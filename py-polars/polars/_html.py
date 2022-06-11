@@ -23,7 +23,7 @@ class Tag:
         if self.attributes is not None:
             s = f"<{self.tag} "
             for k, v in self.attributes.items():
-                s += f'{k}="{v} "'
+                s += f'{k}="{v}" '
             s += ">"
             self.elements.append(s)
         else:
@@ -67,6 +67,7 @@ class HTMLFormatter:
         """
         Writes the header of an HTML table.
         """
+        self.elements.append(f"<small>shape: {self.df.shape}</small>")
         with Tag(self.elements, "thead"):
             with Tag(self.elements, "tr"):
                 columns = self.df.columns
@@ -103,9 +104,7 @@ class HTMLFormatter:
                                 if series.dtype == Object:
                                     self.elements.append(f"{series[r]}")
                                 else:
-                                    self.elements.append(
-                                        f"<pre>{series._s.get_fmt(r)}</pre>"
-                                    )
+                                    self.elements.append(f"{series._s.get_fmt(r)}")
 
     def write(self, inner: str) -> None:
         self.elements.append(inner)
@@ -141,8 +140,11 @@ class NotebookFormatter(HTMLFormatter):
         element_props = [
             ("tbody tr th:only-of-type", "vertical-align", "middle"),
             ("tbody tr th", "vertical-align", "top"),
+            ("thead th", "text-align", "right"),
+            ("td", "white-space", "pre"),
+            ("td", "padding-top", "0"),
+            ("td", "padding-bottom", "0"),
         ]
-        element_props.append(("thead th", "text-align", "right"))
         template_mid = "\n\n".join(map(lambda t: template_select % t, element_props))
         template = dedent("\n".join((template_first, template_mid, template_last)))
         self.write(template)
