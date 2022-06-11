@@ -13,6 +13,21 @@ class StringCache:
     """
     Context manager that allows data sources to share the same categorical features.
     This will temporarily cache the string categories until the context manager is finished.
+
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a_col": ["red", "green", "blue"],
+    ...         "b_col": ["yellow", "orange", "black"],
+    ...     }
+    ... )
+    >>> with pl.StringCache():
+    ...     df = df.with_columns(
+    ...         [
+    ...             pl.col("a_col").cast(pl.Categorical).alias("a_col"),
+    ...             pl.col("b_col").cast(pl.Categorical).alias("b_col"),
+    ...         ]
+    ...     )
+    ...
     """
 
     def __init__(self) -> None:
