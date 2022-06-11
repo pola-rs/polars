@@ -181,3 +181,29 @@ describe("groupby", () => {
   test.todo("groups");
 
 });
+describe("rolling", () => {
+  test("rolling", () => {
+    let dates = [
+      "2020-01-01 13:45:48",
+      "2020-01-01 16:42:13",
+      "2020-01-01 16:45:09",
+      "2020-01-02 18:12:48",
+      "2020-01-03 19:45:32",
+      "2020-01-08 23:16:43",
+    ];
+
+    const df = pl
+      .DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]})
+      .withColumn(pl.col("dt").str.strptime(pl.Datetime));
+
+    const a = pl.col("a");
+    const out = df.groupByRolling({indexColumn:"dt", period:"2d"}).agg(
+      a.sum().as("sum_a"),
+      a.min().as("min_a"),
+      a.max().as("max_a"),
+    );
+    expect(out["sum_a"].toArray()).toEqual([3, 10, 15, 24, 11, 1]);
+    expect(out["max_a"].toArray()).toEqual([3, 7, 7, 9, 9, 1]);
+    expect(out["min_a"].toArray()).toEqual([3, 3, 3, 3, 2, 1]);
+  });
+});

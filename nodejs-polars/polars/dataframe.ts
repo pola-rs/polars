@@ -1,6 +1,6 @@
 import pli from "./internals/polars_internal";
 import { arrayToJsDataFrame } from "./internals/construction";
-import {GroupBy} from "./groupby";
+import {GroupBy, RollingGroupBy} from "./groupby";
 import {LazyDataFrame, _LazyDataFrame} from "./lazy/dataframe";
 import {concat} from "./functions";
 import {Expr} from "./lazy/expr";
@@ -23,7 +23,7 @@ import {
   ExprOrString
 } from "./utils";
 
-import {Arithmetic, Deserialize, Sample, Serialize} from "./shared_traits";
+import {Arithmetic, Deserialize, GroupByRolling, Sample, Serialize} from "./shared_traits";
 import {col} from "./lazy/functions";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
@@ -222,7 +222,13 @@ interface WriteMethods {
   ╰─────┴─────┴─────╯
   ```
  */
-export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, WriteMethods, Serialize {
+export interface DataFrame extends
+Arithmetic<DataFrame>,
+Sample<DataFrame>,
+WriteMethods,
+Serialize,
+GroupByRolling<RollingGroupBy>
+ {
   /** @ignore */
   _df: any
   dtypes: DataType[]
@@ -1608,6 +1614,16 @@ export const _DataFrame = (_df: any): DataFrame => {
     groupBy(...by) {
 
       return GroupBy(_df as any, columnOrColumnsStrict(by));
+    },
+    groupByRolling(opts) {
+      return RollingGroupBy(
+        _DataFrame(_df) as any,
+        opts.indexColumn,
+        opts.period,
+        opts.offset,
+        opts.closed,
+        opts.by
+      );
     },
     hashRows(obj: any = 0n, k1=1n, k2=2n, k3=3n) {
       if (typeof obj === "number" || typeof obj === "bigint") {

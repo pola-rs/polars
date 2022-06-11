@@ -261,23 +261,27 @@ function PivotOps(
 }
 
 
-export interface RollingGroupBy<T> {
-  agg(column: ColumnsOrExpr): T
+export interface RollingGroupBy {
+  agg(column: ColumnsOrExpr, ...columns: ColumnsOrExpr[]): DataFrame
 }
 
 export function RollingGroupBy(
-  df: DataFrame,
+  df: any,
   indexColumn: string,
   period: string,
   offset?: string,
-  closed = "none",
-  by?: ColumnsOrExpr): RollingGroupBy<DataFrame> {
+  closed?,
+  by?: ColumnsOrExpr
+): RollingGroupBy {
+
   return {
-    agg(column: ColumnsOrExpr) {
+    agg(column: ColumnsOrExpr, ...columns: ColumnsOrExpr[]) {
+
+
       return df
         .lazy()
-        .groupByRolling()
-        .agg(column)
+        .groupByRolling({indexColumn, period, offset, closed, by} as any)
+        .agg(column as any, ...columns)
         .collectSync();
     }
   };
