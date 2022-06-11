@@ -232,16 +232,17 @@ fn value_to_dtype(val: &Value) -> DataType {
 
             DataType::List(Box::new(dtype))
         }
-        #[cfg(feature = "dtype-struct")]
         Value::Object(doc) => {
-            let fields = doc.iter().map(|(key, value)| {
-                let dtype = value_to_dtype(value);
-                Field::new(key, dtype)
-            });
-            DataType::Struct(fields.collect())
+            if cfg!(feature = "dtype-struct") {
+                let fields = doc.iter().map(|(key, value)| {
+                    let dtype = value_to_dtype(value);
+                    Field::new(key, dtype)
+                });
+                DataType::Struct(fields.collect())
+            } else {
+                DataType::Utf8
+            }
         }
-        #[cfg(not(feature = "dtype-struct"))]
-        Value::Object(doc) => DataType::Utf8
     }
 }
 
@@ -265,21 +266,21 @@ fn deserialize_all<'a, 'b>(json: &'b Value) -> AnyValue<'a> {
             AnyValue::List(s)
         }
         Value::Null => AnyValue::Null,
-        #[cfg(feature = "dtype-struct")]
         Value::Object(doc) => {
-            let vals: (Vec<AnyValue>, Vec<Field>) = doc
-                .into_iter()
-                .map(|(key, value)| {
-                    let dt = value_to_dtype(value);
-                    let fld = Field::new(key, dt);
-                    let av: AnyValue<'a> = deserialize_all(value);
-                    (av, fld)
-                })
-                .unzip();
-
-            AnyValue::StructOwned(Box::new(vals))
-        },
-        #[cfg(not(feature = "dtype-struct"))]
-        Value::Object(doc) => AnyValue::Utf8Owned(format!("{:#?}", doc)),
+            if cfg!(feature = "dtype-struct") {
+                let vals: (Vec<AnyValue>, Vec<Field>) = doc
+                    .into_iter()
+                    .map(|(key, value)| {
+                        let dt = value_to_dtype(value);
+                        let fld = Field::new(key, dt);
+                        let av: AnyValue<'a> = deserialize_all(value);
+                        (av, fld)
+                    })
+                    .unzip();
+                AnyValue::StructOwned(Box::new(vals))
+            } else {
+                AnyValue::Utf8Owned(format!("{:#?}", doc))
+            }
+        }
     }
 }
