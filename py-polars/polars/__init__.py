@@ -34,6 +34,7 @@ from polars.datatypes import (
     List,
     Null,
     Object,
+    PolarsDataType,
     Struct,
     Time,
     UInt8,

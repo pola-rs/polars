@@ -11,7 +11,14 @@ else:
 import numpy as np
 
 from polars import internals as pli
-from polars.datatypes import DataType, Date, Datetime, Duration, py_type_to_dtype
+from polars.datatypes import (
+    DataType,
+    Date,
+    Datetime,
+    Duration,
+    PolarsDataType,
+    py_type_to_dtype,
+)
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _timedelta_to_pl_timedelta,
@@ -50,7 +57,13 @@ except ImportError:  # pragma: no cover
 
 
 def col(
-    name: Union[str, List[str], List[Type[DataType]], "pli.Series", Type[DataType]]
+    name: Union[
+        str,
+        List[str],
+        Sequence[PolarsDataType],
+        "pli.Series",
+        PolarsDataType,
+    ]
 ) -> "pli.Expr":
     """
     A column in a DataFrame.
@@ -151,10 +164,17 @@ def col(
     if isclass(name) and issubclass(cast(type, name), DataType):
         name = [cast(type, name)]
 
+    if isinstance(name, DataType):
+        return pli.wrap_expr(_dtype_cols([name]))
+
     if isinstance(name, list):
         if len(name) == 0 or isinstance(name[0], str):
             return pli.wrap_expr(pycols(name))
-        elif isclass(name[0]) and issubclass(name[0], DataType):
+        elif (
+            isclass(name[0])
+            and issubclass(name[0], DataType)
+            or isinstance(name[0], DataType)
+        ):
             return pli.wrap_expr(_dtype_cols(name))
         else:
             raise ValueError("did expect argument of List[str] or List[DataType]")

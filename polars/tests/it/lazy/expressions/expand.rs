@@ -20,9 +20,8 @@ fn test_expand_datetimes_3042() -> Result<()> {
         "dt2" => date_range,
     ]?
     .lazy()
-    // this tests if we expand datetimes even though the units differ
     .with_column(
-        dtype_col(&DataType::Datetime(TimeUnit::Microseconds, None))
+        dtype_col(&DataType::Datetime(TimeUnit::Milliseconds, None))
             .dt()
             .strftime("%m/%d/%Y"),
     )

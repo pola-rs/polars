@@ -963,3 +963,21 @@ def test_datetime_units() -> None:
             len(set(df.select([pl.all().exclude(pl.Datetime(unit))]).columns) - subset)
             == 0
         )
+
+
+def test_datetime_instance_selection() -> None:
+    df = pl.DataFrame(
+        data={
+            "ns": [datetime(2022, 12, 31, 1, 2, 3)],
+            "us": [datetime(2022, 12, 31, 4, 5, 6)],
+            "ms": [datetime(2022, 12, 31, 7, 8, 9)],
+        },
+        columns=[
+            ("ns", pl.Datetime("ns")),
+            ("us", pl.Datetime("us")),
+            ("ms", pl.Datetime("ms")),
+        ],
+    )
+
+    for tu in ["ns", "us", "ms"]:
+        assert df.select(pl.col([pl.Datetime(tu)])).dtypes == [pl.Datetime(tu)]
