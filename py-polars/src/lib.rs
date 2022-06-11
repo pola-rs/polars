@@ -7,7 +7,6 @@ extern crate core;
 
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
-use polars_core::prelude::*;
 
 use crate::lazy::dsl::PyExpr;
 use crate::{
@@ -49,9 +48,9 @@ use jemallocator::Jemalloc;
 use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
 use polars::prelude::Null;
+use polars_core::prelude::DataFrame;
 use polars_core::datatypes::TimeUnit;
 use polars_core::frame::row::Row;
-use polars_core::export::arrow::io::ipc::read::read_file_metadata;
 use polars_core::prelude::IntoSeries;
 use polars_core::POOL;
 use pyo3::panic::PanicException;
@@ -287,8 +286,8 @@ fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
     let mut rdfs: Vec<DataFrame> = vec![first_rdf];
 
     for item in iter {
-        let ritem = get_df(item?)?;
-        rdfs.push(ritem);
+        let rdf = get_df(item?)?;
+        rdfs.push(rdf);
     }
 
     let identity = || {
