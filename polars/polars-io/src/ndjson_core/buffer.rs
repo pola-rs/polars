@@ -226,12 +226,12 @@ fn value_to_dtype(val: &Value) -> DataType {
                 DataType::Float64
             }
         }
-        Value::String(_) => DataType::Utf8,
         Value::Array(arr) => {
             let dtype = value_to_dtype(&arr[0]);
 
             DataType::List(Box::new(dtype))
         }
+        #[cfg(feature = "dtype-struct")]
         Value::Object(doc) => {
             if cfg!(feature = "dtype-struct") {
                 let fields = doc.iter().map(|(key, value)| {
@@ -243,6 +243,8 @@ fn value_to_dtype(val: &Value) -> DataType {
                 DataType::Utf8
             }
         }
+        _ => DataType::Utf8,
+
     }
 }
 
@@ -258,7 +260,6 @@ fn deserialize_all<'a, 'b>(json: &'b Value) -> AnyValue<'a> {
                 AnyValue::Float64(n.as_f64().unwrap())
             }
         }
-        Value::String(v) => AnyValue::Utf8Owned(v.clone()),
         Value::Array(arr) => {
             let vals: Vec<AnyValue> = arr.iter().map(deserialize_all).collect();
 
@@ -266,21 +267,19 @@ fn deserialize_all<'a, 'b>(json: &'b Value) -> AnyValue<'a> {
             AnyValue::List(s)
         }
         Value::Null => AnyValue::Null,
+        #[cfg(feature = "dtype-struct")]
         Value::Object(doc) => {
-            if cfg!(feature = "dtype-struct") {
-                let vals: (Vec<AnyValue>, Vec<Field>) = doc
-                    .into_iter()
-                    .map(|(key, value)| {
-                        let dt = value_to_dtype(value);
-                        let fld = Field::new(key, dt);
-                        let av: AnyValue<'a> = deserialize_all(value);
-                        (av, fld)
-                    })
-                    .unzip();
-                AnyValue::StructOwned(Box::new(vals))
-            } else {
-                AnyValue::Utf8Owned(format!("{:#?}", doc))
-            }
+            let vals: (Vec<AnyValue>, Vec<Field>) = doc
+                .into_iter()
+                .map(|(key, value)| {
+                    let dt = value_to_dtype(value);
+                    let fld = Field::new(key, dt);
+                    let av: AnyValue<'a> = deserialize_all(value);
+                    (av, fld)
+                })
+                .unzip();
+            AnyValue::StructOwned(Box::new(vals))
         }
+        val => AnyValue::Utf8Owned(format!("{:#?}", val)),
     }
 }
