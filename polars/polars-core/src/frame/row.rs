@@ -99,7 +99,7 @@ impl DataFrame {
     /// as this is a lot slower than creating the `Series` in a columnar fashion
     #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub fn from_rows(rows: &[Row]) -> Result<Self> {
-        let schema = rows_to_schema(rows);
+        let schema = rows_to_schema(rows, Some(50));
         let has_nulls = schema
             .iter_dtypes()
             .any(|dtype| matches!(dtype, DataType::Null));
@@ -240,9 +240,9 @@ fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
 }
 
 /// Infer schema from rows.
-pub fn rows_to_schema(rows: &[Row]) -> Schema {
+pub fn rows_to_schema(rows: &[Row], infer_schema_length: Option<usize>) -> Schema {
     // no of rows to use to infer dtype
-    let max_infer = std::cmp::min(rows.len(), 50);
+    let max_infer = infer_schema_length.unwrap_or(rows.len());
     let mut schema: Schema = (&rows[0]).into();
     // the first row that has no nulls will be used to infer the schema.
     // if there is a null, we check the next row and see if we can update the schema
@@ -390,7 +390,8 @@ impl<'a> AnyValueBuffer<'a> {
 
     pub(crate) fn add_fallible(&mut self, val: &AnyValue<'a>) -> Result<()> {
         self.add(val.clone()).ok_or_else(|| {
-            PolarsError::ComputeError(format!("Could not append {:?} to builder; make sure that all rows have the same schema.", val).into())
+            PolarsError::ComputeError(format!("Could not append {:?} to builder; make sure that all rows have the same schema.\n\
+            Or consider increasing the the 'schema_inference_length' argument.", val).into())
         })
     }
 

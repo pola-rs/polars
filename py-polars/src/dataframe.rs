@@ -46,9 +46,9 @@ impl PyDataFrame {
         PyDataFrame { df }
     }
 
-    fn finish_from_rows(rows: Vec<Row>) -> PyResult<Self> {
+    fn finish_from_rows(rows: Vec<Row>, infer_schema_length: Option<usize>) -> PyResult<Self> {
         // replace inferred nulls with boolean
-        let schema = rows_to_schema(&rows);
+        let schema = rows_to_schema(&rows, infer_schema_length);
         let fields = schema.iter_fields().map(|mut fld| match fld.data_type() {
             DataType::Null => {
                 fld.coerce(DataType::Boolean);
@@ -378,13 +378,13 @@ impl PyDataFrame {
         // safety:
         // wrap is transparent
         let rows: Vec<Row> = unsafe { std::mem::transmute(rows) };
-        Self::finish_from_rows(rows)
+        Self::finish_from_rows(rows, Some(50))
     }
 
     #[staticmethod]
-    pub fn read_dicts(dicts: &PyAny) -> PyResult<Self> {
+    pub fn read_dicts(dicts: &PyAny, infer_schema_length: Option<usize>) -> PyResult<Self> {
         let (rows, names) = dicts_to_rows(dicts)?;
-        let mut pydf = Self::finish_from_rows(rows)?;
+        let mut pydf = Self::finish_from_rows(rows, infer_schema_length)?;
         pydf.df
             .set_column_names(&names)
             .map_err(PyPolarsErr::from)?;
