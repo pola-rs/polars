@@ -40,7 +40,9 @@ use crate::error::{
     SchemaError,
 };
 use crate::file::get_either_file;
-use crate::prelude::{ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs, PyDataType};
+use crate::prelude::{
+    vec_extract_wrapped, ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs,
+};
 use dsl::ToExprs;
 #[cfg(target_os = "linux")]
 use jemallocator::Jemalloc;
@@ -88,18 +90,8 @@ fn cols(names: Vec<String>) -> dsl::PyExpr {
 }
 
 #[pyfunction]
-fn dtype_cols(dtypes: &PyAny) -> PyResult<dsl::PyExpr> {
-    let (seq, len) = get_pyseq(dtypes)?;
-    let iter = seq.iter()?;
-
-    let mut dtypes = Vec::with_capacity(len);
-
-    for res in iter {
-        let item = res?;
-        let pydt = item.extract::<PyDataType>()?;
-        let dt: DataType = pydt.into();
-        dtypes.push(dt)
-    }
+fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> PyResult<dsl::PyExpr> {
+    let dtypes = vec_extract_wrapped(dtypes);
     Ok(dsl::dtype_cols(dtypes))
 }
 
