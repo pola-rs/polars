@@ -352,8 +352,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def _from_dicts(
         cls: Type[DF],
         data: Sequence[Dict[str, Any]],
+        infer_schema_length: Optional[int] = 100,
     ) -> DF:
-        pydf = PyDataFrame.read_dicts(data)
+        pydf = PyDataFrame.read_dicts(data, infer_schema_length)
         return cls._from_pydf(pydf)
 
     @classmethod

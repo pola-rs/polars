@@ -117,7 +117,10 @@ def from_records(
     return DataFrame._from_records(data, columns=columns, orient=orient)
 
 
-def from_dicts(dicts: Sequence[Dict[str, Any]]) -> DataFrame:
+def from_dicts(
+    dicts: Sequence[Dict[str, Any]],
+    infer_schema_length: Optional[int] = 50,
+) -> DataFrame:
     """
     Construct a DataFrame from a sequence of dictionaries.
 
@@ -125,6 +128,9 @@ def from_dicts(dicts: Sequence[Dict[str, Any]]) -> DataFrame:
     ----------
     dicts
         Sequence with dictionaries mapping column name to value
+    infer_schema_length
+        How many dictionaries/rows to scan to determine the data types
+        if set to `None` all rows are scanned. This will be slow.
 
     Returns
     -------
@@ -150,7 +156,7 @@ def from_dicts(dicts: Sequence[Dict[str, Any]]) -> DataFrame:
     └─────┴─────┘
 
     """
-    return DataFrame._from_dicts(dicts)
+    return DataFrame._from_dicts(dicts, infer_schema_length)
 
 
 # Note that we cannot overload because pyarrow has no stubs :(

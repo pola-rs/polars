@@ -281,7 +281,7 @@ pub fn apply_lambda_with_rows_output<'a>(
     let mut buf = Vec::with_capacity(inference_size);
     buf.push(first_value);
     buf.extend((&mut row_iter).take(inference_size).cloned());
-    let schema = rows_to_schema(&buf);
+    let schema = rows_to_schema(&buf, Some(50));
 
     if init_null_count > 0 {
         // Safety: we know the iterators size
