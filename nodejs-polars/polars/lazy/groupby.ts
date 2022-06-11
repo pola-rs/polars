@@ -1,6 +1,7 @@
 import {Expr} from "./expr";
-import {selectionToExprList} from "../utils";
+import {ColumnsOrExpr, selectionToExprList} from "../utils";
 import {_LazyDataFrame, LazyDataFrame} from "./dataframe";
+import {DataFrame} from "@polars/dataframe";
 
 export interface LazyGroupBy {
   agg(...aggs: Expr[]): LazyDataFrame
@@ -25,3 +26,26 @@ export const LazyGroupBy = (_lgb: any): LazyGroupBy => {
     }
   };
 };
+
+export interface RollingGroupBy {
+  agg(column: ColumnsOrExpr): LazyDataFrame
+}
+
+export function RollingGroupBy(
+  df: any,
+  indexColumn: string,
+  period: string,
+  offset?: string,
+  closed = "none",
+  by?: ColumnsOrExpr): RollingGroupBy {
+  return {
+    agg(column: ColumnsOrExpr) {
+      const exprs = selectionToExprList([by]);
+
+      return df
+        .groupbyRolling(indexColumn, period, offset, closed, exprs)
+        .agg(column)
+        .collectSync();
+    }
+  };
+}

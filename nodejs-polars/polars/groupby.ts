@@ -4,7 +4,7 @@ import util from "util";
 import {Expr} from "./lazy/expr";
 import {col, exclude} from "./lazy/functions";
 import pli from "./internals/polars_internal";
-import {selectionToExprList} from "./utils";
+import {ColumnsOrExpr, selectionToExprList} from "./utils";
 
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
@@ -257,5 +257,28 @@ function PivotOps(
     mean: pivot("mean"),
     count: pivot("count"),
     median: pivot("median"),
+  };
+}
+
+
+export interface RollingGroupBy<T> {
+  agg(column: ColumnsOrExpr): T
+}
+
+export function RollingGroupBy(
+  df: DataFrame,
+  indexColumn: string,
+  period: string,
+  offset?: string,
+  closed = "none",
+  by?: ColumnsOrExpr): RollingGroupBy<DataFrame> {
+  return {
+    agg(column: ColumnsOrExpr) {
+      return df
+        .lazy()
+        .groupByRolling()
+        .agg(column)
+        .collectSync();
+    }
   };
 }
