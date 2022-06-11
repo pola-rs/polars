@@ -22,7 +22,6 @@ use ahash::RandomState;
 use arrow::array::ArrayRef;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use std::borrow::Cow;
-use std::ops::{BitAnd, BitOr, BitXor};
 
 macro_rules! impl_dyn_series {
     ($ca: ident) => {
@@ -178,36 +177,6 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "interpolate")]
             fn interpolate(&self) -> Series {
                 self.0.interpolate().into_series()
-            }
-
-            fn bitand(&self, other: &Series) -> Result<Series> {
-                let other = if other.len() == 1 {
-                    Cow::Owned(other.cast(self.dtype())?)
-                } else {
-                    Cow::Borrowed(other)
-                };
-                let other = self.0.unpack_series_matching_type(&other)?;
-                Ok(self.0.bitand(&other).into_series())
-            }
-
-            fn bitor(&self, other: &Series) -> Result<Series> {
-                let other = if other.len() == 1 {
-                    Cow::Owned(other.cast(self.dtype())?)
-                } else {
-                    Cow::Borrowed(other)
-                };
-                let other = self.0.unpack_series_matching_type(&other)?;
-                Ok(self.0.bitor(&other).into_series())
-            }
-
-            fn bitxor(&self, other: &Series) -> Result<Series> {
-                let other = if other.len() == 1 {
-                    Cow::Owned(other.cast(self.dtype())?)
-                } else {
-                    Cow::Borrowed(other)
-                };
-                let other = self.0.unpack_series_matching_type(&other)?;
-                Ok(self.0.bitxor(&other).into_series())
             }
 
             fn rename(&mut self, name: &str) {

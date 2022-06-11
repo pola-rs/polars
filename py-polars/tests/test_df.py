@@ -1587,7 +1587,7 @@ def test_filter_with_all_expansion() -> None:
             "a": [None, None, None],
         }
     )
-    out = df.filter(~pl.fold(True, lambda acc, s: acc & s.is_null(), pl.all()))  # type: ignore
+    out = df.filter(~pl.fold(True, lambda acc, s: acc & s.is_null(), pl.all()))
     assert out.shape == (2, 3)
 
 

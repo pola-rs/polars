@@ -248,3 +248,17 @@ def test_expression_appends() -> None:
 
     assert out.n_chunks() == 1
     assert out.to_series().to_list() == [None, None, None, 1, 1, 2]
+
+
+def test_regex_in_filter() -> None:
+    df = pl.DataFrame(
+        {
+            "nrs": [1, 2, 3, None, 5],
+            "names": ["foo", "ham", "spam", "egg", None],
+            "flt": [1.0, None, 3.0, 1.0, None],
+        }
+    )
+
+    assert df.filter(
+        pl.fold(acc=False, f=lambda acc, s: acc | s, exprs=(pl.col("^nrs|flt*$") < 3))
+    ).row(0) == (1, "foo", 1.0)

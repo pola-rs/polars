@@ -203,24 +203,33 @@ pub trait SeriesTrait:
     fn rename(&mut self, name: &str);
 
     fn bitand(&self, _other: &Series) -> Result<Series> {
-        panic!(
-            "bitwise and operation not supported for dtype {:?}",
-            self.dtype()
-        )
+        Err(PolarsError::InvalidOperation(
+            format!(
+                "bitwise 'AND' operation not supported for dtype {:?}",
+                self.dtype()
+            )
+            .into(),
+        ))
     }
 
     fn bitor(&self, _other: &Series) -> Result<Series> {
-        panic!(
-            "bitwise or operation not fit supported for dtype {:?}",
-            self.dtype()
-        )
+        Err(PolarsError::InvalidOperation(
+            format!(
+                "bitwise 'OR' operation not supported for dtype {:?}",
+                self.dtype()
+            )
+            .into(),
+        ))
     }
 
     fn bitxor(&self, _other: &Series) -> Result<Series> {
-        panic!(
-            "bitwise xor operation not fit supported for dtype {:?}",
-            self.dtype()
-        )
+        Err(PolarsError::InvalidOperation(
+            format!(
+                "bitwise 'XOR' operation not supported for dtype {:?}",
+                self.dtype()
+            )
+            .into(),
+        ))
     }
 
     /// Get the lengths of the underlying chunks

@@ -855,7 +855,7 @@ def map_binary(
 
 
 def fold(
-    acc: "pli.Expr",
+    acc: "pli.IntoExpr",
     f: Callable[["pli.Series", "pli.Series"], "pli.Series"],
     exprs: Union[Sequence[Union["pli.Expr", str]], "pli.Expr"],
 ) -> "pli.Expr":

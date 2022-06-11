@@ -253,35 +253,6 @@ impl BitAnd for BooleanChunked {
     }
 }
 
-macro_rules! impl_floats {
-    ($_type:ty) => {
-        impl BitXor for &$_type {
-            type Output = $_type;
-
-            fn bitxor(self, _rhs: Self) -> Self::Output {
-                unimplemented!()
-            }
-        }
-        impl BitAnd for &$_type {
-            type Output = $_type;
-
-            fn bitand(self, _rhs: Self) -> Self::Output {
-                unimplemented!()
-            }
-        }
-        impl BitOr for &$_type {
-            type Output = $_type;
-
-            fn bitor(self, _rhs: Self) -> Self::Output {
-                unimplemented!()
-            }
-        }
-    };
-}
-
-impl_floats!(Float64Chunked);
-impl_floats!(Float32Chunked);
-
 #[cfg(test)]
 mod test {
     use super::*;
