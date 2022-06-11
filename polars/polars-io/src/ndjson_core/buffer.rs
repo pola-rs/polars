@@ -244,7 +244,6 @@ fn value_to_dtype(val: &Value) -> DataType {
             }
         }
         _ => DataType::Utf8,
-
     }
 }
 
