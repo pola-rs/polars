@@ -199,7 +199,7 @@
 //! ## Conditionally apply
 //! If we want to create a new column based on some condition, we can use the `.when()/.then()/.otherwise()` expressions.
 //!
-//! * `when` - accepts a predicate epxression
+//! * `when` - accepts a predicate expression
 //! * `then` - expression to use when `predicate == true`
 //! * `otherwise` - expression to use when `predicate == false`
 //!
