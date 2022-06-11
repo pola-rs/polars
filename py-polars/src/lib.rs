@@ -283,30 +283,38 @@ fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
     let first_rdf = get_df(first)?;
     let schema = first_rdf.schema();
 
-    let mut rdfs: Vec<DataFrame> = vec![first_rdf];
+    let mut rdfs: Vec<polars_core::error::Result<DataFrame>> = vec![Ok(first_rdf)];
 
     for item in iter {
         let rdf = get_df(item?)?;
-        rdfs.push(rdf);
+        rdfs.push(Ok(rdf));
     }
 
     let identity = || {
-        DataFrame::from_rows_and_schema(&[Row::default()], &schema).unwrap()
+        DataFrame::from_rows_and_schema(&[Row::default()], &schema)
     };
 
     let df = py.allow_threads(|| {
         polars_core::POOL.install(|| {
-            rdfs.par_iter()
+            rdfs.into_par_iter()
             .fold(
                 identity,
-                |mut a, b| { a.vstack_mut(&b).unwrap(); a }
+                |acc, df| {
+                    let mut acc = acc?;
+                    acc.vstack_mut(&df?)?;
+                    Ok(acc)
+                }
             )
             .reduce(
                 identity,
-                |mut a, b| { a.vstack_mut(&b).unwrap(); a }
+                |acc, df| {
+                    let mut acc = acc?;
+                    acc.vstack_mut(&df?)?;
+                    Ok(acc)
+                }
             )
         })
-    });
+    }).map_err(PyPolarsErr::from)?;
 
     Ok(df.into())
 }
