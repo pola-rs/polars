@@ -443,9 +443,7 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
             Float64 => AnyValueBuffer::Float64(PrimitiveChunkedBuilder::new("", len)),
             Utf8 => AnyValueBuffer::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(revmap) => {
-                AnyValueBuffer::Categorical(CategoricalChunkedBuilder::new("", len))
-            }
+            Categorical(_) => AnyValueBuffer::Categorical(CategoricalChunkedBuilder::new("", len)),
             // Struct and List can be recursive so use anyvalues for that
             _ => AnyValueBuffer::All(Vec::with_capacity(len)),
         }
