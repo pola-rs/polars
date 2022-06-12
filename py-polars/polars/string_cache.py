@@ -14,20 +14,43 @@ class StringCache:
     Context manager that allows data sources to share the same categorical features.
     This will temporarily cache the string categories until the context manager is finished.
 
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "a_col": ["red", "green", "blue"],
-    ...         "b_col": ["yellow", "orange", "black"],
-    ...     }
-    ... )
     >>> with pl.StringCache():
-    ...     df = df.with_columns(
+    ...     df1 = pl.DataFrame(
     ...         [
-    ...             pl.col("a_col").cast(pl.Categorical).alias("a_col"),
-    ...             pl.col("b_col").cast(pl.Categorical).alias("b_col"),
+    ...             pl.Series(
+    ...                 "color", ["red", "green", "blue", "orange"], pl.Categorical
+    ...             ),
+    ...             pl.Series("uint8", [1, 2, 3, 4], pl.UInt8),
+    ...         ]
+    ...     )
+    ...     df2 = pl.DataFrame(
+    ...         [
+    ...             pl.Series(
+    ...                 "color",
+    ...                 ["yellow", "green", "orange", "black", "red"],
+    ...                 pl.Categorical,
+    ...             ),
+    ...             pl.Series("char", ["a", "b", "c", "d", "e"], pl.Utf8),
     ...         ]
     ...     )
     ...
+    ...     # Both dataframes are use the same string cache for the categorical column,
+    ...     # so the join operation on that column will succeed.
+    ...     df_join = df1.join(df2, how="inner", on="color")
+    ...
+    >>> df_join
+    shape: (3, 3)
+    ┌────────┬───────┬──────┐
+    │ color  ┆ uint8 ┆ char │
+    │ ---    ┆ ---   ┆ ---  │
+    │ cat    ┆ u8    ┆ str  │
+    ╞════════╪═══════╪══════╡
+    │ green  ┆ 2     ┆ b    │
+    ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ orange ┆ 4     ┆ c    │
+    ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ red    ┆ 1     ┆ e    │
+    └────────┴───────┴──────┘
     """
 
     def __init__(self) -> None:
