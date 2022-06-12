@@ -34,7 +34,7 @@ class StringCache:
     ...         ]
     ...     )
     ...
-    ...     # Both dataframes are use the same string cache for the categorical column,
+    ...     # Both dataframes use the same string cache for the categorical column,
     ...     # so the join operation on that column will succeed.
     ...     df_join = df1.join(df2, how="inner", on="color")
     ...
