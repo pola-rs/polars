@@ -346,6 +346,8 @@ pub(crate) enum AnyValueBuffer<'a> {
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     Utf8(Utf8ChunkedBuilder),
+    #[cfg(feature = "dtype-categorical")]
+    Categorical(CategoricalChunkedBuilder),
     All(Vec<AnyValue<'a>>),
 }
 
@@ -411,6 +413,8 @@ impl<'a> AnyValueBuffer<'a> {
             Float32(b) => b.finish().into_series(),
             Float64(b) => b.finish().into_series(),
             Utf8(b) => b.finish().into_series(),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(b) => b.finish().into_series(),
             All(vals) => Series::new("", vals),
         }
     }
@@ -438,6 +442,10 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
             Float32 => AnyValueBuffer::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => AnyValueBuffer::Float64(PrimitiveChunkedBuilder::new("", len)),
             Utf8 => AnyValueBuffer::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(revmap) => {
+                AnyValueBuffer::Categorical(CategoricalChunkedBuilder::new("", len))
+            }
             // Struct and List can be recursive so use anyvalues for that
             _ => AnyValueBuffer::All(Vec::with_capacity(len)),
         }
