@@ -3583,6 +3583,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         The direction is backward
         The keys must be sorted to perform an asof join
 
+        **Joining on columns with categorical data**
+        See pl.StringCache().
         """
         if how == "asof":  # pragma: no cover
             warnings.warn(
