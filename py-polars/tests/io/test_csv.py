@@ -431,3 +431,9 @@ def test_csv_string_escaping() -> None:
     f.seek(0)
     df_read = pl.read_csv(f)
     assert df_read.frame_equal(df)
+
+
+def test_glob_csv(io_test_dir: str) -> None:
+    path = os.path.join(io_test_dir, "small*.csv")
+    assert pl.scan_csv(path).collect().shape == (3, 11)
+    assert pl.read_csv(path).shape == (3, 11)

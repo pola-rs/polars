@@ -146,3 +146,9 @@ def test_nested_parquet() -> None:
     assert read.columns == ["a"]
     assert isinstance(read.dtypes[0], pl.datatypes.List)
     assert isinstance(read.dtypes[0].inner, pl.datatypes.Struct)
+
+
+def test_glob_parquet(io_test_dir: str) -> None:
+    path = os.path.join(io_test_dir, "small*.parquet")
+    assert pl.read_parquet(path).shape == (3, 16)
+    assert pl.scan_parquet(path).collect().shape == (3, 16)
