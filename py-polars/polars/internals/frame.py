@@ -638,7 +638,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         if isinstance(file, (str, Path)):
             file = format_path(file)
-        if isinstance(file, str) and "*" in file:
+
+        if isinstance(file, str) and "*" in file and pli._is_local_file(file):
             from polars import scan_parquet
 
             scan = scan_parquet(
@@ -730,7 +731,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         if isinstance(file, (str, Path)):
             file = format_path(file)
-        if isinstance(file, str) and "*" in file:
+
+        if isinstance(file, str) and "*" in file and pli._is_local_file(file):
             from polars import scan_ipc
 
             scan = scan_ipc(
@@ -741,9 +743,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 row_count_offset=row_count_offset,
             )
             if columns is None:
-                scan.collect()
+                return scan.collect()
             elif is_str_sequence(columns, False):
-                scan.select(columns).collect()
+                return scan.select(columns).collect()
             else:
                 raise ValueError(
                     "cannot use glob patterns and integer based projection as `columns` argument; Use columns: List[str]"

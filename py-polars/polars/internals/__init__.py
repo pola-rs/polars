@@ -13,7 +13,7 @@ from .datatypes import IntoExpr
 from .expr import Expr, expr_to_lit_or_expr, selection_to_pyexpr_list, wrap_expr
 from .frame import DataFrame, LazyFrame, wrap_df, wrap_ldf
 from .functions import concat, date_range  # DataFrame.describe() & DataFrame.upsample()
-from .io import _prepare_file_arg, read_ipc_schema, read_parquet_schema
+from .io import _is_local_file, _prepare_file_arg, read_ipc_schema, read_parquet_schema
 from .lazy_functions import all, argsort_by, col, concat_list, element, lit, select
 from .series import Series, wrap_s
 from .whenthen import when  # used in expr.clip()

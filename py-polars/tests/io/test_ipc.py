@@ -127,3 +127,10 @@ def test_ipc_column_order() -> None:
     columns = ["colc", "colb", "cola"]
     # read file into polars; the specified column order is no longer respected
     assert pl.read_ipc(f, columns=columns).columns == columns
+
+
+def test_glob_ipc(io_test_dir: str) -> None:
+    if os.name != "nt":
+        path = os.path.join(io_test_dir, "small*.ipc")
+        assert pl.scan_ipc(path).collect().shape == (3, 12)
+        assert pl.read_ipc(path).shape == (3, 12)

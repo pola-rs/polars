@@ -1,4 +1,3 @@
-import os.path
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import (
@@ -30,13 +29,7 @@ except ImportError:  # pragma: no cover
 
 from polars.convert import from_arrow
 from polars.datatypes import DataType
-from polars.internals import (
-    DataFrame,
-    LazyFrame,
-    _scan_ds,
-    _scan_ipc_fsspec,
-    _scan_parquet_fsspec,
-)
+from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
 
 try:
@@ -573,13 +566,6 @@ def scan_ipc(
     # Map legacy arguments to current ones and remove them from kwargs.
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
-    if isinstance(file, (str, Path)):
-        file = format_path(file)
-
-    # try fsspec scanner
-    if not os.path.exists((file)):
-        return _scan_ipc_fsspec(file, storage_options)
-
     return LazyFrame.scan_ipc(
         file=file,
         n_rows=n_rows,
@@ -587,6 +573,7 @@ def scan_ipc(
         rechunk=rechunk,
         row_count_name=row_count_name,
         row_count_offset=row_count_offset,
+        storage_options=storage_options,
     )
 
 
@@ -635,10 +622,6 @@ def scan_parquet(
     if isinstance(file, (str, Path)):
         file = format_path(file)
 
-    # try fsspec scanner
-    if not os.path.exists((file)):
-        return _scan_parquet_fsspec(file, storage_options)
-
     return LazyFrame.scan_parquet(
         file=file,
         n_rows=n_rows,
@@ -647,6 +630,7 @@ def scan_parquet(
         rechunk=rechunk,
         row_count_name=row_count_name,
         row_count_offset=row_count_offset,
+        storage_options=storage_options,
     )
 
 

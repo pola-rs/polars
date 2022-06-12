@@ -185,10 +185,20 @@ class LazyFrame(Generic[DF]):
         rechunk: bool = True,
         row_count_name: Optional[str] = None,
         row_count_offset: int = 0,
+        storage_options: Optional[Dict] = None,
     ) -> LDF:
         """
         See Also: `pl.scan_parquet`
         """
+
+        # try fsspec scanner
+        if not pli._is_local_file(file):
+            scan = pli._scan_parquet_fsspec(file, storage_options)
+            if n_rows:
+                scan = scan.head(n_rows)
+            if row_count_name is not None:
+                scan = scan.with_row_count(row_count_name, row_count_offset)
+            return scan  # type: ignore
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_parquet(
@@ -204,16 +214,28 @@ class LazyFrame(Generic[DF]):
     @classmethod
     def scan_ipc(
         cls: Type[LDF],
-        file: str,
+        file: Union[str, Path],
         n_rows: Optional[int] = None,
         cache: bool = True,
         rechunk: bool = True,
         row_count_name: Optional[str] = None,
         row_count_offset: int = 0,
+        storage_options: Optional[Dict] = None,
     ) -> LDF:
         """
         See Also: `pl.scan_ipc`
         """
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
+
+        # try fsspec scanner
+        if not pli._is_local_file(file):
+            scan = pli._scan_ipc_fsspec(file, storage_options)
+            if n_rows:
+                scan = scan.head(n_rows)
+            if row_count_name is not None:
+                scan = scan.with_row_count(row_count_name, row_count_offset)
+            return scan  # type: ignore
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_ipc(
