@@ -10,11 +10,13 @@ export interface LazyGroupBy {
 
 
 export const LazyGroupBy = (_lgb: any): LazyGroupBy => {
+
   return {
     agg(...aggs: Expr[])  {
-      const agg  = selectionToExprList(aggs.flat(), false);
+      aggs  = selectionToExprList(aggs, false);
+      const ret = _lgb.agg(aggs.flat());
 
-      return _LazyDataFrame(_lgb.agg(agg));
+      return _LazyDataFrame(ret);
     },
     head(n=5) {
       return _LazyDataFrame(_lgb.head(n));

@@ -11,7 +11,7 @@ import {
   ValueOrArray
 } from "../utils";
 import {LazyGroupBy} from "./groupby";
-import {Deserialize, Serialize} from "../shared_traits";
+import {Deserialize, GroupByOps, Serialize} from "../shared_traits";
 
 
 type LazyJoinOptions =  {
@@ -34,7 +34,7 @@ type LazyOptions = {
 /**
  * Representation of a Lazy computation graph / query.
  */
-export interface LazyDataFrame extends Serialize {
+export interface LazyDataFrame extends Serialize, GroupByOps<LazyGroupBy> {
   /** @ignore */
   _ldf: any;
   get columns(): string[]
@@ -159,6 +159,7 @@ export interface LazyDataFrame extends Serialize {
    */
   groupBy(by: ColumnsOrExpr, maintainOrder?: boolean): LazyGroupBy
   groupBy(by: ColumnsOrExpr, opts: {maintainOrder: boolean}): LazyGroupBy
+
   /**
    * Gets the first `n` rows of the DataFrame. You probably don't want to use this!
    *
@@ -287,6 +288,25 @@ export interface LazyDataFrame extends Serialize {
   withRowCount()
 }
 
+const prepareGroupbyInputs = (by) => {
+  if(Array.isArray(by)) {
+    const newBy: any = [];
+    by.forEach(e => {
+      if(typeof e === "string") {
+        e = pli.col(e);
+      }
+      newBy.push(e);
+    });
+
+    return newBy;
+  } else if (typeof by === "string") {
+    return [pli.col(by)];
+  } else if (Expr.isExpr(by)) {
+    return [by._expr];
+  } else {
+    return [];
+  }
+};
 
 export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
   const unwrap = (method: string, ...args: any[]) => {
@@ -294,13 +314,6 @@ export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
   };
   const wrap = (method, ...args): LazyDataFrame => {
     return _LazyDataFrame(unwrap(method, ...args));
-  };
-  const wrapNullArgs = (method: string) => () => wrap(method);
-  const withOptimizationToggle = (method) =>  (lazyOptions?: LazyOptions) => {
-    const ldf = unwrap("optimizationToggle", lazyOptions);
-
-    return unwrap(method, {}, ldf);
-
   };
 
   return {
@@ -428,6 +441,36 @@ export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
       const by = selectionToExprList([opt], false);
 
       return LazyGroupBy(_ldf.groupby(by, maintainOrder));
+    },
+    groupByRolling({indexColumn, by, period, offset, closed}) {
+      offset = offset ?? `-${period}`;
+      closed = closed ?? "right";
+      by = prepareGroupbyInputs(by);
+      const lgb = _ldf.groupbyRolling(indexColumn, period, offset, closed, by);
+
+      return LazyGroupBy(lgb);
+    },
+    groupByDynamic({indexColumn, every, period, offset, truncate, includeBoundaries, closed, by}) {
+      period = period ?? every;
+      offset = offset ?? `-${period}`;
+      closed = closed ?? "right";
+      by = prepareGroupbyInputs(by);
+      truncate = truncate ?? true;
+      includeBoundaries = includeBoundaries ?? false;
+
+      const lgb = _ldf.groupbyDynamic(
+        indexColumn,
+        every,
+        period,
+        offset,
+        truncate,
+        includeBoundaries,
+        closed,
+        by
+      );
+
+      return LazyGroupBy(lgb);
+
     },
     head(len=5) {
       return _LazyDataFrame(_ldf.slice(0, len));

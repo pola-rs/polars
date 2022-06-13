@@ -4,7 +4,7 @@ import util from "util";
 import {Expr} from "./lazy/expr";
 import {col, exclude} from "./lazy/functions";
 import pli from "./internals/polars_internal";
-import {selectionToExprList} from "./utils";
+import {ColumnsOrExpr, selectionToExprList} from "./utils";
 
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
@@ -257,5 +257,61 @@ function PivotOps(
     mean: pivot("mean"),
     count: pivot("count"),
     median: pivot("median"),
+  };
+}
+
+
+export interface RollingGroupBy {
+  agg(column: ColumnsOrExpr, ...columns: ColumnsOrExpr[]): DataFrame
+}
+
+export function RollingGroupBy(
+  df: any,
+  indexColumn: string,
+  period: string,
+  offset?: string,
+  closed?,
+  by?: ColumnsOrExpr
+): RollingGroupBy {
+
+  return {
+    agg(column: ColumnsOrExpr, ...columns: ColumnsOrExpr[]) {
+
+
+      return df
+        .lazy()
+        .groupByRolling({indexColumn, period, offset, closed, by} as any)
+        .agg(column as any, ...columns)
+        .collectSync();
+    }
+  };
+}
+
+export interface DynamicGroupBy {
+  agg(column: ColumnsOrExpr, ...columns: ColumnsOrExpr[]): DataFrame
+}
+
+export function DynamicGroupBy(
+  df: any,
+  indexColumn: string,
+  every: string,
+  period?: string,
+  offset?: string,
+  truncate?: boolean,
+  includeBoundaries?: boolean,
+  closed?: string,
+  by?: ColumnsOrExpr
+): DynamicGroupBy {
+
+  return {
+    agg(column: ColumnsOrExpr, ...columns: ColumnsOrExpr[]) {
+
+
+      return df
+        .lazy()
+        .groupByDynamic({indexColumn, every, period, offset, truncate, includeBoundaries, closed, by} as any)
+        .agg(column as any, ...columns)
+        .collectSync({noOptimizations: true});
+    }
   };
 }
