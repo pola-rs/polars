@@ -69,6 +69,7 @@ impl LogicalPlanBuilder {
             function,
             schema: schema.clone(),
             predicate: None,
+            aggregate: vec![],
             options: AnonymousScanOptions {
                 fmt_str: name,
                 schema,

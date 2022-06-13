@@ -342,29 +342,44 @@ impl ProjectionPushDown {
                 schema,
                 predicate,
                 mut options,
-                ..
+                output_schema,
+                aggregate,
             } => {
-                options.with_columns = get_scan_columns(&mut acc_projections, expr_arena);
-                let output_schema = if options.with_columns.is_none() {
-                    None
-                } else {
-                    Some(Arc::new(update_scan_schema(
-                        &acc_projections,
-                        expr_arena,
-                        &*schema,
-                        true,
-                    )))
-                };
-                options.output_schema = output_schema.clone();
+                if function.allows_projection_pushdown() {
+                    options.with_columns = get_scan_columns(&mut acc_projections, expr_arena);
 
-                let lp = AnonymousScan {
-                    function,
-                    schema,
-                    output_schema,
-                    options,
-                    predicate,
-                };
-                Ok(lp)
+                    let output_schema = if options.with_columns.is_none() {
+                        None
+                    } else {
+                        Some(Arc::new(update_scan_schema(
+                            &acc_projections,
+                            expr_arena,
+                            &*schema,
+                            true,
+                        )))
+                    };
+                    options.output_schema = output_schema.clone();
+
+                    let lp = AnonymousScan {
+                        function,
+                        schema,
+                        output_schema,
+                        options,
+                        predicate,
+                        aggregate,
+                    };
+                    Ok(lp)
+                } else {
+                    let lp = AnonymousScan {
+                        function,
+                        schema,
+                        predicate,
+                        options,
+                        output_schema,
+                        aggregate,
+                    };
+                    Ok(lp)
+                }
             }
             DataFrameScan {
                 df,

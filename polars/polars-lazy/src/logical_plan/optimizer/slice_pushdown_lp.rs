@@ -100,7 +100,7 @@ impl SlicePushDown {
                 output_schema,
                 predicate,
                 options,
-
+                aggregate,
             },
                 // TODO! we currently skip slice pushdown if there is a predicate.
                 // we can modify the readers to only limit after predicates have been applied
@@ -112,7 +112,8 @@ impl SlicePushDown {
                     schema,
                     output_schema,
                     predicate,
-                    options
+                    options,
+                    aggregate,
                 };
 
                 Ok(lp)

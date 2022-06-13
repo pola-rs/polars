@@ -56,6 +56,7 @@ pub enum LogicalPlan {
         function: Arc<dyn AnonymousScan>,
         schema: SchemaRef,
         predicate: Option<Expr>,
+        aggregate: Vec<Expr>,
         options: AnonymousScanOptions,
     },
     #[cfg(feature = "python")]

@@ -12,7 +12,7 @@ use polars_utils::arena::{Arena, Node};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-// ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
+/// ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
 #[derive(Clone, Debug)]
 pub enum ALogicalPlan {
     AnonymousScan {
@@ -20,6 +20,7 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         output_schema: Option<SchemaRef>,
         predicate: Option<Node>,
+        aggregate: Vec<Node>,
         options: AnonymousScanOptions,
     },
     #[cfg(feature = "python")]
@@ -173,7 +174,11 @@ impl ALogicalPlan {
                 ..
             } => output_schema.as_ref().unwrap_or(schema),
             DataFrameScan { schema, .. } => schema,
-            AnonymousScan { schema, .. } => schema,
+            AnonymousScan {
+                schema,
+                output_schema,
+                ..
+            } => output_schema.as_ref().unwrap_or(schema),
             Selection { input, .. } => arena.get(*input).schema(arena),
             #[cfg(feature = "csv-file")]
             CsvScan {
@@ -384,15 +389,18 @@ impl ALogicalPlan {
                 schema,
                 output_schema,
                 predicate,
+                aggregate: _,
                 options,
             } => {
                 let mut new_predicate = None;
                 if predicate.is_some() {
                     new_predicate = exprs.pop()
                 }
+
                 AnonymousScan {
                     function: function.clone(),
                     schema: schema.clone(),
+                    aggregate: exprs,
                     output_schema: output_schema.clone(),
                     predicate: new_predicate,
                     options: options.clone(),
