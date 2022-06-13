@@ -401,7 +401,7 @@ impl OptimizationRule for SimplifyExprRule {
                         Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
                     }
 
-                    #[cfg(feature = "dtype-i16")]
+                    #[cfg(feature = "dtype-i8")]
                     (AExpr::Literal(LiteralValue::Int8(v)), DataType::Float64) => {
                         Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
                     }
@@ -430,7 +430,7 @@ impl OptimizationRule for SimplifyExprRule {
                         Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
                     }
 
-                    #[cfg(feature = "dtype-i16")]
+                    #[cfg(feature = "dtype-i8")]
                     (AExpr::Literal(LiteralValue::Int8(v)), DataType::Float32) => {
                         Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
                     }

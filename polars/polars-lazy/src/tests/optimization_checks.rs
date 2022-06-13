@@ -245,6 +245,7 @@ pub fn test_slice_pushdown_sort() -> Result<()> {
 }
 
 #[test]
+#[cfg(feature = "dtype-i16")]
 pub fn test_predicate_block_cast() -> Result<()> {
     let df = df![
         "value" => [10, 20, 30, 40]

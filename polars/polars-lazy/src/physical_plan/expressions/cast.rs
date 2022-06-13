@@ -108,7 +108,7 @@ impl PartitionedAggregation for CastExpr {
         state: &ExecutionState,
     ) -> Result<Series> {
         let e = self.input.as_partitioned_aggregator().unwrap();
-        e.evaluate_partitioned(df, groups, state)
+        self.finish(&e.evaluate_partitioned(df, groups, state)?)
     }
 
     fn finalize(
