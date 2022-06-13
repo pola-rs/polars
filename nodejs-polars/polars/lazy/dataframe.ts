@@ -11,7 +11,7 @@ import {
   ValueOrArray
 } from "../utils";
 import {LazyGroupBy} from "./groupby";
-import {Deserialize, GroupByRolling, Serialize} from "../shared_traits";
+import {Deserialize, GroupByOps, Serialize} from "../shared_traits";
 
 
 type LazyJoinOptions =  {
@@ -34,7 +34,7 @@ type LazyOptions = {
 /**
  * Representation of a Lazy computation graph / query.
  */
-export interface LazyDataFrame extends Serialize, GroupByRolling<LazyGroupBy> {
+export interface LazyDataFrame extends Serialize, GroupByOps<LazyGroupBy> {
   /** @ignore */
   _ldf: any;
   get columns(): string[]
@@ -449,6 +449,28 @@ export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
       const lgb = _ldf.groupbyRolling(indexColumn, period, offset, closed, by);
 
       return LazyGroupBy(lgb);
+    },
+    groupByDynamic({indexColumn, every, period, offset, truncate, includeBoundaries, closed, by}) {
+      period = period ?? every;
+      offset = offset ?? `-${period}`;
+      closed = closed ?? "right";
+      by = prepareGroupbyInputs(by);
+      truncate = truncate ?? true;
+      includeBoundaries = includeBoundaries ?? false;
+
+      const lgb = _ldf.groupbyDynamic(
+        indexColumn,
+        every,
+        period,
+        offset,
+        truncate,
+        includeBoundaries,
+        closed,
+        by
+      );
+
+      return LazyGroupBy(lgb);
+
     },
     head(len=5) {
       return _LazyDataFrame(_ldf.slice(0, len));
