@@ -66,7 +66,7 @@ impl LiteralValue {
             UInt16(v) => AnyValue::UInt16(*v),
             UInt32(v) => AnyValue::UInt32(*v),
             UInt64(v) => AnyValue::UInt64(*v),
-            #[cfg(feature = "dtype-i16")]
+            #[cfg(feature = "dtype-i8")]
             Int8(v) => AnyValue::Int8(*v),
             #[cfg(feature = "dtype-i16")]
             Int16(v) => AnyValue::Int16(*v),

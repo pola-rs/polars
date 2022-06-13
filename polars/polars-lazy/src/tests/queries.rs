@@ -2053,7 +2053,7 @@ fn test_partitioned_gb_binary() -> Result<()> {
     let out = df
         .lazy()
         .groupby([col("col")])
-        .agg([(col("col").cast(DataType::Float32) + lit(10))
+        .agg([(col("col").cast(DataType::Float32) + lit(10.0))
             .sum()
             .alias("sum")])
         .collect()?;

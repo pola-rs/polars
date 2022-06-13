@@ -111,8 +111,9 @@ fn test_exploded_window_function() -> Result<()> {
         ])
         .collect()?;
 
+    // even though we fill with f32, cast i32 -> f32 can overflow so the result is f64
     assert_eq!(
-        Vec::from(out.column("shifted")?.f32()?),
+        Vec::from(out.column("shifted")?.f64()?),
         &[Some(-1.0), Some(3.0), Some(-1.0), Some(5.0), Some(4.0)]
     );
     Ok(())

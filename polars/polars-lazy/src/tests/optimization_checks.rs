@@ -245,6 +245,7 @@ pub fn test_slice_pushdown_sort() -> Result<()> {
 }
 
 #[test]
+#[cfg(feature = "dtype-i16")]
 pub fn test_predicate_block_cast() -> Result<()> {
     let df = df![
         "value" => [10, 20, 30, 40]
@@ -253,12 +254,12 @@ pub fn test_predicate_block_cast() -> Result<()> {
     let lf1 = df
         .clone()
         .lazy()
-        .with_column(col("value") * lit(0.1f32))
+        .with_column(col("value").cast(DataType::Int16) * lit(0.1f32))
         .filter(col("value").lt(lit(2.5f32)));
 
     let lf2 = df
         .lazy()
-        .select([col("value") * lit(0.1f32)])
+        .select([col("value").cast(DataType::Int16) * lit(0.1f32)])
         .filter(col("value").lt(lit(2.5f32)));
 
     for lf in [lf1, lf2] {
