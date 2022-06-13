@@ -93,7 +93,17 @@ impl PhysicalExpr for ApplyExpr {
 
             match self.collect_groups {
                 ApplyOptions::ApplyGroups => {
-                    let name = ac.series().name().to_string();
+                    let s = ac.series();
+
+                    // collection of empty list leads to a null dtype
+                    // see: #3687
+                    if s.len() == 0 {
+                        let s = self.function.call_udf(&mut [s.clone()])?;
+                        let ca = ListChunked::full(s.name(), &s, 0);
+                        return Ok(self.finish_apply_groups(ac, ca));
+                    }
+
+                    let name = s.name().to_string();
 
                     let mut ca: ListChunked = ac
                         .aggregated()
@@ -109,8 +119,7 @@ impl PhysicalExpr for ApplyExpr {
                         .collect();
 
                     ca.rename(&name);
-                    let ac = self.finish_apply_groups(ac, ca);
-                    Ok(ac)
+                    Ok(self.finish_apply_groups(ac, ca))
                 }
                 ApplyOptions::ApplyFlat => {
                     // make sure the groups are updated because we are about to throw away
