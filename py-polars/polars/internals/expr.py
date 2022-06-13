@@ -1664,8 +1664,6 @@ class Expr:
 
         Depending on the context it has the following behavior:
 
-        ## Context
-
         * Select/Project
             expected type `f`: Callable[[Any], Any]
             Applies a python function over each individual value in the column.
