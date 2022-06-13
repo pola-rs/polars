@@ -278,8 +278,7 @@ name = "sort"
 harness = false
 
 [package.metadata.docs.rs]
-# not all because arrow 4.3 does not compile with simd
 # all-features = true
 features = ["docs-selection"]
 # defines the configuration attribute `docsrs`
-rustdoc-args = ["--cfg", "docsrs", "polars-core/docsrs"]
+rustdoc-args = ["--cfg", "docsrs"]
