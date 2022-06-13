@@ -75,6 +75,9 @@ where
             eprintln!("groupby keys are sorted; running sorted key fast path");
         }
         let arr = self.downcast_iter().next().unwrap();
+        if arr.is_empty() {
+            return GroupsSlice::default();
+        }
         let mut values = arr.values().as_slice();
         let null_count = arr.null_count();
 
