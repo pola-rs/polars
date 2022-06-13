@@ -309,7 +309,7 @@ impl<'a> From<&AnyValue<'a>> for DataType {
             Int8(_) => DataType::Int8,
             Int16(_) => DataType::Int16,
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) => DataType::Categorical(None),
+            Categorical(_, rev_map) => DataType::Categorical(Some(Arc::new((*rev_map).clone()))),
             #[cfg(feature = "object")]
             Object(o) => DataType::Object(o.type_name()),
         }
