@@ -1,12 +1,11 @@
+use arrow::types::NativeType;
 use num::traits::NumCast;
 use polars_core::prelude::*;
 use polars_time::prelude::utf8::infer::infer_pattern_single;
 use polars_time::prelude::utf8::infer::DatetimeInfer;
 use polars_time::prelude::utf8::Pattern;
 use serde_json::Value;
-
-use arrow::types::NativeType;
-pub(crate) fn init_buffers(schema: &Schema, capacity: usize) -> Result<PlHashMap<String, Buffer>> {
+pub(crate) fn init_buffers(schema: &Schema, capacity: usize) -> Result<PlIndexMap<String, Buffer>> {
     schema
         .iter()
         .map(|(name, dtype)| {
@@ -27,11 +26,7 @@ pub(crate) fn init_buffers(schema: &Schema, capacity: usize) -> Result<PlHashMap
                 }
                 #[cfg(feature = "dtype-date")]
                 &DataType::Date => Buffer::Date(PrimitiveChunkedBuilder::new(name, capacity)),
-                other => {
-                    return Err(PolarsError::ComputeError(
-                        format!("Unsupported data type {:?} when reading a csv", other).into(),
-                    ))
-                }
+                _ => Buffer::All((Vec::with_capacity(capacity), name)),
             };
             Ok((name.clone(), builder))
         })
@@ -39,7 +34,7 @@ pub(crate) fn init_buffers(schema: &Schema, capacity: usize) -> Result<PlHashMap
 }
 
 #[allow(clippy::large_enum_variant)]
-pub(crate) enum Buffer {
+pub(crate) enum Buffer<'a> {
     Boolean(BooleanChunkedBuilder),
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
@@ -52,9 +47,10 @@ pub(crate) enum Buffer {
     Datetime(PrimitiveChunkedBuilder<Int64Type>),
     #[cfg(feature = "dtype-date")]
     Date(PrimitiveChunkedBuilder<Int32Type>),
+    All((Vec<AnyValue<'a>>, &'a str)),
 }
 
-impl Buffer {
+impl<'a> Buffer<'a> {
     pub(crate) fn into_series(self) -> Result<Series> {
         let s = match self {
             Buffer::Boolean(v) => v.finish().into_series(),
@@ -73,6 +69,7 @@ impl Buffer {
             #[cfg(feature = "dtype-date")]
             Buffer::Date(v) => v.finish().into_series().cast(&DataType::Date).unwrap(),
             Buffer::Utf8(v) => v.finish().into_series(),
+            Buffer::All((vals, name)) => Series::new(name, vals),
         };
         Ok(s)
     }
@@ -91,6 +88,7 @@ impl Buffer {
             Buffer::Datetime(v) => v.append_null(),
             #[cfg(feature = "dtype-date")]
             Buffer::Date(v) => v.append_null(),
+            Buffer::All((v, _)) => v.push(AnyValue::Null),
         };
     }
 
@@ -173,6 +171,11 @@ impl Buffer {
                 buf.append_option(v);
                 Ok(())
             }
+            All((buf, _)) => {
+                let av = deserialize_all(value);
+                buf.push(av);
+                Ok(())
+            }
         }
     }
 }
@@ -208,5 +211,72 @@ where
             Ok(mut infer) => infer.parse(val),
             Err(_) => None,
         },
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+fn value_to_dtype(val: &Value) -> DataType {
+    match val {
+        Value::Null => DataType::Null,
+        Value::Bool(_) => DataType::Boolean,
+        Value::Number(n) => {
+            if n.is_i64() {
+                DataType::Int64
+            } else if n.is_u64() {
+                DataType::UInt64
+            } else {
+                DataType::Float64
+            }
+        }
+        Value::Array(arr) => {
+            let dtype = value_to_dtype(&arr[0]);
+
+            DataType::List(Box::new(dtype))
+        }
+        #[cfg(feature = "dtype-struct")]
+        Value::Object(doc) => {
+            let fields = doc.iter().map(|(key, value)| {
+                let dtype = value_to_dtype(value);
+                Field::new(key, dtype)
+            });
+            DataType::Struct(fields.collect())
+        }
+        _ => DataType::Utf8,
+    }
+}
+
+fn deserialize_all<'a, 'b>(json: &'b Value) -> AnyValue<'a> {
+    match json {
+        Value::Bool(b) => AnyValue::Boolean(*b),
+        Value::Number(n) => {
+            if n.is_i64() {
+                AnyValue::Int64(n.as_i64().unwrap())
+            } else if n.is_u64() {
+                AnyValue::UInt64(n.as_u64().unwrap())
+            } else {
+                AnyValue::Float64(n.as_f64().unwrap())
+            }
+        }
+        Value::Array(arr) => {
+            let vals: Vec<AnyValue> = arr.iter().map(deserialize_all).collect();
+
+            let s = Series::new("", vals);
+            AnyValue::List(s)
+        }
+        Value::Null => AnyValue::Null,
+        #[cfg(feature = "dtype-struct")]
+        Value::Object(doc) => {
+            let vals: (Vec<AnyValue>, Vec<Field>) = doc
+                .into_iter()
+                .map(|(key, value)| {
+                    let dt = value_to_dtype(value);
+                    let fld = Field::new(key, dt);
+                    let av: AnyValue<'a> = deserialize_all(value);
+                    (av, fld)
+                })
+                .unzip();
+            AnyValue::StructOwned(Box::new(vals))
+        }
+        val => AnyValue::Utf8Owned(format!("{:#?}", val)),
     }
 }
