@@ -142,6 +142,7 @@ class NotebookFormatter(HTMLFormatter):
             ("tbody tr th", "vertical-align", "top"),
             ("thead th", "text-align", "right"),
             ("td", "white-space", "pre"),
+            ("td", "line-height", "95%"),
             ("td", "padding-top", "0"),
             ("td", "padding-bottom", "0"),
         ]
