@@ -2006,12 +2006,35 @@ class Expr:
         """
         Hash the Series.
 
-        The hash value is of type `Datetime`
+        The hash value is of type `UInt64`
 
         Parameters
         ----------
         seed
             seed parameter
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...     }
+        ... )
+        >>> df.with_column(pl.col("a").hash(0))
+        shape: (3, 1)
+        ┌─────────────────────┐
+        │ a                   │
+        │ ---                 │
+        │ u64                 │
+        ╞═════════════════════╡
+        │ 2818902862237899908 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 1584708464793912000 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 8337078092773689561 │
+        └─────────────────────┘
+
         """
         # kwargs is for backward compatibility
         # can be removed later
