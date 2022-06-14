@@ -93,7 +93,7 @@ impl<'a> Iterator for FlatIter<'a> {
         if self.len == self.offset {
             None
         } else {
-            let arr = unsafe { Box::from(self.array.slice_unchecked(self.offset, 1)) };
+            let arr = unsafe { self.array.slice_unchecked(self.offset, 1) };
             self.offset += 1;
             self.item.swap(arr);
             Some(Some(self.item))

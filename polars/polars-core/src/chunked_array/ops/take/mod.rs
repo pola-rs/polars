@@ -175,7 +175,7 @@ impl ChunkTake for BooleanChunked {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take::take(chunks.next().unwrap(), array).unwrap().into(),
+                    1 => take::take(chunks.next().unwrap(), array).unwrap(),
                     _ => {
                         return if !array.has_validity() {
                             let iter = array.values().iter().map(|i| *i as usize);

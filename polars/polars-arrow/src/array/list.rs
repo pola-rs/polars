@@ -94,7 +94,7 @@ impl<'a> AnonymousBuilder<'a> {
             Ok(ListArray::<i64>::new_unchecked(
                 dtype,
                 self.offsets.into(),
-                values.into(),
+                values,
                 self.validity.map(|validity| validity.into()),
             ))
         }

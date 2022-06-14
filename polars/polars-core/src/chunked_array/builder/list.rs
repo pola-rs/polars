@@ -539,12 +539,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
                 let array = new_null_array(dtype.clone(), real_length);
                 let dtype = ListArray::<i64>::default_datatype(dtype);
                 let array = unsafe {
-                    ListArray::new_unchecked(
-                        dtype,
-                        slf.builder.take_offsets().into(),
-                        Box::from(array),
-                        None,
-                    )
+                    ListArray::new_unchecked(dtype, slf.builder.take_offsets().into(), array, None)
                 };
                 ListChunked::from_chunks(&slf.name, vec![Box::new(array)])
             } else {

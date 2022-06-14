@@ -28,7 +28,7 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
         #[cfg(feature = "compute")]
         _ => {
             use arrow::compute::take::take;
-            Box::from(take(arr, idx).unwrap())
+            take(arr, idx).unwrap()
         }
         #[cfg(not(feature = "compute"))]
         _ => {

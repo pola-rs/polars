@@ -229,8 +229,7 @@ impl<T> ChunkedArray<T> {
                 .collect::<Vec<_>>()
                 .as_slice(),
         )
-        .unwrap()
-        .into()];
+        .unwrap()];
     }
 
     /// Unpack a Series to the same physical type.
@@ -416,7 +415,9 @@ where
             let mut offset = 0;
             let chunks = chunk_id
                 .map(|len| {
-                    let out = array.slice(offset, len).into();
+                    // safety:
+                    // within bounds
+                    let out = unsafe { array.slice_unchecked(offset, len) };
                     offset += len;
                     out
                 })
@@ -464,7 +465,7 @@ where
 // A hack to save compiler bloat for null arrays
 impl Int32Chunked {
     pub(crate) fn new_null(name: &str, len: usize) -> Self {
-        let arr = Box::from(arrow::array::new_null_array(ArrowDataType::Null, len));
+        let arr = arrow::array::new_null_array(ArrowDataType::Null, len);
         let field = Arc::new(Field::new(name, DataType::Null));
         let chunks = vec![arr as ArrayRef];
         ChunkedArray {

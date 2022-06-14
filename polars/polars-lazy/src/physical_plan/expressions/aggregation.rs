@@ -333,7 +333,7 @@ impl PartitionedAggregation for AggregationExpr {
                 }
 
                 let vals = values.iter().map(|arr| &**arr).collect::<Vec<_>>();
-                let values: ArrayRef = concatenate(&vals).unwrap().into();
+                let values = concatenate(&vals).unwrap();
 
                 let data_type = ListArray::<i64>::default_datatype(values.data_type().clone());
                 // Safety:

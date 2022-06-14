@@ -316,13 +316,9 @@ impl Series {
                     let new_values = struct_arr
                         .values()
                         .iter()
-                        .map(|arr| {
-                            Box::from(match arr.validity() {
-                                None => arr.with_validity(Some(validity.clone())),
-                                Some(arr_validity) => {
-                                    arr.with_validity(Some(arr_validity & validity))
-                                }
-                            })
+                        .map(|arr| match arr.validity() {
+                            None => arr.with_validity(Some(validity.clone())),
+                            Some(arr_validity) => arr.with_validity(Some(arr_validity & validity)),
                         })
                         .collect();
 
@@ -361,7 +357,7 @@ fn convert_inner_types(arr: &ArrayRef) -> ArrayRef {
         }
         ArrowDataType::List(field) => {
             let out = cast(&**arr, &ArrowDataType::LargeList(field.clone())).unwrap();
-            convert_inner_types(&(Box::from(out) as ArrayRef))
+            convert_inner_types(&out)
         }
         ArrowDataType::LargeList(_) => {
             let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();

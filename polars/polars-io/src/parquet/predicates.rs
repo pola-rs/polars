@@ -38,7 +38,7 @@ impl ColumnStats {
         let dtype = DataType::from(min_val.data_type());
         if dtype.is_numeric() || matches!(dtype, DataType::Utf8) {
             let arr = concatenate(&[min_val, max_val]).unwrap();
-            let s = Series::try_from(("", Box::from(arr) as ArrayRef)).unwrap();
+            let s = Series::try_from(("", arr)).unwrap();
             if s.null_count() > 0 {
                 None
             } else {

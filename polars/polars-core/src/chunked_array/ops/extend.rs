@@ -11,7 +11,7 @@ fn extend_immutable(immutable: &dyn Array, chunks: &mut Vec<ArrayRef>, other_chu
         concatenate(&arrays).unwrap()
     };
 
-    chunks.push(Box::from(out));
+    chunks.push(out);
 }
 
 impl<T> ChunkedArray<T>

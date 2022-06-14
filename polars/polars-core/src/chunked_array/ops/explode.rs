@@ -254,7 +254,11 @@ impl ChunkExplode for ListChunked {
 
         if !offsets.is_empty() {
             let offset = offsets[0];
-            values = Box::from(values.slice(offset as usize, offsets[offsets.len() - 1] as usize));
+            // safety:
+            // we are in bounds
+            values = unsafe {
+                values.slice_unchecked(offset as usize, offsets[offsets.len() - 1] as usize)
+            };
         }
 
         let mut s = if ca.can_fast_explode() {

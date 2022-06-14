@@ -493,11 +493,8 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
                         .map(|array| {
                             // safety
                             // reported dtype is correct
-                            let series = Series::from_chunks_and_dtype_unchecked(
-                                "",
-                                vec![array.into()],
-                                &dtype,
-                            );
+                            let series =
+                                Series::from_chunks_and_dtype_unchecked("", vec![array], &dtype);
                             f(series)
                         })
                         .trust_my_length(self.len())
@@ -522,7 +519,6 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
             .map(|array| {
                 let values = array.iter().map(|x| {
                     let x = x.map(|x| {
-                        let x: ArrayRef = x.into();
                         // safety
                         // reported dtype is correct
                         unsafe { Series::from_chunks_and_dtype_unchecked("", vec![x], &dtype) }

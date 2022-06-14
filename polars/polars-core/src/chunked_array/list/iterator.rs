@@ -43,7 +43,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                 }
 
                 // update the inner state
-                unsafe { *self.inner.as_mut() = array_ref.into() };
+                unsafe { *self.inner.as_mut() = array_ref };
 
                 // Safety
                 // we cannot control the lifetime of an iterators `next` method.
