@@ -2,7 +2,7 @@ use crate::chunked_array::object::extension::PolarsExtension;
 use crate::prelude::*;
 
 /// This will dereference a raw ptr when dropping the PolarsExtension, make sure that it's valid.
-pub(crate) unsafe fn drop_list(ca: &ListChunked) {
+pub(crate) unsafe fn drop_list(ca: &mut ListChunked) {
     let mut inner = ca.inner_dtype();
     let mut nested_count = 0;
 
@@ -31,9 +31,14 @@ pub(crate) unsafe fn drop_list(ca: &ListChunked) {
                 let arr = values
                     .as_any()
                     .downcast_ref::<FixedSizeBinaryArray>()
-                    .unwrap()
-                    .clone();
-                PolarsExtension::new(arr);
+                    .unwrap();
+
+                // if the buf is not shared with anyone but us
+                // we can deallocate
+                let buf = arr.values();
+                if buf.shared_count_strong() == 1 {
+                    PolarsExtension::new(arr.clone());
+                };
             }
         }
     }

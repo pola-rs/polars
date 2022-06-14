@@ -653,7 +653,6 @@ impl PyDataFrame {
             .map(|(i, _)| i)
             .collect::<Vec<_>>();
 
-        use polars_core::export::arrow::array::ArrayRef;
         let rbs = self
             .df
             .iter_chunks()
@@ -671,7 +670,6 @@ impl PyDataFrame {
                         CastOptions::default(),
                     )
                     .unwrap();
-                    let out = Arc::from(out) as ArrayRef;
                     *arr = out;
                 }
                 let rb = ArrowChunk::new(rb);
