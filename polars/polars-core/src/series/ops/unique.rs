@@ -41,7 +41,7 @@ impl Series {
     #[cfg(feature = "unique_counts")]
     #[cfg_attr(docsrs, doc(cfg(feature = "unique_counts")))]
     pub fn unique_counts(&self) -> IdxCa {
-        if self.dtype().is_numeric() {
+        if self.dtype().to_physical().is_numeric() {
             if self.bit_repr_is_large() {
                 let ca = self.bit_repr_large();
                 unique_counts(ca.into_iter())
