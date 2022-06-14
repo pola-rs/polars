@@ -1,8 +1,8 @@
-use arrow::array::{Array, ArrayRef, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
+use crate::prelude::*;
+use arrow::array::{Array, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
-use std::sync::Arc;
 
 use crate::utils::CustomIterTools;
 
@@ -94,10 +94,12 @@ pub trait ListFromIter {
 
         let values: PrimitiveArray<T> = iter_to_values!(iterator, validity, offsets, length_so_far);
 
-        ListArray::from_data(
+        // Safety:
+        // offsets are monotonically increasing
+        ListArray::new_unchecked(
             ListArray::<i64>::default_datatype(data_type.clone()),
             offsets.into(),
-            Arc::new(values.to(data_type)),
+            Box::new(values.to(data_type)),
             Some(validity.into()),
         )
     }
@@ -122,10 +124,12 @@ pub trait ListFromIter {
 
         let values: BooleanArray = iter_to_values!(iterator, validity, offsets, length_so_far);
 
-        ListArray::from_data(
+        // Safety:
+        // Offsets are monotonically increasing.
+        ListArray::new_unchecked(
             ListArray::<i64>::default_datatype(DataType::Boolean),
             offsets.into(),
-            Arc::new(values),
+            Box::new(values),
             Some(validity.into()),
         )
     }
@@ -166,10 +170,12 @@ pub trait ListFromIter {
             .trust_my_length(n_elements)
             .collect();
 
-        ListArray::from_data(
+        // Safety:
+        // offsets are monotonically increasing
+        ListArray::new_unchecked(
             ListArray::<i64>::default_datatype(DataType::LargeUtf8),
             offsets.into(),
-            Arc::new(values),
+            Box::new(values),
             Some(validity.into()),
         )
     }

@@ -263,16 +263,18 @@ impl Series {
                         let offsets = arr.offsets().clone();
                         let validity = arr.validity().cloned();
 
-                        let values = Arc::new(PrimitiveArray::from_data(
+                        let values = Box::new(PrimitiveArray::from_data(
                             ArrowDataType::UInt8,
                             values,
                             None,
                         ));
 
                         let dtype = ListArray::<i64>::default_datatype(ArrowDataType::UInt8);
-                        Arc::new(ListArray::<i64>::from_data(
+                        // Safety:
+                        // offsets are monotonically increasing
+                        unsafe { Arc::new(ListArray::<i64>::new_unchecked(
                             dtype, offsets, values, validity,
-                        )) as ArrayRef
+                        )) as ArrayRef }
                     })
                     .collect();
                 Ok(ListChunked::from_chunks(name, chunks).into())

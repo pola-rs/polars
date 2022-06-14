@@ -6,14 +6,13 @@ mod variance;
 
 use super::*;
 use crate::utils::CustomIterTools;
-use arrow::array::{ArrayRef, PrimitiveArray};
+use arrow::array::PrimitiveArray;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
 use num::{Float, NumCast};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
-use std::sync::Arc;
 
 pub use mean::*;
 pub use min_max::*;
@@ -56,7 +55,7 @@ where
         .collect_trusted::<Vec<_>>();
 
     let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
-    Arc::new(PrimitiveArray::from_data(
+    Box::new(PrimitiveArray::from_data(
         T::PRIMITIVE.into(),
         out.into(),
         validity.map(|b| b.into()),
@@ -104,7 +103,7 @@ where
         .collect_trusted::<Vec<T>>();
 
     let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
-    Arc::new(PrimitiveArray::from_data(
+    Box::new(PrimitiveArray::from_data(
         DataType::from(T::PRIMITIVE),
         out.into(),
         validity.map(|b| b.into()),

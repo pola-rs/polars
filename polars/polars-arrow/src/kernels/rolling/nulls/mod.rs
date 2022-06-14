@@ -76,7 +76,7 @@ where
         })
         .collect_trusted::<Vec<_>>();
 
-    Arc::new(PrimitiveArray::from_data(
+    Box::new(PrimitiveArray::from_data(
         T::PRIMITIVE.into(),
         out.into(),
         Some(validity.into()),

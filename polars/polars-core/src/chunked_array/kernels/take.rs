@@ -75,5 +75,7 @@ pub(crate) unsafe fn take_list_unchecked(
         } else {
             None
         };
-    ListArray::from_data(values.data_type().clone(), offsets.into(), taken, validity)
+    // Safety:
+    // offsets are monotonically increasing
+    ListArray::new_unchecked(values.data_type().clone(), offsets.into(), taken, validity)
 }

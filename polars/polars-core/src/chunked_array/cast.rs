@@ -105,7 +105,9 @@ fn cast_inner_list_type(list: &ListArray<i64>, child_type: &DataType) -> Result<
     let child = cast::cast(child.as_ref(), &child_type.to_arrow())?.into();
 
     let data_type = ListArray::<i64>::default_datatype(child_type.to_arrow());
-    let list = ListArray::from_data(data_type, offsets.clone(), child, list.validity().cloned());
+    // Safety:
+    // offsets are correct as they have not changed
+    let list = unsafe { ListArray::new_unchecked(data_type, offsets.clone(), child, list.validity().cloned()) };
     Ok(Arc::new(list) as ArrayRef)
 }
 

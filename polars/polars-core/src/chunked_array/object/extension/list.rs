@@ -74,12 +74,14 @@ impl<T: PolarsObject> ListBuilderTrait for ExtensionListBuilder<T> {
         let extension_dtype = extension_array.data_type();
 
         let data_type = ListArray::<i64>::default_datatype(extension_dtype.clone());
-        let arr = Arc::new(ListArray::<i64>::from_data(
+        // Safety:
+        // offsets are monotonically increasing
+        let arr = unsafe { Arc::new(ListArray::<i64>::new_unchecked(
             data_type,
             offsets.into(),
             extension_array,
             None,
-        )) as ArrayRef;
+        )) as ArrayRef };
 
         let mut listarr = ListChunked::from_chunks(ca.name(), vec![arr]);
         if self.fast_explode {

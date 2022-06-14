@@ -74,7 +74,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.12.0"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=6919cc3281c3ee7dd3e973a7b303c67277458f20#6919cc3281c3ee7dd3e973a7b303c67277458f20"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=83082fabeb1bf66c5c695a9831e60fd9e337f23e#83082fabeb1bf66c5c695a9831e60fd9e337f23e"
 dependencies = [
  "arrow-format",
  "avro-schema",
@@ -82,6 +82,7 @@ dependencies = [
  "bytemuck",
  "chrono",
  "crc",
+ "dyn-clone",
  "either",
  "fallible-streaming-iterator",
  "futures",
@@ -408,6 +409,12 @@ dependencies = [
  "redox_users",
  "winapi",
 ]
+
+[[package]]
+name = "dyn-clone"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21e50f3adc76d6a43f5ed73b698a87d0760ca74617f60f7c3b879003536fdd28"
 
 [[package]]
 name = "either"

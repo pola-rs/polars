@@ -29,7 +29,7 @@ where
 {
     if values.is_empty() {
         let out: Vec<T> = vec![];
-        return Arc::new(PrimitiveArray::from_data(
+        return Box::new(PrimitiveArray::from_data(
             T::PRIMITIVE.into(),
             out.into(),
             None,
@@ -70,7 +70,7 @@ where
         })
         .collect_trusted::<Vec<T>>();
 
-    Arc::new(PrimitiveArray::from_data(
+    Box::new(PrimitiveArray::from_data(
         T::PRIMITIVE.into(),
         out.into(),
         Some(validity.into()),
@@ -134,7 +134,7 @@ where
         })
         .collect_trusted::<Vec<T>>();
 
-    Arc::new(PrimitiveArray::from_data(
+    Box::new(PrimitiveArray::from_data(
         T::PRIMITIVE.into(),
         out.into(),
         Some(validity.into()),

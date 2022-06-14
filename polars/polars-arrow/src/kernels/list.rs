@@ -1,8 +1,8 @@
-use crate::index::*;
 use crate::kernels::take::take_unchecked;
+use crate::prelude::*;
 use crate::trusted_len::PushUnchecked;
 use crate::utils::CustomIterTools;
-use arrow::array::{ArrayRef, ListArray};
+use arrow::array::ListArray;
 use arrow::buffer::Buffer;
 
 /// Get the indices that would result in a get operation on the lists values.
@@ -81,7 +81,9 @@ pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
 
     let offsets: Buffer<i64> = offsets.into();
     let dtype = ListArray::<i64>::default_datatype(array.data_type().clone());
-    ListArray::<i64>::from_data(dtype, offsets, array, None)
+    // Safety:
+    // offsets are monotonically increasing
+    unsafe { ListArray::<i64>::new_unchecked(dtype, offsets, array, None) }
 }
 
 #[cfg(test)]
@@ -97,7 +99,7 @@ mod test {
         let offsets = Buffer::from(vec![0i64, 3, 5, 6]);
 
         let dtype = ListArray::<i64>::default_datatype(DataType::Int32);
-        ListArray::<i64>::from_data(dtype, offsets, Arc::new(values), None)
+        ListArray::<i64>::from_data(dtype, offsets, Box::new(values), None)
     }
 
     #[test]

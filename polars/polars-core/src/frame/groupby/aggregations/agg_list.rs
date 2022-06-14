@@ -73,8 +73,10 @@ where
                     validity,
                 );
                 let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow());
+                // Safety:
+                // offsets are monotonically increasing
                 let arr =
-                    ListArray::<i64>::from_data(data_type, offsets.into(), Arc::new(array), None);
+                    unsafe { ListArray::<i64>::new_unchecked(data_type, offsets.into(), Box::new(array), None) };
 
                 let mut ca = ListChunked::from_chunks(self.name(), vec![Arc::new(arr)]);
                 if can_fast_explode {
@@ -131,7 +133,7 @@ where
                 );
                 let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow());
                 let arr =
-                    ListArray::<i64>::from_data(data_type, offsets.into(), Arc::new(array), None);
+                   unsafe { ListArray::<i64>::new_unchecked(data_type, offsets.into(), Box::new(array), None) };
                 let mut ca = ListChunked::from_chunks(self.name(), vec![Arc::new(arr)]);
                 if can_fast_explode {
                     ca.set_fast_explode()
@@ -219,12 +221,14 @@ fn agg_list_list<F: Fn(&ListChunked, bool, &mut Vec<i64>, &mut i64, &mut Vec<Arr
         .unwrap()
         .into();
     let data_type = ListArray::<i64>::default_datatype(list_values.data_type().clone());
-    let arr = Arc::new(ListArray::<i64>::from_data(
+    // Safety:
+    // offsets are monotonically increasing
+    let arr = unsafe { Arc::new(ListArray::<i64>::new_unchecked(
         data_type,
         offsets.into(),
         list_values,
         None,
-    )) as ArrayRef;
+    )) as ArrayRef};
     let mut listarr = ListChunked::from_chunks(ca.name(), vec![arr]);
     if can_fast_explode {
         listarr.set_fast_explode()
@@ -349,12 +353,14 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
         let extension_dtype = extension_array.data_type();
 
         let data_type = ListArray::<i64>::default_datatype(extension_dtype.clone());
-        let arr = Arc::new(ListArray::<i64>::from_data(
+        // Safety:
+        // offsets are monotonically increasing
+        let arr = unsafe { Arc::new(ListArray::<i64>::new_unchecked(
             data_type,
             offsets.into(),
             extension_array,
             None,
-        )) as ArrayRef;
+        )) as ArrayRef };
 
         let mut listarr = ListChunked::from_chunks(self.name(), vec![arr]);
         if can_fast_explode {

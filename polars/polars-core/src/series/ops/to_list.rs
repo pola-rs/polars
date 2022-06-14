@@ -34,7 +34,9 @@ impl Series {
 
         let data_type = ListArray::<i64>::default_datatype(inner_type.to_physical().to_arrow());
 
-        let arr = ListArray::from_data(data_type, offsets.into(), values.clone(), None);
+        // Safety:
+        // offsets are correct;
+        let arr = unsafe { ListArray::new_unchecked(data_type, offsets.into(), values.clone(), None) };
         let name = self.name();
 
         let mut ca = ListChunked::from_chunks(name, vec![Arc::new(arr)]);
