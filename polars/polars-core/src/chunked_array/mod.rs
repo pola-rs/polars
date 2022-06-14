@@ -350,7 +350,7 @@ impl<T> ChunkedArray<T> {
                     .validity()
                     .map(|bitmap| !bitmap)
                     .unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
-                Arc::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
+                Box::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
             .collect::<Vec<_>>();
         BooleanChunked::from_chunks(self.name(), chunks)
@@ -369,7 +369,7 @@ impl<T> ChunkedArray<T> {
                     .validity()
                     .cloned()
                     .unwrap_or_else(|| !(&Bitmap::new_zeroed(arr.len())));
-                Arc::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
+                Box::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
             .collect::<Vec<_>>();
         BooleanChunked::from_chunks(self.name(), chunks)
@@ -464,7 +464,7 @@ where
 // A hack to save compiler bloat for null arrays
 impl Int32Chunked {
     pub(crate) fn new_null(name: &str, len: usize) -> Self {
-        let arr = Arc::from(arrow::array::new_null_array(ArrowDataType::Null, len));
+        let arr = Box::from(arrow::array::new_null_array(ArrowDataType::Null, len));
         let field = Arc::new(Field::new(name, DataType::Null));
         let chunks = vec![arr as ArrayRef];
         ChunkedArray {
@@ -635,12 +635,12 @@ pub(crate) fn to_array<T: PolarsNumericType>(
     values: Vec<T::Native>,
     validity: Option<Bitmap>,
 ) -> ArrayRef {
-    Arc::new(to_primitive::<T>(values, validity))
+    Box::new(to_primitive::<T>(values, validity))
 }
 
 impl<T: PolarsNumericType> From<PrimitiveArray<T::Native>> for ChunkedArray<T> {
     fn from(a: PrimitiveArray<T::Native>) -> Self {
-        ChunkedArray::from_chunks("", vec![Arc::new(a)])
+        ChunkedArray::from_chunks("", vec![Box::new(a)])
     }
 }
 

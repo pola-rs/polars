@@ -529,7 +529,7 @@ pub(crate) fn df_rows_to_hashes(
         keys.vec_hash_combine(build_hasher.clone(), hslice);
     }
 
-    let chunks = vec![Arc::new(PrimitiveArray::from_data(
+    let chunks = vec![Box::new(PrimitiveArray::from_data(
         ArrowDataType::UInt64,
         hashes.into(),
         None,

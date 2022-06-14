@@ -34,28 +34,20 @@ impl Series {
                 let new = CategoricalChunked::from_cats_and_rev_map(cats, ca.get_rev_map().clone());
 
                 let arr: DictionaryArray<u32> = (&new).into();
-                Arc::new(arr) as ArrayRef
+                Box::new(arr) as ArrayRef
             }
             #[cfg(feature = "dtype-date")]
-            DataType::Date => {
-                let arr = cast(&*self.chunks()[chunk_idx], &DataType::Date.to_arrow()).unwrap();
-                Arc::from(arr)
-            }
+            DataType::Date => cast(&*self.chunks()[chunk_idx], &DataType::Date.to_arrow()).unwrap(),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
-                let arr = cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow()).unwrap();
-                Arc::from(arr)
+                cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow()).unwrap()
             }
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(_) => {
-                let arr = cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow()).unwrap();
-                Arc::from(arr)
+                cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow()).unwrap()
             }
             #[cfg(feature = "dtype-time")]
-            DataType::Time => {
-                let arr = cast(&*self.chunks()[chunk_idx], &DataType::Time.to_arrow()).unwrap();
-                Arc::from(arr)
-            }
+            DataType::Time => cast(&*self.chunks()[chunk_idx], &DataType::Time.to_arrow()).unwrap(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(_) => self.array_ref(chunk_idx).clone(),
             _ => self.array_ref(chunk_idx).clone(),

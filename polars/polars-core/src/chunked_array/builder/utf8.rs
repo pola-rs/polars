@@ -38,8 +38,8 @@ impl Utf8ChunkedBuilder {
         self.builder.push(opt);
     }
 
-    pub fn finish(self) -> Utf8Chunked {
-        let arr = self.builder.into_arc();
+    pub fn finish(mut self) -> Utf8Chunked {
+        let arr = self.builder.as_box();
         ChunkedArray {
             field: Arc::new(self.field),
             chunks: vec![arr],

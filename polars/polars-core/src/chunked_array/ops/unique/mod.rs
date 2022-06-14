@@ -314,7 +314,7 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
 mod is_first {
     use super::*;
     use crate::utils::CustomIterTools;
-    use arrow::array::{ArrayRef, BooleanArray};
+    use arrow::array::BooleanArray;
 
     fn is_first<T>(ca: &ChunkedArray<T>) -> BooleanChunked
     where
@@ -329,7 +329,7 @@ mod is_first {
                     .into_iter()
                     .map(|opt_v| unique.insert(opt_v))
                     .collect_trusted();
-                Arc::new(mask) as ArrayRef
+                Box::new(mask) as ArrayRef
             })
             .collect();
 
@@ -371,7 +371,7 @@ mod is_first {
                         .into_iter()
                         .map(|opt_v| unique.insert(opt_v))
                         .collect_trusted();
-                    Arc::new(mask) as ArrayRef
+                    Box::new(mask) as ArrayRef
                 })
                 .collect();
 

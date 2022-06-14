@@ -144,6 +144,10 @@ where
     fn to_boxed(&self) -> Box<dyn Array> {
         Box::new(self.clone())
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        unimplemented!()
+    }
 }
 
 impl<T> ObjectChunked<T>

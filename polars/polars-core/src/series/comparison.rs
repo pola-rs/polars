@@ -4,6 +4,12 @@ use super::Series;
 use crate::apply_method_physical_numeric;
 use crate::prelude::*;
 use crate::series::arithmetic::coerce_lhs_rhs;
+#[cfg(any(
+    feature = "dtype-duration",
+    feature = "dtype-datetime",
+    feature = "dtype-date",
+    feature = "dtype-time"
+))]
 use std::ops::Deref;
 
 macro_rules! impl_compare {

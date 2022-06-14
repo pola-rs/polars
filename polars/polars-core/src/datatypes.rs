@@ -413,18 +413,18 @@ impl<'a> AnyValue<'a> {
             dt => panic!("cannot create date from other type. dtype: {}", dt),
         }
     }
+    #[cfg(feature = "dtype-datetime")]
     pub(crate) fn into_datetime(self, tu: TimeUnit, tz: &'a Option<TimeZone>) -> Self {
         match self {
-            #[cfg(feature = "dtype-datetime")]
             AnyValue::Int64(v) => AnyValue::Datetime(v, tu, tz),
             AnyValue::Null => AnyValue::Null,
             dt => panic!("cannot create date from other type. dtype: {}", dt),
         }
     }
 
+    #[cfg(feature = "dtype-duration")]
     pub(crate) fn into_duration(self, tu: TimeUnit) -> Self {
         match self {
-            #[cfg(feature = "dtype-duration")]
             AnyValue::Int64(v) => AnyValue::Duration(v, tu),
             AnyValue::Null => AnyValue::Null,
             dt => panic!("cannot create date from other type. dtype: {}", dt),

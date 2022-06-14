@@ -62,7 +62,7 @@ where
 
         let len = self.values.len();
 
-        let arr = Arc::new(ObjectArray {
+        let arr = Box::new(ObjectArray {
             values: Arc::new(self.values),
             null_bitmap,
             offset: 0,
@@ -126,7 +126,7 @@ where
         let field = Arc::new(Field::new(name, DataType::Object(T::type_name())));
         let len = v.len();
 
-        let arr = Arc::new(ObjectArray {
+        let arr = Box::new(ObjectArray {
             values: Arc::new(v),
             null_bitmap: None,
             offset: 0,

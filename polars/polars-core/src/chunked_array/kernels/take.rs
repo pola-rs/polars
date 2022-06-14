@@ -47,7 +47,7 @@ pub(crate) unsafe fn take_list_unchecked(
     let taken = s
         .take_unchecked(&IdxCa::from_chunks(
             "",
-            vec![Arc::new(list_indices) as ArrayRef],
+            vec![Box::new(list_indices) as ArrayRef],
         ))
         .unwrap();
 

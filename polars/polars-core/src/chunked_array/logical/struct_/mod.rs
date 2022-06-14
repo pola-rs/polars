@@ -23,7 +23,7 @@ fn fields_to_struct_array(fields: &[Series]) -> (ArrayRef, Vec<Series>) {
     let new_fields = fields.iter().map(|s| s.field().to_arrow()).collect();
     let field_arrays = fields.iter().map(|s| s.to_arrow(0)).collect::<Vec<_>>();
     let arr = StructArray::new(ArrowDataType::Struct(new_fields), field_arrays, None);
-    (Arc::new(arr), fields)
+    (Box::new(arr), fields)
 }
 
 impl StructChunked {
@@ -73,7 +73,7 @@ impl StructChunked {
                 .iter()
                 .map(|s| s.to_arrow(i))
                 .collect::<Vec<_>>();
-            let arr = Arc::new(StructArray::new(
+            let arr = Box::new(StructArray::new(
                 ArrowDataType::Struct(new_fields.clone()),
                 field_arrays,
                 None,

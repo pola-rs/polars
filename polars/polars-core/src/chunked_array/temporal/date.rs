@@ -51,7 +51,7 @@ impl DateChunked {
             }
 
             let arr: Utf8Array<i64> = mutarr.into();
-            Arc::new(arr)
+            Box::new(arr)
         });
         ca.rename(self.name());
         ca

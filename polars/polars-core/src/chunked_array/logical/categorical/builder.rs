@@ -201,10 +201,10 @@ impl CategoricalChunkedBuilder {
         }
     }
 
-    pub fn finish(self) -> CategoricalChunked {
+    pub fn finish(mut self) -> CategoricalChunked {
         CategoricalChunked::from_chunks_original(
             &self.name,
-            vec![self.array_builder.into_arc()],
+            vec![self.array_builder.as_box()],
             self.reverse_mapping.finish(),
         )
     }

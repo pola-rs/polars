@@ -2,7 +2,6 @@
 use crate::chunked_array::object::PolarsObjectSafe;
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
-use arrow::array::ArrayRef;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use std::any::Any;
 use std::borrow::Cow;

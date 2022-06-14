@@ -18,10 +18,7 @@ pub(crate) unsafe fn drop_list(ca: &ListChunked) {
         // if empty the memory is leaked somewhere
         assert!(!ca.chunks.is_empty());
         for lst_arr in &ca.chunks {
-            // This list can be cloned, so we check the ref count before we drop
-            if let (ArrowDataType::LargeList(fld), 1) =
-                (lst_arr.data_type(), Arc::strong_count(lst_arr))
-            {
+            if let ArrowDataType::LargeList(fld) = lst_arr.data_type() {
                 let dtype = fld.data_type();
 
                 assert!(matches!(dtype, ArrowDataType::Extension(_, _, _)));
@@ -31,15 +28,12 @@ pub(crate) unsafe fn drop_list(ca: &ListChunked) {
 
                 let values = arr.values();
 
-                // The inner value also may be cloned, check the ref count
-                if Arc::strong_count(values) == 1 {
-                    let arr = values
-                        .as_any()
-                        .downcast_ref::<FixedSizeBinaryArray>()
-                        .unwrap()
-                        .clone();
-                    PolarsExtension::new(arr);
-                }
+                let arr = values
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
+                    .unwrap()
+                    .clone();
+                PolarsExtension::new(arr);
             }
         }
     }

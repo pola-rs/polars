@@ -45,7 +45,7 @@ where
 
 macro_rules! finish_list_builder {
     ($self:ident) => {{
-        let arr = $self.builder.as_arc();
+        let arr = $self.builder.as_box();
         let mut ca = ListChunked {
             field: Arc::new($self.field.clone()),
             chunks: vec![arr],
@@ -477,7 +477,7 @@ impl<'a> AnonymousListBuilder<'a> {
             let dtype = slf.dtype.map(|dt| dt.to_physical().to_arrow());
             let arr = slf.builder.finish(dtype.as_ref()).unwrap();
             let dtype = DataType::from(arr.data_type());
-            let mut ca = ListChunked::from_chunks("", vec![Arc::new(arr)]);
+            let mut ca = ListChunked::from_chunks("", vec![Box::new(arr)]);
 
             ca.field = Arc::new(Field::new(&slf.name, dtype));
             ca
@@ -542,11 +542,11 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
                     ListArray::new_unchecked(
                         dtype,
                         slf.builder.take_offsets().into(),
-                        Arc::from(array),
+                        Box::from(array),
                         None,
                     )
                 };
-                ListChunked::from_chunks(&slf.name, vec![Arc::new(array)])
+                ListChunked::from_chunks(&slf.name, vec![Box::new(array)])
             } else {
                 ListChunked::full_null_with_dtype(
                     &slf.name,
@@ -558,7 +558,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
             let inner_dtype = slf.inner_dtype.map(|dt| dt.to_physical().to_arrow());
             let arr = slf.builder.finish(inner_dtype.as_ref()).unwrap();
             let dtype = DataType::from(arr.data_type());
-            let mut ca = ListChunked::from_chunks("", vec![Arc::new(arr)]);
+            let mut ca = ListChunked::from_chunks("", vec![Box::new(arr)]);
 
             ca.field = Arc::new(Field::new(&slf.name, dtype));
             ca

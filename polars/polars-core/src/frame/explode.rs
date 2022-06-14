@@ -289,7 +289,7 @@ impl DataFrame {
         let values =
             unsafe { Series::from_chunks_and_dtype_unchecked(value_name, vec![values_arr], &st) };
 
-        let variable_col = variable_col.into_arc();
+        let variable_col = variable_col.as_box();
         // Safety
         // The give dtype is correct
         let variables = unsafe {

@@ -4,7 +4,6 @@ use crate::prelude::*;
 use arrow::array::*;
 use polars_arrow::is_valid::IsValid;
 use std::convert::TryFrom;
-use std::sync::Arc;
 
 macro_rules! impl_take_random_get {
     ($self:ident, $index:ident, $array_type:ty) => {{
@@ -16,7 +15,7 @@ macro_rules! impl_take_random_get {
 
         // Safety:
         // caller should give right array type
-        let arr = &*(arr as *const ArrayRef as *const Arc<$array_type>);
+        let arr = &*(arr as *const ArrayRef as *const Box<$array_type>);
 
         // Safety:
         // index should be in bounds
@@ -37,7 +36,7 @@ macro_rules! impl_take_random_get_unchecked {
 
         // Safety:
         // caller should give right array type
-        let arr = &*(arr as *const ArrayRef as *const Arc<$array_type>);
+        let arr = &*(&**arr as *const dyn Array as *const $array_type);
 
         // Safety:
         // index should be in bounds

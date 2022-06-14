@@ -2,11 +2,10 @@
 use crate::prelude::*;
 use crate::utils::align_chunks_binary;
 use arrow::array::PrimitiveArray;
-use arrow::{array::ArrayRef, compute, compute::arithmetics::basic};
+use arrow::{compute, compute::arithmetics::basic};
 use num::{Num, NumCast, ToPrimitive};
 use std::borrow::Cow;
 use std::ops::{Add, Div, Mul, Rem, Sub};
-use std::sync::Arc;
 
 macro_rules! apply_operand_on_chunkedarray_by_iter {
 
@@ -69,7 +68,7 @@ where
             let chunks = lhs
                 .downcast_iter()
                 .zip(rhs.downcast_iter())
-                .map(|(lhs, rhs)| Arc::new(kernel(lhs, rhs)) as ArrayRef)
+                .map(|(lhs, rhs)| Box::new(kernel(lhs, rhs)) as ArrayRef)
                 .collect();
             lhs.copy_with_chunks(chunks)
         }
@@ -243,7 +242,7 @@ where
 
     fn div(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(&|arr| Arc::new(basic::div_scalar(arr, &rhs)))
+        self.apply_kernel(&|arr| Box::new(basic::div_scalar(arr, &rhs)))
     }
 }
 
@@ -269,7 +268,7 @@ where
 
     fn rem(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(&|arr| Arc::new(basic::rem_scalar(arr, &rhs)))
+        self.apply_kernel(&|arr| Box::new(basic::rem_scalar(arr, &rhs)))
     }
 }
 
@@ -420,7 +419,7 @@ where
     fn pow_f32(&self, exp: f32) -> Float32Chunked {
         let s = self.cast(&DataType::Float32).unwrap();
         s.f32().unwrap().apply_kernel(&|arr| {
-            Arc::new(compute::arity::unary(
+            Box::new(compute::arity::unary(
                 arr,
                 |x| x.powf(exp),
                 DataType::Float32.to_arrow(),
@@ -431,7 +430,7 @@ where
     fn pow_f64(&self, exp: f64) -> Float64Chunked {
         let s = self.cast(&DataType::Float64).unwrap();
         s.f64().unwrap().apply_kernel(&|arr| {
-            Arc::new(compute::arity::unary(
+            Box::new(compute::arity::unary(
                 arr,
                 |x| x.powf(exp),
                 DataType::Float64.to_arrow(),

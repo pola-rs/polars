@@ -62,7 +62,7 @@ where
 {
     fn from_slice(name: &str, v: &[T::Native]) -> Self {
         let arr = PrimitiveArray::<T::Native>::from_slice(v).to(T::get_dtype().to_arrow());
-        ChunkedArray::from_chunks(name, vec![Arc::new(arr)])
+        ChunkedArray::from_chunks(name, vec![Box::new(arr)])
     }
 
     fn from_slice_options(name: &str, opt_v: &[Option<T::Native>]) -> Self {
@@ -127,7 +127,7 @@ where
 
         ChunkedArray {
             field,
-            chunks: vec![builder.into_arc()],
+            chunks: vec![builder.as_box()],
             phantom: PhantomData,
             categorical_map: None,
             ..Default::default()
@@ -146,7 +146,7 @@ where
 
         ChunkedArray {
             field,
-            chunks: vec![builder.into_arc()],
+            chunks: vec![builder.as_box()],
             phantom: PhantomData,
             categorical_map: None,
             ..Default::default()
