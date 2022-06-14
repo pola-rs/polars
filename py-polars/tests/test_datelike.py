@@ -981,3 +981,26 @@ def test_datetime_instance_selection() -> None:
 
     for tu in ["ns", "us", "ms"]:
         assert df.select(pl.col([pl.Datetime(tu)])).dtypes == [pl.Datetime(tu)]
+
+
+def test_unique_counts_on_dates() -> None:
+    assert pl.DataFrame(
+        {
+            "dt_ns": pl.date_range(datetime(2020, 1, 1), datetime(2020, 3, 1), "1mo"),
+        }
+    ).with_columns(
+        [
+            pl.col("dt_ns").dt.cast_time_unit("us").alias("dt_us"),
+            pl.col("dt_ns").dt.cast_time_unit("ms").alias("dt_ms"),
+            pl.col("dt_ns").cast(pl.Date).alias("date"),
+        ]
+    ).select(
+        pl.all().unique_counts().sum()
+    ).to_dict(
+        False
+    ) == {
+        "dt_ns": [3],
+        "dt_us": [3],
+        "dt_ms": [3],
+        "date": [3],
+    }
