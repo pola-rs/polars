@@ -10,7 +10,13 @@ mod duration;
 mod time;
 
 pub use self::conversion::*;
-use chrono::*;
+
+use chrono::NaiveDateTime;
+#[cfg(feature = "dtype-time")]
+use chrono::NaiveTime;
+
+#[cfg(feature = "dtype-date")]
+use chrono::NaiveDate;
 
 pub fn unix_time() -> NaiveDateTime {
     NaiveDateTime::from_timestamp(0, 0)

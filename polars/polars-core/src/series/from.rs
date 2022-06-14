@@ -275,11 +275,9 @@ impl Series {
                         let dtype = ListArray::<i64>::default_datatype(ArrowDataType::UInt8);
                         // Safety:
                         // offsets are monotonically increasing
-                        unsafe {
-                            Box::new(ListArray::<i64>::new_unchecked(
-                                dtype, offsets, values, validity,
-                            )) as ArrayRef
-                        }
+                        Box::new(ListArray::<i64>::new_unchecked(
+                            dtype, offsets, values, validity,
+                        )) as ArrayRef
                     })
                     .collect();
                 Ok(ListChunked::from_chunks(name, chunks).into())

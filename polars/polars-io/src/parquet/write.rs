@@ -133,7 +133,7 @@ where
 }
 
 fn create_serializer(
-    batch: Chunk<Arc<dyn Array>>,
+    batch: Chunk<Box<dyn Array>>,
     fields: Vec<ParquetType>,
     encodings: Vec<Vec<Encoding>>,
     options: WriteOptions,

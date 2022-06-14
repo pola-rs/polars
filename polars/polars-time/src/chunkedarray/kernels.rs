@@ -2,7 +2,7 @@
 //! `week`, `weekday`, `year`, `hour` etc. from primitive arrays.
 use super::*;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
-use polars_arrow::export::arrow::array::{ArrayRef, PrimitiveArray};
+use polars_arrow::export::arrow::array::PrimitiveArray;
 use polars_arrow::export::arrow::compute::arity::unary;
 #[cfg(feature = "dtype-time")]
 use polars_arrow::export::arrow::temporal_conversions::time64ns_to_time;
@@ -10,7 +10,6 @@ use polars_arrow::export::arrow::temporal_conversions::{
     date32_to_datetime, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
     timestamp_us_to_datetime,
 };
-use std::sync::Arc;
 
 trait PolarsWeekDay {
     fn p_weekday(&self) -> u32;
@@ -38,7 +37,7 @@ impl PolarsWeekDay for NaiveDate {
 macro_rules! to_temporal_unit {
     ($name: ident, $chrono_method:ident, $to_datetime_fn: expr, $dtype_in: ty, $dtype_out:expr) => {
         pub(crate) fn $name(arr: &PrimitiveArray<$dtype_in>) -> ArrayRef {
-            Arc::new(unary(
+            Box::new(unary(
                 arr,
                 |value| {
                     let dt = $to_datetime_fn(value);

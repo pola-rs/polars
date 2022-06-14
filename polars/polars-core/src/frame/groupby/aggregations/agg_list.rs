@@ -365,14 +365,12 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
         let data_type = ListArray::<i64>::default_datatype(extension_dtype.clone());
         // Safety:
         // offsets are monotonically increasing
-        let arr = unsafe {
-            Box::new(ListArray::<i64>::new_unchecked(
-                data_type,
-                offsets.into(),
-                extension_array,
-                None,
-            )) as ArrayRef
-        };
+        let arr = Box::new(ListArray::<i64>::new_unchecked(
+            data_type,
+            offsets.into(),
+            extension_array,
+            None,
+        )) as ArrayRef;
 
         let mut listarr = ListChunked::from_chunks(self.name(), vec![arr]);
         if can_fast_explode {

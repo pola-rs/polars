@@ -229,8 +229,8 @@ impl StringNameSpace {
             let fields = arrs
                 .into_iter()
                 .enumerate()
-                .map(|(i, arr)| {
-                    Series::try_from((format!("field_{i}").as_str(), arr.into_arc())).unwrap()
+                .map(|(i, mut arr)| {
+                    Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
                 })
                 .collect::<Vec<_>>();
             Ok(StructChunked::new(ca.name(), &fields)?.into_series())
@@ -281,8 +281,8 @@ impl StringNameSpace {
             let fields = arrs
                 .into_iter()
                 .enumerate()
-                .map(|(i, arr)| {
-                    Series::try_from((format!("field_{i}").as_str(), arr.into_arc())).unwrap()
+                .map(|(i, mut arr)| {
+                    Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
                 })
                 .collect::<Vec<_>>();
             Ok(StructChunked::new(ca.name(), &fields)?.into_series())

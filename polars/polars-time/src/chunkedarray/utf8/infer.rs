@@ -4,7 +4,7 @@ use crate::chunkedarray::date::naive_date_to_date;
 use crate::chunkedarray::utf8::patterns::Pattern;
 use crate::chunkedarray::utf8::strptime;
 use chrono::{NaiveDate, NaiveDateTime};
-use polars_arrow::export::arrow::array::{ArrayRef, PrimitiveArray};
+use polars_arrow::export::arrow::array::PrimitiveArray;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::types::NativeType;
 
@@ -124,7 +124,7 @@ impl<T: NativeType> DatetimeInfer<T> {
                 let iter = array
                     .into_iter()
                     .map(|opt_val| opt_val.and_then(|val| self.parse(val)));
-                Arc::new(PrimitiveArray::from_trusted_len_iter(iter)) as ArrayRef
+                Box::new(PrimitiveArray::from_trusted_len_iter(iter)) as ArrayRef
             })
             .collect();
         let mut out = match self.logical_type {
