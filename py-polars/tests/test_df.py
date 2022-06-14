@@ -771,27 +771,29 @@ def test_hstack_list_of_series(
     stack: list, exp_shape: tuple, exp_columns: list, in_place: bool
 ) -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
-    df_out = df.hstack(stack, in_place=in_place)
     if in_place:
+        df.hstack(stack, in_place=True)
         assert df.shape == exp_shape
         assert df.columns == exp_columns
     else:
-        assert df_out.shape == exp_shape  # type: ignore
-        assert df_out.columns == exp_columns  # type: ignore
+        df_out = df.hstack(stack, in_place=False)
+        assert df_out.shape == exp_shape
+        assert df_out.columns == exp_columns
 
 
 @pytest.mark.parametrize("in_place", [True, False])
 def test_hstack_dataframe(in_place: bool) -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
     df2 = pl.DataFrame({"c": [2, 1, 3], "d": ["a", "b", "c"]})
-    df_out = df.hstack(df2, in_place=in_place)
     expected = pl.DataFrame(
         {"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [2, 1, 3], "d": ["a", "b", "c"]}
     )
     if in_place:
+        df.hstack(df2, in_place=True)
         assert df.frame_equal(expected)
     else:
-        assert df_out.frame_equal(expected)  # type: ignore
+        df_out = df.hstack(df2, in_place=False)
+        assert df_out.frame_equal(expected)
 
 
 @pytest.mark.parametrize("in_place", [True, False])

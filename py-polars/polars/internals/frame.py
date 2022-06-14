@@ -3759,6 +3759,22 @@ class DataFrame(metaclass=DataFrameMetaClass):
         else:
             return self._from_pydf(self._df.with_column(column._s))
 
+    @overload
+    def hstack(
+        self: DF,
+        columns: Union[List["pli.Series"], "DataFrame"],
+        in_place: Literal[False] = False,
+    ) -> DF:
+        ...
+
+    @overload
+    def hstack(
+        self: DF,
+        columns: Union[List["pli.Series"], "DataFrame"],
+        in_place: Literal[True],
+    ) -> None:
+        ...
+
     def hstack(
         self: DF,
         columns: Union[List["pli.Series"], "DataFrame"],
