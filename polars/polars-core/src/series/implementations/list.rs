@@ -76,10 +76,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         self.0.shrink_to_fit()
     }
 
-    fn list(&self) -> Result<&ListChunked> {
-        unsafe { Ok(&*(self as *const dyn SeriesTrait as *const ListChunked)) }
-    }
-
     fn append_array(&mut self, other: ArrayRef) -> Result<()> {
         self.0.append_array(other)
     }

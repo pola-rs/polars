@@ -208,38 +208,6 @@ macro_rules! impl_dyn_series {
                 self.0.shrink_to_fit()
             }
 
-            #[cfg(feature = "dtype-time")]
-            fn time(&self) -> Result<&TimeChunked> {
-                if matches!(self.0.dtype(), DataType::Time) {
-                    unsafe { Ok(&*(self as *const dyn SeriesTrait as *const TimeChunked)) }
-                } else {
-                    Err(PolarsError::SchemaMisMatch(
-                        format!(
-                            "cannot unpack Series: {:?} of type {:?} into Time",
-                            self.name(),
-                            self.dtype(),
-                        )
-                        .into(),
-                    ))
-                }
-            }
-
-            #[cfg(feature = "dtype-date")]
-            fn date(&self) -> Result<&DateChunked> {
-                if matches!(self.0.dtype(), DataType::Date) {
-                    unsafe { Ok(&*(self as *const dyn SeriesTrait as *const DateChunked)) }
-                } else {
-                    Err(PolarsError::SchemaMisMatch(
-                        format!(
-                            "cannot unpack Series: {:?} of type {:?} into Date",
-                            self.name(),
-                            self.dtype(),
-                        )
-                        .into(),
-                    ))
-                }
-            }
-
             fn append_array(&mut self, other: ArrayRef) -> Result<()> {
                 self.0.append_array(other)
             }

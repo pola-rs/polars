@@ -147,10 +147,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         self.0.shrink_to_fit()
     }
 
-    fn bool(&self) -> Result<&BooleanChunked> {
-        unsafe { Ok(&*(self as *const dyn SeriesTrait as *const BooleanChunked)) }
-    }
-
     fn append_array(&mut self, other: ArrayRef) -> Result<()> {
         self.0.append_array(other)
     }
@@ -301,8 +297,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     }
 
     fn arg_true(&self) -> Result<IdxCa> {
-        let ca: &BooleanChunked = self.bool()?;
-        Ok(ca.arg_true())
+        Ok(self.0.arg_true())
     }
 
     fn is_null(&self) -> BooleanChunked {

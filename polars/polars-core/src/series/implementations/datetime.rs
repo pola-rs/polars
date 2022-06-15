@@ -237,10 +237,6 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.shrink_to_fit()
     }
 
-    fn datetime(&self) -> Result<&DatetimeChunked> {
-        unsafe { Ok(&*(self as *const dyn SeriesTrait as *const DatetimeChunked)) }
-    }
-
     fn append_array(&mut self, other: ArrayRef) -> Result<()> {
         self.0.append_array(other)
     }
