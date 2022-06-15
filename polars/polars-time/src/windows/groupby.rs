@@ -150,10 +150,15 @@ pub(crate) fn groupby_values_iter_full_lookbehind(
     };
 
     let mut last_lookbehind_i = 0;
+    let mut last = i64::MIN;
     time[start_offset..]
         .iter()
         .enumerate()
         .map(move |(mut i, lower)| {
+            if *lower < last {
+                panic!("index column of 'groupby_rolling' must be sorted!")
+            }
+            last = *lower;
             i += start_offset;
             let lower = add(&offset, *lower);
             let upper = add(&period, lower);
@@ -163,7 +168,16 @@ pub(crate) fn groupby_values_iter_full_lookbehind(
             // we have a complete lookbehind so we know that `i` is the upper bound.
             // Safety
             // we are in bounds
-            let slice = unsafe { time.get_unchecked(last_lookbehind_i..i) };
+            let slice = {
+                #[cfg(debug_assertions)]
+                {
+                    &time[last_lookbehind_i..i]
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    unsafe { time.get_unchecked(last_lookbehind_i..i) }
+                }
+            };
             let offset = slice.partition_point(|v| !b.is_member(*v, closed_window));
 
             let lookbehind_i = offset + last_lookbehind_i;
@@ -194,7 +208,12 @@ pub(crate) fn groupby_values_iter_partial_lookbehind(
     };
 
     let mut lagging_offset = 0;
+    let mut last = i64::MIN;
     time.iter().enumerate().map(move |(i, lower)| {
+        if *lower < last {
+            panic!("index column of 'groupby_rolling' must be sorted!")
+        }
+        last = *lower;
         let lower = add(&offset, *lower);
         let upper = add(&period, lower);
 
@@ -234,16 +253,22 @@ pub(crate) fn groupby_values_iter_full_lookahead(
         TimeUnit::Milliseconds => Duration::add_ms,
     };
 
+    let mut last = i64::MIN;
     time[start_offset..upper_bound]
         .iter()
         .enumerate()
         .map(move |(mut i, lower)| {
+            if *lower < last {
+                panic!("index column of 'groupby_rolling' must be sorted!")
+            }
+            last = *lower;
             i += start_offset;
             let lower = add(&offset, *lower);
             let upper = add(&period, lower);
 
             let b = Bounds::new(lower, upper);
 
+            debug_assert!(i < time.len());
             let slice = unsafe { time.get_unchecked(i..) };
             let len = slice.partition_point(|v| b.is_member(*v, closed_window));
 
@@ -257,7 +282,7 @@ fn partially_check_sorted(time: &[i64]) {
         assert!(time[..std::cmp::min(time.len(), 10)].windows(2).filter_map(|w| match w[0].cmp(&w[1]) {
             Ordering::Equal => None,
             t => Some(t)
-        }).all_equal(), "subslice check showed that the values in `groupby_rolling` were not sorted. Pleasure ensure the index column is sorted.")
+        }).all_equal(), "subslice check showed that the values in `groupby_rolling` were not sorted. Pleasure ensure the index column is sorted.");
     }
 }
 
