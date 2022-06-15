@@ -1084,7 +1084,7 @@ impl PyDataFrame {
         // We don't use `py.allow_threads(|| gb.par_apply(..)` because that segfaulted
         // due to code related to Pyo3 or rayon, cannot reproduce it in native polars
         // so we lose parallelism, but it doesn't really matter because we are GIL bound anyways
-        // and this function should not be used in ideomatic polars anyway.
+        // and this function should not be used in idiomatic polars anyway.
         let df = gb.apply(function).map_err(PyPolarsErr::from)?;
 
         Ok(df.into())

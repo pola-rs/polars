@@ -10,7 +10,7 @@ The Rust crate `polars` has its own changelog.
 **Merged pull requests:**
 
 - python collect\_all function [\#1503](https://github.com/pola-rs/polars/pull/1503) ([ritchie46](https://github.com/ritchie46))
-- python: remove deprecated code/funcitonallity [\#1502](https://github.com/pola-rs/polars/pull/1502) ([ritchie46](https://github.com/ritchie46))
+- python: remove deprecated code/functionallity [\#1502](https://github.com/pola-rs/polars/pull/1502) ([ritchie46](https://github.com/ritchie46))
 - Refactor Date/Datetime dtypes [\#1501](https://github.com/pola-rs/polars/pull/1501) ([ritchie46](https://github.com/ritchie46))
 - add vertical string concat; closes \#1490 [\#1500](https://github.com/pola-rs/polars/pull/1500) ([ritchie46](https://github.com/ritchie46))
 - fix bug in outer\_join functions, add tests [\#1498](https://github.com/pola-rs/polars/pull/1498) ([marcvanheerden](https://github.com/marcvanheerden))
@@ -345,7 +345,7 @@ The Rust crate `polars` has its own changelog.
 - Only first gzip stream of gzipped CSV/TSV files with multiple gzip streams is read. [\#1126](https://github.com/pola-rs/polars/issues/1126)
 - implement `__copy__, __deepcopy__` [\#1120](https://github.com/pola-rs/polars/issues/1120)
 - pretty print failure output of `frame_equal` assertions [\#1112](https://github.com/pola-rs/polars/issues/1112)
-- PanicException when converting non-Utf8 column to Catergorical. [\#1107](https://github.com/pola-rs/polars/issues/1107)
+- PanicException when converting non-Utf8 column to Categorical. [\#1107](https://github.com/pola-rs/polars/issues/1107)
 - read\_csv of a compressed file fails when selecting a subset of columns [\#1026](https://github.com/pola-rs/polars/issues/1026)
 - csv-parser: remove dependency on csv crate. [\#956](https://github.com/pola-rs/polars/issues/956)
 
@@ -553,7 +553,7 @@ patch release to fix panic #1077
 ### polars 0.7.16
 * feature
   - Series literal may have any length
-  - change globaly string cache behavior
+  - change globally string cache behavior
   - Add Expr.arg_sort
   - Make literals typed
 
@@ -643,7 +643,7 @@ patch release to fix panic #1077
 * feature
   - cast categorical in csv parser: #533
   - add many groupby-context aware operations: #534
-  - dowcast by month: #537
+  - downcast by month: #537
 
 * performance
   - improve iterator in no null case: #538
