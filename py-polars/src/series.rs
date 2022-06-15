@@ -1881,7 +1881,7 @@ pub(crate) fn to_series_collection(ps: Vec<PySeries>) -> Vec<Series> {
     let len = ps.len();
     let cap = ps.capacity();
 
-    // The pointer ownership will be transferred to Vec and this will be responsible for dealoc
+    // The pointer ownership will be transferred to Vec and this will be responsible for dealloc
     unsafe { Vec::from_raw_parts(p, len, cap) }
 }
 
