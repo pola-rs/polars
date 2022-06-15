@@ -193,7 +193,7 @@ pub(crate) fn rename_aexpr_root_names(node: Node, arena: &mut Arena<AExpr>, new_
 }
 
 /// Rename the root of the expression from `current` to `new` and assign to new node in arena.
-/// Returns `Node` on first sucessful rename.
+/// Returns `Node` on first successful rename.
 pub(crate) fn aexpr_assign_renamed_root(
     node: Node,
     arena: &mut Arena<AExpr>,

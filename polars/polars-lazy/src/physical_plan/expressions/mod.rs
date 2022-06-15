@@ -318,7 +318,7 @@ impl<'a> AggregationContext<'a> {
 
     /// In a binary expression one state can be aggregated and the other not.
     /// If both would be flattened naively one would be sorted and the other not.
-    /// Calling this function will ensure both are sortened. This will be a no-op
+    /// Calling this function will ensure both are sorted. This will be a no-op
     /// if already aggregated.
     pub(crate) fn sort_by_groups(&mut self) {
         // make sure that the groups are updated before we use them to sort.

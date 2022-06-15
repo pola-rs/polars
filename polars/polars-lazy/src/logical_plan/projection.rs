@@ -3,7 +3,7 @@ use super::*;
 use crate::utils::has_nth;
 use polars_arrow::index::IndexToUsize;
 
-/// This replace the wilcard Expr with a Column Expr. It also removes the Exclude Expr from the
+/// This replace the wildcard Expr with a Column Expr. It also removes the Exclude Expr from the
 /// expression chain.
 pub(super) fn replace_wildcard_with_column(mut expr: Expr, column_name: Arc<str>) -> Expr {
     expr.mutate().apply(|e| {
@@ -51,9 +51,9 @@ fn rewrite_special_aliases(expr: Expr) -> Expr {
 /// Take an expression with a root: col("*") and copies that expression for all columns in the schema,
 /// with the exclusion of the `names` in the exclude expression.
 /// The resulting expressions are written to result.
-fn replace_wilcard(expr: &Expr, result: &mut Vec<Expr>, exclude: &[Arc<str>], schema: &Schema) {
+fn replace_wildcard(expr: &Expr, result: &mut Vec<Expr>, exclude: &[Arc<str>], schema: &Schema) {
     for name in schema.iter_names() {
-        if !exclude.iter().any(|exluded| &**exluded == name) {
+        if !exclude.iter().any(|excluded| &**excluded == name) {
             let new_expr = replace_wildcard_with_column(expr.clone(), Arc::from(name.as_str()));
             let new_expr = rewrite_special_aliases(new_expr);
             result.push(new_expr)
@@ -306,7 +306,7 @@ fn function_wildcard_expansion(mut expr: Expr, schema: &Schema, exclude: &[Arc<s
                         }
                         _ => {
                             if has_wildcard(e) {
-                                replace_wilcard(e, &mut new_inputs, exclude, schema)
+                                replace_wildcard(e, &mut new_inputs, exclude, schema)
                             } else {
                                 #[cfg(feature = "regex")]
                                 {
@@ -371,7 +371,7 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Exp
                 result.push(expr);
                 continue;
             }
-            replace_wilcard(&expr, &mut result, &exclude, schema);
+            replace_wildcard(&expr, &mut result, &exclude, schema);
         } else {
             #[allow(clippy::collapsible_else_if)]
             #[cfg(feature = "regex")]

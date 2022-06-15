@@ -1300,7 +1300,7 @@ fn test_regex_selection() -> Result<()> {
 
 #[test]
 fn test_filter_in_groupby_agg() -> Result<()> {
-    // This tests if the fitler is correctly handled by the binary expression.
+    // This tests if the filter is correctly handled by the binary expression.
     // This could lead to UB if it were not the case. The filter creates an empty column.
     // but the group tuples could still be untouched leading to out of bounds aggregation.
     let df = df![
