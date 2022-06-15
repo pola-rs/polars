@@ -133,21 +133,6 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
         self.0.shrink_to_fit()
     }
 
-    fn utf8(&self) -> Result<&Utf8Chunked> {
-        if matches!(self.0.dtype(), DataType::Utf8) {
-            unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Utf8Chunked)) }
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                format!(
-                    "cannot unpack Series: {:?} of type {:?} into utf8",
-                    self.name(),
-                    self.dtype(),
-                )
-                .into(),
-            ))
-        }
-    }
-
     fn append_array(&mut self, other: ArrayRef) -> Result<()> {
         self.0.append_array(other)
     }

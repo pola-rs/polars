@@ -173,21 +173,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.logical_mut().shrink_to_fit()
     }
 
-    fn categorical(&self) -> Result<&CategoricalChunked> {
-        if matches!(self.0.dtype(), DataType::Categorical(_)) {
-            unsafe { Ok(&*(self as *const dyn SeriesTrait as *const CategoricalChunked)) }
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                format!(
-                    "cannot unpack Series: {:?} of type {:?} into categorical",
-                    self.name(),
-                    self.dtype(),
-                )
-                .into(),
-            ))
-        }
-    }
-
     fn append_array(&mut self, other: ArrayRef) -> Result<()> {
         self.0.logical_mut().append_array(other)
     }
