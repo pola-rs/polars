@@ -221,11 +221,7 @@ impl<'a> IntoIterator for &'a ListChunked {
                     .trust_my_length(self.len())
                     .map(move |arr| {
                         arr.map(|arr| {
-                            Series::from_chunks_and_dtype_unchecked(
-                                "",
-                                vec![Arc::from(arr)],
-                                &dtype,
-                            )
+                            Series::from_chunks_and_dtype_unchecked("", vec![arr], &dtype)
                         })
                     }),
             )
@@ -264,7 +260,7 @@ impl<'a> Iterator for ListIterNoNull<'a> {
             unsafe {
                 Some(Series::from_chunks_and_dtype_unchecked(
                     "",
-                    vec![Arc::from(self.array.value_unchecked(old))],
+                    vec![self.array.value_unchecked(old)],
                     &self.inner_type,
                 ))
             }

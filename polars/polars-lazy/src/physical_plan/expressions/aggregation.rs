@@ -333,15 +333,19 @@ impl PartitionedAggregation for AggregationExpr {
                 }
 
                 let vals = values.iter().map(|arr| &**arr).collect::<Vec<_>>();
-                let values: ArrayRef = concatenate(&vals).unwrap().into();
+                let values = concatenate(&vals).unwrap();
 
                 let data_type = ListArray::<i64>::default_datatype(values.data_type().clone());
-                let arr = Arc::new(ListArray::<i64>::from_data(
-                    data_type,
-                    offsets.into(),
-                    values,
-                    None,
-                )) as ArrayRef;
+                // Safety:
+                // offsets are monotonically increasing
+                let arr = unsafe {
+                    Box::new(ListArray::<i64>::new_unchecked(
+                        data_type,
+                        offsets.into(),
+                        values,
+                        None,
+                    )) as ArrayRef
+                };
                 let mut ca = ListChunked::from_chunks(&new_name, vec![arr]);
                 if can_fast_explode {
                     ca.set_fast_explode()

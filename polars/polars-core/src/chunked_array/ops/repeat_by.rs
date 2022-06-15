@@ -19,7 +19,7 @@ where
         // Length of iter is trusted
         ListChunked::from_chunks(
             self.name(),
-            vec![Arc::new(unsafe {
+            vec![Box::new(unsafe {
                 LargeListArray::from_iter_primitive_trusted_len::<T::Native, _, _>(
                     iter,
                     T::get_dtype().to_arrow(),
@@ -39,7 +39,7 @@ impl RepeatBy for BooleanChunked {
         // Length of iter is trusted
         ListChunked::from_chunks(
             self.name(),
-            vec![Arc::new(unsafe {
+            vec![Box::new(unsafe {
                 LargeListArray::from_iter_bool_trusted_len(iter)
             })],
         )
@@ -56,7 +56,7 @@ impl RepeatBy for Utf8Chunked {
         // Length of iter is trusted
         ListChunked::from_chunks(
             self.name(),
-            vec![Arc::new(unsafe {
+            vec![Box::new(unsafe {
                 LargeListArray::from_iter_utf8_trusted_len(iter, self.len())
             })],
         )

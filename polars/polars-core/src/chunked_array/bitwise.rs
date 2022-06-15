@@ -27,7 +27,7 @@ where
                     .collect_trusted::<Vec<_>>();
 
                 let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), validity);
-                Arc::new(arr) as ArrayRef
+                Box::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
 
@@ -59,7 +59,7 @@ where
                     .collect_trusted::<Vec<_>>();
 
                 let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), validity);
-                Arc::new(arr) as ArrayRef
+                Box::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
 
@@ -91,7 +91,7 @@ where
                     .collect_trusted::<Vec<_>>();
 
                 let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), validity);
-                Arc::new(arr) as ArrayRef
+                Box::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
 
@@ -133,7 +133,7 @@ impl BitOr for &BooleanChunked {
             .downcast_iter()
             .zip(rhs.downcast_iter())
             .map(|(lhs, rhs)| {
-                Arc::new(compute::boolean_kleene::or(lhs, rhs).expect("should be same size"))
+                Box::new(compute::boolean_kleene::or(lhs, rhs).expect("should be same size"))
                     as ArrayRef
             })
             .collect();
@@ -191,7 +191,7 @@ impl BitXor for &BooleanChunked {
                 let values = l_arr.values() ^ r_arr.values();
 
                 let arr = BooleanArray::from_data_default(values, validity);
-                Arc::new(arr) as ArrayRef
+                Box::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
 
@@ -237,7 +237,7 @@ impl BitAnd for &BooleanChunked {
             .downcast_iter()
             .zip(rhs.downcast_iter())
             .map(|(lhs, rhs)| {
-                Arc::new(compute::boolean_kleene::and(lhs, rhs).expect("should be same size"))
+                Box::new(compute::boolean_kleene::and(lhs, rhs).expect("should be same size"))
                     as ArrayRef
             })
             .collect();

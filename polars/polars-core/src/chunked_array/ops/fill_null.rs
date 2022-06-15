@@ -253,7 +253,7 @@ where
     T: PolarsNumericType,
 {
     fn fill_null_with_values(&self, value: T::Native) -> Result<Self> {
-        Ok(self.apply_kernel(&|arr| Arc::new(set_at_nulls(arr, value))))
+        Ok(self.apply_kernel(&|arr| Box::new(set_at_nulls(arr, value))))
     }
 }
 

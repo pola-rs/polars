@@ -58,7 +58,7 @@ where
 {
     if values.is_empty() {
         let out: Vec<T> = vec![];
-        return Arc::new(PrimitiveArray::from_data(
+        return Box::new(PrimitiveArray::from_data(
             T::PRIMITIVE.into(),
             out.into(),
             None,
@@ -99,7 +99,7 @@ where
         })
         .collect_trusted::<Vec<_>>();
 
-    Arc::new(PrimitiveArray::from_data(
+    Box::new(PrimitiveArray::from_data(
         T::PRIMITIVE.into(),
         out.into(),
         Some(validity.into()),
@@ -119,7 +119,7 @@ where
 {
     if values.is_empty() {
         let out: Vec<T> = vec![];
-        return Arc::new(PrimitiveArray::from_data(
+        return Box::new(PrimitiveArray::from_data(
             T::PRIMITIVE.into(),
             out.into(),
             None,
@@ -142,7 +142,7 @@ where
         })
         .collect::<PrimitiveArray<T>>();
 
-    Arc::new(out)
+    Box::new(out)
 }
 
 fn slice_from_offsets<T>(ca: &ChunkedArray<T>, first: IdxSize, len: IdxSize) -> ChunkedArray<T>

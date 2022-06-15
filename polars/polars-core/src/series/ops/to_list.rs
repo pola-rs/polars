@@ -7,12 +7,12 @@ fn reshape_fast_path(name: &str, s: &Series) -> Series {
     let chunks = match s.dtype() {
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => {
-            vec![Arc::new(array_to_unit_list(s.array_ref(0).clone())) as ArrayRef]
+            vec![Box::new(array_to_unit_list(s.array_ref(0).clone())) as ArrayRef]
         }
         _ => s
             .chunks()
             .iter()
-            .map(|arr| Arc::new(array_to_unit_list(arr.clone())) as ArrayRef)
+            .map(|arr| Box::new(array_to_unit_list(arr.clone())) as ArrayRef)
             .collect::<Vec<_>>(),
     };
 
@@ -34,10 +34,13 @@ impl Series {
 
         let data_type = ListArray::<i64>::default_datatype(inner_type.to_physical().to_arrow());
 
-        let arr = ListArray::from_data(data_type, offsets.into(), values.clone(), None);
+        // Safety:
+        // offsets are correct;
+        let arr =
+            unsafe { ListArray::new_unchecked(data_type, offsets.into(), values.clone(), None) };
         let name = self.name();
 
-        let mut ca = ListChunked::from_chunks(name, vec![Arc::new(arr)]);
+        let mut ca = ListChunked::from_chunks(name, vec![Box::new(arr)]);
         if self.dtype() != &self.dtype().to_physical() {
             ca.to_logical(inner_type.clone())
         }

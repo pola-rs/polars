@@ -1,7 +1,7 @@
 //! Implementations of the ChunkApply Trait.
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
-use arrow::array::{ArrayRef, BooleanArray, PrimitiveArray};
+use arrow::array::{BooleanArray, PrimitiveArray};
 use polars_arrow::array::PolarsArray;
 use polars_arrow::trusted_len::PushUnchecked;
 use std::borrow::Cow;
@@ -69,7 +69,7 @@ where
             drop(arr);
 
             match owned_arr.into_mut() {
-                Left(immutable) => Arc::new(arrow::compute::arity::unary(
+                Left(immutable) => Box::new(arrow::compute::arity::unary(
                     &immutable,
                     f,
                     S::get_dtype().to_arrow(),
@@ -77,7 +77,8 @@ where
                 Right(mut mutable) => {
                     let vals = mutable.values_mut_slice();
                     vals.iter_mut().for_each(|v| *v = f(*v));
-                    mutable.into_arc()
+                    let a: PrimitiveArray<_> = mutable.into();
+                    Box::new(a) as ArrayRef
                 }
             }
         })
@@ -190,7 +191,7 @@ where
                 let iter = arr.into_iter().map(|opt_v| f(opt_v.copied()));
                 let arr = PrimitiveArray::<T::Native>::from_trusted_len_iter(iter)
                     .to(T::get_dtype().to_arrow());
-                Arc::new(arr) as ArrayRef
+                Box::new(arr) as ArrayRef
             })
             .collect();
         Self::from_chunks(self.name(), chunks)
@@ -492,11 +493,8 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
                         .map(|array| {
                             // safety
                             // reported dtype is correct
-                            let series = Series::from_chunks_and_dtype_unchecked(
-                                "",
-                                vec![array.into()],
-                                &dtype,
-                            );
+                            let series =
+                                Series::from_chunks_and_dtype_unchecked("", vec![array], &dtype);
                             f(series)
                         })
                         .trust_my_length(self.len())
@@ -521,7 +519,6 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
             .map(|array| {
                 let values = array.iter().map(|x| {
                     let x = x.map(|x| {
-                        let x: ArrayRef = x.into();
                         // safety
                         // reported dtype is correct
                         unsafe { Series::from_chunks_and_dtype_unchecked("", vec![x], &dtype) }

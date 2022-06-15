@@ -202,7 +202,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         let ca = self.as_utf8();
         let chunks = ca
             .downcast_iter()
-            .map(|c| Ok(substring(c, start, &length)?.into()))
+            .map(|c| substring(c, start, &length))
             .collect::<arrow::error::Result<_>>()?;
 
         Ok(Utf8Chunked::from_chunks(ca.name(), chunks))

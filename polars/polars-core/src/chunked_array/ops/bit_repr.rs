@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use arrow::array::Array;
 use arrow::buffer::Buffer;
 
 impl<T> ToBitRepr for ChunkedArray<T>
@@ -28,11 +27,11 @@ where
                     assert_eq!(reinterpretted_buf.len(), len);
                     assert_eq!(reinterpretted_buf.offset(), offset);
                     assert_eq!(reinterpretted_buf.as_slice().as_ptr() as usize, ptr);
-                    Arc::new(PrimitiveArray::from_data(
+                    Box::new(PrimitiveArray::from_data(
                         ArrowDataType::UInt64,
                         reinterpretted_buf,
                         array.validity().cloned(),
-                    )) as Arc<dyn Array>
+                    )) as ArrayRef
                 })
                 .collect::<Vec<_>>();
             UInt64Chunked::from_chunks(self.name(), chunks)
@@ -59,11 +58,11 @@ where
                     assert_eq!(reinterpretted_buf.len(), len);
                     assert_eq!(reinterpretted_buf.offset(), offset);
                     assert_eq!(reinterpretted_buf.as_slice().as_ptr() as usize, ptr);
-                    Arc::new(PrimitiveArray::from_data(
+                    Box::new(PrimitiveArray::from_data(
                         ArrowDataType::UInt32,
                         reinterpretted_buf,
                         array.validity().cloned(),
-                    )) as Arc<dyn Array>
+                    )) as ArrayRef
                 })
                 .collect::<Vec<_>>();
             UInt32Chunked::from_chunks(self.name(), chunks)
@@ -92,11 +91,11 @@ impl Reinterpret for UInt64Chunked {
                 assert_eq!(reinterpretted_buf.len(), len);
                 assert_eq!(reinterpretted_buf.offset(), offset);
                 assert_eq!(reinterpretted_buf.as_slice().as_ptr() as usize, ptr);
-                Arc::new(PrimitiveArray::from_data(
+                Box::new(PrimitiveArray::new(
                     ArrowDataType::Int64,
                     reinterpretted_buf,
                     array.validity().cloned(),
-                )) as Arc<dyn Array>
+                )) as ArrayRef
             })
             .collect::<Vec<_>>();
         Int64Chunked::from_chunks(self.name(), chunks).into_series()
@@ -135,11 +134,11 @@ impl UInt64Chunked {
                 assert_eq!(reinterpretted_buf.len(), len);
                 assert_eq!(reinterpretted_buf.offset(), offset);
                 assert_eq!(reinterpretted_buf.as_slice().as_ptr() as usize, ptr);
-                Arc::new(PrimitiveArray::from_data(
+                Box::new(PrimitiveArray::from_data(
                     ArrowDataType::Float64,
                     reinterpretted_buf,
                     array.validity().cloned(),
-                )) as Arc<dyn Array>
+                )) as ArrayRef
             })
             .collect::<Vec<_>>();
         Float64Chunked::from_chunks(self.name(), chunks).into()
@@ -163,11 +162,11 @@ impl UInt32Chunked {
                 assert_eq!(reinterpretted_buf.len(), len);
                 assert_eq!(reinterpretted_buf.offset(), offset);
                 assert_eq!(reinterpretted_buf.as_slice().as_ptr() as usize, ptr);
-                Arc::new(PrimitiveArray::from_data(
+                Box::new(PrimitiveArray::from_data(
                     ArrowDataType::Float32,
                     reinterpretted_buf,
                     array.validity().cloned(),
-                )) as Arc<dyn Array>
+                )) as ArrayRef
             })
             .collect::<Vec<_>>();
         Float32Chunked::from_chunks(self.name(), chunks).into()

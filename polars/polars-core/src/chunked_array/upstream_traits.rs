@@ -60,7 +60,7 @@ where
                 .collect::<PrimitiveArray<T::Native>>()
                 .to(T::get_dtype().to_arrow()),
         };
-        ChunkedArray::from_chunks("", vec![Arc::new(arr)])
+        ChunkedArray::from_chunks("", vec![Box::new(arr)])
     }
 }
 
@@ -81,7 +81,7 @@ where
 impl FromIterator<Option<bool>> for ChunkedArray<BooleanType> {
     fn from_iter<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self {
         let arr = BooleanArray::from_iter(iter);
-        Self::from_chunks("", vec![Arc::new(arr)])
+        Self::from_chunks("", vec![Box::new(arr)])
     }
 }
 
@@ -89,7 +89,7 @@ impl FromIterator<bool> for BooleanChunked {
     fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
         // 2021-02-07: this was ~70% faster than with the builder, even with the extra Option<T> added.
         let arr = BooleanArray::from_iter(iter.into_iter().map(Some));
-        Self::from_chunks("", vec![Arc::new(arr)])
+        Self::from_chunks("", vec![Box::new(arr)])
     }
 }
 
@@ -108,7 +108,7 @@ where
 {
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let arr = Utf8Array::<i64>::from_iter(iter);
-        Self::from_chunks("", vec![Arc::new(arr)])
+        Self::from_chunks("", vec![Box::new(arr)])
     }
 }
 
@@ -127,7 +127,7 @@ where
 {
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
         let arr = Utf8Array::<i64>::from_iter_values(iter.into_iter());
-        Self::from_chunks("", vec![Arc::new(arr)])
+        Self::from_chunks("", vec![Box::new(arr)])
     }
 }
 
@@ -295,7 +295,7 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
 
         let len = values.len();
 
-        let arr = Arc::new(ObjectArray {
+        let arr = Box::new(ObjectArray {
             values: Arc::new(values),
             null_bitmap,
             offset: 0,
@@ -377,7 +377,7 @@ where
         let iter = TrustMyLength::new(vectors.into_iter().flatten(), capacity);
         let arr =
             PrimitiveArray::<T::Native>::from_trusted_len_iter(iter).to(T::get_dtype().to_arrow());
-        Self::from_chunks("", vec![Arc::new(arr)])
+        Self::from_chunks("", vec![Box::new(arr)])
     }
 }
 
@@ -392,7 +392,7 @@ impl FromParallelIterator<bool> for BooleanChunked {
                 vectors.into_iter().flatten().trust_my_length(capacity),
             )
         };
-        Self::from_chunks("", vec![Arc::new(arr)])
+        Self::from_chunks("", vec![Box::new(arr)])
     }
 }
 
@@ -403,7 +403,7 @@ where
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
         let arr = LargeStringArray::from_iter_values(vectors.into_iter().flatten());
-        Self::from_chunks("", vec![Arc::new(arr)])
+        Self::from_chunks("", vec![Box::new(arr)])
     }
 }
 
@@ -414,7 +414,7 @@ where
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
         let arr = LargeStringArray::from_iter(vectors.into_iter().flatten());
-        Self::from_chunks("", vec![Arc::new(arr)])
+        Self::from_chunks("", vec![Box::new(arr)])
     }
 }
 

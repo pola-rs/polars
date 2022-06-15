@@ -1,7 +1,5 @@
 use crate::prelude::*;
 
-#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
-use arrow::temporal_conversions::{date32_to_date, timestamp_ns_to_datetime};
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
 use num::{Num, NumCast};
@@ -12,7 +10,12 @@ use std::{
 
 const LIMIT: usize = 25;
 
-use arrow::temporal_conversions::{timestamp_ms_to_datetime, timestamp_us_to_datetime};
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+use arrow::temporal_conversions::*;
 #[cfg(feature = "fmt")]
 use comfy_table::presets::{ASCII_FULL, UTF8_FULL};
 #[cfg(feature = "fmt")]

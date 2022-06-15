@@ -2,14 +2,13 @@ use crate::utils::align_chunks_binary;
 use crate::{prelude::*, utils::NoNull};
 use arrow::scalar::{PrimitiveScalar, Scalar, Utf8Scalar};
 use arrow::{
-    array::{ArrayRef, BooleanArray, PrimitiveArray, Utf8Array},
+    array::{BooleanArray, PrimitiveArray, Utf8Array},
     compute,
     compute::comparison,
 };
 use num::{NumCast, ToPrimitive};
 use polars_arrow::prelude::FromData;
 use std::ops::Not;
-use std::sync::Arc;
 
 impl<T> ChunkedArray<T>
 where
@@ -27,7 +26,7 @@ where
             .zip(rhs.downcast_iter())
             .map(|(left, right)| {
                 let arr = f(left, right);
-                Arc::new(arr) as ArrayRef
+                Box::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
 
@@ -221,7 +220,7 @@ fn compare_bools(
     let chunks = lhs
         .downcast_iter()
         .zip(rhs.downcast_iter())
-        .map(|(l, r)| Arc::new(f(l, r)) as ArrayRef)
+        .map(|(l, r)| Box::new(f(l, r)) as ArrayRef)
         .collect();
 
     BooleanChunked::from_chunks(lhs.name(), chunks)
@@ -248,13 +247,13 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                                     .downcast_iter()
                                     .map(|arr| {
                                         if let Some(validity) = arr.validity() {
-                                            Arc::new(BooleanArray::from_data_default(
+                                            Box::new(BooleanArray::from_data_default(
                                                 arr.values() & validity,
                                                 None,
                                             ))
                                                 as ArrayRef
                                         } else {
-                                            Arc::new(arr.clone())
+                                            Box::new(arr.clone())
                                         }
                                     })
                                     .collect();
@@ -273,7 +272,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                                         } else {
                                             arr.values().not()
                                         };
-                                        Arc::new(BooleanArray::from_data_default(bitmap, None))
+                                        Box::new(BooleanArray::from_data_default(bitmap, None))
                                             as ArrayRef
                                     })
                                     .collect();
@@ -312,7 +311,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                                         } else {
                                             arr.values().not()
                                         };
-                                        Arc::new(BooleanArray::from_data_default(bitmap, None))
+                                        Box::new(BooleanArray::from_data_default(bitmap, None))
                                             as ArrayRef
                                     })
                                     .collect();
@@ -331,7 +330,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                                         } else {
                                             arr.values().clone()
                                         };
-                                        Arc::new(BooleanArray::from_data_default(bitmap, None))
+                                        Box::new(BooleanArray::from_data_default(bitmap, None))
                                             as ArrayRef
                                     })
                                     .collect();
@@ -490,7 +489,7 @@ impl Utf8Chunked {
             .zip(rhs.downcast_iter())
             .map(|(left, right)| {
                 let arr = f(left, right);
-                Arc::new(arr) as ArrayRef
+                Box::new(arr) as ArrayRef
             })
             .collect();
         BooleanChunked::from_chunks("", chunks)
@@ -649,7 +648,7 @@ where
         let rhs: T::Native =
             NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
         let scalar = PrimitiveScalar::new(T::get_dtype().to_arrow(), Some(rhs));
-        self.apply_kernel_cast(&|arr| Arc::new(f(arr, &scalar)))
+        self.apply_kernel_cast(&|arr| Box::new(f(arr, &scalar)))
     }
 }
 
@@ -695,7 +694,7 @@ impl Utf8Chunked {
         f: impl Fn(&Utf8Array<i64>, &dyn Scalar) -> BooleanArray,
     ) -> BooleanChunked {
         let scalar = Utf8Scalar::<i64>::new(Some(rhs));
-        self.apply_kernel_cast(&|arr| Arc::new(f(arr, &scalar)))
+        self.apply_kernel_cast(&|arr| Box::new(f(arr, &scalar)))
     }
 }
 
@@ -827,7 +826,7 @@ impl Not for &BooleanChunked {
             .downcast_iter()
             .map(|a| {
                 let arr = compute::boolean::not(a);
-                Arc::new(arr) as ArrayRef
+                Box::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
         ChunkedArray::from_chunks(self.name(), chunks)

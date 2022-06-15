@@ -141,7 +141,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
                 av.into(),
                 Some(validity.into()),
             );
-            Self::from_chunks(self.name(), vec![Arc::new(array)])
+            Self::from_chunks(self.name(), vec![Box::new(array)])
         } else {
             Self::from_vec(self.name(), av)
         }

@@ -1,7 +1,6 @@
 use crate::prelude::*;
 use crate::series::unstable::{ArrayBox, UnstableSeries};
 use crate::utils::CustomIterTools;
-use arrow::array::ArrayRef;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
@@ -30,7 +29,6 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                     // Safety
                     // dtype is known
                     unsafe {
-                        let array_ref = Arc::from(array_ref);
                         let mut s = Series::from_chunks_and_dtype_unchecked(
                             "",
                             vec![array_ref],
@@ -45,7 +43,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                 }
 
                 // update the inner state
-                unsafe { *self.inner.as_mut() = array_ref.into() };
+                unsafe { *self.inner.as_mut() = array_ref };
 
                 // Safety
                 // we cannot control the lifetime of an iterators `next` method.

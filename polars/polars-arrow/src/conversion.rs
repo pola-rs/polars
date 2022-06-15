@@ -1,4 +1,5 @@
-use arrow::array::{ArrayRef, StructArray};
+use crate::prelude::*;
+use arrow::array::StructArray;
 use arrow::chunk::Chunk;
 use arrow::datatypes::{DataType, Field};
 

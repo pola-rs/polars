@@ -9,7 +9,6 @@ use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 #[cfg(feature = "chunked_ids")]
 use crate::series::IsSorted;
-use arrow::array::ArrayRef;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use std::any::Any;
 use std::borrow::Cow;

@@ -1,5 +1,5 @@
 use crate::ArrowResult;
-use arrow::array::{Array, ArrayRef};
+use arrow::array::Array;
 use arrow::compute::concatenate::concatenate;
 use arrow::io::parquet::read::statistics::{self, deserialize, Statistics};
 use arrow::io::parquet::read::RowGroupMetaData;
@@ -38,7 +38,7 @@ impl ColumnStats {
         let dtype = DataType::from(min_val.data_type());
         if dtype.is_numeric() || matches!(dtype, DataType::Utf8) {
             let arr = concatenate(&[min_val, max_val]).unwrap();
-            let s = Series::try_from(("", Arc::from(arr) as ArrayRef)).unwrap();
+            let s = Series::try_from(("", arr)).unwrap();
             if s.null_count() > 0 {
                 None
             } else {

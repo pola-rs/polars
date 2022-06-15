@@ -11,7 +11,7 @@ fn extend_immutable(immutable: &dyn Array, chunks: &mut Vec<ArrayRef>, other_chu
         concatenate(&arrays).unwrap()
     };
 
-    chunks.push(Arc::from(out));
+    chunks.push(out);
 }
 
 impl<T> ChunkedArray<T>
@@ -71,7 +71,7 @@ where
                     }
                 }
                 let arr: PrimitiveArray<T::Native> = mutable.into();
-                self.chunks.push(Arc::new(arr) as ArrayRef)
+                self.chunks.push(Box::new(arr) as ArrayRef)
             }
         }
     }
@@ -107,7 +107,7 @@ impl Utf8Chunked {
                     mutable.extend_trusted_len(arr.into_iter())
                 }
                 let arr: Utf8Array<i64> = mutable.into();
-                self.chunks.push(Arc::new(arr) as ArrayRef)
+                self.chunks.push(Box::new(arr) as ArrayRef)
             }
         }
     }
@@ -144,7 +144,7 @@ impl BooleanChunked {
                     mutable.extend_trusted_len(arr.into_iter())
                 }
                 let arr: BooleanArray = mutable.into();
-                self.chunks.push(Arc::new(arr) as ArrayRef)
+                self.chunks.push(Box::new(arr) as ArrayRef)
             }
         }
     }

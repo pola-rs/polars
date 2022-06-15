@@ -35,7 +35,7 @@ fn slice(
         unsafe {
             // Safety:
             // this function ensures the slices are in bounds
-            new_chunks.push(chunk.slice_unchecked(remaining_offset, take_len).into());
+            new_chunks.push(chunk.slice_unchecked(remaining_offset, take_len));
         }
         remaining_length -= take_len;
         remaining_offset = 0;
@@ -44,7 +44,7 @@ fn slice(
         }
     }
     if new_chunks.is_empty() {
-        new_chunks.push(chunks[0].slice(0, 0).into());
+        new_chunks.push(chunks[0].slice(0, 0));
     }
     new_chunks
 }
@@ -64,8 +64,7 @@ where
                     .collect::<Vec<_>>()
                     .as_slice(),
             )
-            .unwrap()
-            .into()];
+            .unwrap()];
             ChunkedArray::from_chunks(self.name(), chunks)
         }
     }
@@ -87,8 +86,7 @@ impl ChunkOps for BooleanChunked {
                     .collect::<Vec<_>>()
                     .as_slice(),
             )
-            .unwrap()
-            .into()];
+            .unwrap()];
             ChunkedArray::from_chunks(self.name(), chunks)
         }
     }
@@ -110,8 +108,7 @@ impl ChunkOps for Utf8Chunked {
                     .collect::<Vec<_>>()
                     .as_slice(),
             )
-            .unwrap()
-            .into()];
+            .unwrap()];
             self.copy_with_chunks(chunks)
         }
     }
@@ -133,8 +130,7 @@ impl ChunkOps for ListChunked {
                     .collect::<Vec<_>>()
                     .as_slice(),
             )
-            .unwrap()
-            .into()];
+            .unwrap()];
             let mut ca = ListChunked::from_chunks(self.name(), chunks);
             if self.can_fast_explode() {
                 ca.set_fast_explode()

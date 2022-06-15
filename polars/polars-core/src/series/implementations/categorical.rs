@@ -16,7 +16,6 @@ use crate::frame::hash_join::{check_categorical_src, ZipOuterJoinColumn};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use ahash::RandomState;
-use arrow::array::ArrayRef;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use std::borrow::Cow;
 

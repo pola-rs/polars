@@ -71,5 +71,5 @@ where
     };
 
     let arr = IdxArr::from_data_default(Buffer::from(idx), None);
-    IdxCa::from_chunks(name, vec![Arc::new(arr)])
+    IdxCa::from_chunks(name, vec![Box::new(arr)])
 }

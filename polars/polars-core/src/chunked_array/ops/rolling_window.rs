@@ -88,8 +88,9 @@ mod inner_mod {
             let arr = ca.downcast_iter().next().unwrap();
             let series_container =
                 ChunkedArray::<T>::from_slice("", &[T::Native::zero()]).into_series();
-            let array_ptr = &series_container.array_ref(0);
-            let ptr = Arc::as_ptr(array_ptr) as *mut dyn Array as *mut PrimitiveArray<T::Native>;
+            let array_ptr = series_container.array_ref(0);
+            let ptr = &*array_ptr.as_ref() as *const dyn Array as *mut dyn Array
+                as *mut PrimitiveArray<T::Native>;
             let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
 
             if let Some(weights) = options.weights {
@@ -186,7 +187,8 @@ mod inner_mod {
 
             let arr_container = ChunkedArray::<T>::from_slice("", &[T::Native::zero()]);
             let array_ptr = &arr_container.chunks()[0];
-            let ptr = Arc::as_ptr(array_ptr) as *mut dyn Array as *mut PrimitiveArray<T::Native>;
+            let ptr = &*array_ptr.as_ref() as *const dyn Array as *mut dyn Array
+                as *mut PrimitiveArray<T::Native>;
 
             let mut validity = MutableBitmap::with_capacity(ca.len());
             validity.extend_constant(window_size - 1, false);
@@ -218,7 +220,7 @@ mod inner_mod {
                 values.into(),
                 Some(validity.into()),
             );
-            Ok(Self::from_chunks(self.name(), vec![Arc::new(arr)]))
+            Ok(Self::from_chunks(self.name(), vec![Box::new(arr)]))
         }
     }
 }

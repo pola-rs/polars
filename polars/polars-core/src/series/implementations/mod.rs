@@ -42,7 +42,6 @@ use crate::prelude::*;
 #[cfg(feature = "checked_arithmetic")]
 use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 use ahash::RandomState;
-use arrow::array::ArrayRef;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use std::borrow::Cow;
 use std::ops::Deref;

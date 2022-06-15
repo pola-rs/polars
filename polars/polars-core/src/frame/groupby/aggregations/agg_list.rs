@@ -73,10 +73,16 @@ where
                     validity,
                 );
                 let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow());
-                let arr =
-                    ListArray::<i64>::from_data(data_type, offsets.into(), Arc::new(array), None);
+                // Safety:
+                // offsets are monotonically increasing
+                let arr = ListArray::<i64>::new_unchecked(
+                    data_type,
+                    offsets.into(),
+                    Box::new(array),
+                    None,
+                );
 
-                let mut ca = ListChunked::from_chunks(self.name(), vec![Arc::new(arr)]);
+                let mut ca = ListChunked::from_chunks(self.name(), vec![Box::new(arr)]);
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
@@ -130,9 +136,13 @@ where
                     validity,
                 );
                 let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow());
-                let arr =
-                    ListArray::<i64>::from_data(data_type, offsets.into(), Arc::new(array), None);
-                let mut ca = ListChunked::from_chunks(self.name(), vec![Arc::new(arr)]);
+                let arr = ListArray::<i64>::new_unchecked(
+                    data_type,
+                    offsets.into(),
+                    Box::new(array),
+                    None,
+                );
+                let mut ca = ListChunked::from_chunks(self.name(), vec![Box::new(arr)]);
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
@@ -212,19 +222,21 @@ fn agg_list_list<F: Fn(&ListChunked, bool, &mut Vec<i64>, &mut i64, &mut Vec<Arr
         &mut list_values,
     );
     if groups_len == 0 {
-        list_values.push(ca.chunks[0].slice(0, 0).into())
+        list_values.push(ca.chunks[0].slice(0, 0))
     }
     let arrays = list_values.iter().map(|arr| &**arr).collect::<Vec<_>>();
-    let list_values: ArrayRef = arrow::compute::concatenate::concatenate(&arrays)
-        .unwrap()
-        .into();
+    let list_values: ArrayRef = arrow::compute::concatenate::concatenate(&arrays).unwrap();
     let data_type = ListArray::<i64>::default_datatype(list_values.data_type().clone());
-    let arr = Arc::new(ListArray::<i64>::from_data(
-        data_type,
-        offsets.into(),
-        list_values,
-        None,
-    )) as ArrayRef;
+    // Safety:
+    // offsets are monotonically increasing
+    let arr = unsafe {
+        Box::new(ListArray::<i64>::new_unchecked(
+            data_type,
+            offsets.into(),
+            list_values,
+            None,
+        )) as ArrayRef
+    };
     let mut listarr = ListChunked::from_chunks(ca.name(), vec![arr]);
     if can_fast_explode {
         listarr.set_fast_explode()
@@ -345,11 +357,13 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
         // meaning that the sentinel is heap allocated and the dereference of the
         // pointer does not fail
         pe.set_to_series_fn::<T>();
-        let extension_array = Arc::new(pe.take_and_forget()) as ArrayRef;
+        let extension_array = Box::new(pe.take_and_forget()) as ArrayRef;
         let extension_dtype = extension_array.data_type();
 
         let data_type = ListArray::<i64>::default_datatype(extension_dtype.clone());
-        let arr = Arc::new(ListArray::<i64>::from_data(
+        // Safety:
+        // offsets are monotonically increasing
+        let arr = Box::new(ListArray::<i64>::new_unchecked(
             data_type,
             offsets.into(),
             extension_array,

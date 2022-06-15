@@ -43,7 +43,7 @@ where
         let chunks = left
             .downcast_iter()
             .zip(filter.downcast_iter())
-            .map(|(left, mask)| filter_fn(left, mask).unwrap().into())
+            .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
         Ok(self.copy_with_chunks(chunks))
     }
@@ -64,7 +64,7 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
         let chunks = left
             .downcast_iter()
             .zip(filter.downcast_iter())
-            .map(|(left, mask)| filter_fn(left, mask).unwrap().into())
+            .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
         Ok(self.copy_with_chunks(chunks))
     }
@@ -85,7 +85,7 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
         let chunks = left
             .downcast_iter()
             .zip(filter.downcast_iter())
-            .map(|(left, mask)| filter_fn(left, mask).unwrap().into())
+            .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
 
         Ok(self.copy_with_chunks(chunks))
@@ -106,7 +106,7 @@ impl ChunkFilter<ListType> for ListChunked {
         let chunks = left
             .downcast_iter()
             .zip(filter.downcast_iter())
-            .map(|(left, mask)| filter_fn(left, mask).unwrap().into())
+            .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
 
         // inner type may be categorical or logical type so we clone the state.

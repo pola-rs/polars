@@ -1,11 +1,9 @@
 use crate::prelude::*;
 use crate::utils::{align_chunks_binary, CustomIterTools};
-use arrow::array::ArrayRef;
 use arrow::bitmap::MutableBitmap;
 use polars_arrow::array::ValueSize;
 use polars_arrow::kernels::set::{set_at_idx_no_null, set_with_mask};
 use polars_arrow::prelude::FromData;
-use std::sync::Arc;
 
 macro_rules! impl_set_at_idx_with {
     ($self:ident, $builder:ident, $idx:ident, $f:ident) => {{
@@ -71,7 +69,7 @@ where
                         value,
                         T::get_dtype().to_arrow(),
                     )?;
-                    return Ok(Self::from_chunks(self.name(), vec![Arc::new(arr)]));
+                    return Ok(Self::from_chunks(self.name(), vec![Box::new(arr)]));
                 }
                 // Other fast path. Slightly slower as it does not do a memcpy
                 else {
@@ -117,7 +115,7 @@ where
                 .zip(mask.downcast_iter())
                 .map(|(arr, mask)| {
                     let a = set_with_mask(arr, mask, value, T::get_dtype().to_arrow());
-                    Arc::new(a) as ArrayRef
+                    Box::new(a) as ArrayRef
                 })
                 .collect();
             Ok(ChunkedArray::from_chunks(self.name(), chunks))
@@ -192,7 +190,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
 
         Ok(BooleanChunked::from_chunks(
             self.name(),
-            vec![Arc::new(arr)],
+            vec![Box::new(arr)],
         ))
     }
 

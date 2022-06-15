@@ -1,8 +1,6 @@
 //! Traits for miscellaneous operations on ChunkedArray
 use std::marker::Sized;
 
-use arrow::array::ArrayRef;
-
 pub use self::take::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;

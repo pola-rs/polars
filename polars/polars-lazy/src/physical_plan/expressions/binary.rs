@@ -174,7 +174,7 @@ impl PhysicalExpr for BinaryExpr {
 
                                 // Safety:
                                 // we are in bounds
-                                let arr = unsafe { Arc::from(arr_l.slice_unchecked(idx, 1)) };
+                                let arr = unsafe { arr_l.slice_unchecked(idx, 1) };
                                 us.swap(arr);
 
                                 let l = us.as_ref();
@@ -224,7 +224,7 @@ impl PhysicalExpr for BinaryExpr {
                                 // TODO: optimize this? Its slow.
                                 // Safety:
                                 // we are in bounds
-                                let arr = unsafe { Arc::from(arr_r.slice_unchecked(idx, 1)) };
+                                let arr = unsafe { arr_r.slice_unchecked(idx, 1) };
                                 us.swap(arr);
                                 let r = us.as_ref();
 

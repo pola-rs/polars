@@ -3,16 +3,15 @@ pub mod nulls;
 mod window;
 
 use crate::data_types::IsFloat;
-use crate::prelude::QuantileInterpolOptions;
+use crate::prelude::*;
 use crate::utils::CustomIterTools;
-use arrow::array::{ArrayRef, PrimitiveArray};
+use arrow::array::PrimitiveArray;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
 use num::ToPrimitive;
 use num::{Bounded, Float, NumCast, One, Zero};
 use std::cmp::Ordering;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
-use std::sync::Arc;
 use window::*;
 
 type Start = usize;

@@ -429,7 +429,6 @@ impl<'a> TakeRandom for ListTakeRandom<'a> {
     fn get(&self, index: usize) -> Option<Self::Item> {
         let v = take_random_get!(self, index);
         v.map(|v| {
-            let v: Arc<dyn Array> = v.into();
             let s = Series::try_from((self.ca.name(), v));
             s.unwrap()
         })

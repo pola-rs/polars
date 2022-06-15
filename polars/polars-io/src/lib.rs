@@ -150,10 +150,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
                 .fields
                 .iter()
                 .map(|fld| {
-                    Series::try_from((
-                        fld.name.as_str(),
-                        Arc::from(new_empty_array(fld.data_type.clone())),
-                    ))
+                    Series::try_from((fld.name.as_str(), new_empty_array(fld.data_type.clone())))
                 })
                 .collect::<Result<_>>()?;
             DataFrame::new(empty_cols)?

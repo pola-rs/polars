@@ -7,7 +7,6 @@ use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 use crate::series::IsSorted;
 use ahash::RandomState;
-use arrow::array::ArrayRef;
 use std::any::Any;
 use std::borrow::Cow;
 

@@ -4,7 +4,6 @@
 //! There are several structs that implement the fastest path for random access.
 //!
 
-use arrow::array::ArrayRef;
 use arrow::compute::take::take;
 use polars_arrow::kernels::take::*;
 
@@ -176,7 +175,7 @@ impl ChunkTake for BooleanChunked {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take::take(chunks.next().unwrap(), array).unwrap().into(),
+                    1 => take::take(chunks.next().unwrap(), array).unwrap(),
                     _ => {
                         return if !array.has_validity() {
                             let iter = array.values().iter().map(|i| *i as usize);
@@ -351,7 +350,7 @@ impl ChunkTake for ListChunked {
                     );
                 }
                 let array = match ca_self.chunks.len() {
-                    1 => Arc::new(take_list_unchecked(chunks.next().unwrap(), array)) as ArrayRef,
+                    1 => Box::new(take_list_unchecked(chunks.next().unwrap(), array)) as ArrayRef,
                     _ => {
                         return if !array.has_validity() {
                             let iter = array.values().iter().map(|i| *i as usize);

@@ -82,7 +82,7 @@ where
                 .zip(mask.downcast_iter())
                 .map(|((left_c, right_c), mask_c)| {
                     let mask_c = prepare_mask(mask_c);
-                    let arr = if_then_else(&mask_c, left_c, right_c)?.into();
+                    let arr = if_then_else(&mask_c, left_c, right_c)?;
                     Ok(arr)
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -104,7 +104,7 @@ impl ChunkZip<BooleanType> for BooleanChunked {
                 .zip(mask.downcast_iter())
                 .map(|((left_c, right_c), mask_c)| {
                     let mask_c = prepare_mask(mask_c);
-                    let arr = if_then_else(&mask_c, left_c, right_c)?.into();
+                    let arr = if_then_else(&mask_c, left_c, right_c)?;
                     Ok(arr)
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -125,7 +125,7 @@ impl ChunkZip<Utf8Type> for Utf8Chunked {
                 .zip(mask.downcast_iter())
                 .map(|((left_c, right_c), mask_c)| {
                     let mask_c = prepare_mask(mask_c);
-                    let arr = if_then_else(&mask_c, left_c, right_c)?.into();
+                    let arr = if_then_else(&mask_c, left_c, right_c)?;
                     Ok(arr)
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -146,7 +146,7 @@ impl ChunkZip<ListType> for ListChunked {
             .zip(mask.downcast_iter())
             .map(|((left_c, right_c), mask_c)| {
                 let mask_c = prepare_mask(mask_c);
-                let arr = if_then_else(&mask_c, left_c, right_c)?.into();
+                let arr = if_then_else(&mask_c, left_c, right_c)?;
                 Ok(arr)
             })
             .collect::<Result<Vec<_>>>()?;

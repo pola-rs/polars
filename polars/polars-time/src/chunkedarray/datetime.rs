@@ -1,5 +1,5 @@
 use super::*;
-use arrow::array::{Array, ArrayRef, PrimitiveArray};
+use arrow::array::{Array, PrimitiveArray};
 use arrow::compute::cast::CastOptions;
 use arrow::compute::{cast::cast, temporal};
 use arrow::error::Result as ArrowResult;
@@ -26,7 +26,7 @@ fn cast_and_apply<
                 },
             )
             .unwrap();
-            Arc::from(func(&*arr).unwrap()) as ArrayRef
+            Box::from(func(&*arr).unwrap()) as ArrayRef
         })
         .collect();
 

@@ -26,7 +26,7 @@ where
 {
     if values.is_empty() {
         let out: Vec<T> = vec![];
-        return Arc::new(PrimitiveArray::from_data(
+        return Box::new(PrimitiveArray::from_data(
             T::PRIMITIVE.into(),
             out.into(),
             None,
@@ -50,7 +50,7 @@ where
         })
         .collect::<PrimitiveArray<T>>();
 
-    Arc::new(out)
+    Box::new(out)
 }
 
 pub(crate) fn compute_quantile2<T>(
@@ -244,7 +244,7 @@ where
         .collect_trusted::<Vec<T>>();
 
     let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
-    Arc::new(PrimitiveArray::from_data(
+    Box::new(PrimitiveArray::from_data(
         T::PRIMITIVE.into(),
         out.into(),
         validity.map(|b| b.into()),
@@ -284,7 +284,7 @@ where
         .collect_trusted::<Vec<T>>();
 
     let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
-    Arc::new(PrimitiveArray::from_data(
+    Box::new(PrimitiveArray::from_data(
         T::PRIMITIVE.into(),
         out.into(),
         validity.map(|b| b.into()),

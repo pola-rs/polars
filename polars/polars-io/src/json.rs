@@ -63,7 +63,7 @@
 //!
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::*;
-use arrow::array::{ArrayRef, StructArray};
+use arrow::array::StructArray;
 use arrow::io::ndjson::read::FallibleStreamingIterator;
 pub use arrow::{
     error::Result as ArrowResult,
@@ -112,7 +112,7 @@ where
         let fields = df.iter().map(|s| s.field().to_arrow()).collect::<Vec<_>>();
         let batches = df
             .iter_chunks()
-            .map(|chunk| Ok(Arc::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
+            .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
 
         match self.json_format {
             JsonFormat::JsonLines => {

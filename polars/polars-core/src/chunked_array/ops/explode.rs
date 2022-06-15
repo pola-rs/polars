@@ -111,7 +111,7 @@ where
             new_values.into(),
             Some(validity.into()),
         );
-        Series::try_from((self.name(), Arc::new(arr) as ArrayRef)).unwrap()
+        Series::try_from((self.name(), Box::new(arr) as ArrayRef)).unwrap()
     }
 }
 
@@ -254,7 +254,11 @@ impl ChunkExplode for ListChunked {
 
         if !offsets.is_empty() {
             let offset = offsets[0];
-            values = Arc::from(values.slice(offset as usize, offsets[offsets.len() - 1] as usize));
+            // safety:
+            // we are in bounds
+            values = unsafe {
+                values.slice_unchecked(offset as usize, offsets[offsets.len() - 1] as usize)
+            };
         }
 
         let mut s = if ca.can_fast_explode() {
@@ -356,7 +360,7 @@ impl ChunkExplode for Utf8Chunked {
             Utf8Array::<i64>::from_data_unchecked_default(offsets, values.clone(), validity)
         };
 
-        let new_arr = Arc::new(array) as ArrayRef;
+        let new_arr = Box::new(array) as ArrayRef;
 
         let s = Series::try_from((self.name(), new_arr)).unwrap();
         Ok((s, old_offsets))

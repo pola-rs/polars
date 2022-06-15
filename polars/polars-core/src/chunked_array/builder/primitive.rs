@@ -24,10 +24,10 @@ where
         self.array_builder.push(None)
     }
 
-    fn finish(self) -> ChunkedArray<T> {
+    fn finish(mut self) -> ChunkedArray<T> {
         ChunkedArray {
             field: Arc::new(self.field),
-            chunks: vec![self.array_builder.into_arc()],
+            chunks: vec![self.array_builder.as_box()],
             phantom: PhantomData,
             categorical_map: None,
             ..Default::default()

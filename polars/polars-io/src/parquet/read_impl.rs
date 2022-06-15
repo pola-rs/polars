@@ -20,7 +20,7 @@ use std::sync::Arc;
 fn array_iter_to_series(iter: ArrayIter, field: &ArrowField) -> Result<Series> {
     let chunks = iter.collect::<arrow::error::Result<Vec<_>>>()?;
     if chunks.is_empty() {
-        let arr = Arc::from(new_empty_array(field.data_type.clone()));
+        let arr = new_empty_array(field.data_type.clone());
         Series::try_from((field.name.as_str(), arr))
     } else {
         Series::try_from((field.name.as_str(), chunks))

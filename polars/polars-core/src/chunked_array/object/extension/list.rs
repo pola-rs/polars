@@ -70,16 +70,20 @@ impl<T: PolarsObject> ListBuilderTrait for ExtensionListBuilder<T> {
         // meaning that the sentinel is heap allocated and the dereference of the
         // pointer does not fail
         unsafe { pe.set_to_series_fn::<T>() };
-        let extension_array = Arc::new(pe.take_and_forget()) as ArrayRef;
+        let extension_array = Box::new(pe.take_and_forget()) as ArrayRef;
         let extension_dtype = extension_array.data_type();
 
         let data_type = ListArray::<i64>::default_datatype(extension_dtype.clone());
-        let arr = Arc::new(ListArray::<i64>::from_data(
-            data_type,
-            offsets.into(),
-            extension_array,
-            None,
-        )) as ArrayRef;
+        // Safety:
+        // offsets are monotonically increasing
+        let arr = unsafe {
+            Box::new(ListArray::<i64>::new_unchecked(
+                data_type,
+                offsets.into(),
+                extension_array,
+                None,
+            )) as ArrayRef
+        };
 
         let mut listarr = ListChunked::from_chunks(ca.name(), vec![arr]);
         if self.fast_explode {

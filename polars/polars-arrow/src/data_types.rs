@@ -1,3 +1,5 @@
+use arrow::array::Array;
+
 /// # Safety
 /// unsafe code downstream relies on the correct is_float call
 pub unsafe trait IsFloat: private::Sealed {
@@ -57,3 +59,5 @@ macro_rules! impl_is_float {
 
 impl_is_float!(f32);
 impl_is_float!(f64);
+
+pub type ArrayRef = Box<dyn Array>;

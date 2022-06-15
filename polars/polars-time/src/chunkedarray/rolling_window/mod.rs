@@ -6,7 +6,7 @@ mod rolling_kernels;
 use crate::prelude::*;
 use crate::series::WrapFloat;
 #[cfg(feature = "rolling_window")]
-use arrow::array::{Array, ArrayRef, PrimitiveArray};
+use arrow::array::{Array, PrimitiveArray};
 use polars_arrow::data_types::IsFloat;
 #[cfg(feature = "rolling_window")]
 use polars_arrow::export::arrow;

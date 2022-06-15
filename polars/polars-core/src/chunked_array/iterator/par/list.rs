@@ -3,7 +3,7 @@ use rayon::prelude::*;
 
 unsafe fn idx_to_array(idx: usize, arr: &ListArray<i64>, dtype: &DataType) -> Option<Series> {
     if arr.is_valid(idx) {
-        Some(Arc::from(arr.value_unchecked(idx)))
+        Some(arr.value_unchecked(idx))
             .map(|arr: ArrayRef| Series::from_chunks_and_dtype_unchecked("", vec![arr], dtype))
     } else {
         None

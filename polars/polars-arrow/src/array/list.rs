@@ -1,4 +1,5 @@
-use arrow::array::{Array, ArrayRef, ListArray};
+use crate::prelude::*;
+use arrow::array::{Array, ListArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::compute::concatenate;
 use arrow::datatypes::DataType;
@@ -87,11 +88,15 @@ impl<'a> AnonymousBuilder<'a> {
         let values = concatenate::concatenate(&self.arrays)?;
 
         let dtype = ListArray::<i64>::default_datatype(inner_dtype.clone());
-        Ok(ListArray::<i64>::from_data(
-            dtype,
-            self.offsets.into(),
-            values.into(),
-            self.validity.map(|validity| validity.into()),
-        ))
+        // Safety:
+        // offsets are monotonically increasing
+        unsafe {
+            Ok(ListArray::<i64>::new_unchecked(
+                dtype,
+                self.offsets.into(),
+                values,
+                self.validity.map(|validity| validity.into()),
+            ))
+        }
     }
 }

@@ -3,9 +3,12 @@ use crate::chunked_array::cast::cast_chunks;
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
 use arrow::compute::cast::utf8_to_large_utf8;
-use arrow::temporal_conversions::MILLISECONDS;
-#[cfg(feature = "dtype-time")]
-use arrow::temporal_conversions::NANOSECONDS;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+use arrow::temporal_conversions::*;
 use polars_arrow::compute::cast::cast;
 #[cfg(feature = "dtype-struct")]
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
@@ -263,14 +266,16 @@ impl Series {
                         let offsets = arr.offsets().clone();
                         let validity = arr.validity().cloned();
 
-                        let values = Arc::new(PrimitiveArray::from_data(
+                        let values = Box::new(PrimitiveArray::from_data(
                             ArrowDataType::UInt8,
                             values,
                             None,
                         ));
 
                         let dtype = ListArray::<i64>::default_datatype(ArrowDataType::UInt8);
-                        Arc::new(ListArray::<i64>::from_data(
+                        // Safety:
+                        // offsets are monotonically increasing
+                        Box::new(ListArray::<i64>::new_unchecked(
                             dtype, offsets, values, validity,
                         )) as ArrayRef
                     })
@@ -311,13 +316,9 @@ impl Series {
                     let new_values = struct_arr
                         .values()
                         .iter()
-                        .map(|arr| {
-                            Arc::from(match arr.validity() {
-                                None => arr.with_validity(Some(validity.clone())),
-                                Some(arr_validity) => {
-                                    arr.with_validity(Some(arr_validity & validity))
-                                }
-                            })
+                        .map(|arr| match arr.validity() {
+                            None => arr.with_validity(Some(validity.clone())),
+                            Some(arr_validity) => arr.with_validity(Some(arr_validity & validity)),
                         })
                         .collect();
 
@@ -352,18 +353,18 @@ fn convert_inner_types(arr: &ArrayRef) -> ArrayRef {
     match arr.data_type() {
         ArrowDataType::Utf8 => {
             let arr = arr.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
-            Arc::from(utf8_to_large_utf8(arr))
+            Box::from(utf8_to_large_utf8(arr))
         }
         ArrowDataType::List(field) => {
             let out = cast(&**arr, &ArrowDataType::LargeList(field.clone())).unwrap();
-            convert_inner_types(&(Arc::from(out) as ArrayRef))
+            convert_inner_types(&out)
         }
         ArrowDataType::LargeList(_) => {
             let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
             let values = convert_inner_types(arr.values());
             let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
             unsafe {
-                Arc::from(ListArray::<i64>::new_unchecked(
+                Box::from(ListArray::<i64>::new_unchecked(
                     dtype,
                     arr.offsets().clone(),
                     values,
@@ -383,7 +384,7 @@ fn convert_inner_types(arr: &ArrayRef) -> ArrayRef {
                 .iter()
                 .map(|f| ArrowField::new(&f.name, DataType::from(&f.data_type).to_arrow(), true))
                 .collect();
-            Arc::new(StructArray::new(
+            Box::new(StructArray::new(
                 ArrowDataType::Struct(fields),
                 values,
                 arr.validity().cloned(),
@@ -426,15 +427,6 @@ impl TryFrom<(&str, ArrayRef)> for Series {
     fn try_from(name_arr: (&str, ArrayRef)) -> Result<Self> {
         let (name, arr) = name_arr;
         Series::try_from((name, vec![arr]))
-    }
-}
-
-impl TryFrom<(&str, Box<dyn Array>)> for Series {
-    type Error = PolarsError;
-
-    fn try_from(name_arr: (&str, Box<dyn Array>)) -> Result<Self> {
-        let (name, arr) = name_arr;
-        Series::try_from((name, vec![arr.into()]))
     }
 }
 
@@ -510,7 +502,7 @@ mod test {
     #[cfg(feature = "dtype-u8")]
     fn test_binary_to_list() {
         let iter = std::iter::repeat(b"hello").take(2).map(Some);
-        let a = Arc::new(iter.collect::<BinaryArray<i32>>()) as ArrayRef;
+        let a = Box::new(iter.collect::<BinaryArray<i32>>()) as ArrayRef;
 
         let s = Series::try_from(("", a)).unwrap();
         assert_eq!(s.dtype(), &DataType::List(Box::new(DataType::UInt8)));

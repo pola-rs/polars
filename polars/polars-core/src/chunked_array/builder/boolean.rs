@@ -20,7 +20,7 @@ impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
 
     fn finish(self) -> BooleanChunked {
         let arr: BooleanArray = self.array_builder.into();
-        let arr = Arc::new(arr) as ArrayRef;
+        let arr = Box::new(arr) as ArrayRef;
 
         ChunkedArray {
             field: Arc::new(self.field),

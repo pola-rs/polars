@@ -1,7 +1,6 @@
 //! Type agnostic columnar data structure.
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
-use arrow::array::ArrayRef;
 #[cfg(any(feature = "dtype-struct", feature = "object"))]
 use std::any::Any;
 
@@ -19,9 +18,11 @@ pub mod unstable;
 
 #[cfg(feature = "rank")]
 use crate::prelude::unique::rank::rank;
+#[cfg(feature = "zip_with")]
+use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::{split_ca, split_series};
 use crate::utils::{split_offsets, Wrap};
-use crate::{series::arithmetic::coerce_lhs_rhs, POOL};
+use crate::POOL;
 use ahash::RandomState;
 use arrow::compute::aggregate::estimated_bytes_size;
 pub use from::*;
@@ -709,10 +710,9 @@ impl Series {
         {
             panic!("activate feature dtype-date")
         }
+        #[cfg(feature = "dtype-date")]
         match self.dtype() {
-            #[cfg(feature = "dtype-date")]
             DataType::Int32 => self.i32().unwrap().clone().into_date().into_series(),
-            #[cfg(feature = "dtype-date")]
             DataType::Date => self
                 .date()
                 .unwrap()
@@ -729,15 +729,14 @@ impl Series {
             panic!("activate feature dtype-datetime")
         }
 
+        #[cfg(feature = "dtype-datetime")]
         match self.dtype() {
-            #[cfg(feature = "dtype-datetime")]
             DataType::Int64 => self
                 .i64()
                 .unwrap()
                 .clone()
                 .into_datetime(timeunit, tz)
                 .into_series(),
-            #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => self
                 .datetime()
                 .unwrap()
@@ -754,15 +753,14 @@ impl Series {
         {
             panic!("activate feature dtype-duration")
         }
+        #[cfg(feature = "dtype-duration")]
         match self.dtype() {
-            #[cfg(feature = "dtype-duration")]
             DataType::Int64 => self
                 .i64()
                 .unwrap()
                 .clone()
                 .into_duration(timeunit)
                 .into_series(),
-            #[cfg(feature = "dtype-duration")]
             DataType::Duration(_) => self
                 .duration()
                 .unwrap()
@@ -1018,7 +1016,7 @@ mod test {
     #[test]
     fn new_series_from_arrow_primitive_array() {
         let array = UInt32Array::from_slice(&[1, 2, 3, 4, 5]);
-        let array_ref: ArrayRef = Arc::new(array);
+        let array_ref: ArrayRef = Box::new(array);
 
         let _ = Series::try_from(("foo", array_ref)).unwrap();
     }

@@ -12,7 +12,7 @@ where
 {
     if values.is_empty() {
         let out: Vec<T> = vec![];
-        return Arc::new(PrimitiveArray::from_data(
+        return Box::new(PrimitiveArray::from_data(
             T::PRIMITIVE.into(),
             out.into(),
             None,
@@ -35,7 +35,7 @@ where
         })
         .collect::<PrimitiveArray<T>>();
 
-    Arc::new(out)
+    Box::new(out)
 }
 
 pub(crate) fn rolling_min<T>(
