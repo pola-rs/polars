@@ -106,6 +106,16 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
     }
 }
 
+impl<T: PolarsNumericType> ChunkedArray<T> {
+    pub(crate) fn apply_mut<F>(&mut self, f: F)
+    where
+        F: Fn(T::Native) -> T::Native + Copy,
+    {
+        self.downcast_iter_mut()
+            .for_each(|arr| arrow::compute::arity_assign::unary(arr, f));
+    }
+}
+
 impl<'a, T> ChunkApply<'a, T::Native, T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,

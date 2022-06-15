@@ -1,8 +1,11 @@
 //! Implementations of arithmetic operations on ChunkedArray's.
 use crate::prelude::*;
-use crate::utils::align_chunks_binary;
+use crate::utils::{align_chunks_binary, align_chunks_binary_owned};
 use arrow::array::PrimitiveArray;
-use arrow::{compute, compute::arithmetics::basic};
+use arrow::{
+    compute,
+    compute::{arithmetics::basic, arity_assign},
+};
 use num::{Num, NumCast, ToPrimitive};
 use std::borrow::Cow;
 use std::ops::{Add, Div, Mul, Rem, Sub};
@@ -93,6 +96,52 @@ where
     ca
 }
 
+/// This assigns to the owned buffer if the ref count is 1
+fn arithmetic_helper_owned<T, Kernel, F>(
+    mut lhs: ChunkedArray<T>,
+    mut rhs: ChunkedArray<T>,
+    kernel: Kernel,
+    operation: F,
+) -> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    Kernel: Fn(&mut PrimitiveArray<T::Native>, &mut PrimitiveArray<T::Native>),
+    F: Fn(T::Native, T::Native) -> T::Native,
+{
+    let ca = match (lhs.len(), rhs.len()) {
+        (a, b) if a == b => {
+            let (mut lhs, mut rhs) = align_chunks_binary_owned(lhs, rhs);
+            lhs.downcast_iter_mut()
+                .zip(rhs.downcast_iter_mut())
+                .for_each(|(lhs, rhs)| kernel(lhs, rhs));
+            lhs
+        }
+        // broadcast right path
+        (_, 1) => {
+            let opt_rhs = rhs.get(0);
+            match opt_rhs {
+                None => ChunkedArray::full_null(lhs.name(), lhs.len()),
+                Some(rhs) => {
+                    lhs.apply_mut(|lhs| operation(lhs, rhs));
+                    lhs
+                }
+            }
+        }
+        (1, _) => {
+            let opt_lhs = lhs.get(0);
+            match opt_lhs {
+                None => ChunkedArray::full_null(lhs.name(), rhs.len()),
+                Some(lhs) => {
+                    rhs.apply_mut(|rhs| operation(lhs, rhs));
+                    rhs
+                }
+            }
+        }
+        _ => panic!("Cannot apply operation on arrays of different lengths"),
+    };
+    ca
+}
+
 // Operands on ChunkedArray & ChunkedArray
 
 impl<T> Add for &ChunkedArray<T>
@@ -157,7 +206,12 @@ where
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        (&self).add(&rhs)
+        arithmetic_helper_owned(
+            self,
+            rhs,
+            |a, b| arity_assign::binary(a, b, |a, b| a + b),
+            |lhs, rhs| lhs + rhs,
+        )
     }
 }
 
@@ -168,7 +222,12 @@ where
     type Output = Self;
 
     fn div(self, rhs: Self) -> Self::Output {
-        (&self).div(&rhs)
+        arithmetic_helper_owned(
+            self,
+            rhs,
+            |a, b| arity_assign::binary(a, b, |a, b| a / b),
+            |lhs, rhs| lhs / rhs,
+        )
     }
 }
 
@@ -179,7 +238,12 @@ where
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        (&self).mul(&rhs)
+        arithmetic_helper_owned(
+            self,
+            rhs,
+            |a, b| arity_assign::binary(a, b, |a, b| a * b),
+            |lhs, rhs| lhs * rhs,
+        )
     }
 }
 
@@ -190,7 +254,12 @@ where
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        (&self).sub(&rhs)
+        arithmetic_helper_owned(
+            self,
+            rhs,
+            |a, b| arity_assign::binary(a, b, |a, b| a - b),
+            |lhs, rhs| lhs - rhs,
+        )
     }
 }
 
@@ -279,8 +348,14 @@ where
 {
     type Output = ChunkedArray<T>;
 
-    fn add(self, rhs: N) -> Self::Output {
-        (&self).add(rhs)
+    fn add(mut self, rhs: N) -> Self::Output {
+        if std::env::var("ASSIGN").is_ok() {
+            let adder: T::Native = NumCast::from(rhs).unwrap();
+            self.apply_mut(|val| val + adder);
+            self
+        } else {
+            (&self).add(rhs)
+        }
     }
 }
 
@@ -291,8 +366,14 @@ where
 {
     type Output = ChunkedArray<T>;
 
-    fn sub(self, rhs: N) -> Self::Output {
-        (&self).sub(rhs)
+    fn sub(mut self, rhs: N) -> Self::Output {
+        if std::env::var("ASSIGN").is_ok() {
+            let subber: T::Native = NumCast::from(rhs).unwrap();
+            self.apply_mut(|val| val - subber);
+            self
+        } else {
+            (&self).sub(rhs)
+        }
     }
 }
 
@@ -315,8 +396,14 @@ where
 {
     type Output = ChunkedArray<T>;
 
-    fn mul(self, rhs: N) -> Self::Output {
-        (&self).mul(rhs)
+    fn mul(mut self, rhs: N) -> Self::Output {
+        if std::env::var("ASSIGN").is_ok() {
+            let multiplier: T::Native = NumCast::from(rhs).unwrap();
+            self.apply_mut(|val| val * multiplier);
+            self
+        } else {
+            (&self).mul(rhs)
+        }
     }
 }
 

@@ -19,7 +19,7 @@ default = ["docs", "temporal", "private"]
 lazy = ["sort_multiple"]
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
-# more fast paths
+# more fast paths, slower compilation
 performant = []
 
 # extra utilities for Utf8Chunked
