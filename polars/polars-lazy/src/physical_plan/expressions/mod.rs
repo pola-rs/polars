@@ -27,6 +27,8 @@ pub(crate) use {
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
+use polars_arrow::export::arrow::array::ListArray;
+use polars_arrow::trusted_len::PushUnchecked;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
@@ -427,12 +429,33 @@ impl<'a> AggregationContext<'a> {
     /// this is because comparisons need to create mask that have a correct length.
     fn aggregated_arity_operation(&mut self) -> Series {
         if let AggState::Literal(s) = self.agg_state() {
+            // stop borrow;
             let s = s.clone();
-            // // todo! optimize this, we don't have to call agg_list, create the list directly.
-            let s = s.expand_at_index(0, self.groups.iter().map(|g| g.len()).sum());
-            // safety:
-            // groups are in bounds
-            unsafe { s.agg_list(&self.groups) }
+            let groups = self.groups();
+
+            let mut offsets = Vec::with_capacity(groups.len() + 1);
+
+            let mut last_offset = 0i64;
+            offsets.push(last_offset);
+            for g in groups.iter() {
+                last_offset += g.len() as i64;
+                // safety:
+                // we allocated enough
+                unsafe { offsets.push_unchecked(last_offset) };
+            }
+            let values = s.expand_at_index(0, last_offset as usize);
+            let values = values.array_ref(0).clone();
+            // Safety:
+            // offsets are monotonically increasing
+            let arr = unsafe {
+                ListArray::<i64>::new_unchecked(
+                    DataType::List(Box::new(s.dtype().clone())).to_arrow(),
+                    offsets.into(),
+                    values,
+                    None,
+                )
+            };
+            Series::try_from((s.name(), Box::new(arr) as ArrayRef)).unwrap()
         } else {
             self.aggregated()
         }
