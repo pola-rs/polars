@@ -53,7 +53,7 @@ fn rewrite_special_aliases(expr: Expr) -> Expr {
 /// The resulting expressions are written to result.
 fn replace_wildcard(expr: &Expr, result: &mut Vec<Expr>, exclude: &[Arc<str>], schema: &Schema) {
     for name in schema.iter_names() {
-        if !exclude.iter().any(|exluded| &**exluded == name) {
+        if !exclude.iter().any(|excluded| &**excluded == name) {
             let new_expr = replace_wildcard_with_column(expr.clone(), Arc::from(name.as_str()));
             let new_expr = rewrite_special_aliases(new_expr);
             result.push(new_expr)
