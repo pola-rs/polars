@@ -83,7 +83,7 @@ impl OptimizationRule for AggregatePushdown {
                 input,
                 schema,
             } => self.pushdown_projection(node, expr, input, schema, lp_arena, expr_arena),
-            // todo! hstack should pushown not dependent columns
+            // todo! hstack should pushdown not dependent columns
             Join { .. } | Aggregate { .. } | HStack { .. } | DataFrameScan { .. } => {
                 if self.accumulated_projections.is_empty() {
                     lp_arena.replace(node, lp);
