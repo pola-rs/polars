@@ -51,6 +51,8 @@ use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
 use polars::prelude::Null;
 use polars_core::datatypes::TimeUnit;
+use polars_core::frame::row::Row;
+use polars_core::prelude::DataFrame;
 use polars_core::prelude::IntoSeries;
 use polars_core::POOL;
 use pyo3::panic::PanicException;
@@ -263,18 +265,43 @@ fn py_duration(
 }
 
 #[pyfunction]
-fn concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
+fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
+    use polars_core::utils::rayon::prelude::*;
+
     let (seq, _len) = get_pyseq(dfs)?;
     let mut iter = seq.iter()?;
     let first = iter.next().unwrap()?;
 
-    let mut df = get_df(first)?;
+    let first_rdf = get_df(first)?;
+    let schema = first_rdf.schema();
 
-    for res in iter {
-        let item = res?;
-        let other = get_df(item)?;
-        df.vstack_mut(&other).map_err(PyPolarsErr::from)?;
+    let mut rdfs: Vec<polars_core::error::Result<DataFrame>> = vec![Ok(first_rdf)];
+
+    for item in iter {
+        let rdf = get_df(item?)?;
+        rdfs.push(Ok(rdf));
     }
+
+    let identity = || DataFrame::from_rows_and_schema(&[Row::default()], &schema);
+
+    let df = py
+        .allow_threads(|| {
+            polars_core::POOL.install(|| {
+                rdfs.into_par_iter()
+                    .fold(identity, |acc, df| {
+                        let mut acc = acc?;
+                        acc.vstack_mut(&df?)?;
+                        Ok(acc)
+                    })
+                    .reduce(identity, |acc, df| {
+                        let mut acc = acc?;
+                        acc.vstack_mut(&df?)?;
+                        Ok(acc)
+                    })
+            })
+        })
+        .map_err(PyPolarsErr::from)?;
+
     Ok(df.into())
 }
 
