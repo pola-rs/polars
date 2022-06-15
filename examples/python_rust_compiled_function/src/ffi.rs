@@ -1,4 +1,4 @@
-use arrow::{array::ArrayRef, ffi};
+use arrow::ffi;
 use polars::prelude::*;
 use polars_arrow::export::arrow;
 use pyo3::exceptions::PyValueError;
@@ -24,8 +24,7 @@ fn array_to_rust(arrow_array: &PyAny) -> PyResult<ArrayRef> {
 
     unsafe {
         let field = ffi::import_field_from_c(schema.as_ref()).unwrap();
-        let array = ffi::import_array_from_c(array, field.data_type).unwrap();
-        Ok(array.into())
+        Ok(ffi::import_array_from_c(array, field.data_type).unwrap())
     }
 }
 
