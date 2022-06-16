@@ -241,7 +241,7 @@ class Expr:
         """
         Compute the square root of the elements
         """
-        return self**0.5
+        return self ** 0.5
 
     def log10(self) -> "Expr":
         """
@@ -1648,6 +1648,32 @@ class Expr:
         return_dtype
             Dtype of the output Series.
         agg_list
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "id": [0, 1, 2],
+        ...         "value": [3,4,5],
+        ...     }
+        ... )
+        >>> (
+        ...     df.select(pl.col('location')).apply(lambda x: x**2).alias('squared_value'))
+        ... )
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ b   ┆ a   │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ a   ┆ 1   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ b   ┆ 2   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ c   ┆ 2   │
+        └─────┴─────┘
+
 
         """
         if return_dtype is not None:
