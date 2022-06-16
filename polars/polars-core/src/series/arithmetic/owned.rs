@@ -80,3 +80,4 @@ macro_rules! impl_operation {
 impl_operation!(Add, add, |a, b| a.add(b));
 impl_operation!(Sub, sub, |a, b| a.sub(b));
 impl_operation!(Mul, mul, |a, b| a.mul(b));
+impl_operation!(Div, div, |a, b| a.div(b));
