@@ -110,6 +110,7 @@ impl<R: Read + Seek> IpcReader<R> {
     }
 
     // todo! hoist to lazy crate
+    #[cfg(feature = "lazy")]
     pub fn finish_with_scan_ops(
         mut self,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,

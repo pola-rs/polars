@@ -29,7 +29,36 @@ impl BinaryExpr {
     }
 }
 
-pub(crate) fn apply_operator(left: &Series, right: &Series, op: Operator) -> Result<Series> {
+/// Can partially do operations in place.
+fn apply_operator_owned(left: Series, right: Series, op: Operator) -> Result<Series> {
+    match op {
+        Operator::Gt => ChunkCompare::<&Series>::gt(&left, &right).map(|ca| ca.into_series()),
+        Operator::GtEq => ChunkCompare::<&Series>::gt_eq(&left, &right).map(|ca| ca.into_series()),
+        Operator::Lt => ChunkCompare::<&Series>::lt(&left, &right).map(|ca| ca.into_series()),
+        Operator::LtEq => ChunkCompare::<&Series>::lt_eq(&left, &right).map(|ca| ca.into_series()),
+        Operator::Eq => ChunkCompare::<&Series>::equal(&left, &right).map(|ca| ca.into_series()),
+        Operator::NotEq => {
+            ChunkCompare::<&Series>::not_equal(&left, &right).map(|ca| ca.into_series())
+        }
+        Operator::Plus => Ok(left + right),
+        Operator::Minus => Ok(left - right),
+        Operator::Multiply => Ok(left * right),
+        Operator::Divide => Ok(&left / &right),
+        Operator::TrueDivide => {
+            use DataType::*;
+            match left.dtype() {
+                Date | Datetime(_, _) | Float32 | Float64 => Ok(&left / &right),
+                _ => Ok(&left.cast(&Float64)? / &right.cast(&Float64)?),
+            }
+        }
+        Operator::And => left.bitand(&right),
+        Operator::Or => left.bitor(&right),
+        Operator::Xor => left.bitxor(&right),
+        Operator::Modulus => Ok(&left % &right),
+    }
+}
+
+pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> Result<Series> {
     match op {
         Operator::Gt => ChunkCompare::<&Series>::gt(left, right).map(|ca| ca.into_series()),
         Operator::GtEq => ChunkCompare::<&Series>::gt_eq(left, right).map(|ca| ca.into_series()),
@@ -69,7 +98,7 @@ impl PhysicalExpr for BinaryExpr {
                 || self.right.evaluate(df, state),
             )
         });
-        apply_operator(&lhs?, &rhs?, self.op)
+        apply_operator_owned(lhs?, rhs?, self.op)
     }
 
     #[allow(clippy::ptr_arg)]
@@ -119,7 +148,17 @@ impl PhysicalExpr for BinaryExpr {
                 | Operator::Modulus
                 | Operator::TrueDivide,
             ) => {
-                let out = apply_operator(lhs, rhs, self.op)?;
+                // we want to be able to mutate in place
+                // so we take the lhs to make sure that we drop
+                let lhs = lhs.clone();
+                let rhs = rhs.clone();
+
+                // drop lhs so that we might operate in place
+                {
+                    let _ = ac_l.take();
+                }
+
+                let out = apply_operator_owned(lhs, rhs, self.op)?;
 
                 ac_l.with_series(out, true);
                 Ok(ac_l)
@@ -130,12 +169,16 @@ impl PhysicalExpr for BinaryExpr {
             //
             (AggState::AggregatedFlat(_), AggState::Literal(_), _)
             | (AggState::Literal(_), AggState::AggregatedFlat(_), _) => {
-                let l = ac_l.series();
-                let r = ac_r.series();
-                let mut s = apply_operator(l, r, self.op)?;
-                s.rename(l.name());
+                let l = ac_l.series().clone();
+                let r = ac_r.series().clone();
 
-                ac_l.with_series(s, true);
+                // drop lhs so that we might operate in place
+                {
+                    let _ = ac_l.take();
+                }
+                let out = apply_operator_owned(l, r, self.op)?;
+
+                ac_l.with_series(out, true);
                 Ok(ac_l)
             }
             // One of the two exprs is aggregated with flat aggregation, e.g. `e.min(), e.max(), e.first()`
@@ -252,11 +295,15 @@ impl PhysicalExpr for BinaryExpr {
                 ac_l.sort_by_groups();
                 ac_r.sort_by_groups();
 
-                let out = apply_operator(
-                    ac_l.flat_naive().as_ref(),
-                    ac_r.flat_naive().as_ref(),
-                    self.op,
-                )?;
+                let lhs = ac_l.flat_naive().as_ref().clone();
+                let rhs = ac_r.flat_naive().as_ref().clone();
+
+                // drop lhs so that we might operate in place
+                {
+                    let _ = ac_l.take();
+                }
+
+                let out = apply_operator_owned(lhs, rhs, self.op)?;
 
                 // we flattened the series, so that sorts by group
                 ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
@@ -265,11 +312,15 @@ impl PhysicalExpr for BinaryExpr {
             }
             // flatten the Series and apply the operators
             (AggState::AggregatedList(_), AggState::AggregatedList(_), _) => {
-                let out = apply_operator(
-                    ac_l.flat_naive().as_ref(),
-                    ac_r.flat_naive().as_ref(),
-                    self.op,
-                )?;
+                let lhs = ac_l.flat_naive().as_ref().clone();
+                let rhs = ac_l.flat_naive().as_ref().clone();
+
+                // drop lhs so that we might operate in place
+                {
+                    let _ = ac_l.take();
+                }
+
+                let out = apply_operator_owned(lhs, rhs, self.op)?;
 
                 ac_l.combine_groups(ac_r).with_series(out, false);
                 ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
@@ -297,11 +348,15 @@ impl PhysicalExpr for BinaryExpr {
                     ac_l.with_series(out, false);
                     Ok(ac_l)
                 } else {
-                    let out = apply_operator(
-                        ac_l.flat_naive().as_ref(),
-                        ac_r.flat_naive().as_ref(),
-                        self.op,
-                    )?;
+                    let lhs = ac_l.flat_naive().as_ref().clone();
+                    let rhs = ac_r.flat_naive().as_ref().clone();
+
+                    // drop lhs so that we might operate in place
+                    {
+                        let _ = ac_l.take();
+                    }
+
+                    let out = apply_operator_owned(lhs, rhs, self.op)?;
 
                     ac_l.combine_groups(ac_r).with_series(out, false);
 
