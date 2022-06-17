@@ -1,6 +1,8 @@
-use ahash::AHashMap;
+use crate::prelude::PlHashMap;
 use once_cell::sync::Lazy;
 use smartstring::{LazyCompact, SmartString};
+use std::borrow::Borrow;
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -37,7 +39,7 @@ pub(crate) fn use_string_cache() -> bool {
 }
 
 pub(crate) struct SCacheInner {
-    pub(crate) map: AHashMap<SmartString<LazyCompact>, u32>,
+    pub(crate) map: PlHashMap<StrHashGlobal, u32>,
     pub(crate) uuid: u128,
 }
 
@@ -77,3 +79,35 @@ impl Default for StringCache {
 }
 
 pub(crate) static STRING_CACHE: Lazy<StringCache> = Lazy::new(Default::default);
+
+#[derive(Eq, Clone)]
+pub struct StrHashGlobal {
+    pub(crate) str: SmartString<LazyCompact>,
+    pub(crate) hash: u64,
+}
+
+impl<'a> Hash for StrHashGlobal {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash)
+    }
+}
+
+impl StrHashGlobal {
+    pub(crate) fn new(s: SmartString<LazyCompact>, hash: u64) -> Self {
+        Self { str: s, hash }
+    }
+}
+
+impl PartialEq for StrHashGlobal {
+    fn eq(&self, other: &Self) -> bool {
+        // can be collisions in the hashtable even though the hashes are equal
+        // e.g. hashtable hash = hash % n_slots
+        (self.hash == other.hash) && (self.str == other.str)
+    }
+}
+
+impl Borrow<str> for StrHashGlobal {
+    fn borrow(&self) -> &str {
+        self.str.as_str()
+    }
+}

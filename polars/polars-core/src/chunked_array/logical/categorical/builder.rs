@@ -1,6 +1,6 @@
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::*;
-use crate::{datatypes::PlHashMap, use_string_cache};
+use crate::{datatypes::PlHashMap, use_string_cache, StrHashGlobal};
 use ahash::CallHasher;
 use arrow::array::*;
 use hashbrown::hash_map::RawEntryMut;
@@ -182,18 +182,28 @@ impl CategoricalChunkedBuilder {
     {
         if use_string_cache() {
             let mut cache = crate::STRING_CACHE.lock_map();
+            let mapping = &mut cache.map;
+            let hb = mapping.hasher().clone();
 
             for opt_s in i {
                 match opt_s {
                     Some(s) => {
-                        let idx = match cache.map.get(s) {
-                            Some(idx) => *idx,
-                            None => {
-                                let idx = cache.map.len() as u32;
-                                cache.map.insert(s.into(), idx);
-                                idx
+                        let h = str::get_hash(s, &hb);
+                        let mut idx = mapping.len() as u32;
+                        // Note that we don't create the StrHashGlobal to search the key in the hashmap
+                        // as StrHashGlobal may allocate a string
+                        let entry = mapping
+                            .raw_entry_mut()
+                            .from_hash(h, |val| (val.hash == h) && val.str == s);
+
+                        match entry {
+                            RawEntryMut::Occupied(entry) => idx = *entry.get(),
+                            RawEntryMut::Vacant(entry) => {
+                                // only just now we allocate the string
+                                let key = StrHashGlobal::new(s.into(), h);
+                                entry.insert_with_hasher(h, key, idx, |s| s.hash);
                             }
-                        };
+                        }
                         // we still need to check if the idx is already stored in our map
                         self.reverse_mapping.insert(idx, s);
                         self.array_builder.push(Some(idx));
