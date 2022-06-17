@@ -588,10 +588,12 @@ impl PyExpr {
     pub fn str_contains(&self, pat: String, literal: Option<bool>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            let match_type = | p: &str | if literal.unwrap_or(false) {
-                ca.contains_literal(p)
-            } else {
-                ca.contains(p)
+            let match_type = |p: &str| {
+                if literal.unwrap_or(false) {
+                    ca.contains_literal(p)
+                } else {
+                    ca.contains(p)
+                }
             };
             match match_type(&pat) {
                 Ok(ca) => Ok(ca.into_series()),

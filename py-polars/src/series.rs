@@ -1113,7 +1113,9 @@ impl PySeries {
             ca.contains_literal(pat)
         } else {
             ca.contains(pat)
-        }.map_err(PyPolarsErr::from)?.into_series();
+        }
+        .map_err(PyPolarsErr::from)?
+        .into_series();
         Ok(s.into())
     }
 
