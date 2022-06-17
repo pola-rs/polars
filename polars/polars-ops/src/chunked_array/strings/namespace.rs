@@ -4,7 +4,7 @@ use polars_arrow::{
     export::arrow::{self, compute::substring::substring},
     kernels::string::*,
 };
-use polars_core::export::regex::{Regex,escape};
+use polars_core::export::regex::Regex;
 use std::borrow::Cow;
 
 fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Option<Cow<'a, str>> {
@@ -101,14 +101,23 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     }
 
     /// Check if strings contain a regex pattern
-    fn contains(&self, pat: &str, literal: Option<bool>) -> Result<BooleanChunked> {
+    fn contains(&self, pat: &str) -> Result<BooleanChunked> {
         let ca = self.as_utf8();
-        let reg = if literal.unwrap_or(false) {
-            Regex::new(escape(pat).as_str())?
-        } else {
-            Regex::new(pat)?
-        };
+        let reg = Regex::new(pat)?;
         let f = |s| reg.is_match(s);
+        let mut out: BooleanChunked = if !ca.has_validity() {
+            ca.into_no_null_iter().map(f).collect()
+        } else {
+            ca.into_iter().map(|opt_s| opt_s.map(f)).collect()
+        };
+        out.rename(ca.name());
+        Ok(out)
+    }
+
+    /// Check if strings contain a given literal
+    fn contains_literal(&self, lit: &str) -> Result<BooleanChunked> {
+        let ca = self.as_utf8();
+        let f = |s: &str| s.contains(lit);
         let mut out: BooleanChunked = if !ca.has_validity() {
             ca.into_no_null_iter().map(f).collect()
         } else {

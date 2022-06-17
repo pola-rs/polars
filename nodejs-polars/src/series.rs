@@ -788,9 +788,9 @@ impl JsSeries {
     }
 
     #[napi]
-    pub fn str_contains(&self, pat: String, literal: Option<bool>) -> napi::Result<JsSeries> {
+    pub fn str_contains(&self, pat: String) -> napi::Result<JsSeries> {
         let ca = self.series.utf8().map_err(JsPolarsErr::from)?;
-        let s = ca.contains(&pat,literal).map_err(JsPolarsErr::from)?.into_series();
+        let s = ca.contains(&pat).map_err(JsPolarsErr::from)?.into_series();
         Ok(s.into())
     }
 
