@@ -1107,9 +1107,9 @@ impl PySeries {
         Ok(PySeries::new(s))
     }
 
-    pub fn str_contains(&self, pat: &str) -> PyResult<Self> {
+    pub fn str_contains(&self, pat: &str, literal: Option<bool>) -> PyResult<Self> {
         let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
-        let s = ca.contains(pat).map_err(PyPolarsErr::from)?.into_series();
+        let s = ca.contains(pat,literal).map_err(PyPolarsErr::from)?.into_series();
         Ok(s.into())
     }
 

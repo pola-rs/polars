@@ -20,6 +20,40 @@ def test_auto_explode() -> None:
     assert grouped.dtype == pl.Utf8
 
 
+def test_contains() -> None:
+    df = pl.DataFrame(
+        data=[(1, "some * * text"), (2, "(with) special\n * chars"), (3, "**etc...?$")],
+        columns=["idx", "text"],
+    )
+    for pattern, as_literal, expected in (
+        (r"\* \*", False, [True, False, False]),
+        (r"* *", True, [True, False, False]),
+        (r"^\(", False, [False, True, False]),
+        (r"^\(", True, [False, False, False]),
+        (r"(", True, [False, True, False]),
+        (r"e", False, [True, True, True]),
+        (r"e", True, [True, True, True]),
+        (r"^\S+$", False, [False, False, True]),
+        (r"\?\$", False, [False, False, True]),
+        (r"?$", True, [False, False, True]),
+    ):
+        # series
+        assert (
+            expected == df["text"].str.contains(pattern, literal=as_literal).to_list()
+        )
+        # frame select
+        assert (
+            expected
+            == df.select(pl.col("text").str.contains(pattern, literal=as_literal))[
+                "text"
+            ].to_list()
+        )
+        # frame filter
+        assert sum(expected) == len(
+            df.filter(pl.col("text").str.contains(pattern, literal=as_literal))
+        )
+
+
 def test_null_comparisons() -> None:
     s = pl.Series("s", [None, "str", "a"])
     assert (s.shift() == s).null_count() == 0

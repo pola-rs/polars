@@ -3973,24 +3973,26 @@ class StringNameSpace:
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.concat(delimiter)).to_series()
 
-    def contains(self, pattern: str) -> Series:
+    def contains(self, pattern: str, literal: bool = False) -> Series:
         """
-        Check if strings in Series contain regex pattern.
+        Check if strings in Series contain a substring that matches a regex.
 
         Parameters
         ----------
         pattern
             A valid regex pattern.
+        literal
+            Treat pattern as a literal string.
 
         Returns
         -------
         Boolean mask
         """
-        return wrap_s(self._s.str_contains(pattern))
+        return wrap_s(self._s.str_contains(pattern, literal))
 
     def decode(self, encoding: str, strict: bool = False) -> Series:
         """
-        Decodes a value using the provided encoding
+        Decodes a value using the provided encoding.
 
         Parameters
         ----------

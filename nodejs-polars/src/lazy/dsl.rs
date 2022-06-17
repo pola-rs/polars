@@ -676,10 +676,10 @@ impl JsExpr {
     }
 
     #[napi]
-    pub fn str_contains(&self, pat: String) -> JsExpr {
+    pub fn str_contains(&self, pat: String, literal: Option<bool>) -> JsExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            match ca.contains(&pat) {
+            match ca.contains(&pat, literal) {
                 Ok(ca) => Ok(ca.into_series()),
                 Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
             }

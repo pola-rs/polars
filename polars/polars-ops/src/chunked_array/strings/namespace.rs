@@ -4,7 +4,7 @@ use polars_arrow::{
     export::arrow::{self, compute::substring::substring},
     kernels::string::*,
 };
-use polars_core::export::regex::Regex;
+use polars_core::export::regex::{Regex,escape};
 use std::borrow::Cow;
 
 fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Option<Cow<'a, str>> {
@@ -101,10 +101,13 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     }
 
     /// Check if strings contain a regex pattern
-    fn contains(&self, pat: &str) -> Result<BooleanChunked> {
+    fn contains(&self, pat: &str, literal: Option<bool>) -> Result<BooleanChunked> {
         let ca = self.as_utf8();
-
-        let reg = Regex::new(pat)?;
+        let reg = if literal.unwrap_or(false) {
+            Regex::new(escape(pat).as_str())?
+        } else {
+            Regex::new(pat)?
+        };
         let f = |s| reg.is_match(s);
         let mut out: BooleanChunked = if !ca.has_validity() {
             ca.into_no_null_iter().map(f).collect()
