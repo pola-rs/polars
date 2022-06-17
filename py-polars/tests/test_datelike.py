@@ -1004,3 +1004,49 @@ def test_unique_counts_on_dates() -> None:
         "dt_ms": [3],
         "date": [3],
     }
+
+
+def test_groupby_rolling_by_ordering() -> None:
+    # we must check that the keys still match the time labels after the rolling window
+    # with a `by` argument.
+    df = pl.DataFrame(
+        {
+            "dt": [
+                datetime(2022, 1, 1, 0, 1),
+                datetime(2022, 1, 1, 0, 2),
+                datetime(2022, 1, 1, 0, 3),
+                datetime(2022, 1, 1, 0, 4),
+                datetime(2022, 1, 1, 0, 5),
+                datetime(2022, 1, 1, 0, 6),
+                datetime(2022, 1, 1, 0, 7),
+            ],
+            "key": ["A", "A", "B", "B", "A", "B", "A"],
+            "val": [1, 1, 1, 1, 1, 1, 1],
+        }
+    )
+
+    assert df.groupby_rolling(
+        index_column="dt",
+        period="2m",
+        closed="both",
+        offset="-1m",
+        by="key",
+    ).agg(
+        [
+            pl.col("val").sum().alias("sum val"),
+        ]
+    ).to_dict(
+        False
+    ) == {
+        "key": ["A", "A", "B", "B", "A", "B", "A"],
+        "dt": [
+            datetime(2022, 1, 1, 0, 1),
+            datetime(2022, 1, 1, 0, 2),
+            datetime(2022, 1, 1, 0, 3),
+            datetime(2022, 1, 1, 0, 4),
+            datetime(2022, 1, 1, 0, 5),
+            datetime(2022, 1, 1, 0, 6),
+            datetime(2022, 1, 1, 0, 7),
+        ],
+        "sum val": [2, 2, 2, 2, 1, 1, 1],
+    }

@@ -3759,6 +3759,22 @@ class DataFrame(metaclass=DataFrameMetaClass):
         else:
             return self._from_pydf(self._df.with_column(column._s))
 
+    @overload
+    def hstack(
+        self: DF,
+        columns: Union[List["pli.Series"], "DataFrame"],
+        in_place: Literal[False] = False,
+    ) -> DF:
+        ...
+
+    @overload
+    def hstack(
+        self: DF,
+        columns: Union[List["pli.Series"], "DataFrame"],
+        in_place: Literal[True],
+    ) -> None:
+        ...
+
     def hstack(
         self: DF,
         columns: Union[List["pli.Series"], "DataFrame"],
@@ -4680,7 +4696,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
             .collect(no_optimization=True, string_cache=False)
         )
 
-    def with_columns(self: DF, exprs: Union["pli.Expr", List["pli.Expr"]]) -> DF:
+    def with_columns(
+        self: DF,
+        exprs: Union["pli.Expr", "pli.Series", List[Union["pli.Expr", "pli.Series"]]],
+    ) -> DF:
         """
         Add or overwrite multiple columns in a DataFrame.
 

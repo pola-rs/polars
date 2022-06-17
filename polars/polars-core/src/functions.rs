@@ -132,6 +132,10 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> Result<Utf8Chunked> {
             "expected multiple series in concat_str function".into(),
         ));
     }
+    if s[0].is_empty() {
+        return Ok(Utf8Chunked::full_null(s[0].name(), 0));
+    }
+
     let len = s.iter().map(|s| s.len()).max().unwrap();
 
     let cas = s
