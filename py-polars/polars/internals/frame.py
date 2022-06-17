@@ -4696,7 +4696,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
             .collect(no_optimization=True, string_cache=False)
         )
 
-    def with_columns(self: DF, exprs: Union["pli.Expr", List["pli.Expr"]]) -> DF:
+    def with_columns(
+        self: DF,
+        exprs: Union["pli.Expr", "pli.Series", List[Union["pli.Expr", "pli.Series"]]],
+    ) -> DF:
         """
         Add or overwrite multiple columns in a DataFrame.
 
