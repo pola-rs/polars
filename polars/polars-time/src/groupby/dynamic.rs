@@ -374,15 +374,22 @@ impl Wrap<&DataFrame> {
                     })
                     .collect()
             });
-            GroupsProxy::Idx(groupsidx)
+            let mut groups = GroupsProxy::Idx(groupsidx);
+            groups.sort();
+            groups
+        };
+        let dt = dt.cast(time_type).unwrap();
+
+        // the ordering has changed due to the groupby
+        if !by.is_empty() {
+            unsafe {
+                for key in by.iter_mut() {
+                    *key = key.agg_first(&groups);
+                }
+            }
         };
 
-        if !by.is_empty() {
-            for key in by.iter_mut() {
-                *key = unsafe { key.agg_first(&groups) };
-            }
-        }
-        dt.cast(time_type).map(|s| (s, by, groups))
+        Ok((dt, by, groups))
     }
 }
 
