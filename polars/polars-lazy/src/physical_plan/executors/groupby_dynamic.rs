@@ -45,7 +45,7 @@ impl Executor for GroupByDynamicExec {
                 self.aggs
                     .par_iter()
                     .map(|expr| {
-                        let agg = expr.evaluate_on_groups(&df, groups, state)?.aggregated();
+                        let agg = expr.evaluate_on_groups(&df, groups, state)?.finalize();
                         if agg.len() != groups.len() {
                             return Err(PolarsError::ComputeError(
                                 format!("returned aggregation is a different length: {} than the group lengths: {}",
