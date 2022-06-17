@@ -109,3 +109,20 @@ fn test_filter_diff_arithmetic() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_groupby_lit_agg() -> Result<()> {
+    let df = df![
+        "group" => [1, 2, 1, 1, 2],
+    ]?;
+
+    let out = df
+        .lazy()
+        .groupby([col("group")])
+        .agg([lit("foo").alias("foo")])
+        .collect()?;
+
+    assert_eq!(out.column("foo")?.dtype(), &DataType::Utf8);
+
+    Ok(())
+}

@@ -417,6 +417,21 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
+    /// Get the final aggregated version of the series.
+    pub(crate) fn finalize(&mut self) -> Series {
+        // we clone, because we only want to call `self.groups()` if needed.
+        // self groups may instantiate new groups and thus can be expensive.
+        match &self.state {
+            AggState::Literal(s) => {
+                let s = s.clone();
+                self.groups();
+                let rows = self.groups.len();
+                s.expand_at_index(0, rows)
+            }
+            _ => self.aggregated(),
+        }
+    }
+
     /// Different from aggregated, in arity operations we expect literals to expand to the size of the
     /// group
     /// eg:
