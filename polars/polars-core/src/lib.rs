@@ -36,6 +36,9 @@ use std::sync::Mutex;
 #[cfg(feature = "dtype-categorical")]
 use std::sync::MutexGuard;
 
+#[cfg(feature = "dtype-categorical")]
+use smartstring::{LazyCompact, SmartString};
+
 #[cfg(feature = "object")]
 pub(crate) static PROCESS_ID: Lazy<u128> = Lazy::new(|| {
     SystemTime::now()
@@ -62,7 +65,7 @@ pub static POOL: Lazy<ThreadPool> = Lazy::new(|| {
 
 #[cfg(feature = "dtype-categorical")]
 struct SCacheInner {
-    map: AHashMap<String, u32>,
+    map: AHashMap<SmartString<LazyCompact>, u32>,
     uuid: u128,
 }
 

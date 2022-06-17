@@ -384,7 +384,7 @@ impl<'a> StrHash<'a> {
 
 impl<'a> PartialEq for StrHash<'a> {
     fn eq(&self, other: &Self) -> bool {
-        self.str == other.str
+        (self.hash == other.hash) && (self.str == other.str)
     }
 }
 
