@@ -74,7 +74,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.12.0"
-source = "git+https://github.com/ritchie46/arrow2?branch=arity_assign#d5b084f0f0804382776bdf8f5972528d747a10ee"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=d4873fcb9b201d591049055c0e554dbdd2c45ad3#d4873fcb9b201d591049055c0e554dbdd2c45ad3"
 dependencies = [
  "arrow-format",
  "avro-schema",
