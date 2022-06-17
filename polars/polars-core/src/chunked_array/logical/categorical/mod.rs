@@ -2,6 +2,7 @@ mod builder;
 mod from;
 mod merge;
 mod ops;
+pub mod stringcache;
 
 use super::*;
 use crate::prelude::*;
