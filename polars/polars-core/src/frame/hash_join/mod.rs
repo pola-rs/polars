@@ -138,15 +138,12 @@ pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<Item>(
     hash_tables: &[Item],
     len: u64,
 ) -> &Item {
-    let mut idx = 0;
     for i in 0..len {
-        // can only be done for powers of two.
-        // n % 2^i = n & (2^i - 1)
-        if (h + i) & (len - 1) == 0 {
-            idx = i as usize;
+        if this_partition(h, i, len) {
+            return hash_tables.get_unchecked(i as usize);
         }
     }
-    hash_tables.get_unchecked(idx)
+    unreachable!()
 }
 
 #[allow(clippy::type_complexity)]
@@ -155,15 +152,12 @@ unsafe fn get_hash_tbl_threaded_join_mut_partitioned<T, H>(
     hash_tables: &mut [HashMap<T, (bool, Vec<IdxSize>), H>],
     len: u64,
 ) -> &mut HashMap<T, (bool, Vec<IdxSize>), H> {
-    let mut idx = 0;
     for i in 0..len {
-        // can only be done for powers of two.
-        // n % 2^i = n & (2^i - 1)
-        if (h + i) & (len - 1) == 0 {
-            idx = i as usize;
+        if this_partition(h, i, len) {
+            return hash_tables.get_unchecked_mut(i as usize);
         }
     }
-    hash_tables.get_unchecked_mut(idx)
+    unreachable!()
 }
 
 pub trait ZipOuterJoinColumn {
