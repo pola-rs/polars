@@ -100,12 +100,31 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         ca.apply(f)
     }
 
-    /// Check if strings contain a regex pattern
+    /// Check if strings contain a regex pattern; select literal fast-path if no special chars
     fn contains(&self, pat: &str) -> Result<BooleanChunked> {
-        let ca = self.as_utf8();
+        if pat
+            .chars()
+            .all(|c| c.is_alphanumeric() || c.is_whitespace() || (c == '_'))
+        {
+            self.contains_literal(pat)
+        } else {
+            let ca = self.as_utf8();
+            let reg = Regex::new(pat)?;
+            let f = |s| reg.is_match(s);
+            let mut out: BooleanChunked = if !ca.has_validity() {
+                ca.into_no_null_iter().map(f).collect()
+            } else {
+                ca.into_iter().map(|opt_s| opt_s.map(f)).collect()
+            };
+            out.rename(ca.name());
+            Ok(out)
+        }
+    }
 
-        let reg = Regex::new(pat)?;
-        let f = |s| reg.is_match(s);
+    /// Check if strings contain a given literal
+    fn contains_literal(&self, lit: &str) -> Result<BooleanChunked> {
+        let ca = self.as_utf8();
+        let f = |s: &str| s.contains(lit);
         let mut out: BooleanChunked = if !ca.has_validity() {
             ca.into_no_null_iter().map(f).collect()
         } else {

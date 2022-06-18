@@ -585,10 +585,17 @@ impl PyExpr {
         self.clone().inner.str().rjust(width, fillchar).into()
     }
 
-    pub fn str_contains(&self, pat: String) -> PyExpr {
+    pub fn str_contains(&self, pat: String, literal: Option<bool>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            match ca.contains(&pat) {
+            let match_type = |p: &str| {
+                if literal.unwrap_or(false) {
+                    ca.contains_literal(p)
+                } else {
+                    ca.contains(p)
+                }
+            };
+            match match_type(&pat) {
                 Ok(ca) => Ok(ca.into_series()),
                 Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
             }

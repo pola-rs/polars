@@ -4450,16 +4450,19 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_rjust(width, fillchar))
 
-    def contains(self, pattern: str) -> Expr:
+    def contains(self, pattern: str, literal: bool = False) -> Expr:
         """
-        Check if string contains regex.
+        Check if string contains a substring that matches a regex.
 
         Parameters
         ----------
         pattern
-            Regex pattern.
+            A valid regex pattern.
+        literal
+            Treat pattern as a literal string.
+
         """
-        return wrap_expr(self._pyexpr.str_contains(pattern))
+        return wrap_expr(self._pyexpr.str_contains(pattern, literal))
 
     def json_path_match(self, json_path: str) -> Expr:
         """
