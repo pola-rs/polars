@@ -23,7 +23,7 @@ lazy = ["sort_multiple"]
 performant = []
 
 # extra utilities for Utf8Chunked
-strings = ["regex", "polars-arrow/strings", "arrow/compute_substring"]
+strings = ["regex", "regex-syntax", "polars-arrow/strings", "arrow/compute_substring"]
 string_encoding = ["base64", "hex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
@@ -164,6 +164,7 @@ rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }
 rayon = "1.5"
 regex = { version = "1.5", optional = true }
+regex-syntax = { version = "0.6.26", optional = true }
 # activate if you want serde support for Series and DataFrames
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }

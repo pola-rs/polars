@@ -1195,6 +1195,7 @@ dependencies = [
  "rand_distr",
  "rayon",
  "regex",
+ "regex-syntax",
  "serde",
  "serde_json",
  "smartstring",

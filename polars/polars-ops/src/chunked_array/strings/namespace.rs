@@ -4,7 +4,7 @@ use polars_arrow::{
     export::arrow::{self, compute::substring::substring},
     kernels::string::*,
 };
-use polars_core::export::regex::Regex;
+use polars_core::export::{regex::Regex, regex_syntax::is_meta_character};
 use std::borrow::Cow;
 
 fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Option<Cow<'a, str>> {
@@ -102,10 +102,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     /// Check if strings contain a regex pattern; select literal fast-path if no special chars
     fn contains(&self, pat: &str) -> Result<BooleanChunked> {
-        if pat
-            .chars()
-            .all(|c| c.is_alphanumeric() || c.is_whitespace() || (c == '_'))
-        {
+        if pat.chars().all(|c| !is_meta_character(c)) {
             self.contains_literal(pat)
         } else {
             let ca = self.as_utf8();
