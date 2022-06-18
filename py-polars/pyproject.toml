@@ -17,7 +17,7 @@ pyarrow = ["pyarrow>=4.0.*"]
 pandas = ["pyarrow>=4.0.*", "pandas"]
 fsspec = ["fsspec"]
 connectorx = ["connectorx"]
-xlsx2csv = ["xlsx2csv"]
+xlsx2csv = ["xlsx2csv>=0.8.1"]
 
 [tool.isort]
 profile = "black"
