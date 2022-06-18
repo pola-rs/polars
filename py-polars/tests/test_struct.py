@@ -256,7 +256,7 @@ def test_list_to_struct() -> None:
         [pl.col("a").arr.to_struct(n_field_strategy="max_width")]
     ).to_series().to_list() == [
         {"field_0": 1, "field_1": 2, "field_2": None},
-        {"field_0": 1, "field_1": 2, "field_2": 1},
+        {"field_0": 1, "field_1": 2, "field_2": 3},
     ]
 
 
