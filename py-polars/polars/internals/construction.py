@@ -297,14 +297,14 @@ def _pandas_series_to_arrow(
     """
     dtype = values.dtype
     if dtype == "object" and len(values) > 0:
-        if isinstance(_get_first_non_none(values.values), str):  # type: ignore
-            return pa.array(values, pa.large_utf8(), from_pandas=nan_to_none)
+        first_non_none = _get_first_non_none(values.values)  # type: ignore
 
-        # array is null array, we set to a float64 array
-        if values.values[0] is None and min_len is not None:
-            return pa.nulls(min_len, pa.float64())
-        else:
-            return pa.array(values, from_pandas=nan_to_none)
+        if isinstance(first_non_none, str):
+            return pa.array(values, pa.large_utf8(), from_pandas=nan_to_none)
+        if first_non_none is None:
+            return pa.nulls(min_len, pa.large_utf8())
+
+        return pa.array(values, from_pandas=nan_to_none)
     else:
         return pa.array(values, from_pandas=nan_to_none)
 
