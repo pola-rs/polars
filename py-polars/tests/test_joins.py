@@ -87,3 +87,28 @@ def test_sorted_merge_joins() -> None:
             ).join(df_b.with_column(pl.col("a").set_sorted(reverse)), on="a", how=how)
 
             assert out_hash_join.frame_equal(out_sorted_merge_join)
+
+
+def test_join_negative_integers() -> None:
+    expected = {"a": [-6, -1, 0], "b": [-6, -1, 0]}
+
+    df1 = pl.DataFrame(
+        {
+            "a": [-1, -6, -3, 0],
+        }
+    )
+
+    df2 = pl.DataFrame(
+        {
+            "a": [-6, -1, -4, -2, 0],
+            "b": [-6, -1, -4, -2, 0],
+        }
+    )
+
+    for dt in [pl.Int8, pl.Int16, pl.Int32, pl.Int64]:
+        assert (
+            df1.with_column(pl.all().cast(dt))
+            .join(df2.with_column(pl.all().cast(dt)), on="a", how="inner")
+            .to_dict(False)
+            == expected
+        )

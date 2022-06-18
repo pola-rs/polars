@@ -67,7 +67,11 @@ where
                 .collect::<Vec<_>>();
             UInt32Chunked::from_chunks(self.name(), chunks)
         } else {
-            self.cast(&DataType::UInt32).unwrap().u32().unwrap().clone()
+            self.cast_unchecked(&DataType::UInt32)
+                .unwrap()
+                .u32()
+                .unwrap()
+                .clone()
         }
     }
 }
