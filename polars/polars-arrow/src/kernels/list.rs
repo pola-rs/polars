@@ -40,7 +40,12 @@ fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> IdxArr {
                 let len = offset - previous;
                 previous = offset;
                 // make sure that empty lists don't get accessed
-                if len == 0 || index >= len {
+                // and out of bounds return null
+                if len == 0 {
+                    return None;
+                }
+                if index >= len {
+                    cum_offset += len as IdxSize;
                     return None;
                 }
 
@@ -111,6 +116,32 @@ mod test {
         assert_eq!(out.values().as_slice(), &[2, 4, 5]);
         let out = sublist_get_indexes(&arr, 3);
         assert_eq!(out.null_count(), 3);
+
+        let values = Int32Array::from_iter([
+            Some(1),
+            Some(1),
+            Some(3),
+            Some(4),
+            Some(5),
+            Some(6),
+            Some(7),
+            Some(8),
+            Some(9),
+            None,
+            Some(11),
+        ]);
+        let offsets = Buffer::from(vec![0i64, 1, 2, 3, 6, 9, 11]);
+
+        let dtype = ListArray::<i64>::default_datatype(DataType::Int32);
+        let arr = ListArray::<i64>::from_data(dtype, offsets, Box::new(values), None);
+
+        let out = sublist_get_indexes(&arr, 1);
+        assert_eq!(
+            out.into_iter()
+                .map(|opt_v| opt_v.cloned())
+                .collect::<Vec<_>>(),
+            &[None, None, None, Some(4), Some(7), Some(10)]
+        );
     }
 
     #[test]
