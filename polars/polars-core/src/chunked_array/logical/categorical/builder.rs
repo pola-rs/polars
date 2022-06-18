@@ -1,6 +1,10 @@
+use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::*;
-use crate::{datatypes::PlHashMap, use_string_cache};
+use crate::{datatypes::PlHashMap, use_string_cache, StrHashGlobal};
+use ahash::CallHasher;
 use arrow::array::*;
+use hashbrown::hash_map::RawEntryMut;
+use std::hash::{Hash, Hasher};
 
 pub enum RevMappingBuilder {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
@@ -121,6 +125,32 @@ impl RevMapping {
     }
 }
 
+#[derive(Eq, Copy, Clone)]
+pub struct StrHashLocal<'a> {
+    str: &'a str,
+    hash: u64,
+}
+
+impl<'a> Hash for StrHashLocal<'a> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash)
+    }
+}
+
+impl<'a> StrHashLocal<'a> {
+    pub(crate) fn new(s: &'a str, hash: u64) -> Self {
+        Self { str: s, hash }
+    }
+}
+
+impl<'a> PartialEq for StrHashLocal<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        // can be collisions in the hashtable even though the hashes are equal
+        // e.g. hashtable hash = hash % n_slots
+        (self.hash == other.hash) && (self.str == other.str)
+    }
+}
+
 pub struct CategoricalChunkedBuilder {
     array_builder: UInt32Vec,
     name: String,
@@ -152,18 +182,28 @@ impl CategoricalChunkedBuilder {
     {
         if use_string_cache() {
             let mut cache = crate::STRING_CACHE.lock_map();
+            let mapping = &mut cache.map;
+            let hb = mapping.hasher().clone();
 
             for opt_s in i {
                 match opt_s {
                     Some(s) => {
-                        let idx = match cache.map.get(s) {
-                            Some(idx) => *idx,
-                            None => {
-                                let idx = cache.map.len() as u32;
-                                cache.map.insert(s.to_string(), idx);
-                                idx
+                        let h = str::get_hash(s, &hb);
+                        let mut idx = mapping.len() as u32;
+                        // Note that we don't create the StrHashGlobal to search the key in the hashmap
+                        // as StrHashGlobal may allocate a string
+                        let entry = mapping
+                            .raw_entry_mut()
+                            .from_hash(h, |val| (val.hash == h) && val.str == s);
+
+                        match entry {
+                            RawEntryMut::Occupied(entry) => idx = *entry.get(),
+                            RawEntryMut::Vacant(entry) => {
+                                // only just now we allocate the string
+                                let key = StrHashGlobal::new(s.into(), h);
+                                entry.insert_with_hasher(h, key, idx, |s| s.hash);
                             }
-                        };
+                        }
                         // we still need to check if the idx is already stored in our map
                         self.reverse_mapping.insert(idx, s);
                         self.array_builder.push(Some(idx));
@@ -174,17 +214,22 @@ impl CategoricalChunkedBuilder {
                 }
             }
         } else {
-            let mut mapping = PlHashMap::new();
+            let mut mapping = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+            let hb = mapping.hasher().clone();
             for opt_s in i {
                 match opt_s {
                     Some(s) => {
-                        let idx = match mapping.get(s) {
-                            Some(idx) => *idx,
-                            None => {
-                                let idx = mapping.len() as u32;
+                        let h = str::get_hash(s, &hb);
+                        let key = StrHashLocal::new(s, h);
+                        let mut idx = mapping.len() as u32;
+
+                        let entry = mapping.raw_entry_mut().from_key_hashed_nocheck(h, &key);
+
+                        match entry {
+                            RawEntryMut::Occupied(entry) => idx = *entry.get(),
+                            RawEntryMut::Vacant(entry) => {
+                                entry.insert_with_hasher(h, key, idx, |s| s.hash);
                                 self.reverse_mapping.insert(idx, s);
-                                mapping.insert(s, idx);
-                                idx
                             }
                         };
                         self.array_builder.push(Some(idx));
