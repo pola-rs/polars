@@ -51,7 +51,6 @@ use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
 use polars::prelude::Null;
 use polars_core::datatypes::TimeUnit;
-use polars_core::frame::row::Row;
 use polars_core::prelude::DataFrame;
 use polars_core::prelude::IntoSeries;
 use polars_core::POOL;
@@ -266,29 +265,29 @@ fn py_duration(
 
 #[pyfunction]
 fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
-    use polars_core::utils::rayon::prelude::*;
+    use polars_core::{error::Result, utils::rayon::prelude::*};
 
     let (seq, _len) = get_pyseq(dfs)?;
     let mut iter = seq.iter()?;
     let first = iter.next().unwrap()?;
 
     let first_rdf = get_df(first)?;
-    let schema = first_rdf.schema();
+    let identity_df = first_rdf.slice(0, 0);
 
-    let mut rdfs: Vec<polars_core::error::Result<DataFrame>> = vec![Ok(first_rdf)];
+    let mut rdfs: Vec<Result<DataFrame>> = vec![Ok(first_rdf)];
 
     for item in iter {
         let rdf = get_df(item?)?;
         rdfs.push(Ok(rdf));
     }
 
-    let identity = || DataFrame::from_rows_and_schema(&[Row::default()], &schema);
+    let identity = || Ok(identity_df.clone());
 
     let df = py
         .allow_threads(|| {
             polars_core::POOL.install(|| {
                 rdfs.into_par_iter()
-                    .fold(identity, |acc, df| {
+                    .fold(identity, |acc: Result<DataFrame>, df| {
                         let mut acc = acc?;
                         acc.vstack_mut(&df?)?;
                         Ok(acc)
