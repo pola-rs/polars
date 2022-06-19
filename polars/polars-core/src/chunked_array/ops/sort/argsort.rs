@@ -1,14 +1,16 @@
 use super::*;
 
-fn default_order<T: PartialOrd>(a: &(IdxSize, T), b: &(IdxSize, T)) -> Ordering {
-    a.1.partial_cmp(&b.1).unwrap()
+#[inline]
+fn default_order<T: PartialOrd + IsFloat>(a: &(IdxSize, T), b: &(IdxSize, T)) -> Ordering {
+    sort_cmp(&a.1, &b.1)
 }
 
-fn reverse_order<T: PartialOrd>(a: &(IdxSize, T), b: &(IdxSize, T)) -> Ordering {
-    b.1.partial_cmp(&a.1).unwrap()
+#[inline]
+fn reverse_order<T: PartialOrd + IsFloat>(a: &(IdxSize, T), b: &(IdxSize, T)) -> Ordering {
+    sort_cmp(&b.1, &a.1)
 }
 
-pub(super) fn argsort<I, J, K>(
+pub(super) fn argsort<I, J, T>(
     name: &str,
     iters: I,
     options: SortOptions,
@@ -17,8 +19,8 @@ pub(super) fn argsort<I, J, K>(
 ) -> IdxCa
 where
     I: IntoIterator<Item = J>,
-    J: IntoIterator<Item = Option<K>>,
-    K: PartialOrd + Send + Sync,
+    J: IntoIterator<Item = Option<T>>,
+    T: PartialOrd + Send + Sync + IsFloat,
 {
     let reverse = options.descending;
     let nulls_last = options.nulls_last;

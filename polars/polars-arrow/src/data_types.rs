@@ -8,7 +8,7 @@ pub unsafe trait IsFloat: private::Sealed {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    fn is_nan(self) -> bool
+    fn is_nan(&self) -> bool
     where
         Self: Sized,
     {
@@ -25,6 +25,7 @@ unsafe impl IsFloat for u16 {}
 unsafe impl IsFloat for u32 {}
 unsafe impl IsFloat for u64 {}
 unsafe impl IsFloat for &str {}
+unsafe impl IsFloat for bool {}
 unsafe impl<T: IsFloat> IsFloat for Option<T> {}
 
 mod private {
@@ -40,6 +41,7 @@ mod private {
     impl Sealed for f32 {}
     impl Sealed for f64 {}
     impl Sealed for &str {}
+    impl Sealed for bool {}
     impl<T: Sealed> Sealed for Option<T> {}
 }
 
@@ -50,8 +52,8 @@ macro_rules! impl_is_float {
                 true
             }
 
-            fn is_nan(self) -> bool {
-                <$tp>::is_nan(self)
+            fn is_nan(&self) -> bool {
+                <$tp>::is_nan(*self)
             }
         }
     };
