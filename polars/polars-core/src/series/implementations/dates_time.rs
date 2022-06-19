@@ -473,12 +473,6 @@ macro_rules! impl_dyn_series {
                 Arc::new(SeriesWrap(Clone::clone(&self.0)))
             }
 
-            fn pow(&self, _exponent: f64) -> Result<Series> {
-                Err(PolarsError::ComputeError(
-                    "cannot compute power of logical".into(),
-                ))
-            }
-
             fn peak_max(&self) -> BooleanChunked {
                 self.0.peak_max()
             }

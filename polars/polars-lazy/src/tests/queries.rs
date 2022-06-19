@@ -1688,7 +1688,7 @@ fn test_groupby_rank() -> Result<()> {
 fn test_apply_multiple_columns() -> Result<()> {
     let df = fruits_cars();
 
-    let multiply = |s: &mut [Series]| Ok(&s[0].pow(2.0).unwrap() * &s[1]);
+    let multiply = |s: &mut [Series]| Ok(&(&s[0] * &s[0]) * &s[1]);
 
     let out = df
         .clone()
@@ -1700,10 +1700,10 @@ fn test_apply_multiple_columns() -> Result<()> {
         )])
         .collect()?;
     let out = out.column("A")?;
-    let out = out.f64()?;
+    let out = out.i32()?;
     assert_eq!(
         Vec::from(out),
-        &[Some(5.0), Some(16.0), Some(27.0), Some(32.0), Some(25.0)]
+        &[Some(5), Some(16), Some(27), Some(32), Some(25)]
     );
 
     let out = df
@@ -1718,9 +1718,9 @@ fn test_apply_multiple_columns() -> Result<()> {
 
     let out = out.column("A")?;
     let out = out.list()?.get(1).unwrap();
-    let out = out.f64()?;
+    let out = out.i32()?;
 
-    assert_eq!(Vec::from(out), &[Some(16.0)]);
+    assert_eq!(Vec::from(out), &[Some(16)]);
     Ok(())
 }
 

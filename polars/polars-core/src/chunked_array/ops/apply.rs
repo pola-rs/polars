@@ -107,7 +107,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
 }
 
 impl<T: PolarsNumericType> ChunkedArray<T> {
-    pub(crate) fn apply_mut<F>(&mut self, f: F)
+    pub fn apply_mut<F>(&mut self, f: F)
     where
         F: Fn(T::Native) -> T::Native + Copy,
     {

@@ -159,7 +159,7 @@ impl Series {
 
     #[doc(hidden)]
     #[cfg(feature = "private")]
-    pub(crate) fn _get_inner_mut(&mut self) -> &mut dyn SeriesTrait {
+    pub fn _get_inner_mut(&mut self) -> &mut dyn SeriesTrait {
         if Arc::weak_count(&self.0) + Arc::strong_count(&self.0) != 1 {
             self.0 = self.0.clone_inner();
         }
