@@ -110,3 +110,13 @@ def test_argsort_window_functions() -> None:
     assert (
         out["arg_sort"].to_list() == out["argsort_by"].to_list() == [0, 1, 0, 1, 0, 1]
     )
+
+
+def test_sort_nans_3740() -> None:
+    df = pl.DataFrame(
+        {
+            "key": [1, 2, 3, 4, 5],
+            "val": [0.0, None, float("nan"), float("-inf"), float("inf")],
+        }
+    )
+    assert df.sort("val")["key"].to_list() == [2, 4, 1, 5, 3]
