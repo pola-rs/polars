@@ -102,10 +102,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     /// Check if strings contain a regex pattern; select literal fast-path if no special chars
     fn contains(&self, pat: &str) -> Result<BooleanChunked> {
-        if pat
-            .chars()
-            .all(|c| c.is_alphanumeric() || c.is_whitespace() || (c == '_'))
-        {
+        if pat.chars().all(|c| !c.is_ascii_punctuation()) {
             self.contains_literal(pat)
         } else {
             let ca = self.as_utf8();
