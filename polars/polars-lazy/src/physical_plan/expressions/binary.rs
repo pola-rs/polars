@@ -313,7 +313,7 @@ impl PhysicalExpr for BinaryExpr {
             // flatten the Series and apply the operators
             (AggState::AggregatedList(_), AggState::AggregatedList(_), _) => {
                 let lhs = ac_l.flat_naive().as_ref().clone();
-                let rhs = ac_l.flat_naive().as_ref().clone();
+                let rhs = ac_r.flat_naive().as_ref().clone();
 
                 // drop lhs so that we might operate in place
                 {
