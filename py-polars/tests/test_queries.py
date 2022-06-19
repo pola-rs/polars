@@ -123,9 +123,9 @@ def test_maintain_order_after_sampling() -> None:
             "value": [1, 3, 2, 3, 4, 5, 3, 4],
         }
     )
-    assert df.groupby("type", maintain_order=True).agg(pl.col("value").sum()).to_dict(
-        False
-    ) == {"type": ["A", "B", "C", "D"], "value": [5, 8, 5, 7]}
+    assert df.groupby("type", maintain_order=True).agg(
+        pl.col("value").sum()
+    ).to_dict(False) == {"type": ["A", "B", "C", "D"], "value": [5, 8, 5, 7]}
 
 
 def test_sorted_groupby_optimization() -> None:
@@ -140,7 +140,9 @@ def test_sorted_groupby_optimization() -> None:
             .agg(pl.count())
         )
 
-        sorted_explicit = df.groupby("a").agg(pl.count()).sort("a", reverse=reverse)
+        sorted_explicit = (
+            df.groupby("a").agg(pl.count()).sort("a", reverse=reverse)
+        )
         sorted_explicit.frame_equal(sorted_implicit)
 
 
@@ -228,10 +230,10 @@ def test_dtype_concat_3735() -> None:
                 pl.Series("val", [1, 2], dtype=dt),
             ]
         )
-    d2 = pl.DataFrame(
-        [
-            pl.Series("val", [3, 4], dtype=dt),
-        ]
-    )
-    df = pl.concat([d1, d2])
-    assert df.shape == (4, 1)
+        d2 = pl.DataFrame(
+            [
+                pl.Series("val", [3, 4], dtype=dt),
+            ]
+        )
+        df = pl.concat([d1, d2])
+        assert df.shape == (4, 1)
