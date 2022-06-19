@@ -74,7 +74,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.12.0"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=9066298b531054ad7c0253827dd421797bf5684c#9066298b531054ad7c0253827dd421797bf5684c"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=d1ab4efa5c895513681bacd5e20660be882433ac#d1ab4efa5c895513681bacd5e20660be882433ac"
 dependencies = [
  "arrow-format",
  "avro-schema",
@@ -1292,7 +1292,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.13.47"
+version = "0.13.48"
 dependencies = [
  "ahash",
  "bincode",
