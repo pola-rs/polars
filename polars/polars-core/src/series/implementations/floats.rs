@@ -421,20 +421,6 @@ macro_rules! impl_dyn_series {
                 Arc::new(SeriesWrap(Clone::clone(&self.0)))
             }
 
-            fn pow(&self, exponent: f64) -> Result<Series> {
-                let f_err = || {
-                    Err(PolarsError::InvalidOperation(
-                        format!("power operation not supported on dtype {:?}", self.dtype()).into(),
-                    ))
-                };
-
-                match self.dtype() {
-                    DataType::Utf8 | DataType::List(_) | DataType::Boolean => f_err(),
-                    DataType::Float32 => Ok(self.0.pow_f32(exponent as f32).into_series()),
-                    _ => Ok(self.0.pow_f64(exponent).into_series()),
-                }
-            }
-
             fn peak_max(&self) -> BooleanChunked {
                 self.0.peak_max()
             }

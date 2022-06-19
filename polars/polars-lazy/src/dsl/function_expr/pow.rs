@@ -1,26 +1,46 @@
 use super::*;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::export::num;
+use polars_core::export::num::ToPrimitive;
 
 fn pow_on_floats<T>(base: &ChunkedArray<T>, exponent: &Series) -> Result<Series>
 where
     T: PolarsFloatType,
-    T::Native: num::pow::Pow<T::Native, Output = T::Native>,
+    T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive,
     ChunkedArray<T>: IntoSeries,
 {
     let dtype = T::get_dtype();
     let exponent = exponent.cast(&dtype)?;
     let exponent = base.unpack_series_matching_type(&exponent).unwrap();
 
-    Ok(base
-        .into_iter()
-        .zip(exponent.into_iter())
-        .map(|(opt_base, opt_exponent)| match (opt_base, opt_exponent) {
-            (Some(base), Some(exponent)) => Some(num::pow::Pow::pow(base, exponent)),
-            _ => None,
-        })
-        .collect_trusted::<ChunkedArray<T>>()
-        .into_series())
+    if exponent.len() == 1 {
+        let av = exponent
+            .get(0)
+            .ok_or_else(|| PolarsError::ComputeError("exponent is null".into()))?;
+        let s = match av.to_f64().unwrap() {
+            a if a == 1.0 => base.clone().into_series(),
+            a if a.fract() == 0.0 && a < 10.0 && a > 1.0 => {
+                let mut out = base.clone();
+
+                for _ in 1..av.to_u8().unwrap() {
+                    out = out * base.clone()
+                }
+                out.into_series()
+            }
+            _ => base.apply(|v| num::pow::Pow::pow(v, av)).into_series(),
+        };
+        Ok(s)
+    } else {
+        Ok(base
+            .into_iter()
+            .zip(exponent.into_iter())
+            .map(|(opt_base, opt_exponent)| match (opt_base, opt_exponent) {
+                (Some(base), Some(exponent)) => Some(num::pow::Pow::pow(base, exponent)),
+                _ => None,
+            })
+            .collect_trusted::<ChunkedArray<T>>()
+            .into_series())
+    }
 }
 
 fn pow_on_series(base: &Series, exponent: &Series) -> Result<Series> {
@@ -45,28 +65,12 @@ pub(super) fn pow(s: &mut [Series]) -> Result<Series> {
     let base = &s[0];
     let exponent = &s[1];
 
-    match exponent.len() {
-        1 => {
-            let av = exponent.get(0);
-            let exponent = av.extract::<f64>().ok_or_else(|| {
-                PolarsError::ComputeError(
-                    format!(
-                        "expected a numerical exponent in the pow expression, but got dtype: {}",
-                        exponent.dtype()
-                    )
-                    .into(),
-                )
-            })?;
-            base.pow(exponent)
-        }
-        len => {
-            let base_len = base.len();
-            if len != base_len {
-                Err(PolarsError::ComputeError(
-                    format!("pow expression: the exponents length: {len} does not match that of the base: {base_len}. Please ensure the lengths match or consider a literal exponent.").into()))
-            } else {
-                pow_on_series(base, exponent)
-            }
-        }
+    let base_len = base.len();
+    let exp_len = exponent.len();
+    if exp_len != base_len && (exp_len != 1) {
+        Err(PolarsError::ComputeError(
+            format!("pow expression: the exponents length: {exp_len} does not match that of the base: {base_len}. Please ensure the lengths match or consider a literal exponent.").into()))
+    } else {
+        pow_on_series(base, exponent)
     }
 }

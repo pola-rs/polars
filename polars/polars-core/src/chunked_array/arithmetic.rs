@@ -2,10 +2,7 @@
 use crate::prelude::*;
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned};
 use arrow::array::PrimitiveArray;
-use arrow::{
-    compute,
-    compute::{arithmetics::basic, arity_assign},
-};
+use arrow::compute::{arithmetics::basic, arity_assign};
 use num::{Num, NumCast, ToPrimitive};
 use std::borrow::Cow;
 use std::ops::{Add, Div, Mul, Rem, Sub};
@@ -489,43 +486,6 @@ impl Add<&str> for &Utf8Chunked {
     }
 }
 
-pub trait Pow {
-    fn pow_f32(&self, _exp: f32) -> Float32Chunked {
-        unimplemented!()
-    }
-    fn pow_f64(&self, _exp: f64) -> Float64Chunked {
-        unimplemented!()
-    }
-}
-
-impl<T> Pow for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: ChunkCast,
-{
-    fn pow_f32(&self, exp: f32) -> Float32Chunked {
-        let s = self.cast(&DataType::Float32).unwrap();
-        s.f32().unwrap().apply_kernel(&|arr| {
-            Box::new(compute::arity::unary(
-                arr,
-                |x| x.powf(exp),
-                DataType::Float32.to_arrow(),
-            ))
-        })
-    }
-
-    fn pow_f64(&self, exp: f64) -> Float64Chunked {
-        let s = self.cast(&DataType::Float64).unwrap();
-        s.f64().unwrap().apply_kernel(&|arr| {
-            Box::new(compute::arity::unary(
-                arr,
-                |x| x.powf(exp),
-                DataType::Float64.to_arrow(),
-            ))
-        })
-    }
-}
-
 #[cfg(test)]
 pub(crate) mod test {
     use crate::prelude::*;
@@ -553,12 +513,5 @@ pub(crate) mod test {
         let _ = &a1 - &a1;
         let _ = &a1 / &a1;
         let _ = &a1 * &a1;
-    }
-
-    #[test]
-    fn test_power() {
-        let a = UInt32Chunked::new("", &[1, 2, 3]);
-        let b = a.pow_f64(2.);
-        println!("{:?}", b);
     }
 }
