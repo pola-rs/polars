@@ -11,6 +11,3 @@ pub use rayon;
 #[cfg(feature = "private")]
 #[cfg(any(feature = "strings", feature = "temporal"))]
 pub use regex;
-#[cfg(feature = "private")]
-#[cfg(any(feature = "strings"))]
-pub use regex_syntax;
