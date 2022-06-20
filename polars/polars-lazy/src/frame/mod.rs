@@ -540,11 +540,6 @@ impl LazyFrame {
         let opt = StackOptimizer {};
         let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
 
-        if simplify_expr {
-            rules.push(Box::new(SimplifyExprRule {}));
-            rules.push(Box::new(SimplifyBooleanRule {}));
-        }
-
         // during debug we check if the optimizations have not modified the final schema
         #[cfg(debug_assertions)]
         let prev_schema = logical_plan.schema().clone();
@@ -555,6 +550,11 @@ impl LazyFrame {
         // run that first
         // this optimization will run twice because optimizer may create dumb expressions
         lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top);
+
+        // we do simplification
+        if simplify_expr {
+            rules.push(Box::new(SimplifyExprRule {}));
+        }
 
         if projection_pushdown {
             let projection_pushdown_opt = ProjectionPushDown {};
@@ -592,6 +592,11 @@ impl LazyFrame {
 
         if type_coercion {
             rules.push(Box::new(TypeCoercionRule {}))
+        }
+        // this optimization removes branches, so we must do it when type coercion
+        // is completed
+        if simplify_expr {
+            rules.push(Box::new(SimplifyBooleanRule {}));
         }
 
         if aggregate_pushdown {
