@@ -4317,7 +4317,7 @@ class StringNameSpace:
 
     def replace(self, pattern: str, value: str, literal: bool = False) -> Series:
         """
-        Replace first regex match with a string value.
+        Replace first 'n' regex matches with a string value.
 
         Parameters
         ----------
