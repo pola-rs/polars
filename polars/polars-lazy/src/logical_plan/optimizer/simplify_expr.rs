@@ -221,7 +221,31 @@ impl OptimizationRule for SimplifyBooleanRule {
             {
                 Some(AExpr::Literal(LiteralValue::Boolean(false)))
             }
-
+            AExpr::Ternary {
+                truthy, predicate, ..
+            } if matches!(
+                expr_arena.get(*predicate),
+                AExpr::Literal(LiteralValue::Boolean(true))
+            ) =>
+            {
+                Some(expr_arena.get(*truthy).clone())
+            }
+            AExpr::Ternary {
+                truthy,
+                falsy,
+                predicate,
+            } if matches!(
+                expr_arena.get(*predicate),
+                AExpr::Literal(LiteralValue::Boolean(false))
+            ) =>
+            {
+                let names = aexpr_to_root_names(*truthy, expr_arena);
+                if names.is_empty() {
+                    None
+                } else {
+                    Some(AExpr::Alias(*falsy, names[0].clone()))
+                }
+            }
             AExpr::Not(x) => {
                 let y = expr_arena.get(*x);
 
