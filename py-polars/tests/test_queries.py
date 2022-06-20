@@ -123,9 +123,9 @@ def test_maintain_order_after_sampling() -> None:
             "value": [1, 3, 2, 3, 4, 5, 3, 4],
         }
     )
-    assert df.groupby("type", maintain_order=True).agg(
-        pl.col("value").sum()
-    ).to_dict(False) == {"type": ["A", "B", "C", "D"], "value": [5, 8, 5, 7]}
+    assert df.groupby("type", maintain_order=True).agg(pl.col("value").sum()).to_dict(
+        False
+    ) == {"type": ["A", "B", "C", "D"], "value": [5, 8, 5, 7]}
 
 
 def test_sorted_groupby_optimization() -> None:
@@ -140,9 +140,7 @@ def test_sorted_groupby_optimization() -> None:
             .agg(pl.count())
         )
 
-        sorted_explicit = (
-            df.groupby("a").agg(pl.count()).sort("a", reverse=reverse)
-        )
+        sorted_explicit = df.groupby("a").agg(pl.count()).sort("a", reverse=reverse)
         sorted_explicit.frame_equal(sorted_implicit)
 
 
