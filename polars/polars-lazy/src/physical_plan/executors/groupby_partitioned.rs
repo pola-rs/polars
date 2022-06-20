@@ -66,11 +66,20 @@ fn run_partitions(
                         let agg_expr = expr.as_partitioned_aggregator().unwrap();
                         let agg = agg_expr.evaluate_partitioned(&df, groups, state)?;
                         if agg.len() != groups.len() {
-                            Err(PolarsError::ComputeError(
-                                format!("returned aggregation is a different length: {} than the group lengths: {}",
-                                        agg.len(),
-                                        groups.len()).into()
-                            ))
+
+                            if agg.len() == 1 {
+                                Ok(match groups.len()  {
+                                    0 => agg.slice(0, 0),
+                                    len => agg.expand_at_index(0, len)
+                                })
+                            } else {
+                                Err(PolarsError::ComputeError(
+                                    format!("returned aggregation is a different length: {} than the group lengths: {}",
+                                            agg.len(),
+                                            groups.len()).into()
+                                ))
+                            }
+
                         } else {
                             Ok(agg)
                         }

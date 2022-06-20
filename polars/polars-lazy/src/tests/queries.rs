@@ -1958,7 +1958,7 @@ fn test_is_in() -> Result<()> {
 }
 
 #[test]
-fn test_partitioned_gb() -> Result<()> {
+fn test_partitioned_gb_1() -> Result<()> {
     // don't move these to integration tests
     // keep these dtypes
     let out = df![
