@@ -543,10 +543,17 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_replace(&self, pat: String, val: String) -> PyExpr {
+    pub fn str_replace(&self, pat: String, val: String, literal: Option<bool>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            match ca.replace(&pat, &val) {
+            let replace = |p: &str, v: &str| {
+                if literal.unwrap_or(false) {
+                    ca.replace_literal(p, v)
+                } else {
+                    ca.replace(p, v)
+                }
+            };
+            match replace(&pat, &val) {
                 Ok(ca) => Ok(ca.into_series()),
                 Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
             }
@@ -558,10 +565,17 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_replace_all(&self, pat: String, val: String) -> PyExpr {
+    pub fn str_replace_all(&self, pat: String, val: String, literal: Option<bool>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            match ca.replace_all(&pat, &val) {
+            let replace_all = |p: &str, v: &str| {
+                if literal.unwrap_or(false) {
+                    ca.replace_all_literal(p, v)
+                } else {
+                    ca.replace_all(p, v)
+                }
+            };
+            match replace_all(&pat, &val) {
                 Ok(ca) => Ok(ca.into_series()),
                 Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
             }
@@ -588,14 +602,14 @@ impl PyExpr {
     pub fn str_contains(&self, pat: String, literal: Option<bool>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            let match_type = |p: &str| {
+            let contains = |p: &str| {
                 if literal.unwrap_or(false) {
                     ca.contains_literal(p)
                 } else {
                     ca.contains(p)
                 }
             };
-            match match_type(&pat) {
+            match contains(&pat) {
                 Ok(ca) => Ok(ca.into_series()),
                 Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
             }

@@ -1137,21 +1137,27 @@ impl PySeries {
         Ok(s.into())
     }
 
-    pub fn str_replace(&self, pat: &str, val: &str) -> PyResult<Self> {
+    pub fn str_replace(&self, pat: &str, val: &str, literal: Option<bool>) -> PyResult<Self> {
         let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
-        let s = ca
-            .replace(pat, val)
-            .map_err(PyPolarsErr::from)?
-            .into_series();
+        let s = if literal.unwrap_or(false) {
+            ca.replace_literal(pat, val)
+        } else {
+            ca.replace(pat, val)
+        }
+        .map_err(PyPolarsErr::from)?
+        .into_series();
         Ok(s.into())
     }
 
-    pub fn str_replace_all(&self, pat: &str, val: &str) -> PyResult<Self> {
+    pub fn str_replace_all(&self, pat: &str, val: &str, literal: Option<bool>) -> PyResult<Self> {
         let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
-        let s = ca
-            .replace_all(pat, val)
-            .map_err(PyPolarsErr::from)?
-            .into_series();
+        let s = if literal.unwrap_or(false) {
+            ca.replace_all_literal(pat, val)
+        } else {
+            ca.replace_all(pat, val)
+        }
+        .map_err(PyPolarsErr::from)?
+        .into_series();
         Ok(s.into())
     }
 

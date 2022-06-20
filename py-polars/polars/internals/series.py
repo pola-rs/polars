@@ -4261,9 +4261,9 @@ class StringNameSpace:
             .to_series()
         )
 
-    def replace(self, pattern: str, value: str) -> Series:
+    def replace(self, pattern: str, value: str, literal: bool = False) -> Series:
         """
-        Replace first regex match with a string value.
+        Replace first 'n' regex matches with a string value.
 
         Parameters
         ----------
@@ -4271,6 +4271,8 @@ class StringNameSpace:
             A valid regex pattern.
         value
             Substring to replace.
+        literal
+            Treat pattern as a literal string.
 
         See Also
         --------
@@ -4289,9 +4291,9 @@ class StringNameSpace:
         ]
 
         """
-        return wrap_s(self._s.str_replace(pattern, value))
+        return wrap_s(self._s.str_replace(pattern, value, literal))
 
-    def replace_all(self, pattern: str, value: str) -> Series:
+    def replace_all(self, pattern: str, value: str, literal: bool = False) -> Series:
         """
         Replace all regex matches with a string value.
 
@@ -4301,6 +4303,8 @@ class StringNameSpace:
             A valid regex pattern.
         value
             Substring to replace.
+        literal
+            Treat pattern as a literal string.
 
         See Also
         --------
@@ -4317,7 +4321,7 @@ class StringNameSpace:
             "123-123"
         ]
         """
-        return wrap_s(self._s.str_replace_all(pattern, value))
+        return wrap_s(self._s.str_replace_all(pattern, value, literal))
 
     def strip(self) -> Series:
         """

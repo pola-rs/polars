@@ -133,17 +133,39 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     /// Replace the leftmost (sub)string by a regex pattern
     fn replace(&self, pat: &str, val: &str) -> Result<Utf8Chunked> {
+        if pat.chars().all(|c| !c.is_ascii_punctuation()) {
+            self.replace_literal(pat, val)
+        } else {
+            let ca = self.as_utf8();
+            let reg = Regex::new(pat)?;
+            let f = |s| reg.replace(s, val);
+            Ok(ca.apply(f))
+        }
+    }
+
+    /// Replace the leftmost (sub)string by a literal string
+    fn replace_literal(&self, pat: &str, val: &str) -> Result<Utf8Chunked> {
         let ca = self.as_utf8();
-        let reg = Regex::new(pat)?;
-        let f = |s| reg.replace(s, val);
+        let f = |s: &str| Cow::Owned(s.replacen(pat, val, 1));
         Ok(ca.apply(f))
     }
 
     /// Replace all (sub)strings by a regex pattern
     fn replace_all(&self, pat: &str, val: &str) -> Result<Utf8Chunked> {
+        if pat.chars().all(|c| !c.is_ascii_punctuation()) {
+            self.replace_all_literal(pat, val)
+        } else {
+            let ca = self.as_utf8();
+            let reg = Regex::new(pat)?;
+            let f = |s| reg.replace_all(s, val);
+            Ok(ca.apply(f))
+        }
+    }
+
+    /// Replace all (sub)strings by a literal string
+    fn replace_all_literal(&self, pat: &str, val: &str) -> Result<Utf8Chunked> {
         let ca = self.as_utf8();
-        let reg = Regex::new(pat)?;
-        let f = |s| reg.replace_all(s, val);
+        let f = |s: &str| Cow::Owned(s.replace(pat, val));
         Ok(ca.apply(f))
     }
 

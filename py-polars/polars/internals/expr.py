@@ -4782,7 +4782,7 @@ class ExprStringNameSpace:
             return wrap_expr(self._pyexpr.str_split_exact_inclusive(by, n))
         return wrap_expr(self._pyexpr.str_split_exact(by, n))
 
-    def replace(self, pattern: str, value: str) -> Expr:
+    def replace(self, pattern: str, value: str, literal: bool = False) -> Expr:
         """
         Replace first regex match with a string value.
 
@@ -4792,6 +4792,8 @@ class ExprStringNameSpace:
             Regex pattern.
         value
             Replacement string.
+        literal
+            Treat pattern as a literal string.
 
         See Also
         --------
@@ -4814,9 +4816,9 @@ class ExprStringNameSpace:
         └─────┴────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_replace(pattern, value))
+        return wrap_expr(self._pyexpr.str_replace(pattern, value, literal))
 
-    def replace_all(self, pattern: str, value: str) -> Expr:
+    def replace_all(self, pattern: str, value: str, literal: bool = False) -> Expr:
         """
         Replace substring on all regex pattern matches.
 
@@ -4826,6 +4828,8 @@ class ExprStringNameSpace:
             Regex pattern.
         value
             Replacement string.
+        literal
+            Treat pattern as a literal string.
 
         See Also
         --------
@@ -4846,7 +4850,7 @@ class ExprStringNameSpace:
         │ 2   ┆ 123-123 │
         └─────┴─────────┘
         """
-        return wrap_expr(self._pyexpr.str_replace_all(pattern, value))
+        return wrap_expr(self._pyexpr.str_replace_all(pattern, value, literal))
 
     def slice(self, start: int, length: Optional[int] = None) -> Expr:
         """
