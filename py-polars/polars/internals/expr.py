@@ -1636,8 +1636,11 @@ class Expr:
         agg_list: bool = False,
     ) -> "Expr":
         """
-        Apply a custom python function. This function must produce a `Series`. Any other value will be stored as
-        null/missing. If you want to apply a function over single values, consider using `apply`.
+        Apply a custom python function to a Series or sequence of Series.
+        The output of this custom function should be a Series.
+        If you want to apply a custom function elementwise over single values see `apply`.
+        A use case for map is when you want to transform an expression
+        with a third-party library
 
         [read more in the book](https://pola-rs.github.io/polars-book/user-guide/howcani/apply/udfs.html)
 
@@ -1655,7 +1658,7 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {
         ...         "id": [0, 1, 2],
-        ...         "value": [3,4,5],
+        ...         "ref": ["Jan001","Jan002","Feb001"],
         ...     }
         ... )
         >>> (
