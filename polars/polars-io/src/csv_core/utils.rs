@@ -16,6 +16,7 @@ use polars_time::prelude::utf8::Pattern;
 use regex::{Regex, RegexBuilder};
 use std::borrow::Cow;
 use std::io::Read;
+use std::mem::MaybeUninit;
 
 pub(crate) fn get_file_chunks(
     bytes: &[u8],
@@ -540,7 +541,7 @@ pub(crate) fn decompress(
 /// The caller must ensure that:
 ///     - Output buffer must have enough capacity to hold `bytes.len()`
 ///     - bytes ends with the quote character e.g.: `"`
-pub(super) unsafe fn escape_field(bytes: &[u8], quote: u8, buf: &mut [u8]) -> usize {
+pub(super) unsafe fn escape_field(bytes: &[u8], quote: u8, buf: &mut [MaybeUninit<u8>]) -> usize {
     let mut prev_quote = false;
 
     let mut count = 0;
@@ -548,14 +549,14 @@ pub(super) unsafe fn escape_field(bytes: &[u8], quote: u8, buf: &mut [u8]) -> us
         if *c == quote {
             if prev_quote {
                 prev_quote = false;
-                *buf.get_unchecked_mut(count) = *c;
+                buf.get_unchecked_mut(count).write(*c);
                 count += 1;
             } else {
                 prev_quote = true;
             }
         } else {
             prev_quote = false;
-            *buf.get_unchecked_mut(count) = *c;
+            buf.get_unchecked_mut(count).write(*c);
             count += 1;
         }
     }

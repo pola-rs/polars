@@ -87,7 +87,7 @@ fn includes_null_predicate_3038() -> Result<()> {
                 move |s| {
                     s.utf8()?
                         .to_lowercase()
-                        .contains("non-existent")
+                        .contains_literal("non-existent")
                         .map(Into::into)
                 },
                 GetOutput::from_type(DataType::Boolean),

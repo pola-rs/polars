@@ -30,6 +30,20 @@ def test_list_arr_get() -> None:
     expected = pl.Series("a", [1, None, 7])
     testing.assert_series_equal(out, expected)
 
+    assert pl.DataFrame(
+        {"a": [[1], [2], [3], [4, 5, 6], [7, 8, 9], [None, 11]]}
+    ).with_columns(
+        [pl.col("a").arr.get(i).alias(f"get_{i}") for i in range(4)]
+    ).to_dict(
+        False
+    ) == {
+        "a": [[1], [2], [3], [4, 5, 6], [7, 8, 9], [None, 11]],
+        "get_0": [1, 2, 3, 4, 7, None],
+        "get_1": [None, None, None, 5, 8, 11],
+        "get_2": [None, None, None, 6, 9, None],
+        "get_3": [None, None, None, None, None, None],
+    }
+
 
 def test_contains() -> None:
     a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9]])

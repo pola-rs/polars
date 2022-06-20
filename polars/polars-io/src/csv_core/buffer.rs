@@ -183,7 +183,7 @@ impl ParsedBuffer for Utf8Field {
         let n_written = if needs_escaping {
             // Safety:
             // we just allocated enough capacity and data_len is correct.
-            unsafe { escape_field(bytes, self.quote_char, &mut self.data[data_len..]) }
+            unsafe { escape_field(bytes, self.quote_char, self.data.spare_capacity_mut()) }
         } else {
             self.data.extend_from_slice(bytes);
             bytes.len()

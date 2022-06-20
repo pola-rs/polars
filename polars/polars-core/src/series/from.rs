@@ -90,7 +90,7 @@ impl Series {
         match dtype {
             ArrowDataType::LargeUtf8 => Ok(Utf8Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Utf8 => {
-                let chunks = cast_chunks(&chunks, &DataType::Utf8).unwrap();
+                let chunks = cast_chunks(&chunks, &DataType::Utf8, false).unwrap();
                 Ok(Utf8Chunked::from_chunks(name, chunks).into_series())
             }
             ArrowDataType::List(_) => {
@@ -114,14 +114,14 @@ impl Series {
             ArrowDataType::Float64 => Ok(Float64Chunked::from_chunks(name, chunks).into_series()),
             #[cfg(feature = "dtype-date")]
             ArrowDataType::Date32 => {
-                let chunks = cast_chunks(&chunks, &DataType::Int32).unwrap();
+                let chunks = cast_chunks(&chunks, &DataType::Int32, false).unwrap();
                 Ok(Int32Chunked::from_chunks(name, chunks)
                     .into_date()
                     .into_series())
             }
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Date64 => {
-                let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
+                let chunks = cast_chunks(&chunks, &DataType::Int64, false).unwrap();
                 let ca = Int64Chunked::from_chunks(name, chunks);
                 Ok(ca.into_datetime(TimeUnit::Milliseconds, None).into_series())
             }
@@ -132,7 +132,7 @@ impl Series {
                     tz = None;
                 }
                 // we still drop timezone for now
-                let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
+                let chunks = cast_chunks(&chunks, &DataType::Int64, false).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_datetime(tu.into(), tz)
                     .into_series();
@@ -145,7 +145,7 @@ impl Series {
             }
             #[cfg(feature = "dtype-duration")]
             ArrowDataType::Duration(tu) => {
-                let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
+                let chunks = cast_chunks(&chunks, &DataType::Int64, false).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_duration(tu.into())
                     .into_series();
@@ -160,9 +160,9 @@ impl Series {
             ArrowDataType::Time64(tu) | ArrowDataType::Time32(tu) => {
                 let mut chunks = chunks;
                 if matches!(dtype, ArrowDataType::Time32(_)) {
-                    chunks = cast_chunks(&chunks, &DataType::Int32).unwrap();
+                    chunks = cast_chunks(&chunks, &DataType::Int32, false).unwrap();
                 }
-                let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
+                let chunks = cast_chunks(&chunks, &DataType::Int64, false).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_time()
                     .into_series();

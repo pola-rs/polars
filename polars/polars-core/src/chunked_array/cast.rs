@@ -2,19 +2,38 @@
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::categorical::CategoricalChunkedBuilder;
 use crate::prelude::*;
+use arrow::compute::cast::CastOptions;
 use polars_arrow::compute::cast;
 use std::convert::TryFrom;
 
-pub(crate) fn cast_chunks(chunks: &[ArrayRef], dtype: &DataType) -> Result<Vec<ArrayRef>> {
+pub(crate) fn cast_chunks(
+    chunks: &[ArrayRef],
+    dtype: &DataType,
+    checked: bool,
+) -> Result<Vec<ArrayRef>> {
+    let options = if checked {
+        Default::default()
+    } else {
+        CastOptions {
+            wrapped: true,
+            partial: false,
+        }
+    };
+
     let chunks = chunks
         .iter()
-        .map(|arr| cast::cast(arr.as_ref(), &dtype.to_arrow()))
+        .map(|arr| arrow::compute::cast::cast(arr.as_ref(), &dtype.to_arrow(), options))
         .collect::<arrow::error::Result<Vec<_>>>()?;
     Ok(chunks)
 }
 
-fn cast_impl(name: &str, chunks: &[ArrayRef], dtype: &DataType) -> Result<Series> {
-    let chunks = cast_chunks(chunks, &dtype.to_physical())?;
+fn cast_impl_inner(
+    name: &str,
+    chunks: &[ArrayRef],
+    dtype: &DataType,
+    checked: bool,
+) -> Result<Series> {
+    let chunks = cast_chunks(chunks, &dtype.to_physical(), checked)?;
     let out = Series::try_from((name, chunks))?;
     use DataType::*;
     let out = match dtype {
@@ -29,17 +48,21 @@ fn cast_impl(name: &str, chunks: &[ArrayRef], dtype: &DataType) -> Result<Series
     Ok(out)
 }
 
-impl<T> ChunkCast for ChunkedArray<T>
+fn cast_impl(name: &str, chunks: &[ArrayRef], dtype: &DataType) -> Result<Series> {
+    cast_impl_inner(name, chunks, dtype, true)
+}
+
+impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn cast(&self, data_type: &DataType) -> Result<Series> {
+    fn cast_impl(&self, data_type: &DataType, checked: bool) -> Result<Series> {
         match data_type {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
                 Ok(CategoricalChunked::full_null(self.name(), self.len()).into_series())
             }
-            _ => cast_impl(self.name(), &self.chunks, data_type).map(|mut s| {
+            _ => cast_impl_inner(self.name(), &self.chunks, data_type, checked).map(|mut s| {
                 // maintain sorted if data types remain signed
                 if self.is_sorted()
                     || self.is_sorted_reverse() && (s.null_count() == self.null_count())
@@ -60,6 +83,19 @@ where
     }
 }
 
+impl<T> ChunkCast for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    fn cast(&self, data_type: &DataType) -> Result<Series> {
+        self.cast_impl(data_type, true)
+    }
+
+    fn cast_unchecked(&self, data_type: &DataType) -> Result<Series> {
+        self.cast_impl(data_type, false)
+    }
+}
+
 impl ChunkCast for Utf8Chunked {
     fn cast(&self, data_type: &DataType) -> Result<Series> {
         match data_type {
@@ -73,6 +109,10 @@ impl ChunkCast for Utf8Chunked {
             }
             _ => cast_impl(self.name(), &self.chunks, data_type),
         }
+    }
+
+    fn cast_unchecked(&self, data_type: &DataType) -> Result<Series> {
+        self.cast(data_type)
     }
 }
 
@@ -95,6 +135,10 @@ impl ChunkCast for BooleanChunked {
         } else {
             cast_impl(self.name(), &self.chunks, data_type)
         }
+    }
+
+    fn cast_unchecked(&self, data_type: &DataType) -> Result<Series> {
+        self.cast(data_type)
     }
 }
 
@@ -132,6 +176,10 @@ impl ChunkCast for ListChunked {
             }
             _ => Err(PolarsError::ComputeError("Cannot cast list type".into())),
         }
+    }
+
+    fn cast_unchecked(&self, data_type: &DataType) -> Result<Series> {
+        self.cast(data_type)
     }
 }
 

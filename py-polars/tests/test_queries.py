@@ -183,3 +183,55 @@ def test_groupby_agg_equals_zero_3535() -> None:
         "val1": [10, 0, -99],
         "val2": [None, 0.0, 10.5],
     }
+
+
+def test_arithmetic_in_aggregation_3739() -> None:
+    def demean_dot() -> pl.Expr:
+        x = pl.col("x")
+        y = pl.col("y")
+        x1 = x - x.mean()
+        y1 = y - y.mean()
+        return (x1 * y1).sum().alias("demean_dot")
+
+    assert (
+        pl.DataFrame(
+            {
+                "key": ["a", "a", "a", "a"],
+                "x": [4, 2, 2, 4],
+                "y": [2, 0, 2, 0],
+            }
+        )
+        .groupby("key")
+        .agg(
+            [
+                demean_dot(),
+            ]
+        )
+    ).to_dict(False) == {"key": ["a"], "demean_dot": [0.0]}
+
+
+def test_dtype_concat_3735() -> None:
+    for dt in [
+        pl.Int8,
+        pl.Int16,
+        pl.Int32,
+        pl.Int64,
+        pl.UInt8,
+        pl.UInt16,
+        pl.UInt32,
+        pl.UInt64,
+        pl.Float32,
+        pl.Float64,
+    ]:
+        d1 = pl.DataFrame(
+            [
+                pl.Series("val", [1, 2], dtype=dt),
+            ]
+        )
+    d2 = pl.DataFrame(
+        [
+            pl.Series("val", [3, 4], dtype=dt),
+        ]
+    )
+    df = pl.concat([d1, d2])
+    assert df.shape == (4, 1)

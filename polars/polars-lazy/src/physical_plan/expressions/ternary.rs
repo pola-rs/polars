@@ -111,8 +111,6 @@ impl PhysicalExpr for TernaryExpr {
         groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
-        let required_height = df.height();
-
         let op_mask = || self.predicate.evaluate_on_groups(df, groups, state);
         let op_truthy = || self.truthy.evaluate_on_groups(df, groups, state);
         let op_falsy = || self.falsy.evaluate_on_groups(df, groups, state);
@@ -165,15 +163,11 @@ impl PhysicalExpr for TernaryExpr {
             // Both are or a flat series or aggregated into a list
             // so we can flatten the Series an apply the operators
             _ => {
-                let mask = mask_s.bool()?;
-                let out = ac_truthy
-                    .flat_naive()
-                    .zip_with(mask, ac_falsy.flat_naive().as_ref())?;
-
-                assert!((out.len() == required_height), "The output of the `when -> then -> otherwise-expr` is of a different length than the groups.\
-The expr produced {} values. Where the original DataFrame has {} values",
-                        out.len(),
-                        required_height);
+                let mut mask = mask_s.bool()?.clone();
+                let mut truthy = ac_truthy.flat_naive().into_owned();
+                let mut falsy = ac_falsy.flat_naive().into_owned();
+                expand_lengths(&mut truthy, &mut falsy, &mut mask);
+                let out = truthy.zip_with(&mask, &falsy)?;
 
                 ac_truthy.with_series(out, false);
 

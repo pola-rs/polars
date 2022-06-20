@@ -631,13 +631,6 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
-    /// Raise a numeric series to the power of exponent.
-    fn pow(&self, _exponent: f64) -> Result<Series> {
-        Err(PolarsError::InvalidOperation(
-            format!("power operation not supported on dtype {:?}", self.dtype()).into(),
-        ))
-    }
-
     /// Get a boolean mask of the local maximum peaks.
     fn peak_max(&self) -> BooleanChunked {
         invalid_operation_panic!(self)

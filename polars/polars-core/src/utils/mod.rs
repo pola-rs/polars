@@ -893,6 +893,34 @@ where
     }
 }
 
+#[cfg(feature = "performant")]
+pub(crate) fn align_chunks_binary_owned_series(left: Series, right: Series) -> (Series, Series) {
+    match (left.chunks().len(), right.chunks().len()) {
+        (1, 1) => (left, right),
+        (_, 1) => (left.rechunk(), right),
+        (1, _) => (left, right.rechunk()),
+        (_, _) => (left.rechunk(), right.rechunk()),
+    }
+}
+
+pub(crate) fn align_chunks_binary_owned<T, B>(
+    left: ChunkedArray<T>,
+    right: ChunkedArray<B>,
+) -> (ChunkedArray<T>, ChunkedArray<B>)
+where
+    ChunkedArray<B>: ChunkOps,
+    ChunkedArray<T>: ChunkOps,
+    B: PolarsDataType,
+    T: PolarsDataType,
+{
+    match (left.chunks.len(), right.chunks.len()) {
+        (1, 1) => (left, right),
+        (_, 1) => (left.rechunk(), right),
+        (1, _) => (left, right.rechunk()),
+        (_, _) => (left.rechunk(), right.rechunk()),
+    }
+}
+
 #[allow(clippy::type_complexity)]
 pub(crate) fn align_chunks_ternary<'a, A, B, C>(
     a: &'a ChunkedArray<A>,

@@ -4,7 +4,6 @@ pub(crate) use crate::frame::{groupby::aggregations::*, hash_join::*};
 pub(crate) use crate::utils::CustomIterTools;
 pub use crate::{
     chunked_array::{
-        arithmetic::Pow,
         builder::{
             BooleanChunkedBuilder, ChunkedBuilder, ListBooleanChunkedBuilder, ListBuilderTrait,
             ListPrimitiveChunkedBuilder, ListUtf8ChunkedBuilder, NewChunkedArray,

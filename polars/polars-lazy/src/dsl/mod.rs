@@ -955,7 +955,14 @@ impl Expr {
     /// Get the product aggregation of an expression
     #[cfg_attr(docsrs, doc(cfg(feature = "product")))]
     pub fn product(self) -> Self {
-        self.apply(
+        let options = FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: false,
+            auto_explode: true,
+            fmt_str: "product",
+        };
+
+        self.function_with_options(
             move |s: Series| Ok(s.product()),
             GetOutput::map_dtype(|dt| {
                 use DataType::*;
@@ -965,8 +972,8 @@ impl Expr {
                     _ => Int64,
                 }
             }),
+            options,
         )
-        .with_fmt("product")
     }
 
     /// Fill missing value with next non-null.

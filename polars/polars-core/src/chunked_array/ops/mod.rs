@@ -298,6 +298,9 @@ pub trait ChunkSet<'a, A, B> {
 pub trait ChunkCast {
     /// Cast a `[ChunkedArray]` to `[DataType]`
     fn cast(&self, data_type: &DataType) -> Result<Series>;
+
+    /// Does not check if the cast is a valid one and may over/underflow
+    fn cast_unchecked(&self, data_type: &DataType) -> Result<Series>;
 }
 
 /// Fastest way to do elementwise operations on a ChunkedArray<T> when the operation is cheaper than

@@ -1430,7 +1430,10 @@ class LazyFrame(Generic[DF]):
             )
         )
 
-    def with_columns(self: LDF, exprs: Union[List["pli.Expr"], "pli.Expr"]) -> LDF:
+    def with_columns(
+        self: LDF,
+        exprs: Union["pli.Expr", "pli.Series", List[Union["pli.Expr", "pli.Series"]]],
+    ) -> LDF:
         """
         Add or overwrite multiple columns in a DataFrame.
 

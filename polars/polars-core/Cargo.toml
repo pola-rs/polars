@@ -19,7 +19,7 @@ default = ["docs", "temporal", "private"]
 lazy = ["sort_multiple"]
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
-# more fast paths
+# more fast paths, slower compilation
 performant = []
 
 # extra utilities for Utf8Chunked
@@ -91,7 +91,7 @@ dtype-i8 = []
 dtype-i16 = []
 dtype-u8 = []
 dtype-u16 = []
-dtype-categorical = []
+dtype-categorical = ["smartstring"]
 dtype-struct = []
 
 parquet = ["arrow/io_parquet"]
@@ -167,15 +167,16 @@ regex = { version = "1.5", optional = true }
 # activate if you want serde support for Series and DataFrames
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
+smartstring = { version = "1", optional = true }
 thiserror = "^1.0"
 
 [dependencies.arrow]
 package = "arrow2"
 git = "https://github.com/jorgecarleitao/arrow2"
 # git = "https://github.com/ritchie46/arrow2"
-rev = "39db6fb7514364bfea08d594793b23e1ed5a7def"
+rev = "d1ab4efa5c895513681bacd5e20660be882433ac"
 # path = "../../../arrow2"
-# branch = "count_shared"
+# branch = "arity_assign"
 # version = "0.12"
 default-features = false
 features = [

@@ -248,14 +248,14 @@ impl AsU64 for i32 {
     #[inline]
     fn as_u64(self) -> u64 {
         let asu32: u32 = unsafe { std::mem::transmute(self) };
-        asu32 as u64
+        dbg!(asu32 as u64)
     }
 }
 
 impl AsU64 for i64 {
     #[inline]
     fn as_u64(self) -> u64 {
-        unsafe { std::mem::transmute(self) }
+        unsafe { dbg!(std::mem::transmute(self)) }
     }
 }
 
@@ -384,7 +384,7 @@ impl<'a> StrHash<'a> {
 
 impl<'a> PartialEq for StrHash<'a> {
     fn eq(&self, other: &Self) -> bool {
-        self.str == other.str
+        (self.hash == other.hash) && (self.str == other.str)
     }
 }
 
@@ -397,6 +397,7 @@ impl<'a> AsU64 for StrHash<'a> {
 #[inline]
 /// For partitions that are a power of 2 we can use a bitshift instead of a modulo.
 pub(crate) fn this_partition(h: u64, thread_no: u64, n_partitions: u64) -> bool {
+    debug_assert!(n_partitions.is_power_of_two());
     // n % 2^i = n & (2^i - 1)
     (h.wrapping_add(thread_no)) & n_partitions.wrapping_sub(1) == 0
 }
