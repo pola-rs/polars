@@ -3654,7 +3654,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Implementing logic using this .apply method is generally slower and more memory intensive
         than implementing the same logic using the expression API because:
-        - with .apply the logic is implemented in Python with an expression the logic is implemented in Rust
+        - with .apply the logic is implemented in Python but with an expression the logic is implemented in Rust
+        - with .apply the DataFrame is materialized in memory
         - expressions can be parallelised
         - expressions can be optimised
 
@@ -3688,13 +3689,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 6        ┆ 24       │
         └──────────┴──────────┘
-        # In this case it would be better to use the following expression
-        >>> df.select(
-            [
-            pl.col("foo") * 2,
-            pl.col("bar") * 3
-            ]
-            )
+        # It would be better to implement this with an expression:
+        >>> (df.select([pl.col("foo") * 2, pl.col("bar") * 3]))
         # Return a Series by mapping each row to a scalar
         >>> df.apply(lambda t: (t[0] * 2 + t[1]))
         shape: (3, 1)
@@ -3710,8 +3706,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ 14    │
         └───────┘
         # In this case it would be better to use the following expression
-        >>> df.select(pl.col("foo") * 2 +  pl.col("bar"))
-
+        >>> df.select(pl.col("foo") * 2 + pl.col("bar"))
         """
         out, is_df = self._df.apply(f, return_dtype, inference_size)
         if is_df:
@@ -5885,7 +5880,14 @@ class GroupBy(Generic[DF]):
         """
          Apply a function over the groups as a sub-DataFrame.
 
-         Beware, this is slow.
+        Implementing logic using this .apply method is generally slower and more memory intensive
+        than implementing the same logic using the expression API because:
+        - with .apply the logic is implemented in Python but with an expression the logic is implemented in Rust
+        - with .apply the DataFrame is materialized in memory
+        - expressions can be parallelised
+        - expressions can be optimised
+
+        If possible use the expression API for best performance.
 
          Parameters
          ----------
@@ -5898,11 +5900,13 @@ class GroupBy(Generic[DF]):
 
          Examples
          --------
-         >>> df = pl.DataFrame({
-         ...     'id':[0,1,2,3,4],
-         ...     'color':['red','green','green','red','red'],
-         ...     'shape':['square','triangle','square','triangle','square']
-         ...     })
+         >>> df = pl.DataFrame(
+         ...     {
+         ...         "id": [0, 1, 2, 3, 4],
+         ...         "color": ["red", "green", "green", "red", "red"],
+         ...         "shape": ["square", "triangle", "square", "triangle", "square"],
+         ...     }
+         ... )
         shape: (5, 3)
         ┌─────┬───────┬──────────┐
         │ id  ┆ color ┆ shape    │
@@ -5919,13 +5923,20 @@ class GroupBy(Generic[DF]):
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 4   ┆ red   ┆ square   │
         └─────┴───────┴──────────┘
-        # For each color group return the first row where shape is "square"
+        # For each color group sample two rows
          (df
          .groupby('color')
          .apply(
-             lambda group_df: group_df.filter(
-                 pl.col('shape')=='square')[0]
+             lambda group_df: group_df.sample(2)
                  )
+        # It would be better to implement this with an expression:
+         (df
+         .groupby('color').filter(
+             pl.arange(0, pl.count()).shuffle().over("groups") < 2
+             )
+         )
+
+
         """
         return self._dataframe_class._from_pydf(self._df.groupby_apply(self.by, f))
 

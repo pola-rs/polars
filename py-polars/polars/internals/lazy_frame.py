@@ -2343,6 +2343,40 @@ class LazyGroupBy(Generic[LDF]):
         Parameters
         ----------
         f
-            Function to apply over the `DataFrame`.
+            Function to apply over each group of the `LazyFrame`.
+
+        Examples
+        --------
+
+        # The function is applied by group
+        >>> (
+        ...     df.lazy()
+        ...     .groupby("b", maintain_order=True)
+        ...     .agg(
+        ...         [
+        ...             pl.col("a").apply(lambda x: x.sum()),
+        ...         ]
+        ...     )
+        ...     .collect()
+        ... )
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ b   ┆ a   │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ a   ┆ 1   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ b   ┆ 2   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ c   ┆ 2   │
+        └─────┴─────┘
+        # It would be better to implement this with an expression:
+        >>> (
+        ...     df.groupby("b", maintain_order=True).agg(
+        ...         pl.col("a").sum(),
+        ...     )
+        ... )
+
         """
         return self._lazyframe_class._from_pyldf(self.lgb.apply(f))

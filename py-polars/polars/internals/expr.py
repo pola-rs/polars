@@ -241,7 +241,7 @@ class Expr:
         """
         Compute the square root of the elements
         """
-        return self ** 0.5
+        return self**0.5
 
     def log10(self) -> "Expr":
         """
@@ -1658,11 +1658,13 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {
         ...         "id": [0, 1, 2],
-        ...         "ref": ["Jan001","Jan002","Feb001"],
+        ...         "ref": ["Jan001", "Jan002", "Feb001"],
         ...     }
         ... )
         >>> (
-        ...     df.select(pl.col('location')).apply(lambda x: x**2).alias('squared_value'))
+        ...     df.select(
+        ...         pl.col("location").apply(lambda x: x**2).alias("squared_value")
+        ...     )
         ... )
         shape: (3, 2)
         ┌─────┬─────┐
@@ -1700,6 +1702,15 @@ class Expr:
             expected type `f`: Callable[[Series], Series]
             Applies a python function over each group.
 
+        Implementing logic using the .apply method is generally slower and more memory intensive
+        than implementing the same logic using the expression API because:
+        - with .apply the logic is implemented in Python but with an expression the logic is implemented in Rust
+        - with .apply the DataFrame is materialized in memory
+        - expressions can be parallelised
+        - expressions can be optimised
+
+        If possible use the expression API for best performance.
+
         Parameters
         ----------
         f
@@ -1716,6 +1727,33 @@ class Expr:
         ...         "b": ["a", "b", "c", "c"],
         ...     }
         ... )
+        # In a selection context the function is applied by row
+        >>> (
+        ...     df.with_column(
+        ...         pl.col("a").apply(lambda x: x * 2),
+        ...     )
+        ... )
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 2   ┆ a   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 4   ┆ b   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ c   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ c   │
+        └─────┴─────┘
+        # It would be better to implement this with an expression:
+        >>> (
+        ...     df.with_column(
+        ...         pl.col("a") * 2,
+        ...     )
+        ... )
+        # In a GroupBy context the function is applied by group
         >>> (
         ...     df.lazy()
         ...     .groupby("b", maintain_order=True)
@@ -1738,7 +1776,12 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ c   ┆ 2   │
         └─────┴─────┘
-
+        # It would be better to implement this with an expression:
+        >>> (
+        ...     df.groupby("b", maintain_order=True).agg(
+        ...         pl.col("a").sum(),
+        ...     )
+        ... )
         """
 
         # input x: Series of type list containing the group values
