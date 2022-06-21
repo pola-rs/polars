@@ -10,7 +10,7 @@ license = "MIT"
 repository = "https://github.com/pola-rs/polars"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
 
 [dependencies]
 ahash = "0.7"
