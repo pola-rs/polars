@@ -113,6 +113,7 @@ list_to_struct = ["polars-ops/list_to_struct", "polars-lazy/list_to_struct"]
 describe = ["polars-core/describe"]
 timezones = ["polars-core/timezones"]
 string_justify = ["polars-lazy/string_justify", "polars-ops/string_justify"]
+arg_where = ["polars-lazy/arg_where"]
 
 test = [
   "lazy",
@@ -235,6 +236,7 @@ docs-selection = [
   "list_eval",
   "cumulative_eval",
   "timezones",
+  "arg_where",
 ]
 
 bench = [

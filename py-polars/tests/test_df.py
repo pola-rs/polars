@@ -1042,7 +1042,7 @@ def test_concat() -> None:
 
 def test_arg_where() -> None:
     s = pl.Series([True, False, True, False])
-    assert pl.arg_where(s).cast(int).series_equal(pl.Series([0, 2]))
+    assert pl.arg_where(s, eager=True).cast(int).series_equal(pl.Series([0, 2]))
 
 
 def test_get_dummies() -> None:
