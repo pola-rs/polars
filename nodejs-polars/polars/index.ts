@@ -96,4 +96,4 @@ namespace pl {
 // eslint-disable-next-line no-undef
 global[Symbol.for("__pl__")] = pl;
 // eslint-disable-next-line no-undef
-export = global[Symbol.for("__pl__")] as typeof pl;
+export = pl;
