@@ -273,7 +273,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
                         _ => {}
                     }
                     if let Some(validity) = &validity_agg {
-                        null_count += validity.null_count()
+                        null_count += validity.unset_bits()
                     }
                 }
             }

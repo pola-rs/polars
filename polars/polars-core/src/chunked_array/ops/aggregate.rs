@@ -462,9 +462,9 @@ impl ChunkAgg<IdxSize> for BooleanChunked {
                 self.downcast_iter()
                     .map(|arr| match arr.validity() {
                         Some(validity) => {
-                            (arr.len() - (validity & arr.values()).null_count()) as IdxSize
+                            (arr.len() - (validity & arr.values()).unset_bits()) as IdxSize
                         }
-                        None => (arr.len() - arr.values().null_count()) as IdxSize,
+                        None => (arr.len() - arr.values().unset_bits()) as IdxSize,
                     })
                     .sum(),
             )

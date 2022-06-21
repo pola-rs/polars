@@ -17,7 +17,7 @@ fn prepare_mask(mask: &BooleanArray) -> BooleanArray {
 
     match mask.validity() {
         // nulls are set to true meaning we take from the right in the zip/ if_then_else kernel
-        Some(validity) if validity.null_count() != 0 => {
+        Some(validity) if validity.unset_bits() != 0 => {
             let mask = mask.values() & validity;
             BooleanArray::from_data_default(mask, None)
         }
