@@ -92,4 +92,6 @@ namespace pl {
   export const version = pli.version();
 }
 
+// add this globally so packages can reuse it.
+global.__pl__ = pl;
 export = pl;
