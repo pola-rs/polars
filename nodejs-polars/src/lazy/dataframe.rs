@@ -89,7 +89,10 @@ impl JsLazyFrame {
         };
         Ok(LazyFrame::from(lp).into())
     }
-
+    #[napi(factory)]
+    pub fn clone_external(lf: &JsLazyFrame) -> napi::Result<JsLazyFrame> {
+        Ok(lf.clone())
+    }
     #[napi]
     pub fn describe_plan(&self) -> String {
         self.ldf.describe_plan()
