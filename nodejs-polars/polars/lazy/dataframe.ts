@@ -637,6 +637,6 @@ export interface LazyDataFrameConstructor extends Deserialize<LazyDataFrame> {
 export const LazyDataFrame: LazyDataFrameConstructor = Object.assign(_LazyDataFrame, {
   deserialize: (buf, fmt) => _LazyDataFrame(pli.JsLazyFrame.deserialize(buf, fmt)),
   fromExternal(external) {
-    return _LazyDataFrame(pli.JsLazyFrame.fromOther(external))
+    return _LazyDataFrame(pli.JsLazyFrame.cloneExternal(external))
   }
 });
