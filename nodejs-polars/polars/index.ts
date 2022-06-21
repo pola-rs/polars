@@ -61,7 +61,7 @@ namespace pl {
   export import readCSVStream = io.readCSVStream;
   export import readJSONStream = io.readJSONStream;
 
-  // // lazy
+  // lazy
   export import col = lazy.col
   export import cols = lazy.cols
   export import lit = lazy.lit
