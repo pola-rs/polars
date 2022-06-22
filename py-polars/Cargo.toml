@@ -105,6 +105,7 @@ features = [
   "list_to_struct",
   "to_dummies",
   "string_justify",
+  "arg_where",
 ]
 
 # [patch.crates-io]

@@ -146,35 +146,6 @@ def concat(
     return out
 
 
-def arg_where(mask: "pli.Series") -> "pli.Series":
-    """
-    Get index values where Boolean mask evaluate True.
-
-    Parameters
-    ----------
-    mask
-        Boolean Series.
-
-    Returns
-    -------
-    UInt32 Series
-
-    Examples
-    --------
-
-    >>> df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
-    >>> pl.arg_where(df.select(pl.col("a") % 2 == 0).to_series())
-    shape: (2,)
-    Series: '' [u32]
-    [
-            1
-            3
-    ]
-
-    """
-    return mask.arg_true()
-
-
 def date_range(
     low: datetime,
     high: datetime,

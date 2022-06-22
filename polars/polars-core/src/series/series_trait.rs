@@ -457,13 +457,6 @@ pub trait SeriesTrait:
         None
     }
 
-    /// Get indexes that evaluate true
-    fn arg_true(&self) -> Result<IdxCa> {
-        Err(PolarsError::InvalidOperation(
-            "arg_true can only be called for boolean dtype".into(),
-        ))
-    }
-
     /// Get a mask of the null values.
     fn is_null(&self) -> BooleanChunked {
         invalid_operation_panic!(self)

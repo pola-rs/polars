@@ -2,6 +2,8 @@
 //!
 //! Functions on expressions that might be useful.
 //!
+#[cfg(feature = "arg_where")]
+use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::*;
 use crate::utils::has_wildcard;
 use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
@@ -861,6 +863,7 @@ pub fn as_struct(exprs: &[Expr]) -> Expr {
     })
 }
 
+/// Repeat a literal `value` `n` times.
 pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
     let function = |s: Series, n: Series| {
         let n = n.get(0).extract::<usize>().ok_or_else(|| {
@@ -869,4 +872,20 @@ pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
         Ok(s.expand_at_index(0, n))
     };
     apply_binary(lit(value), n_times, function, GetOutput::same_type())
+}
+
+#[cfg(feature = "arg_where")]
+/// Get the indices where `condition` evaluates `true`.
+pub fn arg_where<E: Into<Expr>>(condition: E) -> Expr {
+    let condition = condition.into();
+    Expr::Function {
+        input: vec![condition],
+        function: FunctionExpr::ArgWhere,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: false,
+            auto_explode: false,
+            fmt_str: "arg_where",
+        },
+    }
 }

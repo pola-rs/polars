@@ -22,8 +22,8 @@ Conversion
     from_arrow
     from_pandas
 
-Eager functions
-~~~~~~~~~~~~~~~
+Eager/Lazy functions
+~~~~~~~~~~~~~~~~~~~~
 .. autosummary::
    :toctree: api/
 

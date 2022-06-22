@@ -296,10 +296,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         ArgAgg::arg_max(&self.0)
     }
 
-    fn arg_true(&self) -> Result<IdxCa> {
-        Ok(self.0.arg_true())
-    }
-
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }

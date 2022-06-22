@@ -1,3 +1,5 @@
+#[cfg(feature = "arg_where")]
+mod arg_where;
 #[cfg(feature = "is_in")]
 mod is_in;
 mod pow;
@@ -16,6 +18,8 @@ pub enum FunctionExpr {
     Hash(usize),
     #[cfg(feature = "is_in")]
     IsIn,
+    #[cfg(feature = "arg_where")]
+    ArgWhere,
 }
 
 impl FunctionExpr {
@@ -46,6 +50,8 @@ impl FunctionExpr {
             Hash(_) => with_dtype(DataType::UInt64),
             #[cfg(feature = "is_in")]
             IsIn => with_dtype(DataType::Boolean),
+            #[cfg(feature = "arg_where")]
+            ArgWhere => with_dtype(IDX_DTYPE),
         }
     }
 }
@@ -81,6 +87,10 @@ impl From<FunctionExpr> for NoEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "is_in")]
             IsIn => {
                 wrap!(is_in::is_in)
+            }
+            #[cfg(feature = "arg_where")]
+            ArgWhere => {
+                wrap!(arg_where::arg_where)
             }
         }
     }

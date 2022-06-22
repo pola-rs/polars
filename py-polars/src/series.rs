@@ -621,11 +621,6 @@ impl PySeries {
         Ok(ca.into_series().into())
     }
 
-    pub fn arg_true(&self) -> PyResult<Self> {
-        let ca = self.series.arg_true().map_err(PyPolarsErr::from)?;
-        Ok(ca.into_series().into())
-    }
-
     pub fn sample_n(
         &self,
         n: usize,
