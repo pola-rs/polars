@@ -3990,6 +3990,30 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_contains(pattern, literal))
 
+    def ends_with(self, sub: str) -> Series:
+        """
+        Check if string values end with a substring
+
+        Parameters
+        ----------
+        sub
+            Suffix
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.ends_with(sub)).to_series()
+
+    def starts_with(self, sub: str) -> Series:
+        """
+        Check if string values start with a substring
+
+        Parameters
+        ----------
+        sub
+            Prefix
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.starts_with(sub)).to_series()
+
     def decode(self, encoding: str, strict: bool = False) -> Series:
         """
         Decodes a value using the provided encoding.

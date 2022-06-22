@@ -26,7 +26,6 @@ These functions can be used as expression and sometimes also in eager contexts.
    median
    n_unique
    first
-   last
    head
    tail
    lit
@@ -317,6 +316,8 @@ The following methods are available under the `Expr.str` attribute.
     ExprStringNameSpace.ljust
     ExprStringNameSpace.rjust
     ExprStringNameSpace.contains
+    ExprStringNameSpace.starts_with
+    ExprStringNameSpace.ends_with
     ExprStringNameSpace.json_path_match
     ExprStringNameSpace.extract
     ExprStringNameSpace.extract_all

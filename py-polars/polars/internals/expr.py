@@ -4467,6 +4467,28 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_contains(pattern, literal))
 
+    def ends_with(self, sub: str) -> Expr:
+        """
+        Check if string values end with a substring
+
+        Parameters
+        ----------
+        sub
+            Suffix
+        """
+        return wrap_expr(self._pyexpr.str_ends_with(sub))
+
+    def starts_with(self, sub: str) -> Expr:
+        """
+        Check if string values start with a substring
+
+        Parameters
+        ----------
+        sub
+            Prefix
+        """
+        return wrap_expr(self._pyexpr.str_starts_with(sub))
+
     def json_path_match(self, json_path: str) -> Expr:
         """
         Extract the first match of json string with provided JSONPath expression.

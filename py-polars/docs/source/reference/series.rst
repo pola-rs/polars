@@ -257,6 +257,8 @@ The following methods are available under the `Series.str` attribute.
     StringNameSpace.lengths
     StringNameSpace.concat
     StringNameSpace.contains
+    StringNameSpace.starts_with
+    StringNameSpace.ends_with
     StringNameSpace.json_path_match
     StringNameSpace.extract
     StringNameSpace.extract_all
