@@ -131,6 +131,24 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         Ok(out)
     }
 
+    /// Check if strings ends with a substring
+    fn ends_with(&self, sub: &str) -> BooleanChunked {
+        let ca = self.as_utf8();
+        let f = |s: &str| s.ends_with(sub);
+        let mut out: BooleanChunked = ca.into_iter().map(|opt_s| opt_s.map(f)).collect();
+        out.rename(ca.name());
+        out
+    }
+
+    /// Check if strings starts with a substring
+    fn starts_with(&self, sub: &str) -> BooleanChunked {
+        let ca = self.as_utf8();
+        let f = |s: &str| s.starts_with(sub);
+        let mut out: BooleanChunked = ca.into_iter().map(|opt_s| opt_s.map(f)).collect();
+        out.rename(ca.name());
+        out
+    }
+
     /// Replace the leftmost (sub)string by a regex pattern
     fn replace(&self, pat: &str, val: &str) -> Result<Utf8Chunked> {
         let ca = self.as_utf8();

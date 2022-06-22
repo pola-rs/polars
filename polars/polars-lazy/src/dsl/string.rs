@@ -8,6 +8,38 @@ use polars_time::prelude::*;
 pub struct StringNameSpace(pub(crate) Expr);
 
 impl StringNameSpace {
+    /// Check if a string value contains a literal substring.
+    pub fn contains_literal(self, pat: String) -> Expr {
+        self.0.map_private(
+            FunctionExpr::StringContains { pat, literal: true },
+            "str.contains_literal",
+        )
+    }
+
+    /// Check if a string value contains a Regex substring.
+    pub fn contains(self, pat: String) -> Expr {
+        self.0.map_private(
+            FunctionExpr::StringContains {
+                pat,
+                literal: false,
+            },
+            "str.contains",
+        )
+    }
+
+    /// Check if a string value ends with the `sub` string.
+    pub fn ends_with(self, sub: String) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringEndsWith(sub), "str.ends_with")
+    }
+
+    /// Check if a string value starts with the `sub` string.
+    pub fn starts_with(self, sub: String) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringStartsWith(sub), "str.starts_with")
+    }
+
+    /// Extract a regex pattern from the a string value.
     pub fn extract(self, pat: &str, group_index: usize) -> Expr {
         let pat = pat.to_string();
         let function = move |s: Series| {
