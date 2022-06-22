@@ -205,7 +205,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
             }
 
             let bitmap = obs.values();
-            let cap = bitmap.len() - bitmap.null_count();
+            let cap = bitmap.len() - bitmap.unset_bits();
             let mut count = Vec::with_capacity(cap + 1);
             let mut cnt: IdxSize = 0;
             count.push(cnt);

@@ -522,7 +522,7 @@ where
 
                 let validity = if has_nulls {
                     let validity = Bitmap::from_trusted_len_iter(validity.iter().copied());
-                    if validity.null_count() > 0 {
+                    if validity.unset_bits() > 0 {
                         Some(validity)
                     } else {
                         None
