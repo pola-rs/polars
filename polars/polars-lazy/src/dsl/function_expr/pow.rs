@@ -1,4 +1,5 @@
 use super::*;
+use num::pow::Pow;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::export::num;
 use polars_core::export::num::ToPrimitive;
@@ -27,9 +28,15 @@ where
                 }
                 out.into_series()
             }
-            _ => base.apply(|v| num::pow::Pow::pow(v, av)).into_series(),
+            _ => base.apply(|v| Pow::pow(v, av)).into_series(),
         };
         Ok(s)
+    } else if (base.len() == 1) && (exponent.len() != 1) {
+        let base = base
+            .get(0)
+            .ok_or_else(|| PolarsError::ComputeError("base is null".into()))?;
+
+        Ok(exponent.apply(|exp| Pow::pow(base, exp)).into_series())
     } else {
         Ok(base
             .into_iter()
@@ -67,10 +74,15 @@ pub(super) fn pow(s: &mut [Series]) -> Result<Series> {
 
     let base_len = base.len();
     let exp_len = exponent.len();
-    if exp_len != base_len && (exp_len != 1) {
-        Err(PolarsError::ComputeError(
-            format!("pow expression: the exponents length: {exp_len} does not match that of the base: {base_len}. Please ensure the lengths match or consider a literal exponent.").into()))
-    } else {
-        pow_on_series(base, exponent)
+    match (base_len, exp_len) {
+        (1, _) | (_, 1) => pow_on_series(base, exponent),
+        (len_a, len_b) if len_a == len_b => {
+            pow_on_series(base, exponent)
+        }
+        _ => {
+            Err(PolarsError::ComputeError(
+                format!("pow expression: the exponents length: {exp_len} does not match that of the base: {base_len}. Please ensure the lengths match or consider a literal exponent.").into()))
+        }
+
     }
 }
