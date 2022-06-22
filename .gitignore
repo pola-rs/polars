@@ -16,3 +16,4 @@ venv/
 *.iml
 coverage.lcov
 coverage.xml
+.DS_Store
