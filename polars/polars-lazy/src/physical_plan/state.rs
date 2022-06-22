@@ -1,3 +1,4 @@
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use super::file_cache::FileCache;
 use parking_lot::{Mutex, RwLock};
 use polars_core::frame::groupby::GroupsProxy;
@@ -14,6 +15,7 @@ pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
     df_cache: Arc<Mutex<PlHashMap<String, DataFrame>>>,
     // cache file reads until all branches got there file, then we delete it
+    #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
     pub(crate) file_cache: FileCache,
     pub(crate) schema_cache: Arc<RwLock<Option<SchemaRef>>>,
     /// Used by Window Expression to prevent redundant grouping
@@ -29,6 +31,7 @@ impl ExecutionState {
         Self {
             df_cache: Arc::new(Mutex::new(PlHashMap::default())),
             schema_cache: Arc::new(RwLock::new(None)),
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
             file_cache: FileCache::new(),
             group_tuples: Arc::new(Mutex::new(PlHashMap::default())),
             join_tuples: Arc::new(Mutex::new(PlHashMap::default())),

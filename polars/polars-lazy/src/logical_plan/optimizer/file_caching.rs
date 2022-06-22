@@ -6,10 +6,11 @@ use polars_core::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+#[derive(Hash, Eq, PartialEq, Clone)]
 pub(crate) struct FileFingerPrint {
     pub path: PathBuf,
     pub predicate: Option<Expr>,
-    pub limit: Option<IdxSize>
+    pub slice: (usize, Option<usize>),
 }
 
 #[allow(clippy::type_complexity)]
@@ -17,14 +18,16 @@ fn process_with_columns(
     path: &Path,
     with_columns: &Option<Arc<Vec<String>>>,
     predicate: Option<Expr>,
-    file_count_and_column_union: &mut PlHashMap<
-        FileFingerPrint,
-        (FileCount, PlIndexSet<String>),
-    >,
+    slice: (usize, Option<usize>),
+    file_count_and_column_union: &mut PlHashMap<FileFingerPrint, (FileCount, PlIndexSet<String>)>,
     schema: &Schema,
 ) {
     let cols = file_count_and_column_union
-        .entry((path.to_owned(), predicate))
+        .entry(FileFingerPrint {
+            path: path.into(),
+            predicate,
+            slice,
+        })
         .or_insert_with(|| {
             (
                 0,
@@ -52,7 +55,7 @@ pub(crate) fn find_common_columns_per_file_and_predicate(
     root: Node,
     // The hashmap maps files to a hashset over column names.
     // we also keep track of how often a needs file needs to be read so we can cache until last read
-    columns: &mut PlHashMap<(PathBuf, Option<Expr>), (FileCount, PlIndexSet<String>)>,
+    columns: &mut PlHashMap<FileFingerPrint, (FileCount, PlIndexSet<String>)>,
     lp_arena: &Arena<ALogicalPlan>,
     expr_arena: &Arena<AExpr>,
 ) {
@@ -66,8 +69,16 @@ pub(crate) fn find_common_columns_per_file_and_predicate(
             schema,
             ..
         } => {
+            let slice = (options.skip_rows, options.n_rows);
             let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
-            process_with_columns(path, &options.with_columns, predicate, columns, schema);
+            process_with_columns(
+                path,
+                &options.with_columns,
+                predicate,
+                slice,
+                columns,
+                schema,
+            );
         }
         #[cfg(feature = "parquet")]
         ParquetScan {
@@ -77,8 +88,16 @@ pub(crate) fn find_common_columns_per_file_and_predicate(
             predicate,
             ..
         } => {
+            let slice = (0, options.n_rows);
             let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
-            process_with_columns(path, &options.with_columns, predicate, columns, schema);
+            process_with_columns(
+                path,
+                &options.with_columns,
+                predicate,
+                slice,
+                columns,
+                schema,
+            );
         }
         #[cfg(feature = "ipc")]
         IpcScan {
@@ -88,8 +107,16 @@ pub(crate) fn find_common_columns_per_file_and_predicate(
             predicate,
             ..
         } => {
+            let slice = (0, options.n_rows);
             let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
-            process_with_columns(path, &options.with_columns, predicate, columns, schema);
+            process_with_columns(
+                path,
+                &options.with_columns,
+                predicate,
+                slice,
+                columns,
+                schema,
+            );
         }
         DataFrameScan { .. } => (),
         lp => {
@@ -103,14 +130,13 @@ pub(crate) fn find_common_columns_per_file_and_predicate(
 /// Aggregate all the columns used in csv scans and make sure that all columns are scanned in one go.
 /// Due to self joins there can be multiple Scans of the same file in a LP. We already cache the scans
 /// in the PhysicalPlan, but we need to make sure that the first scan has all the columns needed.
-#[allow(clippy::type_complexity)]
 pub struct FileCacher {
-    file_count_and_column_union: PlHashMap<(PathBuf, Option<Expr>), (FileCount, Arc<Vec<String>>)>,
+    file_count_and_column_union: PlHashMap<FileFingerPrint, (FileCount, Arc<Vec<String>>)>,
 }
 
 impl FileCacher {
     pub(crate) fn new(
-        columns: PlHashMap<(PathBuf, Option<Expr>), (FileCount, PlIndexSet<String>)>,
+        columns: PlHashMap<FileFingerPrint, (FileCount, PlIndexSet<String>)>,
     ) -> Self {
         let new_columns_mapping = columns
             .into_iter()
@@ -130,17 +156,18 @@ impl FileCacher {
         mut lp: ALogicalPlan,
         expr_arena: &mut Arena<AExpr>,
         lp_arena: &mut Arena<ALogicalPlan>,
-        path: PathBuf,
-        predicate: Option<Expr>,
+        finger_print: &FileFingerPrint,
         with_columns: Option<Arc<Vec<String>>>,
     ) -> ALogicalPlan {
         // if the original projection is less than the new one. Also project locally
         if let Some(mut with_columns) = with_columns {
-            let agg = self
-                .file_count_and_column_union
-                .get(&(path, predicate))
-                .unwrap();
-            if with_columns.len() < agg.1.len() {
+            // we cannot always find the predicates, because some have `NoEq` functions so for those
+            // cases we may read the file twice and/or do an extra projection
+            let do_projection = match self.file_count_and_column_union.get(finger_print) {
+                Some((_file_count, agg_columns)) => with_columns.len() < agg_columns.len(),
+                None => true,
+            };
+            if do_projection {
                 let node = lp_arena.add(lp);
 
                 let projections = std::mem::take(Arc::make_mut(&mut with_columns))
@@ -158,12 +185,9 @@ impl FileCacher {
 
     fn extract_columns_and_count(
         &mut self,
-        path: PathBuf,
-        predicate: Option<Expr>,
+        finger_print: &FileFingerPrint,
     ) -> Option<(FileCount, Arc<Vec<String>>)> {
-        self.file_count_and_column_union
-            .get(&(path, predicate))
-            .cloned()
+        self.file_count_and_column_union.get(finger_print).cloned()
     }
 }
 
@@ -189,14 +213,19 @@ impl OptimizationRule for FileCacher {
                 } = lp
                 {
                     let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
-                    let with_columns =
-                        self.extract_columns_and_count(path.clone(), predicate_expr.clone());
+                    let finger_print = FileFingerPrint {
+                        path,
+                        predicate: predicate_expr,
+                        slice: (0, options.n_rows),
+                    };
+
+                    let with_columns = self.extract_columns_and_count(&finger_print);
                     options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
                     let with_columns = with_columns.map(|t| t.1);
                     // prevent infinite loop
                     if options.with_columns == with_columns {
                         let lp = ALogicalPlan::IpcScan {
-                            path,
+                            path: finger_print.path,
                             schema,
                             output_schema,
                             predicate,
@@ -209,7 +238,7 @@ impl OptimizationRule for FileCacher {
 
                     options.with_columns = with_columns;
                     let lp = ALogicalPlan::IpcScan {
-                        path: path.clone(),
+                        path: finger_print.path.clone(),
                         schema,
                         output_schema,
                         predicate,
@@ -220,8 +249,7 @@ impl OptimizationRule for FileCacher {
                         lp,
                         expr_arena,
                         lp_arena,
-                        path,
-                        predicate_expr,
+                        &finger_print,
                         options.with_columns,
                     ))
                 } else {
@@ -241,14 +269,18 @@ impl OptimizationRule for FileCacher {
                 } = lp
                 {
                     let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
-                    let with_columns =
-                        self.extract_columns_and_count(path.clone(), predicate_expr.clone());
+                    let finger_print = FileFingerPrint {
+                        path,
+                        predicate: predicate_expr,
+                        slice: (0, options.n_rows),
+                    };
+                    let with_columns = self.extract_columns_and_count(&finger_print);
                     options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
                     let mut with_columns = with_columns.map(|t| t.1);
                     // prevent infinite loop
                     if options.with_columns == with_columns {
                         let lp = ALogicalPlan::ParquetScan {
-                            path,
+                            path: finger_print.path,
                             schema,
                             output_schema,
                             predicate,
@@ -261,21 +293,14 @@ impl OptimizationRule for FileCacher {
                     std::mem::swap(&mut options.with_columns, &mut with_columns);
 
                     let lp = ALogicalPlan::ParquetScan {
-                        path: path.clone(),
+                        path: finger_print.path.clone(),
                         schema,
                         output_schema,
                         predicate,
                         aggregate,
                         options,
                     };
-                    Some(self.finish_rewrite(
-                        lp,
-                        expr_arena,
-                        lp_arena,
-                        path,
-                        predicate_expr,
-                        with_columns,
-                    ))
+                    Some(self.finish_rewrite(lp, expr_arena, lp_arena, &finger_print, with_columns))
                 } else {
                     unreachable!()
                 }
@@ -293,13 +318,17 @@ impl OptimizationRule for FileCacher {
                 } = lp
                 {
                     let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
-                    let with_columns =
-                        self.extract_columns_and_count(path.clone(), predicate_expr.clone());
+                    let finger_print = FileFingerPrint {
+                        path,
+                        predicate: predicate_expr,
+                        slice: (options.skip_rows, options.n_rows),
+                    };
+                    let with_columns = self.extract_columns_and_count(&finger_print);
                     options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
                     let with_columns = with_columns.map(|t| t.1);
                     if options.with_columns == with_columns {
                         let lp = ALogicalPlan::CsvScan {
-                            path,
+                            path: finger_print.path,
                             schema,
                             output_schema,
                             options,
@@ -311,7 +340,7 @@ impl OptimizationRule for FileCacher {
                     }
                     options.with_columns = with_columns;
                     let lp = ALogicalPlan::CsvScan {
-                        path: path.clone(),
+                        path: finger_print.path.clone(),
                         schema,
                         output_schema,
                         options: options.clone(),
@@ -322,8 +351,7 @@ impl OptimizationRule for FileCacher {
                         lp,
                         expr_arena,
                         lp_arena,
-                        path,
-                        predicate_expr,
+                        &finger_print,
                         options.with_columns,
                     ))
                 } else {

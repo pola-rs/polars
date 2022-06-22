@@ -1,40 +1,25 @@
+#[cfg(feature = "csv-file")]
+mod csv;
 #[cfg(feature = "ipc")]
 mod ipc;
 #[cfg(feature = "parquet")]
 mod parquet;
-#[cfg(feature = "csv-file")]
-mod csv;
 
 use super::*;
 use crate::prelude::*;
-use crate::utils::try_path_to_str;
 use polars_io::aggregations::ScanAggregation;
 use polars_io::csv::CsvEncoding;
 use polars_io::prelude::*;
-use std::path::Path;
 use std::fs::File;
 use std::mem;
+use std::path::Path;
 
+#[cfg(feature = "csv-file")]
+pub(crate) use csv::CsvExec;
 #[cfg(feature = "ipc")]
 pub(crate) use ipc::IpcExec;
 #[cfg(feature = "parquet")]
 pub(crate) use parquet::ParquetExec;
-#[cfg(feature = "csv-file")]
-pub(crate) use csv::CsvExec;
-
-fn cache_hit(
-    path: &Path,
-    predicate: &Option<Arc<dyn PhysicalExpr>>,
-    state: &ExecutionState,
-) -> (String, Option<DataFrame>) {
-    let path_str = try_path_to_str(path).unwrap();
-    let cache_key = match predicate {
-        Some(predicate) => format!("{}{:?}", path_str, predicate.as_expression()),
-        None => path_str.to_string(),
-    };
-    let cached = state.cache_hit(&cache_key);
-    (cache_key, cached)
-}
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 type Projection = Option<Vec<usize>>;
@@ -78,9 +63,6 @@ fn prepare_scan_args<'a>(
 
     (file, projection, n_rows, aggregate, predicate)
 }
-
-
-
 
 /// Producer of an in memory DataFrame
 pub struct DataFrameExec {

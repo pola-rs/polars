@@ -1,13 +1,12 @@
+use crate::prelude::file_caching::FileFingerPrint;
 use crate::prelude::*;
+use parking_lot::Mutex;
 use polars_core::prelude::*;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
-#[allow(clippy::type_complexity)]
 pub(crate) struct FileCache {
     // (path, predicate) -> (read_count, df)
-    inner: Arc<Mutex<PlHashMap<(PathBuf, Option<Expr>), (FileCount, DataFrame)>>>,
+    inner: Arc<Mutex<PlHashMap<FileFingerPrint, (FileCount, DataFrame)>>>,
 }
 
 impl FileCache {
@@ -19,7 +18,7 @@ impl FileCache {
 
     pub(crate) fn read<F>(
         &self,
-        key: (PathBuf, Option<Expr>),
+        finger_print: FileFingerPrint,
         total_read_count: FileCount,
         reader: &mut F,
     ) -> Result<DataFrame>
@@ -29,9 +28,9 @@ impl FileCache {
         if total_read_count == 1 {
             reader()
         } else {
-            let mut mapping = self.inner.lock().unwrap();
+            let mut mapping = self.inner.lock();
             let (file_count, df_state) = mapping
-                .entry(key)
+                .entry(finger_print)
                 .or_insert_with(|| (0, Default::default()));
 
             // initialize df

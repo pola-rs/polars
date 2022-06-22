@@ -1,4 +1,5 @@
 use super::*;
+use crate::prelude::file_caching::FileFingerPrint;
 
 pub struct ParquetExec {
     path: PathBuf,
@@ -50,12 +51,13 @@ impl ParquetExec {
 
 impl Executor for ParquetExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
-        let key = (
-            self.path.clone(),
-            self.predicate.as_ref().map(|ae| ae.as_expression().clone()),
-        );
+        let finger_print = FileFingerPrint {
+            path: self.path.clone(),
+            predicate: self.predicate.as_ref().map(|ae| ae.as_expression().clone()),
+            slice: (0, self.options.n_rows),
+        };
         state
             .file_cache
-            .read(key, self.options.file_counter, &mut || self.read())
+            .read(finger_print, self.options.file_counter, &mut || self.read())
     }
 }

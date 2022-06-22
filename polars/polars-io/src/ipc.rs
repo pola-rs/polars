@@ -134,7 +134,7 @@ impl<R: Read + Seek> IpcReader<R> {
         let reader = read::FileReader::new(&mut self.reader, metadata, sorted_projection);
 
         let include_row_count = self.row_count.is_some();
-        dbg!(finish_reader(
+        finish_reader(
             reader,
             rechunk,
             self.n_rows,
@@ -143,7 +143,7 @@ impl<R: Read + Seek> IpcReader<R> {
             &schema,
             self.row_count,
         )
-        .map(|df| fix_column_order(df, projection, include_row_count)))
+        .map(|df| fix_column_order(df, projection, include_row_count))
     }
 }
 
