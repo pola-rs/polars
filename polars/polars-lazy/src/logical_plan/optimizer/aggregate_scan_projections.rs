@@ -1,34 +1,27 @@
 use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::ALogicalPlanBuilder;
 use crate::prelude::*;
-use polars_core::datatypes::{PlHashMap, PlHashSet};
-use polars_core::prelude::Schema;
+use polars_core::datatypes::PlHashMap;
+use polars_core::prelude::{PlIndexSet, Schema};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 fn process_with_columns(
     path: &Path,
     with_columns: &Option<Arc<Vec<String>>>,
-    columns: &mut PlHashMap<PathBuf, PlHashSet<(usize, String)>>,
+    columns: &mut PlHashMap<PathBuf, PlIndexSet<String>>,
     schema: &Schema,
 ) {
     let cols = columns
         .entry(path.to_owned())
-        .or_insert_with(PlHashSet::new);
+        .or_insert_with(|| PlIndexSet::with_capacity_and_hasher(32, Default::default()));
 
     match with_columns {
         // add only the projected columns
-        Some(with_columns) => {
-            cols.extend(with_columns.iter().enumerate().map(|t| (t.0, t.1.clone())));
-        }
+        Some(with_columns) => cols.extend(with_columns.iter().cloned()),
         // no projection, so we must take all columns
         None => {
-            cols.extend(
-                schema
-                    .iter_names()
-                    .enumerate()
-                    .map(|t| (t.0, t.1.to_string())),
-            );
+            cols.extend(schema.iter_names().map(|t| t.to_string()));
         }
     }
 }
@@ -36,8 +29,8 @@ fn process_with_columns(
 /// Aggregate all the projections in an LP
 pub(crate) fn agg_projection(
     root: Node,
-    // The hashmap maps files to a hashset over column names. (There is a usize to be able to sort them later)
-    columns: &mut PlHashMap<PathBuf, PlHashSet<(usize, String)>>,
+    // The hashmap maps files to a hashset over column names.
+    columns: &mut PlHashMap<PathBuf, PlIndexSet<String>>,
     lp_arena: &Arena<ALogicalPlan>,
 ) {
     use ALogicalPlan::*;
@@ -82,10 +75,23 @@ pub(crate) fn agg_projection(
 /// Due to self joins there can be multiple Scans of the same file in a LP. We already cache the scans
 /// in the PhysicalPlan, but we need to make sure that the first scan has all the columns needed.
 pub struct AggScanProjection {
-    pub columns: PlHashMap<PathBuf, PlHashSet<(usize, String)>>,
+    columns: PlHashMap<PathBuf, Arc<Vec<String>>>,
 }
 
 impl AggScanProjection {
+    pub(crate) fn new(columns: PlHashMap<PathBuf, PlIndexSet<String>>) -> Self {
+        let new_columns_mapping = columns
+            .into_iter()
+            .map(|(k, agg)| {
+                let columns = agg.iter().cloned().collect::<Vec<_>>();
+                (k, Arc::new(columns))
+            })
+            .collect();
+        Self {
+            columns: new_columns_mapping,
+        }
+    }
+
     fn finish_rewrite(
         &self,
         mut lp: ALogicalPlan,
@@ -112,6 +118,10 @@ impl AggScanProjection {
         }
         lp
     }
+
+    fn extract_columns(&mut self, path: &PathBuf) -> Option<Arc<Vec<String>>> {
+        self.columns.get(path).cloned()
+    }
 }
 
 impl OptimizationRule for AggScanProjection {
@@ -135,12 +145,7 @@ impl OptimizationRule for AggScanProjection {
                     mut options,
                 } = lp
                 {
-                    let with_columns = self.columns.get(&path).map(|agg| {
-                        let mut columns = agg.iter().cloned().collect::<Vec<_>>();
-                        // make sure that the columns are sorted because they come from a hashmap
-                        columns.sort_unstable_by_key(|k| k.0);
-                        Arc::new(columns.into_iter().map(|k| k.1).collect())
-                    });
+                    let with_columns = self.extract_columns(&path);
                     // prevent infinite loop
                     if options.with_columns == with_columns {
                         let lp = ALogicalPlan::IpcScan {
@@ -181,12 +186,7 @@ impl OptimizationRule for AggScanProjection {
                     mut options,
                 } = lp
                 {
-                    let mut with_columns = self.columns.get(&path).map(|agg| {
-                        let mut columns = agg.iter().cloned().collect::<Vec<_>>();
-                        // make sure that the columns are sorted because they come from a hashmap
-                        columns.sort_unstable_by_key(|k| k.0);
-                        Arc::new(columns.into_iter().map(|k| k.1).collect())
-                    });
+                    let mut with_columns = self.extract_columns(&path);
                     // prevent infinite loop
                     if options.with_columns == with_columns {
                         let lp = ALogicalPlan::ParquetScan {
@@ -227,12 +227,7 @@ impl OptimizationRule for AggScanProjection {
                     aggregate,
                 } = lp
                 {
-                    let with_columns = self.columns.get(&path).map(|agg| {
-                        let mut columns = agg.iter().cloned().collect::<Vec<_>>();
-                        // make sure that the columns are sorted because they come from a hashmap
-                        columns.sort_unstable_by_key(|k| k.0);
-                        Arc::new(columns.into_iter().map(|k| k.1).collect())
-                    });
+                    let with_columns = self.extract_columns(&path);
                     if options.with_columns == with_columns {
                         let lp = ALogicalPlan::CsvScan {
                             path,
