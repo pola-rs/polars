@@ -224,16 +224,47 @@ class Expr:
         Returns
         -------
         Boolean literal
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"TF": [True, False], "FF": [False, False]})
+        >>> df.select(pl.col("*").any())
+        shape: (1, 2)
+        ┌───────┬──────┐
+        │ FF    ┆ TF   │
+        │ ---   ┆ ---  │
+        │ bool  ┆ bool │
+        ╞═══════╪══════╡
+        │ false ┆ true │
+        └───────┴──────┘
         """
         return wrap_expr(self._pyexpr.any())
 
     def all(self) -> "Expr":
         """
         Check if all boolean values in the column are `True`
+        Not to be confused with pl.all()
 
         Returns
         -------
         Boolean literal
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {"TT": [True, True], "TF": [True, False], "FF": [False, False]}
+        ... )
+        >>> df.select(pl.col("*").all())
+        shape: (1, 3)
+        ┌──────┬───────┬───────┐
+        │ TT   ┆ TF    ┆ FF    │
+        │ ---  ┆ ---   ┆ ---   │
+        │ bool ┆ bool  ┆ bool  │
+        ╞══════╪═══════╪═══════╡
+        │ true ┆ false ┆ false │
+        └──────┴───────┴───────┘
         """
         return wrap_expr(self._pyexpr.all())
 
@@ -566,6 +597,26 @@ class Expr:
         ----------
         f
             function that maps root name to new name
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "A": [1, 2],
+        ...         "B": [3, 4],
+        ...     }
+        ... )
+        >>> df.select(pl.col("*").map_alias(lambda colName: colName + "XXX"))
+        shape: (2, 2)
+        ┌──────┬──────┐
+        │ AXXX ┆ BXXX │
+        │ ---  ┆ ---  │
+        │ i64  ┆ i64  │
+        ╞══════╪══════╡
+        │ 1    ┆ 3    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2    ┆ 4    │
+        └──────┴──────┘
         """
         return wrap_expr(self._pyexpr.map_alias(f))
 
@@ -1804,6 +1855,7 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame({"foo": ["hello", "world"]})
+        # Turn each character into a separate row
         >>> df.select(pl.col("foo").flatten())
         shape: (10, 1)
         ┌─────┐
@@ -1829,7 +1881,19 @@ class Expr:
         ├╌╌╌╌╌┤
         │ d   │
         └─────┘
-
+        >>> df = pl.DataFrame({"foo": ["hello world"]})
+        # Turn each word into a separate row
+        >>> df.select(pl.col("foo").str.split(by=" ").flatten())
+        shape: (2, 1)
+        ┌───────┐
+        │ foo   │
+        │ ---   │
+        │ str   │
+        ╞═══════╡
+        │ hello │
+        ├╌╌╌╌╌╌╌┤
+        │ world │
+        └───────┘
         """
 
         return wrap_expr(self._pyexpr.explode())
@@ -1911,6 +1975,25 @@ class Expr:
     def pow(self, exponent: Union[float, "Expr"]) -> "Expr":
         """
         Raise expression to the power of exponent.
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
+        >>> df.select(pl.col("foo").pow(3))
+        shape: (4, 1)
+        ┌──────┐
+        │ foo  │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 1.0  │
+        ├╌╌╌╌╌╌┤
+        │ 8.0  │
+        ├╌╌╌╌╌╌┤
+        │ 27.0 │
+        ├╌╌╌╌╌╌┤
+        │ 64.0 │
+        └──────┘
         """
         exponent = expr_to_lit_or_expr(exponent)
         return wrap_expr(self._pyexpr.pow(exponent._pyexpr))
@@ -2225,6 +2308,35 @@ class Expr:
             If you want to compute multiple aggregation statistics over the same dynamic window, consider using
             `groupby_rolling` this method can cache the window size computation.
 
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_min(window_size=2),
+        ...         ]
+        ...     )
+        ... )
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 1.0  │
+        ├╌╌╌╌╌╌┤
+        │ 2.0  │
+        ├╌╌╌╌╌╌┤
+        │ 3.0  │
+        ├╌╌╌╌╌╌┤
+        │ 4.0  │
+        ├╌╌╌╌╌╌┤
+        │ 5.0  │
+        └──────┘
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -2292,6 +2404,37 @@ class Expr:
         .. note::
             If you want to compute multiple aggregation statistics over the same dynamic window, consider using
             `groupby_rolling` this method can cache the window size computation.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_max(window_size=2),
+        ...         ]
+        ...     )
+        ... )
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 2.0  │
+        ├╌╌╌╌╌╌┤
+        │ 3.0  │
+        ├╌╌╌╌╌╌┤
+        │ 4.0  │
+        ├╌╌╌╌╌╌┤
+        │ 5.0  │
+        ├╌╌╌╌╌╌┤
+        │ 6.0  │
+        └──────┘
+
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -2455,6 +2598,18 @@ class Expr:
         .. note::
             If you want to compute multiple aggregation statistics over the same dynamic window, consider using
             `groupby_rolling` this method can cache the window size computation.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_sum(window_size=2),
+        ...         ]
+        ...     )
+        ... )
 
         """
         window_size, min_periods = _prepare_rolling_window_args(

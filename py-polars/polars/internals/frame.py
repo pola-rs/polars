@@ -5900,6 +5900,7 @@ class GroupBy(Generic[DF]):
 
          Examples
          --------
+
          >>> df = pl.DataFrame(
          ...     {
          ...         "id": [0, 1, 2, 3, 4],
@@ -5924,17 +5925,9 @@ class GroupBy(Generic[DF]):
         │ 4   ┆ red   ┆ square   │
         └─────┴───────┴──────────┘
         # For each color group sample two rows
-         (df
-         .groupby('color')
-         .apply(
-             lambda group_df: group_df.sample(2)
-                 )
+        >>> (df.groupby("color").apply(lambda group_df: group_df.sample(2)))
         # It would be better to implement this with an expression:
-         (df
-         .groupby('color').filter(
-             pl.arange(0, pl.count()).shuffle().over("groups") < 2
-             )
-         )
+        >>> (df.filter(pl.arange(0, pl.count()).shuffle().over("color") < 2))
 
 
         """
