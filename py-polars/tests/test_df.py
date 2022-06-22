@@ -2236,3 +2236,54 @@ def test_fill_null_limits() -> None:
             False,
         ],
     }
+
+
+def test_selection_regex_and_multicol() -> None:
+    test_df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4],
+            "b": [5, 6, 7, 8],
+            "c": [9, 10, 11, 12],
+            "foo": [13, 14, 15, 16],
+        }
+    )
+
+    # Selection only
+    test_df.select(
+        [
+            pl.col(["a", "b", "c"]).suffix("_list"),
+            pl.all().exclude("foo").suffix("_wild"),
+            pl.col("^\\w$").suffix("_regex"),
+        ]
+    )
+
+    # Multi * Single
+    assert test_df.select(pl.col(["a", "b", "c"]) * pl.col("foo")).to_dict(False) == {
+        "a": [13, 28, 45, 64],
+        "b": [65, 84, 105, 128],
+        "c": [117, 140, 165, 192],
+    }
+    assert test_df.select(pl.all().exclude("foo") * pl.col("foo")).to_dict(False) == {
+        "a": [13, 28, 45, 64],
+        "b": [65, 84, 105, 128],
+        "c": [117, 140, 165, 192],
+    }
+
+    assert test_df.select(pl.col("^\\w$") * pl.col("foo")).to_dict(False) == {
+        "a": [13, 28, 45, 64],
+        "b": [65, 84, 105, 128],
+        "c": [117, 140, 165, 192],
+    }
+
+    # Multi * Multi
+    assert test_df.select(pl.col(["a", "b", "c"]) * pl.col(["a", "b", "c"])).to_dict(
+        False
+    ) == {"a": [1, 4, 9, 16], "b": [25, 36, 49, 64], "c": [81, 100, 121, 144]}
+    assert test_df.select(pl.all().exclude("foo") * pl.all().exclude("foo")).to_dict(
+        False
+    ) == {"a": [1, 4, 9, 16], "b": [25, 36, 49, 64], "c": [81, 100, 121, 144]}
+    assert test_df.select(pl.col("^\\w$") * pl.col("^\\w$")).to_dict(False) == {
+        "a": [1, 4, 9, 16],
+        "b": [25, 36, 49, 64],
+        "c": [81, 100, 121, 144],
+    }
