@@ -67,6 +67,9 @@ impl Series {
                 "n is larger than the number of elements in this array".into(),
             ));
         }
+        if n == 0 {
+            return Ok(self.slice(0, 0));
+        }
         let len = self.len();
 
         match with_replacement {

@@ -286,8 +286,13 @@ impl LazyFrame {
     ///         .sort_by_exprs(vec![col("sepal.width")], vec![false])
     /// }
     /// ```
-    pub fn sort_by_exprs<E: AsRef<[Expr]>>(self, by_exprs: E, reverse: Vec<bool>) -> Self {
+    pub fn sort_by_exprs<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
+        self,
+        by_exprs: E,
+        reverse: B,
+    ) -> Self {
         let by_exprs = by_exprs.as_ref().to_vec();
+        let reverse = reverse.as_ref().to_vec();
         if by_exprs.is_empty() {
             self
         } else {
@@ -603,14 +608,14 @@ impl LazyFrame {
             rules.push(Box::new(AggregatePushdown::new()))
         }
 
-        #[cfg(any(feature = "parquet", feature = "csv-file"))]
+        #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
         if agg_scan_projection {
             // scan the LP to aggregate all the column used in scans
             // these columns will be added to the state of the AggScanProjection rule
             let mut columns = PlHashMap::with_capacity(32);
             agg_projection(lp_top, &mut columns, lp_arena);
 
-            let opt = AggScanProjection { columns };
+            let opt = AggScanProjection::new(columns);
             rules.push(Box::new(opt));
         }
 
