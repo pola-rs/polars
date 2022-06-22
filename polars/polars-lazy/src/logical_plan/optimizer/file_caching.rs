@@ -2,9 +2,15 @@ use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::ALogicalPlanBuilder;
 use crate::prelude::*;
 use polars_core::datatypes::PlHashMap;
-use polars_core::prelude::{PlIndexSet, Schema};
+use polars_core::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+pub(crate) struct FileFingerPrint {
+    pub path: PathBuf,
+    pub predicate: Option<Expr>,
+    pub limit: Option<IdxSize>
+}
 
 #[allow(clippy::type_complexity)]
 fn process_with_columns(
@@ -12,7 +18,7 @@ fn process_with_columns(
     with_columns: &Option<Arc<Vec<String>>>,
     predicate: Option<Expr>,
     file_count_and_column_union: &mut PlHashMap<
-        (PathBuf, Option<Expr>),
+        FileFingerPrint,
         (FileCount, PlIndexSet<String>),
     >,
     schema: &Schema,
@@ -98,11 +104,11 @@ pub(crate) fn find_common_columns_per_file_and_predicate(
 /// Due to self joins there can be multiple Scans of the same file in a LP. We already cache the scans
 /// in the PhysicalPlan, but we need to make sure that the first scan has all the columns needed.
 #[allow(clippy::type_complexity)]
-pub struct AggScanProjection {
+pub struct FileCacher {
     file_count_and_column_union: PlHashMap<(PathBuf, Option<Expr>), (FileCount, Arc<Vec<String>>)>,
 }
 
-impl AggScanProjection {
+impl FileCacher {
     pub(crate) fn new(
         columns: PlHashMap<(PathBuf, Option<Expr>), (FileCount, PlIndexSet<String>)>,
     ) -> Self {
@@ -161,7 +167,7 @@ impl AggScanProjection {
     }
 }
 
-impl OptimizationRule for AggScanProjection {
+impl OptimizationRule for FileCacher {
     fn optimize_plan(
         &mut self,
         lp_arena: &mut Arena<ALogicalPlan>,
@@ -237,6 +243,7 @@ impl OptimizationRule for AggScanProjection {
                     let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
                     let with_columns =
                         self.extract_columns_and_count(path.clone(), predicate_expr.clone());
+                    options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
                     let mut with_columns = with_columns.map(|t| t.1);
                     // prevent infinite loop
                     if options.with_columns == with_columns {
@@ -288,6 +295,7 @@ impl OptimizationRule for AggScanProjection {
                     let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
                     let with_columns =
                         self.extract_columns_and_count(path.clone(), predicate_expr.clone());
+                    options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
                     let with_columns = with_columns.map(|t| t.1);
                     if options.with_columns == with_columns {
                         let lp = ALogicalPlan::CsvScan {

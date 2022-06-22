@@ -25,6 +25,7 @@ pub struct CsvParserOptions {
     pub(crate) encoding: CsvEncoding,
     pub(crate) row_count: Option<RowCount>,
     pub(crate) parse_dates: bool,
+    pub(crate) file_counter: FileCount,
 }
 #[cfg(feature = "parquet")]
 #[derive(Clone, Debug)]
@@ -36,6 +37,7 @@ pub struct ParquetOptions {
     pub(crate) parallel: bool,
     pub(crate) rechunk: bool,
     pub(crate) row_count: Option<RowCount>,
+    pub(crate) file_counter: FileCount,
 }
 
 #[derive(Clone, Debug)]
@@ -57,7 +59,6 @@ pub struct IpcScanOptionsInner {
     pub(crate) row_count: Option<RowCount>,
     pub(crate) rechunk: bool,
     pub(crate) file_counter: FileCount,
-    pub(crate) files_with_predicate: FileCount,
 }
 
 impl From<IpcScanOptions> for IpcScanOptionsInner {
@@ -69,7 +70,6 @@ impl From<IpcScanOptions> for IpcScanOptionsInner {
             row_count: options.row_count,
             rechunk: options.rechunk,
             file_counter: Default::default(),
-            files_with_predicate: Default::default(),
         }
     }
 }

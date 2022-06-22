@@ -30,7 +30,7 @@ use std::sync::Arc;
 
 use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
-use crate::logical_plan::optimizer::aggregate_scan_projections::AggScanProjection;
+use crate::logical_plan::optimizer::file_caching::FileCacher;
 use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
 use crate::logical_plan::optimizer::{
@@ -41,7 +41,7 @@ use crate::physical_plan::state::ExecutionState;
 use serde::{Deserialize, Serialize};
 
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-use crate::prelude::aggregate_scan_projections::find_common_columns_per_file_and_predicate;
+use crate::prelude::file_caching::find_common_columns_per_file_and_predicate;
 use crate::prelude::{
     drop_nulls::ReplaceDropNulls, fast_projection::FastProjection,
     simplify_expr::SimplifyBooleanRule, slice_pushdown_lp::SlicePushDown, *,
@@ -598,7 +598,7 @@ impl LazyFrame {
                 expr_arena,
             );
 
-            let rule = AggScanProjection::new(file_predicate_to_columns_and_count);
+            let rule = FileCacher::new(file_predicate_to_columns_and_count);
             // its important that we do it now
             // because typo coercion will change the predicates and there for
             lp_top = opt.optimize_loop(

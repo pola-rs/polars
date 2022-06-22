@@ -3,7 +3,7 @@ use polars_core::{datatypes::PlHashMap, prelude::*};
 
 pub(crate) mod aggregate_pushdown;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-pub(crate) mod aggregate_scan_projections;
+pub(crate) mod file_caching;
 pub(crate) mod delay_rechunk;
 pub(crate) mod drop_nulls;
 pub(crate) mod fast_projection;
