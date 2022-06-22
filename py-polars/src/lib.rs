@@ -470,6 +470,11 @@ fn pool_size() -> usize {
     POOL.current_num_threads()
 }
 
+#[pyfunction]
+pub fn arg_where(condition: PyExpr) -> PyExpr {
+    polars::lazy::dsl::arg_where(condition.inner).into()
+}
+
 #[pymodule]
 fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add("NotFoundError", py.get_type::<NotFoundError>())
@@ -530,5 +535,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(as_struct)).unwrap();
     m.add_wrapped(wrap_pyfunction!(repeat)).unwrap();
     m.add_wrapped(wrap_pyfunction!(pool_size)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(arg_where)).unwrap();
     Ok(())
 }

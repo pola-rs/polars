@@ -28,6 +28,7 @@ from polars.utils import (
 
 try:
     from polars.polars import arange as pyarange
+    from polars.polars import arg_where as py_arg_where
     from polars.polars import argsort_by as pyargsort_by
     from polars.polars import as_struct as _as_struct
     from polars.polars import binary_function as pybinary_function
@@ -1653,3 +1654,65 @@ def repeat(
         if isinstance(n, int):
             n = lit(n)
         return pli.wrap_expr(_repeat(value, n._pyexpr))
+
+
+@overload
+def arg_where(
+    condition: Union["pli.Expr", "pli.Series"],
+    eager: Literal[False] = ...,
+) -> "pli.Expr":
+    ...
+
+
+@overload
+def arg_where(
+    condition: Union["pli.Expr", "pli.Series"], eager: Literal[True]
+) -> "pli.Series":
+    ...
+
+
+@overload
+def arg_where(
+    condition: Union["pli.Expr", "pli.Series"], eager: bool
+) -> Union["pli.Expr", "pli.Series"]:
+    ...
+
+
+def arg_where(
+    condition: Union["pli.Expr", "pli.Series"], eager: bool = False
+) -> Union["pli.Expr", "pli.Series"]:
+    """
+    Return indices where `condition` evaluates `True`.
+
+    Parameters
+    ----------
+    condition
+        Boolean expression to evaluate
+
+    Examples
+    --------
+
+    >>> df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+    >>> df.select(
+    ...     [
+    ...         pl.col("a") % 2 == 0,
+    ...     ]
+    ... ).to_series()
+    shape: (2,)
+    Series: '' [u32]
+    [
+            1
+            3
+    ]
+    """
+    if eager:
+        if not isinstance(condition, pli.Series):
+            raise ValueError(
+                f"expected 'Series' in 'arg_where' if 'eager=True', got {type(condition)}"
+            )
+        return (
+            condition.to_frame().select(arg_where(pli.col(condition.name))).to_series()
+        )
+    else:
+        condition = pli.expr_to_lit_or_expr(condition, str_to_lit=True)
+        return pli.wrap_expr(py_arg_where(condition._pyexpr))

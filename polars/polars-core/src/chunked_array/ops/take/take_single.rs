@@ -162,18 +162,3 @@ impl TakeRandom for ListChunked {
         })
     }
 }
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    #[should_panic]
-    fn test_oob() {
-        let data: Series = [1.0, 2.0, 3.0].iter().collect();
-        let data = data.f64().unwrap();
-        let matches = data.equal(5.0);
-        let matches_indexes = matches.arg_true();
-        matches_indexes.get(0);
-    }
-}

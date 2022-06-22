@@ -1768,7 +1768,7 @@ class Series:
         -------
         UInt32 Series
         """
-        return wrap_s(self._s.arg_true())
+        return pli.arg_where(self, eager=True)
 
     def is_unique(self) -> "Series":
         """
