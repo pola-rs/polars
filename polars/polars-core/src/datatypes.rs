@@ -1046,6 +1046,8 @@ pub type PlHashMap<K, V> = hashbrown::HashMap<K, V, RandomState>;
 pub type PlHashSet<V> = hashbrown::HashSet<V, RandomState>;
 #[cfg(feature = "private")]
 pub type PlIndexMap<K, V> = indexmap::IndexMap<K, V, RandomState>;
+#[cfg(feature = "private")]
+pub type PlIndexSet<K> = indexmap::IndexSet<K, RandomState>;
 
 #[cfg(not(feature = "bigidx"))]
 pub type IdxCa = UInt32Chunked;

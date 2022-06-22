@@ -9,7 +9,8 @@ pub struct StringNameSpace(pub(crate) Expr);
 
 impl StringNameSpace {
     /// Check if a string value contains a literal substring.
-    pub fn contains_literal(self, pat: String) -> Expr {
+    pub fn contains_literal<S: AsRef<str>>(self, pat: S) -> Expr {
+        let pat = pat.as_ref().into();
         self.0.map_private(
             FunctionExpr::StringContains { pat, literal: true },
             "str.contains_literal",
@@ -17,7 +18,8 @@ impl StringNameSpace {
     }
 
     /// Check if a string value contains a Regex substring.
-    pub fn contains(self, pat: String) -> Expr {
+    pub fn contains<S: AsRef<str>>(self, pat: S) -> Expr {
+        let pat = pat.as_ref().into();
         self.0.map_private(
             FunctionExpr::StringContains {
                 pat,
@@ -28,13 +30,15 @@ impl StringNameSpace {
     }
 
     /// Check if a string value ends with the `sub` string.
-    pub fn ends_with(self, sub: String) -> Expr {
+    pub fn ends_with<S: AsRef<str>>(self, sub: S) -> Expr {
+        let sub = sub.as_ref().into();
         self.0
             .map_private(FunctionExpr::StringEndsWith(sub), "str.ends_with")
     }
 
     /// Check if a string value starts with the `sub` string.
-    pub fn starts_with(self, sub: String) -> Expr {
+    pub fn starts_with<S: AsRef<str>>(self, sub: S) -> Expr {
+        let sub = sub.as_ref().into();
         self.0
             .map_private(FunctionExpr::StringStartsWith(sub), "str.starts_with")
     }
