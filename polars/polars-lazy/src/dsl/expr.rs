@@ -2,6 +2,7 @@ use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
 use std::fmt::{Debug, Formatter};
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
 use crate::dsl::function_expr::FunctionExpr;
@@ -244,7 +245,8 @@ impl AsRef<Expr> for AggExpr {
     }
 }
 
-/// Queries consists of multiple expressions.
+/// Queries consists of multiple ex
+/// pressions.
 #[derive(Clone, PartialEq)]
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -352,13 +354,27 @@ pub enum Expr {
     Nth(i64),
 }
 
+// TODO! derive. This is only a temporary fix
+// Because PartialEq will have a lot of `false`, e.g. on Function
+// Types, this may lead to many file reads, as we use predicate comparison
+// to check if we can cache a file
+#[allow(clippy::derive_hash_xor_eq)]
+impl Hash for Expr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let s = format!("{:?}", self);
+        s.hash(state)
+    }
+}
+
+impl Eq for Expr {}
+
 impl Default for Expr {
     fn default() -> Self {
         Expr::Literal(LiteralValue::Null)
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Excluded {
     Name(Arc<str>),
     Dtype(DataType),

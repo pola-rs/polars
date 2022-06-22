@@ -6,8 +6,6 @@ use polars_io::RowCount;
 use serde::{Deserialize, Serialize};
 
 pub type FileCount = u32;
-// E.g. 1/7 files read
-pub type FileCounter = (FileCount, FileCount);
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -51,13 +49,15 @@ pub struct IpcScanOptions {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptionsInner {
     pub(crate) n_rows: Option<usize>,
     pub(crate) with_columns: Option<Arc<Vec<String>>>,
     pub(crate) cache: bool,
     pub(crate) row_count: Option<RowCount>,
     pub(crate) rechunk: bool,
-    pub(crate) file_counter: FileCounter
+    pub(crate) file_counter: FileCount,
+    pub(crate) files_with_predicate: FileCount,
 }
 
 impl From<IpcScanOptions> for IpcScanOptionsInner {
@@ -68,7 +68,8 @@ impl From<IpcScanOptions> for IpcScanOptionsInner {
             cache: options.cache,
             row_count: options.row_count,
             rechunk: options.rechunk,
-            file_counter: Default::default()
+            file_counter: Default::default(),
+            files_with_predicate: Default::default(),
         }
     }
 }

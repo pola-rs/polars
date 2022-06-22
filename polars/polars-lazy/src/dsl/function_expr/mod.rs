@@ -12,7 +12,7 @@ use polars_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum FunctionExpr {
     NullCount,
     Pow,

@@ -40,8 +40,8 @@ use crate::physical_plan::state::ExecutionState;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(any(feature="ipc", feature = "parquet", feature = "csv-file"))]
-use crate::prelude::aggregate_scan_projections::agg_projection;
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+use crate::prelude::aggregate_scan_projections::find_common_columns_per_file_and_predicate;
 use crate::prelude::{
     drop_nulls::ReplaceDropNulls, fast_projection::FastProjection,
     simplify_expr::SimplifyBooleanRule, slice_pushdown_lp::SlicePushDown, *,
@@ -535,7 +535,7 @@ impl LazyFrame {
         let simplify_expr = self.opt_state.simplify_expr;
         let slice_pushdown = self.opt_state.slice_pushdown;
 
-        #[cfg(any(feature="ipc", feature = "parquet", feature = "csv-file"))]
+        #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
         let agg_scan_projection = self.opt_state.agg_scan_projection;
         let aggregate_pushdown = self.opt_state.aggregate_pushdown;
 
@@ -578,6 +578,37 @@ impl LazyFrame {
                 .expect("predicate pushdown failed");
             lp_arena.replace(lp_top, alp);
         }
+
+        #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+        if agg_scan_projection {
+            // we do this so that expressions are simplified created by the pushdown optimizations
+            // we must clean up the predicates, because the agg_scan_projection
+            // uses them in the hashtable to determine duplicates.
+            let simplify_bools =
+                &mut [Box::new(SimplifyBooleanRule {}) as Box<dyn OptimizationRule>];
+            lp_top = opt.optimize_loop(simplify_bools, expr_arena, lp_arena, lp_top);
+
+            // scan the LP to aggregate all the column used in scans
+            // these columns will be added to the state of the AggScanProjection rule
+            let mut file_predicate_to_columns_and_count = PlHashMap::with_capacity(32);
+            find_common_columns_per_file_and_predicate(
+                lp_top,
+                &mut file_predicate_to_columns_and_count,
+                lp_arena,
+                expr_arena,
+            );
+
+            let rule = AggScanProjection::new(file_predicate_to_columns_and_count);
+            // its important that we do it now
+            // because typo coercion will change the predicates and there for
+            lp_top = opt.optimize_loop(
+                &mut [Box::new(rule) as Box<dyn OptimizationRule>],
+                expr_arena,
+                lp_arena,
+                lp_top,
+            );
+        }
+
         // make sure its before slice pushdown.
         rules.push(Box::new(FastProjection {}));
         rules.push(Box::new(DelayRechunk {}));
@@ -606,17 +637,6 @@ impl LazyFrame {
 
         if aggregate_pushdown {
             rules.push(Box::new(AggregatePushdown::new()))
-        }
-
-        #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-        if agg_scan_projection {
-            // scan the LP to aggregate all the column used in scans
-            // these columns will be added to the state of the AggScanProjection rule
-            let mut columns = PlHashMap::with_capacity(32);
-            agg_projection(lp_top, &mut columns, lp_arena);
-
-            let opt = AggScanProjection::new(columns);
-            rules.push(Box::new(opt));
         }
 
         rules.push(Box::new(ReplaceDropNulls {}));

@@ -76,12 +76,8 @@ pub struct IpcExec {
 }
 
 #[cfg(feature = "ipc")]
-impl Executor for IpcExec {
-    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
-        let (cache_key, cached) = cache_hit(&self.path, &self.predicate, state);
-        if let Some(df) = cached {
-            return Ok(df);
-        }
+impl IpcExec {
+    fn read(&mut self) -> Result<DataFrame> {
         let (file, projection, n_rows, aggregate, predicate) = prepare_scan_args(
             &self.path,
             &self.predicate,
@@ -90,20 +86,24 @@ impl Executor for IpcExec {
             self.options.n_rows,
             &self.aggregate,
         );
-        let df = IpcReader::new(file)
+        IpcReader::new(file)
             .with_n_rows(n_rows)
             .with_row_count(std::mem::take(&mut self.options.row_count))
             .set_rechunk(self.options.rechunk)
-            .finish_with_scan_ops(predicate, aggregate, projection)?;
+            .finish_with_scan_ops(predicate, aggregate, projection)
+    }
+}
 
-        if self.options.cache {
-            state.store_cache(cache_key, df.clone())
-        }
-        if state.verbose {
-            println!("ipc {:?} read", self.path);
-        }
-
-        Ok(df)
+#[cfg(feature = "ipc")]
+impl Executor for IpcExec {
+    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        let key = (
+            self.path.clone(),
+            self.predicate.as_ref().map(|ae| ae.as_expression().clone()),
+        );
+        state
+            .file_cache
+            .read(key, self.options.file_counter, &mut || self.read())
     }
 }
 
