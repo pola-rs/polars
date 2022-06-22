@@ -6,12 +6,16 @@ use std::ops::Deref;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, JoinOptIds>>>;
 pub type GroupsProxyCache = Arc<Mutex<PlHashMap<String, GroupsProxy>>>;
+pub(super) type FileCache = Arc<Mutex<PlHashMap<String, (usize, DataFrame)>>>;
 
 /// State/ cache that is maintained during the Execution of the physical plan.
 #[derive(Clone)]
 pub struct ExecutionState {
+    // cached by a `.cache` call and kept in memory for the duration of the plan.
     df_cache: Arc<Mutex<PlHashMap<String, DataFrame>>>,
-    pub schema_cache: Arc<RwLock<Option<SchemaRef>>>,
+    // cache file reads until all branches got there file, then we delete it
+    file_cache: FileCache,
+    pub(crate) schema_cache: Arc<RwLock<Option<SchemaRef>>>,
     /// Used by Window Expression to prevent redundant grouping
     pub(crate) group_tuples: GroupsProxyCache,
     /// Used by Window Expression to prevent redundant joins
@@ -25,6 +29,7 @@ impl ExecutionState {
         Self {
             df_cache: Arc::new(Mutex::new(PlHashMap::default())),
             schema_cache: Arc::new(RwLock::new(None)),
+            file_cache: Arc::new(Mutex::new(PlHashMap::default())),
             group_tuples: Arc::new(Mutex::new(PlHashMap::default())),
             join_tuples: Arc::new(Mutex::new(PlHashMap::default())),
             verbose: std::env::var("POLARS_VERBOSE").is_ok(),

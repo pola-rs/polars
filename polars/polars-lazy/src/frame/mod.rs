@@ -40,7 +40,7 @@ use crate::physical_plan::state::ExecutionState;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(any(feature = "parquet", feature = "csv-file"))]
+#[cfg(any(feature="ipc", feature = "parquet", feature = "csv-file"))]
 use crate::prelude::aggregate_scan_projections::agg_projection;
 use crate::prelude::{
     drop_nulls::ReplaceDropNulls, fast_projection::FastProjection,
@@ -535,7 +535,7 @@ impl LazyFrame {
         let simplify_expr = self.opt_state.simplify_expr;
         let slice_pushdown = self.opt_state.slice_pushdown;
 
-        #[cfg(any(feature = "parquet", feature = "csv-file"))]
+        #[cfg(any(feature="ipc", feature = "parquet", feature = "csv-file"))]
         let agg_scan_projection = self.opt_state.agg_scan_projection;
         let aggregate_pushdown = self.opt_state.aggregate_pushdown;
 

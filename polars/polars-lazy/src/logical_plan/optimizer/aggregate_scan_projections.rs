@@ -9,28 +9,33 @@ use std::sync::Arc;
 fn process_with_columns(
     path: &Path,
     with_columns: &Option<Arc<Vec<String>>>,
-    columns: &mut PlHashMap<PathBuf, PlIndexSet<String>>,
+    columns: &mut PlHashMap<PathBuf, (FileCount, PlIndexSet<String>)>,
     schema: &Schema,
 ) {
     let cols = columns
         .entry(path.to_owned())
-        .or_insert_with(|| PlIndexSet::with_capacity_and_hasher(32, Default::default()));
+        .or_insert_with(|| (0, PlIndexSet::with_capacity_and_hasher(32, Default::default())));
+
+    // increment file count
+    cols.0 += 1;
 
     match with_columns {
         // add only the projected columns
-        Some(with_columns) => cols.extend(with_columns.iter().cloned()),
+        Some(with_columns) => cols.1.extend(with_columns.iter().cloned()),
         // no projection, so we must take all columns
         None => {
-            cols.extend(schema.iter_names().map(|t| t.to_string()));
+            cols.1.extend(schema.iter_names().map(|t| t.to_string()));
         }
     }
 }
+
 
 /// Aggregate all the projections in an LP
 pub(crate) fn agg_projection(
     root: Node,
     // The hashmap maps files to a hashset over column names.
-    columns: &mut PlHashMap<PathBuf, PlIndexSet<String>>,
+    // we also keep track of how often a needs file needs to be read so we can cache until last read
+    columns: &mut PlHashMap<PathBuf, (FileCount, PlIndexSet<String>)>,
     lp_arena: &Arena<ALogicalPlan>,
 ) {
     use ALogicalPlan::*;
@@ -75,16 +80,17 @@ pub(crate) fn agg_projection(
 /// Due to self joins there can be multiple Scans of the same file in a LP. We already cache the scans
 /// in the PhysicalPlan, but we need to make sure that the first scan has all the columns needed.
 pub struct AggScanProjection {
-    columns: PlHashMap<PathBuf, Arc<Vec<String>>>,
+    columns: PlHashMap<PathBuf, (FileCount, Arc<Vec<String>>)>,
 }
 
 impl AggScanProjection {
-    pub(crate) fn new(columns: PlHashMap<PathBuf, PlIndexSet<String>>) -> Self {
+    pub(crate) fn new(columns: PlHashMap<PathBuf, (FileCount, PlIndexSet<String>)>) -> Self {
         let new_columns_mapping = columns
             .into_iter()
             .map(|(k, agg)| {
-                let columns = agg.iter().cloned().collect::<Vec<_>>();
-                (k, Arc::new(columns))
+                let file_count = agg.0;
+                let columns = agg.1.iter().cloned().collect::<Vec<_>>();
+                (k, (file_count, Arc::new(columns)))
             })
             .collect();
         Self {
@@ -103,7 +109,7 @@ impl AggScanProjection {
         // if the original projection is less than the new one. Also project locally
         if let Some(mut with_columns) = with_columns {
             let agg = self.columns.get(path).unwrap();
-            if with_columns.len() < agg.len() {
+            if with_columns.len() < agg.1.len() {
                 let node = lp_arena.add(lp);
 
                 let projections = std::mem::take(Arc::make_mut(&mut with_columns))
@@ -120,7 +126,7 @@ impl AggScanProjection {
     }
 
     fn extract_columns(&mut self, path: &PathBuf) -> Option<Arc<Vec<String>>> {
-        self.columns.get(path).cloned()
+        self.columns.get(path).map(|t| t.1.clone())
     }
 }
 

@@ -129,7 +129,7 @@ impl LogicalPlanBuilder {
             schema,
             predicate: None,
             aggregate: vec![],
-            options,
+            options: options.into(),
         }
         .into())
     }

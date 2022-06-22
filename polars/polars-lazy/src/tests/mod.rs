@@ -14,6 +14,7 @@ mod predicate_queries;
 mod projection_queries;
 #[cfg(feature = "test")]
 mod queries;
+#[cfg(feature = "strings")]
 mod tpch;
 
 fn load_df() -> DataFrame {

@@ -72,7 +72,7 @@ pub struct IpcExec {
     pub(crate) schema: SchemaRef,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
     pub(crate) aggregate: Vec<ScanAggregation>,
-    pub(crate) options: IpcScanOptions,
+    pub(crate) options: IpcScanOptionsInner,
 }
 
 #[cfg(feature = "ipc")]
