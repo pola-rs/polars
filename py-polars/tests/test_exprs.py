@@ -225,15 +225,30 @@ def test_null_count_expr() -> None:
 
 
 def test_power_by_expression() -> None:
-    assert pl.DataFrame(
+    out = pl.DataFrame(
         {"a": [1, None, None, 4, 5, 6], "b": [1, 2, None, 4, None, 6]}
-    ).select([(pl.col("a") ** pl.col("b")).alias("pow")])["pow"].to_list() == [
+    ).select(
+        [
+            (pl.col("a") ** pl.col("b")).alias("pow"),
+            (2 ** pl.col("b")).alias("pow_left"),
+        ]
+    )
+
+    assert out["pow"].to_list() == [
         1.0,
         None,
         None,
         256.0,
         None,
         46656.0,
+    ]
+    assert out["pow_left"].to_list() == [
+        2.0,
+        4.0,
+        None,
+        16.0,
+        None,
+        64.0,
     ]
 
 

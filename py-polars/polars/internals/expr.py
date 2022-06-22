@@ -133,8 +133,11 @@ class Expr:
     def __rmod__(self, other: Any) -> "Expr":
         return wrap_expr(self.__to_pyexpr(other) % self._pyexpr)
 
-    def __pow__(self, power: Union[float, "Expr"], modulo: None = None) -> "Expr":
+    def __pow__(self, power: Union[float, "Expr", int], modulo: None = None) -> "Expr":
         return self.pow(power)
+
+    def __rpow__(self, base: Union[float, "Expr", int]) -> "Expr":
+        return pli.expr_to_lit_or_expr(base) ** self
 
     def __ge__(self, other: Any) -> "Expr":
         return self.gt_eq(self.__to_expr(other))
