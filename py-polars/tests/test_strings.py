@@ -134,3 +134,12 @@ def test_format_empty_df() -> None:
     )
     assert df.shape == (0, 1)
     assert df.dtypes == [pl.Utf8]
+
+
+def test_starts_ends_with() -> None:
+    assert pl.DataFrame({"a": ["hamburger", "nuts", "lollypop"]}).select(
+        [
+            pl.col("a").str.ends_with("pop").alias("pop"),
+            pl.col("a").str.starts_with("ham").alias("ham"),
+        ]
+    ).to_dict(False) == {"pop": [False, False, True], "ham": [True, False, False]}

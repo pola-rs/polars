@@ -586,26 +586,20 @@ impl PyExpr {
     }
 
     pub fn str_contains(&self, pat: String, literal: Option<bool>) -> PyExpr {
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            let match_type = |p: &str| {
-                if literal.unwrap_or(false) {
-                    ca.contains_literal(p)
-                } else {
-                    ca.contains(p)
-                }
-            };
-            match match_type(&pat) {
-                Ok(ca) => Ok(ca.into_series()),
-                Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
-            }
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::Boolean))
-            .with_fmt("str.contains")
-            .into()
+        match literal {
+            Some(true) => self.inner.clone().str().contains_literal(pat).into(),
+            _ => self.inner.clone().str().contains(pat).into(),
+        }
     }
+
+    pub fn str_ends_with(&self, sub: String) -> PyExpr {
+        self.inner.clone().str().ends_with(sub).into()
+    }
+
+    pub fn str_starts_with(&self, sub: String) -> PyExpr {
+        self.inner.clone().str().starts_with(sub).into()
+    }
+
     pub fn str_hex_encode(&self) -> PyExpr {
         self.clone()
             .inner
