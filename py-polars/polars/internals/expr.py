@@ -17,6 +17,7 @@ import math
 
 from polars import internals as pli
 from polars.datatypes import (
+    Boolean,
     DataType,
     Date,
     Datetime,
@@ -3958,7 +3959,7 @@ class ExprListNameSpace:
         └───────┘
 
         """
-        return wrap_expr(self._pyexpr).map(lambda s: s.arr.contains(item))
+        return wrap_expr(self._pyexpr).map(lambda s: s.arr.contains(item), Boolean)
 
     def join(self, separator: str) -> "Expr":
         """
