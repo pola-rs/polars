@@ -531,9 +531,6 @@ mod test {
         );
         let root = *acc_predicates.get("foo").unwrap();
         let expr = node_to_expr(root, &expr_arena);
-        assert_eq!(
-            format!("{:?}", &expr),
-            format!("{:?}", predicate_expr.and(lit(true)))
-        );
+        assert_eq!(format!("{:?}", &expr), format!("{:?}", predicate_expr));
     }
 }
