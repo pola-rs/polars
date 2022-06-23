@@ -4,6 +4,8 @@ pub use crate::{SerReader, SerWriter};
 pub use crate::csv::*;
 #[cfg(feature = "ipc")]
 pub use crate::ipc::*;
+#[cfg(feature = "ipc")]
+pub use crate::ipc_stream::*;
 #[cfg(feature = "json")]
 pub use crate::json::*;
 #[cfg(feature = "json")]
