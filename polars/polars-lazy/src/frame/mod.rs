@@ -41,7 +41,7 @@ use crate::physical_plan::state::ExecutionState;
 use serde::{Deserialize, Serialize};
 
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-use crate::prelude::file_caching::find_common_columns_per_file_and_predicate;
+use crate::prelude::file_caching::find_column_union_and_fingerprints;
 use crate::prelude::{
     drop_nulls::ReplaceDropNulls, fast_projection::FastProjection,
     simplify_expr::SimplifyBooleanRule, slice_pushdown_lp::SlicePushDown, *,
@@ -49,6 +49,8 @@ use crate::prelude::{
 
 use crate::logical_plan::FETCH_ROWS;
 use crate::prelude::delay_rechunk::DelayRechunk;
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+use crate::prelude::file_caching::collect_fingerprints;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::explode::MeltArgs;
@@ -113,8 +115,7 @@ pub struct OptState {
     pub predicate_pushdown: bool,
     pub type_coercion: bool,
     pub simplify_expr: bool,
-    /// Make sure that all needed columns are scanned
-    pub agg_scan_projection: bool,
+    pub file_caching: bool,
     pub aggregate_pushdown: bool,
     pub global_string_cache: bool,
     pub slice_pushdown: bool,
@@ -130,7 +131,7 @@ impl Default for OptState {
             global_string_cache: false,
             slice_pushdown: true,
             // will be toggled by a scan operation such as csv scan or parquet scan
-            agg_scan_projection: false,
+            file_caching: false,
             aggregate_pushdown: false,
         }
     }
@@ -185,7 +186,7 @@ impl LazyFrame {
             global_string_cache: false,
             slice_pushdown: false,
             // will be toggled by a scan operation such as csv scan or parquet scan
-            agg_scan_projection: false,
+            file_caching: false,
             aggregate_pushdown: false,
         })
     }
@@ -536,7 +537,7 @@ impl LazyFrame {
         let slice_pushdown = self.opt_state.slice_pushdown;
 
         #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-        let agg_scan_projection = self.opt_state.agg_scan_projection;
+        let agg_scan_projection = self.opt_state.file_caching;
         let aggregate_pushdown = self.opt_state.aggregate_pushdown;
 
         let logical_plan = self.get_plan_builder().build();
@@ -591,7 +592,7 @@ impl LazyFrame {
             // scan the LP to aggregate all the column used in scans
             // these columns will be added to the state of the AggScanProjection rule
             let mut file_predicate_to_columns_and_count = PlHashMap::with_capacity(32);
-            find_common_columns_per_file_and_predicate(
+            find_column_union_and_fingerprints(
                 lp_top,
                 &mut file_predicate_to_columns_and_count,
                 lp_arena,
@@ -677,6 +678,7 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> Result<DataFrame> {
+        let file_caching = self.opt_state.file_caching;
         #[cfg(feature = "dtype-categorical")]
         let use_string_cache = self.opt_state.global_string_cache;
         #[cfg(feature = "dtype-categorical")]
@@ -692,11 +694,27 @@ impl LazyFrame {
         if use_string_cache {
             toggle_string_cache(use_string_cache);
         }
+
+        let finger_prints = if file_caching {
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            {
+                let mut fps = Vec::with_capacity(8);
+                collect_fingerprints(lp_top, &mut fps, &lp_arena, &expr_arena);
+                Some(fps)
+            }
+            #[cfg(not(any(feature = "ipc", feature = "parquet", feature = "csv-file")))]
+            {
+                None
+            }
+        } else {
+            None
+        };
+
         let planner = DefaultPlanner::default();
         let mut physical_plan =
             planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
-        let state = ExecutionState::new();
+        let state = ExecutionState::with_finger_prints(finger_prints);
         let out = physical_plan.execute(&state);
         #[cfg(feature = "dtype-categorical")]
         if use_string_cache {

@@ -31,7 +31,7 @@ impl LazyFrame {
             rechunk: args.rechunk,
         };
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_ipc(path, options)?.build().into();
-        lf.opt_state.agg_scan_projection = true;
+        lf.opt_state.file_caching = true;
         Ok(lf)
     }
 

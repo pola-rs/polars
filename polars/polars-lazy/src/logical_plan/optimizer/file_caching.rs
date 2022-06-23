@@ -48,10 +48,76 @@ fn process_with_columns(
     }
 }
 
+#[allow(clippy::type_complexity)]
+pub(crate) fn collect_fingerprints(
+    root: Node,
+    fps: &mut Vec<FileFingerPrint>,
+    lp_arena: &Arena<ALogicalPlan>,
+    expr_arena: &Arena<AExpr>,
+) {
+    use ALogicalPlan::*;
+    match lp_arena.get(root) {
+        #[cfg(feature = "csv-file")]
+        CsvScan {
+            path,
+            options,
+            predicate,
+            ..
+        } => {
+            let slice = (options.skip_rows, options.n_rows);
+            let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
+            let fp = FileFingerPrint {
+                path: path.clone(),
+                predicate,
+                slice,
+            };
+            fps.push(fp);
+        }
+        #[cfg(feature = "parquet")]
+        ParquetScan {
+            path,
+            options,
+            predicate,
+            ..
+        } => {
+            let slice = (0, options.n_rows);
+            let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
+            let fp = FileFingerPrint {
+                path: path.clone(),
+                predicate,
+                slice,
+            };
+            fps.push(fp);
+        }
+        #[cfg(feature = "ipc")]
+        IpcScan {
+            path,
+            options,
+            predicate,
+            ..
+        } => {
+            let slice = (0, options.n_rows);
+            let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
+            let fp = FileFingerPrint {
+                path: path.clone(),
+                predicate,
+                slice,
+            };
+            fps.push(fp);
+        }
+        DataFrameScan { .. } => (),
+        lp => {
+            for input in lp.get_inputs() {
+                collect_fingerprints(input, fps, lp_arena, expr_arena)
+            }
+        }
+    }
+}
+
 /// Find the union between the columns per unique IO operation.
 /// A unique IO operation is the file + the predicates pushed down to that file
 #[allow(clippy::type_complexity)]
-pub(crate) fn find_common_columns_per_file_and_predicate(
+pub(crate) fn find_column_union_and_fingerprints(
     root: Node,
     // The hashmap maps files to a hashset over column names.
     // we also keep track of how often a needs file needs to be read so we can cache until last read
@@ -121,7 +187,7 @@ pub(crate) fn find_common_columns_per_file_and_predicate(
         DataFrameScan { .. } => (),
         lp => {
             for input in lp.get_inputs() {
-                find_common_columns_per_file_and_predicate(input, columns, lp_arena, expr_arena)
+                find_column_union_and_fingerprints(input, columns, lp_arena, expr_arena)
             }
         }
     }

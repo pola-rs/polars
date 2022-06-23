@@ -6,14 +6,23 @@ use polars_core::prelude::*;
 #[derive(Clone)]
 pub(crate) struct FileCache {
     // (path, predicate) -> (read_count, df)
-    inner: Arc<Mutex<PlHashMap<FileFingerPrint, (FileCount, DataFrame)>>>,
+    inner: Arc<PlHashMap<FileFingerPrint, Mutex<(FileCount, DataFrame)>>>,
 }
 
 impl FileCache {
-    pub(super) fn new() -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(Default::default())),
-        }
+    pub(super) fn new(finger_prints: Option<Vec<FileFingerPrint>>) -> Self {
+        let inner = match finger_prints {
+            None => Arc::new(Default::default()),
+            Some(fps) => {
+                let mut mapping = PlHashMap::with_capacity(fps.len());
+                for fp in fps {
+                    mapping.insert(fp, Mutex::new((0, Default::default())));
+                }
+                Arc::new(mapping)
+            }
+        };
+
+        Self { inner }
     }
     pub(crate) fn read<F>(
         &self,
@@ -30,22 +39,21 @@ impl FileCache {
             }
             reader()
         } else {
-            let mut mapping = self.inner.lock();
-            let (file_count, df_state) = mapping
-                .entry(finger_print)
-                .or_insert_with(|| (0, Default::default()));
+            // should exist
+            let guard = self.inner.get(&finger_print).unwrap();
+            let mut state = guard.lock();
 
             // initialize df
-            if *file_count == 0 {
-                *df_state = reader()?;
+            if state.0 == 0 {
+                state.1 = reader()?;
             }
-            *file_count += 1;
+            state.0 += 1;
 
             // remove dataframe from memory
-            if *file_count == total_read_count {
-                Ok(std::mem::take(df_state))
+            if state.0 == total_read_count {
+                Ok(std::mem::take(&mut state.1))
             } else {
-                Ok(df_state.clone())
+                Ok(state.1.clone())
             }
         }
     }
