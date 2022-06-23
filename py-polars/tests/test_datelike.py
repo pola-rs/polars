@@ -1053,3 +1053,31 @@ def test_groupby_rolling_by_ordering() -> None:
         ],
         "sum val": [2, 2, 2, 2, 1, 1, 1],
     }
+
+
+def test_add_duration_3786() -> None:
+    df = pl.DataFrame(
+        {
+            "datetime": [datetime(2022, 1, 1), datetime(2022, 1, 2)],
+            "add": [1, 2],
+        }
+    )
+    assert df.slice(0, 1).with_columns(
+        [
+            (pl.col("datetime") + pl.duration(weeks="add")).alias("add_weeks"),
+            (pl.col("datetime") + pl.duration(days="add")).alias("add_days"),
+            (pl.col("datetime") + pl.duration(seconds="add")).alias("add_seconds"),
+            (pl.col("datetime") + pl.duration(milliseconds="add")).alias(
+                "add_milliseconds"
+            ),
+            (pl.col("datetime") + pl.duration(hours="add")).alias("add_hours"),
+        ]
+    ).to_dict(False) == {
+        "datetime": [datetime(2022, 1, 1, 0, 0)],
+        "add": [1],
+        "add_weeks": [datetime(2022, 1, 8, 0, 0)],
+        "add_days": [datetime(2022, 1, 2, 0, 0)],
+        "add_seconds": [datetime(2022, 1, 1, 0, 0, 1)],
+        "add_milliseconds": [datetime(2022, 1, 1, 0, 0, 0, 1000)],
+        "add_hours": [datetime(2022, 1, 1, 1, 0)],
+    }
