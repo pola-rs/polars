@@ -458,6 +458,9 @@ def test_upsample() -> None:
     up = df.upsample(
         time_column="time", every="1mo", by="admin", maintain_order=True
     ).select(pl.all().forward_fill())
+    # this print will panic if timezones feature is not activated
+    # don't remove
+    print(up)
 
     expected = pl.DataFrame(
         {
