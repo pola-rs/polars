@@ -25,17 +25,17 @@ pub(super) fn insert_and_combine_predicate(
     predicate: Node,
     arena: &mut Arena<AExpr>,
 ) {
-    let existing_predicate = acc_predicates
+    acc_predicates
         .entry(name)
-        .or_insert_with(|| arena.add(AExpr::Literal(LiteralValue::Boolean(true))));
-
-    let node = arena.add(AExpr::BinaryExpr {
-        left: predicate,
-        op: Operator::And,
-        right: *existing_predicate,
-    });
-
-    *existing_predicate = node;
+        .and_modify(|existing_predicate| {
+            let node = arena.add(AExpr::BinaryExpr {
+                left: predicate,
+                op: Operator::And,
+                right: *existing_predicate,
+            });
+            *existing_predicate = node
+        })
+        .or_insert_with(|| predicate);
 }
 
 pub(super) fn combine_predicates<I>(iter: I, arena: &mut Arena<AExpr>) -> Node

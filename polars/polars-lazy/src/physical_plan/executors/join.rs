@@ -51,7 +51,8 @@ impl Executor for JoinExec {
 
         let (df_left, df_right) = if self.parallel {
             let state_left = state.clone();
-            let state_right = state.clone();
+            let mut state_right = state.clone();
+            state_right.join_branch += 1;
             // propagate the fetch_rows static value to the spawning threads.
             let fetch_rows = FETCH_ROWS.with(|fetch_rows| fetch_rows.get());
 
