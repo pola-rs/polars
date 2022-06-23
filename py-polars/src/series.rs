@@ -477,7 +477,9 @@ impl PySeries {
     }
 
     pub fn slice(&self, offset: i64, length: Option<usize>) -> Self {
-        let series = self.series.slice(offset, length.unwrap_or(self.series.len()));
+        let series = self
+            .series
+            .slice(offset, length.unwrap_or(self.series.len()));
         series.into()
     }
 
