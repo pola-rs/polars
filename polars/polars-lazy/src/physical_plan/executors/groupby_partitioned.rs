@@ -93,7 +93,6 @@ fn run_partitions(
 }
 
 fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> usize {
-    dbg!(keys);
     // https://stats.stackexchange.com/a/19090/147321
     // estimated unique size
     // u + ui / m (s - m)
