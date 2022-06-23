@@ -3,7 +3,7 @@ use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_io::aggregations::ScanAggregation;
 
-#[cfg(any(feature = "parquet", feature = "csv-file"))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 fn aggregate_expr_to_scan_agg(
     aggregate: Vec<Node>,
     expr_arena: &mut Arena<AExpr>,

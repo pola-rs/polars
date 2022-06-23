@@ -606,7 +606,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input: vec![self],
-            function: NoEq::new(Arc::new(f)),
+            function: SpecialEq::new(Arc::new(f)),
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
@@ -642,7 +642,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input,
-            function: NoEq::new(Arc::new(function)),
+            function: SpecialEq::new(Arc::new(function)),
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
@@ -668,7 +668,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input: vec![self],
-            function: NoEq::new(Arc::new(f)),
+            function: SpecialEq::new(Arc::new(f)),
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyList,
@@ -693,7 +693,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input: vec![self],
-            function: NoEq::new(Arc::new(f)),
+            function: SpecialEq::new(Arc::new(f)),
             output_type,
             options,
         }
@@ -716,7 +716,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input: vec![self],
-            function: NoEq::new(Arc::new(f)),
+            function: SpecialEq::new(Arc::new(f)),
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
@@ -752,7 +752,7 @@ impl Expr {
 
         Expr::AnonymousFunction {
             input,
-            function: NoEq::new(Arc::new(function)),
+            function: SpecialEq::new(Arc::new(function)),
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
@@ -1336,7 +1336,7 @@ impl Expr {
     where
         F: Fn(&str) -> String + 'static + Send + Sync,
     {
-        let function = NoEq::new(Arc::new(function) as Arc<dyn RenameAliasFn>);
+        let function = SpecialEq::new(Arc::new(function) as Arc<dyn RenameAliasFn>);
         Expr::RenameAlias {
             expr: Box::new(self),
             function,
@@ -2128,7 +2128,7 @@ where
 
     Expr::AnonymousFunction {
         input,
-        function: NoEq::new(Arc::new(function)),
+        function: SpecialEq::new(Arc::new(function)),
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
@@ -2155,7 +2155,7 @@ where
 
     Expr::AnonymousFunction {
         input,
-        function: NoEq::new(Arc::new(function)),
+        function: SpecialEq::new(Arc::new(function)),
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyList,
@@ -2184,7 +2184,7 @@ where
 
     Expr::AnonymousFunction {
         input,
-        function: NoEq::new(Arc::new(function)),
+        function: SpecialEq::new(Arc::new(function)),
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,

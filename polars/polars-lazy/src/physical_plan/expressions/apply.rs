@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 pub struct ApplyExpr {
     pub inputs: Vec<Arc<dyn PhysicalExpr>>,
-    pub function: NoEq<Arc<dyn SeriesUdf>>,
+    pub function: SpecialEq<Arc<dyn SeriesUdf>>,
     pub expr: Expr,
     pub collect_groups: ApplyOptions,
     pub auto_explode: bool,
