@@ -550,3 +550,30 @@ fn test_groupby_windows_duplicates_2931() {
     );
     assert_eq!(groups, [[0, 1], [1, 2], [3, 2]]);
 }
+
+#[test]
+fn test_groupby_windows_offsets_3776() {
+    let dates = &[
+        NaiveDate::from_ymd(2020, 12, 1),
+        NaiveDate::from_ymd(2021, 2, 1),
+        NaiveDate::from_ymd(2021, 5, 1),
+    ];
+    let ts = dates
+        .iter()
+        .map(|d| d.and_hms(0, 0, 0).timestamp_nanos())
+        .collect::<Vec<_>>();
+
+    let window = Window::new(
+        Duration::parse("2d"),
+        Duration::parse("2d"),
+        Duration::parse("-2d"),
+    );
+    let (groups, _, _) = groupby_windows(
+        window,
+        &ts,
+        false,
+        ClosedWindow::Right,
+        TimeUnit::Nanoseconds,
+    );
+    assert_eq!(groups, [[0, 1], [1, 1], [2, 1]]);
+}
