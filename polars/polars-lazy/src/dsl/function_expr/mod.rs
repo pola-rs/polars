@@ -12,7 +12,7 @@ use polars_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum FunctionExpr {
     NullCount,
     Pow,
@@ -73,7 +73,7 @@ impl FunctionExpr {
 
 macro_rules! wrap {
     ($e:expr) => {
-        NoEq::new(Arc::new($e))
+        SpecialEq::new(Arc::new($e))
     };
 }
 
@@ -84,11 +84,11 @@ macro_rules! map_with_args {
             $func(s, $($args),*)
         };
 
-        NoEq::new(Arc::new(f))
+        SpecialEq::new(Arc::new(f))
     }};
 }
 
-impl From<FunctionExpr> for NoEq<Arc<dyn SeriesUdf>> {
+impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: FunctionExpr) -> Self {
         use FunctionExpr::*;
         match func {

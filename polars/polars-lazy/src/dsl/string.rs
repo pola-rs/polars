@@ -190,7 +190,7 @@ impl StringNameSpace {
     /// * `delimiter` - A string that will act as delimiter between values.
     pub fn concat(self, delimiter: &str) -> Expr {
         let delimiter = delimiter.to_owned();
-        let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+        let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
             Ok(s[0].str_concat(&delimiter).into_series())
         }) as Arc<dyn SeriesUdf>);
         Expr::AnonymousFunction {

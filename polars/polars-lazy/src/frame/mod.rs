@@ -30,7 +30,7 @@ use std::sync::Arc;
 
 use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
-use crate::logical_plan::optimizer::aggregate_scan_projections::AggScanProjection;
+use crate::logical_plan::optimizer::file_caching::FileCacher;
 use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
 use crate::logical_plan::optimizer::{
@@ -40,8 +40,8 @@ use crate::physical_plan::state::ExecutionState;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(any(feature = "parquet", feature = "csv-file"))]
-use crate::prelude::aggregate_scan_projections::agg_projection;
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+use crate::prelude::file_caching::find_column_union_and_fingerprints;
 use crate::prelude::{
     drop_nulls::ReplaceDropNulls, fast_projection::FastProjection,
     simplify_expr::SimplifyBooleanRule, slice_pushdown_lp::SlicePushDown, *,
@@ -49,6 +49,8 @@ use crate::prelude::{
 
 use crate::logical_plan::FETCH_ROWS;
 use crate::prelude::delay_rechunk::DelayRechunk;
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+use crate::prelude::file_caching::collect_fingerprints;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::explode::MeltArgs;
@@ -113,8 +115,7 @@ pub struct OptState {
     pub predicate_pushdown: bool,
     pub type_coercion: bool,
     pub simplify_expr: bool,
-    /// Make sure that all needed columns are scanned
-    pub agg_scan_projection: bool,
+    pub file_caching: bool,
     pub aggregate_pushdown: bool,
     pub global_string_cache: bool,
     pub slice_pushdown: bool,
@@ -130,7 +131,7 @@ impl Default for OptState {
             global_string_cache: false,
             slice_pushdown: true,
             // will be toggled by a scan operation such as csv scan or parquet scan
-            agg_scan_projection: false,
+            file_caching: false,
             aggregate_pushdown: false,
         }
     }
@@ -185,7 +186,7 @@ impl LazyFrame {
             global_string_cache: false,
             slice_pushdown: false,
             // will be toggled by a scan operation such as csv scan or parquet scan
-            agg_scan_projection: false,
+            file_caching: false,
             aggregate_pushdown: false,
         })
     }
@@ -535,8 +536,8 @@ impl LazyFrame {
         let simplify_expr = self.opt_state.simplify_expr;
         let slice_pushdown = self.opt_state.slice_pushdown;
 
-        #[cfg(any(feature = "parquet", feature = "csv-file"))]
-        let agg_scan_projection = self.opt_state.agg_scan_projection;
+        #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+        let agg_scan_projection = self.opt_state.file_caching;
         let aggregate_pushdown = self.opt_state.aggregate_pushdown;
 
         let logical_plan = self.get_plan_builder().build();
@@ -578,6 +579,37 @@ impl LazyFrame {
                 .expect("predicate pushdown failed");
             lp_arena.replace(lp_top, alp);
         }
+
+        #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+        if agg_scan_projection {
+            // we do this so that expressions are simplified created by the pushdown optimizations
+            // we must clean up the predicates, because the agg_scan_projection
+            // uses them in the hashtable to determine duplicates.
+            let simplify_bools =
+                &mut [Box::new(SimplifyBooleanRule {}) as Box<dyn OptimizationRule>];
+            lp_top = opt.optimize_loop(simplify_bools, expr_arena, lp_arena, lp_top);
+
+            // scan the LP to aggregate all the column used in scans
+            // these columns will be added to the state of the AggScanProjection rule
+            let mut file_predicate_to_columns_and_count = PlHashMap::with_capacity(32);
+            find_column_union_and_fingerprints(
+                lp_top,
+                &mut file_predicate_to_columns_and_count,
+                lp_arena,
+                expr_arena,
+            );
+
+            let rule = FileCacher::new(file_predicate_to_columns_and_count);
+            // its important that we do it now
+            // because typo coercion will change the predicates and there for
+            lp_top = opt.optimize_loop(
+                &mut [Box::new(rule) as Box<dyn OptimizationRule>],
+                expr_arena,
+                lp_arena,
+                lp_top,
+            );
+        }
+
         // make sure its before slice pushdown.
         rules.push(Box::new(FastProjection {}));
         rules.push(Box::new(DelayRechunk {}));
@@ -606,17 +638,6 @@ impl LazyFrame {
 
         if aggregate_pushdown {
             rules.push(Box::new(AggregatePushdown::new()))
-        }
-
-        #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-        if agg_scan_projection {
-            // scan the LP to aggregate all the column used in scans
-            // these columns will be added to the state of the AggScanProjection rule
-            let mut columns = PlHashMap::with_capacity(32);
-            agg_projection(lp_top, &mut columns, lp_arena);
-
-            let opt = AggScanProjection::new(columns);
-            rules.push(Box::new(opt));
         }
 
         rules.push(Box::new(ReplaceDropNulls {}));
@@ -657,6 +678,7 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> Result<DataFrame> {
+        let file_caching = self.opt_state.file_caching;
         #[cfg(feature = "dtype-categorical")]
         let use_string_cache = self.opt_state.global_string_cache;
         #[cfg(feature = "dtype-categorical")]
@@ -672,11 +694,27 @@ impl LazyFrame {
         if use_string_cache {
             toggle_string_cache(use_string_cache);
         }
+
+        let finger_prints = if file_caching {
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            {
+                let mut fps = Vec::with_capacity(8);
+                collect_fingerprints(lp_top, &mut fps, &lp_arena, &expr_arena);
+                Some(fps)
+            }
+            #[cfg(not(any(feature = "ipc", feature = "parquet", feature = "csv-file")))]
+            {
+                None
+            }
+        } else {
+            None
+        };
+
         let planner = DefaultPlanner::default();
         let mut physical_plan =
             planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
-        let state = ExecutionState::new();
+        let state = ExecutionState::with_finger_prints(finger_prints);
         let out = physical_plan.execute(&state);
         #[cfg(feature = "dtype-categorical")]
         if use_string_cache {

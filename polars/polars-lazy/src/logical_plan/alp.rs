@@ -1,5 +1,5 @@
 #[cfg(feature = "ipc")]
-use crate::logical_plan::IpcScanOptions;
+use crate::logical_plan::IpcScanOptionsInner;
 #[cfg(feature = "parquet")]
 use crate::logical_plan::ParquetOptions;
 use crate::logical_plan::{det_melt_schema, Context, CsvParserOptions};
@@ -8,7 +8,7 @@ use crate::utils::{aexprs_to_schema, PushNode};
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
-#[cfg(any(feature = "csv-file", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -58,7 +58,7 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         // schema of the projected file
         output_schema: Option<SchemaRef>,
-        options: IpcScanOptions,
+        options: IpcScanOptionsInner,
         predicate: Option<Node>,
         aggregate: Vec<Node>,
     },

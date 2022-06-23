@@ -1,3 +1,7 @@
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+use super::file_cache::FileCache;
+#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+use crate::prelude::file_caching::FileFingerPrint;
 use parking_lot::{Mutex, RwLock};
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::frame::hash_join::JoinOptIds;
@@ -10,8 +14,12 @@ pub type GroupsProxyCache = Arc<Mutex<PlHashMap<String, GroupsProxy>>>;
 /// State/ cache that is maintained during the Execution of the physical plan.
 #[derive(Clone)]
 pub struct ExecutionState {
+    // cached by a `.cache` call and kept in memory for the duration of the plan.
     df_cache: Arc<Mutex<PlHashMap<String, DataFrame>>>,
-    pub schema_cache: Arc<RwLock<Option<SchemaRef>>>,
+    // cache file reads until all branches got there file, then we delete it
+    #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+    pub(crate) file_cache: FileCache,
+    pub(crate) schema_cache: Arc<RwLock<Option<SchemaRef>>>,
     /// Used by Window Expression to prevent redundant grouping
     pub(crate) group_tuples: GroupsProxyCache,
     /// Used by Window Expression to prevent redundant joins
@@ -21,10 +29,30 @@ pub struct ExecutionState {
 }
 
 impl ExecutionState {
+    #[cfg(not(any(feature = "parquet", feature = "csv-file", feature = "ipc")))]
+    pub(crate) fn with_finger_prints(finger_prints: Option<usize>) -> Self {
+        Self::new()
+    }
+    #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+    pub(crate) fn with_finger_prints(finger_prints: Option<Vec<FileFingerPrint>>) -> Self {
+        Self {
+            df_cache: Arc::new(Mutex::new(PlHashMap::default())),
+            schema_cache: Arc::new(RwLock::new(None)),
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            file_cache: FileCache::new(finger_prints),
+            group_tuples: Arc::new(Mutex::new(PlHashMap::default())),
+            join_tuples: Arc::new(Mutex::new(PlHashMap::default())),
+            verbose: std::env::var("POLARS_VERBOSE").is_ok(),
+            cache_window: true,
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             df_cache: Arc::new(Mutex::new(PlHashMap::default())),
             schema_cache: Arc::new(RwLock::new(None)),
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            file_cache: FileCache::new(None),
             group_tuples: Arc::new(Mutex::new(PlHashMap::default())),
             join_tuples: Arc::new(Mutex::new(PlHashMap::default())),
             verbose: std::env::var("POLARS_VERBOSE").is_ok(),
