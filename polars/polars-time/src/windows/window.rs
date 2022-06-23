@@ -71,10 +71,9 @@ impl Window {
         let start = if !self.every.months_only()
             && self.every.duration_ns() > NANOSECONDS * SECONDS_IN_DAY
         {
-            t
+            self.offset.add_ns(t)
         } else {
-            // original code translates offset here
-            // we don't. Seems unintuitive to me.
+            // offset is translated in the truncate
             self.truncate_ns(t)
         };
 
@@ -87,7 +86,7 @@ impl Window {
         let start = if !self.every.months_only()
             && self.every.duration_us() > MICROSECONDS * SECONDS_IN_DAY
         {
-            t
+            self.offset.add_us(t)
         } else {
             self.truncate_us(t)
         };
@@ -100,7 +99,7 @@ impl Window {
         let start = if !self.every.months_only()
             && self.every.duration_ms() > MILLISECONDS * SECONDS_IN_DAY
         {
-            t
+            self.offset.add_ms(t)
         } else {
             self.truncate_ms(t)
         };
