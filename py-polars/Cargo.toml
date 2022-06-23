@@ -106,6 +106,7 @@ features = [
   "to_dummies",
   "string_justify",
   "arg_where",
+  "timezones",
 ]
 
 # [patch.crates-io]

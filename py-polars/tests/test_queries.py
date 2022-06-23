@@ -235,3 +235,25 @@ def test_dtype_concat_3735() -> None:
     )
     df = pl.concat([d1, d2])
     assert df.shape == (4, 1)
+
+
+def test_opaque_filter_on_lists_3784() -> None:
+    df = pl.DataFrame(
+        {"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]}
+    ).lazy()
+    df = df.with_column(pl.col("str").cast(pl.Categorical))
+
+    df_groups = df.groupby("group").agg([pl.col("str").list().alias("str_list")])
+
+    pre = "A"
+    succ = "B"
+
+    assert (
+        df_groups.filter(
+            pl.col("str_list").apply(
+                lambda variant: pre in variant
+                and succ in variant
+                and variant.to_list().index(pre) < variant.to_list().index(succ)
+            )
+        )
+    ).collect().to_dict(False) == {"group": [1], "str_list": [["A", "B", "B"]]}
