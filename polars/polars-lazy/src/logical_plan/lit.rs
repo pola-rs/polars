@@ -51,7 +51,7 @@ pub enum LiteralValue {
     #[cfg_attr(feature = "serde", serde(skip))]
     Duration(ChronoDuration, TimeUnit),
     #[cfg_attr(feature = "serde", serde(skip))]
-    Series(NoEq<Series>),
+    Series(SpecialEq<Series>),
 }
 
 impl LiteralValue {
@@ -192,7 +192,7 @@ impl Literal for NaiveDate {
 
 impl Literal for Series {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Series(NoEq::new(self)))
+        Expr::Literal(LiteralValue::Series(SpecialEq::new(self)))
     }
 }
 

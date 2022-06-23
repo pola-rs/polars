@@ -15,7 +15,6 @@ impl FileCache {
             inner: Arc::new(Mutex::new(Default::default())),
         }
     }
-
     pub(crate) fn read<F>(
         &self,
         finger_print: FileFingerPrint,
@@ -26,6 +25,9 @@ impl FileCache {
         F: FnMut() -> Result<DataFrame>,
     {
         if total_read_count == 1 {
+            if total_read_count == 0 {
+                eprintln!("we have hit an unexpected branch, please open an issue")
+            }
             reader()
         } else {
             let mut mapping = self.inner.lock();

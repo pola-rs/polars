@@ -159,7 +159,7 @@ impl DefaultPlanner {
                                 Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Min)))
                             }
                             Context::Default => {
-                                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
                                     parallel_op_series(|s| Ok(s.min_as_series()), s, None)
                                 })
@@ -181,7 +181,7 @@ impl DefaultPlanner {
                                 Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Max)))
                             }
                             Context::Default => {
-                                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
                                     parallel_op_series(|s| Ok(s.max_as_series()), s, None)
                                 })
@@ -203,7 +203,7 @@ impl DefaultPlanner {
                                 Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Sum)))
                             }
                             Context::Default => {
-                                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
                                     parallel_op_series(|s| Ok(s.sum_as_series()), s, None)
                                 })
@@ -225,7 +225,7 @@ impl DefaultPlanner {
                                 Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Std)))
                             }
                             Context::Default => {
-                                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
                                     Ok(s.std_as_series())
                                 })
@@ -247,7 +247,7 @@ impl DefaultPlanner {
                                 Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Var)))
                             }
                             Context::Default => {
-                                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
                                     Ok(s.var_as_series())
                                 })
@@ -269,7 +269,7 @@ impl DefaultPlanner {
                                 Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Mean)))
                             }
                             Context::Default => {
-                                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
                                     Ok(s.mean_as_series())
                                 })
@@ -291,7 +291,7 @@ impl DefaultPlanner {
                                 Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Median)))
                             }
                             Context::Default => {
-                                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
                                     Ok(s.median_as_series())
                                 })
@@ -313,7 +313,7 @@ impl DefaultPlanner {
                                 Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::First)))
                             }
                             Context::Default => {
-                                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
                                     Ok(s.head(Some(1)))
                                 })
@@ -335,7 +335,7 @@ impl DefaultPlanner {
                                 Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Last)))
                             }
                             Context::Default => {
-                                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
                                     Ok(s.tail(Some(1)))
                                 })
@@ -357,7 +357,7 @@ impl DefaultPlanner {
                                 Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::List)))
                             }
                             Context::Default => {
-                                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = &s[0];
                                     s.to_list().map(|ca| ca.into_series())
                                 })
@@ -380,7 +380,7 @@ impl DefaultPlanner {
                                 GroupByMethod::NUnique,
                             ))),
                             Context::Default => {
-                                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
                                     s.n_unique().map(|count| {
                                         UInt32Chunked::from_slice(s.name(), &[count as u32])
@@ -410,7 +410,7 @@ impl DefaultPlanner {
                                 Ok(Arc::new(AggQuantileExpr::new(input, quantile, interpol)))
                             }
                             Context::Default => {
-                                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
                                     s.quantile_as_series(quantile, interpol)
                                 })
@@ -442,7 +442,7 @@ impl DefaultPlanner {
                                 Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Count)))
                             }
                             Context::Default => {
-                                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
                                     let count = s.len();
                                     Ok(UInt32Chunked::from_slice(s.name(), &[count as u32])
@@ -546,7 +546,7 @@ impl DefaultPlanner {
             }
             Reverse(expr) => {
                 let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                     let s = std::mem::take(&mut s[0]);
                     Ok(s.reverse())
                 }) as Arc<dyn SeriesUdf>);
@@ -560,7 +560,7 @@ impl DefaultPlanner {
             }
             Duplicated(expr) => {
                 let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                     let s = std::mem::take(&mut s[0]);
                     s.is_duplicated().map(|ca| ca.into_series())
                 }) as Arc<dyn SeriesUdf>);
@@ -574,7 +574,7 @@ impl DefaultPlanner {
             }
             IsUnique(expr) => {
                 let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                     let s = std::mem::take(&mut s[0]);
                     s.is_unique().map(|ca| ca.into_series())
                 }) as Arc<dyn SeriesUdf>);
@@ -588,7 +588,7 @@ impl DefaultPlanner {
             }
             Explode(expr) => {
                 let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                     let s = std::mem::take(&mut s[0]);
                     s.explode()
                 }) as Arc<dyn SeriesUdf>);

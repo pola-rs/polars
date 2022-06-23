@@ -166,7 +166,7 @@ pub fn spearman_rank_corr(a: Expr, b: Expr) -> Expr {
 /// be used and so on.
 pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
     let reverse = reverse.to_vec();
-    let function = NoEq::new(Arc::new(move |by: &mut [Series]| {
+    let function = SpecialEq::new(Arc::new(move |by: &mut [Series]| {
         polars_core::functions::argsort_by(by, &reverse).map(|ca| ca.into_series())
     }) as Arc<dyn SeriesUdf>);
 
@@ -189,7 +189,7 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
 pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
     let s = s.as_ref().to_vec();
     let sep = sep.to_string();
-    let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+    let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
         polars_core::functions::concat_str(s, &sep).map(|ca| ca.into_series())
     }) as Arc<dyn SeriesUdf>);
     Expr::AnonymousFunction {
@@ -211,7 +211,7 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
 pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
     let s = s.as_ref().iter().map(|e| e.clone().into()).collect();
 
-    let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+    let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
         let mut first = std::mem::take(&mut s[0]);
         let other = &s[1..];
 
@@ -352,7 +352,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
     let second = args.second;
     let millisecond = args.millisecond;
 
-    let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+    let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
         assert_eq!(s.len(), 7);
         let max_len = s.iter().map(|s| s.len()).max().unwrap();
         let mut year = s[0].cast(&DataType::Int32)?;
@@ -454,7 +454,7 @@ pub struct DurationArgs {
 
 #[cfg(feature = "temporal")]
 pub fn duration(args: DurationArgs) -> Expr {
-    let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+    let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
         assert_eq!(s.len(), 7);
         let days = s[0].cast(&DataType::Int64).unwrap();
         let seconds = s[1].cast(&DataType::Int64).unwrap();
@@ -691,7 +691,7 @@ where
     if exprs.iter().any(has_wildcard) {
         exprs.push(acc);
 
-        let function = NoEq::new(Arc::new(move |series: &mut [Series]| {
+        let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
             let mut series = series.to_vec();
             let mut acc = series.pop().unwrap();
 

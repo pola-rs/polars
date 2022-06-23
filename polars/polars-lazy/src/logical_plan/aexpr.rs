@@ -77,7 +77,7 @@ pub enum AExpr {
     },
     AnonymousFunction {
         input: Vec<Node>,
-        function: NoEq<Arc<dyn SeriesUdf>>,
+        function: SpecialEq<Arc<dyn SeriesUdf>>,
         output_type: GetOutput,
         options: FunctionOptions,
     },
