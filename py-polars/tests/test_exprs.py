@@ -277,3 +277,20 @@ def test_regex_in_filter() -> None:
     assert df.filter(
         pl.fold(acc=False, f=lambda acc, s: acc | s, exprs=(pl.col("^nrs|flt*$") < 3))
     ).row(0) == (1, "foo", 1.0)
+
+
+def test_arr_contains() -> None:
+    df_groups = pl.DataFrame(
+        {
+            "str_list": [
+                ["cat", "mouse", "dog"],
+                ["dog", "mouse", "cat"],
+                ["dog", "mouse", "aardvark"],
+            ],
+        }
+    )
+    assert df_groups.lazy().filter(
+        pl.col("str_list").arr.contains("cat")
+    ).collect().to_dict(False) == {
+        "str_list": [["cat", "mouse", "dog"], ["dog", "mouse", "cat"]]
+    }
