@@ -692,6 +692,9 @@ impl PyExpr {
     pub fn year(&self) -> PyExpr {
         self.clone().inner.dt().year().into()
     }
+    pub fn quarter(&self) -> PyExpr {
+        self.clone().inner.dt().quarter().into()
+    }
     pub fn month(&self) -> PyExpr {
         self.clone().inner.dt().month().into()
     }
