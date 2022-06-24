@@ -179,10 +179,6 @@ pub struct SortArguments {
 
 #[derive(Clone, PartialEq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(
-    all(feature = "serde", feature = "object"),
-    serde(bound(deserialize = "'de: 'static"))
-)]
 #[cfg(feature = "python")]
 pub struct PythonOptions {
     // Serialized Fn() -> Result<DataFrame>
