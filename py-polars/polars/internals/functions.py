@@ -190,8 +190,8 @@ def date_range(
     Notes
     -----
     If both `low` and `high` are passed as date types (not datetime), and the
-    interval granularity is >= 1 day, the returned range is also of type date.
-    All other permutations will be returned a datetime Series.
+    interval granularity is no finer than 1d, the returned range is also of
+    type date. All other permutations return a datetime Series.
 
     Returns
     -------
