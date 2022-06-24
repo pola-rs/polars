@@ -147,15 +147,15 @@ def concat(
     return out
 
 
-def _ensure_datetime( value: Union[date, datetime] ) -> tuple[datetime, bool]:
+def _ensure_datetime(value: Union[date, datetime]) -> tuple[datetime, bool]:
     is_date_type = False
-    if isinstance( value, date ) and not isinstance( value, datetime ):
+    if isinstance(value, date) and not isinstance(value, datetime):
         value = datetime(value.year, value.month, value.day)
         is_date_type = True
     return value, is_date_type
 
 
-def _interval_granularity( interval:str ) -> str:
+def _interval_granularity(interval: str) -> str:
     return interval[-2:].lstrip("0123456789")
 
 
@@ -217,7 +217,7 @@ def date_range(
         2015-06-30 12:00:00
     ]
 
-    >>> pl.date_range(date(2022, 1, 1), date(2022, 3, 1), '1mo', name="drange")
+    >>> pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", name="drange")
     shape: (3,)
     Series: 'drange' [date]
     [
@@ -245,7 +245,11 @@ def date_range(
         name = ""
 
     dt_range = pli.wrap_s(_py_date_range(start, stop, interval, closed, name, tu))
-    if low_is_date and high_is_date and not _interval_granularity(interval).endswith(("h","m","s")):
+    if (
+        low_is_date
+        and high_is_date
+        and not _interval_granularity(interval).endswith(("h", "m", "s"))
+    ):
         dt_range = dt_range.cast(Date)
 
     return dt_range
