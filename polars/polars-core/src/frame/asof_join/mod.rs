@@ -5,6 +5,7 @@ use crate::prelude::*;
 use crate::utils::slice_slice;
 use asof::*;
 use num::Bounded;
+#[cfg(feature = "serde")]
 use serde::Deserializer;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
