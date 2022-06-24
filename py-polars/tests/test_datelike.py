@@ -1149,3 +1149,9 @@ def test_groupby_rolling_by_() -> None:
         ],
         "count": [1, 2, 3, 3, 3, 1, 2, 3, 3, 3, 1, 2, 3, 3, 3],
     }
+
+
+def test_quarter() -> None:
+    assert pl.date_range(
+        datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo"
+    ).dt.quarter().to_list() == [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4]

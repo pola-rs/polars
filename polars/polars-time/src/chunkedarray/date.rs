@@ -17,6 +17,13 @@ pub trait DateMethods {
     fn year(&self) -> Int32Chunked;
 
     /// Extract month from underlying NaiveDateTime representation.
+    /// Quarters range from 1 to 4.
+    fn quarter(&self) -> UInt32Chunked {
+        let months = self.month();
+        months_to_quarters(months)
+    }
+
+    /// Extract month from underlying NaiveDateTime representation.
     /// Returns the month number starting from 1.
     ///
     /// The return value ranges from 1 to 12.
