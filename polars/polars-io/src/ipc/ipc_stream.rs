@@ -35,6 +35,7 @@
 //! ```
 use crate::{finish_reader, ArrowReader, ArrowResult};
 use crate::{prelude::*, WriterFactory};
+use arrow::io::ipc::read::StreamState;
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
@@ -112,8 +113,12 @@ where
     R: Read + Seek,
 {
     fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>> {
-        self.next().map_or(Ok(None), |v| {
-            v.map_or(Ok(None), |ss| Ok(Option::Some(ss.unwrap())))
+        self.next().map_or(Ok(None), |v| match v {
+            Ok(stream_state) => match stream_state {
+                StreamState::Waiting => Ok(None),
+                StreamState::Some(chunk) => Ok(Some(chunk)),
+            },
+            Err(err) => Err(err),
         })
     }
 }
