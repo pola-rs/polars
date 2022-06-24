@@ -412,6 +412,10 @@ impl PySeries {
         self.series.cumprod(reverse).into()
     }
 
+    pub fn reverse(&self) -> Self {
+        self.series.reverse().into()
+    }
+
     pub fn chunk_lengths(&self) -> Vec<usize> {
         self.series.chunk_lengths().collect()
     }
@@ -472,8 +476,10 @@ impl PySeries {
         series.into()
     }
 
-    pub fn slice(&self, offset: i64, length: usize) -> Self {
-        let series = self.series.slice(offset, length);
+    pub fn slice(&self, offset: i64, length: Option<usize>) -> Self {
+        let series = self
+            .series
+            .slice(offset, length.unwrap_or(self.series.len()));
         series.into()
     }
 
@@ -1413,9 +1419,11 @@ impl PySeries {
         let out = self.series.reshape(&dims).map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
+
     pub fn shuffle(&self, seed: u64) -> Self {
         self.series.shuffle(seed).into()
     }
+
     pub fn extend_constant(&self, value: Wrap<AnyValue>, n: usize) -> PyResult<Self> {
         let value = value.0;
         let out = self

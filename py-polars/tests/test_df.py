@@ -512,8 +512,13 @@ def test_assignment() -> None:
 
 def test_slice() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
-    df = df.slice(1, 2)
-    assert df.frame_equal(pl.DataFrame({"a": [1, 3], "b": ["b", "c"]}))
+    expected = pl.DataFrame({"a": [1, 3], "b": ["b", "c"]})
+    for slice_params in (
+        [1, 10],  # slice > len(df)
+        [1, 2],  # slice == len(df)
+        [1],  # optional len
+    ):
+        assert df.slice(*slice_params).frame_equal(expected)
 
 
 def test_null_count() -> None:
@@ -1289,6 +1294,7 @@ def test_to_html(df: pl.DataFrame) -> None:
 def test_rows() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [1, 2]})
     assert df.rows() == [(1, 1), (2, 2)]
+    assert df.reverse().rows() == [(2, 2), (1, 1)]
 
 
 def test_rename(df: pl.DataFrame) -> None:
