@@ -1399,6 +1399,7 @@ impl Expr {
             .with_fmt("interpolate")
     }
 
+    #[allow(clippy::type_complexity)]
     fn finish_rolling(
         self,
         options: RollingOptions,

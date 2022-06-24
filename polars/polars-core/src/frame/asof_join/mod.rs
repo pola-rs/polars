@@ -6,12 +6,13 @@ use crate::utils::slice_slice;
 use asof::*;
 use num::Bounded;
 #[cfg(feature = "serde")]
+use serde::Deserializer;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(bound(deserialize = "'de: 'static")))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct AsOfOptions {
     pub strategy: AsofStrategy,
     /// A tolerance in the same unit as the asof column
@@ -24,6 +25,16 @@ pub struct AsOfOptions {
     pub tolerance_str: Option<String>,
     pub left_by: Option<Vec<String>>,
     pub right_by: Option<Vec<String>>,
+}
+
+#[cfg(feature = "serde")]
+impl<'a> Deserialize<'a> for AsOfOptions {
+    fn deserialize<D>(_deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'a>,
+    {
+        todo!()
+    }
 }
 
 fn check_asof_columns(a: &Series, b: &Series) -> Result<()> {
@@ -41,7 +52,7 @@ fn check_asof_columns(a: &Series, b: &Series) -> Result<()> {
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AsofStrategy {
     /// selects the last row in the right DataFrame whose ‘on’ key is less than or equal to the left’s key

@@ -86,7 +86,7 @@ pub struct StrHashGlobal {
     pub(crate) hash: u64,
 }
 
-impl<'a> Hash for StrHashGlobal {
+impl Hash for StrHashGlobal {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_u64(self.hash)
     }

@@ -300,7 +300,7 @@ where
         for batch in iter {
             ipc_writer.write(&batch, None)?
         }
-        let _ = ipc_writer.finish()?;
+        ipc_writer.finish()?;
         Ok(())
     }
 }
