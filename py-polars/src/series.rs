@@ -11,6 +11,7 @@ use crate::{
 };
 use numpy::PyArray1;
 use polars_core::prelude::QuantileInterpolOptions;
+use polars_core::series::IsSorted;
 use polars_core::utils::CustomIterTools;
 use pyo3::types::{PyBytes, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
@@ -441,7 +442,11 @@ impl PySeries {
 
     fn set_sorted(&self, reverse: bool) -> Self {
         let mut out = self.series.clone();
-        out.set_sorted(reverse);
+        if reverse {
+            out.set_sorted(IsSorted::Descending);
+        } else {
+            out.set_sorted(IsSorted::Ascending)
+        }
         out.into()
     }
 

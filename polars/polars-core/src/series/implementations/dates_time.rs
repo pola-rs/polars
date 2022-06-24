@@ -57,8 +57,8 @@ macro_rules! impl_dyn_series {
                 self.0.cummin(reverse).$into_logical().into_series()
             }
 
-            fn _set_sorted(&mut self, reverse: bool) {
-                self.0.deref_mut().set_sorted(reverse)
+            fn _set_sorted(&mut self, is_sorted: IsSorted) {
+                self.0.deref_mut().set_sorted2(is_sorted)
             }
 
             #[cfg(feature = "zip_with")]
@@ -297,7 +297,7 @@ macro_rules! impl_dyn_series {
                 let mut out = ChunkTake::take_unchecked(self.0.deref(), idx.into());
 
                 if self.0.is_sorted() && (idx.is_sorted() || idx.is_sorted_reverse()) {
-                    out.set_sorted(idx.is_sorted_reverse())
+                    out.set_sorted2(idx.is_sorted2())
                 }
 
                 Ok(out.$into_logical().into_series())
