@@ -233,16 +233,23 @@ def test_append_extend() -> None:
 
 def test_various() -> None:
     a = pl.Series("a", [1, 2])
-
     assert a.is_null().sum() == 0
     assert a.name == "a"
+
     a.rename("b", in_place=True)
     assert a.name == "b"
     assert a.len() == 2
     assert len(a) == 2
-    b = a.slice(1, 1)
-    assert b.len() == 1
-    assert b.series_equal(pl.Series("b", [2]))
+
+    for b in (
+        a.slice(1, 10),
+        a.slice(1, 1),
+        a.slice(1, None),
+        a.slice(1),
+    ):
+        assert b.len() == 1
+        assert b.series_equal(pl.Series("b", [2]))
+
     a.append(b)
     assert a.series_equal(pl.Series("b", [1, 2, 2]))
 
@@ -259,6 +266,7 @@ def test_various() -> None:
 
     assert a.take([2, 3]).series_equal(pl.Series("a", [1, 4]))
     assert a.is_numeric()
+
     a = pl.Series("bool", [True, False])
     assert not a.is_numeric()
 
@@ -624,12 +632,19 @@ def test_iter() -> None:
 def test_empty() -> None:
     a = pl.Series(dtype=pl.Int8)
     assert a.dtype == pl.Int8
+    assert a.is_empty()
+
     a = pl.Series()
     assert a.dtype == pl.Float32
+    assert a.is_empty()
+
     a = pl.Series("name", [])
     assert a.dtype == pl.Float32
+    assert a.is_empty()
+
     a = pl.Series(values=(), dtype=pl.Int8)
     assert a.dtype == pl.Int8
+    assert a.is_empty()
 
 
 def test_describe() -> None:
@@ -1583,3 +1598,11 @@ def test_drop_nan_ignore_null_3525() -> None:
         3.0,
         4.0,
     ]
+
+
+def test_reverse() -> None:
+    s = pl.Series("values", [1, 2, 3, 4, 5])
+    assert s.reverse().to_list() == [5, 4, 3, 2, 1]
+
+    s = pl.Series("values", ["a", "b", None, "y", "x"])
+    assert s.reverse().to_list() == ["x", "y", None, "b", "a"]

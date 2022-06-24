@@ -652,9 +652,9 @@ impl PyLazyFrame {
             .into()
     }
 
-    pub fn slice(&self, offset: i64, len: IdxSize) -> Self {
+    pub fn slice(&self, offset: i64, len: Option<IdxSize>) -> Self {
         let ldf = self.ldf.clone();
-        ldf.slice(offset, len).into()
+        ldf.slice(offset, len.unwrap_or(IdxSize::MAX)).into()
     }
 
     pub fn tail(&self, n: IdxSize) -> Self {
