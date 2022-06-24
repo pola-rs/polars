@@ -9,9 +9,9 @@ Exceptions
     
     ArrowError
     ComputeError
+    DuplicateError
     NoDataError
     NotFoundError
+    PanicException
     SchemaError
     ShapeError
-    DuplicateError
-    PanicException

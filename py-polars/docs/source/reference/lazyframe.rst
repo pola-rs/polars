@@ -23,14 +23,14 @@ Aggregation
 .. autosummary::
    :toctree: api/
 
-    LazyFrame.std
-    LazyFrame.var
     LazyFrame.max
-    LazyFrame.min
-    LazyFrame.sum
     LazyFrame.mean
     LazyFrame.median
+    LazyFrame.min
     LazyFrame.quantile
+    LazyFrame.std
+    LazyFrame.sum
+    LazyFrame.var
 
 Descriptive stats
 -----------------
@@ -46,48 +46,48 @@ Manipulation/ selection
 .. autosummary::
    :toctree: api/
 
-    LazyFrame.with_row_count
     LazyFrame.clone
-    LazyFrame.inspect
+    LazyFrame.distinct
+    LazyFrame.drop
+    LazyFrame.drop_nulls
+    LazyFrame.explode
+    LazyFrame.fill_nan
+    LazyFrame.fill_null
     LazyFrame.filter
-    LazyFrame.select
+    LazyFrame.first
     LazyFrame.groupby
     LazyFrame.groupby_dynamic
     LazyFrame.groupby_rolling
+    LazyFrame.head
+    LazyFrame.inspect
+    LazyFrame.interpolate
     LazyFrame.join
     LazyFrame.join_asof
-    LazyFrame.with_columns
-    LazyFrame.with_column
-    LazyFrame.drop
+    LazyFrame.last
+    LazyFrame.limit
+    LazyFrame.melt
     LazyFrame.rename
     LazyFrame.reverse
+    LazyFrame.select
     LazyFrame.shift
     LazyFrame.shift_and_fill
     LazyFrame.slice
-    LazyFrame.limit
-    LazyFrame.head
-    LazyFrame.tail
-    LazyFrame.last
-    LazyFrame.first
-    LazyFrame.fill_null
-    LazyFrame.fill_nan
-    LazyFrame.explode
-    LazyFrame.distinct
-    LazyFrame.unique
-    LazyFrame.drop_nulls
     LazyFrame.sort
-    LazyFrame.melt
-    LazyFrame.interpolate
+    LazyFrame.tail
+    LazyFrame.unique
     LazyFrame.unnest
+    LazyFrame.with_column
+    LazyFrame.with_columns
+    LazyFrame.with_row_count
 
 Conversion
 ----------
 .. autosummary::
    :toctree: api/
 
-    LazyFrame.write_json
-    LazyFrame.read_json
     LazyFrame.from_json
+    LazyFrame.read_json
+    LazyFrame.write_json
 
 Apply
 -----
@@ -101,10 +101,10 @@ Various
 .. autosummary::
    :toctree: api/
 
-    LazyFrame.pipe
+    LazyFrame.cache
     LazyFrame.collect
     LazyFrame.fetch
-    LazyFrame.cache
+    LazyFrame.pipe
 
 GroupBy
 -------
