@@ -36,8 +36,8 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
         self.0.explode_by_offsets(offsets)
     }
 
-    fn _set_sorted(&mut self, reverse: bool) {
-        self.0.set_sorted(reverse)
+    fn _set_sorted(&mut self, is_sorted: IsSorted) {
+        self.0.set_sorted2(is_sorted)
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
@@ -206,13 +206,13 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
             Cow::Borrowed(idx)
         };
 
-        let mut out = ChunkTake::take_unchecked(&self.0, (&*idx).into()).into_series();
+        let mut out = ChunkTake::take_unchecked(&self.0, (&*idx).into());
 
         if self.0.is_sorted() && (idx.is_sorted() || idx.is_sorted_reverse()) {
-            out.set_sorted(idx.is_sorted_reverse())
+            out.set_sorted2(idx.is_sorted2())
         }
 
-        Ok(out)
+        Ok(out.into_series())
     }
 
     unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {

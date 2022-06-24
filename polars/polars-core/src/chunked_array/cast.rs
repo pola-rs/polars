@@ -64,18 +64,13 @@ where
             }
             _ => cast_impl_inner(self.name(), &self.chunks, data_type, checked).map(|mut s| {
                 // maintain sorted if data types remain signed
-                if self.is_sorted()
-                    || self.is_sorted_reverse() && (s.null_count() == self.null_count())
+                // this may still fail with overflow?
+                if ((self.dtype().is_signed() && data_type.is_signed())
+                    || (self.dtype().is_unsigned() && data_type.is_unsigned()))
+                    && (s.null_count() == self.null_count())
                 {
-                    // this may still fail with overflow?
-                    //
-                    if (self.dtype().is_signed() && data_type.is_signed())
-                        || (self.dtype().is_unsigned() && data_type.is_unsigned())
-                    {
-                        let reverse = self.is_sorted_reverse();
-                        let inner = s._get_inner_mut();
-                        inner._set_sorted(reverse)
-                    }
+                    let is_sorted = self.is_sorted2();
+                    s.set_sorted(is_sorted)
                 }
                 s
             }),

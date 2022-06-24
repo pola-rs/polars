@@ -1081,3 +1081,47 @@ def test_add_duration_3786() -> None:
         "add_milliseconds": [datetime(2022, 1, 1, 0, 0, 0, 1000)],
         "add_hours": [datetime(2022, 1, 1, 1, 0)],
     }
+
+
+def test_groupby_rolling_by_() -> None:
+    df = pl.DataFrame({"group": pl.arange(0, 3, eager=True)}).join(
+        pl.DataFrame(
+            {
+                "datetime": pl.date_range(
+                    datetime(2020, 1, 1), datetime(2020, 1, 5), "1d"
+                ),
+            }
+        ),
+        how="cross",
+    )
+    out = df.groupby_rolling(index_column="datetime", by="group", period="3d").agg(
+        [pl.count().alias("count")]
+    )
+
+    expected = (
+        df.sort(["group", "datetime"])
+        .groupby_rolling(index_column="datetime", by="group", period="3d")
+        .agg([pl.count().alias("count")])
+    )
+    assert out.frame_equal(expected)
+    assert out.to_dict(False) == {
+        "group": [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
+        "datetime": [
+            datetime(2020, 1, 1, 0, 0),
+            datetime(2020, 1, 2, 0, 0),
+            datetime(2020, 1, 3, 0, 0),
+            datetime(2020, 1, 4, 0, 0),
+            datetime(2020, 1, 5, 0, 0),
+            datetime(2020, 1, 1, 0, 0),
+            datetime(2020, 1, 2, 0, 0),
+            datetime(2020, 1, 3, 0, 0),
+            datetime(2020, 1, 4, 0, 0),
+            datetime(2020, 1, 5, 0, 0),
+            datetime(2020, 1, 1, 0, 0),
+            datetime(2020, 1, 2, 0, 0),
+            datetime(2020, 1, 3, 0, 0),
+            datetime(2020, 1, 4, 0, 0),
+            datetime(2020, 1, 5, 0, 0),
+        ],
+        "count": [1, 2, 3, 3, 3, 1, 2, 3, 3, 3, 1, 2, 3, 3, 3],
+    }

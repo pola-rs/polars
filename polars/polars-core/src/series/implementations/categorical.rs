@@ -72,8 +72,8 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         .into_series()
     }
 
-    fn _set_sorted(&mut self, reverse: bool) {
-        self.0.logical_mut().set_sorted(reverse)
+    fn _set_sorted(&mut self, is_sorted: IsSorted) {
+        self.0.logical_mut().set_sorted2(is_sorted)
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {

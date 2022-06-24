@@ -166,9 +166,9 @@ impl Series {
         Arc::get_mut(&mut self.0).expect("implementation error")
     }
 
-    pub fn set_sorted(&mut self, _reverse: bool) {
+    pub fn set_sorted(&mut self, sorted: IsSorted) {
         let inner = self._get_inner_mut();
-        inner._set_sorted(_reverse)
+        inner._set_sorted(sorted)
     }
 
     pub fn into_frame(self) -> DataFrame {
