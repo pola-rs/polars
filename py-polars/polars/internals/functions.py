@@ -1,7 +1,8 @@
-from datetime import datetime, timedelta
-from typing import Optional, Sequence, Union, overload
+from datetime import date, datetime, timedelta
+from typing import Optional, Sequence, Tuple, Union, overload
 
 from polars import internals as pli
+from polars.datatypes import Date
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _timedelta_to_pl_duration,
@@ -146,23 +147,35 @@ def concat(
     return out
 
 
+def _ensure_datetime(value: Union[date, datetime]) -> Tuple[datetime, bool]:
+    is_date_type = False
+    if isinstance(value, date) and not isinstance(value, datetime):
+        value = datetime(value.year, value.month, value.day)
+        is_date_type = True
+    return value, is_date_type
+
+
+def _interval_granularity(interval: str) -> str:
+    return interval[-2:].lstrip("0123456789")
+
+
 def date_range(
-    low: datetime,
-    high: datetime,
+    low: Union[date, datetime],
+    high: Union[date, datetime],
     interval: Union[str, timedelta],
     closed: Optional[str] = "both",
     name: Optional[str] = None,
     time_unit: Optional[str] = None,
 ) -> "pli.Series":
     """
-    Create a date range of type `Datetime`.
+    Create a range of type `Datetime` (or `Date`).
 
     Parameters
     ----------
     low
-        Lower bound of the date range
+        Lower bound of the date range.
     high
-        Upper bound of the date range
+        Upper bound of the date range.
     interval
         Interval periods
         A python timedelta object or a polars duration `str`
@@ -170,17 +183,23 @@ def date_range(
     closed {None, 'left', 'right', 'both', 'none'}
         Make the interval closed to the 'left', 'right', 'none' or 'both' sides.
     name
-        Name of the output Series
+        Name of the output Series.
     time_unit
-        Set the time unit; one of {'ns', 'ms'}
+        Set the time unit; one of {'ns', 'us', 'ms'}.
+
+    Notes
+    -----
+    If both `low` and `high` are passed as date types (not datetime), and the
+    interval granularity is no finer than 1d, the returned range is also of
+    type date. All other permutations return a datetime Series.
 
     Returns
     -------
-    A Series of type `Datetime`
+    A Series of type `Datetime` or `Date`.
 
     Examples
     --------
-    >>> from datetime import datetime
+    >>> from datetime import datetime, date
     >>> pl.date_range(datetime(1985, 1, 1), datetime(2015, 7, 1), "1d12h")
     shape: (7426,)
     Series: '' [datetime[ns]]
@@ -190,21 +209,7 @@ def date_range(
         1985-01-04 00:00:00
         1985-01-05 12:00:00
         1985-01-07 00:00:00
-        1985-01-08 12:00:00
-        1985-01-10 00:00:00
-        1985-01-11 12:00:00
-        1985-01-13 00:00:00
-        1985-01-14 12:00:00
-        1985-01-16 00:00:00
-        1985-01-17 12:00:00
         ...
-        2015-06-14 00:00:00
-        2015-06-15 12:00:00
-        2015-06-17 00:00:00
-        2015-06-18 12:00:00
-        2015-06-20 00:00:00
-        2015-06-21 12:00:00
-        2015-06-23 00:00:00
         2015-06-24 12:00:00
         2015-06-26 00:00:00
         2015-06-27 12:00:00
@@ -212,9 +217,20 @@ def date_range(
         2015-06-30 12:00:00
     ]
 
+    >>> pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", name="drange")
+    shape: (3,)
+    Series: 'drange' [date]
+    [
+        2022-01-01
+        2022-02-01
+        2022-03-01
+    ]
     """
     if isinstance(interval, timedelta):
         interval = _timedelta_to_pl_duration(interval)
+
+    low, low_is_date = _ensure_datetime(low)
+    high, high_is_date = _ensure_datetime(high)
 
     if in_nanoseconds_window(low) and in_nanoseconds_window(high) and time_unit is None:
         tu = "ns"
@@ -228,4 +244,12 @@ def date_range(
     if name is None:
         name = ""
 
-    return pli.wrap_s(_py_date_range(start, stop, interval, closed, name, tu))
+    dt_range = pli.wrap_s(_py_date_range(start, stop, interval, closed, name, tu))
+    if (
+        low_is_date
+        and high_is_date
+        and not _interval_granularity(interval).endswith(("h", "m", "s"))
+    ):
+        dt_range = dt_range.cast(Date)
+
+    return dt_range

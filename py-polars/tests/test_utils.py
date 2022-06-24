@@ -15,10 +15,13 @@ def test_in_ns_window() -> None:
 
 
 def test_datetime_to_pl_timestamp() -> None:
-    out = _datetime_to_pl_timestamp(datetime(2121, 1, 1), "ns")
-    assert out == 4765132800000000000
-    out = _datetime_to_pl_timestamp(datetime(2121, 1, 1), "ms")
-    assert out == 4765132800000
+    for dt, tu, expected in (
+        (datetime(2121, 1, 1), "ns", 4765132800000000000),
+        (datetime(2121, 1, 1), "us", 4765132800000000),
+        (datetime(2121, 1, 1), "ms", 4765132800000),
+    ):
+        out = _datetime_to_pl_timestamp(dt, tu)
+        assert out == expected
 
 
 def test_date_to_pl_date() -> None:
