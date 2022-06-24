@@ -33,8 +33,8 @@
 //! let df_read = IpcStreamReader::new(buf).finish().unwrap();
 //! assert!(df.frame_equal(&df_read));
 //! ```
-use crate::{finish_reader, ArrowReader, ArrowResult};
 use crate::predicates::PhysicalIoExpr;
+use crate::{finish_reader, ArrowReader, ArrowResult};
 use crate::{prelude::*, WriterFactory};
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
@@ -353,12 +353,12 @@ impl WriterFactory for IpcStreamWriterOption {
 
 #[cfg(test)]
 mod test {
+    use crate::ipc::ipc_stream::{IpcStreamReader, IpcStreamWriter};
     use crate::prelude::*;
     use arrow::io::ipc::write;
     use polars_core::df;
     use polars_core::prelude::*;
     use std::io::Cursor;
-    use crate::ipc::ipc_stream::{IpcStreamReader, IpcStreamWriter};
 
     #[test]
     fn write_and_read_ipc_stream() {

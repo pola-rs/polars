@@ -133,7 +133,7 @@ test = [
   "abs",
   "parquet",
   "ipc",
-  "ipc_streaming"
+  "ipc_streaming",
 ]
 
 # don't use this
