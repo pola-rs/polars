@@ -1,5 +1,5 @@
 from datetime import date, datetime, timedelta
-from typing import Optional, Sequence, Union, overload
+from typing import Optional, Sequence, Tuple, Union, overload
 
 from polars import internals as pli
 from polars.datatypes import Date
@@ -147,7 +147,7 @@ def concat(
     return out
 
 
-def _ensure_datetime(value: Union[date, datetime]) -> tuple[datetime, bool]:
+def _ensure_datetime(value: Union[date, datetime]) -> Tuple[datetime, bool]:
     is_date_type = False
     if isinstance(value, date) and not isinstance(value, datetime):
         value = datetime(value.year, value.month, value.day)
