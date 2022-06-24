@@ -135,7 +135,7 @@ impl<'a> IntoIterator for &'a GroupsIdx {
     }
 }
 
-impl<'a> IntoIterator for GroupsIdx {
+impl IntoIterator for GroupsIdx {
     type Item = IdxItem;
     type IntoIter = std::iter::Zip<std::vec::IntoIter<IdxSize>, std::vec::IntoIter<Vec<IdxSize>>>;
 
@@ -189,10 +189,15 @@ impl IntoParallelIterator for GroupsIdx {
 /// Only used when group values are stored together
 pub type GroupsSlice = Vec<[IdxSize; 2]>;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GroupsProxy {
     Idx(GroupsIdx),
-    Slice { groups: GroupsSlice, rolling: bool },
+    Slice {
+        // the groups slices
+        groups: GroupsSlice,
+        // indicates if we do a rolling groupby
+        rolling: bool,
+    },
 }
 
 impl Default for GroupsProxy {

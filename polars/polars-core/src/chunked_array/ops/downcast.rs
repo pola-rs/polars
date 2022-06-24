@@ -150,7 +150,7 @@ impl ListChunked {
 
 #[cfg(feature = "object")]
 #[doc(hidden)]
-impl<'a, T> ObjectChunked<T>
+impl<T> ObjectChunked<T>
 where
     T: PolarsObject,
 {

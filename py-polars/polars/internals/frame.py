@@ -1761,6 +1761,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
             if isinstance(item[0], str):
                 return self._from_pydf(self._df.select(item))
             if item.dtype == bool:
+                warnings.warn(
+                    "index notation '[]' is deprecated for boolean masks. Consider using 'filter'.",
+                    DeprecationWarning,
+                )
                 return self._from_pydf(self._df.filter(pli.Series("", item).inner()))
 
         if isinstance(item, Sequence):

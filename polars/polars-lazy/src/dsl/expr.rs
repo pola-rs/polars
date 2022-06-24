@@ -208,7 +208,6 @@ where
 
 #[derive(PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(bound(deserialize = "'de: 'static")))]
 pub enum AggExpr {
     Min(Box<Expr>),
     Max(Box<Expr>),
@@ -257,10 +256,6 @@ impl AsRef<Expr> for AggExpr {
 #[derive(Clone, PartialEq)]
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(
-    all(feature = "serde", feature = "object"),
-    serde(bound(deserialize = "'de: 'static"))
-)]
 pub enum Expr {
     Alias(Box<Expr>, Arc<str>),
     Column(Arc<str>),
@@ -311,6 +306,7 @@ pub enum Expr {
         output_type: GetOutput,
         options: FunctionOptions,
     },
+    #[cfg_attr(feature = "serde", serde(skip))]
     Function {
         /// function arguments
         input: Vec<Expr>,
@@ -397,7 +393,7 @@ impl Expr {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Operator {
     Eq,

@@ -4963,6 +4963,19 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.year())
 
+    def quarter(self) -> Series:
+        """
+        Extract quarter from underlying Date representation.
+        Can be performed on Date and Datetime.
+
+        Returns the quarter ranging from 1 to 4.
+
+        Returns
+        -------
+        Quarter as UInt32
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).dt.quarter()).to_series()
+
     def month(self) -> Series:
         """
         Extract the month from the underlying date representation.

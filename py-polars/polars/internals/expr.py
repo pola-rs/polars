@@ -5033,6 +5033,19 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.year())
 
+    def quarter(self) -> Expr:
+        """
+        Extract quarter from underlying Date representation.
+        Can be performed on Date and Datetime.
+
+        Returns the quarter ranging from 1 to 4.
+
+        Returns
+        -------
+        Quarter as UInt32
+        """
+        return wrap_expr(self._pyexpr.quarter())
+
     def month(self) -> Expr:
         """
         Extract month from underlying Date representation.

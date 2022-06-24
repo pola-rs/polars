@@ -198,7 +198,7 @@ pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
 #[cfg(feature = "private")]
 #[doc(hidden)]
 pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, usize) {
-    let abs_offset = offset.abs() as usize;
+    let abs_offset = offset.unsigned_abs() as usize;
 
     // The offset counted from the start of the array
     // negative index

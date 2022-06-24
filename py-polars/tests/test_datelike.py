@@ -234,7 +234,7 @@ def test_truncate() -> None:
 
 def test_date_range() -> None:
     result = pl.date_range(
-        datetime(1985, 1, 1), datetime(2015, 7, 1), timedelta(days=1, hours=12)
+        date(1985, 1, 1), date(2015, 7, 1), timedelta(days=1, hours=12)
     )
     assert len(result) == 7426
     assert result.dt[0] == datetime(1985, 1, 1)
@@ -242,14 +242,38 @@ def test_date_range() -> None:
     assert result.dt[2] == datetime(1985, 1, 4, 0, 0)
     assert result.dt[-1] == datetime(2015, 6, 30, 12, 0)
 
-    for tu in ["ns", "ms"]:
-        rng = pl.date_range(
-            datetime(2020, 1, 1), datetime(2020, 1, 2), "2h", time_unit=tu
-        )
+    for tu in ["ns", "us", "ms"]:
+        rng = pl.date_range(datetime(2020, 1, 1), date(2020, 1, 2), "2h", time_unit=tu)
         assert rng.time_unit == tu
         assert rng.shape == (13,)
         assert rng.dt[0] == datetime(2020, 1, 1)
         assert rng.dt[-1] == datetime(2020, 1, 2)
+
+    # if low/high are both date, range is also be date _iif_ the granularity is >= 1d
+    result = pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", name="drange")
+    assert result.to_list() == [date(2022, 1, 1), date(2022, 2, 1), date(2022, 3, 1)]
+    assert result.name == "drange"
+
+    result = pl.date_range(date(2022, 1, 1), date(2022, 1, 2), "1h30m")
+    assert result == [
+        datetime(2022, 1, 1, 0, 0),
+        datetime(2022, 1, 1, 1, 30),
+        datetime(2022, 1, 1, 3, 0),
+        datetime(2022, 1, 1, 4, 30),
+        datetime(2022, 1, 1, 6, 0),
+        datetime(2022, 1, 1, 7, 30),
+        datetime(2022, 1, 1, 9, 0),
+        datetime(2022, 1, 1, 10, 30),
+        datetime(2022, 1, 1, 12, 0),
+        datetime(2022, 1, 1, 13, 30),
+        datetime(2022, 1, 1, 15, 0),
+        datetime(2022, 1, 1, 16, 30),
+        datetime(2022, 1, 1, 18, 0),
+        datetime(2022, 1, 1, 19, 30),
+        datetime(2022, 1, 1, 21, 0),
+        datetime(2022, 1, 1, 22, 30),
+        datetime(2022, 1, 2, 0, 0),
+    ]
 
 
 def test_date_comp() -> None:
@@ -1081,3 +1105,53 @@ def test_add_duration_3786() -> None:
         "add_milliseconds": [datetime(2022, 1, 1, 0, 0, 0, 1000)],
         "add_hours": [datetime(2022, 1, 1, 1, 0)],
     }
+
+
+def test_groupby_rolling_by_() -> None:
+    df = pl.DataFrame({"group": pl.arange(0, 3, eager=True)}).join(
+        pl.DataFrame(
+            {
+                "datetime": pl.date_range(
+                    datetime(2020, 1, 1), datetime(2020, 1, 5), "1d"
+                ),
+            }
+        ),
+        how="cross",
+    )
+    out = df.groupby_rolling(index_column="datetime", by="group", period="3d").agg(
+        [pl.count().alias("count")]
+    )
+
+    expected = (
+        df.sort(["group", "datetime"])
+        .groupby_rolling(index_column="datetime", by="group", period="3d")
+        .agg([pl.count().alias("count")])
+    )
+    assert out.frame_equal(expected)
+    assert out.to_dict(False) == {
+        "group": [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
+        "datetime": [
+            datetime(2020, 1, 1, 0, 0),
+            datetime(2020, 1, 2, 0, 0),
+            datetime(2020, 1, 3, 0, 0),
+            datetime(2020, 1, 4, 0, 0),
+            datetime(2020, 1, 5, 0, 0),
+            datetime(2020, 1, 1, 0, 0),
+            datetime(2020, 1, 2, 0, 0),
+            datetime(2020, 1, 3, 0, 0),
+            datetime(2020, 1, 4, 0, 0),
+            datetime(2020, 1, 5, 0, 0),
+            datetime(2020, 1, 1, 0, 0),
+            datetime(2020, 1, 2, 0, 0),
+            datetime(2020, 1, 3, 0, 0),
+            datetime(2020, 1, 4, 0, 0),
+            datetime(2020, 1, 5, 0, 0),
+        ],
+        "count": [1, 2, 3, 3, 3, 1, 2, 3, 3, 3, 1, 2, 3, 3, 3],
+    }
+
+
+def test_quarter() -> None:
+    assert pl.date_range(
+        datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo"
+    ).dt.quarter().to_list() == [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4]

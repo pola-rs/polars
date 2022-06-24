@@ -108,7 +108,6 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             .into_series()
     }
 
-    #[doc(hidden)]
     fn append(&mut self, other: &Series) -> Result<()> {
         let other = other.struct_()?;
         let offset = self.chunks().len();
@@ -125,7 +124,6 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         Ok(())
     }
 
-    #[doc(hidden)]
     fn extend(&mut self, other: &Series) -> Result<()> {
         let other = other.struct_()?;
 

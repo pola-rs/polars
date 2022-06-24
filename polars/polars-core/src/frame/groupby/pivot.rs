@@ -328,7 +328,7 @@ impl DataFrame {
             }
             Ok(())
         });
-        let _ = out?;
+        out?;
         Ok(DataFrame::new_no_checks(final_cols))
     }
 }

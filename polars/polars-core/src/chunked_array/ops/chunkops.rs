@@ -70,7 +70,7 @@ where
     }
     #[inline]
     fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
+        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()), true)
     }
 }
 
@@ -92,7 +92,7 @@ impl ChunkOps for BooleanChunked {
     }
     #[inline]
     fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
+        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()), true)
     }
 }
 
@@ -109,12 +109,12 @@ impl ChunkOps for Utf8Chunked {
                     .as_slice(),
             )
             .unwrap()];
-            self.copy_with_chunks(chunks)
+            self.copy_with_chunks(chunks, true)
         }
     }
     #[inline]
     fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
+        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()), true)
     }
 }
 
@@ -140,7 +140,7 @@ impl ChunkOps for ListChunked {
     }
     #[inline]
     fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
+        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()), true)
     }
 }
 
@@ -183,7 +183,7 @@ where
     }
     #[inline]
     fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
+        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()), true)
     }
 }
 

@@ -70,7 +70,7 @@ impl PhysicalExpr for FilterExpr {
                                 })
                                 .collect();
 
-                            (*idx.get(0).unwrap_or(&first), idx)
+                            (*idx.first().unwrap_or(&first), idx)
                         })
                         .collect();
 
@@ -89,7 +89,7 @@ impl PhysicalExpr for FilterExpr {
                                 })
                                 .collect();
 
-                            (*idx.get(0).unwrap_or(&first), idx)
+                            (*idx.first().unwrap_or(&first), idx)
                         })
                         .collect();
                     GroupsProxy::Idx(groups)

@@ -22,6 +22,7 @@ pub mod testing;
 #[cfg(test)]
 mod tests;
 pub(crate) mod vector_hasher;
+
 use once_cell::sync::Lazy;
 
 #[cfg(feature = "object")]

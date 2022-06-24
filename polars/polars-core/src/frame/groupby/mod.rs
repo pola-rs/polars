@@ -332,7 +332,11 @@ impl<'df> GroupBy<'df> {
                             let mut iter = groups.iter().map(|(first, _idx)| first as usize);
                             // Safety:
                             // groups are always in bounds
-                            unsafe { s.take_iter_unchecked(&mut iter) }
+                            let mut out = unsafe { s.take_iter_unchecked(&mut iter) };
+                            if groups.sorted {
+                                out.set_sorted(s.is_sorted());
+                            };
+                            out
                         }
                         GroupsProxy::Slice { groups, rolling } => {
                             if *rolling && !groups.is_empty() {
@@ -348,7 +352,10 @@ impl<'df> GroupBy<'df> {
                             let mut iter = groups.iter().map(|&[first, _len]| first as usize);
                             // Safety:
                             // groups are always in bounds
-                            unsafe { s.take_iter_unchecked(&mut iter) }
+                            let mut out = unsafe { s.take_iter_unchecked(&mut iter) };
+                            // sliced groups are always in order of discovery
+                            out.set_sorted(s.is_sorted());
+                            out
                         }
                     }
                 })

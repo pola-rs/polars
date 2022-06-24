@@ -1399,6 +1399,7 @@ impl Expr {
             .with_fmt("interpolate")
     }
 
+    #[allow(clippy::type_complexity)]
     fn finish_rolling(
         self,
         options: RollingOptions,
@@ -2029,11 +2030,7 @@ impl Expr {
     pub fn set_sorted(self, sorted: IsSorted) -> Expr {
         self.apply(
             move |mut s| {
-                match sorted {
-                    IsSorted::Not => {}
-                    IsSorted::Ascending => s.set_sorted(false),
-                    IsSorted::Descending => s.set_sorted(true),
-                }
+                s.set_sorted(sorted);
                 Ok(s)
             },
             GetOutput::same_type(),
