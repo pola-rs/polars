@@ -143,13 +143,13 @@ impl<R: Read + Seek> IpcReader<R> {
             &schema,
             self.row_count,
         )
-            .map(|df| fix_column_order(df, projection, include_row_count))
+        .map(|df| fix_column_order(df, projection, include_row_count))
     }
 }
 
 impl<R> ArrowReader for read::FileReader<R>
-    where
-        R: Read + Seek,
+where
+    R: Read + Seek,
 {
     fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>> {
         self.next().map_or(Ok(None), |v| v.map(Some))
@@ -157,8 +157,8 @@ impl<R> ArrowReader for read::FileReader<R>
 }
 
 impl<R> SerReader<R> for IpcReader<R>
-    where
-        R: Read + Seek,
+where
+    R: Read + Seek,
 {
     fn new(reader: R) -> Self {
         IpcReader {
@@ -209,7 +209,7 @@ impl<R> SerReader<R> for IpcReader<R>
             &schema,
             self.row_count,
         )
-            .map(|df| fix_column_order(df, self.projection, include_row_count))
+        .map(|df| fix_column_order(df, self.projection, include_row_count))
     }
 }
 
@@ -275,8 +275,8 @@ impl<W> IpcWriter<W> {
 }
 
 impl<W> SerWriter<W> for IpcWriter<W>
-    where
-        W: Write,
+where
+    W: Write,
 {
     fn new(writer: W) -> Self {
         IpcWriter {
@@ -415,7 +415,7 @@ mod test {
             "c" => [4.5, 10.0, 10.0],
             "d" => ["misc", "other", "value"],
         ]
-            .unwrap();
+        .unwrap();
         IpcWriter::new(&mut buf)
             .finish(&mut df)
             .expect("ipc writer");
@@ -426,7 +426,7 @@ mod test {
             "d" => ["misc", "other", "value"],
             "b" => [123, 456, 789],
         ]
-            .unwrap();
+        .unwrap();
         let df_read = IpcReader::new(buf)
             .with_columns(Some(vec![
                 "a".to_string(),
