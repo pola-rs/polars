@@ -475,22 +475,22 @@ pub fn duration(args: DurationArgs) -> Expr {
             nanoseconds = nanoseconds.expand_at_index(0, max_len);
         }
         if condition(&days) {
-            nanoseconds = (&nanoseconds + &days) * NANOSECONDS * SECONDS_IN_DAY;
+            nanoseconds = nanoseconds + days * NANOSECONDS * SECONDS_IN_DAY;
         }
         if condition(&seconds) {
-            nanoseconds = (&nanoseconds + &seconds) * NANOSECONDS;
+            nanoseconds = nanoseconds + &seconds * NANOSECONDS;
         }
         if condition(&milliseconds) {
-            nanoseconds = (&nanoseconds + &milliseconds) * 1_000_000;
+            nanoseconds = nanoseconds + milliseconds * 1_000_000;
         }
         if condition(&minutes) {
-            nanoseconds = (&nanoseconds + &minutes) * NANOSECONDS * 60;
+            nanoseconds = nanoseconds + minutes * NANOSECONDS * 60;
         }
         if condition(&hours) {
-            nanoseconds = (&nanoseconds + &hours) * NANOSECONDS * 60 * 60;
+            nanoseconds = nanoseconds + hours * NANOSECONDS * 60 * 60;
         }
         if condition(&weeks) {
-            nanoseconds = (&nanoseconds + &weeks) * NANOSECONDS * SECONDS_IN_DAY * 7;
+            nanoseconds = nanoseconds + weeks * NANOSECONDS * SECONDS_IN_DAY * 7;
         }
 
         nanoseconds.cast(&DataType::Duration(TimeUnit::Nanoseconds))
