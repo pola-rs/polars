@@ -9,13 +9,13 @@ methods. All classes and functions exposed in ``polars.*`` namespace are public.
 .. toctree::
    :maxdepth: 2
 
-   io
-   functions
-   series
-   dataframe
-   expression
-   lazyframe
-   testing
    config
+   dataframe
    datatypes
    exceptions
+   expression
+   functions
+   io
+   lazyframe
+   series
+   testing
