@@ -1,4 +1,5 @@
 use super::*;
+use crate::chunkedarray::date::months_to_quarters;
 use arrow::array::{Array, PrimitiveArray};
 use arrow::compute::cast::CastOptions;
 use arrow::compute::{cast::cast, temporal};
@@ -38,6 +39,13 @@ pub trait DatetimeMethods: AsDatetime {
     /// Returns the year number in the calendar date.
     fn year(&self) -> Int32Chunked {
         cast_and_apply(self.as_datetime(), temporal::year)
+    }
+
+    /// Extract quarter from underlying NaiveDateTime representation.
+    /// Quarters range from 1 to 4.
+    fn quarter(&self) -> UInt32Chunked {
+        let months = self.month();
+        months_to_quarters(months)
     }
 
     /// Extract month from underlying NaiveDateTime representation.

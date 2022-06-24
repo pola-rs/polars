@@ -243,6 +243,36 @@ pub trait TemporalMethods: AsSeries {
     }
 
     /// Extract month from underlying NaiveDateTime representation.
+    /// Returns the year number in the calendar date.
+    fn year(&self) -> Result<Int32Chunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => s.date().map(|ca| ca.year()),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.year()),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", s.dtype()).into(),
+            )),
+        }
+    }
+
+    /// Extract quarter from underlying NaiveDateTime representation.
+    /// Quarters range from 1 to 4.
+    fn quarter(&self) -> Result<UInt32Chunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => s.date().map(|ca| ca.quarter()),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.quarter()),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", s.dtype()).into(),
+            )),
+        }
+    }
+
+    /// Extract month from underlying NaiveDateTime representation.
     /// Returns the month number starting from 1.
     ///
     /// The return value ranges from 1 to 12.
@@ -253,21 +283,6 @@ pub trait TemporalMethods: AsSeries {
             DataType::Date => s.date().map(|ca| ca.month()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => s.datetime().map(|ca| ca.month()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", s.dtype()).into(),
-            )),
-        }
-    }
-
-    /// Extract month from underlying NaiveDateTime representation.
-    /// Returns the year number in the calendar date.
-    fn year(&self) -> Result<Int32Chunked> {
-        let s = self.as_series();
-        match s.dtype() {
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => s.date().map(|ca| ca.year()),
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.year()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", s.dtype()).into(),
             )),

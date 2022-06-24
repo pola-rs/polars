@@ -32,7 +32,7 @@ Conversion
    :toctree: api/
 
    Series.to_arrow
-   Series.to_frame
+   Series.tquarter
    Series.to_list
    Series.to_numpy
    Series.to_pandas
@@ -233,6 +233,7 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.nanosecond
     DateTimeNameSpace.nanoseconds
     DateTimeNameSpace.ordinal_day
+    DateTimeNameSpace.quarter
     DateTimeNameSpace.second
     DateTimeNameSpace.seconds
     DateTimeNameSpace.strftime
