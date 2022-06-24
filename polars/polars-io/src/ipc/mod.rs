@@ -7,7 +7,7 @@ mod ipc_file;
 mod ipc_stream;
 
 #[cfg(feature = "ipc")]
-pub use crate::ipc::ipc_file::{IpcCompression, IpcReader, IpcWriter, IpcWriterOption};
+pub use ipc_file::{IpcCompression, IpcReader, IpcWriter, IpcWriterOption};
 
 #[cfg(feature = "ipc_streaming")]
 pub use ipc_stream::*;
