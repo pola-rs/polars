@@ -15,7 +15,7 @@ pub mod csv;
 #[cfg_attr(docsrs, doc(cfg(feature = "csv-file")))]
 pub mod csv_core;
 pub mod export;
-#[cfg(any(feature = "ipc", any(feature = "ipc", feature = "ipc_streaming")))]
+#[cfg(any(feature = "ipc", feature = "ipc_streaming"))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "ipc", feature = "ipc_streaming"))))]
 pub mod ipc;
 #[cfg(feature = "json")]
