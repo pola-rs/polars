@@ -992,8 +992,10 @@ impl PyDataFrame {
         Ok(())
     }
 
-    pub fn slice(&self, offset: usize, length: usize) -> Self {
-        let df = self.df.slice(offset as i64, length);
+    pub fn slice(&self, offset: usize, length: Option<usize>) -> Self {
+        let df = self
+            .df
+            .slice(offset as i64, length.unwrap_or(self.df.height()));
         df.into()
     }
 

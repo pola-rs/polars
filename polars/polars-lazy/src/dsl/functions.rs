@@ -2,6 +2,8 @@
 //!
 //! Functions on expressions that might be useful.
 //!
+#[cfg(feature = "arg_where")]
+use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::*;
 use crate::utils::has_wildcard;
 use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
@@ -164,7 +166,7 @@ pub fn spearman_rank_corr(a: Expr, b: Expr) -> Expr {
 /// be used and so on.
 pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
     let reverse = reverse.to_vec();
-    let function = NoEq::new(Arc::new(move |by: &mut [Series]| {
+    let function = SpecialEq::new(Arc::new(move |by: &mut [Series]| {
         polars_core::functions::argsort_by(by, &reverse).map(|ca| ca.into_series())
     }) as Arc<dyn SeriesUdf>);
 
@@ -187,7 +189,7 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
 pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
     let s = s.as_ref().to_vec();
     let sep = sep.to_string();
-    let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+    let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
         polars_core::functions::concat_str(s, &sep).map(|ca| ca.into_series())
     }) as Arc<dyn SeriesUdf>);
     Expr::AnonymousFunction {
@@ -209,7 +211,7 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
 pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
     let s = s.as_ref().iter().map(|e| e.clone().into()).collect();
 
-    let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+    let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
         let mut first = std::mem::take(&mut s[0]);
         let other = &s[1..];
 
@@ -350,7 +352,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
     let second = args.second;
     let millisecond = args.millisecond;
 
-    let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+    let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
         assert_eq!(s.len(), 7);
         let max_len = s.iter().map(|s| s.len()).max().unwrap();
         let mut year = s[0].cast(&DataType::Int32)?;
@@ -452,7 +454,7 @@ pub struct DurationArgs {
 
 #[cfg(feature = "temporal")]
 pub fn duration(args: DurationArgs) -> Expr {
-    let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+    let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
         assert_eq!(s.len(), 7);
         let days = s[0].cast(&DataType::Int64).unwrap();
         let seconds = s[1].cast(&DataType::Int64).unwrap();
@@ -473,22 +475,22 @@ pub fn duration(args: DurationArgs) -> Expr {
             nanoseconds = nanoseconds.expand_at_index(0, max_len);
         }
         if condition(&days) {
-            nanoseconds = (&nanoseconds + &days) * NANOSECONDS * SECONDS_IN_DAY;
+            nanoseconds = nanoseconds + days * NANOSECONDS * SECONDS_IN_DAY;
         }
         if condition(&seconds) {
-            nanoseconds = (&nanoseconds + &seconds) * NANOSECONDS;
+            nanoseconds = nanoseconds + &seconds * NANOSECONDS;
         }
         if condition(&milliseconds) {
-            nanoseconds = (&nanoseconds + &milliseconds) * 1_000_000;
+            nanoseconds = nanoseconds + milliseconds * 1_000_000;
         }
         if condition(&minutes) {
-            nanoseconds = (&nanoseconds + &minutes) * NANOSECONDS * 60;
+            nanoseconds = nanoseconds + minutes * NANOSECONDS * 60;
         }
         if condition(&hours) {
-            nanoseconds = (&nanoseconds + &hours) * NANOSECONDS * 60 * 60;
+            nanoseconds = nanoseconds + hours * NANOSECONDS * 60 * 60;
         }
         if condition(&weeks) {
-            nanoseconds = (&nanoseconds + &weeks) * NANOSECONDS * SECONDS_IN_DAY * 7;
+            nanoseconds = nanoseconds + weeks * NANOSECONDS * SECONDS_IN_DAY * 7;
         }
 
         nanoseconds.cast(&DataType::Duration(TimeUnit::Nanoseconds))
@@ -689,7 +691,7 @@ where
     if exprs.iter().any(has_wildcard) {
         exprs.push(acc);
 
-        let function = NoEq::new(Arc::new(move |series: &mut [Series]| {
+        let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
             let mut series = series.to_vec();
             let mut acc = series.pop().unwrap();
 
@@ -861,6 +863,7 @@ pub fn as_struct(exprs: &[Expr]) -> Expr {
     })
 }
 
+/// Repeat a literal `value` `n` times.
 pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
     let function = |s: Series, n: Series| {
         let n = n.get(0).extract::<usize>().ok_or_else(|| {
@@ -869,4 +872,20 @@ pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
         Ok(s.expand_at_index(0, n))
     };
     apply_binary(lit(value), n_times, function, GetOutput::same_type())
+}
+
+#[cfg(feature = "arg_where")]
+/// Get the indices where `condition` evaluates `true`.
+pub fn arg_where<E: Into<Expr>>(condition: E) -> Expr {
+    let condition = condition.into();
+    Expr::Function {
+        input: vec![condition],
+        function: FunctionExpr::ArgWhere,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: false,
+            auto_explode: false,
+            fmt_str: "arg_where",
+        },
+    }
 }

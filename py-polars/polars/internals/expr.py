@@ -17,6 +17,7 @@ import math
 
 from polars import internals as pli
 from polars.datatypes import (
+    Boolean,
     DataType,
     Date,
     Datetime,
@@ -133,8 +134,11 @@ class Expr:
     def __rmod__(self, other: Any) -> "Expr":
         return wrap_expr(self.__to_pyexpr(other) % self._pyexpr)
 
-    def __pow__(self, power: Union[float, "Expr"], modulo: None = None) -> "Expr":
+    def __pow__(self, power: Union[float, "Expr", int], modulo: None = None) -> "Expr":
         return self.pow(power)
+
+    def __rpow__(self, base: Union[float, "Expr", int]) -> "Expr":
+        return pli.expr_to_lit_or_expr(base) ** self
 
     def __ge__(self, other: Any) -> "Expr":
         return self.gt_eq(self.__to_expr(other))
@@ -4263,7 +4267,7 @@ class ExprListNameSpace:
         └───────┘
 
         """
-        return wrap_expr(self._pyexpr).map(lambda s: s.arr.contains(item))
+        return wrap_expr(self._pyexpr).map(lambda s: s.arr.contains(item), Boolean)
 
     def join(self, separator: str) -> "Expr":
         """
@@ -4771,6 +4775,28 @@ class ExprStringNameSpace:
 
         """
         return wrap_expr(self._pyexpr.str_contains(pattern, literal))
+
+    def ends_with(self, sub: str) -> Expr:
+        """
+        Check if string values end with a substring
+
+        Parameters
+        ----------
+        sub
+            Suffix
+        """
+        return wrap_expr(self._pyexpr.str_ends_with(sub))
+
+    def starts_with(self, sub: str) -> Expr:
+        """
+        Check if string values start with a substring
+
+        Parameters
+        ----------
+        sub
+            Prefix
+        """
+        return wrap_expr(self._pyexpr.str_starts_with(sub))
 
     def json_path_match(self, json_path: str) -> Expr:
         """
@@ -5314,6 +5340,19 @@ class ExprDateTimeNameSpace:
         Year as Int32
         """
         return wrap_expr(self._pyexpr.year())
+
+    def quarter(self) -> Expr:
+        """
+        Extract quarter from underlying Date representation.
+        Can be performed on Date and Datetime.
+
+        Returns the quarter ranging from 1 to 4.
+
+        Returns
+        -------
+        Quarter as UInt32
+        """
+        return wrap_expr(self._pyexpr.quarter())
 
     def month(self) -> Expr:
         """

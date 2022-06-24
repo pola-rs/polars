@@ -29,7 +29,7 @@ pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {
             }
             | IpcScan {
                 options:
-                    IpcScanOptions {
+                    IpcScanOptionsInner {
                         row_count: Some(_), ..
                     },
                 ..

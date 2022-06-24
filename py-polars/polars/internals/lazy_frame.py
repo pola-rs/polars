@@ -756,6 +756,18 @@ class LazyFrame(Generic[DF]):
         """
         return self._from_pyldf(self._ldf.cache())
 
+    def clone(self: LDF) -> LDF:
+        """
+        Cheap deepcopy/clone.
+        """
+        return self._from_pyldf(self._ldf.clone())
+
+    def __copy__(self: LDF) -> LDF:
+        return self.clone()
+
+    def __deepcopy__(self: LDF, memodict={}) -> LDF:  # type: ignore
+        return self.clone()
+
     def filter(self: LDF, predicate: Union["pli.Expr", str]) -> LDF:
         """
         Filter the rows in the DataFrame based on a predicate expression.
@@ -1645,7 +1657,7 @@ class LazyFrame(Generic[DF]):
             fill_value = pli.lit(fill_value)
         return self._from_pyldf(self._ldf.shift_and_fill(periods, fill_value._pyexpr))
 
-    def slice(self: LDF, offset: int, length: int) -> LDF:
+    def slice(self: LDF, offset: int, length: Optional[int] = None) -> LDF:
         """
         Slice the DataFrame.
 

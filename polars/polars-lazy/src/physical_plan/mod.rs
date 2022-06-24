@@ -1,5 +1,7 @@
 pub mod executors;
 pub mod expressions;
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+mod file_cache;
 pub mod planner;
 pub(crate) mod state;
 

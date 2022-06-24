@@ -512,8 +512,13 @@ def test_assignment() -> None:
 
 def test_slice() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
-    df = df.slice(1, 2)
-    assert df.frame_equal(pl.DataFrame({"a": [1, 3], "b": ["b", "c"]}))
+    expected = pl.DataFrame({"a": [1, 3], "b": ["b", "c"]})
+    for slice_params in (
+        [1, 10],  # slice > len(df)
+        [1, 2],  # slice == len(df)
+        [1],  # optional len
+    ):
+        assert df.slice(*slice_params).frame_equal(expected)
 
 
 def test_null_count() -> None:
@@ -1042,7 +1047,7 @@ def test_concat() -> None:
 
 def test_arg_where() -> None:
     s = pl.Series([True, False, True, False])
-    assert pl.arg_where(s).cast(int).series_equal(pl.Series([0, 2]))
+    assert pl.arg_where(s, eager=True).cast(int).series_equal(pl.Series([0, 2]))
 
 
 def test_get_dummies() -> None:
@@ -1289,6 +1294,7 @@ def test_to_html(df: pl.DataFrame) -> None:
 def test_rows() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [1, 2]})
     assert df.rows() == [(1, 1), (2, 2)]
+    assert df.reverse().rows() == [(2, 2), (1, 1)]
 
 
 def test_rename(df: pl.DataFrame) -> None:
@@ -2235,4 +2241,55 @@ def test_fill_null_limits() -> None:
             False,
             False,
         ],
+    }
+
+
+def test_selection_regex_and_multicol() -> None:
+    test_df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4],
+            "b": [5, 6, 7, 8],
+            "c": [9, 10, 11, 12],
+            "foo": [13, 14, 15, 16],
+        }
+    )
+
+    # Selection only
+    test_df.select(
+        [
+            pl.col(["a", "b", "c"]).suffix("_list"),
+            pl.all().exclude("foo").suffix("_wild"),
+            pl.col("^\\w$").suffix("_regex"),
+        ]
+    )
+
+    # Multi * Single
+    assert test_df.select(pl.col(["a", "b", "c"]) * pl.col("foo")).to_dict(False) == {
+        "a": [13, 28, 45, 64],
+        "b": [65, 84, 105, 128],
+        "c": [117, 140, 165, 192],
+    }
+    assert test_df.select(pl.all().exclude("foo") * pl.col("foo")).to_dict(False) == {
+        "a": [13, 28, 45, 64],
+        "b": [65, 84, 105, 128],
+        "c": [117, 140, 165, 192],
+    }
+
+    assert test_df.select(pl.col("^\\w$") * pl.col("foo")).to_dict(False) == {
+        "a": [13, 28, 45, 64],
+        "b": [65, 84, 105, 128],
+        "c": [117, 140, 165, 192],
+    }
+
+    # Multi * Multi
+    assert test_df.select(pl.col(["a", "b", "c"]) * pl.col(["a", "b", "c"])).to_dict(
+        False
+    ) == {"a": [1, 4, 9, 16], "b": [25, 36, 49, 64], "c": [81, 100, 121, 144]}
+    assert test_df.select(pl.all().exclude("foo") * pl.all().exclude("foo")).to_dict(
+        False
+    ) == {"a": [1, 4, 9, 16], "b": [25, 36, 49, 64], "c": [81, 100, 121, 144]}
+    assert test_df.select(pl.col("^\\w$") * pl.col("^\\w$")).to_dict(False) == {
+        "a": [1, 4, 9, 16],
+        "b": [25, 36, 49, 64],
+        "c": [81, 100, 121, 144],
     }

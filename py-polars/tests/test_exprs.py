@@ -225,15 +225,30 @@ def test_null_count_expr() -> None:
 
 
 def test_power_by_expression() -> None:
-    assert pl.DataFrame(
+    out = pl.DataFrame(
         {"a": [1, None, None, 4, 5, 6], "b": [1, 2, None, 4, None, 6]}
-    ).select([(pl.col("a") ** pl.col("b")).alias("pow")])["pow"].to_list() == [
+    ).select(
+        [
+            (pl.col("a") ** pl.col("b")).alias("pow"),
+            (2 ** pl.col("b")).alias("pow_left"),
+        ]
+    )
+
+    assert out["pow"].to_list() == [
         1.0,
         None,
         None,
         256.0,
         None,
         46656.0,
+    ]
+    assert out["pow_left"].to_list() == [
+        2.0,
+        4.0,
+        None,
+        16.0,
+        None,
+        64.0,
     ]
 
 
@@ -262,3 +277,20 @@ def test_regex_in_filter() -> None:
     assert df.filter(
         pl.fold(acc=False, f=lambda acc, s: acc | s, exprs=(pl.col("^nrs|flt*$") < 3))
     ).row(0) == (1, "foo", 1.0)
+
+
+def test_arr_contains() -> None:
+    df_groups = pl.DataFrame(
+        {
+            "str_list": [
+                ["cat", "mouse", "dog"],
+                ["dog", "mouse", "cat"],
+                ["dog", "mouse", "aardvark"],
+            ],
+        }
+    )
+    assert df_groups.lazy().filter(
+        pl.col("str_list").arr.contains("cat")
+    ).collect().to_dict(False) == {
+        "str_list": [["cat", "mouse", "dog"], ["dog", "mouse", "cat"]]
+    }

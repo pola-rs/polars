@@ -2,6 +2,7 @@ use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
 use std::fmt::{Debug, Formatter};
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
 use crate::dsl::function_expr::FunctionExpr;
@@ -65,28 +66,35 @@ impl Debug for dyn RenameAliasFn {
 }
 
 #[derive(Clone)]
-/// Wrapper type that indicates that the inner type is not equal to anything
-pub struct NoEq<T>(T);
+/// Wrapper type that has special equality properties
+/// depending on the inner type specialization
+pub struct SpecialEq<T>(T);
 
-impl<T> NoEq<T> {
+impl<T> SpecialEq<T> {
     pub fn new(val: T) -> Self {
-        NoEq(val)
+        SpecialEq(val)
     }
 }
 
-impl<T> PartialEq for NoEq<T> {
-    fn eq(&self, _other: &Self) -> bool {
-        false
+impl<T: ?Sized> PartialEq for SpecialEq<Arc<T>> {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
-impl<T> Debug for NoEq<T> {
+impl PartialEq for SpecialEq<Series> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T> Debug for SpecialEq<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "no_eq")
     }
 }
 
-impl<T> Deref for NoEq<T> {
+impl<T> Deref for SpecialEq<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -123,11 +131,11 @@ pub trait FunctionOutputField: Send + Sync {
     fn get_field(&self, input_schema: &Schema, cntxt: Context, fields: &[Field]) -> Field;
 }
 
-pub type GetOutput = NoEq<Arc<dyn FunctionOutputField>>;
+pub type GetOutput = SpecialEq<Arc<dyn FunctionOutputField>>;
 
 impl Default for GetOutput {
     fn default() -> Self {
-        NoEq::new(Arc::new(
+        SpecialEq::new(Arc::new(
             |_input_schema: &Schema, _cntxt: Context, fields: &[Field]| fields[0].clone(),
         ))
     }
@@ -139,25 +147,25 @@ impl GetOutput {
     }
 
     pub fn from_type(dt: DataType) -> Self {
-        NoEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
+        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
             Field::new(flds[0].name(), dt.clone())
         }))
     }
 
     pub fn map_field<F: 'static + Fn(&Field) -> Field + Send + Sync>(f: F) -> Self {
-        NoEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
+        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
             f(&flds[0])
         }))
     }
 
     pub fn map_fields<F: 'static + Fn(&[Field]) -> Field + Send + Sync>(f: F) -> Self {
-        NoEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
+        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
             f(flds)
         }))
     }
 
     pub fn map_dtype<F: 'static + Fn(&DataType) -> DataType + Send + Sync>(f: F) -> Self {
-        NoEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
+        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
             let mut fld = flds[0].clone();
             let new_type = f(fld.data_type());
             fld.coerce(new_type);
@@ -179,7 +187,7 @@ impl GetOutput {
     where
         F: 'static + Fn(&[&DataType]) -> DataType + Send + Sync,
     {
-        NoEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
+        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
             let mut fld = flds[0].clone();
             let dtypes = flds.iter().map(|fld| fld.data_type()).collect::<Vec<_>>();
             let new_type = f(&dtypes);
@@ -244,7 +252,8 @@ impl AsRef<Expr> for AggExpr {
     }
 }
 
-/// Queries consists of multiple expressions.
+/// Queries consists of multiple ex
+/// pressions.
 #[derive(Clone, PartialEq)]
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -297,7 +306,7 @@ pub enum Expr {
         /// function arguments
         input: Vec<Expr>,
         /// function to apply
-        function: NoEq<Arc<dyn SeriesUdf>>,
+        function: SpecialEq<Arc<dyn SeriesUdf>>,
         /// output dtype of the function
         output_type: GetOutput,
         options: FunctionOptions,
@@ -343,7 +352,7 @@ pub enum Expr {
     KeepName(Box<Expr>),
     #[cfg_attr(feature = "serde", serde(skip))]
     RenameAlias {
-        function: NoEq<Arc<dyn RenameAliasFn>>,
+        function: SpecialEq<Arc<dyn RenameAliasFn>>,
         expr: Box<Expr>,
     },
     /// Special case that does not need columns
@@ -352,13 +361,27 @@ pub enum Expr {
     Nth(i64),
 }
 
+// TODO! derive. This is only a temporary fix
+// Because PartialEq will have a lot of `false`, e.g. on Function
+// Types, this may lead to many file reads, as we use predicate comparison
+// to check if we can cache a file
+#[allow(clippy::derive_hash_xor_eq)]
+impl Hash for Expr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let s = format!("{:?}", self);
+        s.hash(state)
+    }
+}
+
+impl Eq for Expr {}
+
 impl Default for Expr {
     fn default() -> Self {
         Expr::Literal(LiteralValue::Null)
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Excluded {
     Name(Arc<str>),
     Dtype(DataType),

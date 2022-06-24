@@ -2,7 +2,7 @@ use crate::logical_plan::iterator::{ArenaExprIter, ArenaLpIter};
 use crate::logical_plan::Context;
 use crate::prelude::*;
 use polars_core::prelude::*;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 pub(crate) trait PushNode {
@@ -254,12 +254,6 @@ pub(crate) fn agg_source_paths(
             }
             _ => {}
         }
-    })
-}
-
-pub(crate) fn try_path_to_str(path: &Path) -> Result<&str> {
-    path.to_str().ok_or_else(|| {
-        PolarsError::ComputeError(format!("Non-UTF8 file path: {}", path.to_string_lossy()).into())
     })
 }
 

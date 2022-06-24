@@ -14,6 +14,8 @@ mod predicate_queries;
 mod projection_queries;
 #[cfg(feature = "test")]
 mod queries;
+#[cfg(feature = "strings")]
+mod tpch;
 
 fn load_df() -> DataFrame {
     df!("a" => &[1, 2, 3, 4, 5],

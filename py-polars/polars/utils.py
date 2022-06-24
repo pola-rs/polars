@@ -80,7 +80,7 @@ def _datetime_to_pl_timestamp(dt: datetime, tu: Optional[str]) -> int:
         # python has us precision
         return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e6)
     else:
-        raise ValueError("expected on of {'ns', 'ms'}")
+        raise ValueError("expected on of {'ns', 'us', 'ms'}")
 
 
 def _timedelta_to_pl_timedelta(td: timedelta, tu: Optional[str] = None) -> int:

@@ -91,9 +91,9 @@ fn expand_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, pattern: &
             let mut new_expr = expr.clone();
 
             new_expr.mutate().apply(|e| match &e {
-                Expr::Column(_) => {
+                Expr::Column(pat) if pat.as_ref() == pattern => {
                     *e = Expr::Column(Arc::from(name.as_str()));
-                    false
+                    true
                 }
                 _ => true,
             });
@@ -109,20 +109,42 @@ fn expand_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, pattern: &
 /// that are selected by that regex in `result`. The regex should start with `^` and end with `$`.
 fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema) {
     let roots = expr_to_root_column_names(expr);
-    // only in simple expression (no binary expression)
-    // we pattern match regex columns
-    if roots.len() == 1 {
-        let name = &*roots[0];
+    let mut regex = None;
+    for name in &roots {
         if name.starts_with('^') && name.ends_with('$') {
-            expand_regex(expr, result, schema, name)
-        } else {
-            let expr = rewrite_special_aliases(expr.clone());
-            result.push(expr)
+            match regex {
+                None => {
+                    regex = Some(name);
+                    expand_regex(expr, result, schema, name)
+                }
+                Some(r) => {
+                    assert_eq!(
+                        r, name,
+                        "an expression is not allowed to have different regexes"
+                    )
+                }
+            }
         }
-    } else {
+    }
+    if regex.is_none() {
         let expr = rewrite_special_aliases(expr.clone());
         result.push(expr)
     }
+
+    // // only in simple expression (no binary expression)
+    // // we pattern match regex columns
+    // if roots.len() == 1 {
+    //     let name = &*roots[0];
+    //     if name.starts_with('^') && name.ends_with('$') {
+    //         expand_regex(expr, result, schema, name)
+    //     } else {
+    //         let expr = rewrite_special_aliases(expr.clone());
+    //         result.push(expr)
+    //     }
+    // } else {
+    //     let expr = rewrite_special_aliases(expr.clone());
+    //     result.push(expr)
+    // }
 }
 
 /// replace `columns(["A", "B"])..` with `col("A")..`, `col("B")..`

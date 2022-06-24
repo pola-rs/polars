@@ -57,8 +57,8 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    fn _set_sorted(&mut self, reverse: bool) {
-        self.0.deref_mut().set_sorted(reverse)
+    fn _set_sorted(&mut self, is_sorted: IsSorted) {
+        self.0.deref_mut().set_sorted2(is_sorted)
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
@@ -359,7 +359,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         let mut out = ChunkTake::take_unchecked(self.0.deref(), idx.into());
 
         if self.0.is_sorted() && (idx.is_sorted() || idx.is_sorted_reverse()) {
-            out.set_sorted(idx.is_sorted_reverse())
+            out.set_sorted2(idx.is_sorted2())
         }
 
         Ok(out.into_duration(self.0.time_unit()).into_series())

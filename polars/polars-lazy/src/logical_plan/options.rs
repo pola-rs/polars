@@ -5,6 +5,8 @@ use polars_io::RowCount;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+pub type FileCount = u32;
+
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvParserOptions {
@@ -23,6 +25,7 @@ pub struct CsvParserOptions {
     pub(crate) encoding: CsvEncoding,
     pub(crate) row_count: Option<RowCount>,
     pub(crate) parse_dates: bool,
+    pub(crate) file_counter: FileCount,
 }
 #[cfg(feature = "parquet")]
 #[derive(Clone, Debug)]
@@ -34,6 +37,7 @@ pub struct ParquetOptions {
     pub(crate) parallel: bool,
     pub(crate) rechunk: bool,
     pub(crate) row_count: Option<RowCount>,
+    pub(crate) file_counter: FileCount,
 }
 
 #[derive(Clone, Debug)]
@@ -44,6 +48,30 @@ pub struct IpcScanOptions {
     pub cache: bool,
     pub row_count: Option<RowCount>,
     pub rechunk: bool,
+}
+
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct IpcScanOptionsInner {
+    pub(crate) n_rows: Option<usize>,
+    pub(crate) with_columns: Option<Arc<Vec<String>>>,
+    pub(crate) cache: bool,
+    pub(crate) row_count: Option<RowCount>,
+    pub(crate) rechunk: bool,
+    pub(crate) file_counter: FileCount,
+}
+
+impl From<IpcScanOptions> for IpcScanOptionsInner {
+    fn from(options: IpcScanOptions) -> Self {
+        Self {
+            n_rows: options.n_rows,
+            with_columns: options.with_columns,
+            cache: options.cache,
+            row_count: options.row_count,
+            rechunk: options.rechunk,
+            file_counter: Default::default(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Copy, Default)]

@@ -110,6 +110,7 @@ impl LogicalPlanBuilder {
                 parallel,
                 row_count,
                 rechunk,
+                file_counter: Default::default(),
             },
         }
         .into())
@@ -129,7 +130,7 @@ impl LogicalPlanBuilder {
             schema,
             predicate: None,
             aggregate: vec![],
-            options,
+            options: options.into(),
         }
         .into())
     }
@@ -207,6 +208,7 @@ impl LogicalPlanBuilder {
                 encoding,
                 row_count,
                 parse_dates,
+                file_counter: Default::default(),
             },
             predicate: None,
             aggregate: vec![],
@@ -395,6 +397,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn sort(self, by_column: Vec<Expr>, reverse: Vec<bool>, null_last: bool) -> Self {
+        let by_column = rewrite_projections(by_column, self.0.schema(), &[]);
         LogicalPlan::Sort {
             input: Box::new(self.0),
             by_column,

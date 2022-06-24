@@ -11,6 +11,7 @@ use crate::{
 };
 use numpy::PyArray1;
 use polars_core::prelude::QuantileInterpolOptions;
+use polars_core::series::IsSorted;
 use polars_core::utils::CustomIterTools;
 use pyo3::types::{PyBytes, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
@@ -412,6 +413,10 @@ impl PySeries {
         self.series.cumprod(reverse).into()
     }
 
+    pub fn reverse(&self) -> Self {
+        self.series.reverse().into()
+    }
+
     pub fn chunk_lengths(&self) -> Vec<usize> {
         self.series.chunk_lengths().collect()
     }
@@ -437,7 +442,11 @@ impl PySeries {
 
     fn set_sorted(&self, reverse: bool) -> Self {
         let mut out = self.series.clone();
-        out.set_sorted(reverse);
+        if reverse {
+            out.set_sorted(IsSorted::Descending);
+        } else {
+            out.set_sorted(IsSorted::Ascending)
+        }
         out.into()
     }
 
@@ -472,8 +481,10 @@ impl PySeries {
         series.into()
     }
 
-    pub fn slice(&self, offset: i64, length: usize) -> Self {
-        let series = self.series.slice(offset, length);
+    pub fn slice(&self, offset: i64, length: Option<usize>) -> Self {
+        let series = self
+            .series
+            .slice(offset, length.unwrap_or(self.series.len()));
         series.into()
     }
 
@@ -618,11 +629,6 @@ impl PySeries {
 
     pub fn is_unique(&self) -> PyResult<Self> {
         let ca = self.series.is_unique().map_err(PyPolarsErr::from)?;
-        Ok(ca.into_series().into())
-    }
-
-    pub fn arg_true(&self) -> PyResult<Self> {
-        let ca = self.series.arg_true().map_err(PyPolarsErr::from)?;
         Ok(ca.into_series().into())
     }
 
@@ -869,12 +875,14 @@ impl PySeries {
     }
 
     #[cfg(feature = "is_in")]
-    pub fn is_in(&self, other: &PySeries) -> PyResult<Self> {
-        let out = self
-            .series
-            .is_in(&other.series)
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into_series().into())
+    pub fn is_in(&self, py: Python, other: &PySeries) -> PyResult<Self> {
+        py.allow_threads(|| {
+            let out = self
+                .series
+                .is_in(&other.series)
+                .map_err(PyPolarsErr::from)?;
+            Ok(out.into_series().into())
+        })
     }
 
     pub fn clone(&self) -> Self {
@@ -1416,9 +1424,11 @@ impl PySeries {
         let out = self.series.reshape(&dims).map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
+
     pub fn shuffle(&self, seed: u64) -> Self {
         self.series.shuffle(seed).into()
     }
+
     pub fn extend_constant(&self, value: Wrap<AnyValue>, n: usize) -> PyResult<Self> {
         let value = value.0;
         let out = self

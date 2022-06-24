@@ -38,8 +38,8 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
         self.0.explode_by_offsets(offsets)
     }
 
-    fn _set_sorted(&mut self, reverse: bool) {
-        self.0.set_sorted(reverse)
+    fn _set_sorted(&mut self, is_sorted: IsSorted) {
+        self.0.set_sorted2(is_sorted)
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
@@ -294,10 +294,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
 
     fn arg_max(&self) -> Option<usize> {
         ArgAgg::arg_max(&self.0)
-    }
-
-    fn arg_true(&self) -> Result<IdxCa> {
-        Ok(self.0.arg_true())
     }
 
     fn is_null(&self) -> BooleanChunked {

@@ -36,7 +36,7 @@ impl LazyFrame {
             LogicalPlanBuilder::scan_parquet(path, n_rows, cache, parallel, row_count, rechunk)?
                 .build()
                 .into();
-        lf.opt_state.agg_scan_projection = true;
+        lf.opt_state.file_caching = true;
         Ok(lf)
     }
 

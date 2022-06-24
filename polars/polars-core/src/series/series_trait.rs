@@ -91,7 +91,7 @@ pub(crate) mod private {
             panic!("operation cummin not supported for this dtype")
         }
 
-        fn _set_sorted(&mut self, _reverse: bool) {
+        fn _set_sorted(&mut self, _is_sorted: IsSorted) {
             invalid_operation_panic!(self)
         }
 
@@ -455,13 +455,6 @@ pub trait SeriesTrait:
     /// Get max index
     fn arg_max(&self) -> Option<usize> {
         None
-    }
-
-    /// Get indexes that evaluate true
-    fn arg_true(&self) -> Result<IdxCa> {
-        Err(PolarsError::InvalidOperation(
-            "arg_true can only be called for boolean dtype".into(),
-        ))
     }
 
     /// Get a mask of the null values.

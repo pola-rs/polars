@@ -1,6 +1,10 @@
+#[cfg(feature = "arg_where")]
+mod arg_where;
 #[cfg(feature = "is_in")]
 mod is_in;
 mod pow;
+#[cfg(feature = "strings")]
+mod strings;
 
 use super::*;
 use polars_core::prelude::*;
@@ -8,7 +12,7 @@ use polars_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum FunctionExpr {
     NullCount,
     Pow,
@@ -16,6 +20,17 @@ pub enum FunctionExpr {
     Hash(usize),
     #[cfg(feature = "is_in")]
     IsIn,
+    #[cfg(feature = "arg_where")]
+    ArgWhere,
+    #[cfg(feature = "strings")]
+    StringContains {
+        pat: String,
+        literal: bool,
+    },
+    #[cfg(feature = "strings")]
+    StringStartsWith(String),
+    #[cfg(feature = "strings")]
+    StringEndsWith(String),
 }
 
 impl FunctionExpr {
@@ -46,17 +61,34 @@ impl FunctionExpr {
             Hash(_) => with_dtype(DataType::UInt64),
             #[cfg(feature = "is_in")]
             IsIn => with_dtype(DataType::Boolean),
+            #[cfg(feature = "arg_where")]
+            ArgWhere => with_dtype(IDX_DTYPE),
+            #[cfg(feature = "strings")]
+            StringContains { .. } | StringEndsWith(_) | StringStartsWith(_) => {
+                with_dtype(DataType::Boolean)
+            }
         }
     }
 }
 
 macro_rules! wrap {
     ($e:expr) => {
-        NoEq::new(Arc::new($e))
+        SpecialEq::new(Arc::new($e))
     };
 }
 
-impl From<FunctionExpr> for NoEq<Arc<dyn SeriesUdf>> {
+macro_rules! map_with_args {
+    ($func:path, $($args:expr),*) => {{
+        let f = move |s: &mut [Series]| {
+            let s = &s[0];
+            $func(s, $($args),*)
+        };
+
+        SpecialEq::new(Arc::new(f))
+    }};
+}
+
+impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: FunctionExpr) -> Self {
         use FunctionExpr::*;
         match func {
@@ -81,6 +113,22 @@ impl From<FunctionExpr> for NoEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "is_in")]
             IsIn => {
                 wrap!(is_in::is_in)
+            }
+            #[cfg(feature = "arg_where")]
+            ArgWhere => {
+                wrap!(arg_where::arg_where)
+            }
+            #[cfg(feature = "strings")]
+            StringContains { pat, literal } => {
+                map_with_args!(strings::contains, &pat, literal)
+            }
+            #[cfg(feature = "strings")]
+            StringEndsWith(sub) => {
+                map_with_args!(strings::ends_with, &sub)
+            }
+            #[cfg(feature = "strings")]
+            StringStartsWith(sub) => {
+                map_with_args!(strings::starts_with, &sub)
             }
         }
     }

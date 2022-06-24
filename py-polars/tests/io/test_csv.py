@@ -437,3 +437,27 @@ def test_glob_csv(io_test_dir: str) -> None:
     path = os.path.join(io_test_dir, "small*.csv")
     assert pl.scan_csv(path).collect().shape == (3, 11)
     assert pl.read_csv(path).shape == (3, 11)
+
+
+def test_csv_whitepsace_delimiter_at_start_do_not_skip() -> None:
+    csv = "\t\t\t\t0\t1"
+    assert pl.read_csv(csv.encode(), sep="\t", has_header=False).to_dict(False) == {
+        "column_1": [None],
+        "column_2": [None],
+        "column_3": [None],
+        "column_4": [None],
+        "column_5": [0],
+        "column_6": [1],
+    }
+
+
+def test_csv_whitepsace_delimiter_at_end_do_not_skip() -> None:
+    csv = "0\t1\t\t\t\t"
+    assert pl.read_csv(csv.encode(), sep="\t", has_header=False).to_dict(False) == {
+        "column_1": [0],
+        "column_2": [1],
+        "column_3": [None],
+        "column_4": [None],
+        "column_5": [None],
+        "column_6": [None],
+    }

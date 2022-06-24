@@ -1225,7 +1225,7 @@ class Series:
         """
         return wrap_s(self._s.limit(num_elements))
 
-    def slice(self, offset: int, length: int) -> "Series":
+    def slice(self, offset: int, length: Optional[int] = None) -> "Series":
         """
         Get a slice of this Series.
 
@@ -1561,6 +1561,19 @@ class Series:
         """
         return self._s.has_validity()
 
+    def is_empty(self) -> bool:
+        """
+        Check if the Series is empty.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [], dtype=pl.Float32)
+        >>> s.is_empty()
+        True
+
+        """
+        return self.len() == 0
+
     def is_null(self) -> "Series":
         """
         Get mask of null values.
@@ -1768,7 +1781,7 @@ class Series:
         -------
         UInt32 Series
         """
-        return wrap_s(self._s.arg_true())
+        return pli.arg_where(self, eager=True)
 
     def is_unique(self) -> "Series":
         """
@@ -2007,6 +2020,23 @@ class Series:
             return None
         else:
             return wrap_s(opt_s)
+
+    def reverse(self) -> "Series":
+        """
+        Return Series in reverse order.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3], dtype=pl.Int8)
+        shape: (3,)
+        Series: 'a' [i8]
+        [
+            3
+            2
+            1
+        ]
+        """
+        return wrap_s(self._s.reverse())
 
     def is_numeric(self) -> bool:
         """
@@ -3990,6 +4020,30 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_contains(pattern, literal))
 
+    def ends_with(self, sub: str) -> Series:
+        """
+        Check if string values end with a substring
+
+        Parameters
+        ----------
+        sub
+            Suffix
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.ends_with(sub)).to_series()
+
+    def starts_with(self, sub: str) -> Series:
+        """
+        Check if string values start with a substring
+
+        Parameters
+        ----------
+        sub
+            Prefix
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.starts_with(sub)).to_series()
+
     def decode(self, encoding: str, strict: bool = False) -> Series:
         """
         Decodes a value using the provided encoding.
@@ -4908,6 +4962,19 @@ class DateTimeNameSpace:
         Year as Int32
         """
         return wrap_s(self._s.year())
+
+    def quarter(self) -> Series:
+        """
+        Extract quarter from underlying Date representation.
+        Can be performed on Date and Datetime.
+
+        Returns the quarter ranging from 1 to 4.
+
+        Returns
+        -------
+        Quarter as UInt32
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).dt.quarter()).to_series()
 
     def month(self) -> Series:
         """

@@ -8,6 +8,42 @@ use polars_time::prelude::*;
 pub struct StringNameSpace(pub(crate) Expr);
 
 impl StringNameSpace {
+    /// Check if a string value contains a literal substring.
+    pub fn contains_literal<S: AsRef<str>>(self, pat: S) -> Expr {
+        let pat = pat.as_ref().into();
+        self.0.map_private(
+            FunctionExpr::StringContains { pat, literal: true },
+            "str.contains_literal",
+        )
+    }
+
+    /// Check if a string value contains a Regex substring.
+    pub fn contains<S: AsRef<str>>(self, pat: S) -> Expr {
+        let pat = pat.as_ref().into();
+        self.0.map_private(
+            FunctionExpr::StringContains {
+                pat,
+                literal: false,
+            },
+            "str.contains",
+        )
+    }
+
+    /// Check if a string value ends with the `sub` string.
+    pub fn ends_with<S: AsRef<str>>(self, sub: S) -> Expr {
+        let sub = sub.as_ref().into();
+        self.0
+            .map_private(FunctionExpr::StringEndsWith(sub), "str.ends_with")
+    }
+
+    /// Check if a string value starts with the `sub` string.
+    pub fn starts_with<S: AsRef<str>>(self, sub: S) -> Expr {
+        let sub = sub.as_ref().into();
+        self.0
+            .map_private(FunctionExpr::StringStartsWith(sub), "str.starts_with")
+    }
+
+    /// Extract a regex pattern from the a string value.
     pub fn extract(self, pat: &str, group_index: usize) -> Expr {
         let pat = pat.to_string();
         let function = move |s: Series| {
@@ -154,7 +190,7 @@ impl StringNameSpace {
     /// * `delimiter` - A string that will act as delimiter between values.
     pub fn concat(self, delimiter: &str) -> Expr {
         let delimiter = delimiter.to_owned();
-        let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+        let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
             Ok(s[0].str_concat(&delimiter).into_series())
         }) as Arc<dyn SeriesUdf>);
         Expr::AnonymousFunction {

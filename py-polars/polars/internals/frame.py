@@ -1729,7 +1729,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         if isinstance(item, slice):
             # special case df[::-1]
             if item.start is None and item.stop is None and item.step == -1:
-                return self.select(pli.col("*").reverse())
+                return self.reverse()
 
             if getattr(item, "end", False):
                 raise ValueError("A slice with steps larger than 1 is not supported.")
@@ -1761,6 +1761,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
             if isinstance(item[0], str):
                 return self._from_pydf(self._df.select(item))
             if item.dtype == bool:
+                warnings.warn(
+                    "index notation '[]' is deprecated for boolean masks. Consider using 'filter'.",
+                    DeprecationWarning,
+                )
                 return self._from_pydf(self._df.filter(pli.Series("", item).inner()))
 
         if isinstance(item, Sequence):
@@ -1882,6 +1886,32 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         """
         return pli.wrap_s(self._df.select_at_idx(index))
+
+    def reverse(self: DF) -> DF:
+        """
+        Reverse the DataFrame.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "key": ["a", "b", "c"],
+        ...         "val": [1, 2, 3],
+        ...     }
+        ... )
+        >>> df.reverse()
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ key ┆ val │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ c   ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ b   ┆ 2   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ a   ┆ 1   │
+        └─────┴─────┘
+        """
+        return self.select(pli.col("*").reverse())
 
     def rename(self: DF, mapping: Dict[str, str]) -> DF:
         """
@@ -2443,7 +2473,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         self._df.replace(column, new_col.inner())
 
-    def slice(self: DF, offset: int, length: int) -> DF:
+    def slice(self: DF, offset: int, length: Optional[int] = None) -> DF:
         """
         Slice this DataFrame over the rows direction.
 
@@ -2477,7 +2507,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         └─────┴─────┴─────┘
 
         """
-        if length < 0:
+        if (length is not None) and length < 0:
             length = self.height - offset + length
         return self._from_pydf(self._df.slice(offset, length))
 
@@ -4054,7 +4084,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     def clone(self: DF) -> DF:
         """
-        Very cheap deep clone.
+        Cheap deepcopy/clone.
         """
         return self._from_pydf(self._df.clone())
 
