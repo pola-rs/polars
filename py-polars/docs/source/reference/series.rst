@@ -68,6 +68,7 @@ Descriptive stats
     Series.chunk_lengths
     Series.n_chunks
     Series.null_count
+    Series.is_empty
     Series.is_null
     Series.is_not_null
     Series.is_finite
@@ -160,6 +161,7 @@ Manipulation/ selection
     Series.take_every
     Series.sort
     Series.argsort
+    Series.reverse
     Series.take
     Series.shrink_to_fit
     Series.explode

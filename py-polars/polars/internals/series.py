@@ -1561,6 +1561,19 @@ class Series:
         """
         return self._s.has_validity()
 
+    def is_empty(self) -> bool:
+        """
+        Check if the Series is empty.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [], dtype=pl.Float32)
+        >>> s.is_empty()
+        True
+
+        """
+        return self.len() == 0
+
     def is_null(self) -> "Series":
         """
         Get mask of null values.

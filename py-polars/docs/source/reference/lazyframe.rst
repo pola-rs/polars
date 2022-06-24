@@ -47,6 +47,7 @@ Manipulation/ selection
    :toctree: api/
 
     LazyFrame.with_row_count
+    LazyFrame.clone
     LazyFrame.inspect
     LazyFrame.filter
     LazyFrame.select

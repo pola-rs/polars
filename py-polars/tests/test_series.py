@@ -632,12 +632,19 @@ def test_iter() -> None:
 def test_empty() -> None:
     a = pl.Series(dtype=pl.Int8)
     assert a.dtype == pl.Int8
+    assert a.is_empty()
+
     a = pl.Series()
     assert a.dtype == pl.Float32
+    assert a.is_empty()
+
     a = pl.Series("name", [])
     assert a.dtype == pl.Float32
+    assert a.is_empty()
+
     a = pl.Series(values=(), dtype=pl.Int8)
     assert a.dtype == pl.Int8
+    assert a.is_empty()
 
 
 def test_describe() -> None:
