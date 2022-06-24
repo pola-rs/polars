@@ -1225,7 +1225,7 @@ class Series:
         """
         return wrap_s(self._s.limit(num_elements))
 
-    def slice(self, offset: int, length: int) -> "Series":
+    def slice(self, offset: int, length: Optional[int] = None) -> "Series":
         """
         Get a slice of this Series.
 
@@ -1560,6 +1560,19 @@ class Series:
         Use this to swiftly assert a Series does not have null values.
         """
         return self._s.has_validity()
+
+    def is_empty(self) -> bool:
+        """
+        Check if the Series is empty.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [], dtype=pl.Float32)
+        >>> s.is_empty()
+        True
+
+        """
+        return self.len() == 0
 
     def is_null(self) -> "Series":
         """
@@ -2007,6 +2020,23 @@ class Series:
             return None
         else:
             return wrap_s(opt_s)
+
+    def reverse(self) -> "Series":
+        """
+        Return Series in reverse order.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3], dtype=pl.Int8)
+        shape: (3,)
+        Series: 'a' [i8]
+        [
+            3
+            2
+            1
+        ]
+        """
+        return wrap_s(self._s.reverse())
 
     def is_numeric(self) -> bool:
         """

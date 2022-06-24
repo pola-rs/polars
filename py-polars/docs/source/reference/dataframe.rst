@@ -89,6 +89,7 @@ Manipulation/ selection
     DataFrame.select_at_idx
     DataFrame.replace_at_idx
     DataFrame.sort
+    DataFrame.reverse
     DataFrame.replace
     DataFrame.slice
     DataFrame.limit
