@@ -204,7 +204,7 @@ pub fn infer_file_schema(
     } else {
         first_line = lines.next();
     }
-    // edge case where we a single row, no header and no eol char.
+    // edge case where we have a single row, no header and no eol char.
     if first_line.is_none() && !has_eol && !has_header {
         first_line = Some(bytes);
     }
@@ -246,15 +246,15 @@ pub fn infer_file_schema(
                 .map(|(i, _s)| format!("column_{}", i + 1))
                 .collect();
             // needed because SplitLines does not return the \n char, so SplitFields does not catch
-            // the latest value if ending with ','
-            if header_line.ends_with(b",") {
+            // the latest value if ending with a delimiter.
+            if header_line.ends_with(&[delimiter]) {
                 column_names.push(format!("column_{}", column_names.len() + 1))
             }
             column_names
         }
     } else if has_header && !bytes.is_empty() {
         // there was no new line char. So we copy the whole buf and add one
-        // this is likely to be cheap as there no rows.
+        // this is likely to be cheap as there are no rows.
         let mut buf = Vec::with_capacity(bytes.len() + 2);
         buf.extend_from_slice(bytes);
         buf.push(b'\n');
