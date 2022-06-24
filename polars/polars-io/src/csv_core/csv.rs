@@ -285,7 +285,7 @@ impl<'a> CoreReader<'a> {
         let starting_point_offset = bytes.as_ptr() as usize;
 
         // Skip all leading white space and the occasional utf8-bom
-        bytes = skip_whitespace(skip_bom(bytes));
+        bytes = skip_whitespace_exclude(skip_bom(bytes), self.delimiter);
         // \n\n can be a empty string row of a single column
         // in other cases we skip it.
         if self.schema.len() > 1 {
