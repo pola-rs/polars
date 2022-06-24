@@ -11,46 +11,46 @@ These functions can be used as expression and sometimes also in eager contexts.
 .. autosummary::
    :toctree: api/
 
-   select
-   col
-   element
-   count
-   list
-   std
-   var
-   max
-   min
-   sum
-   mean
-   avg
-   median
-   n_unique
-   first
-   head
-   tail
-   lit
-   pearson_corr
-   spearman_rank_corr
-   cov
-   map
-   apply
-   fold
-   any
    all
-   groups
-   quantile
+   any
+   apply
    arange
-   repeat
    argsort_by
-   concat_str
+   avg
+   col
    concat_list
-   format
-   when
-   exclude
+   concat_str
+   count
+   cov
+   date
    datetime
    duration
-   date
+   element
+   exclude
+   first
+   fold
+   format
+   groups
+   head
+   list
+   lit
+   map
+   max
+   mean
+   median
+   min
+   n_unique
+   pearson_corr
+   quantile
+   repeat
+   select
+   spearman_rank_corr
+   std
    struct
+   sum
+   tail
+   var
+   when
 
 Constructor
 -----------
@@ -66,9 +66,9 @@ Attributes
    :toctree: api/
 
    Expr.arr
+   Expr.cat
    Expr.dt
    Expr.str
-   Expr.cat
 
 
 Aggregation
@@ -76,44 +76,44 @@ Aggregation
 .. autosummary::
    :toctree: api/
 
-    Expr.std
-    Expr.var
+    Expr.agg_groups
+    Expr.arg_max
+    Expr.arg_min
+    Expr.count
+    Expr.first
+    Expr.last
+    Expr.len
+    Expr.list
     Expr.max
-    Expr.min
-    Expr.sum
     Expr.mean
     Expr.mean
     Expr.median
-    Expr.first
-    Expr.last
+    Expr.min
     Expr.product
-    Expr.list
-    Expr.agg_groups
-    Expr.count
-    Expr.len
     Expr.quantile
-    Expr.arg_min
-    Expr.arg_max
+    Expr.std
+    Expr.sum
+    Expr.var
 
 Boolean
 -------
 .. autosummary::
    :toctree: api/
 
-    Expr.is_not
-    Expr.is_null
-    Expr.is_not_null
+    Expr.all
+    Expr.any
+    Expr.is_between
+    Expr.is_duplicated
     Expr.is_finite
+    Expr.is_first
+    Expr.is_in
     Expr.is_infinite
     Expr.is_nan
+    Expr.is_not
     Expr.is_not_nan
+    Expr.is_not_null
+    Expr.is_null
     Expr.is_unique
-    Expr.is_first
-    Expr.is_duplicated
-    Expr.is_between
-    Expr.is_in
-    Expr.any
-    Expr.all
 
 
 Computations
@@ -121,100 +121,100 @@ Computations
 .. autosummary::
    :toctree: api/
 
-    Expr.cumsum
-    Expr.cummin
-    Expr.cummax
-    Expr.cumprod
-    Expr.cumcount
-    Expr.cumulative_eval
-    Expr.dot
-    Expr.mode
-    Expr.n_unique
+    Expr.abs
+    Expr.arccos
+    Expr.arcsin
+    Expr.arctan
     Expr.arg_unique
-    Expr.unique
-    Expr.pow
-    Expr.rolling_min
-    Expr.rolling_max
-    Expr.rolling_mean
-    Expr.rolling_sum
-    Expr.rolling_apply
-    Expr.rolling_std
-    Expr.rolling_var
-    Expr.rolling_median
-    Expr.rolling_quantile
-    Expr.rolling_skew
+    Expr.cos
+    Expr.cumcount
+    Expr.cummax
+    Expr.cummin
+    Expr.cumprod
+    Expr.cumsum
+    Expr.cumulative_eval
+    Expr.diff
+    Expr.dot
+    Expr.entropy
     Expr.ewm_mean
     Expr.ewm_std
     Expr.ewm_var
+    Expr.exp
     Expr.hash
-    Expr.abs
-    Expr.rank
-    Expr.diff
-    Expr.pct_change
-    Expr.skew
     Expr.kurtosis
-    Expr.entropy
-    Expr.sqrt
-    Expr.sin
-    Expr.cos
-    Expr.tan
-    Expr.arcsin
-    Expr.arccos
-    Expr.arctan
     Expr.log
     Expr.log10
-    Expr.exp
+    Expr.mode
+    Expr.n_unique
+    Expr.null_count
+    Expr.pct_change
+    Expr.pow
+    Expr.rank
+    Expr.rolling_apply
+    Expr.rolling_max
+    Expr.rolling_mean
+    Expr.rolling_median
+    Expr.rolling_min
+    Expr.rolling_quantile
+    Expr.rolling_skew
+    Expr.rolling_std
+    Expr.rolling_sum
+    Expr.rolling_var
     Expr.sign
+    Expr.sin
+    Expr.skew
+    Expr.sqrt
+    Expr.tan
+    Expr.unique
     Expr.unique_counts
     Expr.value_counts
-    Expr.null_count
 
 Manipulation/ selection
 -----------------------
 .. autosummary::
    :toctree: api/
 
-    Expr.inspect
-    Expr.slice
     Expr.append
-    Expr.explode
-    Expr.flatten
-    Expr.take_every
-    Expr.repeat_by
-    Expr.round
-    Expr.floor
-    Expr.ceil
-    Expr.cast
-    Expr.sort
+    Expr.arg_sort
     Expr.arg_sort
     Expr.argsort
-    Expr.sort_by
-    Expr.take
+    Expr.backward_fill
+    Expr.cast
+    Expr.ceil
+    Expr.clip
+    Expr.drop_nans
+    Expr.drop_nulls
+    Expr.explode
+    Expr.extend_constant
+    Expr.fill_nan
+    Expr.fill_null
+    Expr.filter
+    Expr.flatten
+    Expr.floor
+    Expr.forward_fill
+    Expr.head
+    Expr.inspect
+    Expr.interpolate
+    Expr.lower_bound
+    Expr.rechunk
+    Expr.reinterpret
+    Expr.repeat_by
+    Expr.reshape
+    Expr.reverse
+    Expr.round
+    Expr.sample
     Expr.shift
     Expr.shift_and_fill
-    Expr.fill_null
-    Expr.fill_nan
-    Expr.forward_fill
-    Expr.backward_fill
-    Expr.reverse
-    Expr.filter
-    Expr.where
-    Expr.head
-    Expr.tail
-    Expr.reinterpret
-    Expr.drop_nulls
-    Expr.drop_nans
-    Expr.rechunk
-    Expr.interpolate
-    Expr.arg_sort
-    Expr.clip
-    Expr.lower_bound
-    Expr.upper_bound
-    Expr.reshape
-    Expr.to_physical
     Expr.shuffle
-    Expr.sample
-    Expr.extend_constant
+    Expr.slice
+    Expr.sort
+    Expr.sort_by
+    Expr.tail
+    Expr.take
+    Expr.take_every
+    Expr.to_physical
+    Expr.upper_bound
+    Expr.where
 
 Column names
 ------------
@@ -228,19 +228,19 @@ Column names
    :toctree: api/
 
     Expr.alias
+    Expr.exclude
     Expr.keep_name
+    Expr.map_alias
     Expr.prefix
     Expr.suffix
-    Expr.map_alias
-    Expr.exclude
 
 Apply
 -----
 .. autosummary::
    :toctree: api/
 
-    Expr.map
     Expr.apply
+    Expr.map
 
 Window
 ------
@@ -265,34 +265,34 @@ The following methods are available under the `expr.dt` attribute.
 .. autosummary::
    :toctree: api/
 
-    ExprDateTimeNameSpace.strftime
-    ExprDateTimeNameSpace.year
-    ExprDateTimeNameSpace.month
-    ExprDateTimeNameSpace.week
-    ExprDateTimeNameSpace.weekday
+    ExprDateTimeNameSpace.and_time_unit
+    ExprDateTimeNameSpace.and_time_zone
+    ExprDateTimeNameSpace.cast_time_unit
     ExprDateTimeNameSpace.day
-    ExprDateTimeNameSpace.ordinal_day
-    ExprDateTimeNameSpace.hour
-    ExprDateTimeNameSpace.minute
-    ExprDateTimeNameSpace.second
-    ExprDateTimeNameSpace.nanosecond
-    ExprDateTimeNameSpace.to_python_datetime
-    ExprDateTimeNameSpace.timestamp
-    ExprDateTimeNameSpace.truncate
+    ExprDateTimeNameSpace.days
     ExprDateTimeNameSpace.epoch
     ExprDateTimeNameSpace.epoch_days
     ExprDateTimeNameSpace.epoch_milliseconds
     ExprDateTimeNameSpace.epoch_seconds
-    ExprDateTimeNameSpace.and_time_unit
-    ExprDateTimeNameSpace.and_time_zone
-    ExprDateTimeNameSpace.with_time_unit
-    ExprDateTimeNameSpace.cast_time_unit
-    ExprDateTimeNameSpace.days
+    ExprDateTimeNameSpace.hour
     ExprDateTimeNameSpace.hours
-    ExprDateTimeNameSpace.minutes
-    ExprDateTimeNameSpace.seconds
     ExprDateTimeNameSpace.milliseconds
+    ExprDateTimeNameSpace.minute
+    ExprDateTimeNameSpace.minutes
+    ExprDateTimeNameSpace.month
+    ExprDateTimeNameSpace.nanosecond
     ExprDateTimeNameSpace.nanoseconds
+    ExprDateTimeNameSpace.ordinal_day
+    ExprDateTimeNameSpace.second
+    ExprDateTimeNameSpace.seconds
+    ExprDateTimeNameSpace.strftime
+    ExprDateTimeNameSpace.timestamp
+    ExprDateTimeNameSpace.to_python_datetime
+    ExprDateTimeNameSpace.truncate
+    ExprDateTimeNameSpace.week
+    ExprDateTimeNameSpace.weekday
+    ExprDateTimeNameSpace.with_time_unit
+    ExprDateTimeNameSpace.year
 
 Strings
 -------
@@ -304,31 +304,31 @@ The following methods are available under the `Expr.str` attribute.
 .. autosummary::
    :toctree: api/
 
-    ExprStringNameSpace.strptime
-    ExprStringNameSpace.lengths
-    ExprStringNameSpace.to_uppercase
-    ExprStringNameSpace.to_lowercase
     ExprStringNameSpace.concat
-    ExprStringNameSpace.strip
-    ExprStringNameSpace.lstrip
-    ExprStringNameSpace.rstrip
-    ExprStringNameSpace.zfill
-    ExprStringNameSpace.ljust
-    ExprStringNameSpace.rjust
     ExprStringNameSpace.contains
-    ExprStringNameSpace.starts_with
+    ExprStringNameSpace.count_match
+    ExprStringNameSpace.decode
+    ExprStringNameSpace.encode
     ExprStringNameSpace.ends_with
-    ExprStringNameSpace.json_path_match
     ExprStringNameSpace.extract
     ExprStringNameSpace.extract_all
-    ExprStringNameSpace.count_match
-    ExprStringNameSpace.split
-    ExprStringNameSpace.split_exact
+    ExprStringNameSpace.json_path_match
+    ExprStringNameSpace.lengths
+    ExprStringNameSpace.ljust
+    ExprStringNameSpace.lstrip
     ExprStringNameSpace.replace
     ExprStringNameSpace.replace_all
+    ExprStringNameSpace.rjust
+    ExprStringNameSpace.rstrip
     ExprStringNameSpace.slice
-    ExprStringNameSpace.encode
-    ExprStringNameSpace.decode
+    ExprStringNameSpace.split
+    ExprStringNameSpace.split_exact
+    ExprStringNameSpace.starts_with
+    ExprStringNameSpace.strip
+    ExprStringNameSpace.strptime
+    ExprStringNameSpace.to_lowercase
+    ExprStringNameSpace.to_uppercase
+    ExprStringNameSpace.zfill
 
 Lists
 -----
@@ -339,29 +339,29 @@ The following methods are available under the `expr.arr` attribute.
 .. autosummary::
    :toctree: api/
 
+    ExprListNameSpace.arg_max
+    ExprListNameSpace.arg_min
     ExprListNameSpace.concat
+    ExprListNameSpace.contains
+    ExprListNameSpace.diff
+    ExprListNameSpace.eval
+    ExprListNameSpace.first
+    ExprListNameSpace.get
+    ExprListNameSpace.head
+    ExprListNameSpace.join
+    ExprListNameSpace.last
     ExprListNameSpace.lengths
-    ExprListNameSpace.sum
-    ExprListNameSpace.min
     ExprListNameSpace.max
     ExprListNameSpace.mean
-    ExprListNameSpace.sort
+    ExprListNameSpace.min
     ExprListNameSpace.reverse
-    ExprListNameSpace.unique
-    ExprListNameSpace.get
-    ExprListNameSpace.first
-    ExprListNameSpace.last
-    ExprListNameSpace.contains
-    ExprListNameSpace.join
-    ExprListNameSpace.arg_min
-    ExprListNameSpace.arg_max
-    ExprListNameSpace.diff
     ExprListNameSpace.shift
     ExprListNameSpace.slice
-    ExprListNameSpace.head
+    ExprListNameSpace.sort
+    ExprListNameSpace.sum
     ExprListNameSpace.tail
     ExprListNameSpace.to_struct
-    ExprListNameSpace.eval
+    ExprListNameSpace.unique
 
 Categories
 ----------

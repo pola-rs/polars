@@ -16,12 +16,12 @@ Attributes
 .. autosummary::
    :toctree: api/
 
-    DataFrame.shape
-    DataFrame.height
-    DataFrame.width
     DataFrame.columns
     DataFrame.dtypes
+    DataFrame.height
     DataFrame.schema
+    DataFrame.shape
+    DataFrame.width
 
 Conversion
 ----------
@@ -30,14 +30,14 @@ Conversion
 
     DataFrame.to_arrow
     DataFrame.to_avro
-    DataFrame.to_json
-    DataFrame.to_pandas
     DataFrame.to_csv
-    DataFrame.to_ipc
-    DataFrame.to_parquet
-    DataFrame.to_numpy
     DataFrame.to_dict
     DataFrame.to_dicts
+    DataFrame.to_ipc
+    DataFrame.to_json
+    DataFrame.to_numpy
+    DataFrame.to_pandas
+    DataFrame.to_parquet
     DataFrame.to_struct
 
 Aggregation
@@ -46,14 +46,14 @@ Aggregation
    :toctree: api/
 
     DataFrame.max
-    DataFrame.min
-    DataFrame.sum
     DataFrame.mean
-    DataFrame.std
-    DataFrame.var
     DataFrame.median
-    DataFrame.quantile
+    DataFrame.min
     DataFrame.product
+    DataFrame.quantile
+    DataFrame.std
+    DataFrame.sum
+    DataFrame.var
 
 Descriptive stats
 -----------------
@@ -63,77 +63,77 @@ Descriptive stats
     DataFrame.describe
     DataFrame.estimated_size
     DataFrame.is_duplicated
+    DataFrame.is_empty
     DataFrame.is_unique
     DataFrame.n_chunks
     DataFrame.null_count
-    DataFrame.is_empty
 
 Computations
 ------------
 .. autosummary::
    :toctree: api/
 
-    DataFrame.hash_rows
     DataFrame.fold
+    DataFrame.hash_rows
 
 Manipulation/ selection
 -----------------------
 .. autosummary::
    :toctree: api/
 
-    DataFrame.rename
-    DataFrame.with_row_count
-    DataFrame.insert_at_idx
-    DataFrame.filter
-    DataFrame.find_idx_by_name
-    DataFrame.select_at_idx
-    DataFrame.replace_at_idx
-    DataFrame.sort
-    DataFrame.reverse
-    DataFrame.replace
-    DataFrame.slice
-    DataFrame.limit
-    DataFrame.head
-    DataFrame.tail
-    DataFrame.drop_nulls
+    DataFrame.clone
+    DataFrame.distinct
     DataFrame.drop
     DataFrame.drop_in_place
-    DataFrame.to_series
-    DataFrame.clone
-    DataFrame.get_columns
-    DataFrame.get_column
-    DataFrame.fill_null
-    DataFrame.fill_nan
+    DataFrame.drop_nulls
     DataFrame.explode
-    DataFrame.pivot
-    DataFrame.melt
-    DataFrame.shift
-    DataFrame.shift_and_fill
-    DataFrame.with_column
-    DataFrame.hstack
-    DataFrame.vstack
     DataFrame.extend
+    DataFrame.fill_nan
+    DataFrame.fill_null
+    DataFrame.filter
+    DataFrame.find_idx_by_name
+    DataFrame.get_column
+    DataFrame.get_columns
     DataFrame.groupby
     DataFrame.groupby_dynamic
     DataFrame.groupby_rolling
-    DataFrame.select
-    DataFrame.with_columns
-    DataFrame.sample
-    DataFrame.row
-    DataFrame.rows
-    DataFrame.to_dummies
-    DataFrame.distinct
-    DataFrame.unique
-    DataFrame.shrink_to_fit
-    DataFrame.rechunk
-    DataFrame.pipe
+    DataFrame.head
+    DataFrame.hstack
+    DataFrame.insert_at_idx
+    DataFrame.interpolate
     DataFrame.join
     DataFrame.join_asof
-    DataFrame.interpolate
-    DataFrame.transpose
+    DataFrame.limit
+    DataFrame.melt
     DataFrame.partition_by
-    DataFrame.upsample
+    DataFrame.pipe
+    DataFrame.pivot
+    DataFrame.rechunk
+    DataFrame.rename
+    DataFrame.replace
+    DataFrame.replace_at_idx
+    DataFrame.reverse
+    DataFrame.row
+    DataFrame.rows
+    DataFrame.sample
+    DataFrame.select
+    DataFrame.select_at_idx
+    DataFrame.shift
+    DataFrame.shift_and_fill
+    DataFrame.shrink_to_fit
+    DataFrame.slice
+    DataFrame.sort
+    DataFrame.tail
+    DataFrame.to_dummies
+    DataFrame.to_series
+    DataFrame.transpose
+    DataFrame.unique
     DataFrame.unnest
+    DataFrame.upsample
+    DataFrame.vstack
+    DataFrame.with_column
+    DataFrame.with_columns
+    DataFrame.with_row_count
 
 Apply
 -----
@@ -160,23 +160,23 @@ This namespace comes available by calling `DataFrame.groupby(..)`.
    :toctree: api/
 
     GroupBy.agg
+    GroupBy.agg_list
     GroupBy.apply
-    GroupBy.head
-    GroupBy.tail
+    GroupBy.count
+    GroupBy.first
     GroupBy.get_group
     GroupBy.groups
-    GroupBy.pivot
-    GroupBy.first
+    GroupBy.head
     GroupBy.last
-    GroupBy.sum
-    GroupBy.min
     GroupBy.max
-    GroupBy.count
     GroupBy.mean
-    GroupBy.n_unique
-    GroupBy.quantile
     GroupBy.median
-    GroupBy.agg_list
+    GroupBy.min
+    GroupBy.n_unique
+    GroupBy.pivot
+    GroupBy.quantile
+    GroupBy.sum
+    GroupBy.tail
 
 Pivot
 -----
@@ -189,11 +189,11 @@ This namespace comes available by calling `DataFrame.groupby(..).pivot`
 .. autosummary::
    :toctree: api/
 
+    PivotOps.count
     PivotOps.first
     PivotOps.last
-    PivotOps.sum
-    PivotOps.min
     PivotOps.max
     PivotOps.mean
-    PivotOps.count
     PivotOps.median
+    PivotOps.min
+    PivotOps.sum
