@@ -219,7 +219,7 @@ class Expr:
 
     def any(self) -> "Expr":
         """
-        Check if any boolean value in the column is `True`
+        Check if any boolean value in a Boolean column is `True`
 
         Returns
         -------
@@ -243,8 +243,9 @@ class Expr:
 
     def all(self) -> "Expr":
         """
-        Check if all boolean values in the column are `True`
-        Not to be confused with pl.all()
+        Check if all boolean values in in a Boolean column are `True`.
+        This method is an expression - not to be confused with polars.all
+        which is a function to select all columns
 
         Returns
         -------
@@ -272,7 +273,7 @@ class Expr:
         """
         Compute the square root of the elements
         """
-        return self**0.5
+        return self ** 0.5
 
     def log10(self) -> "Expr":
         """
@@ -606,17 +607,17 @@ class Expr:
         ...         "B": [3, 4],
         ...     }
         ... )
-        >>> df.select(pl.col("*").map_alias(lambda colName: colName + "XXX"))
+        >>> df.select(pl.col("*").reverse().map_alias(lambda colName: colName + "_reverse"))
         shape: (2, 2)
-        ┌──────┬──────┐
-        │ AXXX ┆ BXXX │
-        │ ---  ┆ ---  │
-        │ i64  ┆ i64  │
-        ╞══════╪══════╡
-        │ 1    ┆ 3    │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ 2    ┆ 4    │
-        └──────┴──────┘
+        ┌───────────┬───────────┐
+        │ A_reverse ┆ B_reverse │
+        │ ---       ┆ ---       │
+        │ i64       ┆ i64       │
+        ╞═══════════╪═══════════╡
+        │ 2         ┆ 4         │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 1         ┆ 3         │
+        └───────────┴───────────┘
         """
         return wrap_expr(self._pyexpr.map_alias(f))
 
@@ -700,18 +701,98 @@ class Expr:
     def is_not_null(self) -> "Expr":
         """
         Create a boolean expression returning `True` where the expression does not contain null values.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, None, 1, 5],
+        ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
+        ...     }
+        ... )
+        >>> df.with_column(pl.all().is_not_null().suffix("_not_null"))  # nan != null
+        shape: (5, 4)
+        ┌──────┬─────┬────────────┬────────────┐
+        │ a    ┆ b   ┆ a_not_null ┆ b_not_null │
+        │ ---  ┆ --- ┆ ---        ┆ ---        │
+        │ i64  ┆ f64 ┆ bool       ┆ bool       │
+        ╞══════╪═════╪════════════╪════════════╡
+        │ 1    ┆ 1.0 ┆ true       ┆ true       │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2    ┆ 2.0 ┆ true       ┆ true       │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null ┆ NaN ┆ false      ┆ true       │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 1    ┆ 1.0 ┆ true       ┆ true       │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5    ┆ 5.0 ┆ true       ┆ true       │
+        └──────┴─────┴────────────┴────────────┘
+
         """
         return wrap_expr(self._pyexpr.is_not_null())
 
     def is_finite(self) -> "Expr":
         """
         Create a boolean expression returning `True` where the expression values are finite.
+
+        Returns
+        -------
+        out
+            Series of type Boolean
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "A": [1.0, 2],
+        ...         "B": [3.0, np.inf],
+        ...     }
+        ... )
+        >>> df.select(pl.col("*").is_finite())
+        shape: (2, 2)
+        ┌──────┬───────┐
+        │ A    ┆ B     │
+        │ ---  ┆ ---   │
+        │ bool ┆ bool  │
+        ╞══════╪═══════╡
+        │ true ┆ true  │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ true ┆ false │
+        └──────┴───────┘
         """
         return wrap_expr(self._pyexpr.is_finite())
 
     def is_infinite(self) -> "Expr":
         """
         Create a boolean expression returning `True` where the expression values are infinite.
+
+        Returns
+        -------
+        out
+            Series of type Boolean
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "A": [1.0, 2],
+        ...         "B": [3.0, np.inf],
+        ...     }
+        ... )
+        >>> df.select(pl.col("*").is_infinite())
+        shape: (2, 2)
+        ┌───────┬───────┐
+        │ A     ┆ B     │
+        │ ---   ┆ ---   │
+        │ bool  ┆ bool  │
+        ╞═══════╪═══════╡
+        │ false ┆ false │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ false ┆ true  │
+        └───────┴───────┘
         """
         return wrap_expr(self._pyexpr.is_infinite())
 
