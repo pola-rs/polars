@@ -33,17 +33,13 @@
 //! let df_read = IpcStreamReader::new(buf).finish().unwrap();
 //! assert!(df.frame_equal(&df_read));
 //! ```
-use crate::predicates::PhysicalIoExpr;
 use crate::{finish_reader, ArrowReader, ArrowResult};
 use crate::{prelude::*, WriterFactory};
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
-
 use std::io::{Read, Seek, Write};
-
 use std::path::PathBuf;
-use std::sync::Arc;
 
 /// Read Arrows Stream IPC format into a DataFrame
 ///
@@ -108,43 +104,6 @@ impl<R: Read + Seek> IpcStreamReader<R> {
     pub fn with_projection(mut self, projection: Option<Vec<usize>>) -> Self {
         self.projection = projection;
         self
-    }
-
-    // todo! hoist to lazy crate
-    #[cfg(feature = "lazy")]
-    pub fn finish_with_scan_ops(
-        mut self,
-        predicate: Option<Arc<dyn PhysicalIoExpr>>,
-        aggregate: Option<&[ScanAggregation]>,
-        projection: Option<Vec<usize>>,
-    ) -> Result<DataFrame> {
-        let rechunk = self.rechunk;
-        let metadata = read::read_stream_metadata(&mut self.reader)?;
-
-        let sorted_projection = projection.clone().map(|mut proj| {
-            proj.sort_unstable();
-            proj
-        });
-
-        let schema = if let Some(projection) = &sorted_projection {
-            apply_projection(&metadata.schema, projection)
-        } else {
-            metadata.schema.clone()
-        };
-
-        let reader = read::StreamReader::new(&mut self.reader, metadata, sorted_projection);
-
-        let include_row_count = self.row_count.is_some();
-        finish_reader(
-            reader,
-            rechunk,
-            self.n_rows,
-            predicate,
-            aggregate,
-            &schema,
-            self.row_count,
-        )
-        .map(|df| fix_column_order(df, projection, include_row_count))
     }
 }
 
@@ -264,7 +223,6 @@ pub struct IpcStreamWriter<W> {
     compression: Option<write::Compression>,
 }
 
-use crate::aggregations::ScanAggregation;
 use crate::RowCount;
 use polars_core::frame::ArrowChunk;
 pub use write::Compression as IpcCompression;
@@ -348,139 +306,5 @@ impl WriterFactory for IpcStreamWriterOption {
 
     fn extension(&self) -> PathBuf {
         self.extension.to_owned()
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::ipc::ipc_stream::{IpcStreamReader, IpcStreamWriter};
-    use crate::prelude::*;
-    use arrow::io::ipc::write;
-    use polars_core::df;
-    use polars_core::prelude::*;
-    use std::io::Cursor;
-
-    #[test]
-    fn write_and_read_ipc_stream() {
-        // Vec<T> : Write + Read
-        // Cursor<Vec<_>>: Seek
-        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let mut df = create_df();
-
-        IpcStreamWriter::new(&mut buf)
-            .finish(&mut df)
-            .expect("ipc writer");
-
-        buf.set_position(0);
-
-        let df_read = IpcStreamReader::new(buf).finish().unwrap();
-        assert!(df.frame_equal(&df_read));
-    }
-
-    #[test]
-    fn test_read_ipc_stream_with_projection() {
-        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let mut df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
-
-        IpcStreamWriter::new(&mut buf)
-            .finish(&mut df)
-            .expect("ipc writer");
-        buf.set_position(0);
-
-        let expected = df!("b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
-        let df_read = IpcStreamReader::new(buf)
-            .with_projection(Some(vec![1, 2]))
-            .finish()
-            .unwrap();
-        assert_eq!(df_read.shape(), (3, 2));
-        df_read.frame_equal(&expected);
-    }
-
-    #[test]
-    fn test_read_ipc_stream_with_columns() {
-        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let mut df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
-
-        IpcStreamWriter::new(&mut buf)
-            .finish(&mut df)
-            .expect("ipc writer");
-        buf.set_position(0);
-
-        let expected = df!("b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
-        let df_read = IpcStreamReader::new(buf)
-            .with_columns(Some(vec!["c".to_string(), "b".to_string()]))
-            .finish()
-            .unwrap();
-        df_read.frame_equal(&expected);
-
-        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let mut df = df![
-            "a" => ["x", "y", "z"],
-            "b" => [123, 456, 789],
-            "c" => [4.5, 10.0, 10.0],
-            "d" => ["misc", "other", "value"],
-        ]
-        .unwrap();
-        IpcStreamWriter::new(&mut buf)
-            .finish(&mut df)
-            .expect("ipc writer");
-        buf.set_position(0);
-        let expected = df![
-            "a" => ["x", "y", "z"],
-            "c" => [4.5, 10.0, 10.0],
-            "d" => ["misc", "other", "value"],
-            "b" => [123, 456, 789],
-        ]
-        .unwrap();
-        let df_read = IpcStreamReader::new(buf)
-            .with_columns(Some(vec![
-                "a".to_string(),
-                "c".to_string(),
-                "d".to_string(),
-                "b".to_string(),
-            ]))
-            .finish()
-            .unwrap();
-        df_read.frame_equal(&expected);
-    }
-
-    #[test]
-    fn test_write_with_compression() {
-        let mut df = create_df();
-
-        let compressions = vec![
-            None,
-            Some(write::Compression::LZ4),
-            Some(write::Compression::ZSTD),
-        ];
-
-        for compression in compressions.into_iter() {
-            let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-            IpcStreamWriter::new(&mut buf)
-                .with_compression(compression)
-                .finish(&mut df)
-                .expect("ipc writer");
-            buf.set_position(0);
-
-            let df_read = IpcStreamReader::new(buf)
-                .finish()
-                .expect(&format!("IPC reader: {:?}", compression));
-            assert!(df.frame_equal(&df_read));
-        }
-    }
-
-    #[test]
-    fn write_and_read_ipc_stream_empty_series() {
-        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let chunked_array = Float64Chunked::new("empty", &[0_f64; 0]);
-        let mut df = DataFrame::new(vec![chunked_array.into_series()]).unwrap();
-        IpcStreamWriter::new(&mut buf)
-            .finish(&mut df)
-            .expect("ipc writer");
-
-        buf.set_position(0);
-
-        let df_read = IpcStreamReader::new(buf).finish().unwrap();
-        assert!(df.frame_equal(&df_read));
     }
 }
