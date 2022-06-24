@@ -16,14 +16,14 @@ Attributes
 .. autosummary::
    :toctree: api/
 
+   Series.arr
+   Series.cat
+   Series.dt
    Series.dtype
    Series.inner_dtype
    Series.name
    Series.shape
-   Series.arr
-   Series.dt
    Series.str
-   Series.cat
    Series.time_unit
 
 Conversion
@@ -31,10 +31,10 @@ Conversion
 .. autosummary::
    :toctree: api/
 
+   Series.to_arrow
    Series.to_frame
    Series.to_list
    Series.to_numpy
-   Series.to_arrow
    Series.to_pandas
 
 
@@ -43,107 +43,107 @@ Aggregation
 .. autosummary::
    :toctree: api/
 
-    Series.sum
-    Series.mean
-    Series.min
-    Series.max
-    Series.std
-    Series.var
-    Series.median
-    Series.quantile
-    Series.product
-    Series.mode
-    Series.arg_min
     Series.arg_max
+    Series.arg_min
+    Series.max
+    Series.mean
+    Series.median
+    Series.min
+    Series.mode
+    Series.product
+    Series.quantile
+    Series.std
+    Series.sum
+    Series.var
 
 Descriptive stats
 -----------------
 .. autosummary::
    :toctree: api/
 
+    Series.chunk_lengths
     Series.describe
     Series.estimated_size
-    Series.unique_counts
-    Series.value_counts
-    Series.chunk_lengths
-    Series.n_chunks
-    Series.null_count
+    Series.has_validity
+    Series.is_boolean
+    Series.is_datelike
+    Series.is_duplicated
     Series.is_empty
-    Series.is_null
-    Series.is_not_null
     Series.is_finite
+    Series.is_first
+    Series.is_float
+    Series.is_in
     Series.is_infinite
     Series.is_nan
     Series.is_not_nan
-    Series.is_in
-    Series.is_unique
-    Series.is_first
-    Series.is_duplicated
+    Series.is_not_null
+    Series.is_null
     Series.is_numeric
-    Series.is_float
-    Series.is_boolean
+    Series.is_unique
     Series.is_utf8
-    Series.is_datelike
     Series.len
+    Series.n_chunks
     Series.n_unique
-    Series.has_validity
+    Series.null_count
+    Series.unique_counts
+    Series.value_counts
 
 Boolean
 -------
 .. autosummary::
    :toctree: api/
 
-    Series.any
     Series.all
+    Series.any
 
 Computations
 ------------
 .. autosummary::
    :toctree: api/
 
-    Series.cumsum
-    Series.cummin
-    Series.cummax
-    Series.cumprod
-    Series.cumulative_eval
+    Series.abs
+    Series.arccos
+    Series.arcsin
+    Series.arctan
     Series.arg_true
     Series.arg_unique
-    Series.unique
-    Series.rolling_min
-    Series.rolling_max
-    Series.rolling_mean
-    Series.rolling_sum
-    Series.rolling_apply
-    Series.rolling_std
-    Series.rolling_var
-    Series.rolling_median
-    Series.rolling_quantile
-    Series.rolling_skew
+    Series.cos
+    Series.cummax
+    Series.cummin
+    Series.cumprod
+    Series.cumsum
+    Series.cumulative_eval
+    Series.diff
+    Series.dot
+    Series.entropy
     Series.ewm_mean
     Series.ewm_std
     Series.ewm_var
+    Series.exp
     Series.hash
-    Series.peak_max
-    Series.peak_min
-    Series.dot
-    Series.abs
-    Series.rank
-    Series.diff
-    Series.pct_change
-    Series.skew
     Series.kurtosis
-    Series.entropy
-    Series.sqrt
-    Series.sin
-    Series.cos
-    Series.tan
-    Series.arcsin
-    Series.arccos
-    Series.arctan
     Series.log
     Series.log10
-    Series.exp
+    Series.pct_change
+    Series.peak_max
+    Series.peak_min
+    Series.rank
+    Series.rolling_apply
+    Series.rolling_max
+    Series.rolling_mean
+    Series.rolling_median
+    Series.rolling_min
+    Series.rolling_quantile
+    Series.rolling_skew
+    Series.rolling_std
+    Series.rolling_sum
+    Series.rolling_var
     Series.sign
+    Series.sin
+    Series.skew
+    Series.sqrt
+    Series.tan
+    Series.unique
 
 Manipulation/ selection
 -----------------------
@@ -151,56 +151,56 @@ Manipulation/ selection
    :toctree: api/
 
     Series.alias
-    Series.rename
-    Series.limit
-    Series.slice
     Series.append
-    Series.filter
-    Series.head
-    Series.tail
-    Series.take_every
-    Series.sort
     Series.argsort
-    Series.reverse
-    Series.take
-    Series.shrink_to_fit
-    Series.explode
-    Series.sample
-    Series.view
-    Series.set
+    Series.cast
+    Series.ceil
+    Series.clip
     Series.clone
+    Series.drop_nans
+    Series.drop_nulls
+    Series.explode
+    Series.extend_constant
+    Series.fill_nan
+    Series.fill_null
+    Series.filter
+    Series.floor
+    Series.head
+    Series.interpolate
+    Series.limit
+    Series.rechunk
+    Series.rename
+    Series.reshape
+    Series.reverse
+    Series.round
+    Series.sample
+    Series.set
+    Series.set_at_idx
     Series.shift
     Series.shift_and_fill
-    Series.drop_nulls
-    Series.drop_nans
-    Series.rechunk
-    Series.cast
-    Series.round
-    Series.floor
-    Series.ceil
-    Series.set_at_idx
-    Series.fill_null
-    Series.fill_nan
-    Series.zip_with
-    Series.interpolate
-    Series.clip
-    Series.reshape
-    Series.to_dummies
+    Series.shrink_to_fit
     Series.shuffle
-    Series.extend_constant
+    Series.slice
+    Series.sort
+    Series.tail
+    Series.take
+    Series.take_every
+    Series.to_dummies
+    Series.view
+    Series.zip_with
 
 Various
 --------
 .. autosummary::
    :toctree: api/
 
-    Series.series_equal
     Series.apply
     Series.dt
-    Series.str
     Series.reinterpret
-    Series.to_physical
+    Series.series_equal
     Series.set_sorted
+    Series.str
+    Series.to_physical
 
 TimeSeries
 ----------
@@ -211,38 +211,38 @@ The following methods are available under the `Series.dt` attribute.
 .. autosummary::
    :toctree: api/
 
-    DateTimeNameSpace.strftime
-    DateTimeNameSpace.year
-    DateTimeNameSpace.month
-    DateTimeNameSpace.week
-    DateTimeNameSpace.weekday
+    DateTimeNameSpace.and_time_unit
+    DateTimeNameSpace.and_time_zone
+    DateTimeNameSpace.cast_time_unit
     DateTimeNameSpace.day
-    DateTimeNameSpace.ordinal_day
-    DateTimeNameSpace.hour
-    DateTimeNameSpace.minute
-    DateTimeNameSpace.second
-    DateTimeNameSpace.nanosecond
-    DateTimeNameSpace.timestamp
-    DateTimeNameSpace.to_python_datetime
-    DateTimeNameSpace.min
-    DateTimeNameSpace.max
-    DateTimeNameSpace.median
-    DateTimeNameSpace.mean
-    DateTimeNameSpace.truncate
+    DateTimeNameSpace.days
     DateTimeNameSpace.epoch
     DateTimeNameSpace.epoch_days
     DateTimeNameSpace.epoch_milliseconds
     DateTimeNameSpace.epoch_seconds
-    DateTimeNameSpace.and_time_unit
-    DateTimeNameSpace.and_time_zone
-    DateTimeNameSpace.with_time_unit
-    DateTimeNameSpace.cast_time_unit
-    DateTimeNameSpace.days
+    DateTimeNameSpace.hour
     DateTimeNameSpace.hours
-    DateTimeNameSpace.minutes
-    DateTimeNameSpace.seconds
+    DateTimeNameSpace.max
+    DateTimeNameSpace.mean
+    DateTimeNameSpace.median
     DateTimeNameSpace.milliseconds
+    DateTimeNameSpace.min
+    DateTimeNameSpace.minute
+    DateTimeNameSpace.minutes
+    DateTimeNameSpace.month
+    DateTimeNameSpace.nanosecond
     DateTimeNameSpace.nanoseconds
+    DateTimeNameSpace.ordinal_day
+    DateTimeNameSpace.second
+    DateTimeNameSpace.seconds
+    DateTimeNameSpace.strftime
+    DateTimeNameSpace.timestamp
+    DateTimeNameSpace.to_python_datetime
+    DateTimeNameSpace.truncate
+    DateTimeNameSpace.week
+    DateTimeNameSpace.weekday
+    DateTimeNameSpace.with_time_unit
+    DateTimeNameSpace.year
 
 
 Strings
@@ -255,31 +255,31 @@ The following methods are available under the `Series.str` attribute.
 .. autosummary::
    :toctree: api/
 
-    StringNameSpace.strptime
-    StringNameSpace.lengths
     StringNameSpace.concat
     StringNameSpace.contains
-    StringNameSpace.starts_with
+    StringNameSpace.count_match
+    StringNameSpace.decode
+    StringNameSpace.encode
     StringNameSpace.ends_with
-    StringNameSpace.json_path_match
     StringNameSpace.extract
     StringNameSpace.extract_all
-    StringNameSpace.count_match
-    StringNameSpace.split
-    StringNameSpace.split_exact
+    StringNameSpace.json_path_match
+    StringNameSpace.lengths
+    StringNameSpace.ljust
+    StringNameSpace.lstrip
     StringNameSpace.replace
     StringNameSpace.replace_all
+    StringNameSpace.rjust
+    StringNameSpace.rstrip
+    StringNameSpace.slice
+    StringNameSpace.split
+    StringNameSpace.split_exact
+    StringNameSpace.starts_with
+    StringNameSpace.strip
+    StringNameSpace.strptime
     StringNameSpace.to_lowercase
     StringNameSpace.to_uppercase
-    StringNameSpace.strip
-    StringNameSpace.rstrip
-    StringNameSpace.lstrip
     StringNameSpace.zfill
-    StringNameSpace.ljust
-    StringNameSpace.rjust
-    StringNameSpace.slice
-    StringNameSpace.encode
-    StringNameSpace.decode
 
 Lists
 -----
@@ -291,28 +291,28 @@ The following methods are available under the `Series.arr` attribute.
 .. autosummary::
    :toctree: api/
 
+    ListNameSpace.arg_max
+    ListNameSpace.arg_min
     ListNameSpace.concat
+    ListNameSpace.contains
+    ListNameSpace.diff
+    ListNameSpace.eval
+    ListNameSpace.first
+    ListNameSpace.get
+    ListNameSpace.head
+    ListNameSpace.join
+    ListNameSpace.last
     ListNameSpace.lengths
-    ListNameSpace.sum
-    ListNameSpace.min
     ListNameSpace.max
     ListNameSpace.mean
-    ListNameSpace.sort
+    ListNameSpace.min
     ListNameSpace.reverse
-    ListNameSpace.unique
-    ListNameSpace.get
-    ListNameSpace.first
-    ListNameSpace.last
-    ListNameSpace.contains
-    ListNameSpace.join
-    ListNameSpace.arg_min
-    ListNameSpace.arg_max
-    ListNameSpace.diff
     ListNameSpace.shift
     ListNameSpace.slice
-    ListNameSpace.head
+    ListNameSpace.sort
+    ListNameSpace.sum
     ListNameSpace.tail
-    ListNameSpace.eval
+    ListNameSpace.unique
 
 Categories
 ----------
@@ -334,7 +334,7 @@ The following methods are available under the `Series.struct` attribute.
 .. autosummary::
    :toctree: api/
 
-    StructNameSpace.to_frame
     StructNameSpace.field
     StructNameSpace.fields
     StructNameSpace.rename_fields
+    StructNameSpace.to_frame
