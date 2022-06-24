@@ -91,7 +91,7 @@ pub(crate) mod private {
             panic!("operation cummin not supported for this dtype")
         }
 
-        fn _set_sorted(&mut self, _reverse: bool) {
+        fn _set_sorted(&mut self, _is_sorted: IsSorted) {
             invalid_operation_panic!(self)
         }
 

@@ -192,7 +192,12 @@ pub type GroupsSlice = Vec<[IdxSize; 2]>;
 #[derive(Debug, Clone, PartialEq)]
 pub enum GroupsProxy {
     Idx(GroupsIdx),
-    Slice { groups: GroupsSlice, rolling: bool },
+    Slice {
+        // the groups slices
+        groups: GroupsSlice,
+        // indicates if we do a rolling groupby
+        rolling: bool,
+    },
 }
 
 impl Default for GroupsProxy {

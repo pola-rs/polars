@@ -1766,7 +1766,11 @@ impl DataFrame {
         // not present in the dataframe
         let _ = df.apply(&first_by_column, |s| {
             let mut s = s.clone();
-            s.set_sorted(first_reverse);
+            if first_reverse {
+                s.set_sorted(IsSorted::Descending)
+            } else {
+                s.set_sorted(IsSorted::Ascending)
+            }
             s
         });
         Ok(df)

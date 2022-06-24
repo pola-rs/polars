@@ -177,6 +177,16 @@ impl<T> ChunkedArray<T> {
         }
     }
 
+    pub fn is_sorted2(&self) -> IsSorted {
+        if self.is_sorted() {
+            IsSorted::Ascending
+        } else if self.is_sorted_reverse() {
+            IsSorted::Descending
+        } else {
+            IsSorted::Not
+        }
+    }
+
     pub fn set_sorted2(&mut self, sorted: IsSorted) {
         match sorted {
             IsSorted::Not => {
@@ -325,14 +335,18 @@ impl<T> ChunkedArray<T> {
     }
 
     /// Create a new ChunkedArray from self, where the chunks are replaced.
-    fn copy_with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
-        ChunkedArray {
+    fn copy_with_chunks(&self, chunks: Vec<ArrayRef>, keep_sorted: bool) -> Self {
+        let mut out = ChunkedArray {
             field: self.field.clone(),
             chunks,
             phantom: PhantomData,
             categorical_map: self.categorical_map.clone(),
             bit_settings: self.bit_settings,
+        };
+        if !keep_sorted {
+            out.set_sorted2(IsSorted::Not);
         }
+        out
     }
 
     /// Get a mask of the null values.

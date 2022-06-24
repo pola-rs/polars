@@ -101,7 +101,7 @@ where
                         }
                     }
                 };
-                self.copy_with_chunks(vec![array])
+                self.copy_with_chunks(vec![array], false)
             }
             TakeIdx::Iter(iter) => {
                 if self.is_empty() {
@@ -122,7 +122,7 @@ where
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array])
+                self.copy_with_chunks(vec![array], false)
             }
             TakeIdx::IterNulls(iter) => {
                 if self.is_empty() {
@@ -143,7 +143,7 @@ where
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array])
+                self.copy_with_chunks(vec![array], false)
             }
         }
     }
@@ -192,7 +192,7 @@ impl ChunkTake for BooleanChunked {
                         }
                     }
                 };
-                self.copy_with_chunks(vec![array])
+                self.copy_with_chunks(vec![array], false)
             }
             TakeIdx::Iter(iter) => {
                 if self.is_empty() {
@@ -209,7 +209,7 @@ impl ChunkTake for BooleanChunked {
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array])
+                self.copy_with_chunks(vec![array], false)
             }
             TakeIdx::IterNulls(iter) => {
                 if self.is_empty() {
@@ -229,7 +229,7 @@ impl ChunkTake for BooleanChunked {
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array])
+                self.copy_with_chunks(vec![array], false)
             }
         }
     }
@@ -278,7 +278,7 @@ impl ChunkTake for Utf8Chunked {
                         }
                     }
                 };
-                self.copy_with_chunks(vec![array])
+                self.copy_with_chunks(vec![array], false)
             }
             TakeIdx::Iter(iter) => {
                 let array = match (self.has_validity(), self.chunks.len()) {
@@ -292,7 +292,7 @@ impl ChunkTake for Utf8Chunked {
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array])
+                self.copy_with_chunks(vec![array], false)
             }
             TakeIdx::IterNulls(iter) => {
                 let array = match (self.has_validity(), self.chunks.len()) {
@@ -309,7 +309,7 @@ impl ChunkTake for Utf8Chunked {
                         return ca;
                     }
                 };
-                self.copy_with_chunks(vec![array])
+                self.copy_with_chunks(vec![array], false)
             }
         }
     }
@@ -369,7 +369,7 @@ impl ChunkTake for ListChunked {
                         }
                     }
                 };
-                ca_self.copy_with_chunks(vec![array])
+                ca_self.copy_with_chunks(vec![array], false)
             }
             // todo! fast path for single chunk
             TakeIdx::Iter(iter) => {

@@ -7,7 +7,6 @@ use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
-#[cfg(feature = "chunked_ids")]
 use crate::series::IsSorted;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use std::any::Any;
@@ -30,8 +29,8 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         self.0.explode_by_offsets(offsets)
     }
 
-    fn _set_sorted(&mut self, reverse: bool) {
-        self.0.set_sorted(reverse)
+    fn _set_sorted(&mut self, is_sorted: IsSorted) {
+        self.0.set_sorted2(is_sorted)
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
