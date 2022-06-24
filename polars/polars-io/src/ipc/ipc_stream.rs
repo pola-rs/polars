@@ -33,7 +33,7 @@
 //! let df_read = IpcStreamReader::new(buf).finish().unwrap();
 //! assert!(df.frame_equal(&df_read));
 //! ```
-use super::{finish_reader, ArrowReader, ArrowResult};
+use crate::{finish_reader, ArrowReader, ArrowResult};
 use crate::predicates::PhysicalIoExpr;
 use crate::{prelude::*, WriterFactory};
 use arrow::io::ipc::write::WriteOptions;
@@ -42,7 +42,6 @@ use polars_core::prelude::*;
 
 use std::io::{Read, Seek, Write};
 
-use arrow::io::ipc::read::StreamState;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -52,7 +51,7 @@ use std::sync::Arc;
 /// ```
 /// use polars_core::prelude::*;
 /// use std::fs::File;
-/// use polars_io::ipc_stream::IpcStreamReader;
+/// use polars_io::ipc::IpcStreamReader;
 /// use polars_io::SerReader;
 ///
 /// fn example() -> Result<DataFrame> {
@@ -247,7 +246,7 @@ fn fix_column_order(df: DataFrame, projection: Option<Vec<usize>>, row_count: bo
 ///
 /// ```
 /// use polars_core::prelude::*;
-/// use polars_io::ipc_stream::IpcStreamWriter;
+/// use polars_io::ipc::IpcStreamWriter;
 /// use std::fs::File;
 /// use polars_io::SerWriter;
 ///
@@ -359,6 +358,7 @@ mod test {
     use polars_core::df;
     use polars_core::prelude::*;
     use std::io::Cursor;
+    use crate::ipc::ipc_stream::{IpcStreamReader, IpcStreamWriter};
 
     #[test]
     fn write_and_read_ipc_stream() {

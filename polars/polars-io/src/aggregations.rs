@@ -27,6 +27,7 @@ impl ScanAggregation {
     /// Evaluate the aggregations per batch.
     #[cfg(any(
         feature = "ipc",
+        feature = "ipc_streaming",
         feature = "parquet",
         feature = "json",
         feature = "avro"
@@ -88,6 +89,7 @@ impl ScanAggregation {
 
 #[cfg(any(
     feature = "ipc",
+    feature = "ipc_streaming",
     feature = "parquet",
     feature = "json",
     feature = "avro"

@@ -32,12 +32,12 @@
 //! let df_read = IpcReader::new(buf).finish().unwrap();
 //! assert!(df.frame_equal(&df_read));
 //! ```
-use super::{finish_reader, ArrowReader, ArrowResult};
 use crate::predicates::PhysicalIoExpr;
-use crate::{prelude::*, WriterFactory};
+use crate::{ArrowReader, finish_reader, prelude::*, WriterFactory};
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
+use super::ArrowResult;
 
 use std::io::{Read, Seek, Write};
 
@@ -354,6 +354,7 @@ mod test {
     use polars_core::df;
     use polars_core::prelude::*;
     use std::io::Cursor;
+    use crate::ipc::{IpcReader, IpcWriter};
 
     #[test]
     fn write_and_read_ipc() {
