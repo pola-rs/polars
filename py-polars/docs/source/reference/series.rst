@@ -32,7 +32,7 @@ Conversion
    :toctree: api/
 
    Series.to_arrow
-   Series.tquarter
+   Series.to_frame
    Series.to_list
    Series.to_numpy
    Series.to_pandas

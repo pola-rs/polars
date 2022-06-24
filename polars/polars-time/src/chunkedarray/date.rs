@@ -11,12 +11,6 @@ pub(crate) fn naive_datetime_to_date(v: NaiveDateTime) -> i32 {
     (datetime_to_timestamp_ms(v) / (MILLISECONDS * SECONDS_IN_DAY)) as i32
 }
 
-// a separate function so that it is not compiled twice
-pub(crate) fn months_to_quarters(mut ca: UInt32Chunked) -> UInt32Chunked {
-    ca.apply_mut(|month| (month + 2) / 3);
-    ca
-}
-
 pub trait DateMethods {
     /// Extract month from underlying NaiveDate representation.
     /// Returns the year number in the calendar date.
