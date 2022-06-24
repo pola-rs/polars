@@ -10,7 +10,7 @@ use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct AsOfOptions {
     pub strategy: AsofStrategy,
@@ -51,7 +51,7 @@ fn check_asof_columns(a: &Series, b: &Series) -> Result<()> {
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AsofStrategy {
     /// selects the last row in the right DataFrame whose ‘on’ key is less than or equal to the left’s key

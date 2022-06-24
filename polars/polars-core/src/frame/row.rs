@@ -6,7 +6,7 @@ use arrow::bitmap::Bitmap;
 use rayon::prelude::*;
 use std::borrow::Borrow;
 use std::fmt::Debug;
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Row<'a>(pub Vec<AnyValue<'a>>);
 
 impl<'a> Row<'a> {

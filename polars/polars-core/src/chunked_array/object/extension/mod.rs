@@ -22,6 +22,7 @@ unsafe fn create_drop<T: Sized>(mut ptr: *const u8, n_t_vals: usize) -> Box<dyn 
     })
 }
 
+#[allow(clippy::type_complexity)]
 struct ExtensionSentinel {
     drop_fn: Option<Box<dyn FnMut()>>,
     // A function on the heap that take a `array: FixedSizeBinary` and a `name: &str`

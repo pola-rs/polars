@@ -108,7 +108,7 @@ pub(super) use det_hash_prone_order;
 pub(crate) fn check_categorical_src(l: &DataType, r: &DataType) -> Result<()> {
     match (l, r) {
         (DataType::Categorical(Some(l)), DataType::Categorical(Some(r))) => {
-            if !l.same_src(&*r) {
+            if !l.same_src(r) {
                 return Err(PolarsError::ComputeError("joins/or comparisons on categorical dtypes can only happen if they are created under the same global string cache".into()));
             }
             Ok(())
@@ -117,7 +117,7 @@ pub(crate) fn check_categorical_src(l: &DataType, r: &DataType) -> Result<()> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum JoinType {
     Left,

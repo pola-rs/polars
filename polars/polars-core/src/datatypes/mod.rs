@@ -766,7 +766,7 @@ impl DataType {
 
     pub fn inner_dtype(&self) -> Option<&DataType> {
         if let DataType::List(inner) = self {
-            Some(&*inner)
+            Some(inner)
         } else {
             None
         }
@@ -879,7 +879,7 @@ impl PartialEq<ArrowDataType> for DataType {
 }
 
 /// Characterizes the name and the [`DataType`] of a column.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct Field {
     name: String,

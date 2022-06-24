@@ -13,7 +13,7 @@ impl IndexToUsize for i64 {
         if self >= 0 && (self as usize) < index {
             Some(self as usize)
         } else {
-            let subtract = self.abs() as usize;
+            let subtract = self.unsigned_abs() as usize;
             if subtract > index {
                 None
             } else {
