@@ -462,15 +462,19 @@ where
 
     let has_nulls = cols.iter().any(|s| s.null_count() > 0);
 
-    let values_buf: Vec<Vec<T::Native>> = (0..new_width)
+    let mut values_buf: Vec<Vec<T::Native>> = (0..new_width)
         .map(|_| Vec::with_capacity(new_height))
         .collect();
-    let validity_buf: Vec<_> = if has_nulls {
+    let mut validity_buf: Vec<_> = if has_nulls {
         // we first use bools instead of bits, because we can access these in parallel without aliasing
         (0..new_width).map(|_| vec![true; new_height]).collect()
     } else {
         (0..new_width).map(|_| vec![]).collect()
     };
+
+    // work with *mut pointers because we it is UB write to &refs.
+    let values_buf_ptr = &mut values_buf as *mut Vec<Vec<T::Native>> as usize;
+    let validity_buf_ptr = &mut validity_buf as *mut Vec<Vec<bool>> as usize;
 
     POOL.install(|| {
         cols.iter().enumerate().for_each(|(row_idx, s)| {
@@ -485,13 +489,15 @@ where
                 for (col_idx, opt_v) in ca.into_iter().enumerate() {
                     match opt_v {
                         None => unsafe {
-                            let column = validity_buf.get_unchecked(col_idx);
-                            let el_ptr = column.as_ptr() as *mut bool;
+                            let column = (*(validity_buf_ptr as *mut Vec<Vec<bool>>))
+                                .get_unchecked_mut(col_idx);
+                            let el_ptr = column.as_mut_ptr();
                             *el_ptr.add(row_idx) = false;
                         },
                         Some(v) => unsafe {
-                            let column = values_buf.get_unchecked(col_idx);
-                            let el_ptr = column.as_ptr() as *mut T::Native;
+                            let column = (*(values_buf_ptr as *mut Vec<Vec<T::Native>>))
+                                .get_unchecked_mut(col_idx);
+                            let el_ptr = column.as_mut_ptr();
                             *el_ptr.add(row_idx) = v;
                         },
                     }
@@ -499,8 +505,9 @@ where
             } else {
                 for (col_idx, v) in ca.into_no_null_iter().enumerate() {
                     unsafe {
-                        let column = values_buf.get(col_idx).unwrap();
-                        let el_ptr = column.as_ptr() as *mut T::Native;
+                        let column = (*(values_buf_ptr as *mut Vec<Vec<T::Native>>))
+                            .get_unchecked_mut(col_idx);
+                        let el_ptr = column.as_mut_ptr();
                         *el_ptr.add(row_idx) = v;
                     }
                 }
