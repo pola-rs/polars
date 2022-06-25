@@ -2,7 +2,7 @@ pub use crate::{SerReader, SerWriter};
 
 #[cfg(feature = "csv-file")]
 pub use crate::csv::*;
-#[cfg(feature = "ipc")]
+#[cfg(any(feature = "ipc", feature = "ipc_streaming"))]
 pub use crate::ipc::*;
 #[cfg(feature = "json")]
 pub use crate::json::*;

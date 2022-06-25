@@ -89,7 +89,7 @@ mod inner_mod {
             let series_container =
                 ChunkedArray::<T>::from_slice("", &[T::Native::zero()]).into_series();
             let array_ptr = series_container.array_ref(0);
-            let ptr = &*array_ptr.as_ref() as *const dyn Array as *mut dyn Array
+            let ptr = array_ptr.as_ref() as *const dyn Array as *mut dyn Array
                 as *mut PrimitiveArray<T::Native>;
             let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
 
@@ -187,7 +187,7 @@ mod inner_mod {
 
             let arr_container = ChunkedArray::<T>::from_slice("", &[T::Native::zero()]);
             let array_ptr = &arr_container.chunks()[0];
-            let ptr = &*array_ptr.as_ref() as *const dyn Array as *mut dyn Array
+            let ptr = array_ptr.as_ref() as *const dyn Array as *mut dyn Array
                 as *mut PrimitiveArray<T::Native>;
 
             let mut validity = MutableBitmap::with_capacity(ca.len());

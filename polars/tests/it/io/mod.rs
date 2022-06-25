@@ -2,6 +2,9 @@ mod csv;
 #[cfg(feature = "parquet")]
 mod parquet;
 
+#[cfg(feature = "ipc_streaming")]
+mod ipc_stream;
+
 use polars::prelude::*;
 
 pub(crate) fn create_df() -> DataFrame {

@@ -7,10 +7,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(PartialEq, Eq, Clone, Default)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
-#[cfg_attr(
-    all(feature = "serde-lazy", feature = "object"),
-    serde(bound(deserialize = "'de: 'static"))
-)]
 pub struct Schema {
     inner: PlIndexMap<String, DataType>,
 }

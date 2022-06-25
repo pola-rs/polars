@@ -276,7 +276,7 @@ impl LogicalPlan {
                 let mut s_keys = String::with_capacity(128);
                 s_keys.push('[');
                 for key in keys.iter() {
-                    s_keys.push_str(&format!("{:?},", key));
+                    write!(s_keys, "{:?},", key)?
                 }
                 s_keys.pop();
                 s_keys.push(']');
@@ -289,16 +289,16 @@ impl LogicalPlan {
                 current_node.push_str("WITH COLUMNS [");
                 for e in exprs {
                     if let Expr::Alias(_, name) = e {
-                        current_node.push_str(&format!("\"{}\",", name));
+                        write!(current_node, "\"{}\",", name)?
                     } else {
                         for name in expr_to_root_column_names(e).iter().take(1) {
-                            current_node.push_str(&format!("\"{}\",", name));
+                            write!(current_node, "\"{}\",", name)?
                         }
                     }
                 }
                 current_node.pop();
                 current_node.push(']');
-                current_node.push_str(&format!(" [{:?}]", (branch, id)));
+                write!(current_node, " [{:?}]", (branch, id))?;
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, (branch, id + 1), &current_node)
             }
@@ -318,10 +318,10 @@ impl LogicalPlan {
                 if let Some(subset) = &options.subset {
                     current_node.push_str(" BY ");
                     for name in subset.iter() {
-                        current_node.push_str(&format!("{}, ", name));
+                        write!(current_node, "{}", name)?
                     }
                 }
-                current_node.push_str(&format!(" [{:?}]", (branch, id)));
+                write!(current_node, " [{:?}]", (branch, id))?;
 
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, (branch, id + 1), &current_node)

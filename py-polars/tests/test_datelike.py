@@ -1065,17 +1065,17 @@ def test_groupby_rolling_by_ordering() -> None:
     ).to_dict(
         False
     ) == {
-        "key": ["A", "A", "B", "B", "A", "B", "A"],
+        "key": ["A", "A", "A", "A", "B", "B", "B"],
         "dt": [
             datetime(2022, 1, 1, 0, 1),
             datetime(2022, 1, 1, 0, 2),
+            datetime(2022, 1, 1, 0, 5),
+            datetime(2022, 1, 1, 0, 7),
             datetime(2022, 1, 1, 0, 3),
             datetime(2022, 1, 1, 0, 4),
-            datetime(2022, 1, 1, 0, 5),
             datetime(2022, 1, 1, 0, 6),
-            datetime(2022, 1, 1, 0, 7),
         ],
-        "sum val": [2, 2, 2, 2, 1, 1, 1],
+        "sum val": [2, 2, 1, 1, 2, 2, 1],
     }
 
 
@@ -1118,8 +1118,10 @@ def test_groupby_rolling_by_() -> None:
         ),
         how="cross",
     )
-    out = df.groupby_rolling(index_column="datetime", by="group", period="3d").agg(
-        [pl.count().alias("count")]
+    out = (
+        df.sort("datetime")
+        .groupby_rolling(index_column="datetime", by="group", period="3d")
+        .agg([pl.count().alias("count")])
     )
 
     expected = (
@@ -1127,7 +1129,7 @@ def test_groupby_rolling_by_() -> None:
         .groupby_rolling(index_column="datetime", by="group", period="3d")
         .agg([pl.count().alias("count")])
     )
-    assert out.frame_equal(expected)
+    assert out.sort(["group", "datetime"]).frame_equal(expected)
     assert out.to_dict(False) == {
         "group": [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
         "datetime": [

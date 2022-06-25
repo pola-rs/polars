@@ -193,7 +193,7 @@ pub fn infer_file_schema(
     let mut first_line = None;
     if let Some(comment_ch) = comment_char {
         for (i, line) in (&mut lines).enumerate() {
-            if let Some(ch) = line.get(0) {
+            if let Some(ch) = line.first() {
                 if *ch != comment_ch {
                     first_line = Some(line);
                     *skip_rows += i;
