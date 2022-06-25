@@ -1,4 +1,9 @@
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "avro"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "ipc_streaming",
+    feature = "parquet",
+    feature = "avro"
+))]
 use crate::ArrowSchema;
 use dirs::home_dir;
 use polars_core::frame::DataFrame;
@@ -17,7 +22,12 @@ pub fn resolve_homedir(path: &Path) -> PathBuf {
     path.into()
 }
 
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "avro"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "ipc_streaming",
+    feature = "parquet",
+    feature = "avro"
+))]
 pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> ArrowSchema {
     let fields = &schema.fields;
     let fields = projection
@@ -27,7 +37,12 @@ pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> Ar
     ArrowSchema::from(fields)
 }
 
-#[cfg(any(feature = "ipc", feature = "avro", feature = "parquet"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "ipc_streaming",
+    feature = "avro",
+    feature = "parquet"
+))]
 pub(crate) fn columns_to_projection(
     columns: Vec<String>,
     schema: &ArrowSchema,

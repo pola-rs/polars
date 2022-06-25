@@ -45,6 +45,9 @@ json = ["polars-io", "polars-io/json"]
 # support for arrows ipc file parsing
 ipc = ["polars-io", "polars-io/ipc", "polars-lazy/ipc"]
 
+# support for arrows streaming ipc file parsing
+ipc_streaming = ["polars-io", "polars-io/ipc_streaming", "polars-lazy/ipc"]
+
 # support for apache avro file parsing
 avro = ["polars-io", "polars-io/avro"]
 
@@ -130,6 +133,7 @@ test = [
   "abs",
   "parquet",
   "ipc",
+  "ipc_streaming",
 ]
 
 # don't use this
@@ -195,6 +199,7 @@ docs-selection = [
   "json",
   "parquet",
   "ipc",
+  "ipc_streaming",
   "dtype-full",
   "is_in",
   "sort_multiple",
