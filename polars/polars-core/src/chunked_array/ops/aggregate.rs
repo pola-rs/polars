@@ -827,7 +827,7 @@ mod test {
     #[test]
     fn test_var() {
         // validated with numpy
-        // Note that numpy as an argument ddof wich influences results. The default is ddof=0
+        // Note that numpy as an argument ddof which influences results. The default is ddof=0
         // we chose ddof=1, which is standard in statistics
         let ca1 = Int32Chunked::new("", &[5, 8, 9, 5, 0]);
         let ca2 = Int32Chunked::new(

@@ -50,7 +50,7 @@ where
 
         // in the case that the value array has got null values, we need to check every validity
         // value and collect the indices.
-        // because the length of the array is not known, we first collect the null indexes, offsetted
+        // because the length of the array is not known, we first collect the null indexes, offset
         // with the insertion of empty rows (as None) and later create a validity bitmap
         if arr.has_validity() {
             let validity_values = arr.validity().unwrap();
