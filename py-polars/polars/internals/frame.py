@@ -213,7 +213,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     [<class 'polars.datatypes.Int64'>, <class 'polars.datatypes.Int64'>]
 
     In order to specify dtypes for your columns, initialize the DataFrame with a list
-    of typed Series, or set the columns parameter with a list of (name,dtype) pairs:
+    of typed Series:
 
     >>> data = [
     ...     pl.Series("col1", [1, 2], dtype=pl.Float32),
@@ -232,9 +232,13 @@ class DataFrame(metaclass=DataFrameMetaClass):
     │ 2.0  ┆ 4    │
     └──────┴──────┘
 
-    # or, equivalent... (and also compatible with all of the other valid data parameter types):
+    Or set the `columns` parameter with a list of (name,dtype) pairs (compatible with
+    all of the other valid data parameter types):
+
+    >>> data = {"col1": [1, 2], "col2": [3, 4]}
     >>> df3 = pl.DataFrame(data, columns=[("col1", pl.Float32), ("col2", pl.Int64)])
     >>> df3
+    shape: (2, 2)
     ┌──────┬──────┐
     │ col1 ┆ col2 │
     │ ---  ┆ ---  │
