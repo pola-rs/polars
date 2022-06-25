@@ -148,6 +148,14 @@ impl DataFrame {
                 .u32()
                 .unwrap()
                 .join_asof(&right_key, strategy, tolerance),
+            DataType::Float32 => left_key
+                .f32()
+                .unwrap()
+                .join_asof(&right_key, strategy, tolerance),
+            DataType::Float64 => left_key
+                .f64()
+                .unwrap()
+                .join_asof(&right_key, strategy, tolerance),
             _ => {
                 let left_key = left_key.cast(&DataType::Int32).unwrap();
                 let right_key = right_key.cast(&DataType::Int32).unwrap();

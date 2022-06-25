@@ -112,3 +112,13 @@ def test_join_negative_integers() -> None:
             .to_dict(False)
             == expected
         )
+
+
+def test_join_asof_floats() -> None:
+    df1 = pl.DataFrame({"a": [1.0, 2.0, 3.0], "b": ["lrow1", "lrow2", "lrow3"]})
+    df2 = pl.DataFrame({"a": [0.59, 1.49, 2.89], "b": ["rrow1", "rrow2", "rrow3"]})
+    assert df1.join_asof(df2, on="a", strategy="backward").to_dict(False) == {
+        "a": [1.0, 2.0, 3.0],
+        "b": ["lrow1", "lrow2", "lrow3"],
+        "b_right": ["rrow1", "rrow2", "rrow3"],
+    }
