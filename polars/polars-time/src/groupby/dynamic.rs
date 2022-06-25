@@ -332,10 +332,10 @@ impl Wrap<&DataFrame> {
         tu: TimeUnit,
         time_type: &DataType,
     ) -> Result<(Series, Vec<Series>, GroupsProxy)> {
-        let dt = dt.rechunk();
-        let dt = dt.datetime().unwrap();
+        let mut dt = dt.rechunk();
 
         let groups = if by.is_empty() {
+            let dt = dt.datetime().unwrap();
             let vals = dt.downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
             GroupsProxy::Slice {
@@ -353,13 +353,21 @@ impl Wrap<&DataFrame> {
                 .0
                 .groupby_with_series(by.clone(), true, true)?
                 .take_groups();
+
+            // we keep a local copy, as we are reordering on next operation.
+            let dt_local = dt.datetime().unwrap().clone();
+
+            // make sure that the output order is correct
+            dt = unsafe { dt.agg_list(&groups).explode().unwrap() };
+
+            // continue determining the rolling indexes.
             let groups = groups.into_idx();
 
             let groupsidx = POOL.install(|| {
                 groups
                     .par_iter()
                     .flat_map(|base_g| {
-                        let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
+                        let dt = unsafe { dt_local.take_unchecked(base_g.1.into()) };
                         let vals = dt.downcast_iter().next().unwrap();
                         let ts = vals.values().as_slice();
                         let sub_groups = groupby_values(
@@ -374,13 +382,11 @@ impl Wrap<&DataFrame> {
                     })
                     .collect()
             });
-            let mut groups = GroupsProxy::Idx(groupsidx);
-            groups.sort();
-            groups
+            GroupsProxy::Idx(groupsidx)
         };
         let dt = dt.cast(time_type).unwrap();
 
-        // the ordering has changed due to the groupby
+        // // the ordering has changed due to the groupby
         if !by.is_empty() {
             unsafe {
                 for key in by.iter_mut() {
