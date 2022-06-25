@@ -1407,8 +1407,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         use_pyarrow
             Use C++ parquet implementation vs rust parquet implementation.
             At the moment C++ supports more features.
-
-        **kwargs are passed to pyarrow.parquet.write_table
+        kwargs
+            Arguments are passed to pyarrow.parquet.write_table.
         """
         if compression is None:
             compression = "uncompressed"
@@ -4453,11 +4453,12 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Parameters
         ----------
         groups
-            Groups to partition by
+            Groups to partition by.
         maintain_order
-            Keep predictable output order. This is slower as it requires and extra sort operation.
+            Keep predictable output order. This is slower as it requires an extra sort operation.
         as_dict
-            Return as dictionary
+            If True, return the partitions in a dictionary keyed by the distinct group values instead
+            of a list.
 
         Examples
         --------
