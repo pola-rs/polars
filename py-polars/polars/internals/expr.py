@@ -277,7 +277,7 @@ class Expr:
         """
         Compute the square root of the elements
         """
-        return self ** 0.5
+        return self**0.5
 
     def log10(self) -> "Expr":
         """
@@ -611,7 +611,9 @@ class Expr:
         ...         "B": [3, 4],
         ...     }
         ... )
-        >>> df.select(pl.col("*").reverse().map_alias(lambda colName: colName + "_reverse"))
+        >>> df.select(
+        ...     pl.col("*").reverse().map_alias(lambda colName: colName + "_reverse")
+        ... )
         shape: (2, 2)
         ┌───────────┬───────────┐
         │ A_reverse ┆ B_reverse │
@@ -1773,7 +1775,7 @@ class Expr:
     ) -> "Expr":
         """
         Apply a custom python function to a Series or sequence of Series.
-        The output of this custom function should be a Series.
+        The output of this custom function must be a Series.
         If you want to apply a custom function elementwise over single values see `apply`.
         A use case for map is when you want to transform an expression
         with a third-party library
@@ -1786,35 +1788,26 @@ class Expr:
             Lambda/ function to apply.
         return_dtype
             Dtype of the output Series.
-        agg_list
 
         Examples
         --------
 
         >>> df = pl.DataFrame(
         ...     {
-        ...         "id": [0, 1, 2],
-        ...         "ref": ["Jan001", "Jan002", "Feb001"],
+        ...         "sine": [0.0, 1.0, 0.0, -1.0],
+        ...         "cosine": [1.0, 0.0, -1.0, 0.0],
         ...     }
         ... )
-        >>> (
-        ...     df.select(
-        ...         pl.col("location").apply(lambda x: x**2).alias("squared_value")
-        ...     )
-        ... )
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ b   ┆ a   │
-        │ --- ┆ --- │
-        │ str ┆ i64 │
-        ╞═════╪═════╡
-        │ a   ┆ 1   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b   ┆ 2   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c   ┆ 2   │
-        └─────┴─────┘
-
+        # Take the Fourier transform of each column with Scipy
+        >>> (df.select(pl.all().map(lambda x: scipy.fft.fft(x.to_numpy()))))
+        shape: (1, 2)
+        ┌───────────────────────────────┬───────────────────────────────┐
+        │ sine                          ┆ cosine                        │
+        │ ---                           ┆ ---                           │
+        │ object                        ┆ object                        │
+        ╞═══════════════════════════════╪═══════════════════════════════╡
+        │ [0.-0.j 0.-2.j 0.-0.j 0.+2.j] ┆ [0.-0.j 2.+0.j 0.-0.j 2.-0.j] │
+        └───────────────────────────────┴───────────────────────────────┘
 
         """
         if return_dtype is not None:
@@ -1859,34 +1852,34 @@ class Expr:
 
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [1, 2, 1, 1],
+        ...         "a": [1, 2, 3, 1],
         ...         "b": ["a", "b", "c", "c"],
         ...     }
         ... )
         # In a selection context the function is applied by row
         >>> (
         ...     df.with_column(
-        ...         pl.col("a").apply(lambda x: x * 2),
+        ...         pl.col("a").apply(lambda x: x * 2).alias("a_times_2"),
         ...     )
         ... )
-        shape: (4, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ str │
-        ╞═════╪═════╡
-        │ 2   ┆ a   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 4   ┆ b   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 2   ┆ c   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 2   ┆ c   │
-        └─────┴─────┘
+        shape: (4, 3)
+        ┌─────┬─────┬───────────┐
+        │ a   ┆ b   ┆ a_times_2 │
+        │ --- ┆ --- ┆ ---       │
+        │ i64 ┆ str ┆ i64       │
+        ╞═════╪═════╪═══════════╡
+        │ 1   ┆ a   ┆ 2         │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ b   ┆ 4         │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ c   ┆ 6         │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 1   ┆ c   ┆ 2         │
+        └─────┴─────┴───────────┘
         # It would be better to implement this with an expression:
         >>> (
         ...     df.with_column(
-        ...         pl.col("a") * 2,
+        ...         (pl.col("a") * 2).alias("a_times_2"),
         ...     )
         ... )
         # In a GroupBy context the function is applied by group
@@ -1910,7 +1903,7 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ b   ┆ 2   │
         ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c   ┆ 2   │
+        │ c   ┆ 4   │
         └─────┴─────┘
         # It would be better to implement this with an expression:
         >>> (
