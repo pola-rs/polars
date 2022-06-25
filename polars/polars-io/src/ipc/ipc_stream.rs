@@ -35,7 +35,7 @@
 //! ```
 use crate::{finish_reader, ArrowReader, ArrowResult};
 use crate::{prelude::*, WriterFactory};
-use arrow::io::ipc::read::StreamState;
+use arrow::io::ipc::read::{StreamMetadata, StreamState};
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
@@ -68,19 +68,18 @@ pub struct IpcStreamReader<R> {
     projection: Option<Vec<usize>>,
     columns: Option<Vec<String>>,
     row_count: Option<RowCount>,
+    metadata: Option<StreamMetadata>,
 }
 
 impl<R: Read + Seek> IpcStreamReader<R> {
     /// Get schema of the Ipc Stream File
     pub fn schema(&mut self) -> Result<Schema> {
-        let metadata = read::read_stream_metadata(&mut self.reader)?;
-        Ok((&metadata.schema.fields).into())
+        Ok((&self.metadata()?.schema.fields).into())
     }
 
     /// Get arrow schema of the Ipc Stream File, this is faster than creating a polars schema.
     pub fn arrow_schema(&mut self) -> Result<ArrowSchema> {
-        let metadata = read::read_stream_metadata(&mut self.reader)?;
-        Ok(metadata.schema)
+        Ok(self.metadata()?.schema)
     }
     /// Stop reading when `n` rows are read.
     pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
@@ -105,6 +104,17 @@ impl<R: Read + Seek> IpcStreamReader<R> {
     pub fn with_projection(mut self, projection: Option<Vec<usize>>) -> Self {
         self.projection = projection;
         self
+    }
+
+    fn metadata(&mut self) -> Result<StreamMetadata> {
+        match &self.metadata {
+            None => {
+                let metadata = read::read_stream_metadata(&mut self.reader).unwrap();
+                self.metadata = Option::from(metadata.clone());
+                Ok(metadata)
+            }
+            Some(md) => Ok(md.clone()),
+        }
     }
 }
 
@@ -135,6 +145,7 @@ where
             columns: None,
             projection: None,
             row_count: None,
+            metadata: None,
         }
     }
 
@@ -145,7 +156,7 @@ where
 
     fn finish(mut self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
-        let metadata = read::read_stream_metadata(&mut self.reader)?;
+        let metadata = self.metadata()?;
         let schema = &metadata.schema;
 
         if let Some(columns) = self.columns {
