@@ -32,7 +32,7 @@ use polars_arrow::trusted_len::PushUnchecked;
 // window
 //
 // if the windows don't overlap, we should not use these kernels as they are single threaded, so
-// we miss out on easy parallization.
+// we miss out on easy parallelization.
 fn use_rolling_kernels(groups: &GroupsSlice, chunks: &[ArrayRef]) -> bool {
     match groups.len() {
         0 | 1 => false,

@@ -77,7 +77,7 @@ pub(super) unsafe fn join_asof_backward_with_indirection<T: PartialOrd + Copy + 
 
 // process the group taken by the `by` operation and keep track of the offset.
 // we don't process a group at once but per `index_left` we find the `right_index` and keep track
-// of the offsets we have already processed in a seperate hashmap. Then on a next iteration we can
+// of the offsets we have already processed in a separate hashmap. Then on a next iteration we can
 // continue from that offsets location.
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
