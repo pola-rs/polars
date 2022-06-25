@@ -23,13 +23,13 @@ where
                     let offset = buf.offset();
                     let ptr = buf.as_slice().as_ptr() as usize;
                     #[allow(clippy::transmute_undefined_repr)]
-                    let reinterpretted_buf = unsafe { std::mem::transmute::<_, Buffer<u64>>(buf) };
-                    assert_eq!(reinterpretted_buf.len(), len);
-                    assert_eq!(reinterpretted_buf.offset(), offset);
-                    assert_eq!(reinterpretted_buf.as_slice().as_ptr() as usize, ptr);
+                    let reinterpreted_buf = unsafe { std::mem::transmute::<_, Buffer<u64>>(buf) };
+                    assert_eq!(reinterpreted_buf.len(), len);
+                    assert_eq!(reinterpreted_buf.offset(), offset);
+                    assert_eq!(reinterpreted_buf.as_slice().as_ptr() as usize, ptr);
                     Box::new(PrimitiveArray::from_data(
                         ArrowDataType::UInt64,
-                        reinterpretted_buf,
+                        reinterpreted_buf,
                         array.validity().cloned(),
                     )) as ArrayRef
                 })
@@ -54,13 +54,13 @@ where
                     let offset = buf.offset();
                     let ptr = buf.as_slice().as_ptr() as usize;
                     #[allow(clippy::transmute_undefined_repr)]
-                    let reinterpretted_buf = unsafe { std::mem::transmute::<_, Buffer<u32>>(buf) };
-                    assert_eq!(reinterpretted_buf.len(), len);
-                    assert_eq!(reinterpretted_buf.offset(), offset);
-                    assert_eq!(reinterpretted_buf.as_slice().as_ptr() as usize, ptr);
+                    let reinterpreted_buf = unsafe { std::mem::transmute::<_, Buffer<u32>>(buf) };
+                    assert_eq!(reinterpreted_buf.len(), len);
+                    assert_eq!(reinterpreted_buf.offset(), offset);
+                    assert_eq!(reinterpreted_buf.as_slice().as_ptr() as usize, ptr);
                     Box::new(PrimitiveArray::from_data(
                         ArrowDataType::UInt32,
-                        reinterpretted_buf,
+                        reinterpreted_buf,
                         array.validity().cloned(),
                     )) as ArrayRef
                 })
@@ -91,13 +91,13 @@ impl Reinterpret for UInt64Chunked {
                 let offset = buf.offset();
                 let ptr = buf.as_slice().as_ptr() as usize;
                 #[allow(clippy::transmute_undefined_repr)]
-                let reinterpretted_buf = unsafe { std::mem::transmute::<_, Buffer<i64>>(buf) };
-                assert_eq!(reinterpretted_buf.len(), len);
-                assert_eq!(reinterpretted_buf.offset(), offset);
-                assert_eq!(reinterpretted_buf.as_slice().as_ptr() as usize, ptr);
+                let reinterpreted_buf = unsafe { std::mem::transmute::<_, Buffer<i64>>(buf) };
+                assert_eq!(reinterpreted_buf.len(), len);
+                assert_eq!(reinterpreted_buf.offset(), offset);
+                assert_eq!(reinterpreted_buf.as_slice().as_ptr() as usize, ptr);
                 Box::new(PrimitiveArray::new(
                     ArrowDataType::Int64,
-                    reinterpretted_buf,
+                    reinterpreted_buf,
                     array.validity().cloned(),
                 )) as ArrayRef
             })
@@ -134,13 +134,13 @@ impl UInt64Chunked {
                 let offset = buf.offset();
                 let ptr = buf.as_slice().as_ptr() as usize;
                 #[allow(clippy::transmute_undefined_repr)]
-                let reinterpretted_buf = unsafe { std::mem::transmute::<_, Buffer<f64>>(buf) };
-                assert_eq!(reinterpretted_buf.len(), len);
-                assert_eq!(reinterpretted_buf.offset(), offset);
-                assert_eq!(reinterpretted_buf.as_slice().as_ptr() as usize, ptr);
+                let reinterpreted_buf = unsafe { std::mem::transmute::<_, Buffer<f64>>(buf) };
+                assert_eq!(reinterpreted_buf.len(), len);
+                assert_eq!(reinterpreted_buf.offset(), offset);
+                assert_eq!(reinterpreted_buf.as_slice().as_ptr() as usize, ptr);
                 Box::new(PrimitiveArray::from_data(
                     ArrowDataType::Float64,
-                    reinterpretted_buf,
+                    reinterpreted_buf,
                     array.validity().cloned(),
                 )) as ArrayRef
             })
@@ -162,13 +162,13 @@ impl UInt32Chunked {
                 let offset = buf.offset();
                 let ptr = buf.as_slice().as_ptr() as usize;
                 #[allow(clippy::transmute_undefined_repr)]
-                let reinterpretted_buf = unsafe { std::mem::transmute::<_, Buffer<f32>>(buf) };
-                assert_eq!(reinterpretted_buf.len(), len);
-                assert_eq!(reinterpretted_buf.offset(), offset);
-                assert_eq!(reinterpretted_buf.as_slice().as_ptr() as usize, ptr);
+                let reinterpreted_buf = unsafe { std::mem::transmute::<_, Buffer<f32>>(buf) };
+                assert_eq!(reinterpreted_buf.len(), len);
+                assert_eq!(reinterpreted_buf.offset(), offset);
+                assert_eq!(reinterpreted_buf.as_slice().as_ptr() as usize, ptr);
                 Box::new(PrimitiveArray::from_data(
                     ArrowDataType::Float32,
-                    reinterpretted_buf,
+                    reinterpreted_buf,
                     array.validity().cloned(),
                 )) as ArrayRef
             })

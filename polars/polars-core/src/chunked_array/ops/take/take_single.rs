@@ -112,7 +112,7 @@ impl<'a> TakeRandomUtf8 for &'a Utf8Chunked {
     #[inline]
     fn get(self, index: usize) -> Option<Self::Item> {
         // Safety:
-        // Out of bounds is checkedn and downcast is of correct type
+        // Out of bounds is checked and downcast is of correct type
         unsafe { impl_take_random_get!(self, index, LargeStringArray) }
     }
 
