@@ -2349,8 +2349,15 @@ class LazyGroupBy(Generic[LDF]):
 
     def apply(self, f: Callable[["pli.DataFrame"], "pli.DataFrame"]) -> LDF:
         """
-        Apply a function over the groups as a new `DataFrame`. It is not recommended that you use
-        this as materializing the `DataFrame` is quite expensive.
+        Apply a function over the groups as a new `DataFrame`.
+        Implementing logic using this .apply method is generally slower and more memory intensive
+        than implementing the same logic using the expression API because:
+        - with .apply the logic is implemented in Python but with an expression the logic is implemented in Rust
+        - with .apply the DataFrame is materialized in memory
+        - expressions can be parallelised
+        - expressions can be optimised
+
+        If possible use the expression API for best performance.
 
         Parameters
         ----------
@@ -2383,7 +2390,7 @@ class LazyGroupBy(Generic[LDF]):
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ c   ┆ 2   │
         └─────┴─────┘
-        # It would be better to implement this with an expression:
+        # It is better to implement this with an expression:
         >>> (
         ...     df.groupby("b", maintain_order=True).agg(
         ...         pl.col("a").sum(),

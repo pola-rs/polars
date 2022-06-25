@@ -1824,7 +1824,7 @@ class Expr:
 
         Depending on the context it has the following behavior:
 
-        * Select/Project
+        * Selection
             expected type `f`: Callable[[Any], Any]
             Applies a python function over each individual value in the column.
         * GroupBy
@@ -1876,7 +1876,7 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 1   ┆ c   ┆ 2         │
         └─────┴─────┴───────────┘
-        # It would be better to implement this with an expression:
+        # It is better to implement this with an expression:
         >>> (
         ...     df.with_column(
         ...         (pl.col("a") * 2).alias("a_times_2"),
@@ -1905,7 +1905,7 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ c   ┆ 4   │
         └─────┴─────┘
-        # It would be better to implement this with an expression:
+        # It is better to implement this with an expression:
         >>> (
         ...     df.groupby("b", maintain_order=True).agg(
         ...         pl.col("a").sum(),

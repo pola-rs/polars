@@ -3719,7 +3719,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 6        ┆ 24       │
         └──────────┴──────────┘
-        # It would be better to implement this with an expression:
+        # It is better to implement this with an expression:
         >>> (df.select([pl.col("foo") * 2, pl.col("bar") * 3]))
         # Return a Series by mapping each row to a scalar
         >>> df.apply(lambda t: (t[0] * 2 + t[1]))
@@ -3735,7 +3735,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ├╌╌╌╌╌╌╌┤
         │ 14    │
         └───────┘
-        # In this case it would be better to use the following expression
+        # In this case it is better to use the following expression
         >>> df.select(pl.col("foo") * 2 + pl.col("bar"))
         """
         out, is_df = self._df.apply(f, return_dtype, inference_size)
@@ -5956,7 +5956,7 @@ class GroupBy(Generic[DF]):
         └─────┴───────┴──────────┘
         # For each color group sample two rows
         >>> (df.groupby("color").apply(lambda group_df: group_df.sample(2)))
-        # It would be better to implement this with an expression:
+        # It is better to implement this with an expression:
         >>> (df.filter(pl.arange(0, pl.count()).shuffle().over("color") < 2))
 
 
