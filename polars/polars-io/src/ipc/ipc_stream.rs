@@ -278,7 +278,7 @@ where
         for batch in iter {
             ipc_stream_writer.write(&batch, None)?
         }
-        let _ = ipc_stream_writer.finish()?;
+        ipc_stream_writer.finish()?;
         Ok(())
     }
 }
