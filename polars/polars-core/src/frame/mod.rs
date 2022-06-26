@@ -406,7 +406,7 @@ impl DataFrame {
         !self
             .columns
             .iter()
-            // The idea is that we creat a hash of the chunk lengths.
+            // The idea is that we create a hash of the chunk lengths.
             // Consisting of the combined hash + the sum (assuming collision probability is nihil)
             // if not, we can add more hashes or at worst case we do an extra rechunk.
             // the old solution to this was clone all lengths to a vec and compare the vecs
@@ -2007,7 +2007,7 @@ impl DataFrame {
     ///
     /// # Example
     ///
-    /// This is the idomatic way to replace some values a column of a `DataFrame` given range of indexes.
+    /// This is the idiomatic way to replace some values a column of a `DataFrame` given range of indexes.
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
@@ -2074,7 +2074,7 @@ impl DataFrame {
     ///
     /// # Example
     ///
-    /// This is the idomatic way to replace some values a column of a `DataFrame` given a boolean mask.
+    /// This is the idiomatic way to replace some values a column of a `DataFrame` given a boolean mask.
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
