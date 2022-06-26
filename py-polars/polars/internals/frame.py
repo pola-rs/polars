@@ -5931,13 +5931,13 @@ class GroupBy(Generic[DF]):
          Examples
          --------
 
-         >>> df = pl.DataFrame(
-         ...     {
-         ...         "id": [0, 1, 2, 3, 4],
-         ...         "color": ["red", "green", "green", "red", "red"],
-         ...         "shape": ["square", "triangle", "square", "triangle", "square"],
-         ...     }
-         ... )
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "id": [0, 1, 2, 3, 4],
+        ...         "color": ["red", "green", "green", "red", "red"],
+        ...         "shape": ["square", "triangle", "square", "triangle", "square"],
+        ...     }
+        ... )
         shape: (5, 3)
         ┌─────┬───────┬──────────┐
         │ id  ┆ color ┆ shape    │
