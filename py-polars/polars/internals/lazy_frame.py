@@ -2368,19 +2368,25 @@ class LazyGroupBy(Generic[LDF]):
         --------
 
         # The function is applied by group
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 1],
+        ...         "bar": ["a", "b", "c", "c"],
+        ...     }
+        ... )
         >>> (
         ...     df.lazy()
-        ...     .groupby("b", maintain_order=True)
+        ...     .groupby("bar", maintain_order=True)
         ...     .agg(
         ...         [
-        ...             pl.col("a").apply(lambda x: x.sum()),
+        ...             pl.col("foo").apply(lambda x: x.sum()),
         ...         ]
         ...     )
         ...     .collect()
         ... )
         shape: (3, 2)
         ┌─────┬─────┐
-        │ b   ┆ a   │
+        │ bar ┆ foo │
         │ --- ┆ --- │
         │ str ┆ i64 │
         ╞═════╪═════╡
@@ -2388,12 +2394,12 @@ class LazyGroupBy(Generic[LDF]):
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ b   ┆ 2   │
         ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c   ┆ 2   │
+        │ c   ┆ 4   │
         └─────┴─────┘
         # It is better to implement this with an expression:
         >>> (
-        ...     df.groupby("b", maintain_order=True).agg(
-        ...         pl.col("a").sum(),
+        ...     df.groupby("bar", maintain_order=True).agg(
+        ...         pl.col("foo").sum(),
         ...     )
         ... )
 
