@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import numpy as np
 
 import polars as pl
@@ -121,4 +123,60 @@ def test_join_asof_floats() -> None:
         "a": [1.0, 2.0, 3.0],
         "b": ["lrow1", "lrow2", "lrow3"],
         "b_right": ["rrow1", "rrow2", "rrow3"],
+    }
+
+
+def test_join_asof_tolerance() -> None:
+    df_trades = pl.DataFrame(
+        {
+            "time": [
+                datetime(2020, 1, 1, 9, 0, 1),
+                datetime(2020, 1, 1, 9, 0, 1),
+                datetime(2020, 1, 1, 9, 0, 3),
+                datetime(2020, 1, 1, 9, 0, 6),
+            ],
+            "stock": ["A", "B", "B", "C"],
+            "trade": [101, 299, 301, 500],
+        }
+    )
+
+    df_quotes = pl.DataFrame(
+        {
+            "time": [
+                datetime(2020, 1, 1, 9, 0, 0),
+                datetime(2020, 1, 1, 9, 0, 2),
+                datetime(2020, 1, 1, 9, 0, 4),
+                datetime(2020, 1, 1, 9, 0, 6),
+            ],
+            "stock": ["A", "B", "C", "A"],
+            "quote": [100, 300, 501, 102],
+        }
+    )
+
+    assert df_trades.join_asof(
+        df_quotes, on="time", by="stock", tolerance="2s"
+    ).to_dict(False) == {
+        "time": [
+            datetime(2020, 1, 1, 9, 0, 1),
+            datetime(2020, 1, 1, 9, 0, 1),
+            datetime(2020, 1, 1, 9, 0, 3),
+            datetime(2020, 1, 1, 9, 0, 6),
+        ],
+        "stock": ["A", "B", "B", "C"],
+        "trade": [101, 299, 301, 500],
+        "quote": [100, None, 300, 501],
+    }
+
+    assert df_trades.join_asof(
+        df_quotes, on="time", by="stock", tolerance="1s"
+    ).to_dict(False) == {
+        "time": [
+            datetime(2020, 1, 1, 9, 0, 1),
+            datetime(2020, 1, 1, 9, 0, 1),
+            datetime(2020, 1, 1, 9, 0, 3),
+            datetime(2020, 1, 1, 9, 0, 6),
+        ],
+        "stock": ["A", "B", "B", "C"],
+        "trade": [101, 299, 301, 500],
+        "quote": [100, None, 300, None],
     }
