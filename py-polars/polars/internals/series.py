@@ -4,14 +4,13 @@ import sys
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Sequence, Union, overload
 
-import numpy as np
-
 try:
     import pyarrow as pa
 
     _PYARROW_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _PYARROW_AVAILABLE = False
+
 
 import math
 
@@ -68,6 +67,13 @@ from polars.utils import (
 )
 
 try:
+    import numpy as np
+
+    _NUMPY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _NUMPY_AVAILABLE = False
+
+try:
     import pandas as pd
 
     _PANDAS_AVAILABLE = True
@@ -113,7 +119,7 @@ def wrap_s(s: PySeries) -> Series:
 
 
 ArrayLike = Union[
-    Sequence[Any], "Series", "pa.Array", np.ndarray, "pd.Series", "pd.DatetimeIndex"
+    Sequence[Any], "Series", "pa.Array", "np.ndarray", "pd.Series", "pd.DatetimeIndex"
 ]
 
 
@@ -210,7 +216,7 @@ class Series:
             self._s = series_to_pyseries(name, values)
         elif _PYARROW_AVAILABLE and isinstance(values, pa.Array):
             self._s = arrow_to_pyseries(name, values)
-        elif isinstance(values, np.ndarray):
+        elif _NUMPY_AVAILABLE and isinstance(values, np.ndarray):
             self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
             if dtype is not None:
                 self._s = self.cast(dtype, strict=True)._s
@@ -435,6 +441,8 @@ class Series:
             raise ValueError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.power(self, power)  # type: ignore
 
     def __rpow__(self, other: Any) -> Series:
@@ -442,6 +450,8 @@ class Series:
             raise ValueError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.power(other, self)  # type: ignore
 
     def __neg__(self) -> Series:
@@ -494,7 +504,7 @@ class Series:
             elif key.dtype == UInt32:
                 self._s = self.set_at_idx(key, value)._s
         # TODO: implement for these types without casting to series
-        elif isinstance(key, np.ndarray) and key.dtype == np.bool_:
+        elif _NUMPY_AVAILABLE and isinstance(key, np.ndarray) and key.dtype == np.bool_:
             # boolean numpy mask
             self._s = self.set_at_idx(np.argwhere(key)[:, 0], value)._s
         elif isinstance(key, (np.ndarray, list, tuple)):
@@ -568,6 +578,8 @@ class Series:
         """
         Return the base 10 logarithm of the input array, element-wise.
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.log10(self)  # type: ignore
 
     def exp(self) -> Series:
@@ -811,6 +823,8 @@ class Series:
         """
         if not self.is_numeric():
             return None
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.std(self.drop_nulls().view(), ddof=ddof)
 
     def var(self, ddof: int = 1) -> float | None:
@@ -833,6 +847,8 @@ class Series:
         """
         if not self.is_numeric():
             return None
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.var(self.drop_nulls().view(), ddof=ddof)
 
     def median(self) -> float:
@@ -2097,7 +2113,7 @@ class Series:
         """
         return self.dtype is Utf8
 
-    def view(self, ignore_nulls: bool = False) -> np.ndarray:
+    def view(self, ignore_nulls: bool = False) -> "np.ndarray":
         """
         Get a view into this Series data with a numpy array. This operation doesn't clone data, but does not include
         missing values. Don't use this unless you know what you are doing.
@@ -2124,7 +2140,7 @@ class Series:
         array.setflags(write=False)
         return array
 
-    def __array__(self, dtype: Any = None) -> np.ndarray:
+    def __array__(self, dtype: Any = None) -> "np.ndarray":
         if dtype:
             return self.to_numpy().__array__(dtype)
         else:
@@ -2132,7 +2148,7 @@ class Series:
 
     def __array_ufunc__(
         self,
-        ufunc: np.ufunc,
+        ufunc: "np.ufunc",
         method: str,
         *inputs: Any,
         **kwargs: Any,
@@ -2140,6 +2156,9 @@ class Series:
         """
         Numpy universal functions.
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
+
         if self._s.n_chunks() > 1:
             self._s.rechunk(in_place=True)
 
@@ -2210,7 +2229,7 @@ class Series:
 
     def to_numpy(
         self, *args: Any, zero_copy_only: bool = False, **kwargs: Any
-    ) -> np.ndarray:
+    ) -> "np.ndarray":
         """
         Convert this Series to numpy. This operation clones data but is completely safe.
 
@@ -2522,6 +2541,8 @@ class Series:
         ]
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.sign(self)  # type: ignore
 
     def sin(self) -> Series:
@@ -2542,6 +2563,8 @@ class Series:
         ]
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.sin(self)  # type: ignore
 
     def cos(self) -> Series:
@@ -2562,6 +2585,8 @@ class Series:
         ]
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.cos(self)  # type: ignore
 
     def tan(self) -> Series:
@@ -2582,6 +2607,8 @@ class Series:
         ]
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.tan(self)  # type: ignore
 
     def arcsin(self) -> Series:
@@ -2602,6 +2629,8 @@ class Series:
         ]
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.arcsin(self)  # type: ignore
 
     def arccos(self) -> Series:
@@ -2622,6 +2651,8 @@ class Series:
         ]
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.arccos(self)  # type: ignore
 
     def arctan(self) -> Series:
@@ -2642,6 +2673,8 @@ class Series:
         ]
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.arctan(self)  # type: ignore
 
     def apply(

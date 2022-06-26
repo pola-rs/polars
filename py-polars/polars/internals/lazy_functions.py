@@ -10,8 +10,6 @@ if sys.version_info >= (3, 8):
 else:
     from typing_extensions import Literal  # pragma: no cover
 
-import numpy as np
-
 from polars import internals as pli
 from polars.datatypes import (
     DataType,
@@ -27,6 +25,13 @@ from polars.utils import (
     in_nanoseconds_window,
     timedelta_in_nanoseconds_window,
 )
+
+try:
+    import numpy as np
+
+    _NUMPY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _NUMPY_AVAILABLE = False
 
 try:
     from polars.polars import arange as pyarange
@@ -675,7 +680,7 @@ def lit(
             return e
         return e.alias(name)
 
-    if isinstance(value, np.ndarray):
+    if _NUMPY_AVAILABLE and isinstance(value, np.ndarray):
         return lit(pli.Series("", value))
 
     if dtype:

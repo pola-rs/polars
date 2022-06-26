@@ -4,8 +4,6 @@ import copy
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, List, Sequence
 
-import numpy as np
-
 from polars.utils import _timedelta_to_pl_duration
 
 try:
@@ -31,6 +29,13 @@ from polars.datatypes import (
     UInt32,
     py_type_to_dtype,
 )
+
+try:
+    import numpy as np
+
+    _NUMPY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _NUMPY_AVAILABLE = False
 
 
 def selection_to_pyexpr_list(
@@ -188,6 +193,8 @@ class Expr:
         """
         Numpy universal functions.
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         out_type = ufunc(np.array([1])).dtype
         dtype: type[DataType] | None
         if "float" in str(out_type):
@@ -1284,7 +1291,9 @@ class Expr:
         └───────┴───────┘
 
         """
-        if isinstance(index, (list, np.ndarray)):
+        if isinstance(index, list):
+            index_lit = pli.lit(pli.Series("", index, dtype=UInt32))
+        elif _NUMPY_AVAILABLE and isinstance(index, np.ndarray):
             index_lit = pli.lit(pli.Series("", index, dtype=UInt32))
         else:
             index_lit = pli.expr_to_lit_or_expr(index, str_to_lit=False)
@@ -3321,6 +3330,8 @@ class Expr:
         └─────┘
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.sign(self)  # type: ignore
 
     def sin(self) -> Expr:
@@ -3346,6 +3357,8 @@ class Expr:
         └─────┘
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.sin(self)  # type: ignore
 
     def cos(self) -> Expr:
@@ -3371,6 +3384,8 @@ class Expr:
         └─────┘
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.cos(self)  # type: ignore
 
     def tan(self) -> Expr:
@@ -3396,6 +3411,8 @@ class Expr:
         └──────┘
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.tan(self)  # type: ignore
 
     def arcsin(self) -> Expr:
@@ -3420,6 +3437,8 @@ class Expr:
         └────────────────────┘
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.arcsin(self)  # type: ignore
 
     def arccos(self) -> Expr:
@@ -3444,6 +3463,8 @@ class Expr:
         └────────────────────┘
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.arccos(self)  # type: ignore
 
     def arctan(self) -> Expr:
@@ -3468,6 +3489,8 @@ class Expr:
         └────────────────────┘
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.arctan(self)  # type: ignore
 
     def reshape(self, dims: tuple[int, ...]) -> Expr:
@@ -3517,6 +3540,8 @@ class Expr:
             Seed initialization. If None given numpy is used.
         """
         if seed is None:
+            if not _NUMPY_AVAILABLE:
+                raise ImportError("'numpy' is required for this functionality.")
             seed = int(np.random.randint(0, 10000))
         return wrap_expr(self._pyexpr.shuffle(seed))
 
@@ -5876,6 +5901,8 @@ def _prepare_alpha(
         alpha = 2.0 / (span + 1.0)
     if half_life is not None and alpha is None:
         assert half_life > 0.0
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         alpha = 1.0 - np.exp(-np.log(2.0) / half_life)
     if alpha is None:
         raise ValueError("at least one of {com, span, half_life, alpha} should be set")

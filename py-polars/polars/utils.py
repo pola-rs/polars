@@ -9,8 +9,6 @@ from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
-import numpy as np
-
 try:
     from polars.polars import pool_size as _pool_size
 
@@ -19,6 +17,13 @@ except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 from polars.datatypes import DataType, Date, Datetime
+
+try:
+    import numpy as np
+
+    _NUMPY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _NUMPY_AVAILABLE = False
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
@@ -36,7 +41,7 @@ def _process_null_values(
 
 
 # https://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy
-def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
+def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> "np.ndarray":
     """
 
     Parameters
@@ -54,6 +59,8 @@ def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
     View of memory block as numpy array.
 
     """
+    if not _NUMPY_AVAILABLE:
+        raise ImportError("'numpy' is required for this functionality.")
     ptr_ctype = ctypes.cast(ptr, ctypes.POINTER(ptr_type))
     return np.ctypeslib.as_array(ptr_ctype, (len,))
 

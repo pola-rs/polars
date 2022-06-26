@@ -27,7 +27,6 @@ if sys.version_info >= (3, 8):
 else:
     from typing_extensions import Literal  # pragma: no cover
 
-import numpy as np
 
 try:
     import pyarrow as pa
@@ -72,12 +71,18 @@ from polars.utils import (
 )
 
 try:
+    import numpy as np
+
+    _NUMPY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _NUMPY_AVAILABLE = False
+
+try:
     import pandas as pd
 
     _PANDAS_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _PANDAS_AVAILABLE = False
-
 
 # A type variable used to refer to a polars.DataFrame or any subclass of it.
 # Used to annotate DataFrame methods which returns the same type as self.
@@ -301,7 +306,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         elif isinstance(data, dict):
             self._df = dict_to_pydf(data, columns=columns)
 
-        elif isinstance(data, np.ndarray):
+        elif _NUMPY_AVAILABLE and isinstance(data, np.ndarray):
             self._df = numpy_to_pydf(data, columns=columns, orient=orient)
 
         elif _PYARROW_AVAILABLE and isinstance(data, pa.Table):
@@ -407,7 +412,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         -------
         DataFrame
         """
-        if isinstance(data, np.ndarray):
+        if _NUMPY_AVAILABLE and isinstance(data, np.ndarray):
             pydf = numpy_to_pydf(data, columns=columns, orient=orient)
         else:
             pydf = sequence_to_pydf(data, columns=columns, orient=orient)
@@ -1470,7 +1475,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             **kwargs,
         )
 
-    def to_numpy(self) -> np.ndarray:
+    def to_numpy(self) -> "np.ndarray":
         """
         Convert DataFrame to a 2d numpy array.
         This operation clones data.
@@ -1490,6 +1495,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         <class 'numpy.ndarray'>
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         out = self._df.to_numpy()
         if out is None:
             return np.vstack(
@@ -1683,7 +1690,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
             # df[2, :] (select row as df)
             if isinstance(row_selection, int):
-                if isinstance(col_selection, (slice, list, np.ndarray)):
+                if isinstance(col_selection, (slice, list)) or (
+                    _NUMPY_AVAILABLE and isinstance(col_selection, np.ndarray)
+                ):
                     df = self[:, col_selection]
                     return df.slice(row_selection, 1)
                 # df[2, "a"]
@@ -1752,7 +1761,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         # select rows by numpy mask or index
         # df[[1, 2, 3]]
         # df[[true, false, true]]
-        if isinstance(item, np.ndarray):
+        if _NUMPY_AVAILABLE and isinstance(item, np.ndarray):
             if item.dtype == int:
                 return self._from_pydf(self._df.take(item))
             if isinstance(item[0], str):
@@ -1803,6 +1812,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 self.hstack([pli.Series(key, value)], in_place=True)
         # df[["C", "D"]]
         elif isinstance(key, list):
+            if not _NUMPY_AVAILABLE:
+                raise ImportError("'numpy' is required for this functionality.")
             value = np.array(value)
             if len(value.shape) != 2:
                 raise ValueError("can only set multiple columns with 2D matrix")

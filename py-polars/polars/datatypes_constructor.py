@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Any, Callable, Sequence
 
-import numpy as np
-
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     Boolean,
@@ -34,6 +32,12 @@ try:
 except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
+try:
+    import numpy as np
+
+    _NUMPY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _NUMPY_AVAILABLE = False
 
 if not _DOCUMENTING:
     _POLARS_TYPE_TO_CONSTRUCTOR: dict[PolarsDataType, Callable] = {
@@ -72,7 +76,7 @@ def polars_type_to_constructor(
         raise ValueError(f"Cannot construct PySeries for type {dtype}.")
 
 
-if not _DOCUMENTING:
+if _NUMPY_AVAILABLE and not _DOCUMENTING:
     _NUMPY_TYPE_TO_CONSTRUCTOR = {
         np.float32: PySeries.new_f32,
         np.float64: PySeries.new_f64,
@@ -97,6 +101,10 @@ def numpy_type_to_constructor(dtype: type[np.dtype]) -> Callable[..., PySeries]:
         return _NUMPY_TYPE_TO_CONSTRUCTOR[dtype]
     except KeyError:
         return PySeries.new_object
+    except NameError:
+        raise ImportError(
+            "'numpy' is required for this functionality."
+        )  # pragma: no cover
 
 
 if not _DOCUMENTING:
