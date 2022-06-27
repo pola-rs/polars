@@ -1104,6 +1104,7 @@ def argsort_by(
 
 
 def duration(
+    *,
     days: Optional[Union["pli.Expr", str]] = None,
     seconds: Optional[Union["pli.Expr", str]] = None,
     nanoseconds: Optional[Union["pli.Expr", str]] = None,

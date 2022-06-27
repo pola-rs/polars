@@ -16,7 +16,7 @@ use std::ops::Mul;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Duration {
     // the number of months for the duration
@@ -60,12 +60,14 @@ impl Duration {
         let mut months = 0;
         let mut iter = duration.char_indices();
         let negative = duration.starts_with('-');
+        let mut start = 0;
+
         // skip the '-' char
         if negative {
+            start += 1;
             iter.next().unwrap();
         }
 
-        let mut start = 0;
         let mut parsed_int = false;
 
         let mut unit = String::with_capacity(2);

@@ -32,6 +32,7 @@ dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object"]
+date_offset = []
 
 true_div = []
 

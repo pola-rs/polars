@@ -5379,6 +5379,36 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.duration_nanoseconds())
 
+    def offset_by(self, by: str) -> Expr:
+        """
+        Offset this date by a relative time offset.
+
+         This differs from `pl.col("foo") + timedelta` in that it can
+         take months and leap years into account
+
+        Parameters
+        ----------
+        by
+            The offset is dictated by the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 day)
+            - 1w    (1 week)
+            - 1mo   (1 calendar month)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+        Returns
+        -------
+        Date/Datetime expression
+        """
+        return wrap_expr(self._pyexpr.dt_offset_by(by))
+
 
 def expr_to_lit_or_expr(
     expr: Union[
