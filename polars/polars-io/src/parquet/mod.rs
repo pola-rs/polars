@@ -14,6 +14,7 @@
 //! }
 //! ```
 //!
+pub(super) mod mmap;
 pub mod predicates;
 mod read;
 mod read_impl;

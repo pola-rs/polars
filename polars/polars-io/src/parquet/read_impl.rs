@@ -1,21 +1,21 @@
 use crate::aggregations::{apply_aggregations, ScanAggregation};
 use crate::mmap::{MmapBytesReader, ReaderBytes};
+use crate::parquet::mmap;
+use crate::parquet::mmap::mmap_columns;
 use crate::parquet::predicates::collect_statistics;
 use crate::predicates::{apply_predicate, arrow_schema_to_empty_df, PhysicalIoExpr};
 use crate::utils::apply_projection;
 use crate::RowCount;
 use arrow::array::new_empty_array;
 use arrow::io::parquet::read;
-use arrow::io::parquet::read::{to_deserializer, ArrayIter, FileMetaData};
+use arrow::io::parquet::read::{ArrayIter, FileMetaData};
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::POOL;
 use rayon::prelude::*;
 use std::borrow::Cow;
 use std::convert::TryFrom;
-use std::io::Cursor;
 use std::ops::Deref;
-use std::path::Path;
 use std::sync::Arc;
 
 fn array_iter_to_series(
@@ -53,7 +53,6 @@ fn array_iter_to_series(
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet<R: MmapBytesReader>(
     mut reader: R,
-    path: Option<&Path>,
     limit: usize,
     projection: Option<&[usize]>,
     schema: &ArrowSchema,
@@ -63,8 +62,6 @@ pub fn read_parquet<R: MmapBytesReader>(
     mut parallel: bool,
     row_count: Option<RowCount>,
 ) -> Result<DataFrame> {
-    let file = reader.to_file();
-
     let file_metadata = metadata
         .map(Ok)
         .unwrap_or_else(|| read::read_metadata(&mut reader))?;
@@ -74,13 +71,16 @@ pub fn read_parquet<R: MmapBytesReader>(
         .map(Cow::Borrowed)
         .unwrap_or_else(|| Cow::Owned((0usize..schema.fields.len()).collect::<Vec<_>>()));
 
-    if projection.len() == 1 || path.is_none() {
+    if projection.len() == 1 {
         parallel = false;
     }
 
     let mut dfs = Vec::with_capacity(row_group_len);
 
     let mut remaining_rows = limit;
+
+    let reader = ReaderBytes::from(&reader);
+    let bytes = reader.deref();
 
     let mut previous_row_count = 0;
     for rg in 0..row_group_len {
@@ -109,16 +109,13 @@ pub fn read_parquet<R: MmapBytesReader>(
 
         let chunk_size = md.num_rows() as usize;
         let columns = if parallel {
-            let file_name = path.unwrap();
-
             POOL.install(|| {
                 projection
                     .par_iter()
                     .map(|column_i| {
-                        let mut reader = std::fs::File::open(file_name).unwrap();
                         let field = &schema.fields[*column_i];
-                        let columns = read::read_columns(&mut reader, md.columns(), &field.name)?;
-                        let iter = to_deserializer(
+                        let columns = mmap_columns(bytes, md.columns(), &field.name);
+                        let iter = mmap::to_deserializer(
                             columns,
                             field.clone(),
                             remaining_rows,
@@ -138,9 +135,13 @@ pub fn read_parquet<R: MmapBytesReader>(
                 .iter()
                 .map(|column_i| {
                     let field = &schema.fields[*column_i];
-                    let columns = read::read_columns(&mut reader, md.columns(), &field.name)?;
-                    let iter =
-                        to_deserializer(columns, field.clone(), remaining_rows, Some(chunk_size))?;
+                    let columns = mmap_columns(bytes, md.columns(), &field.name);
+                    let iter = mmap::to_deserializer(
+                        columns,
+                        field.clone(),
+                        remaining_rows,
+                        Some(chunk_size),
+                    )?;
 
                     if remaining_rows < md.num_rows() {
                         array_iter_to_series(iter, field, Some(remaining_rows))
