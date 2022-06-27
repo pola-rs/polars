@@ -36,7 +36,7 @@ impl ParquetExec {
             &self.aggregate,
         );
 
-        ParquetReader::new(file)
+        ParquetReader::from_path(self.path.as_path())?
             .with_n_rows(n_rows)
             .read_parallel(self.options.parallel)
             .with_row_count(std::mem::take(&mut self.options.row_count))

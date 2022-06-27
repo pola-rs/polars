@@ -6,13 +6,16 @@ use crate::prelude::*;
 use crate::RowCount;
 use arrow::io::parquet::read;
 use polars_core::prelude::*;
+use std::fs::File;
 use std::io::{Read, Seek};
+use std::path::Path;
 use std::sync::Arc;
 
 /// Read Apache parquet format into a DataFrame.
 #[must_use]
-pub struct ParquetReader<R: Read + Seek> {
+pub struct ParquetReader<'a, R: Read + Seek> {
     reader: R,
+    path: Option<&'a Path>,
     rechunk: bool,
     n_rows: Option<usize>,
     columns: Option<Vec<String>>,
@@ -21,7 +24,18 @@ pub struct ParquetReader<R: Read + Seek> {
     row_count: Option<RowCount>,
 }
 
-impl<R: MmapBytesReader> ParquetReader<R> {
+impl<'a> ParquetReader<'a, File> {
+    /// Create a new [`ParquetReader`] from a known `path`.
+    /// Prefer `from_path` over `new` as that is faster.
+    pub fn from_path(path: &'a Path) -> Result<Self> {
+        let file = std::fs::File::open(path)?;
+        let mut out = Self::new(file);
+        out.path = Some(path);
+        Ok(out)
+    }
+}
+
+impl<R: MmapBytesReader> ParquetReader<'_, R> {
     #[cfg(feature = "lazy")]
     // todo! hoist to lazy crate
     pub fn finish_with_scan_ops(
@@ -37,6 +51,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         let rechunk = self.rechunk;
         read_parquet(
             self.reader,
+            self.path,
             self.n_rows.unwrap_or(usize::MAX),
             projection,
             &schema,
@@ -94,10 +109,14 @@ impl<R: MmapBytesReader> ParquetReader<R> {
     }
 }
 
-impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
+impl<R: MmapBytesReader> SerReader<R> for ParquetReader<'_, R> {
+    /// Create a new [`ParquetReader`] for an existing `Reader`.
+    /// If reading from a file, prefer [`ParquetReader::from_path`], this
+    /// is faster.
     fn new(reader: R) -> Self {
         ParquetReader {
             reader,
+            path: None,
             rechunk: false,
             n_rows: None,
             columns: None,
@@ -122,6 +141,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
 
         read_parquet(
             self.reader,
+            self.path,
             self.n_rows.unwrap_or(usize::MAX),
             self.projection.as_deref(),
             &schema,
