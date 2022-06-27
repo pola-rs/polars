@@ -1,24 +1,47 @@
 use crate::aggregations::{apply_aggregations, ScanAggregation};
 use crate::mmap::{MmapBytesReader, ReaderBytes};
+use crate::parquet::mmap;
+use crate::parquet::mmap::mmap_columns;
 use crate::parquet::predicates::collect_statistics;
 use crate::predicates::{apply_predicate, arrow_schema_to_empty_df, PhysicalIoExpr};
 use crate::utils::apply_projection;
 use crate::RowCount;
 use arrow::array::new_empty_array;
 use arrow::io::parquet::read;
-use arrow::io::parquet::read::{to_deserializer, ArrayIter, FileMetaData};
+use arrow::io::parquet::read::{ArrayIter, FileMetaData};
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::POOL;
 use rayon::prelude::*;
 use std::borrow::Cow;
 use std::convert::TryFrom;
-use std::io::Cursor;
 use std::ops::Deref;
 use std::sync::Arc;
 
-fn array_iter_to_series(iter: ArrayIter, field: &ArrowField) -> Result<Series> {
-    let chunks = iter.collect::<arrow::error::Result<Vec<_>>>()?;
+fn array_iter_to_series(
+    iter: ArrayIter,
+    field: &ArrowField,
+    num_rows: Option<usize>,
+) -> Result<Series> {
+    let mut total_count = 0;
+    let chunks = match num_rows {
+        None => iter.collect::<arrow::error::Result<Vec<_>>>()?,
+        Some(n) => {
+            let mut out = Vec::with_capacity(2);
+
+            for arr in iter {
+                let arr = arr?;
+                let len = arr.len();
+                out.push(arr);
+
+                total_count += len;
+                if total_count >= n {
+                    break;
+                }
+            }
+            out
+        }
+    };
     if chunks.is_empty() {
         let arr = new_empty_array(field.data_type.clone());
         Series::try_from((field.name.as_str(), arr))
@@ -29,20 +52,16 @@ fn array_iter_to_series(iter: ArrayIter, field: &ArrowField) -> Result<Series> {
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet<R: MmapBytesReader>(
-    reader: R,
+    mut reader: R,
     limit: usize,
     projection: Option<&[usize]>,
     schema: &ArrowSchema,
     metadata: Option<FileMetaData>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&[ScanAggregation]>,
-    parallel: bool,
+    mut parallel: bool,
     row_count: Option<RowCount>,
 ) -> Result<DataFrame> {
-    let reader = ReaderBytes::from(&reader);
-    let bytes = reader.deref();
-    let mut reader = Cursor::new(bytes);
-
     let file_metadata = metadata
         .map(Ok)
         .unwrap_or_else(|| read::read_metadata(&mut reader))?;
@@ -52,9 +71,16 @@ pub fn read_parquet<R: MmapBytesReader>(
         .map(Cow::Borrowed)
         .unwrap_or_else(|| Cow::Owned((0usize..schema.fields.len()).collect::<Vec<_>>()));
 
+    if projection.len() == 1 {
+        parallel = false;
+    }
+
     let mut dfs = Vec::with_capacity(row_group_len);
 
     let mut remaining_rows = limit;
+
+    let reader = ReaderBytes::from(&reader);
+    let bytes = reader.deref();
 
     let mut previous_row_count = 0;
     for rg in 0..row_group_len {
@@ -87,17 +113,20 @@ pub fn read_parquet<R: MmapBytesReader>(
                 projection
                     .par_iter()
                     .map(|column_i| {
-                        let mut reader = Cursor::new(bytes);
                         let field = &schema.fields[*column_i];
-                        let columns = read::read_columns(&mut reader, md.columns(), &field.name)?;
-                        let iter = to_deserializer(
+                        let columns = mmap_columns(bytes, md.columns(), &field.name);
+                        let iter = mmap::to_deserializer(
                             columns,
                             field.clone(),
                             remaining_rows,
                             Some(chunk_size),
                         )?;
 
-                        array_iter_to_series(iter, field)
+                        if remaining_rows < md.num_rows() {
+                            array_iter_to_series(iter, field, Some(remaining_rows))
+                        } else {
+                            array_iter_to_series(iter, field, None)
+                        }
                     })
                     .collect::<Result<Vec<_>>>()
             })?
@@ -106,11 +135,19 @@ pub fn read_parquet<R: MmapBytesReader>(
                 .iter()
                 .map(|column_i| {
                     let field = &schema.fields[*column_i];
-                    let columns = read::read_columns(&mut reader, md.columns(), &field.name)?;
-                    let iter =
-                        to_deserializer(columns, field.clone(), remaining_rows, Some(chunk_size))?;
+                    let columns = mmap_columns(bytes, md.columns(), &field.name);
+                    let iter = mmap::to_deserializer(
+                        columns,
+                        field.clone(),
+                        remaining_rows,
+                        Some(chunk_size),
+                    )?;
 
-                    array_iter_to_series(iter, field)
+                    if remaining_rows < md.num_rows() {
+                        array_iter_to_series(iter, field, Some(remaining_rows))
+                    } else {
+                        array_iter_to_series(iter, field, None)
+                    }
                 })
                 .collect::<Result<Vec<_>>>()?
         };
