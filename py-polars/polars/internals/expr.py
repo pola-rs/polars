@@ -277,7 +277,7 @@ class Expr:
         """
         Compute the square root of the elements
         """
-        return self ** 0.5
+        return self**0.5
 
     def log10(self) -> "Expr":
         """
@@ -1798,17 +1798,15 @@ class Expr:
         ...         "cosine": [1.0, 0.0, -1.0, 0.0],
         ...     }
         ... )
-        # Take the Fourier transform of each column with Scipy
-        >>> (df.select(pl.all().map(lambda x: scipy.fft.fft(x.to_numpy()))))
+        >>> (df.select(pl.all().map(lambda x: x.to_numpy().argmax())))
         shape: (1, 2)
-        ┌───────────────────────────────┬───────────────────────────────┐
-        │ sine                          ┆ cosine                        │
-        │ ---                           ┆ ---                           │
-        │ object                        ┆ object                        │
-        ╞═══════════════════════════════╪═══════════════════════════════╡
-        │ [0.-0.j 0.-2.j 0.-0.j 0.+2.j] ┆ [0.-0.j 2.+0.j 0.-0.j 2.-0.j] │
-        └───────────────────────────────┴───────────────────────────────┘
-
+        ┌──────┬────────┐
+        │ sine ┆ cosine │
+        │ ---  ┆ ---    │
+        │ i64  ┆ i64    │
+        ╞══════╪════════╡
+        │ 1    ┆ 0      │
+        └──────┴────────┘
         """
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
