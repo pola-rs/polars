@@ -28,24 +28,35 @@ pub(super) unsafe fn join_asof_backward_with_indirection_and_tolerance<
     if offsets.is_empty() {
         return (None, 0);
     }
-    let mut previous = *offsets.get_unchecked(0);
-    let first = *right.get_unchecked(previous as usize);
+    let mut previous_idx = *offsets.get_unchecked(0);
+    let first = *right.get_unchecked(previous_idx as usize);
     if val_l < first {
         (None, 0)
     } else {
         for (idx, &offset) in offsets.iter().enumerate() {
             let val_r = *right.get_unchecked(offset as usize);
+
+            // the point that is larger is not allowed
             if val_r > val_l {
-                let dist = val_l - val_r;
+                // compute the distance of previous point, that one was still backwards
+                let previous_value = *right.get_unchecked(previous_idx as usize);
+                let dist = val_l - previous_value;
                 return if dist > tolerance {
                     (None, idx)
                 } else {
-                    (Some(previous), idx)
+                    (Some(previous_idx), idx)
                 };
             }
-            previous = offset
+            previous_idx = offset
         }
-        (None, offsets.len())
+        // check remaining values that still suffice the distance constraint
+        let previous_value = *right.get_unchecked(previous_idx as usize);
+        let dist = val_l - previous_value;
+        if dist > tolerance {
+            (None, offsets.len())
+        } else {
+            (Some(previous_idx), offsets.len())
+        }
     }
 }
 
@@ -77,7 +88,7 @@ pub(super) unsafe fn join_asof_backward_with_indirection<T: PartialOrd + Copy + 
 
 // process the group taken by the `by` operation and keep track of the offset.
 // we don't process a group at once but per `index_left` we find the `right_index` and keep track
-// of the offsets we have already processed in a seperate hashmap. Then on a next iteration we can
+// of the offsets we have already processed in a separate hashmap. Then on a next iteration we can
 // continue from that offsets location.
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]

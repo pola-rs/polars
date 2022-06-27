@@ -95,6 +95,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
 }
 
 impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
+    /// Create a new [`ParquetReader`] from an existing `Reader`.
     fn new(reader: R) -> Self {
         ParquetReader {
             reader,

@@ -47,8 +47,16 @@ impl Series {
             None => Ok(Series::full_null(name, av.len(), &DataType::Int32)),
             Some(av_) => {
                 let mut s = match av_ {
+                    #[cfg(feature = "dtype-i8")]
+                    AnyValue::Int8(_) => any_values_to_primitive::<Int8Type>(av).into_series(),
+                    #[cfg(feature = "dtype-i16")]
+                    AnyValue::Int16(_) => any_values_to_primitive::<Int16Type>(av).into_series(),
                     AnyValue::Int32(_) => any_values_to_primitive::<Int32Type>(av).into_series(),
                     AnyValue::Int64(_) => any_values_to_primitive::<Int64Type>(av).into_series(),
+                    #[cfg(feature = "dtype-u8")]
+                    AnyValue::UInt8(_) => any_values_to_primitive::<UInt8Type>(av).into_series(),
+                    #[cfg(feature = "dtype-u16")]
+                    AnyValue::UInt16(_) => any_values_to_primitive::<UInt16Type>(av).into_series(),
                     AnyValue::UInt32(_) => any_values_to_primitive::<UInt32Type>(av).into_series(),
                     AnyValue::UInt64(_) => any_values_to_primitive::<UInt64Type>(av).into_series(),
                     AnyValue::Float32(_) => {

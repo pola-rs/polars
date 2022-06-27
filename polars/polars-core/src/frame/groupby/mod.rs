@@ -1148,7 +1148,7 @@ mod test {
         let serie = Series::new("N", [1, 2, 3, 3, 4].as_ref());
         series.push(serie);
 
-        // Creat the dataframe with the computed series.
+        // Create the dataframe with the computed series.
         let df = DataFrame::new(series).unwrap();
 
         // Compute the aggregated DataFrame by the 13 columns defined in `series_names`.

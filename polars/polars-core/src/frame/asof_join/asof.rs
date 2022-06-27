@@ -61,7 +61,7 @@ where
     // left: [-1, 0, 1, 2],
     // right: [1, 2, 3]
     // first values should be None, until left has caught up
-    let mut left_catched_up = false;
+    let mut left_caught_up = false;
 
     // init with left so that the distance starts at 0
     let mut previous_right = left[0];
@@ -74,12 +74,12 @@ where
             match right.get(offset as usize) {
                 Some(&val_r) => {
                     // we fill nulls until left value is larger than right
-                    if !left_catched_up {
+                    if !left_caught_up {
                         if val_l < val_r {
                             out.push(None);
                             break;
                         } else {
-                            left_catched_up = true;
+                            left_caught_up = true;
                         }
                     }
 
@@ -106,7 +106,7 @@ where
                 // we cannot fill the remainder of the value, because we need to check tolerances
                 None => {
                     // if we have previous value, continue with that one
-                    let val = if left_catched_up && dist <= tolerance {
+                    let val = if left_caught_up && dist <= tolerance {
                         Some(offset - 1)
                     }
                     // else null
@@ -133,19 +133,19 @@ pub(super) fn join_asof_backward<T: PartialOrd + Copy + Debug>(
     // left: [-1, 0, 1, 2],
     // right: [1, 2, 3]
     // first values should be None, until left has caught up
-    let mut left_catched_up = false;
+    let mut left_caught_up = false;
 
     for &val_l in left {
         loop {
             match right.get(offset as usize) {
                 Some(&val_r) => {
                     // we fill nulls until left value is larger than right
-                    if !left_catched_up {
+                    if !left_caught_up {
                         if val_l < val_r {
                             out.push(None);
                             break;
                         } else {
-                            left_catched_up = true;
+                            left_caught_up = true;
                         }
                     }
 
@@ -164,7 +164,7 @@ pub(super) fn join_asof_backward<T: PartialOrd + Copy + Debug>(
                 // we depleted the right array
                 None => {
                     // if we have previous value, continue with that one
-                    let val = if left_catched_up {
+                    let val = if left_caught_up {
                         Some(offset - 1)
                     }
                     // else all null
