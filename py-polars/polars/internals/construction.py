@@ -10,16 +10,16 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
-    Type,
     Union,
 )
 
 import numpy as np
 
 from polars import internals as pli
-from polars.datatypes import Categorical, DataType, Date, Datetime, Duration, Float32
+from polars.datatypes import Categorical, ColumnsType, Date, Datetime, Duration, Float32
 from polars.datatypes import List as ListDType
 from polars.datatypes import (
+    PolarsDataType,
     Time,
     dtype_to_arrow_type,
     dtype_to_py_type,
@@ -54,11 +54,6 @@ else:
     except ImportError:  # pragma: no cover
         _PYARROW_AVAILABLE = False
 
-ColumnsType = Union[
-    Union[List[str], Sequence[str]],
-    Dict[str, Type[DataType]],
-    Sequence[Tuple[str, Union[Type[DataType], DataType]]],
-]
 
 ################################
 # Series constructor interface #
@@ -144,14 +139,14 @@ def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> "PySer
 def sequence_to_pyseries(
     name: str,
     values: Sequence[Any],
-    dtype: Optional[Union[Type[DataType], DataType]] = None,
+    dtype: Optional[PolarsDataType] = None,
     strict: bool = True,
 ) -> "PySeries":
     """
     Construct a PySeries from a sequence.
     """
     dtype_: Optional[type] = None
-    nested_dtype: Optional[Union[Type[DataType], type]] = None
+    nested_dtype: Optional[Union[PolarsDataType, type]] = None
     temporal_unit: Optional[str] = None
 
     # empty sequence defaults to Float32 type
@@ -170,9 +165,11 @@ def sequence_to_pyseries(
     if value is not None:
         if dtype in py_temporal_types and isinstance(value, int):
             dtype = py_type_to_dtype(dtype)  # construct from integer
-        elif dtype in pl_temporal_types and not isinstance(value, int):
+        elif (
+            dtype in pl_temporal_types or type(dtype) in pl_temporal_types
+        ) and not isinstance(value, int):
             temporal_unit = getattr(dtype, "tu", None)
-            dtype_ = dtype_to_py_type(dtype)  # construct from python type
+            dtype_ = dtype_to_py_type(dtype)  # type: ignore[arg-type]
 
     if (dtype is not None) and is_polars_dtype(dtype) and (dtype_ is None):
         constructor = polars_type_to_constructor(dtype)
@@ -246,7 +243,9 @@ def sequence_to_pyseries(
                         if is_polars_dtype(nested_dtype)
                         else py_type_to_arrow_type
                     )
-                    nested_arrow_dtype = to_arrow_type(nested_dtype)
+                    nested_arrow_dtype = to_arrow_type(
+                        nested_dtype  # type: ignore[arg-type]
+                    )
                 except ValueError:  # pragma: no cover
                     return sequence_from_anyvalue_or_object(name, values)
                 try:
@@ -374,7 +373,7 @@ def _unpack_columns(
     columns: Optional[ColumnsType],
     lookup_names: Optional[Iterable[str]] = None,
     n_expected: Optional[int] = None,
-) -> Tuple[List[str], Dict[str, Union[Type[DataType], DataType]]]:
+) -> Tuple[List[str], Dict[str, PolarsDataType]]:
     """
     Unpack column names and create dtype lookup for any (name,dtype) pairs or schema dict input.
     """

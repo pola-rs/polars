@@ -12,6 +12,7 @@ polars/vendor
 AUTO_CHANGELOG.md
 node_modules/
 .coverage
+.hypothesis
 venv/
 *.iml
 coverage.lcov

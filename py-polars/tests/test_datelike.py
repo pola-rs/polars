@@ -10,6 +10,7 @@ import pytz
 from test_series import verify_series_and_expr_api
 
 import polars as pl
+from polars.datatypes import DTYPE_TEMPORAL_UNITS
 
 
 def test_fill_null() -> None:
@@ -242,7 +243,7 @@ def test_date_range() -> None:
     assert result.dt[2] == datetime(1985, 1, 4, 0, 0)
     assert result.dt[-1] == datetime(2015, 6, 30, 12, 0)
 
-    for tu in ["ns", "us", "ms"]:
+    for tu in DTYPE_TEMPORAL_UNITS:
         rng = pl.date_range(datetime(2020, 1, 1), date(2020, 1, 2), "2h", time_unit=tu)
         assert rng.time_unit == tu
         assert rng.shape == (13,)
@@ -563,7 +564,7 @@ def test_read_utc_times_parquet() -> None:
 def test_epoch() -> None:
     dates = pl.Series("dates", [datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
 
-    for unit in ["ns", "us", "ms"]:
+    for unit in DTYPE_TEMPORAL_UNITS:
         assert dates.dt.epoch(unit).series_equal(dates.dt.timestamp(unit))
 
     assert dates.dt.epoch("s").series_equal(dates.dt.timestamp("ms") // 1000)
@@ -983,7 +984,7 @@ def test_datetime_units() -> None:
     )
     names = set(df.columns)
 
-    for unit in ["ns", "us", "ms"]:
+    for unit in DTYPE_TEMPORAL_UNITS:
         subset = names - set([unit])
 
         assert (
@@ -1006,7 +1007,7 @@ def test_datetime_instance_selection() -> None:
         ],
     )
 
-    for tu in ["ns", "us", "ms"]:
+    for tu in DTYPE_TEMPORAL_UNITS:
         assert df.select(pl.col([pl.Datetime(tu)])).dtypes == [pl.Datetime(tu)]
 
 

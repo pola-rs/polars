@@ -125,13 +125,10 @@ def _is_iterable_of(val: Iterable, itertype: Type, eltype: Type) -> bool:
 
 
 def range_to_slice(rng: range) -> slice:
-    step: Optional[int]
-    # maybe we can slice instead of take by indices
-    if rng.step != 1:
-        step = rng.step
-    else:
-        step = None
-    return slice(rng.start, rng.stop, step)
+    """
+    Return the given range as an equivalent slice.
+    """
+    return slice(rng.start, rng.stop, rng.step)
 
 
 def handle_projection_columns(
