@@ -94,7 +94,7 @@ See the results in [h2oai's db-benchmark](https://h2oai.github.io/db-benchmark/)
 Install the latest polars version with:
 
 ```
-$ pip3 install -U polars[pyarrow]
+$ pip3 install -U 'polars[pyarrow]'
 ```
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.
