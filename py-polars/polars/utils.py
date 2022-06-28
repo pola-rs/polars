@@ -150,6 +150,8 @@ def handle_projection_columns(
 
 
 def _to_python_time(value: int) -> time:
+    if value == 0:
+        return time(microsecond=0)
     value = value // 1_000
     microsecond = value
     seconds = (microsecond // 1000_000) % 60
