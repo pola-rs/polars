@@ -2894,37 +2894,30 @@ impl DataFrame {
             Some(s) => s.iter().map(|s| &**s).collect(),
             None => self.get_column_names(),
         };
-        let gb = self.groupby(names)?;
-        let groups = gb.get_groups().unwrap_idx();
 
-        let finish_maintain_order = |mut groups: Vec<IdxSize>| {
-            groups.sort_unstable();
-            let ca = IdxCa::from_vec("", groups);
-            unsafe { self.take_unchecked(&ca) }
-        };
-
-        let df = match (keep, maintain_order) {
+        let columns = match (keep, maintain_order) {
             (First, true) => {
-                let iter = groups.iter().map(|g| g.0);
-                let groups = iter.collect_trusted::<Vec<_>>();
-                finish_maintain_order(groups)
+                let gb = self.groupby_stable(names)?;
+                let groups = gb.get_groups();
+                self.apply_columns_par(&|s| unsafe { s.agg_first(groups) })
             }
             (Last, true) => {
-                let iter = groups.iter().map(|g| g.1[g.1.len() - 1]);
-                let groups = iter.collect_trusted::<Vec<_>>();
-                finish_maintain_order(groups)
+                let gb = self.groupby_stable(names)?;
+                let groups = gb.get_groups();
+                self.apply_columns_par(&|s| unsafe { s.agg_last(groups) })
             }
             (First, false) => {
-                let iter = groups.iter().map(|g| g.0 as usize);
-                unsafe { self.take_iter_unchecked(iter) }
+                let gb = self.groupby(names)?;
+                let groups = gb.get_groups();
+                self.apply_columns_par(&|s| unsafe { s.agg_first(groups) })
             }
             (Last, false) => {
-                let iter = groups.iter().map(|g| g.1[g.1.len() - 1] as usize);
-                unsafe { self.take_iter_unchecked(iter) }
+                let gb = self.groupby(names)?;
+                let groups = gb.get_groups();
+                self.apply_columns_par(&|s| unsafe { s.agg_last(groups) })
             }
         };
-
-        Ok(df)
+        Ok(DataFrame::new_no_checks(columns))
     }
 
     /// Get a mask of all the unique rows in the `DataFrame`.
