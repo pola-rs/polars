@@ -256,6 +256,9 @@ impl PhysicalExpr for WindowExpr {
             // and every partition run the cache should be empty so we expect a max of 1.
             debug_assert!(gt_map.len() <= 1);
             if let Some(gt) = gt_map.get_mut(&cache_key) {
+                // We take now, but it is important that we set this before we return!
+                // a next windows function may get this cached key and get an empty if this
+                // does not happen
                 (std::mem::take(gt), true, cache_key)
             } else {
                 (create_groups()?, false, cache_key)

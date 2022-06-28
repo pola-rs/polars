@@ -87,11 +87,14 @@ impl PhysicalExpr for TernaryExpr {
         &self.expr
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
-        let mask_series = self.predicate.evaluate(df, state)?;
+        let mut state = state.clone();
+        // don't cache window functions as they run in parallel
+        state.cache_window = false;
+        let mask_series = self.predicate.evaluate(df, &state)?;
         let mut mask = mask_series.bool()?.clone();
 
-        let op_truthy = || self.truthy.evaluate(df, state);
-        let op_falsy = || self.falsy.evaluate(df, state);
+        let op_truthy = || self.truthy.evaluate(df, &state);
+        let op_falsy = || self.falsy.evaluate(df, &state);
 
         let (truthy, falsy) = POOL.install(|| rayon::join(op_truthy, op_falsy));
         let mut truthy = truthy?;
