@@ -349,7 +349,7 @@ class column:
     >>> from hypothesis.strategies import sampled_from
     >>> from polars.testing import column
     >>>
-    >>> column(name="unique_small_ints", dtype=pl.Uint8, unique=True)
+    >>> column(name="unique_small_ints", dtype=pl.UInt8, unique=True)
     >>> column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
     """
 
