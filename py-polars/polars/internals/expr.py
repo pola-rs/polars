@@ -5055,14 +5055,13 @@ class ExprStringNameSpace:
     def split(self, by: str, inclusive: bool = False) -> Expr:
         """
         Split the string by a substring.
-        The return type will by of type List<Utf8>
 
         Parameters
         ----------
         by
-            substring
+            Substring to split by.
         inclusive
-            Include the split character/string in the results
+            If True, include the split character/string in the results.
 
         Examples
         --------
@@ -5082,6 +5081,10 @@ class ExprStringNameSpace:
         │ ["foo", "bar", "baz"] │
         └───────────────────────┘
 
+        Returns
+        -------
+        List of Utf8 type
+
         """
         if inclusive:
             return wrap_expr(self._pyexpr.str_split_inclusive(by))
@@ -5089,19 +5092,18 @@ class ExprStringNameSpace:
 
     def split_exact(self, by: str, n: int, inclusive: bool = False) -> Expr:
         """
-        Split the string by a substring into a struct of `n` fields.
-        The return type will by of type Struct<Utf8>
+        Split the string by a substring into a struct of ``n`` fields.
 
-        If it cannot make `n` splits, the remaiming field elements will be null
+        If it cannot make ``n`` splits, the remaining field elements will be null.
 
         Parameters
         ----------
         by
-            substring
+            Substring to split by.
         n
-            Number of splits to make
+            Number of splits to make.
         inclusive
-            Include the split character/string in the results
+            If True, include the split character/string in the results.
 
         Examples
         --------
@@ -5127,6 +5129,10 @@ class ExprStringNameSpace:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ {"d","4"}                                 │
         └───────────────────────────────────────────┘
+
+        Returns
+        -------
+        Struct of Utf8 type
 
         """
         if inclusive:
