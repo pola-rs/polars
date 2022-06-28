@@ -1194,3 +1194,13 @@ def test_date_offset() -> None:
         datetime(2017, 11, 1, 0, 0),
         datetime(2018, 11, 1, 0, 0),
     ]
+
+
+def test_sorted_unique() -> None:
+    assert (
+        pl.DataFrame(
+            [pl.Series("dt", [date(2015, 6, 24), date(2015, 6, 23)], dtype=pl.Date)]
+        )
+        .sort("dt")
+        .unique()
+    ).to_dict(False) == {"dt": [date(2015, 6, 23), date(2015, 6, 24)]}
