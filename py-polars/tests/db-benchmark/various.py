@@ -52,3 +52,27 @@ for _ in range(10):
     )
     assert computed[0, "min"] == minimum
     assert computed[0, "max"] == maximum
+
+
+def test_windows_not_cached() -> None:
+    ldf = (
+        pl.DataFrame(
+            [
+                pl.Series("key", ["a", "a", "b", "b"]),
+                pl.Series("val", [2, 2, 1, 3]),
+            ]
+        )
+        .lazy()
+        .filter(
+            (pl.col("key").cumcount().over("key") == 0)
+            | (pl.col("val").shift(1).over("key").is_not_null())
+            | (pl.col("val") != pl.col("val").shift(1).over("key"))
+        )
+    )
+    # this might fail if they are cached
+    for i in range(1000):
+        ldf.collect()
+
+
+if __name__ == "__main__":
+    test_windows_not_cached()

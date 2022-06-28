@@ -92,10 +92,13 @@ impl PhysicalExpr for BinaryExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+        let mut state = state.clone();
+        // don't cache window functions as they run in parallel
+        state.cache_window = false;
         let (lhs, rhs) = POOL.install(|| {
             rayon::join(
-                || self.left.evaluate(df, state),
-                || self.right.evaluate(df, state),
+                || self.left.evaluate(df, &state),
+                || self.right.evaluate(df, &state),
             )
         });
         apply_operator_owned(lhs?, rhs?, self.op)
