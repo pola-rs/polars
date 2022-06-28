@@ -223,21 +223,53 @@ class Expr:
 
     def any(self) -> "Expr":
         """
-        Check if any boolean value in the column is `True`
+        Check if any boolean value in a Boolean column is `True`
 
         Returns
         -------
         Boolean literal
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"TF": [True, False], "FF": [False, False]})
+        >>> df.select(pl.col("*").any())
+        shape: (1, 2)
+        ┌───────┬──────┐
+        │ FF    ┆ TF   │
+        │ ---   ┆ ---  │
+        │ bool  ┆ bool │
+        ╞═══════╪══════╡
+        │ false ┆ true │
+        └───────┴──────┘
         """
         return wrap_expr(self._pyexpr.any())
 
     def all(self) -> "Expr":
         """
-        Check if all boolean values in the column are `True`
+        Check if all boolean values in in a Boolean column are `True`.
+        This method is an expression - not to be confused with polars.all
+        which is a function to select all columns
 
         Returns
         -------
         Boolean literal
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {"TT": [True, True], "TF": [True, False], "FF": [False, False]}
+        ... )
+        >>> df.select(pl.col("*").all())
+        shape: (1, 3)
+        ┌──────┬───────┬───────┐
+        │ TT   ┆ TF    ┆ FF    │
+        │ ---  ┆ ---   ┆ ---   │
+        │ bool ┆ bool  ┆ bool  │
+        ╞══════╪═══════╪═══════╡
+        │ true ┆ false ┆ false │
+        └──────┴───────┴───────┘
         """
         return wrap_expr(self._pyexpr.all())
 
@@ -570,6 +602,28 @@ class Expr:
         ----------
         f
             function that maps root name to new name
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "A": [1, 2],
+        ...         "B": [3, 4],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     pl.col("*").reverse().map_alias(lambda colName: colName + "_reverse")
+        ... )
+        shape: (2, 2)
+        ┌───────────┬───────────┐
+        │ A_reverse ┆ B_reverse │
+        │ ---       ┆ ---       │
+        │ i64       ┆ i64       │
+        ╞═══════════╪═══════════╡
+        │ 2         ┆ 4         │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 1         ┆ 3         │
+        └───────────┴───────────┘
         """
         return wrap_expr(self._pyexpr.map_alias(f))
 
@@ -653,18 +707,98 @@ class Expr:
     def is_not_null(self) -> "Expr":
         """
         Create a boolean expression returning `True` where the expression does not contain null values.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, None, 1, 5],
+        ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
+        ...     }
+        ... )
+        >>> df.with_column(pl.all().is_not_null().suffix("_not_null"))  # nan != null
+        shape: (5, 4)
+        ┌──────┬─────┬────────────┬────────────┐
+        │ a    ┆ b   ┆ a_not_null ┆ b_not_null │
+        │ ---  ┆ --- ┆ ---        ┆ ---        │
+        │ i64  ┆ f64 ┆ bool       ┆ bool       │
+        ╞══════╪═════╪════════════╪════════════╡
+        │ 1    ┆ 1.0 ┆ true       ┆ true       │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2    ┆ 2.0 ┆ true       ┆ true       │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null ┆ NaN ┆ false      ┆ true       │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 1    ┆ 1.0 ┆ true       ┆ true       │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5    ┆ 5.0 ┆ true       ┆ true       │
+        └──────┴─────┴────────────┴────────────┘
+
         """
         return wrap_expr(self._pyexpr.is_not_null())
 
     def is_finite(self) -> "Expr":
         """
         Create a boolean expression returning `True` where the expression values are finite.
+
+        Returns
+        -------
+        out
+            Series of type Boolean
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "A": [1.0, 2],
+        ...         "B": [3.0, np.inf],
+        ...     }
+        ... )
+        >>> df.select(pl.col("*").is_finite())
+        shape: (2, 2)
+        ┌──────┬───────┐
+        │ A    ┆ B     │
+        │ ---  ┆ ---   │
+        │ bool ┆ bool  │
+        ╞══════╪═══════╡
+        │ true ┆ true  │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ true ┆ false │
+        └──────┴───────┘
         """
         return wrap_expr(self._pyexpr.is_finite())
 
     def is_infinite(self) -> "Expr":
         """
         Create a boolean expression returning `True` where the expression values are infinite.
+
+        Returns
+        -------
+        out
+            Series of type Boolean
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "A": [1.0, 2],
+        ...         "B": [3.0, np.inf],
+        ...     }
+        ... )
+        >>> df.select(pl.col("*").is_infinite())
+        shape: (2, 2)
+        ┌───────┬───────┐
+        │ A     ┆ B     │
+        │ ---   ┆ ---   │
+        │ bool  ┆ bool  │
+        ╞═══════╪═══════╡
+        │ false ┆ false │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ false ┆ true  │
+        └───────┴───────┘
         """
         return wrap_expr(self._pyexpr.is_infinite())
 
@@ -1640,8 +1774,11 @@ class Expr:
         agg_list: bool = False,
     ) -> "Expr":
         """
-        Apply a custom python function. This function must produce a `Series`. Any other value will be stored as
-        null/missing. If you want to apply a function over single values, consider using `apply`.
+        Apply a custom python function to a Series or sequence of Series.
+        The output of this custom function must be a Series.
+        If you want to apply a custom function elementwise over single values see `apply`.
+        A use case for map is when you want to transform an expression
+        with a third-party library
 
         [read more in the book](https://pola-rs.github.io/polars-book/user-guide/howcani/apply/udfs.html)
 
@@ -1651,8 +1788,25 @@ class Expr:
             Lambda/ function to apply.
         return_dtype
             Dtype of the output Series.
-        agg_list
 
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "sine": [0.0, 1.0, 0.0, -1.0],
+        ...         "cosine": [1.0, 0.0, -1.0, 0.0],
+        ...     }
+        ... )
+        >>> (df.select(pl.all().map(lambda x: x.to_numpy().argmax())))
+        shape: (1, 2)
+        ┌──────┬────────┐
+        │ sine ┆ cosine │
+        │ ---  ┆ ---    │
+        │ i64  ┆ i64    │
+        ╞══════╪════════╡
+        │ 1    ┆ 0      │
+        └──────┴────────┘
         """
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
@@ -1668,12 +1822,21 @@ class Expr:
 
         Depending on the context it has the following behavior:
 
-        * Select/Project
+        * Selection
             expected type `f`: Callable[[Any], Any]
             Applies a python function over each individual value in the column.
         * GroupBy
             expected type `f`: Callable[[Series], Series]
             Applies a python function over each group.
+
+        Implementing logic using the .apply method is generally slower and more memory intensive
+        than implementing the same logic using the expression API because:
+        - with .apply the logic is implemented in Python but with an expression the logic is implemented in Rust
+        - with .apply the DataFrame is materialized in memory
+        - expressions can be parallelised
+        - expressions can be optimised
+
+        If possible use the expression API for best performance.
 
         Parameters
         ----------
@@ -1687,10 +1850,37 @@ class Expr:
 
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [1, 2, 1, 1],
+        ...         "a": [1, 2, 3, 1],
         ...         "b": ["a", "b", "c", "c"],
         ...     }
         ... )
+        # In a selection context the function is applied by row
+        >>> (
+        ...     df.with_column(
+        ...         pl.col("a").apply(lambda x: x * 2).alias("a_times_2"),
+        ...     )
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬───────────┐
+        │ a   ┆ b   ┆ a_times_2 │
+        │ --- ┆ --- ┆ ---       │
+        │ i64 ┆ str ┆ i64       │
+        ╞═════╪═════╪═══════════╡
+        │ 1   ┆ a   ┆ 2         │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ b   ┆ 4         │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ c   ┆ 6         │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 1   ┆ c   ┆ 2         │
+        └─────┴─────┴───────────┘
+        # It is better to implement this with an expression:
+        >>> (
+        ...     df.with_column(
+        ...         (pl.col("a") * 2).alias("a_times_2"),
+        ...     )
+        ... )
+        # In a GroupBy context the function is applied by group
         >>> (
         ...     df.lazy()
         ...     .groupby("b", maintain_order=True)
@@ -1711,9 +1901,14 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ b   ┆ 2   │
         ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c   ┆ 2   │
+        │ c   ┆ 4   │
         └─────┴─────┘
-
+        # It is better to implement this with an expression:
+        >>> (
+        ...     df.groupby("b", maintain_order=True).agg(
+        ...         pl.col("a").sum(),
+        ...     )
+        ... )
         """
 
         # input x: Series of type list containing the group values
@@ -1736,6 +1931,7 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame({"foo": ["hello", "world"]})
+        # Turn each character into a separate row
         >>> df.select(pl.col("foo").flatten())
         shape: (10, 1)
         ┌─────┐
@@ -1761,7 +1957,19 @@ class Expr:
         ├╌╌╌╌╌┤
         │ d   │
         └─────┘
-
+        >>> df = pl.DataFrame({"foo": ["hello world"]})
+        # Turn each word into a separate row
+        >>> df.select(pl.col("foo").str.split(by=" ").flatten())
+        shape: (2, 1)
+        ┌───────┐
+        │ foo   │
+        │ ---   │
+        │ str   │
+        ╞═══════╡
+        │ hello │
+        ├╌╌╌╌╌╌╌┤
+        │ world │
+        └───────┘
         """
 
         return wrap_expr(self._pyexpr.explode())
@@ -1843,6 +2051,25 @@ class Expr:
     def pow(self, exponent: Union[float, "Expr"]) -> "Expr":
         """
         Raise expression to the power of exponent.
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
+        >>> df.select(pl.col("foo").pow(3))
+        shape: (4, 1)
+        ┌──────┐
+        │ foo  │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 1.0  │
+        ├╌╌╌╌╌╌┤
+        │ 8.0  │
+        ├╌╌╌╌╌╌┤
+        │ 27.0 │
+        ├╌╌╌╌╌╌┤
+        │ 64.0 │
+        └──────┘
         """
         exponent = expr_to_lit_or_expr(exponent)
         return wrap_expr(self._pyexpr.pow(exponent._pyexpr))
@@ -2157,6 +2384,35 @@ class Expr:
             If you want to compute multiple aggregation statistics over the same dynamic window, consider using
             `groupby_rolling` this method can cache the window size computation.
 
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_min(window_size=2),
+        ...         ]
+        ...     )
+        ... )
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 1.0  │
+        ├╌╌╌╌╌╌┤
+        │ 2.0  │
+        ├╌╌╌╌╌╌┤
+        │ 3.0  │
+        ├╌╌╌╌╌╌┤
+        │ 4.0  │
+        ├╌╌╌╌╌╌┤
+        │ 5.0  │
+        └──────┘
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -2224,6 +2480,37 @@ class Expr:
         .. note::
             If you want to compute multiple aggregation statistics over the same dynamic window, consider using
             `groupby_rolling` this method can cache the window size computation.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_max(window_size=2),
+        ...         ]
+        ...     )
+        ... )
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 2.0  │
+        ├╌╌╌╌╌╌┤
+        │ 3.0  │
+        ├╌╌╌╌╌╌┤
+        │ 4.0  │
+        ├╌╌╌╌╌╌┤
+        │ 5.0  │
+        ├╌╌╌╌╌╌┤
+        │ 6.0  │
+        └──────┘
+
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -2387,6 +2674,18 @@ class Expr:
         .. note::
             If you want to compute multiple aggregation statistics over the same dynamic window, consider using
             `groupby_rolling` this method can cache the window size computation.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_sum(window_size=2),
+        ...         ]
+        ...     )
+        ... )
 
         """
         window_size, min_periods = _prepare_rolling_window_args(

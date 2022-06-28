@@ -2349,12 +2349,59 @@ class LazyGroupBy(Generic[LDF]):
 
     def apply(self, f: Callable[["pli.DataFrame"], "pli.DataFrame"]) -> LDF:
         """
-        Apply a function over the groups as a new `DataFrame`. It is not recommended that you use
-        this as materializing the `DataFrame` is quite expensive.
+        Apply a function over the groups as a new `DataFrame`.
+        Implementing logic using this .apply method is generally slower and more memory intensive
+        than implementing the same logic using the expression API because:
+        - with .apply the logic is implemented in Python but with an expression the logic is implemented in Rust
+        - with .apply the DataFrame is materialized in memory
+        - expressions can be parallelised
+        - expressions can be optimised
+
+        If possible use the expression API for best performance.
 
         Parameters
         ----------
         f
-            Function to apply over the `DataFrame`.
+            Function to apply over each group of the `LazyFrame`.
+
+        Examples
+        --------
+
+        # The function is applied by group
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 1],
+        ...         "bar": ["a", "b", "c", "c"],
+        ...     }
+        ... )
+        >>> (
+        ...     df.lazy()
+        ...     .groupby("bar", maintain_order=True)
+        ...     .agg(
+        ...         [
+        ...             pl.col("foo").apply(lambda x: x.sum()),
+        ...         ]
+        ...     )
+        ...     .collect()
+        ... )
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ bar ┆ foo │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ a   ┆ 1   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ b   ┆ 2   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ c   ┆ 4   │
+        └─────┴─────┘
+        # It is better to implement this with an expression:
+        >>> (
+        ...     df.groupby("bar", maintain_order=True).agg(
+        ...         pl.col("foo").sum(),
+        ...     )
+        ... )
+
         """
         return self._lazyframe_class._from_pyldf(self.lgb.apply(f))

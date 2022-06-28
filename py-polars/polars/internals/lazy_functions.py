@@ -801,10 +801,8 @@ def apply(
 
     Depending on the context it has the following behavior:
 
-    ## Context
-
-    * Select/Project
-        Don't do this, use `map`
+    * Select
+        Don't use apply, use `map`
     * GroupBy
         expected type `f`: Callable[[Series], Series]
         Applies a python function over each group.

@@ -3686,7 +3686,14 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         Apply a custom function over the rows of the DataFrame. The rows are passed as tuple.
 
-        Beware, this is slow.
+        Implementing logic using this .apply method is generally slower and more memory intensive
+        than implementing the same logic using the expression API because:
+        - with .apply the logic is implemented in Python but with an expression the logic is implemented in Rust
+        - with .apply the DataFrame is materialized in memory
+        - expressions can be parallelised
+        - expressions can be optimised
+
+        If possible use the expression API for best performance.
 
         Parameters
         ----------
@@ -3702,7 +3709,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         --------
 
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [-1, 5, 8]})
-        # return rows
+        # Return a DataFrame by mapping each row to a tuple:
         >>> df.apply(lambda t: (t[0] * 2, t[1] * 3))
         shape: (3, 2)
         ┌──────────┬──────────┐
@@ -3716,7 +3723,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 6        ┆ 24       │
         └──────────┴──────────┘
-        # return scalar
+        # It is better to implement this with an expression:
+        >>> (df.select([pl.col("foo") * 2, pl.col("bar") * 3]))
+        # Return a Series by mapping each row to a scalar
         >>> df.apply(lambda t: (t[0] * 2 + t[1]))
         shape: (3, 1)
         ┌───────┐
@@ -3730,7 +3739,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ├╌╌╌╌╌╌╌┤
         │ 14    │
         └───────┘
-
+        # In this case it is better to use the following expression
+        >>> df.select(pl.col("foo") * 2 + pl.col("bar"))
         """
         out, is_df = self._df.apply(f, return_dtype, inference_size)
         if is_df:
@@ -5903,18 +5913,58 @@ class GroupBy(Generic[DF]):
 
     def apply(self, f: Callable[[DataFrame], DataFrame]) -> DF:
         """
-        Apply a function over the groups as a sub-DataFrame.
+         Apply a function over the groups as a sub-DataFrame.
 
-        Beware, this is slow.
+        Implementing logic using this .apply method is generally slower and more memory intensive
+        than implementing the same logic using the expression API because:
+        - with .apply the logic is implemented in Python but with an expression the logic is implemented in Rust
+        - with .apply the DataFrame is materialized in memory
+        - expressions can be parallelised
+        - expressions can be optimised
 
-        Parameters
-        ----------
-        f
-            Custom function.
+        If possible use the expression API for best performance.
 
-        Returns
-        -------
-        DataFrame
+         Parameters
+         ----------
+         f
+             Custom function.
+
+         Returns
+         -------
+         DataFrame
+
+         Examples
+         --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "id": [0, 1, 2, 3, 4],
+        ...         "color": ["red", "green", "green", "red", "red"],
+        ...         "shape": ["square", "triangle", "square", "triangle", "square"],
+        ...     }
+        ... )
+        shape: (5, 3)
+        ┌─────┬───────┬──────────┐
+        │ id  ┆ color ┆ shape    │
+        │ --- ┆ ---   ┆ ---      │
+        │ i64 ┆ str   ┆ str      │
+        ╞═════╪═══════╪══════════╡
+        │ 0   ┆ red   ┆ square   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 1   ┆ green ┆ triangle │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ green ┆ square   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ red   ┆ triangle │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 4   ┆ red   ┆ square   │
+        └─────┴───────┴──────────┘
+        # For each color group sample two rows
+        >>> (df.groupby("color").apply(lambda group_df: group_df.sample(2)))
+        # It is better to implement this with an expression:
+        >>> (df.filter(pl.arange(0, pl.count()).shuffle().over("color") < 2))
+
+
         """
         return self._dataframe_class._from_pydf(self._df.groupby_apply(self.by, f))
 
