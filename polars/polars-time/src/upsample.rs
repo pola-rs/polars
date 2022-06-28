@@ -119,7 +119,11 @@ fn upsample_impl(
         } else {
             source.groupby(by)
         };
-        gb?.par_apply(|df| upsample_impl(&df, vec![], index_column, every, offset, false))
+        // don't parallelize this, this may SO on large data.
+        gb?.apply(|df| {
+            let index_column = df.column(index_column)?;
+            upsample_single_impl(&df, index_column, every, offset)
+        })
     }
 }
 
