@@ -5,6 +5,8 @@ mod is_in;
 mod pow;
 #[cfg(feature = "strings")]
 mod strings;
+#[cfg(any(feature = "temporal", feature = "date_offset"))]
+mod temporal;
 
 use super::*;
 use polars_core::prelude::*;
@@ -31,6 +33,8 @@ pub enum FunctionExpr {
     StringStartsWith(String),
     #[cfg(feature = "strings")]
     StringEndsWith(String),
+    #[cfg(feature = "date_offset")]
+    DateOffset(Duration),
 }
 
 impl FunctionExpr {
@@ -53,6 +57,8 @@ impl FunctionExpr {
             })
         };
 
+        let same_type = || map_dtype(&|dtype| dtype.clone());
+
         use FunctionExpr::*;
         match self {
             NullCount => with_dtype(IDX_DTYPE),
@@ -67,6 +73,8 @@ impl FunctionExpr {
             StringContains { .. } | StringEndsWith(_) | StringStartsWith(_) => {
                 with_dtype(DataType::Boolean)
             }
+            #[cfg(feature = "date_offset")]
+            DateOffset(_) => same_type(),
         }
     }
 }
@@ -81,6 +89,17 @@ macro_rules! map_with_args {
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
             let s = &s[0];
+            $func(s, $($args),*)
+        };
+
+        SpecialEq::new(Arc::new(f))
+    }};
+}
+
+macro_rules! map_owned_with_args {
+    ($func:path, $($args:expr),*) => {{
+        let f = move |s: &mut [Series]| {
+            let s = std::mem::take(&mut s[0]);
             $func(s, $($args),*)
         };
 
@@ -129,6 +148,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "strings")]
             StringStartsWith(sub) => {
                 map_with_args!(strings::starts_with, &sub)
+            }
+            #[cfg(feature = "date_offset")]
+            DateOffset(offset) => {
+                map_owned_with_args!(temporal::date_offset, offset)
             }
         }
     }

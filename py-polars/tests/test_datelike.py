@@ -1157,3 +1157,40 @@ def test_quarter() -> None:
     assert pl.date_range(
         datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo"
     ).dt.quarter().to_list() == [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4]
+
+
+def test_date_offset() -> None:
+    out = pl.DataFrame(
+        {"dates": pl.date_range(datetime(2000, 1, 1), datetime(2020, 1, 1), "1y")}
+    ).with_columns(
+        [
+            pl.col("dates").dt.offset_by("1y").alias("date_plus_1y"),
+            pl.col("dates").dt.offset_by("-1y2mo").alias("date_min"),
+        ]
+    )
+
+    assert (out["date_plus_1y"].dt.day() == 1).all()
+    assert (out["date_min"].dt.day() == 1).all()
+    assert out["date_min"].to_list() == [
+        datetime(1998, 11, 1, 0, 0),
+        datetime(1999, 11, 1, 0, 0),
+        datetime(2000, 11, 1, 0, 0),
+        datetime(2001, 11, 1, 0, 0),
+        datetime(2002, 11, 1, 0, 0),
+        datetime(2003, 11, 1, 0, 0),
+        datetime(2004, 11, 1, 0, 0),
+        datetime(2005, 11, 1, 0, 0),
+        datetime(2006, 11, 1, 0, 0),
+        datetime(2007, 11, 1, 0, 0),
+        datetime(2008, 11, 1, 0, 0),
+        datetime(2009, 11, 1, 0, 0),
+        datetime(2010, 11, 1, 0, 0),
+        datetime(2011, 11, 1, 0, 0),
+        datetime(2012, 11, 1, 0, 0),
+        datetime(2013, 11, 1, 0, 0),
+        datetime(2014, 11, 1, 0, 0),
+        datetime(2015, 11, 1, 0, 0),
+        datetime(2016, 11, 1, 0, 0),
+        datetime(2017, 11, 1, 0, 0),
+        datetime(2018, 11, 1, 0, 0),
+    ]

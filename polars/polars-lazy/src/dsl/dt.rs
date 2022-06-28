@@ -1,5 +1,4 @@
 use super::*;
-use polars_core::prelude::DataType::{Datetime, Duration};
 use polars_time::prelude::TemporalMethods;
 
 /// Specialized expressions for [`Series`] with dates/datetimes.
@@ -34,8 +33,8 @@ impl DateLikeNameSpace {
                 )),
             },
             GetOutput::map_dtype(move |dtype| match dtype {
-                DataType::Duration(_) => Duration(tu),
-                DataType::Datetime(_, tz) => Datetime(tu, tz.clone()),
+                DataType::Duration(_) => DataType::Duration(tu),
+                DataType::Datetime(_, tz) => DataType::Datetime(tu, tz.clone()),
                 _ => panic!("expected duration or datetime"),
             }),
         )
@@ -163,5 +162,13 @@ impl DateLikeNameSpace {
                 GetOutput::from_type(DataType::Int64),
             )
             .with_fmt("dt.timestamp")
+    }
+
+    /// Offset this `Date/Datetime` by a given offset [`Duration`].
+    /// This will take leap years/ months into account.
+    #[cfg(feature = "date_offset")]
+    pub fn offset_by(self, by: Duration) -> Expr {
+        self.0
+            .map_private(FunctionExpr::DateOffset(by), "dt.offset_by")
     }
 }

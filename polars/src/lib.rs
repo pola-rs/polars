@@ -232,6 +232,7 @@
 //!     - `list_eval` - Apply expressions over list elements.
 //!     - `cumulative_eval` - Apply expressions over cumulatively increasing windows.
 //!     - `argwhere` Get indices where condition holds.
+//!     - `date_offset` Add an offset to dates that take months and leap years into account.
 //! * `DataFrame` pretty printing
 //!     - `fmt` - Activate DataFrame formatting
 //!

@@ -233,6 +233,7 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.nanosecond
     DateTimeNameSpace.nanoseconds
     DateTimeNameSpace.ordinal_day
+    DateTimeNameSpace.offset_by
     DateTimeNameSpace.quarter
     DateTimeNameSpace.second
     DateTimeNameSpace.seconds

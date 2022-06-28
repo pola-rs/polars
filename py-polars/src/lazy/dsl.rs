@@ -781,6 +781,12 @@ impl PyExpr {
     pub fn timestamp(&self, tu: Wrap<TimeUnit>) -> PyExpr {
         self.inner.clone().dt().timestamp(tu.0).into()
     }
+
+    pub fn dt_offset_by(&self, by: &str) -> PyExpr {
+        let by = Duration::parse(by);
+        self.inner.clone().dt().offset_by(by).into()
+    }
+
     pub fn dt_epoch_seconds(&self) -> PyExpr {
         self.clone()
             .inner

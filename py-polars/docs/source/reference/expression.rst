@@ -283,6 +283,7 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.nanosecond
     ExprDateTimeNameSpace.nanoseconds
     ExprDateTimeNameSpace.ordinal_day
+    ExprDateTimeNameSpace.offset_by
     ExprDateTimeNameSpace.quarter
     ExprDateTimeNameSpace.second
     ExprDateTimeNameSpace.seconds
