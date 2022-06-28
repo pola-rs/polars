@@ -4641,6 +4641,11 @@ class ExprStringNameSpace:
         """
         Vertically concat the values in the Series to a single string value.
 
+        Parameters
+        ----------
+        delimiter
+            The delimiter to insert between consecutive string values.
+
         Returns
         -------
         Series of dtype Utf8
@@ -4649,8 +4654,7 @@ class ExprStringNameSpace:
         --------
 
         >>> df = pl.DataFrame({"foo": [1, None, 2]})
-        >>> df = df.select(pl.col("foo").str.concat("-"))
-        >>> df
+        >>> df.select(pl.col("foo").str.concat("-"))
         shape: (1, 1)
         ┌──────────┐
         │ foo      │
