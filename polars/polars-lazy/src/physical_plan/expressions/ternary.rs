@@ -128,35 +128,53 @@ impl PhysicalExpr for TernaryExpr {
             "cannot combine this ternary expression, the groups do not match"
         );
 
+        use AggState::*;
         match (ac_truthy.agg_state(), ac_falsy.agg_state()) {
-            // if the groups_len == df.len we can just apply all flat.
-            (AggState::AggregatedFlat(s), AggState::NotAggregated(_) | AggState::Literal(_))
-                if s.len() != df.height() =>
-            {
-                finish_as_iters(ac_truthy, ac_falsy, ac_mask)
-            }
-            // all aggregated or literal
+            // all branches are aggregated-flat or literal
+            // mask -> aggregated-flat
+            // truthy -> aggregated-flat | literal
+            // falsy -> aggregated-flat | literal
             // simply align lengths and zip
             (
-                AggState::Literal(truthy) | AggState::AggregatedFlat(truthy),
-                AggState::AggregatedFlat(falsy) | AggState::Literal(falsy),
+                Literal(truthy) | AggregatedFlat(truthy),
+                AggregatedFlat(falsy) | Literal(falsy),
             )
-            | (AggState::AggregatedList(truthy), AggState::AggregatedList(falsy))
-                if matches!(ac_mask.agg_state(), AggState::AggregatedFlat(_)) =>
-            {
-                let mut truthy = truthy.clone();
-                let mut falsy = falsy.clone();
-                let mut mask = ac_mask.series().bool()?.clone();
-                expand_lengths(&mut truthy, &mut falsy, &mut mask);
-                let mut out = truthy.zip_with(&mask, &falsy).unwrap();
-                out.rename(truthy.name());
-                ac_truthy.with_series(out, true);
-                Ok(ac_truthy)
-            }
+            | (AggregatedList(truthy), AggregatedList(falsy))
+            if matches!(ac_mask.agg_state(), AggState::AggregatedFlat(_))
+            =>
+                {
+                    let mut truthy = truthy.clone();
+                    let mut falsy = falsy.clone();
+                    let mut mask = ac_mask.series().bool()?.clone();
+                    expand_lengths(&mut truthy, &mut falsy, &mut mask);
+                    let mut out = truthy.zip_with(&mask, &falsy).unwrap();
+                    out.rename(truthy.name());
+                    ac_truthy.with_series(out, true);
+                    Ok(ac_truthy)
+                }
+
+            // Fallthrough from previous branch. That means the mask is not aggregated
+            // and may be longer than branches, so we iterate over the groups
+            (AggregatedFlat(agg), Literal(_)) |
+            (Literal(_), AggregatedFlat(agg))
+            // todo! check if we need to take this branch for those
+            //| (AggregatedFlat(agg), NotAggregated(_)) |
+            // (NotAggregated(_), AggregatedFlat(agg))
+
             // if the groups_len == df.len we can just apply all flat.
-            (AggState::NotAggregated(_) | AggState::Literal(_), AggState::AggregatedFlat(s))
-                if s.len() != df.height() =>
-            {
+            // make sure that the order of the aggregation does not matter!
+            // this is the case when we have a flat aggregation combined with a literal:
+            // `sum(..) - lit(..)`.
+            if agg.len() != df.height()
+            => {
+                finish_as_iters(ac_truthy, ac_falsy, ac_mask)
+            }
+
+            // Same branch as above, but without escape hatch for `num_groups == df.height()`
+
+            // we cannot flatten a list because that changes the order, so we apply over groups
+            (AggregatedList(_), NotAggregated(_)) |
+            (NotAggregated(_), AggregatedList(_)) => {
                 finish_as_iters(ac_truthy, ac_falsy, ac_mask)
             }
 
