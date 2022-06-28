@@ -32,7 +32,8 @@ def test_repr(df: pl.DataFrame) -> None:
     # print(df)
 
 
-@given(df=dataframes())
+# note: temporarily excluding time data until #3843 closed
+@given(df=dataframes(excluded_dtypes=[pl.Time]))
 def test_null_count(df: pl.DataFrame) -> None:
     null_count, ncols = df.null_count(), len(df.columns)
     if ncols == 0:
