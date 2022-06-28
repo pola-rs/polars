@@ -1204,3 +1204,7 @@ def test_sorted_unique() -> None:
         .sort("dt")
         .unique()
     ).to_dict(False) == {"dt": [date(2015, 6, 23), date(2015, 6, 24)]}
+
+
+def test_time_zero_3828() -> None:
+    assert pl.Series(values=[time(0)], dtype=pl.Time).to_list() == [time(0)]
