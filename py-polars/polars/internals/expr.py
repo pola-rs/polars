@@ -4764,6 +4764,32 @@ class ExprStringNameSpace:
         literal
             Treat pattern as a literal string.
 
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": ["Crab", "cat and dog", "rab$bit", None]})
+        >>> df.select(
+        ...     [
+        ...         pl.col("a"),
+        ...         pl.col("a").str.contains("cat|bit").alias("regex"),
+        ...         pl.col("a").str.contains("rab$", literal=True).alias("literal"),
+        ...     ]
+        ... )
+        shape: (4, 3)
+        ┌─────────────┬───────┬─────────┐
+        │ a           ┆ regex ┆ literal │
+        │ ---         ┆ ---   ┆ ---     │
+        │ str         ┆ bool  ┆ bool    │
+        ╞═════════════╪═══════╪═════════╡
+        │ Crab        ┆ false ┆ false   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ cat and dog ┆ true  ┆ false   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ rab$bit     ┆ true  ┆ true    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ null        ┆ null  ┆ null    │
+        └─────────────┴───────┴─────────┘
+
         """
         return wrap_expr(self._pyexpr.str_contains(pattern, literal))
 
