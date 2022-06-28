@@ -4539,19 +4539,19 @@ class ExprStringNameSpace:
         exact: bool = True,
     ) -> Expr:
         """
-        Parse a UTF8 expression to a Date/Datetime/Time type.
+        Parse a Utf8 expression to a Date/Datetime/Time type.
 
         Parameters
         ----------
         datatype
             Date | Datetime | Time.
         fmt
-            format to use, see the following link for examples:
+            Format to use, see the following link for examples:
             https://docs.rs/chrono/latest/chrono/format/strftime/index.html
 
             example: "%y-%m-%d".
         strict
-            raise an error if any conversion fails
+            Raise an error if any conversion fails.
         exact
             - If True, require an exact format match.
             - If False, allow the format to match anywhere in the target string.
@@ -4702,7 +4702,7 @@ class ExprStringNameSpace:
         Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
         A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
         rather than before.
-        The original string is returned if width is less than or equal to `len(s)`.
+        The original string is returned if width is less than or equal to ``len(s)``.
 
         Parameters
         ----------
@@ -4749,30 +4749,30 @@ class ExprStringNameSpace:
     def ljust(self, width: int, fillchar: str = " ") -> Expr:
         """
         Return the string left justified in a string of length width.
-        Padding is done using the specified `fillchar`,
-        The original string is returned if width is less than or equal to `len(s)`.
+        Padding is done using the specified ``fillchar``,
+        The original string is returned if width is less than or equal to ``len(s)``.
 
         Parameters
         ----------
         width
-            justify left to this length
+            Justify left to this length.
         fillchar
-            fill with this ASCII character
+            Fill with this ASCII character.
         """
         return wrap_expr(self._pyexpr.str_ljust(width, fillchar))
 
     def rjust(self, width: int, fillchar: str = " ") -> Expr:
         """
         Return the string right justified in a string of length width.
-        Padding is done using the specified `fillchar`,
-        The original string is returned if width is less than or equal to `len(s)`.
+        Padding is done using the specified ``fillchar``,
+        The original string is returned if ``width`` is less than or equal to ``len(s)``.
 
         Parameters
         ----------
         width
-            justify right to this length
+            Justify right to this length.
         fillchar
-            fill with this ASCII character
+            Fill with this ASCII character.
         """
         return wrap_expr(self._pyexpr.str_rjust(width, fillchar))
 
