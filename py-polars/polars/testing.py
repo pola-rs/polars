@@ -513,7 +513,7 @@ def series(
     on a given strategy to see concrete instances of the generated data.
 
     Examples
-    -----
+    --------
     >>> from polars.testing import series
     >>> from hypothesis import given
     >>> import polars as pl
