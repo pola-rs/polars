@@ -4615,6 +4615,25 @@ class ExprStringNameSpace:
     def lengths(self) -> Expr:
         """
         Get the length of the Strings as UInt32.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"s": [None, "bears", "110"]})
+        >>> df.select(["s", pl.col("s").str.lengths().alias("len")])
+        shape: (3, 2)
+        ┌───────┬──────┐
+        │ s     ┆ len  │
+        │ ---   ┆ ---  │
+        │ str   ┆ u32  │
+        ╞═══════╪══════╡
+        │ null  ┆ null │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ bears ┆ 5    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 110   ┆ 3    │
+        └───────┴──────┘
+
         """
         return wrap_expr(self._pyexpr.str_lengths())
 
