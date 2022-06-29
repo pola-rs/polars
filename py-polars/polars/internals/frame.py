@@ -1372,6 +1372,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ] = "lz4",
         compression_level: Optional[int] = None,
         statistics: bool = False,
+        row_group_size: Optional[int] = None,
         use_pyarrow: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -1404,6 +1405,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
                     * max-level: 22
         statistics
             Write statistics to the parquet headers. This requires extra compute.
+        row_group_size
+            Size of the row groups. If none the chunks of the `DataFrame` are used.
+            Writing in smaller chunks may reduce memory pressure and improve writing speeds.
+            This argument has no effect if 'pyarrow' is used.
         use_pyarrow
             Use C++ parquet implementation vs rust parquet implementation.
             At the moment C++ supports more features.
@@ -1443,7 +1448,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 **kwargs,
             )
         else:
-            self._df.to_parquet(file, compression, compression_level, statistics)
+            self._df.to_parquet(
+                file, compression, compression_level, statistics, row_group_size
+            )
 
     def to_parquet(
         self,

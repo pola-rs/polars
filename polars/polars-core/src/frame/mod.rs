@@ -2161,6 +2161,17 @@ impl DataFrame {
         DataFrame::new_no_checks(col)
     }
 
+    #[must_use]
+    pub fn slice_par(&self, offset: i64, length: usize) -> Self {
+        let col = POOL.install(|| {
+            self.columns
+                .par_iter()
+                .map(|s| s.slice(offset, length))
+                .collect::<Vec<_>>()
+        });
+        DataFrame::new_no_checks(col)
+    }
+
     /// Get the head of the `DataFrame`.
     ///
     /// # Example
