@@ -43,6 +43,7 @@ from polars.utils import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
+    deprecated_alias,
     format_path,
 )
 
@@ -1121,9 +1122,10 @@ class LazyFrame(Generic[DF]):
         )
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
+    @deprecated_alias(ldf="other")
     def join_asof(
         self: LDF,
-        ldf: "LazyFrame",
+        other: "LazyFrame",
         left_on: Optional[str] = None,
         right_on: Optional[str] = None,
         on: Optional[str] = None,
@@ -1154,7 +1156,7 @@ class LazyFrame(Generic[DF]):
 
         Parameters
         ----------
-        ldf
+        other
             Lazy DataFrame to join with.
         left_on
             Join column of the left DataFrame.
@@ -1197,8 +1199,8 @@ class LazyFrame(Generic[DF]):
         force_parallel
             Force the physical plan to evaluate the computation of both DataFrames up to the join in parallel.
         """
-        if not isinstance(ldf, LazyFrame):
-            raise ValueError(f"Expected a `LazyFrame` as join table, got {type(ldf)}")
+        if not isinstance(other, LazyFrame):
+            raise ValueError(f"Expected a `LazyFrame` as join table, got {type(other)}")
 
         if isinstance(on, str):
             left_on = on
@@ -1235,7 +1237,7 @@ class LazyFrame(Generic[DF]):
 
         return self._from_pyldf(
             self._ldf.join_asof(
-                ldf._ldf,
+                other._ldf,
                 pli.col(left_on)._pyexpr,
                 pli.col(right_on)._pyexpr,
                 by_left_,
@@ -1249,9 +1251,10 @@ class LazyFrame(Generic[DF]):
             )
         )
 
+    @deprecated_alias(ldf="other")
     def join(
         self: LDF,
-        ldf: "LazyFrame",
+        other: "LazyFrame",
         left_on: Optional[Union[str, "pli.Expr", List[Union[str, "pli.Expr"]]]] = None,
         right_on: Optional[Union[str, "pli.Expr", List[Union[str, "pli.Expr"]]]] = None,
         on: Optional[Union[str, "pli.Expr", List[Union[str, "pli.Expr"]]]] = None,
@@ -1268,7 +1271,7 @@ class LazyFrame(Generic[DF]):
 
         Parameters
         ----------
-        ldf
+        other
             Lazy DataFrame to join with.
         left_on
             Join column of the left DataFrame.
@@ -1346,8 +1349,8 @@ class LazyFrame(Generic[DF]):
         └──────┴──────┴─────┴───────┘
 
         """
-        if not isinstance(ldf, LazyFrame):
-            raise ValueError(f"Expected a `LazyFrame` as join table, got {type(ldf)}")
+        if not isinstance(other, LazyFrame):
+            raise ValueError(f"Expected a `LazyFrame` as join table, got {type(other)}")
 
         if how == "asof":
             warnings.warn(
@@ -1357,7 +1360,7 @@ class LazyFrame(Generic[DF]):
         if how == "cross":
             return self._from_pyldf(
                 self._ldf.join(
-                    ldf._ldf,
+                    other._ldf,
                     [],
                     [],
                     allow_parallel,
@@ -1430,7 +1433,7 @@ class LazyFrame(Generic[DF]):
 
         return self._from_pyldf(
             self._ldf.join(
-                ldf._ldf,
+                other._ldf,
                 new_left_on,
                 new_right_on,
                 allow_parallel,
