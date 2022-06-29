@@ -154,8 +154,7 @@ def _to_python_time(value: int) -> time:
     seconds = (microsecond // 1000_000) % 60
     minutes = (microsecond // (1000_000 * 60)) % 60
     hours = (microsecond // (1000_000 * 60 * 60)) % 24
-
-    microsecond = microsecond % seconds * 1000_000
+    microsecond = microsecond - (seconds + minutes * 60 + hours * 3600) * 1000_000
 
     return time(hour=hours, minute=minutes, second=seconds, microsecond=microsecond)
 
