@@ -141,6 +141,7 @@ def test_read_csv_buffer_ownership() -> None:
     )
     # confirm that read_csv succeeded, and didn't close the input buffer (#2696)
     assert df.shape == (2, 3)
+    assert df.rows() == [("😀", 5.55, 333), ("😆", -5.0, 666)]
     assert not buf.closed
 
 

@@ -13,6 +13,7 @@ types-pytz
 maturin==0.12.19
 pytest==7.1.2
 pytest-cov[toml]==3.0.0
+hypothesis==6.48
 black==22.3.0
 blackdoc==0.3.4
 isort~=5.10.1

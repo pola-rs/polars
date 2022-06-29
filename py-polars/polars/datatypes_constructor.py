@@ -3,6 +3,7 @@ from typing import Any, Callable, Dict, Sequence, Type
 import numpy as np
 
 from polars.datatypes import (
+    DTYPE_TEMPORAL_UNITS,
     Boolean,
     Categorical,
     Date,
@@ -53,6 +54,8 @@ if not _DOCUMENTING:
         Object: PySeries.new_object,
         Categorical: PySeries.new_str,
     }
+    for tu in DTYPE_TEMPORAL_UNITS:
+        _POLARS_TYPE_TO_CONSTRUCTOR[Datetime(tu)] = PySeries.new_opt_i64
 
 
 def polars_type_to_constructor(

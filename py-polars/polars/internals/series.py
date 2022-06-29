@@ -41,6 +41,7 @@ except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 from polars.datatypes import (
+    DTYPE_TEMPORAL_UNITS,
     Boolean,
     DataType,
     Date,
@@ -5159,7 +5160,7 @@ class DateTimeNameSpace:
         tu
             One of {'ns', 'us', 'ms', 's', 'd'}
         """
-        if tu in ["ns", "us", "ms"]:
+        if tu in DTYPE_TEMPORAL_UNITS:
             return self.timestamp(tu)
         if tu == "s":
             return wrap_s(self._s.dt_epoch_seconds())
@@ -5244,7 +5245,6 @@ class DateTimeNameSpace:
         ----------
         tu
             Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
-
         """
         return self.with_time_unit(tu)
 

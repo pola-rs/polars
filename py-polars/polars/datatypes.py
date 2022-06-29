@@ -1,7 +1,7 @@
 import ctypes
 import sys
 from datetime import date, datetime, time, timedelta
-from typing import Any, Dict, Optional, Sequence, Type, Union
+from typing import Any, Dict, Optional, Sequence, Tuple, Type, Union
 
 try:
     import pyarrow as pa
@@ -32,6 +32,12 @@ class DataType:
 
 
 PolarsDataType = Union[Type[DataType], DataType]
+
+ColumnsType = Union[
+    Sequence[str],
+    Dict[str, PolarsDataType],
+    Sequence[Tuple[str, Optional[PolarsDataType]]],
+]
 
 
 class Int8(DataType):
@@ -182,7 +188,7 @@ class Datetime(DataType):
             return False
 
     def __hash__(self) -> int:
-        return hash(Datetime)
+        return hash((Datetime, self.tu))
 
 
 class Duration(DataType):
@@ -209,7 +215,7 @@ class Duration(DataType):
             return False
 
     def __hash__(self) -> int:
-        return hash(Duration)
+        return hash((Duration, self.tu))
 
 
 class Time(DataType):
@@ -288,6 +294,9 @@ class Struct(DataType):
         return hash(Struct)
 
 
+DTYPE_TEMPORAL_UNITS = frozenset(["ms", "us", "ns"])
+
+
 _DTYPE_TO_FFINAME: Dict[PolarsDataType, str] = {
     Int8: "i8",
     Int16: "i16",
@@ -310,6 +319,9 @@ _DTYPE_TO_FFINAME: Dict[PolarsDataType, str] = {
     Categorical: "categorical",
     Struct: "struct",
 }
+for tu in DTYPE_TEMPORAL_UNITS:
+    _DTYPE_TO_FFINAME[Datetime(tu)] = "datetime"
+    _DTYPE_TO_FFINAME[Datetime(tu)] = "duration"
 
 _DTYPE_TO_CTYPE: Dict[PolarsDataType, Any] = {
     UInt8: ctypes.c_uint8,
@@ -327,6 +339,9 @@ _DTYPE_TO_CTYPE: Dict[PolarsDataType, Any] = {
     Duration: ctypes.c_int64,
     Time: ctypes.c_int64,
 }
+for tu in DTYPE_TEMPORAL_UNITS:
+    _DTYPE_TO_CTYPE[Datetime(tu)] = ctypes.c_int64
+    _DTYPE_TO_CTYPE[Duration(tu)] = ctypes.c_int64
 
 
 _PY_TYPE_TO_DTYPE: Dict[type, Type[DataType]] = {
@@ -361,6 +376,9 @@ _DTYPE_TO_PY_TYPE: Dict[PolarsDataType, type] = {
     Date: date,
     Time: time,
 }
+for tu in DTYPE_TEMPORAL_UNITS:
+    _DTYPE_TO_PY_TYPE[Datetime(tu)] = datetime
+    _DTYPE_TO_PY_TYPE[Duration(tu)] = timedelta
 
 # Map Numpy char codes to polars dtypes.
 #
@@ -407,19 +425,18 @@ if _PYARROW_AVAILABLE:
         Boolean: pa.bool_(),
         Utf8: pa.large_utf8(),
         Date: pa.date32(),
-        # handle temporal types that require units
         Datetime: pa.timestamp("us"),
-        (Datetime, "ms"): pa.timestamp("ms"),
-        (Datetime, "us"): pa.timestamp("us"),
-        (Datetime, "ns"): pa.timestamp("ns"),
+        Datetime("ms"): pa.timestamp("ms"),
+        Datetime("us"): pa.timestamp("us"),
+        Datetime("ns"): pa.timestamp("ns"),
         Duration: pa.duration("us"),
-        (Duration, "ms"): pa.duration("ms"),
-        (Duration, "us"): pa.duration("us"),
-        (Duration, "ns"): pa.duration("ns"),
+        Duration("ms"): pa.duration("ms"),
+        Duration("us"): pa.duration("us"),
+        Duration("ns"): pa.duration("ns"),
         Time: pa.time64("us"),
-        (Time, "ms"): pa.time32("ms"),
-        (Time, "us"): pa.time64("us"),
-        (Time, "ns"): pa.time64("ns"),
+        # Time("ms"): pa.time32("ms"),
+        # Time("us"): pa.time64("us"),
+        # Time("ns"): pa.time64("ns"),
     }
 
 
@@ -477,9 +494,7 @@ def dtype_to_arrow_type(dtype: PolarsDataType) -> "pa.lib.DataType":
     Convert a Polars dtype to an Arrow dtype.
     """
     try:
-        unit = getattr(dtype, "tu", None)
-        lookup = dtype if unit is None else (dtype, unit)
-        return _DTYPE_TO_ARROW_TYPE[lookup]
+        return _DTYPE_TO_ARROW_TYPE[dtype]
     except KeyError:  # pragma: no cover
         raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.")
 

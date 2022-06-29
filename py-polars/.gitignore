@@ -2,4 +2,5 @@ wheels/
 !Cargo.lock
 target/
 venv/
+.hypothesis
 .DS_Store

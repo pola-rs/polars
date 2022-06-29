@@ -2,7 +2,7 @@
 import sys
 import typing
 from builtins import range
-from datetime import date, datetime, time
+from datetime import date, datetime
 from io import BytesIO
 from typing import Any, Iterator, Type
 from unittest.mock import patch
@@ -11,9 +11,10 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from hypothesis import given
 
 import polars as pl
-from polars import testing
+from polars.testing import assert_series_equal, columns, dataframes
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -22,13 +23,33 @@ else:
 
 
 def test_version() -> None:
-    pl.__version__
+    _version = pl.__version__
+
+
+@given(df=dataframes())
+def test_repr(df: pl.DataFrame) -> None:
+    assert isinstance(repr(df), str)
+    # print(df)
+
+
+# note: *temporarily* constraining dtypes this test until #3843 and a windows-specific
+# fixfor a related date bug is merged (tblocking the PR to merge hypothesis code).
+@given(df=dataframes(allowed_dtypes=[pl.Boolean, pl.UInt64, pl.Utf8]))
+def test_null_count(df: pl.DataFrame) -> None:
+    null_count, ncols = df.null_count(), len(df.columns)
+    if ncols == 0:
+        assert null_count.shape == (0, 0)
+    else:
+        assert null_count.shape == (1, ncols)
+        for idx, count in enumerate(null_count.rows()[0]):
+            assert count == sum(v is None for v in df.select_at_idx(idx).to_list())
 
 
 def test_init_empty() -> None:
-    # Empty initialization
-    df1 = pl.DataFrame()
-    assert df1.shape == (0, 0)
+    # test various flavours of empty init
+    for empty in (None, (), [], {}, pa.Table.from_arrays([])):
+        df = pl.DataFrame(empty)
+        assert df.shape == (0, 0)
 
 
 def test_init_only_columns() -> None:
@@ -63,6 +84,17 @@ def test_init_only_columns() -> None:
         assert df.frame_equal(truth, null_equal=True)
         assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8, pl.List]
         assert getattr(df.schema["d"], "inner") == pl.UInt8
+
+
+def test_special_char_colname_init() -> None:
+    from string import punctuation
+
+    cols = [(c.name, c.dtype) for c in columns(punctuation)]
+    df = pl.DataFrame(columns=cols)
+
+    assert len(cols) == len(df.columns)
+    assert 0 == len(df.rows())
+    assert df.is_empty()
 
 
 def test_init_dict() -> None:
@@ -519,11 +551,6 @@ def test_slice() -> None:
         [1],  # optional len
     ):
         assert df.slice(*slice_params).frame_equal(expected)
-
-
-def test_null_count() -> None:
-    df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", None]})
-    assert df.null_count().shape == (1, 2)
 
 
 def test_head_tail_limit() -> None:
@@ -1480,13 +1507,13 @@ def test_panic() -> None:
 def test_h_agg() -> None:
     df = pl.DataFrame({"a": [1, None, 3], "b": [1, 2, 3]})
 
-    pl.testing.assert_series_equal(
+    assert_series_equal(
         df.sum(axis=1, null_strategy="ignore"), pl.Series("a", [2, 2, 6])
     )
-    pl.testing.assert_series_equal(
+    assert_series_equal(
         df.sum(axis=1, null_strategy="propagate"), pl.Series("a", [2, None, 6])
     )
-    pl.testing.assert_series_equal(
+    assert_series_equal(
         df.mean(axis=1, null_strategy="propagate"), pl.Series("a", [1.0, None, 3.0])
     )
 
@@ -1911,7 +1938,7 @@ def test_add_string() -> None:
 def test_getattr() -> None:
     with pytest.deprecated_call():
         df = pl.DataFrame({"a": [1.0, 2.0]})
-        testing.assert_series_equal(df.a, pl.Series("a", [1.0, 2.0]))
+        assert_series_equal(df.a, pl.Series("a", [1.0, 2.0]))
 
         with pytest.raises(AttributeError):
             _ = df.b
@@ -2057,10 +2084,10 @@ def test_join_suffixes() -> None:
     df_b = pl.DataFrame({"A": [1], "B": [1]})
 
     for how in ["left", "inner", "outer", "cross"]:
-        # no need for an essert, we error if wrong
-        df_a.join(df_b, on="A", suffix="_y", how=how)["B_y"]
+        # no need for an assert, we error if wrong
+        _df = df_a.join(df_b, on="A", suffix="_y", how=how)["B_y"]
 
-    df_a.join_asof(df_b, on="A", suffix="_y")["B_y"]
+    _df = df_a.join_asof(df_b, on="A", suffix="_y")["B_y"]
 
 
 def test_preservation_of_subclasses() -> None:

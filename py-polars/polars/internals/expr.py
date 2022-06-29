@@ -17,6 +17,7 @@ import math
 
 from polars import internals as pli
 from polars.datatypes import (
+    DTYPE_TEMPORAL_UNITS,
     Boolean,
     DataType,
     Date,
@@ -5484,7 +5485,7 @@ class ExprDateTimeNameSpace:
         tu
             One of {'ns', 'us', 'ms', 's', 'd'}
         """
-        if tu in ["ns", "us", "ms"]:
+        if tu in DTYPE_TEMPORAL_UNITS:
             return self.timestamp(tu)
         if tu == "s":
             return wrap_expr(self._pyexpr.dt_epoch_seconds())
