@@ -217,7 +217,7 @@ def _assert_series_inner(
     if unequal.any():
         if check_exact:
             raise_assert_detail(
-                obj, f"Exact value mismatch", left=list(left), right=list(right)
+                obj, "Exact value mismatch", left=list(left), right=list(right)
             )
         else:
             # apply check with tolerance to the inexact matches
