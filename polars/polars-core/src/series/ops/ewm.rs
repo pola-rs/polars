@@ -126,7 +126,8 @@ impl Series {
 
                 ewm_std(x_slice, ewma_slice, options.alpha);
                 // we mask the original null values until we know better how to deal with them.
-                let out = Box::new(ewma_arr.with_validity(arr.validity().cloned())) as ArrayRef;
+                let out =
+                    Box::new(ewma_arr.clone().with_validity(arr.validity().cloned())) as ArrayRef;
                 Series::try_from((self.name(), out))
             }
             DataType::Float32 => {
@@ -139,7 +140,8 @@ impl Series {
 
                 ewm_std(x_slice, ewma_slice, options.alpha as f32);
                 // we mask the original null values until we know better how to deal with them.
-                let out = Box::new(ewma_arr.with_validity(arr.validity().cloned())) as ArrayRef;
+                let out =
+                    Box::new(ewma_arr.clone().with_validity(arr.validity().cloned())) as ArrayRef;
                 Series::try_from((self.name(), out))
             }
             _ => unimplemented!(),
@@ -165,7 +167,8 @@ impl Series {
 
                 ewm_var(x_slice, ewma_slice, options.alpha);
                 // we mask the original null values until we know better how to deal with them.
-                let out = Box::new(ewma_arr.with_validity(arr.validity().cloned())) as ArrayRef;
+                let out =
+                    Box::new(ewma_arr.clone().with_validity(arr.validity().cloned())) as ArrayRef;
                 Series::try_from((self.name(), out))
             }
             DataType::Float32 => {
@@ -178,7 +181,8 @@ impl Series {
 
                 ewm_var(x_slice, ewma_slice, options.alpha as f32);
                 // we mask the original null values until we know better how to deal with them.
-                let out = Box::new(ewma_arr.with_validity(arr.validity().cloned())) as ArrayRef;
+                let out =
+                    Box::new(ewma_arr.clone().with_validity(arr.validity().cloned())) as ArrayRef;
                 Series::try_from((self.name(), out))
             }
             _ => unimplemented!(),
