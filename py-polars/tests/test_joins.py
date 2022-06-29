@@ -1,6 +1,7 @@
 from datetime import datetime
 
 import numpy as np
+import pytest
 
 import polars as pl
 
@@ -180,3 +181,17 @@ def test_join_asof_tolerance() -> None:
         "trade": [101, 299, 301, 500],
         "quote": [100, None, 300, None],
     }
+
+
+def test_deprecated():
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    other = pl.DataFrame({"a": [1, 2], "c": [3, 4]})
+    result = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [3, 4]})
+
+    with pytest.deprecated_call():
+        df.join(df=other, on="a")
+    with pytest.deprecated_call():
+        df.lazy().join(ldf=other.lazy(), on="a")
+
+    assert df.join(other=other, on="a") == result
+    assert df.lazy().join(other=other.lazy(), on="a").collect() == result
