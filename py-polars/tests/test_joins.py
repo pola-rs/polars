@@ -193,7 +193,8 @@ def test_deprecated():
     with pytest.deprecated_call():
         df.lazy().join(ldf=other.lazy(), on="a").collect()
 
-    assert np.testing.assert_equal(df.join(other=other, on="a"), result)
-    assert np.testing.assert_equal(
-        df.lazy().join(other=other.lazy(), on="a").collect(), result
+    np.testing.assert_equal(df.join(other=other, on="a").to_numpy(), result.to_numpy())
+    np.testing.assert_equal(
+        df.lazy().join(other=other.lazy(), on="a").collect().to_numpy(),
+        result.to_numpy(),
     )
