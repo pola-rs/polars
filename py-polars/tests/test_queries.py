@@ -257,3 +257,35 @@ def test_opaque_filter_on_lists_3784() -> None:
             )
         )
     ).collect().to_dict(False) == {"group": [1], "str_list": [["A", "B", "B"]]}
+
+
+def test_ternary_none_struct() -> None:
+    ignore_nulls = False
+
+    def map_expr(name: str) -> pl.Expr:
+        return (
+            pl.when(ignore_nulls or pl.col(name).null_count() == 0)
+            .then(
+                pl.struct(
+                    [
+                        pl.sum(name).alias("sum"),
+                        (pl.count() - pl.col(name).null_count()).alias("count"),
+                    ]
+                ),
+            )
+            .otherwise(None)
+        ).alias("out")
+
+    assert (
+        pl.DataFrame({"groups": [1, 2, 3, 4], "values": [None, None, 1, 2]})
+        .groupby("groups", maintain_order=True)
+        .agg([map_expr("values")])
+    ).to_dict(False) == {
+        "groups": [1, 2, 3, 4],
+        "out": [
+            {"sum": None, "count": None},
+            {"sum": None, "count": None},
+            {"sum": 1, "count": 1},
+            {"sum": 2, "count": 1},
+        ],
+    }

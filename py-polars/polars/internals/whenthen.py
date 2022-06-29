@@ -18,10 +18,11 @@ class WhenThenThen:
     def __init__(self, pywhenthenthen: Any):
         self.pywhenthenthen = pywhenthenthen
 
-    def when(self, predicate: pli.Expr) -> "WhenThenThen":
+    def when(self, predicate: Union[pli.Expr, bool]) -> "WhenThenThen":
         """
         Start another when, then, otherwise layer.
         """
+        predicate = pli.expr_to_lit_or_expr(predicate)
         return WhenThenThen(self.pywhenthenthen.when(predicate._pyexpr))
 
     def then(
@@ -32,6 +33,7 @@ class WhenThenThen:
             float,
             str,
             None,
+            pli.Series,
             Sequence[
                 Union[
                     int,
@@ -85,13 +87,14 @@ class WhenThen:
     def __init__(self, pywhenthen: Any):
         self._pywhenthen = pywhenthen
 
-    def when(self, predicate: pli.Expr) -> WhenThenThen:
+    def when(self, predicate: Union[pli.Expr, bool]) -> WhenThenThen:
         """
         Start another when, then, otherwise layer.
         """
+        predicate = pli.expr_to_lit_or_expr(predicate)
         return WhenThenThen(self._pywhenthen.when(predicate._pyexpr))
 
-    def otherwise(self, expr: Union[pli.Expr, int, float, str]) -> pli.Expr:
+    def otherwise(self, expr: Union[pli.Expr, int, float, str, None]) -> pli.Expr:
         """
         Values to return in case of the predicate being `False`.
 
@@ -112,7 +115,13 @@ class When:
     def then(
         self,
         expr: Union[
-            pli.Expr, int, float, str, None, Sequence[Union[None, int, float, str]]
+            pli.Expr,
+            pli.Series,
+            int,
+            float,
+            str,
+            None,
+            Sequence[Union[None, int, float, str]],
         ],
     ) -> WhenThen:
         """
@@ -125,7 +134,7 @@ class When:
         return WhenThen(pywhenthen)
 
 
-def when(expr: pli.Expr) -> When:
+def when(expr: Union[pli.Expr, bool]) -> When:
     """
     Start a when, then, otherwise expression.
 

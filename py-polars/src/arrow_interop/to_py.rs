@@ -17,9 +17,7 @@ pub(crate) fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> Py
     let schema_ptr: *const ffi::ArrowSchema = &*schema;
     let array_ptr: *const ffi::ArrowArray = &*array;
 
-    let pa = py.import("pyarrow")?;
-
-    let array = pa.getattr("Array")?.call_method1(
+    let array = pyarrow.getattr("Array")?.call_method1(
         "_import_from_c",
         (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
     )?;

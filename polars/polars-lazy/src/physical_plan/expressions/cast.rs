@@ -44,6 +44,18 @@ impl CastExpr {
                         .into_duration(*tu)
                         .into_series())
                 }
+                #[cfg(feature = "dtype-struct")]
+                DataType::Struct(fields) => {
+                    let fields = fields
+                        .iter()
+                        .map(|field| {
+                            Series::full_null(field.name(), input.len(), field.data_type())
+                        })
+                        .collect::<Vec<_>>();
+                    return Ok(StructChunked::new(input.name(), &fields)
+                        .unwrap()
+                        .into_series());
+                }
                 _ => {}
             }
         }
