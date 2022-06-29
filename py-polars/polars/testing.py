@@ -709,6 +709,8 @@ if HYPOTHESIS_INSTALLED:
                 )
                 dtypes_ = [draw(sampled_from(selectable_dtypes)) for _ in range(n)]
                 coldefs = columns(cols=n, dtype=dtypes_)
+            elif isinstance(cols, column):
+                coldefs = [cols]
             else:
                 coldefs = list(cols)  # type: ignore[arg-type]
 
