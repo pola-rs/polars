@@ -24,9 +24,9 @@ try:
     )
     from hypothesis.strategies._internal.utils import defines_strategy
 
-    HYPOTHIS_INSTALLED = True
+    HYPOTHESIS_INSTALLED = True
 except ImportError:
-    HYPOTHIS_INSTALLED = False
+    HYPOTHESIS_INSTALLED = False
 
 
 from polars.datatypes import (
@@ -54,7 +54,7 @@ from polars.datatypes import (
 )
 from polars.internals import DataFrame, LazyFrame, Series, col
 
-if HYPOTHIS_INSTALLED:
+if HYPOTHESIS_INSTALLED:
     # TODO: increase the number of iterations during CI checkins?
     # https://hypothesis.readthedocs.io/en/latest/settings.html#settings-profiles
     settings.register_profile(name="polars.default", max_examples=100, print_blob=True)
@@ -210,18 +210,22 @@ def _assert_series_inner(
         if left.dtype != right.dtype:
             raise_assert_detail(obj, "Dtype mismatch", left.dtype, right.dtype)
 
-    if len(left) == len(right) == 0:
-        pass  # empty series with same name/dtype are equal
-    elif check_exact:
-        if (left != right).sum() != 0:
+    # create mask of which (if any) values are unequal
+    unequal = left != right
+
+    # assert exact, or with tolerance
+    if unequal.any():
+        if check_exact:
             raise_assert_detail(
                 obj, "Exact value mismatch", left=list(left), right=list(right)
             )
-    else:
-        if ((left - right).abs() > (atol + rtol * right.abs())).sum() != 0:
-            raise_assert_detail(
-                obj, "Value mismatch", left=list(left), right=list(right)
-            )
+        else:
+            # apply check with tolerance, but only to the known-unequal matches
+            left, right = left.filter(unequal), right.filter(unequal)
+            if ((left - right).abs() > (atol + rtol * right.abs())).sum() != 0:
+                raise_assert_detail(
+                    obj, "Value mismatch", left=list(left), right=list(right)
+                )
 
 
 def raise_assert_detail(
@@ -285,7 +289,7 @@ def is_categorical_dtype(data_type: Any) -> bool:
     )
 
 
-if HYPOTHIS_INSTALLED:
+if HYPOTHESIS_INSTALLED:
 
     def between(draw: Callable, type_: type, min_: Any, max_: Any) -> Any:
         """

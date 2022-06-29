@@ -120,6 +120,18 @@ def test_assert_frame_equal_column_mismatch_order() -> None:
     assert_frame_equal(df1, df2, check_column_names=False)
 
 
+def test_assert_series_equal_int_overflow() -> None:
+    # internally may call 'abs' if not check_exact, which can overflow on signed int
+    s0 = pl.Series([-128], dtype=pl.Int8)
+    s1 = pl.Series([0, -128], dtype=pl.Int8)
+    s2 = pl.Series([1, -128], dtype=pl.Int8)
+
+    for check_exact in (True, False):
+        assert_series_equal(s0, s0, check_exact=check_exact)
+        with pytest.raises(AssertionError):
+            assert_series_equal(s1, s2, check_exact=check_exact)
+
+
 @given(df=dataframes(), lf=dataframes(lazy=True), srs=series())
 @settings(max_examples=10)
 def test_strategy_classes(df: pl.DataFrame, lf: pl.LazyFrame, srs: pl.Series) -> None:
@@ -167,12 +179,16 @@ def test_strategy_frame_columns(lf: pl.LazyFrame) -> None:
     assert lf.columns == ["a", "b", "c", "d"]
     df = lf.collect()
 
-    # uint8 cols
+    # confirm uint cols bounds
     uint8_max = (2**8) - 1
     assert df["a"].min() >= 0
     assert df["b"].min() >= 0
     assert df["a"].max() <= uint8_max
     assert df["b"].max() <= uint8_max
+
+    # confirm uint cols uniqueness
+    assert df["a"].is_unique().all()
+    assert df["b"].is_unique().all()
 
     # boolean col
     assert all(isinstance(v, bool) for v in df["c"].to_list())
