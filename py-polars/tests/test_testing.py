@@ -188,7 +188,7 @@ def test_strategy_frame_columns(lf: pl.LazyFrame) -> None:
 
     # confirm uint cols uniqueness
     assert df["a"].is_unique().all()
-    assert df["a"].is_unique().all()
+    assert df["b"].is_unique().all()
 
     # boolean col
     assert all(isinstance(v, bool) for v in df["c"].to_list())

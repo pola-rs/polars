@@ -220,7 +220,7 @@ def _assert_series_inner(
                 obj, "Exact value mismatch", left=list(left), right=list(right)
             )
         else:
-            # apply check with tolerance to the inexact matches
+            # apply check with tolerance, but only to the known-unequal matches
             left, right = left.filter(unequal), right.filter(unequal)
             if ((left - right).abs() > (atol + rtol * right.abs())).sum() != 0:
                 raise_assert_detail(
