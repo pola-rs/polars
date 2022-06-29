@@ -12,6 +12,7 @@ use rayon::prelude::*;
 use std::collections::VecDeque;
 use std::io::Write;
 
+use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df};
 pub use write::{BrotliLevel, CompressionOptions as ParquetCompression, GzipLevel, ZstdLevel};
 
 struct Bla {
@@ -52,6 +53,7 @@ pub struct ParquetWriter<W> {
     writer: W,
     compression: write::CompressionOptions,
     statistics: bool,
+    row_group_size: Option<usize>,
 }
 
 impl<W> ParquetWriter<W>
@@ -67,6 +69,7 @@ where
             writer,
             compression: write::CompressionOptions::Lz4Raw,
             statistics: false,
+            row_group_size: None,
         }
     }
 
@@ -76,14 +79,28 @@ where
         self
     }
 
+    /// Compute and write statistic
     pub fn with_statistics(mut self, statistics: bool) -> Self {
         self.statistics = statistics;
         self
     }
 
+    /// Set the row group size during writing. This can reduce memory pressure and improve
+    /// writing performance.
+    pub fn with_row_group_size(mut self, size: Option<usize>) -> Self {
+        self.row_group_size = size;
+        self
+    }
+
     /// Write the given DataFrame in the the writer `W`.
     pub fn finish(mut self, df: &mut DataFrame) -> Result<()> {
+        // ensures all chunks are aligned.
         df.rechunk();
+
+        if let Some(n) = self.row_group_size {
+            *df = accumulate_dataframes_vertical_unchecked(split_df(df, df.height() / n)?);
+        };
+
         let fields = df.schema().to_arrow().fields;
         let rb_iter = df.iter_chunks();
 

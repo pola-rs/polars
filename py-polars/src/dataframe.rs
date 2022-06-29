@@ -290,7 +290,6 @@ impl PyDataFrame {
 
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
-            let f = BufWriter::new(f);
             AvroWriter::new(f)
                 .with_compression(compression)
                 .finish(&mut self.df)
@@ -460,7 +459,6 @@ impl PyDataFrame {
 
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
-            let f = BufWriter::new(f);
             IpcWriter::new(f)
                 .with_compression(compression)
                 .finish(&mut self.df)
@@ -570,6 +568,7 @@ impl PyDataFrame {
         compression: &str,
         compression_level: Option<i32>,
         statistics: bool,
+        row_group_size: Option<usize>,
     ) -> PyResult<()> {
         let compression = match compression {
             "uncompressed" => ParquetCompression::Uncompressed,
@@ -605,10 +604,10 @@ impl PyDataFrame {
 
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
-            let f = BufWriter::new(f);
             ParquetWriter::new(f)
                 .with_compression(compression)
                 .with_statistics(statistics)
+                .with_row_group_size(row_group_size)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         } else {
@@ -616,6 +615,7 @@ impl PyDataFrame {
             ParquetWriter::new(buf)
                 .with_compression(compression)
                 .with_statistics(statistics)
+                .with_row_group_size(row_group_size)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }

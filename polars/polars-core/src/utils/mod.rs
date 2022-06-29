@@ -785,7 +785,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
 
 /// This takes ownership of the DataFrame so that drop is called earlier.
 /// Does not check if schema is correct
-pub fn accumulate_dataframes_vertical_unchecked<I>(dfs: I) -> Result<DataFrame>
+pub fn accumulate_dataframes_vertical_unchecked<I>(dfs: I) -> DataFrame
 where
     I: IntoIterator<Item = DataFrame>,
 {
@@ -794,7 +794,7 @@ where
     for df in iter {
         acc_df.vstack_mut_unchecked(&df);
     }
-    Ok(acc_df)
+    acc_df
 }
 
 /// This takes ownership of the DataFrame so that drop is called earlier.

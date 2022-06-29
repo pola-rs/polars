@@ -1,19 +1,9 @@
 use super::*;
 use arrow::datatypes::Field;
 use arrow::io::parquet::read::{
-    column_iter_to_arrays, ArrayIter, BasicDecompressor, ColumnChunkMetaData, PageReader,
+    column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
+    PageReader,
 };
-
-// TODO! make public in arrow2?
-pub(super) fn get_field_columns<'a>(
-    columns: &'a [ColumnChunkMetaData],
-    field_name: &str,
-) -> Vec<&'a ColumnChunkMetaData> {
-    columns
-        .iter()
-        .filter(|x| x.descriptor().path_in_schema[0] == field_name)
-        .collect()
-}
 
 /// memory maps all columns that are part of the parquet field `field_name`
 pub(super) fn mmap_columns<'a>(
