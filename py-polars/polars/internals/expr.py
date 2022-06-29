@@ -4540,19 +4540,19 @@ class ExprStringNameSpace:
         exact: bool = True,
     ) -> Expr:
         """
-        Parse a UTF8 expression to a Date/Datetime/Time type.
+        Parse a Utf8 expression to a Date/Datetime/Time type.
 
         Parameters
         ----------
         datatype
             Date | Datetime | Time.
         fmt
-            format to use, see the following link for examples:
+            Format to use, see the following link for examples:
             https://docs.rs/chrono/latest/chrono/format/strftime/index.html
 
             example: "%y-%m-%d".
         strict
-            raise an error if any conversion fails
+            Raise an error if any conversion fails.
         exact
             - If True, require an exact format match.
             - If False, allow the format to match anywhere in the target string.
@@ -4616,12 +4616,36 @@ class ExprStringNameSpace:
     def lengths(self) -> Expr:
         """
         Get the length of the Strings as UInt32.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"s": [None, "bears", "110"]})
+        >>> df.select(["s", pl.col("s").str.lengths().alias("len")])
+        shape: (3, 2)
+        ┌───────┬──────┐
+        │ s     ┆ len  │
+        │ ---   ┆ ---  │
+        │ str   ┆ u32  │
+        ╞═══════╪══════╡
+        │ null  ┆ null │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ bears ┆ 5    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 110   ┆ 3    │
+        └───────┴──────┘
+
         """
         return wrap_expr(self._pyexpr.str_lengths())
 
     def concat(self, delimiter: str = "-") -> "Expr":
         """
         Vertically concat the values in the Series to a single string value.
+
+        Parameters
+        ----------
+        delimiter
+            The delimiter to insert between consecutive string values.
 
         Returns
         -------
@@ -4631,8 +4655,7 @@ class ExprStringNameSpace:
         --------
 
         >>> df = pl.DataFrame({"foo": [1, None, 2]})
-        >>> df = df.select(pl.col("foo").str.concat("-"))
-        >>> df
+        >>> df.select(pl.col("foo").str.concat("-"))
         shape: (1, 1)
         ┌──────────┐
         │ foo      │
@@ -4680,7 +4703,7 @@ class ExprStringNameSpace:
         Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
         A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
         rather than before.
-        The original string is returned if width is less than or equal to `len(s)`.
+        The original string is returned if width is less than or equal to ``len(s)``.
 
         Parameters
         ----------
@@ -4727,30 +4750,30 @@ class ExprStringNameSpace:
     def ljust(self, width: int, fillchar: str = " ") -> Expr:
         """
         Return the string left justified in a string of length width.
-        Padding is done using the specified `fillchar`,
-        The original string is returned if width is less than or equal to `len(s)`.
+        Padding is done using the specified ``fillchar``,
+        The original string is returned if width is less than or equal to ``len(s)``.
 
         Parameters
         ----------
         width
-            justify left to this length
+            Justify left to this length.
         fillchar
-            fill with this ASCII character
+            Fill with this ASCII character.
         """
         return wrap_expr(self._pyexpr.str_ljust(width, fillchar))
 
     def rjust(self, width: int, fillchar: str = " ") -> Expr:
         """
         Return the string right justified in a string of length width.
-        Padding is done using the specified `fillchar`,
-        The original string is returned if width is less than or equal to `len(s)`.
+        Padding is done using the specified ``fillchar``,
+        The original string is returned if ``width`` is less than or equal to ``len(s)``.
 
         Parameters
         ----------
         width
-            justify right to this length
+            Justify right to this length.
         fillchar
-            fill with this ASCII character
+            Fill with this ASCII character.
         """
         return wrap_expr(self._pyexpr.str_rjust(width, fillchar))
 
@@ -4764,6 +4787,32 @@ class ExprStringNameSpace:
             A valid regex pattern.
         literal
             Treat pattern as a literal string.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": ["Crab", "cat and dog", "rab$bit", None]})
+        >>> df.select(
+        ...     [
+        ...         pl.col("a"),
+        ...         pl.col("a").str.contains("cat|bit").alias("regex"),
+        ...         pl.col("a").str.contains("rab$", literal=True).alias("literal"),
+        ...     ]
+        ... )
+        shape: (4, 3)
+        ┌─────────────┬───────┬─────────┐
+        │ a           ┆ regex ┆ literal │
+        │ ---         ┆ ---   ┆ ---     │
+        │ str         ┆ bool  ┆ bool    │
+        ╞═════════════╪═══════╪═════════╡
+        │ Crab        ┆ false ┆ false   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ cat and dog ┆ true  ┆ false   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ rab$bit     ┆ true  ┆ true    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ null        ┆ null  ┆ null    │
+        └─────────────┴───────┴─────────┘
 
         """
         return wrap_expr(self._pyexpr.str_contains(pattern, literal))
@@ -5030,14 +5079,13 @@ class ExprStringNameSpace:
     def split(self, by: str, inclusive: bool = False) -> Expr:
         """
         Split the string by a substring.
-        The return type will by of type List<Utf8>
 
         Parameters
         ----------
         by
-            substring
+            Substring to split by.
         inclusive
-            Include the split character/string in the results
+            If True, include the split character/string in the results.
 
         Examples
         --------
@@ -5057,6 +5105,10 @@ class ExprStringNameSpace:
         │ ["foo", "bar", "baz"] │
         └───────────────────────┘
 
+        Returns
+        -------
+        List of Utf8 type
+
         """
         if inclusive:
             return wrap_expr(self._pyexpr.str_split_inclusive(by))
@@ -5064,19 +5116,18 @@ class ExprStringNameSpace:
 
     def split_exact(self, by: str, n: int, inclusive: bool = False) -> Expr:
         """
-        Split the string by a substring into a struct of `n` fields.
-        The return type will by of type Struct<Utf8>
+        Split the string by a substring into a struct of ``n`` fields.
 
-        If it cannot make `n` splits, the remaiming field elements will be null
+        If it cannot make ``n`` splits, the remaining field elements will be null.
 
         Parameters
         ----------
         by
-            substring
+            Substring to split by.
         n
-            Number of splits to make
+            Number of splits to make.
         inclusive
-            Include the split character/string in the results
+            If True, include the split character/string in the results.
 
         Examples
         --------
@@ -5102,6 +5153,10 @@ class ExprStringNameSpace:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ {"d","4"}                                 │
         └───────────────────────────────────────────┘
+
+        Returns
+        -------
+        Struct of Utf8 type
 
         """
         if inclusive:
@@ -5181,7 +5236,8 @@ class ExprStringNameSpace:
         Parameters
         ----------
         start
-            Start of the slice (negative indexing may be used).
+            Starting index of the slice (zero-indexed). Negative indexing
+            may be used.
         length
             Optional length of the slice.
 
