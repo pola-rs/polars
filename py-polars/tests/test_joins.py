@@ -183,7 +183,7 @@ def test_join_asof_tolerance() -> None:
     }
 
 
-def test_deprecated():
+def test_deprecated() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
     other = pl.DataFrame({"a": [1, 2], "c": [3, 4]})
     result = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [3, 4]})

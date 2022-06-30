@@ -270,9 +270,9 @@ def deprecated_alias(**aliases: str) -> Callable:
         ...
     """
 
-    def deco(f: Callable):
+    def deco(f: Callable) -> Callable:
         @functools.wraps(f)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Callable:
             rename_kwargs(f.__name__, kwargs, aliases)
             return f(*args, **kwargs)
 
@@ -281,7 +281,9 @@ def deprecated_alias(**aliases: str) -> Callable:
     return deco
 
 
-def rename_kwargs(func_name: str, kwargs: Dict[str, str], aliases: Dict[str, str]):
+def rename_kwargs(
+    func_name: str, kwargs: Dict[str, str], aliases: Dict[str, str]
+) -> None:
     """Helper function for deprecating function and method arguments."""
     for alias, new in aliases.items():
         if alias in kwargs:
