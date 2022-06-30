@@ -3,16 +3,15 @@ import inspect
 import polars as pl
 import polars.datatypes as datatypes
 
-ALL_DATATYPES = set(
-    dtype
-    for dtype in (getattr(datatypes, attr) for attr in dir(datatypes))
-    if inspect.isclass(dtype) and issubclass(dtype, datatypes.DataType)
-)
-
 
 def test_dtype_init_equivalence() -> None:
-    # check "DataType.__new__" behaviour
-    for dtype in ALL_DATATYPES:
+    # check "DataType.__new__" behaviour for all datatypes
+    all_datatypes = set(
+        dtype
+        for dtype in (getattr(datatypes, attr) for attr in dir(datatypes))
+        if inspect.isclass(dtype) and issubclass(dtype, datatypes.DataType)
+    )
+    for dtype in all_datatypes:
         assert dtype == dtype()
 
 
