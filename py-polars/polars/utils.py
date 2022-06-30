@@ -1,9 +1,22 @@
 import ctypes
+import functools
 import os
 import sys
+import warnings
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+)
 
 import numpy as np
 
@@ -244,3 +257,46 @@ def threadpool_size() -> int:
     Get the size of polars; thread pool
     """
     return _pool_size()
+
+
+def deprecated_alias(**aliases: str) -> Callable:
+    """Decorator for deprecated function and method arguments.
+
+    Use as follows:
+
+    @deprecated_alias(old_arg='new_arg')
+    def myfunc(new_arg):
+        ...
+    """
+
+    def deco(f: Callable) -> Callable:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> Callable:
+            rename_kwargs(f.__name__, kwargs, aliases)
+            return f(*args, **kwargs)
+
+        return wrapper
+
+    return deco
+
+
+def rename_kwargs(
+    func_name: str, kwargs: Dict[str, str], aliases: Dict[str, str]
+) -> None:
+    """Helper function for deprecating function and method arguments."""
+    for alias, new in aliases.items():
+        if alias in kwargs:
+            if new in kwargs:
+                raise TypeError(
+                    f"{func_name} received both {alias} and {new} as arguments!"
+                    f" {alias} is deprecated, use {new} instead."
+                )
+            warnings.warn(
+                message=(
+                    f"`{alias}` is deprecated as an argument to `{func_name}`; use"
+                    f" `{new}` instead."
+                ),
+                category=DeprecationWarning,
+                stacklevel=3,
+            )
+            kwargs[new] = kwargs.pop(alias)

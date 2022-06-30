@@ -67,6 +67,7 @@ from polars.datatypes import Boolean, DataType, UInt32, Utf8, py_type_to_dtype
 from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
+    deprecated_alias,
     format_path,
     handle_projection_columns,
     is_int_sequence,
@@ -3389,9 +3390,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
             self._df.upsample(by, time_column, every, offset, maintain_order)
         )
 
+    @deprecated_alias(df="other")
     def join_asof(
         self: DF,
-        df: "DataFrame",
+        other: "DataFrame",
         left_on: Optional[str] = None,
         right_on: Optional[str] = None,
         on: Optional[str] = None,
@@ -3422,7 +3424,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Parameters
         ----------
-        ldf
+        other
             Lazy DataFrame to join with.
         left_on
             Join column of the left DataFrame.
@@ -3513,7 +3515,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         return (
             self.lazy()
             .join_asof(
-                df.lazy(),
+                other.lazy(),
                 left_on=left_on,
                 right_on=right_on,
                 on=on,
@@ -3529,9 +3531,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
             .collect(no_optimization=True)
         )
 
+    @deprecated_alias(df="other")
     def join(
         self: DF,
-        df: "DataFrame",
+        other: "DataFrame",
         left_on: Optional[Union[str, "pli.Expr", List[Union[str, "pli.Expr"]]]] = None,
         right_on: Optional[Union[str, "pli.Expr", List[Union[str, "pli.Expr"]]]] = None,
         on: Optional[Union[str, "pli.Expr", List[Union[str, "pli.Expr"]]]] = None,
@@ -3546,7 +3549,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Parameters
         ----------
-        df
+        other
             DataFrame to join with.
         left_on
             Name(s) of the left join column(s).
@@ -3633,7 +3636,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 DeprecationWarning,
             )
         if how == "cross":
-            return self._from_pydf(self._df.join(df._df, [], [], how, suffix))
+            return self._from_pydf(self._df.join(other._df, [], [], how, suffix))
 
         left_on_: Optional[List[Union[str, pli.Expr]]]
         if isinstance(left_on, (str, pli.Expr)):
@@ -3667,7 +3670,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             return (
                 self.lazy()
                 .join(
-                    df.lazy(),
+                    other.lazy(),
                     left_on,
                     right_on,
                     on=on,
@@ -3681,7 +3684,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             )
         else:
             return self._from_pydf(
-                self._df.join(df._df, left_on_, right_on_, how, suffix)
+                self._df.join(other._df, left_on_, right_on_, how, suffix)
             )
 
     def apply(
