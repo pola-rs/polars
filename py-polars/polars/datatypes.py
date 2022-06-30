@@ -21,7 +21,16 @@ except ImportError:  # pragma: no cover
 
 
 class DataType:
-    """Base class for all Polars data types"""
+    """
+    Base class for all Polars data types.
+    """
+
+    def __new__(cls, *args, **kwargs) -> "PolarsDataType":  # type: ignore
+        # this formulation allows for equivalent use of "pl.Type" and "pl.Type()", while
+        # still respecting types that take initialisation params (eg: Duration/Datetime)
+        if args or kwargs:
+            return super().__new__(cls)
+        return cls
 
     @classmethod
     def string_repr(cls) -> str:
@@ -182,7 +191,7 @@ class Datetime(DataType):
         # allow comparing object instances to class
         if type(other) is type and issubclass(other, Datetime):
             return True
-        if isinstance(other, Datetime):
+        elif isinstance(other, Datetime):
             return self.tu == other.tu and self.tz == other.tz
         else:
             return False
@@ -209,7 +218,7 @@ class Duration(DataType):
         # allow comparing object instances to class
         if type(other) is type and issubclass(other, Duration):
             return True
-        if isinstance(other, Duration):
+        elif isinstance(other, Duration):
             return self.tu == other.tu
         else:
             return False
