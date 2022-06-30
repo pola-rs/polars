@@ -497,8 +497,8 @@ class Series:
     def __setitem__(
         self, key: Union[int, "Series", np.ndarray, List, Tuple], value: Any
     ) -> None:
-        if isinstance(value, list):
-            raise ValueError("cannot set with a list as value, use a primitive value")
+        if isinstance(value, Sequence):
+            raise ValueError("cannot set with list/tuple as value; use a scalar value")
         if isinstance(key, Series):
             if key.dtype == Boolean:
                 self._s = self.set(key, value)._s
