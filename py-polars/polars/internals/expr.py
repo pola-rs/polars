@@ -6,15 +6,6 @@ import random
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, List, Sequence
 
-from polars.utils import _timedelta_to_pl_duration
-
-try:
-    from polars.polars import PyExpr
-
-    _DOCUMENTING = False
-except ImportError:  # pragma: no cover
-    _DOCUMENTING = True
-
 from polars import internals as pli
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
@@ -29,6 +20,14 @@ from polars.datatypes import (
     UInt32,
     py_type_to_dtype,
 )
+from polars.utils import _timedelta_to_pl_duration
+
+try:
+    from polars.polars import PyExpr
+
+    _DOCUMENTING = False
+except ImportError:  # pragma: no cover
+    _DOCUMENTING = True
 
 try:
     import numpy as np

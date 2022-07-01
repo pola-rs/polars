@@ -5,11 +5,6 @@ from datetime import date, datetime, timedelta
 from inspect import isclass
 from typing import Any, Callable, Sequence, cast, overload
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal  # pragma: no cover
-
 from polars import internals as pli
 from polars.datatypes import (
     DataType,
@@ -25,13 +20,6 @@ from polars.utils import (
     in_nanoseconds_window,
     timedelta_in_nanoseconds_window,
 )
-
-try:
-    import numpy as np
-
-    _NUMPY_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    _NUMPY_AVAILABLE = False
 
 try:
     from polars.polars import arange as pyarange
@@ -62,6 +50,18 @@ try:
     _DOCUMENTING = False
 except ImportError:  # pragma: no cover
     _DOCUMENTING = True
+
+try:
+    import numpy as np
+
+    _NUMPY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _NUMPY_AVAILABLE = False
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal  # pragma: no cover
 
 
 def col(

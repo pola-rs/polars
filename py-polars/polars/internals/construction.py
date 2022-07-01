@@ -29,6 +29,9 @@ from polars.datatypes_constructor import (
 )
 from polars.utils import threadpool_size
 
+if TYPE_CHECKING:  # pragma: no cover
+    import pandas as pd
+
 try:
     from polars.polars import PyDataFrame, PySeries
 
@@ -36,25 +39,19 @@ try:
 except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
-if TYPE_CHECKING:  # pragma: no cover
-    import pandas as pd
-    import pyarrow as pa
-
-    _PYARROW_AVAILABLE = True
-else:
-    try:
-        import pyarrow as pa
-
-        _PYARROW_AVAILABLE = True
-    except ImportError:  # pragma: no cover
-        _PYARROW_AVAILABLE = False
-
 try:
     import numpy as np
 
     _NUMPY_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _NUMPY_AVAILABLE = False
+
+try:
+    import pyarrow as pa
+
+    _PYARROW_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _PYARROW_AVAILABLE = False
 
 
 ################################

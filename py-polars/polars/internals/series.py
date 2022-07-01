@@ -1,35 +1,11 @@
 from __future__ import annotations
 
+import math
 import sys
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Sequence, Union, overload
 
-try:
-    import pyarrow as pa
-
-    _PYARROW_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    _PYARROW_AVAILABLE = False
-
-
-import math
-
 from polars import internals as pli
-from polars.internals.construction import (
-    arrow_to_pyseries,
-    numpy_to_pyseries,
-    pandas_to_pyseries,
-    sequence_to_pyseries,
-    series_to_pyseries,
-)
-
-try:
-    from polars.polars import PyDataFrame, PySeries
-
-    _DOCUMENTING = False
-except ImportError:  # pragma: no cover
-    _DOCUMENTING = True
-
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     Boolean,
@@ -58,6 +34,13 @@ from polars.datatypes import (
     py_type_to_dtype,
     supported_numpy_char_code,
 )
+from polars.internals.construction import (
+    arrow_to_pyseries,
+    numpy_to_pyseries,
+    pandas_to_pyseries,
+    sequence_to_pyseries,
+    series_to_pyseries,
+)
 from polars.utils import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
@@ -67,11 +50,25 @@ from polars.utils import (
 )
 
 try:
+    from polars.polars import PyDataFrame, PySeries
+
+    _DOCUMENTING = False
+except ImportError:  # pragma: no cover
+    _DOCUMENTING = True
+
+try:
     import numpy as np
 
     _NUMPY_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _NUMPY_AVAILABLE = False
+
+try:
+    import pyarrow as pa
+
+    _PYARROW_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _PYARROW_AVAILABLE = False
 
 try:
     import pandas as pd

@@ -9,14 +9,14 @@ from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
+from polars.datatypes import DataType, Date, Datetime
+
 try:
     from polars.polars import pool_size as _pool_size
 
     _DOCUMENTING = False
 except ImportError:  # pragma: no cover
     _DOCUMENTING = True
-
-from polars.datatypes import DataType, Date, Datetime
 
 try:
     import numpy as np

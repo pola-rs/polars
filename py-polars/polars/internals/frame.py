@@ -22,22 +22,9 @@ from typing import (
     overload,
 )
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal  # pragma: no cover
-
-
-try:
-    import pyarrow as pa
-    import pyarrow.compute
-    import pyarrow.parquet
-
-    _PYARROW_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    _PYARROW_AVAILABLE = False
-
 from polars import internals as pli
+from polars._html import NotebookFormatter
+from polars.datatypes import Boolean, DataType, UInt32, Utf8, py_type_to_dtype
 from polars.internals.construction import (
     ColumnsType,
     arrow_to_pydf,
@@ -47,18 +34,6 @@ from polars.internals.construction import (
     sequence_to_pydf,
     series_to_pydf,
 )
-
-from .lazy_frame import LazyFrame, wrap_ldf  # noqa: F401
-
-try:
-    from polars.polars import PyDataFrame, PySeries
-
-    _DOCUMENTING = False
-except ImportError:  # pragma: no cover
-    _DOCUMENTING = True
-
-from polars._html import NotebookFormatter
-from polars.datatypes import Boolean, DataType, UInt32, Utf8, py_type_to_dtype
 from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
@@ -70,6 +45,15 @@ from polars.utils import (
     range_to_slice,
 )
 
+from .lazy_frame import LazyFrame, wrap_ldf  # noqa: F401
+
+try:
+    from polars.polars import PyDataFrame, PySeries
+
+    _DOCUMENTING = False
+except ImportError:  # pragma: no cover
+    _DOCUMENTING = True
+
 try:
     import numpy as np
 
@@ -78,11 +62,25 @@ except ImportError:  # pragma: no cover
     _NUMPY_AVAILABLE = False
 
 try:
+    import pyarrow as pa
+    import pyarrow.compute
+    import pyarrow.parquet
+
+    _PYARROW_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _PYARROW_AVAILABLE = False
+
+try:
     import pandas as pd
 
     _PANDAS_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _PANDAS_AVAILABLE = False
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal  # pragma: no cover
 
 # A type variable used to refer to a polars.DataFrame or any subclass of it.
 # Used to annotate DataFrame methods which returns the same type as self.
