@@ -34,7 +34,7 @@ from polars.datatypes import (
 
 
 def selection_to_pyexpr_list(
-    exprs: str | Expr | Sequence[str | Expr | pli.Series] | pli.Series
+    exprs: str | Expr | Sequence[str | Expr | pli.Series] | pli.Series,
 ) -> list[PyExpr]:
     if isinstance(exprs, (str, Expr, pli.Series)):
         exprs = [exprs]
@@ -350,11 +350,12 @@ class Expr:
     def exclude(
         self,
         columns: (
-            str |
-            list[str] |
-            DataType | type[DataType] |
-            DataType |
-            Sequence[DataType | type[DataType]]
+            str
+            | list[str]
+            | DataType
+            | type[DataType]
+            | DataType
+            | Sequence[DataType | type[DataType]]
         ),
     ) -> Expr:
         """
@@ -3646,9 +3647,7 @@ class Expr:
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_var(alpha, adjust, min_periods))
 
-    def extend_constant(
-        self, value: int | float | str | bool | None, n: int
-    ) -> Expr:
+    def extend_constant(self, value: int | float | str | bool | None, n: int) -> Expr:
         """
         Extend the Series with given number of values.
 
@@ -5770,21 +5769,14 @@ class ExprDateTimeNameSpace:
 
 def expr_to_lit_or_expr(
     expr: (
-        Expr |
-        bool |
-        int |
-        float |
-        str |
-        pli.Series |
-        None |
-        Sequence[
-            (
-                int |
-                float |
-                str |
-                None
-            )
-        ]
+        Expr
+        | bool
+        | int
+        | float
+        | str
+        | pli.Series
+        | None
+        | Sequence[(int | float | str | None)]
     ),
     str_to_lit: bool = True,
 ) -> Expr:

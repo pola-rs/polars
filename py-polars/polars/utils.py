@@ -147,7 +147,7 @@ def range_to_slice(rng: range) -> slice:
 
 
 def handle_projection_columns(
-    columns: list[str] | list[int] | None
+    columns: list[str] | list[int] | None,
 ) -> tuple[list[int] | None, list[str] | None]:
     projection: list[int] | None = None
     if columns:
@@ -174,9 +174,7 @@ def _to_python_time(value: int) -> time:
     return time(hour=hours, minute=minutes, second=seconds, microsecond=microsecond)
 
 
-def _to_python_timedelta(
-    value: int | float, tu: str | None = "ns"
-) -> timedelta:
+def _to_python_timedelta(value: int | float, tu: str | None = "ns") -> timedelta:
     if tu == "ns":
         return timedelta(microseconds=value // 1e3)
     elif tu == "us":

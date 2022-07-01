@@ -108,9 +108,7 @@ def _prepare_file_arg(
     return managed_file(file)
 
 
-def read_ipc_schema(
-    file: str | BinaryIO | Path | bytes
-) -> dict[str, type[DataType]]:
+def read_ipc_schema(file: str | BinaryIO | Path | bytes) -> dict[str, type[DataType]]:
     """
     Get a schema of the IPC file without reading data.
 
@@ -130,7 +128,7 @@ def read_ipc_schema(
 
 
 def read_parquet_schema(
-    file: str | BinaryIO | Path | bytes
+    file: str | BinaryIO | Path | bytes,
 ) -> dict[str, type[DataType]]:
     """
     Get a schema of the Parquet file without reading data.

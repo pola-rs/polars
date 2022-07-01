@@ -289,13 +289,14 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     def __init__(
         self,
-        data: None | (
-                dict[str, Sequence[Any]] |
-                Sequence[Any] |
-                np.ndarray |
-                pa.Table |
-                pd.DataFrame |
-                pli.Series
+        data: None
+        | (
+            dict[str, Sequence[Any]]
+            | Sequence[Any]
+            | np.ndarray
+            | pa.Table
+            | pd.DataFrame
+            | pli.Series
         ) = None,
         columns: ColumnsType | None = None,
         orient: str | None = None,
@@ -503,9 +504,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         comment_char: str | None = None,
         quote_char: str | None = r'"',
         skip_rows: int = 0,
-        dtypes: None | (
-            Mapping[str, type[DataType]] | list[type[DataType]]
-        ) = None,
+        dtypes: None | (Mapping[str, type[DataType]] | list[type[DataType]]) = None,
         null_values: str | list[str] | dict[str, str] | None = None,
         ignore_errors: bool = False,
         parse_dates: bool = False,
@@ -1363,11 +1362,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self,
         file: str | Path | BytesIO,
         *,
-        compression: None | (
-                Literal[
-                    "uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"
-                ] |
-                str
+        compression: None
+        | (
+            Literal["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"]
+            | str
         ) = "lz4",
         compression_level: int | None = None,
         statistics: bool = False,
@@ -1454,11 +1452,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def to_parquet(
         self,
         file: str | Path | BytesIO,
-        compression: None | (
-                Literal[
-                    "uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"
-                ] |
-                str
+        compression: None
+        | (
+            Literal["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"]
+            | str
         ) = "snappy",
         statistics: bool = False,
         use_pyarrow: bool = False,
@@ -1520,9 +1517,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         other = _prepare_other_arg(other)
         return self._from_pydf(self._df.mul(other._s))
 
-    def __truediv__(
-        self: DF, other: DataFrame | pli.Series | int | float | bool
-    ) -> DF:
+    def __truediv__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
         if isinstance(other, DataFrame):
             return self._from_pydf(self._df.div_df(other._df))
 
@@ -1622,7 +1617,15 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def __getitem__(
         self: DF,
         item: (
-            str | int | range | slice | np.ndarray | pli.Expr | pli.Series | list | tuple
+            str
+            | int
+            | range
+            | slice
+            | np.ndarray
+            | pli.Expr
+            | pli.Series
+            | list
+            | tuple
         ),
     ) -> DF | pli.Series:
         """
@@ -4580,9 +4583,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         return self._from_pydf(self._df.shift(periods))
 
-    def shift_and_fill(
-        self: DF, periods: int, fill_value: int | str | float
-    ) -> DF:
+    def shift_and_fill(self: DF, periods: int, fill_value: int | str | float) -> DF:
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with the result of the `fill_value` expression.
@@ -4695,10 +4696,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def select(
         self: DF,
         exprs: (
-            str |
-            pli.Expr |
-            Sequence[str | pli.Expr | bool | int | float | pli.Series] |
-            pli.Series
+            str
+            | pli.Expr
+            | Sequence[str | pli.Expr | bool | int | float | pli.Series]
+            | pli.Series
         ),
     ) -> DF:
         """
@@ -4917,9 +4918,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ) -> DF | pli.Series:
         ...
 
-    def mean(
-        self: DF, axis: int = 0, null_strategy: str = "ignore"
-    ) -> DF | pli.Series:
+    def mean(self: DF, axis: int = 0, null_strategy: str = "ignore") -> DF | pli.Series:
         """
         Aggregate the columns of this DataFrame to their mean value.
 
@@ -5659,10 +5658,10 @@ class RollingGroupBy(Generic[DF]):
     def agg(
         self,
         column_to_agg: (
-            list[tuple[str, list[str]]] |
-            dict[str, str | list[str]] |
-            list[pli.Expr] |
-            pli.Expr
+            list[tuple[str, list[str]]]
+            | dict[str, str | list[str]]
+            | list[pli.Expr]
+            | pli.Expr
         ),
     ) -> DF:
         return (
@@ -5706,10 +5705,10 @@ class DynamicGroupBy(Generic[DF]):
     def agg(
         self,
         column_to_agg: (
-            list[tuple[str, list[str]]] |
-            dict[str, str | list[str]] |
-            list[pli.Expr] |
-            pli.Expr
+            list[tuple[str, list[str]]]
+            | dict[str, str | list[str]]
+            | list[pli.Expr]
+            | pli.Expr
         ),
     ) -> DF:
         return (
@@ -5799,9 +5798,7 @@ class GroupBy(Generic[DF]):
         )
         return self._select(item)
 
-    def _select(
-        self, columns: str | list[str]
-    ) -> GBSelection[DF]:  # pragma: no cover
+    def _select(self, columns: str | list[str]) -> GBSelection[DF]:  # pragma: no cover
         """
         Select the columns that will be aggregated.
 
@@ -5969,10 +5966,10 @@ class GroupBy(Generic[DF]):
     def agg(
         self,
         column_to_agg: (
-            list[tuple[str, list[str]]] |
-            dict[str, str | list[str]] |
-            list[pli.Expr] |
-            pli.Expr
+            list[tuple[str, list[str]]]
+            | dict[str, str | list[str]]
+            | list[pli.Expr]
+            | pli.Expr
         ),
     ) -> DF:
         """

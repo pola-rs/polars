@@ -30,20 +30,13 @@ class WhenThenThen:
     def then(
         self,
         expr: (
-            pli.Expr |
-            int |
-            float |
-            str |
-            None |
-            pli.Series |
-            Sequence[
-                (
-                    int |
-                    float |
-                    str |
-                    None
-                )
-            ]
+            pli.Expr
+            | int
+            | float
+            | str
+            | None
+            | pli.Series
+            | Sequence[(int | float | str | None)]
         ),
     ) -> WhenThenThen:
         """
@@ -57,19 +50,7 @@ class WhenThenThen:
     def otherwise(
         self,
         expr: (
-            pli.Expr |
-            int |
-            float |
-            str |
-            None |
-            Sequence[
-                (
-                    int |
-                    float |
-                    str |
-                    None
-                )
-            ]
+            pli.Expr | int | float | str | None | Sequence[(int | float | str | None)]
         ),
     ) -> pli.Expr:
         """
@@ -117,13 +98,13 @@ class When:
     def then(
         self,
         expr: (
-            pli.Expr |
-            pli.Series |
-            int |
-            float |
-            str |
-            None |
-            Sequence[None | int | float | str]
+            pli.Expr
+            | pli.Series
+            | int
+            | float
+            | str
+            | None
+            | Sequence[None | int | float | str]
         ),
     ) -> WhenThen:
         """

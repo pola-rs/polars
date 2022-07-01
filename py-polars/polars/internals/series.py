@@ -1393,9 +1393,7 @@ class Series:
         return wrap_s(self._s.take_every(n))
 
     @overload
-    def sort(
-        self, reverse: bool = False, *, in_place: Literal[False] = ...
-    ) -> Series:
+    def sort(self, reverse: bool = False, *, in_place: Literal[False] = ...) -> Series:
         ...
 
     @overload
@@ -1403,14 +1401,10 @@ class Series:
         ...
 
     @overload
-    def sort(
-        self, reverse: bool = False, *, in_place: bool = False
-    ) -> Series | None:
+    def sort(self, reverse: bool = False, *, in_place: bool = False) -> Series | None:
         ...
 
-    def sort(
-        self, reverse: bool = False, *, in_place: bool = False
-    ) -> Series | None:
+    def sort(self, reverse: bool = False, *, in_place: bool = False) -> Series | None:
         """
         Sort this Series.
 
@@ -2383,9 +2377,7 @@ class Series:
     def __deepcopy__(self, memodict: Any = {}) -> Series:
         return self.clone()
 
-    def fill_nan(
-        self, fill_value: str | int | float | bool | pli.Expr
-    ) -> Series:
+    def fill_nan(self, fill_value: str | int | float | bool | pli.Expr) -> Series:
         """
         Fill floating point NaN value with a fill value
         """
@@ -2736,9 +2728,7 @@ class Series:
         """
         return wrap_s(self._s.shift(periods))
 
-    def shift_and_fill(
-        self, periods: int, fill_value: int | pli.Expr
-    ) -> Series:
+    def shift_and_fill(self, periods: int, fill_value: int | pli.Expr) -> Series:
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with the result of the `fill_value` expression.
@@ -3743,9 +3733,7 @@ class Series:
             .to_series()
         )
 
-    def extend_constant(
-        self, value: int | float | str | bool | None, n: int
-    ) -> Series:
+    def extend_constant(self, value: int | float | str | bool | None, n: int) -> Series:
         """
         Extend the Series with given number of values.
 

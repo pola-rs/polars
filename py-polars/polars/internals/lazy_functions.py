@@ -60,13 +60,7 @@ except ImportError:  # pragma: no cover
 
 
 def col(
-    name: (
-        str |
-        list[str] |
-        Sequence[PolarsDataType] |
-        pli.Series |
-        PolarsDataType
-    )
+    name: (str | list[str] | Sequence[PolarsDataType] | pli.Series | PolarsDataType),
 ) -> pli.Expr:
     """
     A column in a DataFrame.
@@ -326,9 +320,7 @@ def max(column: pli.Series) -> int | float:
     ...
 
 
-def max(
-    column: str | list[pli.Expr | str] | pli.Series
-) -> pli.Expr | Any:
+def max(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     """
     Get the maximum value. Can be used horizontally or vertically.
 
@@ -359,9 +351,7 @@ def min(column: pli.Series) -> int | float:
     ...
 
 
-def min(
-    column: str | list[pli.Expr | str] | pli.Series
-) -> pli.Expr | Any:
+def min(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     """
     Get the minimum value.
 
@@ -390,9 +380,7 @@ def sum(column: pli.Series) -> int | float:
     ...
 
 
-def sum(
-    column: str | list[pli.Expr | str] | pli.Series
-) -> pli.Expr | Any:
+def sum(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     """
     Get the sum value.
 
@@ -574,9 +562,7 @@ def head(column: pli.Series, n: int | None) -> pli.Series:
     ...
 
 
-def head(
-    column: str | pli.Series, n: int | None = None
-) -> pli.Expr | pli.Series:
+def head(column: str | pli.Series, n: int | None = None) -> pli.Expr | pli.Series:
     """
     Get the first n rows of an Expression.
 
@@ -602,9 +588,7 @@ def tail(column: pli.Series, n: int | None) -> pli.Series:
     ...
 
 
-def tail(
-    column: str | pli.Series, n: int | None = None
-) -> pli.Expr | pli.Series:
+def tail(column: str | pli.Series, n: int | None = None) -> pli.Expr | pli.Series:
     """
     Get the last n rows of an Expression.
 
@@ -621,9 +605,7 @@ def tail(
 
 
 def lit(
-    value: None | (
-        float | int | str | date | datetime | pli.Series | np.ndarray | Any
-    ),
+    value: None | (float | int | str | date | datetime | pli.Series | np.ndarray | Any),
     dtype: type[DataType] | None = None,
 ) -> pli.Expr:
     """
@@ -999,9 +981,7 @@ def groups(column: str) -> pli.Expr:
     return col(column).agg_groups()
 
 
-def quantile(
-    column: str, quantile: float, interpolation: str = "nearest"
-) -> pli.Expr:
+def quantile(column: str, quantile: float, interpolation: str = "nearest") -> pli.Expr:
     """
     Syntactic sugar for `pl.col("foo").quantile(..)`.
     """
@@ -1257,9 +1237,7 @@ def _date(
     return _datetime(year, month, day).cast(Date).alias("date")
 
 
-def concat_str(
-    exprs: Sequence[pli.Expr | str] | pli.Expr, sep: str = ""
-) -> pli.Expr:
+def concat_str(exprs: Sequence[pli.Expr | str] | pli.Expr, sep: str = "") -> pli.Expr:
     """
     Horizontally Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8.
 
@@ -1331,9 +1309,7 @@ def format(fstring: str, *args: pli.Expr | str) -> pli.Expr:
     return concat_str(exprs, sep="")
 
 
-def concat_list(
-    exprs: Sequence[str | pli.Expr | pli.Series] | pli.Expr
-) -> pli.Expr:
+def concat_list(exprs: Sequence[str | pli.Expr | pli.Series] | pli.Expr) -> pli.Expr:
     """
     Concat the arrays in a Series dtype List in linear time.
 
@@ -1452,7 +1428,7 @@ def collect_all(
 
 
 def select(
-    exprs: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | pli.Series
+    exprs: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | pli.Series,
 ) -> pli.DataFrame:
     """
     Run polars expressions without a context.
@@ -1658,16 +1634,12 @@ def arg_where(
 
 
 @overload
-def arg_where(
-    condition: pli.Expr | pli.Series, eager: Literal[True]
-) -> pli.Series:
+def arg_where(condition: pli.Expr | pli.Series, eager: Literal[True]) -> pli.Series:
     ...
 
 
 @overload
-def arg_where(
-    condition: pli.Expr | pli.Series, eager: bool
-) -> pli.Expr | pli.Series:
+def arg_where(condition: pli.Expr | pli.Series, eager: bool) -> pli.Expr | pli.Series:
     ...
 
 

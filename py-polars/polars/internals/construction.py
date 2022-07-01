@@ -630,9 +630,7 @@ def arrow_to_pydf(
     return pydf
 
 
-def series_to_pydf(
-    data: pli.Series, columns: ColumnsType | None = None
-) -> PyDataFrame:
+def series_to_pydf(data: pli.Series, columns: ColumnsType | None = None) -> PyDataFrame:
     """
     Construct a PyDataFrame from a Polars Series.
     """

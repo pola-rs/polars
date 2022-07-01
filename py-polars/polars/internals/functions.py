@@ -74,10 +74,10 @@ def concat(
 
 def concat(
     items: (
-        Sequence[pli.DataFrame] |
-        Sequence[pli.Series] |
-        Sequence[pli.LazyFrame] |
-        Sequence[pli.Expr]
+        Sequence[pli.DataFrame]
+        | Sequence[pli.Series]
+        | Sequence[pli.LazyFrame]
+        | Sequence[pli.Expr]
     ),
     rechunk: bool = True,
     how: str = "vertical",
