@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from datetime import date, datetime, timedelta
 from inspect import isclass
-from typing import Any, Callable, List, Optional, Sequence, Type, Union, cast, overload
+from typing import Any, Callable, Sequence, cast, overload
 
 if sys.version_info >= (3, 8):
     from typing import Literal

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from types import TracebackType
-from typing import Optional, Type
 
 try:
     from polars.polars import toggle_string_cache as pytoggle_string_cache

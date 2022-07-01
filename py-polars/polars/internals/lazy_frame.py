@@ -11,20 +11,7 @@ import tempfile
 import warnings
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generic,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-    overload,
-)
+from typing import Any, Callable, Generic, Sequence, TypeVar, overload
 
 if sys.version_info >= (3, 8):
     from typing import Literal

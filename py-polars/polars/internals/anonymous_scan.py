@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pickle
 from functools import partial
-from typing import Dict, List, Optional
 
 import polars as pl
 from polars import internals as pli

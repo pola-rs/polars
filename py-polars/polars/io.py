@@ -2,20 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
-from typing import (
-    Any,
-    BinaryIO,
-    Callable,
-    Dict,
-    List,
-    Mapping,
-    Optional,
-    TextIO,
-    Tuple,
-    Type,
-    Union,
-    cast,
-)
+from typing import Any, BinaryIO, Callable, Mapping, TextIO, cast
 
 from polars.utils import format_path, handle_projection_columns
 

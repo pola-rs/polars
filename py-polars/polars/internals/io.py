@@ -4,18 +4,7 @@ import glob
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import (
-    Any,
-    BinaryIO,
-    ContextManager,
-    Dict,
-    Iterator,
-    List,
-    TextIO,
-    Type,
-    Union,
-    overload,
-)
+from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, overload
 from urllib.request import urlopen
 
 from polars.datatypes import DataType

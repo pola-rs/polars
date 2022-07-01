@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import Optional, Sequence, Tuple, Union, overload
+from typing import Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import Date

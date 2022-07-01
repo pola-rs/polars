@@ -3,17 +3,7 @@ from __future__ import annotations
 import warnings
 from datetime import date, datetime, time, timedelta
 from itertools import zip_longest
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
-)
+from typing import TYPE_CHECKING, Any, Iterable, Sequence
 
 import numpy as np
 

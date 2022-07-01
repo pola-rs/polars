@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from textwrap import dedent
 from types import TracebackType
-from typing import Dict, Iterable, List, Optional, Type
+from typing import Iterable
 
 from polars.datatypes import Object
 

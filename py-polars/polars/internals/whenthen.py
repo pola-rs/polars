@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Sequence, Union
+from typing import Any, Sequence
 
 try:
     from polars.polars import when as pywhen

@@ -2,18 +2,7 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, timedelta
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-    Union,
-    overload,
-)
+from typing import Any, Callable, Sequence, Union, overload
 
 import numpy as np
 

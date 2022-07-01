@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from typing import Type
 
 from polars.string_cache import toggle_string_cache
 
