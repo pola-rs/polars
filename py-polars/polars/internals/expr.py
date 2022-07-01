@@ -2220,6 +2220,34 @@ class Expr:
         ----------
         maintain_order
             Maintain order of data. This requires more work.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> df.select(pl.col("a").unique())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 2   │
+        ├╌╌╌╌╌┤
+        │ 1   │
+        └─────┘
+        >>> df.select(pl.col("a").unique(maintain_order=True))
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        └─────┘
+
         """
         if maintain_order:
             return wrap_expr(self._pyexpr.unique_stable())
@@ -2228,12 +2256,41 @@ class Expr:
     def first(self) -> "Expr":
         """
         Get the first value.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> df.select(pl.col("a").first())
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        └─────┘
         """
         return wrap_expr(self._pyexpr.first())
 
     def last(self) -> "Expr":
         """
         Get the last value.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> df.select(pl.col("a").last())
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 2   │
+        └─────┘
+
         """
         return wrap_expr(self._pyexpr.last())
 
@@ -2326,6 +2383,24 @@ class Expr:
     def is_unique(self) -> "Expr":
         """
         Get mask of unique values.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> df.select(pl.col("a").is_unique())
+        shape: (3, 1)
+        ┌───────┐
+        │ a     │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ false │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ├╌╌╌╌╌╌╌┤
+        │ true  │
+        └───────┘
         """
         return wrap_expr(self._pyexpr.is_unique())
 
@@ -2369,6 +2444,24 @@ class Expr:
     def is_duplicated(self) -> "Expr":
         """
         Get mask of duplicated values.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> df.select(pl.col("a").is_duplicated())
+        shape: (3, 1)
+        ┌───────┐
+        │ a     │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        └───────┘
         """
         return wrap_expr(self._pyexpr.is_duplicated())
 
@@ -2384,6 +2477,56 @@ class Expr:
 
         interpolation
             interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [0, 1, 2,3,4,5]})
+        >>> df.select(pl.col("a").quantile(0.3))
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 1.0 │
+        └─────┘
+        >>> df.select(pl.col("a").quantile(0.3,interpolation = "higher"))
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 2.0 │
+        └─────┘
+        >>> df.select(pl.col("a").quantile(0.3,interpolation = "lower"))
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 1.0 │
+        └─────┘
+        >>> df.select(pl.col("a").quantile(0.3,interpolation = "midpoint"))
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 1.5 │
+        └─────┘
+        >>> df.select(pl.col("a").quantile(0.3,interpolation = "linear"))
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 1.2 │
+        └─────┘
+
         """
         return wrap_expr(self._pyexpr.quantile(quantile, interpolation))
 
