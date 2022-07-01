@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, List, Sequence
 
 import numpy as np
 
@@ -35,7 +35,7 @@ from polars.datatypes import (
 
 def selection_to_pyexpr_list(
     exprs: str | Expr | Sequence[str | Expr | pli.Series] | pli.Series,
-) -> list[PyExpr]:
+) -> List[PyExpr]:
     if isinstance(exprs, (str, Expr, pli.Series)):
         exprs = [exprs]
 
@@ -351,7 +351,7 @@ class Expr:
         self,
         columns: (
             str
-            | list[str]
+            | List[str]
             | DataType
             | type[DataType]
             | DataType
@@ -1218,8 +1218,8 @@ class Expr:
 
     def sort_by(
         self,
-        by: Expr | str | list[Expr | str],
-        reverse: bool | list[bool] = False,
+        by: Expr | str | List[Expr | str],
+        reverse: bool | List[bool] = False,
     ) -> Expr:
         """
         Sort this column by the ordering of another column, or multiple other columns.
@@ -1242,7 +1242,7 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    def take(self, index: list[int] | Expr | pli.Series | np.ndarray) -> Expr:
+    def take(self, index: List[int] | Expr | pli.Series | np.ndarray) -> Expr:
         """
         Take values by index.
 
@@ -1624,7 +1624,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.list())
 
-    def over(self, expr: str | Expr | list[Expr | str]) -> Expr:
+    def over(self, expr: str | Expr | List[Expr | str]) -> Expr:
         """
         Apply window function over a subgroup.
         This is similar to a groupby + aggregation + self join.
@@ -2078,7 +2078,7 @@ class Expr:
         exponent = expr_to_lit_or_expr(exponent)
         return wrap_expr(self._pyexpr.pow(exponent._pyexpr))
 
-    def is_in(self, other: Expr | list[Any] | str) -> Expr:
+    def is_in(self, other: Expr | List[Any] | str) -> Expr:
         """
         Check if elements of this Series are in the right Series, or List values of the right Series.
 
@@ -2332,7 +2332,7 @@ class Expr:
     def rolling_min(
         self,
         window_size: int | str,
-        weights: list[float] | None = None,
+        weights: List[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -2430,7 +2430,7 @@ class Expr:
     def rolling_max(
         self,
         window_size: int | str,
-        weights: list[float] | None = None,
+        weights: List[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -2528,7 +2528,7 @@ class Expr:
     def rolling_mean(
         self,
         window_size: int | str,
-        weights: list[float] | None = None,
+        weights: List[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -2624,7 +2624,7 @@ class Expr:
     def rolling_sum(
         self,
         window_size: int | str,
-        weights: list[float] | None = None,
+        weights: List[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -2704,7 +2704,7 @@ class Expr:
     def rolling_std(
         self,
         window_size: int | str,
-        weights: list[float] | None = None,
+        weights: List[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -2773,7 +2773,7 @@ class Expr:
     def rolling_var(
         self,
         window_size: int | str,
-        weights: list[float] | None = None,
+        weights: List[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -2842,7 +2842,7 @@ class Expr:
     def rolling_median(
         self,
         window_size: int | str,
-        weights: list[float] | None = None,
+        weights: List[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -2909,7 +2909,7 @@ class Expr:
         quantile: float,
         interpolation: str = "nearest",
         window_size: int | str = 2,
-        weights: list[float] | None = None,
+        weights: List[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -2986,7 +2986,7 @@ class Expr:
         self,
         function: Callable[[pli.Series], Any],
         window_size: int,
-        weights: list[float] | None = None,
+        weights: List[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
     ) -> Expr:
@@ -3495,7 +3495,7 @@ class Expr:
         ┌───────────┐
         │ foo       │
         │ ---       │
-        │ list[i64] │
+        │ List[i64] │
         ╞═══════════╡
         │ [1, 2, 3] │
         ├╌╌╌╌╌╌╌╌╌╌╌┤
@@ -3937,7 +3937,7 @@ class ExprStructNameSpace:
         """
         return wrap_expr(self._pyexpr.struct_field_by_name(name))
 
-    def rename_fields(self, names: list[str]) -> Expr:
+    def rename_fields(self, names: List[str]) -> Expr:
         """
         Rename the fields of the struct
 
@@ -4099,7 +4099,7 @@ class ExprListNameSpace:
         return wrap_expr(self._pyexpr.lst_unique())
 
     def concat(
-        self, other: list[Expr | str] | Expr | str | pli.Series | list[Any]
+        self, other: List[Expr | str] | Expr | str | pli.Series | List[Any]
     ) -> Expr:
         """
         Concat the arrays in a Series dtype List in linear time.
@@ -4136,7 +4136,7 @@ class ExprListNameSpace:
         ):
             return self.concat(pli.Series([other]))
 
-        other_list: list[Expr | str | pli.Series]
+        other_list: List[Expr | str | pli.Series]
         if not isinstance(other, list):
             other_list = [other]
         else:
@@ -5032,7 +5032,7 @@ class ExprStringNameSpace:
         ┌────────────────┐
         │ extracted_nrs  │
         │ ---            │
-        │ list[str]      │
+        │ List[str]      │
         ╞════════════════╡
         │ ["123", "45"]  │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
