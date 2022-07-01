@@ -578,9 +578,7 @@ class Series:
         """
         Return the base 10 logarithm of the input array, element-wise.
         """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.log10(self)  # type: ignore
+        return self.log(10.0)
 
     def exp(self) -> Series:
         """

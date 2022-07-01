@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import math
+import random
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, List, Sequence
 
@@ -12,8 +14,6 @@ try:
     _DOCUMENTING = False
 except ImportError:  # pragma: no cover
     _DOCUMENTING = True
-
-import math
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -3543,9 +3543,7 @@ class Expr:
             Seed initialization. If None given numpy is used.
         """
         if seed is None:
-            if not _NUMPY_AVAILABLE:
-                raise ImportError("'numpy' is required for this functionality.")
-            seed = int(np.random.randint(0, 10000))
+            seed = random.randint(0, 10000)
         return wrap_expr(self._pyexpr.shuffle(seed))
 
     def sample(
@@ -5904,9 +5902,7 @@ def _prepare_alpha(
         alpha = 2.0 / (span + 1.0)
     if half_life is not None and alpha is None:
         assert half_life > 0.0
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        alpha = 1.0 - np.exp(-np.log(2.0) / half_life)
+        alpha = 1.0 - math.exp(-math.log(2.0) / half_life)
     if alpha is None:
         raise ValueError("at least one of {com, span, half_life, alpha} should be set")
     return alpha
