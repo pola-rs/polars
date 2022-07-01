@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from typing import Type
 
@@ -10,7 +12,7 @@ class Config:
     """
 
     @classmethod
-    def set_utf8_tables(cls) -> "Type[Config]":
+    def set_utf8_tables(cls) -> type[Config]:
         """
         Use utf8 characters to print tables
         """
@@ -21,7 +23,7 @@ class Config:
         return cls
 
     @classmethod
-    def set_ascii_tables(cls) -> "Type[Config]":
+    def set_ascii_tables(cls) -> type[Config]:
         """
         Use ascii characters to print tables
         """
@@ -29,7 +31,7 @@ class Config:
         return cls
 
     @classmethod
-    def set_tbl_width_chars(cls, width: int) -> "Type[Config]":
+    def set_tbl_width_chars(cls, width: int) -> type[Config]:
         """
         Set the number of character used to draw the table
 
@@ -42,7 +44,7 @@ class Config:
         return cls
 
     @classmethod
-    def set_tbl_rows(cls, n: int) -> "Type[Config]":
+    def set_tbl_rows(cls, n: int) -> type[Config]:
         """
         Set the number of rows used to print tables
 
@@ -56,7 +58,7 @@ class Config:
         return cls
 
     @classmethod
-    def set_tbl_cols(cls, n: int) -> "Type[Config]":
+    def set_tbl_cols(cls, n: int) -> type[Config]:
         """
         Set the number of columns used to print tables
 
@@ -85,7 +87,7 @@ class Config:
         return cls
 
     @classmethod
-    def set_global_string_cache(cls) -> "Type[Config]":
+    def set_global_string_cache(cls) -> type[Config]:
         """
         Turn on the global string cache
         """
@@ -93,7 +95,7 @@ class Config:
         return cls
 
     @classmethod
-    def unset_global_string_cache(cls) -> "Type[Config]":
+    def unset_global_string_cache(cls) -> type[Config]:
         """
         Turn off the global string cache
         """
