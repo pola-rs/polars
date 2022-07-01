@@ -44,9 +44,7 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
-)
-from polars.datatypes import List as PlList
-from polars.datatypes import (
+    List,
     Object,
     Time,
     UInt8,
@@ -453,12 +451,12 @@ class Series:
         if isinstance(item, int):
             if item < 0:
                 item = self.len() + item
-            if self.dtype in (PlList, Object):
+            if self.dtype in (List, Object):
                 f = get_ffi_func("get_<>", self.dtype, self._s)
                 if f is None:
                     return NotImplemented
                 out = f(item)
-                if self.dtype == PlList:
+                if self.dtype == List:
                     if out is None:
                         return None
                     return wrap_s(out)

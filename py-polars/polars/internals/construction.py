@@ -8,9 +8,14 @@ from typing import TYPE_CHECKING, Any, Iterable, Sequence
 import numpy as np
 
 from polars import internals as pli
-from polars.datatypes import Categorical, ColumnsType, Date, Datetime, Duration, Float32
-from polars.datatypes import List as ListDType
 from polars.datatypes import (
+    Categorical,
+    ColumnsType,
+    Date,
+    Datetime,
+    Duration,
+    Float32,
+    List,
     PolarsDataType,
     Time,
     dtype_to_arrow_type,
@@ -143,7 +148,7 @@ def sequence_to_pyseries(
     if not values and dtype is None:
         dtype = Float32
     # lists defer to subsequent handling; identify nested type
-    elif dtype == ListDType:
+    elif dtype == List:
         nested_dtype = getattr(dtype, "inner", None)
         dtype_ = list
 
