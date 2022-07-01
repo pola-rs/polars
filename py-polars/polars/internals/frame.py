@@ -415,7 +415,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
         if _NUMPY_AVAILABLE and isinstance(data, np.ndarray):
             pydf = numpy_to_pydf(data, columns=columns, orient=orient)
         else:
-            pydf = sequence_to_pydf(data, columns=columns, orient=orient)
+            pydf = sequence_to_pydf(
+                data,  # type: ignore[arg-type]
+                columns=columns,
+                orient=orient,
+            )
         return cls._from_pydf(pydf)
 
     @classmethod

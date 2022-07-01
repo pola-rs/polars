@@ -1296,7 +1296,10 @@ class Expr:
         elif _NUMPY_AVAILABLE and isinstance(index, np.ndarray):
             index_lit = pli.lit(pli.Series("", index, dtype=UInt32))
         else:
-            index_lit = pli.expr_to_lit_or_expr(index, str_to_lit=False)
+            index_lit = pli.expr_to_lit_or_expr(
+                index,  # type: ignore[arg-type]
+                str_to_lit=False,
+            )
         return pli.wrap_expr(self._pyexpr.take(index_lit._pyexpr))
 
     def shift(self, periods: int = 1) -> Expr:
