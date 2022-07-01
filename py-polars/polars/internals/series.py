@@ -504,7 +504,12 @@ class Series:
         elif _NUMPY_AVAILABLE and isinstance(key, np.ndarray) and key.dtype == np.bool_:
             # boolean numpy mask
             self._s = self.set_at_idx(np.argwhere(key)[:, 0], value)._s
-        elif isinstance(key, (np.ndarray, list, tuple)):
+        elif _NUMPY_AVAILABLE and isinstance(key, np.ndarray):
+            s = wrap_s(PySeries.new_u32("", np.array(key, np.uint32), True))
+            self.__setitem__(s, value)
+        elif isinstance(key, (list, tuple)):
+            if not _NUMPY_AVAILABLE:
+                raise ImportError("'numpy' is required for this functionality.")
             s = wrap_s(PySeries.new_u32("", np.array(key, np.uint32), True))
             self.__setitem__(s, value)
         elif isinstance(key, int) and not isinstance(key, bool):
@@ -1538,6 +1543,8 @@ class Series:
         if isinstance(indices, pli.Expr):
             return pli.select(pli.lit(self).take(indices)).to_series()
         if isinstance(indices, list):
+            if not _NUMPY_AVAILABLE:
+                raise ImportError("'numpy' is required for this functionality.")
             indices = np.array(indices)
         return wrap_s(self._s.take(indices))
 
@@ -2353,7 +2360,7 @@ class Series:
             # make sure the dtype matches
             idx = idx.cast(UInt32)
             idx_array = idx.view()
-        elif isinstance(idx, np.ndarray):
+        elif _NUMPY_AVAILABLE and isinstance(idx, np.ndarray):
             if not idx.data.c_contiguous:
                 idx_array = np.ascontiguousarray(idx, dtype=np.uint32)
             else:
@@ -2362,6 +2369,8 @@ class Series:
                     idx_array = np.array(idx_array, np.uint32)
 
         else:
+            if not _NUMPY_AVAILABLE:
+                raise ImportError("'numpy' is required for this functionality.")
             idx_array = np.array(idx, dtype=np.uint32)
 
         return wrap_s(f(idx_array, value))
