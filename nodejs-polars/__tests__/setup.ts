@@ -40,8 +40,8 @@ Received:
       };
     }
   },
-  toFrameEqual(actual, expected) {
-    const pass = actual.frameEqual(expected);
+  toFrameEqual(actual, expected, nullEqual?) {
+    const pass = actual.frameEqual(expected, nullEqual);
     if(pass) {
       return {
         message: () => "dataframes match",

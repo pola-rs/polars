@@ -864,6 +864,31 @@ impl JsDataFrame {
         Ok(JsDataFrame::new(df))
     }
     #[napi]
+    pub fn pivot2(
+        &self,
+        values: Vec<String>,
+        index: Vec<String>,
+        columns: Vec<String>,
+        aggregate_fn: Wrap<PivotAgg>,
+        maintain_order: bool,
+        sort_columns: bool,
+    ) -> napi::Result<JsDataFrame> {
+        let fun = match maintain_order {
+            true => DataFrame::pivot_stable,
+            false => DataFrame::pivot,
+        };
+        let df = fun(
+            &self.df,
+            values,
+            index,
+            columns,
+            aggregate_fn.0,
+            sort_columns,
+        )
+        .map_err(JsPolarsErr::from)?;
+        Ok(JsDataFrame::new(df))
+    }
+    #[napi]
     pub fn clone(&self) -> JsDataFrame {
         JsDataFrame::new(self.df.clone())
     }

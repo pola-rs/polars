@@ -2,7 +2,7 @@
 import pl from "@polars";
 import {Stream} from "stream";
 import fs from "fs";
-describe("dataframe", () => {
+describe.only("dataframe", () => {
   const df = pl.DataFrame([
     pl.Series("foo", [1, 2, 9], pl.Int16),
     pl.Series("bar", [6, 2, 8], pl.Int16),
@@ -1038,6 +1038,22 @@ describe("dataframe", () => {
     ]);
     expect(actual).toFrameEqual(expected);
   });
+  test("pivot", () => {
+    const df = pl.DataFrame({"a": [1, 2, 3], "b": [[1, 1], [2, 2], [3, 3]]});
+
+    const expected = pl.DataFrame(
+      {
+        "a": [1, 2, 3],
+        "1": [[1, 1], null, null],
+        "2": [null, [2, 2], null],
+        "3": [null, null, [3, 3]],
+      }
+    );
+
+    const actual  = df.pivot("b", {index:"a", columns:"a", aggregateFunc:"first", sortColumns:true});
+
+    expect(actual).toFrameEqual(expected, true);
+  });
 });
 describe("join", () => {
   test("on", () => {
@@ -1267,6 +1283,24 @@ describe("join", () => {
       "foo_other": [1, 10, null],
     });
     expect(actual).toFrameEqual(expected);
+  });
+  test("asof_cross_join", () => {
+    const left = pl.DataFrame({"a": [-10, 5, 10], "left_val": ["a", "b", "c"]});
+    const right = pl.DataFrame({"a": [1, 2, 3, 6, 7], "right_val": [1, 2, 3, 6, 7]});
+
+    //  only test dispatch of asof join
+    let out = left.joinAsof(right, {on:"a"});
+    expect(out.shape).toEqual({height: 3, width: 3});
+
+    out = left.lazy().joinAsof(right.lazy(), {on:"a"}).collectSync();
+    expect(out.shape).toEqual({height: 3, width: 3});
+
+    // only test dispatch of cross join
+    out = left.join(right, {how:"cross"});
+    expect(out.shape).toEqual({height: 15, width: 4});
+
+    left.lazy().join(right.lazy(), {how:"cross"}).collectSync();
+    expect(out.shape).toEqual({height: 15, width: 4});
   });
 });
 describe("io", () => {

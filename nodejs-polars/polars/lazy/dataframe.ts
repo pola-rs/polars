@@ -1,4 +1,3 @@
-
 import {DataFrame, _DataFrame} from "../dataframe";
 import {Expr, exprToLitOrExpr} from "./expr";
 import pli from "../internals/polars_internal";
@@ -8,28 +7,26 @@ import {
   ColumnsOrExpr,
   ExprOrString,
   selectionToExprList,
-  ValueOrArray
+  ValueOrArray,
 } from "../utils";
 import {LazyGroupBy} from "./groupby";
 import {Deserialize, GroupByOps, Serialize} from "../shared_traits";
 
-
 type LazyJoinOptions = {
   how?: "left" | "inner" | "outer" | "cross";
-  suffix?: string,
-  allowParallel?: boolean,
-  forceParallel?: boolean
+  suffix?: string;
+  allowParallel?: boolean;
+  forceParallel?: boolean;
 };
 
-
 type LazyOptions = {
-  typeCoercion?: boolean,
-  predicatePushdown?: boolean,
-  projectionPushdown?: boolean,
-  simplifyExpression?: boolean,
-  stringCache?: boolean,
-  noOptimization?: boolean,
-}
+  typeCoercion?: boolean;
+  predicatePushdown?: boolean;
+  projectionPushdown?: boolean;
+  simplifyExpression?: boolean;
+  stringCache?: boolean;
+  noOptimization?: boolean;
+};
 
 /**
  * Representation of a Lazy computation graph / query.
@@ -37,47 +34,47 @@ type LazyOptions = {
 export interface LazyDataFrame extends Serialize, GroupByOps<LazyGroupBy> {
   /** @ignore */
   _ldf: any;
-  get columns(): string[]
+  get columns(): string[];
   /**
    * Cache the result once the execution of the physical plan hits this node.
    */
-  cache(): LazyDataFrame
-  clone(): LazyDataFrame
+  cache(): LazyDataFrame;
+  clone(): LazyDataFrame;
   /**
-  *
-  * Collect into a DataFrame.
-  * Note: use `fetch` if you want to run this query on the first `n` rows only.
-  * This can be a huge time saver in debugging queries.
-  * @param typeCoercion -Do type coercion optimization.
-  * @param predicatePushdown - Do predicate pushdown optimization.
-  * @param projectionPushdown - Do projection pushdown optimization.
-  * @param simplifyExpression - Run simplify expressions optimization.
-  * @param stringCache - Use a global string cache in this query.
-  *     This is needed if you want to join on categorical columns.
-  *     Caution!
-  * *  If you already have set a global string cache, set this to `false` as this will reset the
-  * *  global cache when the query is finished.
-  * @param noOptimization - Turn off optimizations.
-  * @return DataFrame
-  *
-  */
-  collect(opts?: LazyOptions): Promise<DataFrame>
-  collectSync(opts?: LazyOptions): DataFrame
+   *
+   * Collect into a DataFrame.
+   * Note: use `fetch` if you want to run this query on the first `n` rows only.
+   * This can be a huge time saver in debugging queries.
+   * @param typeCoercion -Do type coercion optimization.
+   * @param predicatePushdown - Do predicate pushdown optimization.
+   * @param projectionPushdown - Do projection pushdown optimization.
+   * @param simplifyExpression - Run simplify expressions optimization.
+   * @param stringCache - Use a global string cache in this query.
+   *     This is needed if you want to join on categorical columns.
+   *     Caution!
+   * *  If you already have set a global string cache, set this to `false` as this will reset the
+   * *  global cache when the query is finished.
+   * @param noOptimization - Turn off optimizations.
+   * @return DataFrame
+   *
+   */
+  collect(opts?: LazyOptions): Promise<DataFrame>;
+  collectSync(opts?: LazyOptions): DataFrame;
   /**
    * A string representation of the optimized query plan.
    */
-  describeOptimizedPlan(opts?: LazyOptions): string
+  describeOptimizedPlan(opts?: LazyOptions): string;
   /**
    * A string representation of the unoptimized query plan.
    */
-  describePlan(): string
+  describePlan(): string;
   /**
    * Remove one or multiple columns from a DataFrame.
    * @param columns - column or list of columns to be removed
    */
-  drop(name: string): LazyDataFrame
-  drop(names: string[]): LazyDataFrame
-  drop(name: string, ...names: string[]): LazyDataFrame
+  drop(name: string): LazyDataFrame;
+  drop(names: string[]): LazyDataFrame;
+  drop(name: string, ...names: string[]): LazyDataFrame;
   /**
    * Drop duplicate rows from this DataFrame.
    * Note that this fails if there is a column of type `List` in the DataFrame.
@@ -86,21 +83,29 @@ export interface LazyDataFrame extends Serialize, GroupByOps<LazyGroupBy> {
    * @param keep "first" | "last"
    * @deprecated @since 0.4.0 @use {@link unique}
    */
-  distinct(maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first" | "last"): LazyDataFrame
-  distinct(opts: {maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first" | "last"}): LazyDataFrame
+  distinct(
+    maintainOrder?: boolean,
+    subset?: ColumnSelection,
+    keep?: "first" | "last"
+  ): LazyDataFrame;
+  distinct(opts: {
+    maintainOrder?: boolean;
+    subset?: ColumnSelection;
+    keep?: "first" | "last";
+  }): LazyDataFrame;
   /**
    * Drop rows with null values from this DataFrame.
    * This method only drops nulls row-wise if any single value of the row is null.
    */
-  dropNulls(column: string): LazyDataFrame
-  dropNulls(columns: string[]): LazyDataFrame
-  dropNulls(...columns: string[]): LazyDataFrame
+  dropNulls(column: string): LazyDataFrame;
+  dropNulls(columns: string[]): LazyDataFrame;
+  dropNulls(...columns: string[]): LazyDataFrame;
   /**
    * Explode lists to long format.
    */
-  explode(column: ExprOrString): LazyDataFrame
-  explode(columns: ExprOrString[]): LazyDataFrame
-  explode(column: ExprOrString, ...columns: ExprOrString[]): LazyDataFrame
+  explode(column: ExprOrString): LazyDataFrame;
+  explode(columns: ExprOrString[]): LazyDataFrame;
+  explode(column: ExprOrString, ...columns: ExprOrString[]): LazyDataFrame;
   /**
    * Fetch is like a collect operation, but it overwrites the number of rows read by every scan
    *
@@ -115,16 +120,16 @@ export interface LazyDataFrame extends Serialize, GroupByOps<LazyGroupBy> {
    * @param opts.simplifyExpression - Run simplify expressions optimization.
    * @param opts.stringCache - Use a global string cache in this query.
    */
-  fetch(numRows?: number): Promise<DataFrame>
-  fetch(numRows: number, opts: LazyOptions): Promise<DataFrame>
+  fetch(numRows?: number): Promise<DataFrame>;
+  fetch(numRows: number, opts: LazyOptions): Promise<DataFrame>;
   /** Behaves the same as fetch, but will perform the actions synchronously */
-  fetchSync(numRows?: number): DataFrame
-  fetchSync(numRows: number, opts: LazyOptions): DataFrame
+  fetchSync(numRows?: number): DataFrame;
+  fetchSync(numRows: number, opts: LazyOptions): DataFrame;
   /**
    * Fill missing values
    * @param fillValue value to fill the missing values with
    */
-  fillNull(fillValue: string | number | Expr): LazyDataFrame
+  fillNull(fillValue: string | number | Expr): LazyDataFrame;
   /**
    * Filter the rows in the DataFrame based on a predicate expression.
    * @param predicate - Expression that evaluates to a boolean Series.
@@ -149,16 +154,16 @@ export interface LazyDataFrame extends Serialize, GroupByOps<LazyGroupBy> {
    * └─────┴─────┴─────┘
    * ```
    */
-  filter(predicate: Expr | string): LazyDataFrame
+  filter(predicate: Expr | string): LazyDataFrame;
   /**
    * Get the first row of the DataFrame.
    */
-  first(): DataFrame
+  first(): DataFrame;
   /**
    * Start a groupby operation.
    */
-  groupBy(by: ColumnsOrExpr, maintainOrder?: boolean): LazyGroupBy
-  groupBy(by: ColumnsOrExpr, opts: {maintainOrder: boolean}): LazyGroupBy
+  groupBy(by: ColumnsOrExpr, maintainOrder?: boolean): LazyGroupBy;
+  groupBy(by: ColumnsOrExpr, opts: {maintainOrder: boolean}): LazyGroupBy;
 
   /**
    * Gets the first `n` rows of the DataFrame. You probably don't want to use this!
@@ -166,95 +171,226 @@ export interface LazyDataFrame extends Serialize, GroupByOps<LazyGroupBy> {
    * Consider using the `fetch` operation.
    * The `fetch` operation will truly load the first `n`rows lazily.
    */
-  head(length?: number): LazyDataFrame
+  head(length?: number): LazyDataFrame;
   /**
    * Add a join operation to the Logical Plan.
    */
-  join(df: LazyDataFrame, joinOptions: {on: ValueOrArray<string | Expr>} & LazyJoinOptions): LazyDataFrame
-  join(df: LazyDataFrame, joinOptions: {leftOn: ValueOrArray<string | Expr>, rightOn: ValueOrArray<string | Expr>} & LazyJoinOptions): LazyDataFrame
+  join(
+    other: LazyDataFrame,
+    joinOptions: {on: ValueOrArray<string | Expr>} & LazyJoinOptions
+  ): LazyDataFrame;
+  join(
+    other: LazyDataFrame,
+    joinOptions: {
+      leftOn: ValueOrArray<string | Expr>;
+      rightOn: ValueOrArray<string | Expr>;
+    } & LazyJoinOptions
+  ): LazyDataFrame;
+  join(other: LazyDataFrame, options: {
+    how: "cross",
+    suffix?: string,
+    allowParallel?: boolean,
+    forceParallel?: boolean
+  }): LazyDataFrame
+
+
+  /**
+     * Perform an asof join. This is similar to a left-join except that we
+     * match on nearest key rather than equal keys.
+     *
+     * Both DataFrames must be sorted by the asof_join key.
+     *
+      For each row in the left DataFrame:
+
+        - A "backward" search selects the last row in the right DataFrame whose
+          'on' key is less than or equal to the left's key.
+
+        - A "forward" search selects the first row in the right DataFrame whose
+          'on' key is greater than or equal to the left's key.
+
+      The default is "backward".
+
+      Parameters
+      ----------
+      @param other DataFrame to join with.
+      @param options.leftOn Join column of the left DataFrame.
+      @param options.rightOn Join column of the right DataFrame.
+      @param options.on Join column of both DataFrames. If set, `leftOn` and `rightOn` should be undefined.
+      @param options.byLeft join on these columns before doing asof join
+      @param options.byRight join on these columns before doing asof join
+      @param options.strategy One of {'forward', 'backward'}
+      @param options.suffix Suffix to append to columns with a duplicate name.
+      @param options.tolerance
+        Numeric tolerance. By setting this the join will only be done if the near keys are within this distance.
+        If an asof join is done on columns of dtype "Date", "Datetime" you
+        use the following string language:
+
+        - 1ns   *(1 nanosecond)*
+        - 1us   *(1 microsecond)*
+        - 1ms   *(1 millisecond)*
+        - 1s    *(1 second)*
+        - 1m    *(1 minute)*
+        - 1h    *(1 hour)*
+        - 1d    *(1 day)*
+        - 1w    *(1 week)*
+        - 1mo   *(1 calendar month)*
+        - 1y    *(1 calendar year)*
+        - 1i    *(1 index count)*
+
+      Or combine them:
+        - "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+      @param options.allowParallel Allow the physical plan to optionally evaluate the computation of both DataFrames up to the join in parallel.
+      @param options.forceParallel Force the physical plan to evaluate the computation of both DataFrames up to the join in parallel.
+
+
+      @example
+      ```
+      >>> const gdp = pl.DataFrame({
+      ...   date: [
+      ...     new Date('2016-01-01'),
+      ...     new Date('2017-01-01'),
+      ...     new Date('2018-01-01'),
+      ...     new Date('2019-01-01'),
+      ...   ],  // note record date: Jan 1st (sorted!)
+      ...   gdp: [4164, 4411, 4566, 4696],
+      ... })
+      >>> const population = pl.DataFrame({
+      ...   date: [
+      ...     new Date('2016-05-12'),
+      ...     new Date('2017-05-12'),
+      ...     new Date('2018-05-12'),
+      ...     new Date('2019-05-12'),
+      ...   ],  // note record date: May 12th (sorted!)
+      ...   "population": [82.19, 82.66, 83.12, 83.52],
+      ... })
+      >>> population.joinAsof(
+      ...   gdp,
+      ...   {leftOn:"date", rightOn:"date", strategy:"backward"}
+      ... )
+        shape: (4, 3)
+        ┌─────────────────────┬────────────┬──────┐
+        │ date                ┆ population ┆ gdp  │
+        │ ---                 ┆ ---        ┆ ---  │
+        │ datetime[μs]        ┆ f64        ┆ i64  │
+        ╞═════════════════════╪════════════╪══════╡
+        │ 2016-05-12 00:00:00 ┆ 82.19      ┆ 4164 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2017-05-12 00:00:00 ┆ 82.66      ┆ 4411 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2018-05-12 00:00:00 ┆ 83.12      ┆ 4566 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2019-05-12 00:00:00 ┆ 83.52      ┆ 4696 │
+        └─────────────────────┴────────────┴──────┘
+      ```
+     */
+  joinAsof(
+    other: LazyDataFrame,
+    options: {
+      leftOn?: string;
+      rightOn?: string;
+      on?: string;
+      byLeft?: string | string[];
+      byRight?: string | string[];
+      by?: string | string[];
+      strategy?: "backward" | "forward";
+      suffix?: string;
+      tolerance?: number | string;
+      allowParallel?: boolean;
+      forceParallel?: boolean;
+    }
+  ): LazyDataFrame;
   /**
    * Get the last row of the DataFrame.
    */
-  last(): LazyDataFrame
+  last(): LazyDataFrame;
   /**
    * @see {@link head}
    */
-  limit(n?: number): LazyDataFrame
+  limit(n?: number): LazyDataFrame;
   /**
    * @see {@link DataFrame.max}
    */
-  max(): LazyDataFrame
+  max(): LazyDataFrame;
   /**
    * @see {@link DataFrame.mean}
    */
-  mean(): LazyDataFrame
+  mean(): LazyDataFrame;
   /**
    * @see {@link DataFrame.median}
    */
-  median(): LazyDataFrame
+  median(): LazyDataFrame;
   /**
    * @see {@link DataFrame.melt}
    */
-  melt(idVars: ColumnSelection, valueVars: ColumnSelection): LazyDataFrame
+  melt(idVars: ColumnSelection, valueVars: ColumnSelection): LazyDataFrame;
   /**
    * @see {@link DataFrame.min}
    */
-  min(): LazyDataFrame
+  min(): LazyDataFrame;
   /**
    * @see {@link DataFrame.quantile}
    */
-  quantile(quantile: number): LazyDataFrame
+  quantile(quantile: number): LazyDataFrame;
   /**
    * @see {@link DataFrame.rename}
    */
-  rename(mapping: Record<string, string>)
+  rename(mapping: Record<string, string>);
   /**
    * Reverse the DataFrame.
    */
-  reverse()
+  reverse();
   /**
    * @see {@link DataFrame.select}
    */
-  select(column: ExprOrString): LazyDataFrame
-  select(columns: ExprOrString[]): LazyDataFrame
-  select(column: ExprOrString, ...columns: ExprOrString[]): LazyDataFrame
+  select(column: ExprOrString): LazyDataFrame;
+  select(columns: ExprOrString[]): LazyDataFrame;
+  select(column: ExprOrString, ...columns: ExprOrString[]): LazyDataFrame;
   /**
    * @see {@link DataFrame.shift}
    */
-  shift(periods: number): LazyDataFrame
-  shift(opts: {periods: number}): LazyDataFrame
+  shift(periods: number): LazyDataFrame;
+  shift(opts: {periods: number}): LazyDataFrame;
   /**
    * @see {@link DataFrame.shiftAndFill}
    */
-  shiftAndFill(periods: number, fillValue: number | string | Expr): LazyDataFrame
-  shiftAndFill(opts: {periods: number, fillValue: number | string | Expr}): LazyDataFrame
+  shiftAndFill(
+    periods: number,
+    fillValue: number | string | Expr
+  ): LazyDataFrame;
+  shiftAndFill(opts: {
+    periods: number;
+    fillValue: number | string | Expr;
+  }): LazyDataFrame;
   /**
    * @see {@link DataFrame.slice}
    */
-  slice(offset: number, length: number): LazyDataFrame
-  slice(opts: {offset: number, length: number}): LazyDataFrame
+  slice(offset: number, length: number): LazyDataFrame;
+  slice(opts: {offset: number; length: number}): LazyDataFrame;
   /**
    * @see {@link DataFrame.sort}
    */
-  sort(by: ColumnsOrExpr, reverse?: ValueOrArray<boolean>): LazyDataFrame
-  sort(opts: {by: ColumnsOrExpr, reverse?: ValueOrArray<boolean>}): LazyDataFrame
+  sort(by: ColumnsOrExpr, reverse?: ValueOrArray<boolean>): LazyDataFrame;
+  sort(opts: {
+    by: ColumnsOrExpr;
+    reverse?: ValueOrArray<boolean>;
+  }): LazyDataFrame;
   /**
    * @see {@link DataFrame.std}
    */
-  std(): LazyDataFrame
+  std(): LazyDataFrame;
   /**
    * Aggregate the columns in the DataFrame to their sum value.
    */
-  sum(): LazyDataFrame
+  sum(): LazyDataFrame;
   /**
    * Get the last `n` rows of the DataFrame.
    * @see {@link DataFrame.tail}
    */
-  tail(length?: number): LazyDataFrame
+  tail(length?: number): LazyDataFrame;
   /**
    * compatibility with `JSON.stringify`
    */
-  toJSON(): String
+  toJSON(): String;
   /**
    * Drop duplicate rows from this DataFrame.
    * Note that this fails if there is a column of type `List` in the DataFrame.
@@ -262,36 +398,44 @@ export interface LazyDataFrame extends Serialize, GroupByOps<LazyGroupBy> {
    * @param subset - subset to drop duplicates for
    * @param keep "first" | "last"
    */
-  unique(maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first" | "last"): LazyDataFrame
-  unique(opts: {maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first" | "last"}): LazyDataFrame
+  unique(
+    maintainOrder?: boolean,
+    subset?: ColumnSelection,
+    keep?: "first" | "last"
+  ): LazyDataFrame;
+  unique(opts: {
+    maintainOrder?: boolean;
+    subset?: ColumnSelection;
+    keep?: "first" | "last";
+  }): LazyDataFrame;
   /**
    * Aggregate the columns in the DataFrame to their variance value.
    */
-  var(): LazyDataFrame
+  var(): LazyDataFrame;
   /**
    * Add or overwrite column in a DataFrame.
    * @param expr - Expression that evaluates to column.
    */
-  withColumn(expr: Expr): LazyDataFrame
+  withColumn(expr: Expr): LazyDataFrame;
   /**
    * Add or overwrite multiple columns in a DataFrame.
    * @param exprs - List of Expressions that evaluate to columns.
    *
    */
-  withColumns(exprs: Expr[]): LazyDataFrame
-  withColumns(expr: Expr, ...exprs: Expr[]): LazyDataFrame
-  withColumnRenamed(existing: string, replacement: string): LazyDataFrame
+  withColumns(exprs: Expr[]): LazyDataFrame;
+  withColumns(expr: Expr, ...exprs: Expr[]): LazyDataFrame;
+  withColumnRenamed(existing: string, replacement: string): LazyDataFrame;
   /**
    * Add a column at index 0 that counts the rows.
    * @see {@link DataFrame.withRowCount}
    */
-  withRowCount()
+  withRowCount();
 }
 
 const prepareGroupbyInputs = (by) => {
   if (Array.isArray(by)) {
     const newBy: any = [];
-    by.forEach(e => {
+    by.forEach((e) => {
       if (typeof e === "string") {
         e = pli.col(e);
       }
@@ -354,7 +498,9 @@ export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
       if (typeof opts === "boolean") {
         const o = {...defaultOptions, maintainOrder: opts, subset, keep};
 
-        return _LazyDataFrame(_ldf.unique(o.maintainOrder, o?.subset?.flat(2), o.keep));
+        return _LazyDataFrame(
+          _ldf.unique(o.maintainOrder, o?.subset?.flat(2), o.keep)
+        );
       }
 
       if (opts.subset) {
@@ -373,7 +519,6 @@ export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
     },
     explode(...columns) {
       if (!columns.length) {
-
         const cols = selectionToExprList(_ldf.columns, false);
 
         return wrap("explode", cols);
@@ -417,7 +562,6 @@ export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
       }
 
       return _ldf.fetch(numRows).then(_DataFrame);
-
     },
     first() {
       return this.fetchSync(1);
@@ -450,7 +594,16 @@ export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
 
       return LazyGroupBy(lgb);
     },
-    groupByDynamic({indexColumn, every, period, offset, truncate, includeBoundaries, closed, by}) {
+    groupByDynamic({
+      indexColumn,
+      every,
+      period,
+      offset,
+      truncate,
+      includeBoundaries,
+      closed,
+      by,
+    }) {
       period = period ?? every;
       offset = offset ?? `-${period}`;
       closed = closed ?? "right";
@@ -470,28 +623,36 @@ export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
       );
 
       return LazyGroupBy(lgb);
-
     },
     head(len = 5) {
       return _LazyDataFrame(_ldf.slice(0, len));
     },
-    join(df, options: {[k: string]: any} & LazyJoinOptions) {
+    join(df, options) {
       options = {
         how: "inner",
         suffix: "right",
         allowParallel: true,
         forceParallel: false,
-        ...options
+        ...options,
       };
       const {how, suffix, allowParallel, forceParallel} = options;
+      if(how === "cross") {
+
+        return _LazyDataFrame(_ldf.join(df._ldf, [], [], allowParallel, forceParallel, how, suffix, [], []));
+      }
       let leftOn;
       let rightOn;
       if (options.on) {
         const on = selectionToExprList(options.on, false);
         leftOn = on;
         rightOn = on;
-      } else if ((options.leftOn && !options.rightOn) || (options.rightOn && !options.leftOn)) {
-        throw new TypeError("You should pass the column to join on as an argument.");
+      } else if (
+        (options.leftOn && !options.rightOn) ||
+        (options.rightOn && !options.leftOn)
+      ) {
+        throw new TypeError(
+          "You should pass the column to join on as an argument."
+        );
       } else {
         leftOn = selectionToExprList(options.leftOn, false);
         rightOn = selectionToExprList(options.rightOn, false);
@@ -507,6 +668,75 @@ export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
         suffix,
         [],
         []
+      );
+
+      return _LazyDataFrame(ldf);
+    },
+    joinAsof(other, options) {
+      options = {
+        suffix: "_right",
+        allowParallel: true,
+        forceParallel: false,
+        strategy: "backward",
+        ...options,
+      };
+      const {suffix, strategy, allowParallel, forceParallel} = options;
+      let leftOn;
+      let rightOn;
+      if(!(other?._ldf)) {
+        throw new TypeError("Expected a 'lazyFrame' as join table");
+      }
+      if (options.on) {
+        leftOn = rightOn = options.on;
+      } else if (
+        (options.leftOn && !options.rightOn) ||
+        (options.rightOn && !options.leftOn)
+      ) {
+        throw new TypeError(
+          "You should pass the column to join on as an argument."
+        );
+      } else {
+        leftOn = options.leftOn,
+        rightOn = options.rightOn;
+      }
+      let byLeft;
+      if(typeof options.byLeft === "string") {
+        byLeft = [options.byLeft];
+      } else if (Array.isArray(options.byLeft)) {
+        byLeft = options.byLeft;
+      }
+      let byRight;
+      if(typeof options.byRight === "string") {
+        byRight = [options.byRight];
+      } else if (Array.isArray(options.byRight)) {
+        byRight = options.byRight;
+      }
+
+      if(typeof options.by === "string") {
+        byLeft = byRight =  [options.by];
+
+      } else if (Array.isArray(options.by)) {
+        byLeft = byRight = options.by;
+      }
+      let toleranceStr, toleranceNum;
+      if(typeof options.tolerance === "string") {
+        toleranceStr = options.tolerance;
+      } else {
+        toleranceNum = options.tolerance;
+      }
+
+      const ldf = _ldf.joinAsof(
+        other._ldf,
+        pli.col(leftOn),
+        pli.col(rightOn),
+        byLeft,
+        byRight,
+        allowParallel,
+        forceParallel,
+        suffix,
+        strategy,
+        toleranceNum,
+        toleranceStr
       );
 
       return _LazyDataFrame(ldf);
@@ -527,10 +757,9 @@ export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
       return _LazyDataFrame(_ldf.median());
     },
     melt(ids, values) {
-      return _LazyDataFrame(_ldf.melt(
-        columnOrColumnsStrict(ids),
-        columnOrColumnsStrict(values)
-      ));
+      return _LazyDataFrame(
+        _ldf.melt(columnOrColumnsStrict(ids), columnOrColumnsStrict(values))
+      );
     },
     min() {
       return _LazyDataFrame(_ldf.min());
@@ -560,8 +789,7 @@ export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
         fillValue = exprToLitOrExpr(fillValue)._expr;
 
         return _LazyDataFrame(_ldf.shiftAndFill(optOrPeriods, fillValue));
-      }
-      else {
+      } else {
         fillValue = exprToLitOrExpr(optOrPeriods.fillValue)._expr;
         const periods = optOrPeriods.periods;
 
@@ -607,7 +835,6 @@ export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
       }
 
       return _ldf.serialize("json").toString();
-
     },
     serialize(format) {
       return _ldf.serialize(format);
@@ -629,14 +856,17 @@ export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
   };
 };
 
-
 export interface LazyDataFrameConstructor extends Deserialize<LazyDataFrame> {
-  fromExternal(external: any): LazyDataFrame
+  fromExternal(external: any): LazyDataFrame;
 }
 
-export const LazyDataFrame: LazyDataFrameConstructor = Object.assign(_LazyDataFrame, {
-  deserialize: (buf, fmt) => _LazyDataFrame(pli.JsLazyFrame.deserialize(buf, fmt)),
-  fromExternal(external) {
-    return _LazyDataFrame(pli.JsLazyFrame.cloneExternal(external));
+export const LazyDataFrame: LazyDataFrameConstructor = Object.assign(
+  _LazyDataFrame,
+  {
+    deserialize: (buf, fmt) =>
+      _LazyDataFrame(pli.JsLazyFrame.deserialize(buf, fmt)),
+    fromExternal(external) {
+      return _LazyDataFrame(pli.JsLazyFrame.cloneExternal(external));
+    },
   }
-});
+);

@@ -431,6 +431,26 @@ impl FromNapiValue for Wrap<FillNullStrategy> {
         Ok(Wrap(method))
     }
 }
+impl FromNapiValue for Wrap<PivotAgg> {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> JsResult<Self> {
+        let method = String::from_napi_value(env, napi_val)?;
+        match method.as_ref() {
+            "sum" => Ok(Wrap(PivotAgg::Sum)),
+            "min" => Ok(Wrap(PivotAgg::Min)),
+            "max" => Ok(Wrap(PivotAgg::Max)),
+            "first" => Ok(Wrap(PivotAgg::First)),
+            "mean" => Ok(Wrap(PivotAgg::Mean)),
+            "median" => Ok(Wrap(PivotAgg::Median)),
+            "count" => Ok(Wrap(PivotAgg::Count)),
+            "last" => Ok(Wrap(PivotAgg::Last)),
+            s => {
+                return Err(napi::Error::from_reason(
+                    format!("aggregation {} not supported", s).to_owned(),
+                ))
+            }
+        }
+    }
+}
 
 impl FromNapiValue for Wrap<u8> {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> JsResult<Self> {

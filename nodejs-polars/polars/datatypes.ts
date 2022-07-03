@@ -58,14 +58,15 @@ export type JsDataFrame = any;
 export type NullValues = string | Array<string> | Record<string, string>;
 
 export type JoinBaseOptions = {
-  how?: "left" | "inner" | "outer" | "cross";
+  how?: "left" | "inner" | "outer" | "semi" | "anti" | "cross"
   suffix?: string;
 }
+
 export type JoinOptions = {
   leftOn?: string | Array<string>;
   rightOn?: string | Array<string>;
   on?: string | Array<string>;
-  how?: "left" | "inner" | "outer" | "cross";
+  how?: "left" | "inner" | "outer" | "semi" | "anti" | "cross"
   suffix?: string;
 };
 
