@@ -124,6 +124,7 @@ Manipulation/ selection
     DataFrame.slice
     DataFrame.sort
     DataFrame.tail
+    DataFrame.take_every
     DataFrame.to_dummies
     DataFrame.to_series
     DataFrame.transpose

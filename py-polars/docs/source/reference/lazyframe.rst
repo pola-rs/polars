@@ -74,6 +74,7 @@ Manipulation/ selection
     LazyFrame.slice
     LazyFrame.sort
     LazyFrame.tail
+    LazyFrame.take_every
     LazyFrame.unique
     LazyFrame.unnest
     LazyFrame.with_column
