@@ -223,3 +223,37 @@ def test_strategy_dtypes(
     assert s2.dtype == pl.Boolean
     assert s3.dtype in TEMPORAL_DTYPES
     assert s4.dtype not in TEMPORAL_DTYPES
+
+
+@given(
+    # set global, per-column, and overridden null-probabilities
+    s=series(size=50, null_probability=0.10),
+    df1=dataframes(cols=1, size=50, null_probability=0.30),
+    df2=dataframes(cols=2, size=50, null_probability={"col0": 0.70}),
+    df3=dataframes(
+        cols=1,
+        size=50,
+        null_probability=1.0,
+        include_cols=[column(name="colx", null_probability=0.20)],
+    ),
+)
+def test_strategy_null_probability(
+    s: pl.Series,
+    df1: pl.DataFrame,
+    df2: pl.DataFrame,
+    df3: pl.DataFrame,
+) -> None:
+    for obj in (s, df1, df2, df3):
+        assert len(obj) == 50  # type: ignore[arg-type]
+
+    assert s.null_count() < df1.null_count().fold(sum).sum()
+    assert df1.null_count().fold(sum).sum() < df2.null_count().fold(sum).sum()
+    assert df2.null_count().fold(sum).sum() < df3.null_count().fold(sum).sum()
+
+    nulls_col0, nulls_col1 = df2.null_count().rows()[0]
+    assert nulls_col0 > nulls_col1
+    assert nulls_col0 < 50
+
+    nulls_col0, nulls_colx = df3.null_count().rows()[0]
+    assert nulls_col0 > nulls_colx
+    assert nulls_col0 == 50

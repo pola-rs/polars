@@ -330,7 +330,7 @@ _DTYPE_TO_FFINAME: Dict[PolarsDataType, str] = {
 }
 for tu in DTYPE_TEMPORAL_UNITS:
     _DTYPE_TO_FFINAME[Datetime(tu)] = "datetime"
-    _DTYPE_TO_FFINAME[Datetime(tu)] = "duration"
+    _DTYPE_TO_FFINAME[Duration(tu)] = "duration"
 
 _DTYPE_TO_CTYPE: Dict[PolarsDataType, Any] = {
     UInt8: ctypes.c_uint8,
