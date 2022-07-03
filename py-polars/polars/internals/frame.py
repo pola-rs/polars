@@ -1897,6 +1897,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ]
 
         """
+        if index < 0:
+            index = len(self.columns) + index
         return pli.wrap_s(self._df.select_at_idx(index))
 
     def reverse(self: DF) -> DF:
@@ -1989,6 +1991,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         └─────┴─────┴─────┘
 
         """
+        if index < 0:
+            index = len(self.columns) + index
         self._df.insert_at_idx(index, series._s)
 
     def filter(self: DF, predicate: "pli.Expr") -> DF:
@@ -2290,6 +2294,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         └───────┴─────┴─────┘
 
         """
+        if index < 0:
+            index = len(self.columns) + index
         self._df.replace_at_idx(index, series._s)
 
     @overload
@@ -4094,6 +4100,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ]
 
         """
+        if idx < 0:
+            idx = len(self.columns) + idx
         return pli.wrap_s(self._df.select_at_idx(idx))
 
     def clone(self: DF) -> DF:
@@ -5474,6 +5482,27 @@ class DataFrame(metaclass=DataFrameMetaClass):
             df = self.clone()
             df._df.shrink_to_fit()
             return df
+
+    def take_every(self: DF, n: int) -> DF:
+        """
+        Take every nth row in the DataFrame and return as a new DataFrame.
+
+        Examples
+        --------
+        >>> s = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+        >>> s.take_every(2)
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 5   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 7   │
+        └─────┴─────┘
+        """
+        return self.select(pli.col("*").take_every(n))
 
     def hash_rows(
         self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3
