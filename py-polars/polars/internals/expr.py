@@ -4749,7 +4749,7 @@ class ExprStringNameSpace:
     def ljust(self, width: int, fillchar: str = " ") -> Expr:
         """
         Return the string left justified in a string of length width.
-        Padding is done using the specified ``fillchar``,
+        Padding is done using the specified ``fillchar``.
         The original string is returned if width is less than or equal to ``len(s)``.
 
         Parameters
@@ -4764,7 +4764,7 @@ class ExprStringNameSpace:
     def rjust(self, width: int, fillchar: str = " ") -> Expr:
         """
         Return the string right justified in a string of length width.
-        Padding is done using the specified ``fillchar``,
+        Padding is done using the specified ``fillchar``.
         The original string is returned if ``width`` is less than or equal to ``len(s)``.
 
         Parameters

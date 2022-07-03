@@ -3990,6 +3990,11 @@ class StringNameSpace:
         """
         Vertically concat the values in the Series to a single string value.
 
+        Parameters
+        ----------
+        delimiter
+            The delimiter to insert between consecutive string values.
+
         Returns
         -------
         Series of dtype Utf8
@@ -4316,33 +4321,36 @@ class StringNameSpace:
     def split(self, by: str, inclusive: bool = False) -> Series:
         """
         Split the string by a substring.
-        The return type will by of type List<Utf8>
 
         Parameters
         ----------
         by
-            substring
+            Substring to split by.
         inclusive
-            Include the split character/string in the results
+            If True, include the split character/string in the results.
+
+        Returns
+        -------
+        List of Utf8 type
+
         """
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.split(by, inclusive)).to_series()
 
     def split_exact(self, by: str, n: int, inclusive: bool = False) -> Series:
         """
-        Split the string by a substring into a struct of `n` fields.
-        The return type will by of type Struct<Utf8>
+        Split the string by a substring into a struct of ``n`` fields.
 
-        If it cannot make `n` splits, the remaiming field elements will be null
+        If it cannot make ``n`` splits, the remaining field elements will be null.
 
         Parameters
         ----------
         by
-            substring
+            Substring to split by.
         n
-            Number of splits to make
+            Number of splits to make.
         inclusive
-            Include the split character/string in the results
+            If True, include the split character/string in the results.
 
         Examples
         --------
@@ -4368,6 +4376,10 @@ class StringNameSpace:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ {"d","4"}                                 │
         └───────────────────────────────────────────┘
+
+        Returns
+        -------
+        Struct of Utf8 type
 
         """
         s = wrap_s(self._s)
@@ -4461,12 +4473,12 @@ class StringNameSpace:
         Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
         A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
         rather than before.
-        The original string is returned if width is less than or equal to `len(s)`.
+        The original string is returned if width is less than or equal to ``len(s)``.
 
         Parameters
         ----------
         alignment
-            Fill the value up to this length
+            Fill the value up to this length.
         """
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.zfill(alignment)).to_series()
@@ -4474,15 +4486,15 @@ class StringNameSpace:
     def ljust(self, width: int, fillchar: str = " ") -> Series:
         """
         Return the string left justified in a string of length width.
-        Padding is done using the specified `fillchar`,
-        The original string is returned if width is less than or equal to `len(s)`.
+        Padding is done using the specified ``fillchar``.
+        The original string is returned if width is less than or equal to ``len(s)``.
 
         Parameters
         ----------
         width
-            justify left to this length
+            Justify left to this length.
         fillchar
-            fill with this ASCII character
+            Fill with this ASCII character.
         """
         s = wrap_s(self._s)
         return (
@@ -4492,15 +4504,15 @@ class StringNameSpace:
     def rjust(self, width: int, fillchar: str = " ") -> Series:
         """
         Return the string right justified in a string of length width.
-        Padding is done using the specified `fillchar`,
-        The original string is returned if width is less than or equal to `len(s)`.
+        Padding is done using the specified ``fillchar``.
+        The original string is returned if width is less than or equal to ``len(s)``.
 
         Parameters
         ----------
         width
-            justify right to this length
+            Justify right to this length.
         fillchar
-            fill with this ASCII character
+            Fill with this ASCII character.
         """
         s = wrap_s(self._s)
         return (
@@ -4526,7 +4538,8 @@ class StringNameSpace:
         Parameters
         ----------
         start
-            Start of the slice (negative indexing may be used).
+            Starting index of the slice (zero-indexed). Negative indexing
+            may be used.
         length
             Optional length of the slice.
 
