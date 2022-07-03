@@ -147,6 +147,7 @@ impl<'a> ToNapiValue for Wrap<AnyValue<'a>> {
             AnyValue::List(ser) => Wrap::<&Series>::to_napi_value(env, Wrap(&ser)),
             AnyValue::Struct(vals, flds) => {
                 let env_obj = Env::from_raw(env);
+
                 let mut obj = env_obj.create_object()?;
 
                 for (val, fld) in vals.iter().zip(flds) {
@@ -621,27 +622,66 @@ pub(crate) fn num_to_polarstype(n: u32) -> DataType {
         tp => panic!("Type {} not implemented in num_to_polarstype", tp),
     }
 }
+impl FromNapiValue for Wrap<TimeUnit> {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> JsResult<Self> {
+        let tu = String::from_napi_value(env, napi_val)?;
+        let tu = match tu.as_ref() {
+            "ns" => TimeUnit::Nanoseconds,
+            "us" => TimeUnit::Microseconds,
+            "ms" => TimeUnit::Milliseconds,
+            _ => panic!("not a valid timeunit"),
+        };
 
+        Ok(Wrap(tu))
+    }
+}
 impl FromNapiValue for Wrap<DataType> {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
         let ty = type_of!(env, napi_val)?;
-        let dtype = match ty {
-            ValueType::String => {
-                let s = String::from_napi_value(env, napi_val)?;
-                str_to_polarstype(&s)
-            }
-            ValueType::Number => {
-                let n = u32::from_napi_value(env, napi_val)?;
-                num_to_polarstype(n)
+        match ty {
+            ValueType::Object => {
+                let obj = Object::from_napi_value(env, napi_val)?;
+                let variant = obj.get::<_, String>("variant")?.unwrap();
+                let dtype = match variant.as_ref() {
+                    "Int8" => DataType::Int8,
+                    "Int16" => DataType::Int16,
+                    "Int32" => DataType::Int32,
+                    "Int64" => DataType::Int64,
+                    "UInt8" => DataType::UInt8,
+                    "UInt16" => DataType::UInt16,
+                    "UInt32" => DataType::UInt32,
+                    "UInt64" => DataType::UInt64,
+                    "Float32" => DataType::Float32,
+                    "Float64" => DataType::Float64,
+                    "Bool" => DataType::Boolean,
+                    "Utf8" => DataType::Utf8,
+                    "List" => {
+                        let inner = obj.get::<_, Array>("inner")?.unwrap();
+                        let inner_dtype: Object = inner.get::<Object>(0)?.unwrap();
+                        let napi_dt = Object::to_napi_value(env, inner_dtype).unwrap();
+
+                        let dt = Wrap::<DataType>::from_napi_value(env, napi_dt)?;
+                        DataType::List(Box::new(dt.0))
+                    }
+                    "Date" => DataType::Date,
+                    "Datetime" => {
+                        let tu = obj.get::<_, Wrap<TimeUnit>>("timeUnit")?.unwrap();
+                        DataType::Datetime(tu.0, None)
+                    }
+                    "Time" => DataType::Time,
+                    "Object" => DataType::Object("object"),
+                    "Categorical" => DataType::Categorical(None),
+                    "Struct" => DataType::Struct(vec![]),
+                    tp => panic!("Type {} not implemented in str_to_polarstype", tp),
+                };
+
+                Ok(Wrap(dtype))
+                // Ok(Wrap(Schema::from(fields)))
             }
             _ => {
-                return Err(Error::new(
-                    Status::InvalidArg,
-                    "not a valid conversion to 'DataType'".to_owned(),
-                ))
+                todo!()
             }
-        };
-        Ok(Wrap(dtype))
+        }
     }
 }
 
@@ -742,6 +782,76 @@ impl ToNapiValue for TypedArrayBuffer {
             TypedArrayBuffer::UInt64(v) => BigUint64Array::to_napi_value(env, v),
             TypedArrayBuffer::Float32(v) => Float32Array::to_napi_value(env, v),
             TypedArrayBuffer::Float64(v) => Float64Array::to_napi_value(env, v),
+        }
+    }
+}
+impl ToNapiValue for Wrap<DataType> {
+    unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> napi::Result<sys::napi_value> {
+        match val.0 {
+            DataType::Int8 => String::to_napi_value(env, "Int8".to_owned()),
+            DataType::Int16 => String::to_napi_value(env, "Int16".to_owned()),
+            DataType::Int32 => String::to_napi_value(env, "Int32".to_owned()),
+            DataType::Int64 => String::to_napi_value(env, "Int64".to_owned()),
+            DataType::UInt8 => String::to_napi_value(env, "UInt8".to_owned()),
+            DataType::UInt16 => String::to_napi_value(env, "UInt16".to_owned()),
+            DataType::UInt32 => String::to_napi_value(env, "UInt32".to_owned()),
+            DataType::UInt64 => String::to_napi_value(env, "UInt64".to_owned()),
+            DataType::Float32 => String::to_napi_value(env, "Float32".to_owned()),
+            DataType::Float64 => String::to_napi_value(env, "Float64".to_owned()),
+            DataType::Boolean => String::to_napi_value(env, "Bool".to_owned()),
+            DataType::Utf8 => String::to_napi_value(env, "Utf8".to_owned()),
+            DataType::List(inner) => {
+                let env_ctx = Env::from_raw(env);
+                let mut obj = env_ctx.create_object()?;
+
+                let mut inner_arr = env_ctx.create_array(1)?;
+                let wrapped = Wrap(*inner);
+
+                inner_arr.set(0, wrapped)?;
+
+                obj.set("variant", "List")?;
+                obj.set("inner", vec![inner_arr])?;
+                Object::to_napi_value(env, obj)
+            }
+            DataType::Date => String::to_napi_value(env, "Date".to_owned()),
+            DataType::Datetime(tu, tz) => {
+                let env_ctx = Env::from_raw(env);
+                let mut obj = env_ctx.create_object()?;
+                let mut inner_arr = env_ctx.create_array(2)?;
+
+                inner_arr.set(0, tu.to_ascii())?;
+                inner_arr.set(1, tz)?;
+
+
+                obj.set("variant", "Datetime")?;
+                obj.set("inner", inner_arr)?;
+                Object::to_napi_value(env, obj)
+            }
+            DataType::Time => String::to_napi_value(env, "Time".to_owned()),
+            DataType::Object(_) => String::to_napi_value(env, "Object".to_owned()),
+            DataType::Categorical(_) => String::to_napi_value(env, "Categorical".to_owned()),
+            DataType::Struct(flds) => {
+                let env_ctx = Env::from_raw(env);
+
+                let mut obj = env_ctx.create_object()?;
+                let mut js_flds = env_ctx.create_array(flds.len() as u32)?;
+                for (idx, fld) in flds.iter().enumerate() {
+                    let name = fld.name().clone();
+                    let dtype = Wrap(fld.data_type().clone());
+                    let mut fld_obj = env_ctx.create_object()?;
+                    fld_obj.set("name", name)?;
+                    fld_obj.set("dtype", dtype)?;
+                    js_flds.set(idx as u32, fld_obj)?;
+
+                }
+                obj.set("variant", "Struct")?;
+                obj.set("inner", vec![js_flds])?;
+
+                Object::to_napi_value(env, obj)
+            }
+            _ => {
+                todo!()
+            }
         }
     }
 }

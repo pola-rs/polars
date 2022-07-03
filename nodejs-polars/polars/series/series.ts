@@ -1056,8 +1056,8 @@ export function _Series(_s: any): Series {
     [Symbol.toStringTag]() {
       return "Series";
     },
-    get dtype() {
-      return _s.dtype as any;
+    get dtype(): DataType {
+      return DataType.deserialize(_s.dtype);
     },
     get name() {
       return _s.name;

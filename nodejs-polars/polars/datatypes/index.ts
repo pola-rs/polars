@@ -1,37 +1,40 @@
-import {jsTypeToPolarsType} from "./internals/construction";
-import pli from "./internals/polars_internal";
+import {DataType} from "./datatype";
+export {DataType};
 
-export type DtypeToPrimitive<T> = T extends DataType.Bool ? boolean :
- T extends DataType.Utf8 ? string :
- T extends DataType.Categorical ? string :
- T extends DataType.Datetime ? number | Date :
- T extends DataType.Date ? Date :
- T extends DataType.UInt64 ? bigint : number
+import {jsTypeToPolarsType} from "../internals/construction";
+import pli from "../internals/polars_internal";
 
-export type PrimitiveToDtype<T> = T extends boolean ? DataType.Bool :
- T extends string ? DataType.Utf8 :
- T extends Date ? DataType.Datetime :
- T extends number ? DataType.Float64 :
- T extends bigint ? DataType.Int64 :
- T extends ArrayLike<any> ? DataType.List :
- DataType.Object
+// export type DtypeToPrimitive<T> = T extends DataType.Bool ? boolean :
+//  T extends DataType.Utf8 ? string :
+//  T extends DataType.Categorical ? string :
+//  T extends DataType.Datetime ? number | Date :
+//  T extends DataType.Date ? Date :
+//  T extends DataType.UInt64 ? bigint : number
+
+// export type PrimitiveToDtype<T> = T extends boolean ? DataType.Bool :
+//  T extends string ? DataType.Utf8 :
+//  T extends Date ? DataType.Datetime :
+//  T extends number ? DataType.Float64 :
+//  T extends bigint ? DataType.Int64 :
+//  T extends ArrayLike<any> ? DataType.List :
+//  DataType.Object
 
 export type TypedArray = Int8Array | Int16Array | Int32Array | BigInt64Array | Uint8Array | Uint16Array | Uint32Array | BigInt64Array | Float32Array | Float64Array;
 
-export type DtypeToTypedArray<T> = T extends DataType.Int8 ? Int8Array :
-T extends DataType.Int16 ? Int16Array :
-T extends DataType.Int32 ? Int32Array :
-T extends DataType.Int64 ? BigInt64Array :
-T extends DataType.UInt8 ? Uint8Array :
-T extends DataType.UInt16 ? Uint16Array :
-T extends DataType.UInt32 ? Uint32Array :
-T extends DataType.UInt64 ? BigInt64Array :
-T extends DataType.Float32 ? Float32Array :
-T extends DataType.Float64 ? Float64Array :
-never
+// export type DtypeToTypedArray<T> = T extends DataType.Int8 ? Int8Array :
+// T extends DataType.Int16 ? Int16Array :
+// T extends DataType.Int32 ? Int32Array :
+// T extends DataType.Int64 ? BigInt64Array :
+// T extends DataType.UInt8 ? Uint8Array :
+// T extends DataType.UInt16 ? Uint16Array :
+// T extends DataType.UInt32 ? Uint32Array :
+// T extends DataType.UInt64 ? BigInt64Array :
+// T extends DataType.Float32 ? Float32Array :
+// T extends DataType.Float64 ? Float64Array :
+// never
 
 export type Optional<T> = T | undefined | null;
-export enum DataType {
+export enum _DataType {
   Int8,
   Int16,
   Int32,
@@ -71,26 +74,26 @@ export type JoinOptions = {
 };
 
 
-export const DTYPE_TO_FFINAME: Record<DataType, string> = {
-  [DataType.Int8]: "I8",
-  [DataType.Int16]: "I16",
-  [DataType.Int32]: "I32",
-  [DataType.Int64]: "I64",
-  [DataType.UInt8]: "U8",
-  [DataType.UInt16]: "U16",
-  [DataType.UInt32]: "U32",
-  [DataType.UInt64]: "U64",
-  [DataType.Float32]: "F32",
-  [DataType.Float64]: "F64",
-  [DataType.Bool]: "Bool",
-  [DataType.Utf8]: "Str",
-  [DataType.List]: "List",
-  [DataType.Date]: "Date",
-  [DataType.Datetime]: "Datetime",
-  [DataType.Time]: "Time",
-  [DataType.Object]: "Object",
-  [DataType.Categorical]: "Categorical",
-  [DataType.Struct]: "Struct",
+export const DTYPE_TO_FFINAME = {
+  Int8: "I8",
+  Int16: "I16",
+  Int32: "I32",
+  Int64: "I64",
+  UInt8: "U8",
+  UInt16: "U16",
+  UInt32: "U32",
+  UInt64: "U64",
+  Float32: "F32",
+  Float64: "F64",
+  Bool: "Bool",
+  Utf8: "Str",
+  List: "List",
+  Date: "Date",
+  Datetime: "Datetime",
+  Time: "Time",
+  Object: "Object",
+  Categorical: "Categorical",
+  Struct: "Struct",
 };
 
 const POLARS_TYPE_TO_CONSTRUCTOR: Record<string, any> = {
@@ -145,9 +148,9 @@ const POLARS_TYPE_TO_CONSTRUCTOR: Record<string, any> = {
 };
 
 export const polarsTypeToConstructor = (dtype: DataType): CallableFunction => {
-  const constructor = POLARS_TYPE_TO_CONSTRUCTOR[DataType[dtype]];
+  const constructor = POLARS_TYPE_TO_CONSTRUCTOR[dtype.variant];
   if (!constructor) {
-    throw new Error(`Cannot construct Series for type ${DataType[dtype]}.`);
+    throw new Error(`Cannot construct Series for type ${dtype.variant}.`);
   }
 
 

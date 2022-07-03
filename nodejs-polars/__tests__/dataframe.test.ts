@@ -1038,15 +1038,15 @@ describe.only("dataframe", () => {
     ]);
     expect(actual).toFrameEqual(expected);
   });
-  test("pivot", () => {
+  test.only("pivot", () => {
     const df = pl.DataFrame({"a": [1, 2, 3], "b": [[1, 1], [2, 2], [3, 3]]});
 
     const expected = pl.DataFrame(
       {
-        "a": [1, 2, 3],
-        "1": [[1, 1], null, null],
-        "2": [null, [2, 2], null],
-        "3": [null, null, [3, 3]],
+        "a": pl.Series([1, 2, 3]).cast(pl.Int32),
+        "1": pl.Series([[1, 1], null, null]).cast(pl.Int32),
+        "2": pl.Series([null, [2, 2], null]).cast(pl.Int32),
+        "3": pl.Series([null, null, [3, 3]]).cast(pl.List(pl.Int32)),
       }
     );
 

@@ -19,7 +19,7 @@ const df = () => {
   return df.withColumns(
 
     pl.col("date").cast(pl.Date),
-    pl.col("datetime").cast(pl.Datetime),
+    pl.col("datetime").cast(pl.Datetime("ms")),
     pl.col("strings").cast(pl.Categorical)
       .alias("cat")
   );
@@ -1347,7 +1347,7 @@ describe("expr.str", () => {
 
     const datetimeSeries = df.getColumn("timestamp")
       .str
-      .strptime(pl.Datetime, "%FT%T%.3f%:z")
+      .strptime(pl.Datetime("ms"), "%FT%T%.3f%:z")
       .rename("datetime");
     const dateSeries = df.getColumn("timestamp")
       .str
@@ -1359,7 +1359,7 @@ describe("expr.str", () => {
     const actual = df.select(
       col("timestamp")
         .str
-        .strptime(pl.Datetime, "%FT%T%.3f%:z")
+        .strptime(pl.Datetime("ms"), "%FT%T%.3f%:z")
         .as("datetime"),
       col("timestamp")
         .str

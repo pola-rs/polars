@@ -121,7 +121,7 @@ export const df = () => {
   return df.withColumns(
 
     pl.col("date").cast(pl.Date),
-    pl.col("datetime").cast(pl.Datetime),
+    pl.col("datetime").cast(pl.Datetime("ms")),
     pl.col("strings").cast(pl.Categorical)
       .alias("cat")
   );

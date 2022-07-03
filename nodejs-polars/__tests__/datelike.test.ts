@@ -13,7 +13,7 @@ describe("datelike", () => {
           "2016-05-25 13:30:00.049",
           "2016-05-25 13:30:00.072",
           "2016-05-25 13:30:00.075"
-        ]).str.strptime(pl.Datetime, fmt),
+        ]).str.strptime(pl.Datetime("ms"), fmt),
         ticker: [
           "GOOG",
           "MSFT",
@@ -42,7 +42,7 @@ describe("datelike", () => {
         "2016-05-25 13:30:00.048",
         "2016-05-25 13:30:00.048",
         "2016-05-25 13:30:00.048"
-      ]).str.strptime(pl.Datetime, fmt),
+      ]).str.strptime(pl.Datetime("ms"), fmt),
       ticker: [
         "MSFT",
         "MSFT",
