@@ -4018,29 +4018,89 @@ class StringNameSpace:
         Returns
         -------
         Boolean mask
+
+        Examples
+        --------
+
+        >>> s = pl.Series(["Crab", "cat and dog", "rab$bit", None])
+        >>> s.str.contains("cat|bit")
+        shape: (4,)
+        Series: '' [bool]
+        [
+            false
+            true
+            true
+            null
+        ]
+        >>> s.str.contains("rab$", literal=True)
+        shape: (4,)
+        Series: '' [bool]
+        [
+            false
+            false
+            true
+            null
+        ]
+
         """
         return wrap_s(self._s.str_contains(pattern, literal))
 
     def ends_with(self, sub: str) -> Series:
         """
-        Check if string values end with a substring
+        Check if string values end with a substring.
 
         Parameters
         ----------
         sub
             Suffix
+
+        Examples
+        --------
+
+        >>> s = pl.Series("fruits", ["apple", "mango", None])
+        >>> s.str.ends_with("go")
+        shape: (3,)
+        Series: 'fruits' [bool]
+        [
+            false
+            true
+            null
+        ]
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+
         """
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.ends_with(sub)).to_series()
 
     def starts_with(self, sub: str) -> Series:
         """
-        Check if string values start with a substring
+        Check if string values start with a substring.
 
         Parameters
         ----------
         sub
             Prefix
+
+        Examples
+        --------
+
+        >>> s = pl.Series("fruits", ["apple", "mango", None])
+        >>> s.str.starts_with("app")
+        shape: (3,)
+        Series: 'fruits' [bool]
+        [
+            true
+            false
+            null
+        ]
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+
         """
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.starts_with(sub)).to_series()

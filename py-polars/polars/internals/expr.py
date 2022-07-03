@@ -4819,23 +4819,97 @@ class ExprStringNameSpace:
 
     def ends_with(self, sub: str) -> Expr:
         """
-        Check if string values end with a substring
+        Check if string values end with a substring.
 
         Parameters
         ----------
         sub
             Suffix
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"fruits": ["apple", "mango", None]})
+        >>> df.with_column(
+        ...     pl.col("fruits").str.ends_with("go").alias("has_suffix"),
+        ... )
+        shape: (3, 2)
+        ┌────────┬────────────┐
+        │ fruits ┆ has_suffix │
+        │ ---    ┆ ---        │
+        │ str    ┆ bool       │
+        ╞════════╪════════════╡
+        │ apple  ┆ false      │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ mango  ┆ true       │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null   ┆ null       │
+        └────────┴────────────┘
+
+        Using ``ends_with`` as a filter condition:
+
+        >>> df.filter(pl.col("fruits").str.ends_with("go"))
+        shape: (1, 1)
+        ┌────────┐
+        │ fruits │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │ mango  │
+        └────────┘
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+
         """
         return wrap_expr(self._pyexpr.str_ends_with(sub))
 
     def starts_with(self, sub: str) -> Expr:
         """
-        Check if string values start with a substring
+        Check if string values start with a substring.
 
         Parameters
         ----------
         sub
             Prefix
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"fruits": ["apple", "mango", None]})
+        >>> df.with_column(
+        ...     pl.col("fruits").str.starts_with("app").alias("has_prefix"),
+        ... )
+        shape: (3, 2)
+        ┌────────┬────────────┐
+        │ fruits ┆ has_prefix │
+        │ ---    ┆ ---        │
+        │ str    ┆ bool       │
+        ╞════════╪════════════╡
+        │ apple  ┆ true       │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ mango  ┆ false      │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null   ┆ null       │
+        └────────┴────────────┘
+
+        Using ``starts_with`` as a filter condition:
+
+        >>> df.filter(pl.col("fruits").str.starts_with("app"))
+        shape: (1, 1)
+        ┌────────┐
+        │ fruits │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │ apple  │
+        └────────┘
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+
         """
         return wrap_expr(self._pyexpr.str_starts_with(sub))
 
@@ -4948,6 +5022,7 @@ class ExprStringNameSpace:
         ├╌╌╌╌╌╌╌╌╌┤
         │ null    │
         └─────────┘
+
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.str_hex_encode())
