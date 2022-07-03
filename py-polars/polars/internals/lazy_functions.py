@@ -1048,9 +1048,9 @@ def arange(
     high
         Upper bound of range.
     step
-        Step size of the range
+        Step size of the range.
     eager
-        If eager evaluation is `True`, a Series is returned instead of an Expr
+        If eager evaluation is `True`, a Series is returned instead of an Expr.
     """
     low = pli.expr_to_lit_or_expr(low, str_to_lit=False)
     high = pli.expr_to_lit_or_expr(high, str_to_lit=False)
@@ -1444,6 +1444,7 @@ def select(
     ----------
     exprs
         Expressions to run
+
     Returns
     -------
     DataFrame
