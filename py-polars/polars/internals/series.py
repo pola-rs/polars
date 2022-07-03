@@ -5312,8 +5312,8 @@ class DateTimeNameSpace:
         """
         Set time unit a Series of type Datetime
 
-        ..deprecated::
-            Use `with_time_unit`
+        .. deprecated::
+            Use :func:`with_time_unit` instead.
 
         Parameters
         ----------
@@ -5326,13 +5326,13 @@ class DateTimeNameSpace:
         """
         Set time zone a Series of type Datetime.
 
-        ..deprecated::
-            Use `with_time_zone`
+        .. deprecated::
+            Use :func:`with_time_zone` instead.
 
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` Series
+            Time zone for the `Datetime` Series.
 
         """
         return wrap_s(self._s.and_time_zone(tz))
@@ -5344,7 +5344,7 @@ class DateTimeNameSpace:
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` Series
+            Time zone for the `Datetime` Series.
 
         """
         return wrap_s(self._s.and_time_zone(tz))

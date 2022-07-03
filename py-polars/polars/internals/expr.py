@@ -5710,8 +5710,8 @@ class ExprDateTimeNameSpace:
         Set time unit a Series of type Datetime. This does not modify underlying data,
         and should be used to fix an incorrect time unit.
 
-        ..deprecated::
-            Use `with_time_unit`
+        .. deprecated::
+            Use :func:`with_time_unit` instead.
 
 
         Parameters
@@ -5727,13 +5727,13 @@ class ExprDateTimeNameSpace:
         """
         Set time zone for a Series of type Datetime.
 
-        ..deprecated::
-            Use `with_time_zone`
+        .. deprecated::
+            Use :func:`with_time_zone` instead.
 
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` Series
+            Time zone for the `Datetime` Series.
 
         """
         return wrap_expr(self._pyexpr).map(
@@ -5747,7 +5747,7 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` Series
+            Time zone for the `Datetime` Series.
 
         """
         return wrap_expr(self._pyexpr).map(
