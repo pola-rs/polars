@@ -3972,15 +3972,15 @@ class StringNameSpace:
         Examples
         --------
 
-        >>> s = pl.Series(["foo", "bar", "hello", "world"])
+        >>> s = pl.Series(["foo", None, "hello", "world"])
         >>> s.str.lengths()
         shape: (4,)
         Series: '' [u32]
         [
-                3
-                3
-                5
-                5
+            3
+            null
+            5
+            5
         ]
 
         """
@@ -4570,8 +4570,8 @@ class ListNameSpace:
         shape: (2,)
         Series: '' [u32]
         [
-                3
-                1
+            3
+            1
         ]
 
         """
