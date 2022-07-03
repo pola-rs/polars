@@ -1625,7 +1625,7 @@ class Expr:
         """
         Apply window function over a subgroup.
         This is similar to a groupby + aggregation + self join.
-        Or similar to [window functions in Postgres](https://www.postgresql.org/docs/9.1/tutorial-window.html)
+        Or similar to `window functions in Postgres <https://www.postgresql.org/docs/current/tutorial-window.html>`_.
 
         Parameters
         ----------
@@ -1779,9 +1779,9 @@ class Expr:
         The output of this custom function must be a Series.
         If you want to apply a custom function elementwise over single values see `apply`.
         A use case for map is when you want to transform an expression
-        with a third-party library
+        with a third-party library.
 
-        [read more in the book](https://pola-rs.github.io/polars-book/user-guide/howcani/apply/udfs.html)
+        Read more in `the book <https://pola-rs.github.io/polars-book/user-guide/howcani/apply/udfs.html>`_.
 
         Parameters
         ----------
@@ -4547,10 +4547,9 @@ class ExprStringNameSpace:
         datatype
             Date | Datetime | Time.
         fmt
-            Format to use, see the following link for examples:
-            https://docs.rs/chrono/latest/chrono/format/strftime/index.html
-
-            example: "%y-%m-%d".
+            Format to use, refer to the
+            `chrono strftime documentation <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for specification. Example: ``"%y-%m-%d"``.
         strict
             Raise an error if any conversion fails.
         exact
@@ -4918,12 +4917,14 @@ class ExprStringNameSpace:
         Extract the first match of json string with provided JSONPath expression.
         Throw errors if encounter invalid json strings.
         All return value will be casted to Utf8 regardless of the original value.
-        Documentation on JSONPath standard: https://goessner.net/articles/JsonPath/
+
+        Documentation on JSONPath standard can be found
+        `here <https://goessner.net/articles/JsonPath/>`_.
 
         Parameters
         ----------
         json_path
-            A valid JSON path query string
+            A valid JSON path query string.
 
         Returns
         -------
@@ -5447,7 +5448,10 @@ class ExprDateTimeNameSpace:
 
     def strftime(self, fmt: str) -> Expr:
         """
-        Format Date/datetime with a formatting rule: See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+        Format Date/datetime with a formatting rule.
+
+        See `chrono strftime/strptime <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_.
+
         """
         return wrap_expr(self._pyexpr.strftime(fmt))
 
