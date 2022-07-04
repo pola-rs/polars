@@ -1814,6 +1814,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 self.hstack([pli.Series(key, value)], in_place=True)
         # df[["C", "D"]]
         elif isinstance(key, list):
+            # TODO: Use python sequence constructors
             if not _NUMPY_AVAILABLE:
                 raise ImportError("'numpy' is required for this functionality.")
             value = np.array(value)
