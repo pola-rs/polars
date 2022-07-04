@@ -41,6 +41,40 @@ impl LazyFrame {
         Ok(lf)
     }
 
+    fn concat_impl(lfs: Vec<LazyFrame>, args: ScanArgsParquet) -> Result<LazyFrame> {
+        concat(&lfs, args.rechunk)
+            .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
+            .map(|mut lf| {
+                if let Some(n_rows) = args.n_rows {
+                    lf = lf.slice(0, n_rows as IdxSize)
+                };
+                if let Some(rc) = args.row_count {
+                    lf = lf.with_row_count(&rc.name, Some(rc.offset))
+                };
+                lf
+            })
+    }
+
+    /// Create a LazyFrame directly from a parquet scan.
+    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
+    pub fn scan_parquet_files(paths: Vec<String>, args: ScanArgsParquet) -> Result<Self> {
+        let lfs = paths
+            .iter()
+            .map(|p| {
+                Self::scan_parquet_impl(
+                    p.to_string(),
+                    args.n_rows,
+                    args.cache,
+                    args.parallel,
+                    None,
+                    args.rechunk,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Self::concat_impl(lfs, args)
+    }
+
     /// Create a LazyFrame directly from a parquet scan.
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     pub fn scan_parquet(path: String, args: ScanArgsParquet) -> Result<Self> {
@@ -62,18 +96,7 @@ impl LazyFrame {
                 })
                 .collect::<Result<Vec<_>>>()?;
 
-            concat(&lfs, args.rechunk)
-                .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
-                .map(|mut lf| {
-                    if let Some(n_rows) = args.n_rows {
-                        lf = lf.slice(0, n_rows as IdxSize)
-                    };
-
-                    if let Some(rc) = args.row_count {
-                        lf = lf.with_row_count(&rc.name, Some(rc.offset))
-                    };
-                    lf
-                })
+            Self::concat_impl(lfs, args)
         } else {
             Self::scan_parquet_impl(
                 path,
