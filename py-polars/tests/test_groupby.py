@@ -35,3 +35,19 @@ def test_groupby_custom_agg_empty_list() -> None:
             ]
         )
     ).dtypes == [pl.Categorical, pl.Float64, pl.Float64, pl.Float64, pl.Float64]
+
+
+def test_apply_after_take_in_groupby_3869() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "k": list("aaabbb"),
+                "t": [1, 2, 3, 4, 5, 6],
+                "v": [3, 1, 2, 5, 6, 4],
+            }
+        )
+        .groupby("k", maintain_order=True)
+        .agg(
+            pl.col("v").take(pl.col("t").arg_max()).sqrt()
+        )  # <- fails for sqrt, exp, log, pow, etc.
+    ).to_dict(False) == {"k": ["a", "b"], "v": [1.4142135623730951, 2.0]}
