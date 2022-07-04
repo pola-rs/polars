@@ -10,6 +10,7 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::POOL;
 use polars_utils::sort::perfect_sort;
+use std::fmt::Write;
 use std::sync::Arc;
 
 pub struct WindowExpr {
@@ -247,6 +248,7 @@ impl PhysicalExpr for WindowExpr {
         // Try to get cached grouptuples
         let (groups, _, cache_key) = if state.cache_window {
             let mut cache_key = String::with_capacity(32 * groupby_columns.len());
+            write!(&mut cache_key, "{}", state.join_branch).unwrap();
             for s in &groupby_columns {
                 cache_key.push_str(s.name());
             }

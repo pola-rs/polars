@@ -25,7 +25,7 @@ pub struct ExecutionState {
     pub(crate) join_tuples: JoinTuplesCache,
     pub(crate) verbose: bool,
     pub(crate) cache_window: bool,
-    // every join split gets an increment to distinguish between schema state
+    // every join/union split gets an increment to distinguish between schema state
     pub(crate) join_branch: usize,
 }
 
