@@ -4081,10 +4081,17 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         return pli.wrap_s(self._df.select_at_idx(idx))
 
-    def clone(self: DF) -> DF:
+    def clone(self: DF, empty: bool = False) -> DF:
         """
-        Cheap deepcopy/clone.
+        Very cheap deepcopy/clone.
+
+        Parameters
+        ----------
+        empty
+            Create a clone of the DataFrame with matching schema, but no data.
         """
+        if empty and len(self) > 0:
+            return self.head(0)
         return self._from_pydf(self._df.clone())
 
     def __copy__(self: DF) -> DF:

@@ -746,10 +746,17 @@ class LazyFrame(Generic[DF]):
         """
         return self._from_pyldf(self._ldf.cache())
 
-    def clone(self: LDF) -> LDF:
+    def clone(self: LDF, empty: bool = False) -> LDF:
         """
-        Cheap deepcopy/clone.
+        Very cheap deepcopy/clone.
+
+        Parameters
+        ----------
+        empty
+            Create a clone of the LazyFrame with matching schema, but no data or query plan.
         """
+        if empty:
+            return self._dataframe_class(columns=self.schema).lazy()
         return self._from_pyldf(self._ldf.clone())
 
     def __copy__(self: LDF) -> LDF:
