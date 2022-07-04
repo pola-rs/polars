@@ -1162,7 +1162,7 @@ def test_self_join() -> None:
     ).lazy()
 
     out = (
-        df.join(ldf=df, left_on="manager_id", right_on="employee_id", how="left")
+        df.join(other=df, left_on="manager_id", right_on="employee_id", how="left")
         .select(
             exprs=[
                 pl.col("employee_id"),
