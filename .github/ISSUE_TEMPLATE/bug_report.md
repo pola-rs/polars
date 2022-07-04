@@ -1,18 +1,19 @@
 ---
 name: Bug report
 about: An issue with rust polars, python polars or nodejs polars
-title: ''
-labels: 'bug'
-assignees: ''
+title: ""
+labels: "bug"
+assignees: ""
 ---
 
-#### What language are you using?
+<!-- Fill out this table with information about your OS, runtime, & versions-->
 
-Replace this text with the **Rust**, **Python**, or **Node.js**.
-
-#### Which feature gates did you use?
-
-This can be ignored by Python & JS users.
+| Description    | Value                                                                                                       |
+| -------------- | ----------------------------------------------------------------------------------------------------------- |
+| Runtime        | _Replace this with the language + version, ex: **rust 1.63.1-nightly**, **python 3.7.3**, **node 16.13.0**_ |
+| Feature Gates  | _This can be ignored by Python & JS users_                                                                  |
+| Polars version | _Replace this text with the version._                                                                       |
+| OS             | _Replace this text with your operating system and version._                                                 |
 
 #### Have you tried latest version of polars?
 
@@ -21,20 +22,9 @@ This can be ignored by Python & JS users.
 
 If the problem was resolved, please update polars. :)
 
-#### What version of polars are you using?
-
-Replace this text with the version.
-
-#### What operating system are you using polars on?
-
-Replace this text with your operating system and version.
-
-#### What language version are you using
-ex: python 3.8, node 16, etc.. 
-
 #### Describe your bug.
 
-Give a high level description of the bug.
+<!-- Give a high level description of the bug. -->
 
 #### What are the steps to reproduce the behavior?
 
@@ -71,13 +61,13 @@ If we cannot reproduce the bug, it is unlikely that we will be able fix it.
 Please remove clutter from your examples. Only include the bare minimum to produce the result.
 So please:
 
-* strip unused columns
-* use short distinguishable names
-* don't include unneeded computations
+- strip unused columns
+- use short distinguishable names
+- don't include unneeded computations
 
 #### What is the actual behavior?
 
-Show the query you ran and the actual output. 
+Show the query you ran and the actual output.
 
 If the output is large, put it in a gist: https://gist.github.com/
 
@@ -92,4 +82,4 @@ here
 
 #### What is the expected behavior?
 
-What do you think polars should have done?
+<!-- What do you think polars should have done? -->
