@@ -1782,6 +1782,27 @@ class LazyFrame(Generic[DF]):
         """
         return self._from_pyldf(self._ldf.with_row_count(name, offset))
 
+    def take_every(self: LDF, n: int) -> LDF:
+        """
+        Take every nth row in the LazyFrame and return as a new LazyFrame.
+
+        Examples
+        --------
+        >>> s = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]}).lazy()
+        >>> s.take_every(2).collect()
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 5   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 7   │
+        └─────┴─────┘
+        """
+        return self.select(pli.col("*").take_every(n))
+
     def fill_null(self: LDF, fill_value: int | str | pli.Expr) -> LDF:
         """
         Fill missing values with a literal or Expr.

@@ -14,7 +14,7 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.testing import assert_series_equal, columns, dataframes
+from polars.testing import assert_frame_equal, assert_series_equal, columns, dataframes
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -32,8 +32,7 @@ def test_repr(df: pl.DataFrame) -> None:
     # print(df)
 
 
-# note: *temporarily* constraining dtypes this test until #3843 and a windows-specific
-# fixfor a related date bug is merged (tblocking the PR to merge hypothesis code).
+# note: temporarily constraining dtypes for this test (possible windows-specific date bug)
 @given(df=dataframes(allowed_dtypes=[pl.Boolean, pl.UInt64, pl.Utf8]))
 def test_null_count(df: pl.DataFrame) -> None:
     null_count, ncols = df.null_count(), len(df.columns)
@@ -546,6 +545,54 @@ def test_assignment() -> None:
         pl.when(pl.col("foo") > 1).then(9).otherwise(pl.col("foo")).alias("foo")
     )
     assert df["foo"].to_list() == [1, 9, 9]
+
+
+def test_select_at_idx() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
+    for idx in range(len(df.columns)):
+        assert_series_equal(
+            df.select_at_idx(idx),  # regular positive indexing
+            df.select_at_idx(idx - len(df.columns)),  # equivalent negative index
+        )
+
+
+def test_insert_at_idx() -> None:
+    df = pl.DataFrame({"z": [3, 4, 5]})
+    df.insert_at_idx(0, pl.Series("x", [1, 2, 3]))
+    df.insert_at_idx(-1, pl.Series("y", [2, 3, 4]))
+
+    expected_df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
+    assert_frame_equal(expected_df, df)
+
+
+def test_replace_at_idx() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
+    df.replace_at_idx(0, pl.Series("a", [4, 5, 6]))
+    df.replace_at_idx(-2, pl.Series("b", [5, 6, 7]))
+    df.replace_at_idx(-1, pl.Series("c", [6, 7, 8]))
+
+    expected_df = pl.DataFrame({"a": [4, 5, 6], "b": [5, 6, 7], "c": [6, 7, 8]})
+    assert_frame_equal(expected_df, df)
+
+
+def test_to_series() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
+
+    assert_series_equal(df.to_series(), df["x"])
+    assert_series_equal(df.to_series(0), df["x"])
+    assert_series_equal(df.to_series(-3), df["x"])
+
+    assert_series_equal(df.to_series(1), df["y"])
+    assert_series_equal(df.to_series(-2), df["y"])
+
+    assert_series_equal(df.to_series(2), df["z"])
+    assert_series_equal(df.to_series(-1), df["z"])
+
+
+def test_take_every() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["w", "x", "y", "z"]})
+    expected_df = pl.DataFrame({"a": [1, 3], "b": ["w", "y"]})
+    assert_frame_equal(expected_df, df.take_every(2))
 
 
 def test_slice() -> None:
@@ -1216,9 +1263,6 @@ def test_lazy_functions() -> None:
     expected = 1
     assert np.isclose(out.select_at_idx(8), expected)
     assert np.isclose(pl.first(df["b"]), expected)
-    expected = 3
-    assert np.isclose(out.select_at_idx(9), expected)
-    assert np.isclose(pl.last(df["b"]), expected)
     expected = 3
     assert np.isclose(out.select_at_idx(9), expected)
     assert np.isclose(pl.last(df["b"]), expected)
