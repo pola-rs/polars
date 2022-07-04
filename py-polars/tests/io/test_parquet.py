@@ -152,3 +152,25 @@ def test_glob_parquet(io_test_dir: str) -> None:
     path = os.path.join(io_test_dir, "small*.parquet")
     assert pl.read_parquet(path).shape == (3, 16)
     assert pl.scan_parquet(path).collect().shape == (3, 16)
+
+
+def test_chunked_round_trip() -> None:
+    df1 = pl.DataFrame(
+        {
+            "a": [1] * 2,
+            "l": [[1] for j in range(0, 2)],
+        }
+    )
+    df2 = pl.DataFrame(
+        {
+            "a": [2] * 3,
+            "l": [[2] for j in range(0, 3)],
+        }
+    )
+
+    df = df1.vstack(df2)
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+    assert pl.read_parquet(f).frame_equal(df)
