@@ -46,6 +46,7 @@ Manipulation/ selection
 .. autosummary::
    :toctree: api/
 
+    LazyFrame.cleared
     LazyFrame.clone
     LazyFrame.distinct
     LazyFrame.drop

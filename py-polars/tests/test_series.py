@@ -630,6 +630,11 @@ def test_empty() -> None:
         pl.Series(dtype=pl.Int32), pl.Series(dtype=pl.Int64), check_dtype=False
     )
 
+    a = pl.Series(name="a", values=[1, 2, 3], dtype=pl.Int16)
+    empty_a = a.cleared()
+    assert a.dtype == empty_a.dtype
+    assert len(empty_a) == 0
+
 
 def test_describe() -> None:
     num_s = pl.Series([1, 2, 3])

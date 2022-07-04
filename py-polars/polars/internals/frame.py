@@ -4089,9 +4089,15 @@ class DataFrame(metaclass=DataFrameMetaClass):
             idx = len(self.columns) + idx
         return pli.wrap_s(self._df.select_at_idx(idx))
 
+    def cleared(self: DF) -> DF:
+        """
+        Create an empty copy of the current DataFrame, with identical schema but no data.
+        """
+        return self.head(0) if len(self) > 0 else self.clone()
+
     def clone(self: DF) -> DF:
         """
-        Cheap deepcopy/clone.
+        Very cheap deepcopy/clone.
         """
         return self._from_pydf(self._df.clone())
 
