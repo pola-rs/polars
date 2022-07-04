@@ -3539,7 +3539,8 @@ class Expr:
         Parameters
         ----------
         seed
-            Seed initialization. If None given numpy is used.
+            Seed initialization. If None given, the `random` module is used to generate
+            a random seed.
         """
         if seed is None:
             seed = random.randint(0, 10000)
