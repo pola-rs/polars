@@ -54,79 +54,53 @@ ColumnsType = Union[
 class Int8(DataType):
     """8-bit signed integer type"""
 
-    pass
-
 
 class Int16(DataType):
     """16-bit signed integer type"""
-
-    pass
 
 
 class Int32(DataType):
     """32-bit signed integer type"""
 
-    pass
-
 
 class Int64(DataType):
     """64-bit signed integer type"""
-
-    pass
 
 
 class UInt8(DataType):
     """8-bit unsigned integer type"""
 
-    pass
-
 
 class UInt16(DataType):
     """16-bit unsigned integer type"""
-
-    pass
 
 
 class UInt32(DataType):
     """32-bit unsigned integer type"""
 
-    pass
-
 
 class UInt64(DataType):
     """64-bit unsigned integer type"""
-
-    pass
 
 
 class Float32(DataType):
     """32-bit floating point type"""
 
-    pass
-
 
 class Float64(DataType):
     """64-bit floating point type"""
-
-    pass
 
 
 class Boolean(DataType):
     """Boolean type"""
 
-    pass
-
 
 class Utf8(DataType):
     """UTF-8 encoded string type"""
 
-    pass
-
 
 class Null(DataType):
     """Type representing Null / None values"""
-
-    pass
 
 
 class List(DataType):
@@ -168,8 +142,6 @@ class List(DataType):
 
 class Date(DataType):
     """Calendar date type"""
-
-    pass
 
 
 class Datetime(DataType):
@@ -232,19 +204,13 @@ class Duration(DataType):
 class Time(DataType):
     """Time of day type"""
 
-    pass
-
 
 class Object(DataType):
     """Type for wrapping arbitrary Python objects"""
 
-    pass
-
 
 class Categorical(DataType):
     """A categorical encoding of a set of strings"""
-
-    pass
 
 
 class Field:
