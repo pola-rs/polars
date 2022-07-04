@@ -1,9 +1,11 @@
 """
 Module for formatting output data in HTML.
 """
+from __future__ import annotations
+
 from textwrap import dedent
 from types import TracebackType
-from typing import Dict, Iterable, List, Optional, Type
+from typing import Iterable
 
 from polars.datatypes import Object
 
@@ -11,9 +13,9 @@ from polars.datatypes import Object
 class Tag:
     def __init__(
         self,
-        elements: List[str],
+        elements: list[str],
         tag: str,
-        attributes: Optional[Dict[str, str]] = None,
+        attributes: dict[str, str] | None = None,
     ):
         self.tag = tag
         self.elements = elements
@@ -31,17 +33,17 @@ class Tag:
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         self.elements.append(f"</{self.tag}>")
 
 
 class HTMLFormatter:
-    def __init__(self, df: "DataFrame", max_cols: int = 75, max_rows: int = 40):  # type: ignore  # noqa
+    def __init__(self, df: DataFrame, max_cols: int = 75, max_rows: int = 40):  # type: ignore  # noqa
         self.df = df
-        self.elements: List[str] = []
+        self.elements: list[str] = []
         self.max_cols = max_cols
         self.max_rows = max_rows
         self.row_idx: Iterable[int]
@@ -109,7 +111,7 @@ class HTMLFormatter:
     def write(self, inner: str) -> None:
         self.elements.append(inner)
 
-    def render(self) -> List[str]:
+    def render(self) -> list[str]:
         with Tag(self.elements, "table", {"border": "1", "class": "dataframe"}):
             self.write_header()
             self.write_body()
@@ -150,7 +152,7 @@ class NotebookFormatter(HTMLFormatter):
         template = dedent("\n".join((template_first, template_mid, template_last)))
         self.write(template)
 
-    def render(self) -> List[str]:
+    def render(self) -> list[str]:
         """
         Return the lines needed to render a HTML table.
         """

@@ -1,24 +1,21 @@
+from __future__ import annotations
+
 import warnings
 from datetime import date, datetime, time, timedelta
 from itertools import zip_longest
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
-)
+from typing import TYPE_CHECKING, Any, Iterable, Sequence
 
 import numpy as np
 
 from polars import internals as pli
-from polars.datatypes import Categorical, ColumnsType, Date, Datetime, Duration, Float32
-from polars.datatypes import List as ListDType
 from polars.datatypes import (
+    Categorical,
+    ColumnsType,
+    Date,
+    Datetime,
+    Duration,
+    Float32,
+    List,
     PolarsDataType,
     Time,
     dtype_to_arrow_type,
@@ -60,7 +57,7 @@ else:
 ################################
 
 
-def series_to_pyseries(name: str, values: "pli.Series") -> "PySeries":
+def series_to_pyseries(name: str, values: pli.Series) -> PySeries:
     """
     Construct a PySeries from a Polars Series.
     """
@@ -68,9 +65,7 @@ def series_to_pyseries(name: str, values: "pli.Series") -> "PySeries":
     return values.inner()
 
 
-def arrow_to_pyseries(
-    name: str, values: "pa.Array", rechunk: bool = True
-) -> "PySeries":
+def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySeries:
     """
     Construct a PySeries from an Arrow array.
     """
@@ -93,7 +88,7 @@ def arrow_to_pyseries(
 
 def numpy_to_pyseries(
     name: str, values: np.ndarray, strict: bool = True, nan_to_null: bool = False
-) -> "PySeries":
+) -> PySeries:
     """
     Construct a PySeries from a numpy array.
     """
@@ -114,7 +109,7 @@ def numpy_to_pyseries(
         return PySeries.new_object(name, values, strict)
 
 
-def _get_first_non_none(values: Sequence[Optional[Any]]) -> Any:
+def _get_first_non_none(values: Sequence[Any | None]) -> Any:
     """
     Return the first value from a sequence that isn't None.
 
@@ -124,7 +119,7 @@ def _get_first_non_none(values: Sequence[Optional[Any]]) -> Any:
         return next((v for v in values if v is not None), None)
 
 
-def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> "PySeries":
+def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> PySeries:
     """
     Last resort conversion. AnyValues are most flexible and if they fail we go for object types
     """
@@ -139,21 +134,21 @@ def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> "PySer
 def sequence_to_pyseries(
     name: str,
     values: Sequence[Any],
-    dtype: Optional[PolarsDataType] = None,
+    dtype: PolarsDataType | None = None,
     strict: bool = True,
-) -> "PySeries":
+) -> PySeries:
     """
     Construct a PySeries from a sequence.
     """
-    dtype_: Optional[type] = None
-    nested_dtype: Optional[Union[PolarsDataType, type]] = None
-    temporal_unit: Optional[str] = None
+    dtype_: type | None = None
+    nested_dtype: PolarsDataType | type | None = None
+    temporal_unit: str | None = None
 
     # empty sequence defaults to Float32 type
     if not values and dtype is None:
         dtype = Float32
     # lists defer to subsequent handling; identify nested type
-    elif dtype == ListDType:
+    elif dtype == List:
         nested_dtype = getattr(dtype, "inner", None)
         dtype_ = list
 
@@ -275,10 +270,10 @@ def sequence_to_pyseries(
 
 
 def _pandas_series_to_arrow(
-    values: Union["pd.Series", "pd.DatetimeIndex"],
+    values: pd.Series | pd.DatetimeIndex,
     nan_to_none: bool = True,
-    min_len: Optional[int] = None,
-) -> "pa.Array":
+    min_len: int | None = None,
+) -> pa.Array:
     """
     Convert a pandas Series to an Arrow Array.
 
@@ -309,8 +304,8 @@ def _pandas_series_to_arrow(
 
 
 def pandas_to_pyseries(
-    name: str, values: Union["pd.Series", "pd.DatetimeIndex"], nan_to_none: bool = True
-) -> "PySeries":
+    name: str, values: pd.Series | pd.DatetimeIndex, nan_to_none: bool = True
+) -> PySeries:
     """
     Construct a PySeries from a pandas Series or DatetimeIndex.
     """
@@ -332,8 +327,8 @@ def pandas_to_pyseries(
 
 
 def _handle_columns_arg(
-    data: List["PySeries"], columns: Optional[Sequence[str]] = None
-) -> List["PySeries"]:
+    data: list[PySeries], columns: Sequence[str] | None = None
+) -> list[PySeries]:
     """
     Rename data according to columns argument.
     """
@@ -350,7 +345,7 @@ def _handle_columns_arg(
             raise ValueError("Dimensions of columns arg must match data dimensions.")
 
 
-def _post_apply_columns(pydf: "PyDataFrame", columns: ColumnsType) -> "PyDataFrame":
+def _post_apply_columns(pydf: PyDataFrame, columns: ColumnsType) -> PyDataFrame:
     """
     Apply 'columns' param _after_ PyDataFrame creation (if no alternative).
     """
@@ -370,10 +365,10 @@ def _post_apply_columns(pydf: "PyDataFrame", columns: ColumnsType) -> "PyDataFra
 
 
 def _unpack_columns(
-    columns: Optional[ColumnsType],
-    lookup_names: Optional[Iterable[str]] = None,
-    n_expected: Optional[int] = None,
-) -> Tuple[List[str], Dict[str, PolarsDataType]]:
+    columns: ColumnsType | None,
+    lookup_names: Iterable[str] | None = None,
+    n_expected: int | None = None,
+) -> tuple[list[str], dict[str, PolarsDataType]]:
     """
     Unpack column names and create dtype lookup for any (name,dtype) pairs or schema dict input.
     """
@@ -381,7 +376,7 @@ def _unpack_columns(
         columns = list(columns.items())
     column_names = [
         (col or f"column_{i}") if isinstance(col, str) else col[0]
-        for i, col in enumerate((columns or []))
+        for i, col in enumerate(columns or [])
     ]
     if not column_names and n_expected:
         column_names = [f"column_{i}" for i in range(n_expected)]
@@ -399,8 +394,8 @@ def _unpack_columns(
 
 
 def dict_to_pydf(
-    data: Dict[str, Sequence[Any]], columns: Optional[ColumnsType] = None
-) -> "PyDataFrame":
+    data: dict[str, Sequence[Any]], columns: ColumnsType | None = None
+) -> PyDataFrame:
     """
     Construct a PyDataFrame from a dictionary of sequences.
     """
@@ -449,9 +444,9 @@ def dict_to_pydf(
 
 def numpy_to_pydf(
     data: np.ndarray,
-    columns: Optional[ColumnsType] = None,
-    orient: Optional[str] = None,
-) -> "PyDataFrame":
+    columns: ColumnsType | None = None,
+    orient: str | None = None,
+) -> PyDataFrame:
     """
     Construct a PyDataFrame from a numpy ndarray.
     """
@@ -508,13 +503,13 @@ def numpy_to_pydf(
 
 def sequence_to_pydf(
     data: Sequence[Any],
-    columns: Optional[ColumnsType] = None,
-    orient: Optional[str] = None,
-) -> "PyDataFrame":
+    columns: ColumnsType | None = None,
+    orient: str | None = None,
+) -> PyDataFrame:
     """
     Construct a PyDataFrame from a sequence.
     """
-    data_series: List["PySeries"]
+    data_series: list[PySeries]
 
     if len(data) == 0:
         return dict_to_pydf({}, columns=columns)
@@ -565,8 +560,8 @@ def sequence_to_pydf(
 
 
 def arrow_to_pydf(
-    data: "pa.Table", columns: Optional[ColumnsType] = None, rechunk: bool = True
-) -> "PyDataFrame":
+    data: pa.Table, columns: ColumnsType | None = None, rechunk: bool = True
+) -> PyDataFrame:
     """
     Construct a PyDataFrame from an Arrow Table.
     """
@@ -630,9 +625,7 @@ def arrow_to_pydf(
     return pydf
 
 
-def series_to_pydf(
-    data: "pli.Series", columns: Optional[ColumnsType] = None
-) -> "PyDataFrame":
+def series_to_pydf(data: pli.Series, columns: ColumnsType | None = None) -> PyDataFrame:
     """
     Construct a PyDataFrame from a Polars Series.
     """
@@ -649,11 +642,11 @@ def series_to_pydf(
 
 
 def pandas_to_pydf(
-    data: "pd.DataFrame",
-    columns: Optional[ColumnsType] = None,
+    data: pd.DataFrame,
+    columns: ColumnsType | None = None,
     rechunk: bool = True,
     nan_to_none: bool = True,
-) -> "PyDataFrame":
+) -> PyDataFrame:
     """
     Construct a PyDataFrame from a pandas DataFrame.
     """
@@ -672,7 +665,7 @@ def pandas_to_pydf(
     return arrow_to_pydf(arrow_table, columns=columns, rechunk=rechunk)
 
 
-def coerce_arrow(array: "pa.Array", rechunk: bool = True) -> "pa.Array":
+def coerce_arrow(array: pa.Array, rechunk: bool = True) -> pa.Array:
     # note: Decimal256 could not be cast to float
     if isinstance(array.type, pa.Decimal128Type):
         array = pa.compute.cast(array, pa.float64())

@@ -1,13 +1,6 @@
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Dict,
-    Mapping,
-    Optional,
-    Sequence,
-    Union,
-    overload,
-)
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Mapping, Sequence, overload
 
 import numpy as np
 
@@ -28,8 +21,8 @@ else:
 
 
 def from_dict(
-    data: Mapping[str, Union[Sequence, Mapping]],
-    columns: Optional[Sequence[str]] = None,
+    data: Mapping[str, Sequence | Mapping],
+    columns: Sequence[str] | None = None,
 ) -> DataFrame:
     """
     Construct a DataFrame from a dictionary of sequences.
@@ -69,9 +62,9 @@ def from_dict(
 
 
 def from_records(
-    data: Union[np.ndarray, Sequence[Sequence[Any]]],
-    columns: Optional[Sequence[str]] = None,
-    orient: Optional[str] = None,
+    data: np.ndarray | Sequence[Sequence[Any]],
+    columns: Sequence[str] | None = None,
+    orient: str | None = None,
 ) -> DataFrame:
     """
     Construct a DataFrame from a numpy ndarray or sequence of sequences.
@@ -118,8 +111,8 @@ def from_records(
 
 
 def from_dicts(
-    dicts: Sequence[Dict[str, Any]],
-    infer_schema_length: Optional[int] = 50,
+    dicts: Sequence[dict[str, Any]],
+    infer_schema_length: int | None = 50,
 ) -> DataFrame:
     """
     Construct a DataFrame from a sequence of dictionaries.
@@ -161,8 +154,8 @@ def from_dicts(
 
 # Note that we cannot overload because pyarrow has no stubs :(
 def from_arrow(
-    a: Union["pa.Table", "pa.Array", "pa.ChunkedArray"], rechunk: bool = True
-) -> Union[DataFrame, Series]:
+    a: pa.Table | pa.Array | pa.ChunkedArray, rechunk: bool = True
+) -> DataFrame | Series:
     """
     Create a DataFrame or Series from an Arrow Table or Array.
 
@@ -230,7 +223,7 @@ def from_arrow(
 
 @overload
 def from_pandas(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     rechunk: bool = True,
     nan_to_none: bool = True,
 ) -> DataFrame:
@@ -239,7 +232,7 @@ def from_pandas(
 
 @overload
 def from_pandas(
-    df: Union["pd.Series", "pd.DatetimeIndex"],
+    df: pd.Series | pd.DatetimeIndex,
     rechunk: bool = True,
     nan_to_none: bool = True,
 ) -> Series:
@@ -247,10 +240,10 @@ def from_pandas(
 
 
 def from_pandas(
-    df: Union["pd.DataFrame", "pd.Series", "pd.DatetimeIndex"],
+    df: pd.DataFrame | pd.Series | pd.DatetimeIndex,
     rechunk: bool = True,
     nan_to_none: bool = True,
-) -> Union[DataFrame, Series]:
+) -> DataFrame | Series:
     """
     Construct a Polars DataFrame or Series from a pandas DataFrame or Series.
 
