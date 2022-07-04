@@ -152,7 +152,8 @@ pub fn read_parquet<R: MmapBytesReader>(
                 .collect::<Result<Vec<_>>>()?
         };
 
-        remaining_rows = file_metadata.row_groups[rg].num_rows() as usize;
+        remaining_rows =
+            remaining_rows.saturating_sub(file_metadata.row_groups[rg].num_rows() as usize);
 
         let mut df = DataFrame::new_no_checks(columns);
         if let Some(rc) = &row_count {
