@@ -4,6 +4,7 @@ from _pytest.capture import CaptureFixture
 
 import polars as pl
 from polars import col, lit, map_binary, when
+from polars.testing import assert_frame_equal
 
 
 def test_lazy() -> None:
@@ -48,6 +49,12 @@ def test_set_null() -> None:
     assert s[0] == 100
     assert s[1] is None
     assert s[2] is None
+
+
+def test_take_every() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["w", "x", "y", "z"]}).lazy()
+    expected_df = pl.DataFrame({"a": [1, 3], "b": ["w", "y"]})
+    assert_frame_equal(expected_df, df.take_every(2).collect())
 
 
 def test_agg() -> None:
