@@ -278,7 +278,7 @@ class Expr:
         """
         Compute the square root of the elements
         """
-        return self ** 0.5
+        return self**0.5
 
     def log10(self) -> "Expr":
         """
@@ -1030,7 +1030,9 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [8, 9, 10, 11], "b": [None, 4, 4, float('nan')]})
+        >>> df = pl.DataFrame(
+        ...     {"a": [8, 9, 10, 11], "b": [None, 4.0, 4.0, float("nan")]}
+        ... )
         >>> df.select(pl.col("b").drop_nulls())
         shape: (3, 1)
         ┌─────┐
@@ -1059,7 +1061,9 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [8, 9, 10, 11], "b": [None, 4, 4, float('nan')]})
+        >>> df = pl.DataFrame(
+        ...     {"a": [8, 9, 10, 11], "b": [None, 4.0, 4.0, float("nan")]}
+        ... )
         >>> df.select(pl.col("b").drop_nans())
         shape: (3, 1)
         ┌──────┐
@@ -1094,7 +1098,12 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
-        >>> df.select([pl.col("a").cumsum(),pl.col("a").cumsum(reverse=True).alias('a_reverse')])
+        >>> df.select(
+        ...     [
+        ...         pl.col("a").cumsum(),
+        ...         pl.col("a").cumsum(reverse=True).alias("a_reverse"),
+        ...     ]
+        ... )
         shape: (4, 2)
         ┌─────┬───────────┐
         │ a   ┆ a_reverse │
@@ -1130,7 +1139,12 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
-        >>> df.select([pl.col("a").cumprod(),pl.col("a").cumprod(reverse=True).alias('a_reverse')])
+        >>> df.select(
+        ...     [
+        ...         pl.col("a").cumprod(),
+        ...         pl.col("a").cumprod(reverse=True).alias("a_reverse"),
+        ...     ]
+        ... )
         shape: (4, 2)
         ┌──────┬───────────┐
         │ a    ┆ a_reverse │
@@ -1161,7 +1175,12 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
-        >>> df.select([pl.col("a").cummin(),pl.col("a").cummin(reverse=True).alias('a_reverse')])
+        >>> df.select(
+        ...     [
+        ...         pl.col("a").cummin(),
+        ...         pl.col("a").cummin(reverse=True).alias("a_reverse"),
+        ...     ]
+        ... )
         shape: (4, 2)
         ┌─────┬───────────┐
         │ a   ┆ a_reverse │
@@ -1192,7 +1211,12 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
-        >>> df.select([pl.col("a").cummax(),pl.col("a").cummax(reverse=True).alias('a_reverse')])
+        >>> df.select(
+        ...     [
+        ...         pl.col("a").cummax(),
+        ...         pl.col("a").cummax(reverse=True).alias("a_reverse"),
+        ...     ]
+        ... )
         shape: (4, 2)
         ┌─────┬───────────┐
         │ a   ┆ a_reverse │
@@ -1225,7 +1249,12 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
-        >>> df.select([pl.col("a").cumcount(),pl.col("a").cumcount(reverse=True).alias('a_reverse')])
+        >>> df.select(
+        ...     [
+        ...         pl.col("a").cumcount(),
+        ...         pl.col("a").cumcount(reverse=True).alias("a_reverse"),
+        ...     ]
+        ... )
         >>> shape: (4, 2)
         ┌─────┬───────────┐
         │ a   ┆ a_reverse │
@@ -1253,7 +1282,7 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame({"a": [0.3, 0.5, 1.0, 1.1]})
-        >>> df.select(pl.col('a').floor())
+        >>> df.select(pl.col("a").floor())
         shape: (4, 1)
         ┌─────┐
         │ a   │
@@ -1281,7 +1310,7 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame({"a": [0.3, 0.5, 1.0, 1.1]})
-        >>> df.select(pl.col('a').ceil())
+        >>> df.select(pl.col("a").ceil())
         shape: (4, 1)
         ┌─────┐
         │ a   │
@@ -1312,7 +1341,7 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame({"a": [0.33, 0.52, 1.02, 1.17]})
-        >>> df.select(pl.col('a').round(1))
+        >>> df.select(pl.col("a").round(1))
         shape: (4, 1)
         ┌─────┐
         │ a   │
@@ -1376,7 +1405,7 @@ class Expr:
         ...         "b": [1, 1, 2, 2],
         ...     }
         ... )
-        >>> df.select(pl.col("*).mode())
+        >>> df.select(pl.col("*").mode())
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -1757,7 +1786,7 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
-        >>> df.select(pl.col("foo").shift_and_fill(1,'a'))
+        >>> df.select(pl.col("foo").shift_and_fill(1, "a"))
         shape: (4, 1)
         ┌─────┐
         │ foo │
@@ -1852,7 +1881,9 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [1.0, None, float('nan')], "b": [4.0, float('nan'), 6]})
+        >>> df = pl.DataFrame(
+        ...     {"a": [1.0, None, float("nan")], "b": [4.0, float("nan"), 6]}
+        ... )
         >>> df.fill_nan("zero")
         shape: (3, 2)
         ┌──────┬──────┐
@@ -1974,7 +2005,7 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [-1,0,1]})
+        >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").std())
         shape: (1, 1)
         ┌─────┐
@@ -1994,7 +2025,7 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [-1,0,1]})
+        >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").var())
         shape: (1, 1)
         ┌─────┐
@@ -2015,7 +2046,7 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [-1,0,1]})
+        >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").max())
         shape: (1, 1)
         ┌─────┐
@@ -2034,7 +2065,7 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [-1,0,1]})
+        >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").min())
         shape: (1, 1)
         ┌─────┐
@@ -2060,7 +2091,7 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [-1,0,1]})
+        >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").sum())
         shape: (1, 1)
         ┌─────┐
@@ -2081,7 +2112,7 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [-1,0,1]})
+        >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").mean())
         shape: (1, 1)
         ┌─────┐
@@ -2102,7 +2133,7 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [-1,0,1]})
+        >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").median())
         shape: (1, 1)
         ┌─────┐
@@ -2122,7 +2153,7 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [1,2,3]})
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
         >>> df.select(pl.col("a").product())
         shape: (1, 1)
         ┌─────┐
@@ -2142,7 +2173,7 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [1,1,2]})
+        >>> df = pl.DataFrame({"a": [1, 1, 2]})
         >>> df.select(pl.col("a").n_unique())
         shape: (1, 1)
         ┌─────┐
@@ -2163,7 +2194,7 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [None,1,None],'b':[1,2,3]})
+        >>> df = pl.DataFrame({"a": [None, 1, None], "b": [1, 2, 3]})
         >>> df.select(pl.col("*").null_count())
         shape: (1, 2)
         ┌─────┬─────┐
@@ -2480,7 +2511,7 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [0, 1, 2,3,4,5]})
+        >>> df = pl.DataFrame({"a": [0, 1, 2, 3, 4, 5]})
         >>> df.select(pl.col("a").quantile(0.3))
         shape: (1, 1)
         ┌─────┐
@@ -2490,7 +2521,7 @@ class Expr:
         ╞═════╡
         │ 1.0 │
         └─────┘
-        >>> df.select(pl.col("a").quantile(0.3,interpolation = "higher"))
+        >>> df.select(pl.col("a").quantile(0.3, interpolation="higher"))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2499,7 +2530,7 @@ class Expr:
         ╞═════╡
         │ 2.0 │
         └─────┘
-        >>> df.select(pl.col("a").quantile(0.3,interpolation = "lower"))
+        >>> df.select(pl.col("a").quantile(0.3, interpolation="lower"))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2508,7 +2539,7 @@ class Expr:
         ╞═════╡
         │ 1.0 │
         └─────┘
-        >>> df.select(pl.col("a").quantile(0.3,interpolation = "midpoint"))
+        >>> df.select(pl.col("a").quantile(0.3, interpolation="midpoint"))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2517,7 +2548,7 @@ class Expr:
         ╞═════╡
         │ 1.5 │
         └─────┘
-        >>> df.select(pl.col("a").quantile(0.3,interpolation = "linear"))
+        >>> df.select(pl.col("a").quantile(0.3, interpolation="linear"))
         shape: (1, 1)
         ┌─────┐
         │ a   │
