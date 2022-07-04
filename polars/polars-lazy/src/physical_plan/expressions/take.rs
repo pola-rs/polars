@@ -96,7 +96,6 @@ impl PhysicalExpr for TakeExpr {
                         };
                     let taken = ac.flat_naive().take(&idx)?;
                     ac.with_series(taken, true);
-                    ac.with_update_groups(UpdateGroups::WithSeriesLen);
                     return Ok(ac);
                 }
                 AggState::AggregatedList(s) => s.list().unwrap().clone(),
