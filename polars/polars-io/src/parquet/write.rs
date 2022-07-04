@@ -1,46 +1,17 @@
-use super::ArrowResult;
 use arrow::array::Array;
 use arrow::chunk::Chunk;
 use arrow::datatypes::DataType as ArrowDataType;
 use arrow::datatypes::PhysicalType;
 use arrow::error::Error as ArrowError;
+use arrow::io::parquet::read::ParquetError;
 use arrow::io::parquet::write::{self, FileWriter, *};
 use arrow::io::parquet::write::{DynIter, DynStreamingIterator, Encoding};
 use polars_core::prelude::*;
 use rayon::prelude::*;
-use std::collections::VecDeque;
 use std::io::Write;
 
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df};
 pub use write::{BrotliLevel, CompressionOptions as ParquetCompression, GzipLevel, ZstdLevel};
-
-struct Bla {
-    columns: VecDeque<CompressedPage>,
-    current: Option<CompressedPage>,
-}
-
-impl Bla {
-    pub fn new(columns: VecDeque<CompressedPage>) -> Self {
-        Self {
-            columns,
-            current: None,
-        }
-    }
-}
-
-impl FallibleStreamingIterator for Bla {
-    type Item = CompressedPage;
-    type Error = ArrowError;
-
-    fn advance(&mut self) -> ArrowResult<()> {
-        self.current = self.columns.pop_front();
-        Ok(())
-    }
-
-    fn get(&self) -> Option<&Self::Item> {
-        self.current.as_ref()
-    }
-}
 
 /// Write a DataFrame to parquet format
 ///
@@ -155,25 +126,32 @@ fn create_serializer(
         .par_iter()
         .zip(fields)
         .zip(encodings)
-        .flat_map(move |((array, type_), encoding)| {
+        .map(move |((array, type_), encoding)| {
             let encoded_columns = array_to_columns(array, type_, options, encoding).unwrap();
+
             encoded_columns
                 .into_iter()
                 .map(|encoded_pages| {
-                    encoded_pages
-                        .map(|page| {
-                            compress(page?, vec![], options.compression).map_err(|x| x.into())
-                        })
-                        .collect::<ArrowResult<VecDeque<_>>>()
+                    // iterator over pages
+                    let pages = DynStreamingIterator::new(
+                        Compressor::new_from_vec(
+                            encoded_pages.map(|result| {
+                                result.map_err(|e| ParquetError::General(format!("{}", e)))
+                            }),
+                            options.compression,
+                            vec![],
+                        )
+                        .map_err(|e| ArrowError::External(format!("{}", e), Box::new(e))),
+                    );
+
+                    Ok(pages)
                 })
                 .collect::<Vec<_>>()
         })
-        .collect::<ArrowResult<Vec<VecDeque<CompressedPage>>>>()?;
+        .flatten()
+        .collect::<Vec<_>>();
 
-    let row_group = DynIter::new(
-        columns
-            .into_iter()
-            .map(|column| Ok(DynStreamingIterator::new(Bla::new(column)))),
-    );
+    let row_group = DynIter::new(columns.into_iter());
+
     Ok(row_group)
 }
