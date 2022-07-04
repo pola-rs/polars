@@ -1279,3 +1279,21 @@ def test_deadlocks_3409() -> None:
         .with_columns([pl.col("col1").cumulative_eval(pl.element().map(lambda x: 0))])
         .to_dict(False)
     ) == {"col1": [0, 0, 0]}
+
+
+def test_predicate_count_vstack() -> None:
+    l1 = pl.DataFrame(
+        {
+            "k": ["x", "y"],
+            "v": [3, 2],
+        }
+    ).lazy()
+    l2 = pl.DataFrame(
+        {
+            "k": ["x", "y"],
+            "v": [5, 7],
+        }
+    ).lazy()
+    assert pl.concat([l1, l2]).filter(pl.count().over("k") == 2).collect()[
+        "v"
+    ].to_list() == [3, 2, 5, 7]
