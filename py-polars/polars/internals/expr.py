@@ -2169,7 +2169,6 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.product())
 
-<<<<<<< HEAD
     def n_unique(self) -> "Expr":
         """
         Count unique values.
@@ -2209,14 +2208,6 @@ class Expr:
         │ 2   ┆ 0   │
         └─────┴─────┘
         """
-=======
-    def n_unique(self) -> Expr:
-        """Count unique values."""
-        return wrap_expr(self._pyexpr.n_unique())
-
-    def null_count(self) -> Expr:
-        """Count null values."""
->>>>>>> f614dd990924de4adbed953b84969728f2c103b3
         return wrap_expr(self._pyexpr.null_count())
 
     def arg_unique(self) -> Expr:
