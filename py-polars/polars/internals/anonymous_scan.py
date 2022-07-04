@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import pickle
 from functools import partial
-from typing import Dict, List, Optional
 
 import polars as pl
 from polars import internals as pli
@@ -13,7 +14,7 @@ except ImportError:  # pragma: no cover
     _PYARROW_AVAILABLE = False
 
 
-def _deser_and_exec(buf: bytes, with_columns: Optional[List[str]]) -> "pli.DataFrame":
+def _deser_and_exec(buf: bytes, with_columns: list[str] | None) -> pli.DataFrame:
     """
     Called from polars-lazy. Polars-lazy provides the bytes of the pickled function and the
     projected columns.
@@ -30,8 +31,8 @@ def _deser_and_exec(buf: bytes, with_columns: Optional[List[str]]) -> "pli.DataF
 
 
 def _scan_ds_impl(
-    ds: "pa.dataset.dataset", with_columns: Optional[List[str]]
-) -> "pli.DataFrame":
+    ds: pa.dataset.dataset, with_columns: list[str] | None
+) -> pli.DataFrame:
     """
     Takes the projected columns and materializes an arrow table.
 
@@ -51,7 +52,7 @@ def _scan_ds_impl(
     return pl.from_arrow(ds.to_table(columns=with_columns))  # type: ignore
 
 
-def _scan_ds(ds: "pa.dataset.dataset") -> "pli.LazyFrame":
+def _scan_ds(ds: pa.dataset.dataset) -> pli.LazyFrame:
     """
     This pickles the partially applied function `_scan_ds_impl`. That bytes are then send to in the polars
     logical plan. It can be deserialized once executed and ran.
@@ -66,7 +67,7 @@ def _scan_ds(ds: "pa.dataset.dataset") -> "pli.LazyFrame":
     return pli.LazyFrame._scan_python_function(ds.schema, func_serialized)
 
 
-def _scan_ipc_impl(uri: "str", with_columns: Optional[List[str]]) -> "pli.DataFrame":
+def _scan_ipc_impl(uri: str, with_columns: list[str] | None) -> pli.DataFrame:
     """
     Takes the projected columns and materializes an arrow table.
 
@@ -82,8 +83,8 @@ def _scan_ipc_impl(uri: "str", with_columns: Optional[List[str]]) -> "pli.DataFr
 
 def _scan_ipc_fsspec(
     file: str,
-    storage_options: Optional[Dict] = None,
-) -> "pli.LazyFrame":
+    storage_options: dict | None = None,
+) -> pli.LazyFrame:
     func = partial(_scan_ipc_impl, file)
     func_serialized = pickle.dumps(func)
 
@@ -94,9 +95,7 @@ def _scan_ipc_fsspec(
     return pli.LazyFrame._scan_python_function(schema, func_serialized)
 
 
-def _scan_parquet_impl(
-    uri: "str", with_columns: Optional[List[str]]
-) -> "pli.DataFrame":
+def _scan_parquet_impl(uri: str, with_columns: list[str] | None) -> pli.DataFrame:
     """
     Takes the projected columns and materializes an arrow table.
 
@@ -112,8 +111,8 @@ def _scan_parquet_impl(
 
 def _scan_parquet_fsspec(
     file: str,
-    storage_options: Optional[Dict] = None,
-) -> "pli.LazyFrame":
+    storage_options: dict | None = None,
+) -> pli.LazyFrame:
     func = partial(_scan_parquet_impl, file)
     func_serialized = pickle.dumps(func)
 

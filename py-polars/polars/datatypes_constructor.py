@@ -1,4 +1,6 @@
-from typing import Any, Callable, Dict, Sequence, Type
+from __future__ import annotations
+
+from typing import Any, Callable, Sequence
 
 import numpy as np
 
@@ -34,7 +36,7 @@ except ImportError:  # pragma: no cover
 
 
 if not _DOCUMENTING:
-    _POLARS_TYPE_TO_CONSTRUCTOR: Dict[PolarsDataType, Callable] = {
+    _POLARS_TYPE_TO_CONSTRUCTOR: dict[PolarsDataType, Callable] = {
         Float32: PySeries.new_opt_f32,
         Float64: PySeries.new_opt_f64,
         Int8: PySeries.new_opt_i8,
@@ -60,7 +62,7 @@ if not _DOCUMENTING:
 
 def polars_type_to_constructor(
     dtype: PolarsDataType,
-) -> Callable[[str, Sequence[Any], bool], "PySeries"]:
+) -> Callable[[str, Sequence[Any], bool], PySeries]:
     """
     Get the right PySeries constructor for the given Polars dtype.
     """
@@ -87,7 +89,7 @@ if not _DOCUMENTING:
     }
 
 
-def numpy_type_to_constructor(dtype: Type[np.dtype]) -> Callable[..., "PySeries"]:
+def numpy_type_to_constructor(dtype: type[np.dtype]) -> Callable[..., PySeries]:
     """
     Get the right PySeries constructor for the given Polars dtype.
     """
@@ -106,7 +108,7 @@ if not _DOCUMENTING:
     }
 
 
-def py_type_to_constructor(dtype: Type[Any]) -> Callable[..., "PySeries"]:
+def py_type_to_constructor(dtype: type[Any]) -> Callable[..., PySeries]:
     """
     Get the right PySeries constructor for the given Python dtype.
     """

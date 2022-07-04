@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 from types import TracebackType
-from typing import Optional, Type
 
 try:
     from polars.polars import toggle_string_cache as pytoggle_string_cache
@@ -56,15 +57,15 @@ class StringCache:
     def __init__(self) -> None:
         pass
 
-    def __enter__(self) -> "StringCache":
+    def __enter__(self) -> StringCache:
         pytoggle_string_cache(True)
         return self
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         pytoggle_string_cache(False)
 

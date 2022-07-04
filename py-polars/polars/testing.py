@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import random
 from dataclasses import dataclass
 from datetime import datetime
 from functools import reduce
-from typing import Any, Callable, Dict, List, Optional, Sequence, Union
+from typing import Any, Callable, Sequence
 
 try:
     from hypothesis import settings
@@ -257,7 +259,7 @@ def _getattr_multi(obj: object, op: str) -> Any:
 
 
 def verify_series_and_expr_api(
-    input: Series, expected: Optional[Series], op: str, *args: Any, **kwargs: Any
+    input: Series, expected: Series | None, op: str, *args: Any, **kwargs: Any
 ) -> None:
     """
     Small helper function to test element-wise functions for both the series and expressions api.
@@ -290,20 +292,12 @@ def is_categorical_dtype(data_type: Any) -> bool:
 
 
 if HYPOTHESIS_INSTALLED:
-
-    def between(draw: Callable, type_: type, min_: Any, max_: Any) -> Any:
-        """
-        Draw a value in a given range from a type-inferred strategy.
-        """
-        strategy_init = getattr(from_type(type_), "function")
-        return draw(strategy_init(min_, max_))
-
     # =====================================================================
     # Polars-specific 'hypothesis' strategies and helper functions
     # See: https://hypothesis.readthedocs.io/
     # =====================================================================
 
-    dtype_strategy_mapping: Dict[PolarsDataType, Any] = {
+    dtype_strategy_mapping: dict[PolarsDataType, Any] = {
         Boolean: booleans(),
         Float32: floats(width=32),
         Float64: floats(width=64),
@@ -339,6 +333,13 @@ if HYPOTHESIS_INSTALLED:
 
     strategy_dtypes = list(dtype_strategy_mapping)
 
+    def between(draw: Callable, type_: type, min_: Any, max_: Any) -> Any:
+        """
+        Draw a value in a given range from a type-inferred strategy.
+        """
+        strategy_init = getattr(from_type(type_), "function")
+        return draw(strategy_init(min_, max_))
+
     @dataclass
     class column:
         """
@@ -352,6 +353,10 @@ if HYPOTHESIS_INSTALLED:
             a recognised polars dtype.
         strategy : strategy, optional
             supports overriding the default strategy for the given dtype.
+        null_probability : float, optional
+            percentage chance (expressed between 0.0 => 1.0) that a generated value
+            is None. this is applied in addition to any None values output by the
+            given/inferred strategy for the column.
         unique : bool, optional
             flag indicating that all values generated for the column should be unique.
 
@@ -365,11 +370,18 @@ if HYPOTHESIS_INSTALLED:
         """
 
         name: str
-        dtype: Optional[PolarsDataType] = None
-        strategy: Optional["SearchStrategy"] = None
+        dtype: PolarsDataType | None = None
+        strategy: SearchStrategy | None = None
+        null_probability: float | None = None
         unique: bool = False
 
         def __post_init__(self) -> None:
+            if (self.null_probability is not None) and (
+                self.null_probability < 0 or self.null_probability > 1
+            ):
+                raise InvalidArgument(
+                    f"null_probability should be between 0.0 and 1.0 or None; found {self.null_probability}"
+                )
             if self.dtype is None and not self.strategy:
                 self.dtype = random.choice(strategy_dtypes)
             elif self.dtype not in dtype_strategy_mapping:
@@ -392,13 +404,13 @@ if HYPOTHESIS_INSTALLED:
                         )
 
     def columns(
-        cols: Optional[Union[int, Sequence[str]]] = None,
+        cols: int | Sequence[str] | None = None,
         *,
-        dtype: Optional[Union[PolarsDataType, Sequence[PolarsDataType]]] = None,
-        min_cols: Optional[int] = 0,
-        max_cols: Optional[int] = MAX_COLS,
+        dtype: PolarsDataType | Sequence[PolarsDataType] | None = None,
+        min_cols: int | None = 0,
+        max_cols: int | None = MAX_COLS,
         unique: bool = False,
-    ) -> List[column]:
+    ) -> list[column]:
         """
         Generate a fixed sequence of `column` objects suitable for passing to the @dataframes
         strategy, or using standalone (note that this function is not itself a strategy).
@@ -450,7 +462,7 @@ if HYPOTHESIS_INSTALLED:
                 b=max_cols or MAX_COLS,
             )
         if isinstance(cols, int):
-            names: List[str] = [f"col{n}" for n in range(cols)]
+            names: list[str] = [f"col{n}" for n in range(cols)]
         else:
             names = list(cols)
 
@@ -477,17 +489,17 @@ if HYPOTHESIS_INSTALLED:
     @defines_strategy()
     def series(
         *,
-        name: Optional[Union[str, "SearchStrategy[str]"]] = None,
-        dtype: Optional[PolarsDataType] = None,
-        size: Optional[int] = None,
-        min_size: Optional[int] = 0,
-        max_size: Optional[int] = MAX_DATA_SIZE,
-        strategy: Optional["SearchStrategy"] = None,
-        null_probability: float = 0.01,
+        name: str | SearchStrategy[str] | None = None,
+        dtype: PolarsDataType | None = None,
+        size: int | None = None,
+        min_size: int | None = 0,
+        max_size: int | None = MAX_DATA_SIZE,
+        strategy: SearchStrategy | None = None,
+        null_probability: float = 0.0,
         unique: bool = False,
-        allowed_dtypes: Optional[Sequence[PolarsDataType]] = None,
-        excluded_dtypes: Optional[Sequence[PolarsDataType]] = None,
-    ) -> "SearchStrategy[Series]":
+        allowed_dtypes: Sequence[PolarsDataType] | None = None,
+        excluded_dtypes: Sequence[PolarsDataType] | None = None,
+    ) -> SearchStrategy[Series]:
         """
         Strategy for producing a polars Series.
 
@@ -508,7 +520,8 @@ if HYPOTHESIS_INSTALLED:
         strategy : strategy, optional
             supports overriding the default strategy for the given dtype.
         null_probability : float, optional
-            percentage chance (expressed between 0.0 => 1.0) that a generated value is None; default = 0.01 (1%).
+            percentage chance (expressed between 0.0 => 1.0) that a generated value is None. this
+            is applied independently of any None values generated by the underlying strategy.
         unique : bool, optional
             indicate whether Series values should all be distinct.
         allowed_dtypes : {list,set}, optional
@@ -546,16 +559,16 @@ if HYPOTHESIS_INSTALLED:
         ]
         >>>
         """
-        # TODO: finish 'null_probability' integration - currently a no-op ;p
-        if null_probability and null_probability < 0 or null_probability > 1:
-            raise InvalidArgument(
-                f"null_probability should be between 0.0 and 1.0; found {null_probability}"
-            )
         selectable_dtypes = [
             dtype
             for dtype in (allowed_dtypes or strategy_dtypes)
             if dtype not in (excluded_dtypes or ())
         ]
+        if null_probability and (null_probability < 0 or null_probability > 1):
+            raise InvalidArgument(
+                f"null_probability should be between 0.0 and 1.0; found {null_probability}"
+            )
+        null_probability = float(null_probability or 0.0)
 
         @composite
         def draw_series(draw: Callable) -> Series:
@@ -573,12 +586,15 @@ if HYPOTHESIS_INSTALLED:
                 if size is None
                 else size
             )
-            # create series using dtype-specific strategy to generate values
+
+            # assign series name
             series_name = name if isinstance(name, (str, type(None))) else draw(name)
-            s = Series(
-                name=series_name,
-                dtype=series_dtype,
-                values=(
+
+            # create series using dtype-specific strategy to generate values
+            series_values = (
+                [None] * series_size
+                if null_probability == 1
+                else (
                     draw(
                         lists(
                             dtype_strategy,
@@ -589,7 +605,19 @@ if HYPOTHESIS_INSTALLED:
                     )
                     if (series_size > 0)
                     else []
-                ),
+                )
+            )
+            # optionally apply null values (custom frequency)
+            if 0.0 < null_probability < 1.0:
+                for idx in range(series_size):
+                    if random.random() < null_probability:
+                        series_values[idx] = None
+
+            # init series with strategy-generated data
+            s = Series(
+                name=series_name,
+                dtype=series_dtype,
+                values=series_values,
             )
             if is_categorical_dtype(dtype):
                 s = s.cast(Categorical)
@@ -599,19 +627,19 @@ if HYPOTHESIS_INSTALLED:
 
     @defines_strategy()
     def dataframes(
-        cols: Optional[Union[int, Sequence[column]]] = None,
+        cols: int | Sequence[column] | None = None,
         lazy: bool = False,
         *,
-        min_cols: Optional[int] = 0,
-        max_cols: Optional[int] = MAX_COLS,
-        size: Optional[int] = None,
-        min_size: Optional[int] = 0,
-        max_size: Optional[int] = MAX_DATA_SIZE,
-        include_cols: Optional[Sequence[column]] = None,
-        null_probability: float = 0.0,
-        allowed_dtypes: Optional[Sequence[PolarsDataType]] = None,
-        excluded_dtypes: Optional[Sequence[PolarsDataType]] = None,
-    ) -> "SearchStrategy[Union[DataFrame, LazyFrame]]":
+        min_cols: int | None = 0,
+        max_cols: int | None = MAX_COLS,
+        size: int | None = None,
+        min_size: int | None = 0,
+        max_size: int | None = MAX_DATA_SIZE,
+        include_cols: Sequence[column] | None = None,
+        null_probability: float | dict[str, float] = 0.0,
+        allowed_dtypes: Sequence[PolarsDataType] | None = None,
+        excluded_dtypes: Sequence[PolarsDataType] | None = None,
+    ) -> SearchStrategy[DataFrame | LazyFrame]:
         """
         Provides a strategy for producing a DataFrame or LazyFrame.
 
@@ -635,8 +663,11 @@ if HYPOTHESIS_INSTALLED:
         include_cols : [column], optional
             a list of `column` objects to include in the generated DataFrame. note that explicitly
             provided columns are appended onto the list of existing columns (if any present).
-        null_probability : float, optional
-            chance (expressed as a float between 0.0 => 1.0) that a generated value is None.
+        null_probability : {float, dict[str,float]}, optional
+            percentage chance (expressed between 0.0 => 1.0) that a generated value is None. this is
+            applied independently of any None values generated by the underlying strategy, and can
+            be applied either on a per-column basis (if given as a {col:pct} dict), or globally. if
+            null_probability is defined on a column, it takes precedence over the global value.
         allowed_dtypes : {list,set}, optional
             when automatically generating data, allow only these dtypes.
         excluded_dtypes : {list,set}, optional
@@ -701,7 +732,7 @@ if HYPOTHESIS_INSTALLED:
         ]
 
         @composite
-        def draw_frames(draw: Callable) -> Union[DataFrame, LazyFrame]:
+        def draw_frames(draw: Callable) -> DataFrame | LazyFrame:
             # if not given, create 'n' cols with random dtypes
             if cols is None:
                 n = between(
@@ -730,6 +761,12 @@ if HYPOTHESIS_INSTALLED:
             for idx, c in enumerate(coldefs):
                 if c.name is None:
                     c.name = f"col{idx}"
+                if c.null_probability is None:
+                    if isinstance(null_probability, dict):
+                        c.null_probability = null_probability.get(c.name, 0.0)
+                    else:
+                        c.null_probability = null_probability
+
             frame_columns = [
                 c.name if (c.dtype is None) else (c.name, c.dtype) for c in coldefs
             ]
@@ -740,7 +777,7 @@ if HYPOTHESIS_INSTALLED:
                             name=c.name,
                             dtype=c.dtype,
                             size=series_size,
-                            null_probability=null_probability,
+                            null_probability=(c.null_probability or 0.0),
                             strategy=c.strategy,
                             unique=c.unique,
                         )

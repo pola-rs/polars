@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import ctypes
 import sys
 from datetime import date, datetime, time, timedelta
@@ -25,7 +27,7 @@ class DataType:
     Base class for all Polars data types.
     """
 
-    def __new__(cls, *args, **kwargs) -> "PolarsDataType":  # type: ignore
+    def __new__(cls, *args, **kwargs) -> PolarsDataType:  # type: ignore
         # this formulation allows for equivalent use of "pl.Type" and "pl.Type()", while
         # still respecting types that take initialisation params (eg: Duration/Datetime)
         if args or kwargs:
@@ -52,83 +54,57 @@ ColumnsType = Union[
 class Int8(DataType):
     """8-bit signed integer type"""
 
-    pass
-
 
 class Int16(DataType):
     """16-bit signed integer type"""
-
-    pass
 
 
 class Int32(DataType):
     """32-bit signed integer type"""
 
-    pass
-
 
 class Int64(DataType):
     """64-bit signed integer type"""
-
-    pass
 
 
 class UInt8(DataType):
     """8-bit unsigned integer type"""
 
-    pass
-
 
 class UInt16(DataType):
     """16-bit unsigned integer type"""
-
-    pass
 
 
 class UInt32(DataType):
     """32-bit unsigned integer type"""
 
-    pass
-
 
 class UInt64(DataType):
     """64-bit unsigned integer type"""
-
-    pass
 
 
 class Float32(DataType):
     """32-bit floating point type"""
 
-    pass
-
 
 class Float64(DataType):
     """64-bit floating point type"""
-
-    pass
 
 
 class Boolean(DataType):
     """Boolean type"""
 
-    pass
-
 
 class Utf8(DataType):
     """UTF-8 encoded string type"""
-
-    pass
 
 
 class Null(DataType):
     """Type representing Null / None values"""
 
-    pass
-
 
 class List(DataType):
-    def __init__(self, inner: Type[DataType]):
+    def __init__(self, inner: type[DataType]):
         """
         Nested list/array type
 
@@ -139,7 +115,7 @@ class List(DataType):
         """
         self.inner = py_type_to_dtype(inner)
 
-    def __eq__(self, other: Type[DataType]) -> bool:  # type: ignore
+    def __eq__(self, other: type[DataType]) -> bool:  # type: ignore
         # The comparison allows comparing objects to classes
         # and specific inner types to none specific.
         # if one of the arguments is not specific about its inner type
@@ -167,13 +143,11 @@ class List(DataType):
 class Date(DataType):
     """Calendar date type"""
 
-    pass
-
 
 class Datetime(DataType):
     """Calendar date and time type"""
 
-    def __init__(self, time_unit: str = "us", time_zone: Optional[str] = None):
+    def __init__(self, time_unit: str = "us", time_zone: str | None = None):
         """
         Calendar date and time type
 
@@ -187,7 +161,7 @@ class Datetime(DataType):
         self.tu = time_unit
         self.tz = time_zone
 
-    def __eq__(self, other: Type[DataType]) -> bool:  # type: ignore
+    def __eq__(self, other: type[DataType]) -> bool:  # type: ignore
         # allow comparing object instances to class
         if type(other) is type and issubclass(other, Datetime):
             return True
@@ -214,7 +188,7 @@ class Duration(DataType):
         """
         self.tu = time_unit
 
-    def __eq__(self, other: Type[DataType]) -> bool:  # type: ignore
+    def __eq__(self, other: type[DataType]) -> bool:  # type: ignore
         # allow comparing object instances to class
         if type(other) is type and issubclass(other, Duration):
             return True
@@ -230,23 +204,17 @@ class Duration(DataType):
 class Time(DataType):
     """Time of day type"""
 
-    pass
-
 
 class Object(DataType):
     """Type for wrapping arbitrary Python objects"""
-
-    pass
 
 
 class Categorical(DataType):
     """A categorical encoding of a set of strings"""
 
-    pass
-
 
 class Field:
-    def __init__(self, name: str, dtype: Type[DataType]):
+    def __init__(self, name: str, dtype: type[DataType]):
         """
         Definition of a single field within a `Struct` DataType
 
@@ -260,7 +228,7 @@ class Field:
         self.name = name
         self.dtype = py_type_to_dtype(dtype)
 
-    def __eq__(self, other: "Field") -> bool:  # type: ignore
+    def __eq__(self, other: Field) -> bool:  # type: ignore
         return (self.name == other.name) & (self.dtype == other.dtype)
 
     def __repr__(self) -> str:
@@ -283,7 +251,7 @@ class Struct(DataType):
         """
         self.fields = fields
 
-    def __eq__(self, other: Type[DataType]) -> bool:  # type: ignore
+    def __eq__(self, other: type[DataType]) -> bool:  # type: ignore
         # The comparison allows comparing objects to classes
         # and specific inner types to none specific.
         # if one of the arguments is not specific about its inner type
@@ -306,7 +274,7 @@ class Struct(DataType):
 DTYPE_TEMPORAL_UNITS = frozenset(["ms", "us", "ns"])
 
 
-_DTYPE_TO_FFINAME: Dict[PolarsDataType, str] = {
+_DTYPE_TO_FFINAME: dict[PolarsDataType, str] = {
     Int8: "i8",
     Int16: "i16",
     Int32: "i32",
@@ -330,9 +298,9 @@ _DTYPE_TO_FFINAME: Dict[PolarsDataType, str] = {
 }
 for tu in DTYPE_TEMPORAL_UNITS:
     _DTYPE_TO_FFINAME[Datetime(tu)] = "datetime"
-    _DTYPE_TO_FFINAME[Datetime(tu)] = "duration"
+    _DTYPE_TO_FFINAME[Duration(tu)] = "duration"
 
-_DTYPE_TO_CTYPE: Dict[PolarsDataType, Any] = {
+_DTYPE_TO_CTYPE: dict[PolarsDataType, Any] = {
     UInt8: ctypes.c_uint8,
     UInt16: ctypes.c_uint16,
     UInt32: ctypes.c_uint32,
@@ -353,7 +321,7 @@ for tu in DTYPE_TEMPORAL_UNITS:
     _DTYPE_TO_CTYPE[Duration(tu)] = ctypes.c_int64
 
 
-_PY_TYPE_TO_DTYPE: Dict[type, Type[DataType]] = {
+_PY_TYPE_TO_DTYPE: dict[type, type[DataType]] = {
     float: Float64,
     int: Int64,
     str: Utf8,
@@ -367,7 +335,7 @@ _PY_TYPE_TO_DTYPE: Dict[type, Type[DataType]] = {
 }
 
 
-_DTYPE_TO_PY_TYPE: Dict[PolarsDataType, type] = {
+_DTYPE_TO_PY_TYPE: dict[PolarsDataType, type] = {
     Float64: float,
     Float32: float,
     Int64: int,
@@ -409,7 +377,7 @@ _NUMPY_CHAR_CODE_TO_DTYPE = {
 }
 
 if _PYARROW_AVAILABLE:
-    _PY_TYPE_TO_ARROW_TYPE: Dict[type, "pa.lib.DataType"] = {
+    _PY_TYPE_TO_ARROW_TYPE: dict[type, pa.lib.DataType] = {
         float: pa.float64(),
         int: pa.int64(),
         str: pa.large_utf8(),
@@ -449,7 +417,7 @@ if _PYARROW_AVAILABLE:
     }
 
 
-def dtype_to_ctype(dtype: PolarsDataType) -> Type[_SimpleCData]:
+def dtype_to_ctype(dtype: PolarsDataType) -> type[_SimpleCData]:
     try:
         return _DTYPE_TO_CTYPE[dtype]
     except KeyError:  # pragma: no cover
@@ -463,7 +431,7 @@ def dtype_to_ffiname(dtype: PolarsDataType) -> str:
         raise NotImplementedError
 
 
-def dtype_to_py_type(dtype: PolarsDataType) -> Type:
+def dtype_to_py_type(dtype: PolarsDataType) -> type:
     try:
         return _DTYPE_TO_PY_TYPE[dtype]
     except KeyError:  # pragma: no cover
@@ -478,7 +446,7 @@ def is_polars_dtype(data_type: Any) -> bool:
     )
 
 
-def py_type_to_dtype(data_type: Any) -> Type[DataType]:
+def py_type_to_dtype(data_type: Any) -> type[DataType]:
     # when the passed in is already a Polars datatype, return that
     if is_polars_dtype(data_type):
         return data_type
@@ -488,7 +456,7 @@ def py_type_to_dtype(data_type: Any) -> Type[DataType]:
         raise NotImplementedError
 
 
-def py_type_to_arrow_type(dtype: Type[Any]) -> "pa.lib.DataType":
+def py_type_to_arrow_type(dtype: type[Any]) -> pa.lib.DataType:
     """
     Convert a Python dtype to an Arrow dtype.
     """
@@ -498,7 +466,7 @@ def py_type_to_arrow_type(dtype: Type[Any]) -> "pa.lib.DataType":
         raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.")
 
 
-def dtype_to_arrow_type(dtype: PolarsDataType) -> "pa.lib.DataType":
+def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
     """
     Convert a Polars dtype to an Arrow dtype.
     """
@@ -512,7 +480,7 @@ def supported_numpy_char_code(dtype: str) -> bool:
     return dtype in _NUMPY_CHAR_CODE_TO_DTYPE
 
 
-def numpy_char_code_to_dtype(dtype: str) -> Type[DataType]:
+def numpy_char_code_to_dtype(dtype: str) -> type[DataType]:
     try:
         return _NUMPY_CHAR_CODE_TO_DTYPE[dtype]
     except KeyError:  # pragma: no cover
@@ -520,8 +488,8 @@ def numpy_char_code_to_dtype(dtype: str) -> Type[DataType]:
 
 
 def maybe_cast(
-    el: Type[DataType], dtype: Type, time_unit: Optional[str] = None
-) -> Type[DataType]:
+    el: type[DataType], dtype: type, time_unit: str | None = None
+) -> type[DataType]:
     # cast el if it doesn't match
     from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_timedelta
 
