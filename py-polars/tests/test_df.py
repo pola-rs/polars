@@ -11,10 +11,9 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from hypothesis import given
 
 import polars as pl
-from polars.testing import assert_frame_equal, assert_series_equal, columns, dataframes
+from polars.testing import assert_frame_equal, assert_series_equal, columns
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -26,22 +25,9 @@ def test_version() -> None:
     _version = pl.__version__
 
 
-@given(df=dataframes())
-def test_repr(df: pl.DataFrame) -> None:
-    assert isinstance(repr(df), str)
-    # print(df)
-
-
-# note: temporarily constraining dtypes for this test (possible windows-specific date bug)
-@given(df=dataframes(allowed_dtypes=[pl.Boolean, pl.UInt64, pl.Utf8]))
-def test_null_count(df: pl.DataFrame) -> None:
-    null_count, ncols = df.null_count(), len(df.columns)
-    if ncols == 0:
-        assert null_count.shape == (0, 0)
-    else:
-        assert null_count.shape == (1, ncols)
-        for idx, count in enumerate(null_count.rows()[0]):
-            assert count == sum(v is None for v in df.select_at_idx(idx).to_list())
+def test_null_count() -> None:
+    df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", None]})
+    assert df.null_count().shape == (1, 2)
 
 
 def test_init_empty() -> None:
