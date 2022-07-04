@@ -823,6 +823,8 @@ class Series:
         """
         if not self.is_numeric():
             return None
+        if ddof == 1:
+            return self.to_frame().select(pli.col(self.name).std()).to_series()[0]
         if not _NUMPY_AVAILABLE:
             raise ImportError("'numpy' is required for this functionality.")
         return np.std(self.drop_nulls().view(), ddof=ddof)
@@ -847,6 +849,8 @@ class Series:
         """
         if not self.is_numeric():
             return None
+        if ddof == 1:
+            return self.to_frame().select(pli.col(self.name).var()).to_series()[0]
         if not _NUMPY_AVAILABLE:
             raise ImportError("'numpy' is required for this functionality.")
         return np.var(self.drop_nulls().view(), ddof=ddof)
