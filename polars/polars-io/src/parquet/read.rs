@@ -24,7 +24,7 @@ pub struct ParquetReader<R: Read + Seek> {
 impl<R: MmapBytesReader> ParquetReader<R> {
     #[cfg(feature = "lazy")]
     // todo! hoist to lazy crate
-    pub fn finish_with_scan_ops(
+    pub fn _finish_with_scan_ops(
         mut self,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&[ScanAggregation]>,
