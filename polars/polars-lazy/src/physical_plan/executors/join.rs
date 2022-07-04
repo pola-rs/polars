@@ -50,7 +50,7 @@ impl Executor for JoinExec {
         let mut input_right = self.input_right.take().unwrap();
 
         let (df_left, df_right) = if self.parallel {
-            let state_left = state.clone();
+            let state_left = state;
             let mut state_right = state.clone();
             state_right.join_branch += 1;
             // propagate the fetch_rows static value to the spawning threads.
@@ -59,7 +59,7 @@ impl Executor for JoinExec {
             POOL.join(
                 move || {
                     FETCH_ROWS.with(|fr| fr.set(fetch_rows));
-                    input_left.execute(&state_left)
+                    input_left.execute(state_left)
                 },
                 move || {
                     FETCH_ROWS.with(|fr| fr.set(fetch_rows));
