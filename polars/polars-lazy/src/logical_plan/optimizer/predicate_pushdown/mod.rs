@@ -84,7 +84,8 @@ impl PredicatePushDown {
                     // first we check if we are able to push down the predicate passed this node
                     // it could be that this node just added the column where we base the predicate on
                     let input_schema = lp_arena.get(node).schema(lp_arena);
-                    let mut pushdown_predicates = optimizer::init_hashmap();
+                    let mut pushdown_predicates =
+                        optimizer::init_hashmap(Some(acc_predicates.len()));
                     for (name, &predicate) in acc_predicates.iter() {
                         // we can pushdown the predicate
                         if check_input_node(predicate, input_schema, expr_arena) {
@@ -128,7 +129,12 @@ impl PredicatePushDown {
             .iter()
             .map(|&node| {
                 let alp = lp_arena.take(node);
-                let alp = self.push_down(alp, init_hashmap(), lp_arena, expr_arena)?;
+                let alp = self.push_down(
+                    alp,
+                    init_hashmap(Some(acc_predicates.len())),
+                    lp_arena,
+                    expr_arena,
+                )?;
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
@@ -386,8 +392,8 @@ impl PredicatePushDown {
                 let schema_left = lp_arena.get(input_left).schema(lp_arena);
                 let schema_right = lp_arena.get(input_right).schema(lp_arena);
 
-                let mut pushdown_left = optimizer::init_hashmap();
-                let mut pushdown_right = optimizer::init_hashmap();
+                let mut pushdown_left = optimizer::init_hashmap(Some(acc_predicates.len()));
+                let mut pushdown_right = optimizer::init_hashmap(Some(acc_predicates.len()));
                 let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
                 for (_, predicate) in acc_predicates {
@@ -478,8 +484,27 @@ impl PredicatePushDown {
                     self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
                 }
             }
+            lp @ Union {..} => {
+                let mut local_predicates = vec![];
+
+                // a count is influenced by a Union/Vstack
+                acc_predicates.retain(|_, predicate| {
+                    if has_aexpr(*predicate, expr_arena, |ae| matches!(ae, AExpr::Count)) {
+                        local_predicates.push(*predicate);
+                        false
+                    } else {
+                        true
+                    }
+                });
+                let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
+                Ok(if local_predicates.is_empty() {
+                    self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena)
+                } else {
+                    lp
+                })
+            }
             // Pushed down passed these nodes
-            lp @ Cache { .. } | lp @ Union { .. } | lp @ Sort { .. } => {
+            lp @ Cache { .. } |  lp @ Sort { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             }
             lp @ HStack {..} | lp @ Projection {..} => {
