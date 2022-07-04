@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from datetime import date, datetime, timedelta
-from typing import Optional, Sequence, Tuple, Union, overload
+from typing import Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import Date
@@ -22,7 +24,7 @@ except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 
-def get_dummies(df: "pli.DataFrame") -> "pli.DataFrame":
+def get_dummies(df: pli.DataFrame) -> pli.DataFrame:
     """
     Convert categorical variables into dummy/indicator variables.
 
@@ -36,50 +38,50 @@ def get_dummies(df: "pli.DataFrame") -> "pli.DataFrame":
 
 @overload
 def concat(
-    items: Sequence["pli.DataFrame"],
+    items: Sequence[pli.DataFrame],
     rechunk: bool = True,
     how: str = "vertical",
-) -> "pli.DataFrame":
+) -> pli.DataFrame:
     ...
 
 
 @overload
 def concat(
-    items: Sequence["pli.Series"],
+    items: Sequence[pli.Series],
     rechunk: bool = True,
     how: str = "vertical",
-) -> "pli.Series":
+) -> pli.Series:
     ...
 
 
 @overload
 def concat(
-    items: Sequence["pli.LazyFrame"],
+    items: Sequence[pli.LazyFrame],
     rechunk: bool = True,
     how: str = "vertical",
-) -> "pli.LazyFrame":
+) -> pli.LazyFrame:
     ...
 
 
 @overload
 def concat(
-    items: Sequence["pli.Expr"],
+    items: Sequence[pli.Expr],
     rechunk: bool = True,
     how: str = "vertical",
-) -> "pli.Expr":
+) -> pli.Expr:
     ...
 
 
 def concat(
-    items: Union[
-        Sequence["pli.DataFrame"],
-        Sequence["pli.Series"],
-        Sequence["pli.LazyFrame"],
-        Sequence["pli.Expr"],
-    ],
+    items: (
+        Sequence[pli.DataFrame]
+        | Sequence[pli.Series]
+        | Sequence[pli.LazyFrame]
+        | Sequence[pli.Expr]
+    ),
     rechunk: bool = True,
     how: str = "vertical",
-) -> Union["pli.DataFrame", "pli.Series", "pli.LazyFrame", "pli.Expr"]:
+) -> pli.DataFrame | pli.Series | pli.LazyFrame | pli.Expr:
     """
     Aggregate all the Dataframes/Series in a List of DataFrames/Series to a single DataFrame/Series.
 
@@ -118,7 +120,7 @@ def concat(
     if not len(items) > 0:
         raise ValueError("cannot concat empty list")
 
-    out: Union["pli.Series", "pli.DataFrame", "pli.LazyFrame", "pli.Expr"]
+    out: pli.Series | pli.DataFrame | pli.LazyFrame | pli.Expr
     first = items[0]
     if isinstance(first, pli.DataFrame):
         if how == "vertical":
@@ -147,7 +149,7 @@ def concat(
     return out
 
 
-def _ensure_datetime(value: Union[date, datetime]) -> Tuple[datetime, bool]:
+def _ensure_datetime(value: date | datetime) -> tuple[datetime, bool]:
     is_date_type = False
     if isinstance(value, date) and not isinstance(value, datetime):
         value = datetime(value.year, value.month, value.day)
@@ -160,13 +162,13 @@ def _interval_granularity(interval: str) -> str:
 
 
 def date_range(
-    low: Union[date, datetime],
-    high: Union[date, datetime],
-    interval: Union[str, timedelta],
-    closed: Optional[str] = "both",
-    name: Optional[str] = None,
-    time_unit: Optional[str] = None,
-) -> "pli.Series":
+    low: date | datetime,
+    high: date | datetime,
+    interval: str | timedelta,
+    closed: str | None = "both",
+    name: str | None = None,
+    time_unit: str | None = None,
+) -> pli.Series:
     """
     Create a range of type `Datetime` (or `Date`).
 

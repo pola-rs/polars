@@ -1,19 +1,10 @@
+from __future__ import annotations
+
 import glob
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import (
-    Any,
-    BinaryIO,
-    ContextManager,
-    Dict,
-    Iterator,
-    List,
-    TextIO,
-    Type,
-    Union,
-    overload,
-)
+from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, overload
 from urllib.request import urlopen
 
 from polars.datatypes import DataType
@@ -41,28 +32,28 @@ def _process_http_file(path: str) -> BytesIO:
 
 @overload
 def _prepare_file_arg(
-    file: Union[str, List[str], Path, BinaryIO, bytes], **kwargs: Any
-) -> ContextManager[Union[str, BinaryIO]]:
+    file: str | list[str] | Path | BinaryIO | bytes, **kwargs: Any
+) -> ContextManager[str | BinaryIO]:
     ...
 
 
 @overload
 def _prepare_file_arg(
-    file: Union[str, TextIO, Path, BinaryIO, bytes], **kwargs: Any
-) -> ContextManager[Union[str, BinaryIO]]:
+    file: str | TextIO | Path | BinaryIO | bytes, **kwargs: Any
+) -> ContextManager[str | BinaryIO]:
     ...
 
 
 @overload
 def _prepare_file_arg(
-    file: Union[str, List[str], TextIO, Path, BinaryIO, bytes], **kwargs: Any
-) -> ContextManager[Union[str, List[str], BinaryIO, List[BinaryIO]]]:
+    file: str | list[str] | TextIO | Path | BinaryIO | bytes, **kwargs: Any
+) -> ContextManager[str | list[str] | BinaryIO | list[BinaryIO]]:
     ...
 
 
 def _prepare_file_arg(
-    file: Union[str, List[str], TextIO, Path, BinaryIO, bytes], **kwargs: Any
-) -> ContextManager[Union[str, BinaryIO, List[str], List[BinaryIO]]]:
+    file: str | list[str] | TextIO | Path | BinaryIO | bytes, **kwargs: Any
+) -> ContextManager[str | BinaryIO | list[str] | list[BinaryIO]]:
     """
     Utility for read_[csv, parquet]. (not to be used by scan_[csv, parquet]).
     Returned value is always usable as a context.
@@ -106,9 +97,7 @@ def _prepare_file_arg(
     return managed_file(file)
 
 
-def read_ipc_schema(
-    file: Union[str, BinaryIO, Path, bytes]
-) -> Dict[str, Type[DataType]]:
+def read_ipc_schema(file: str | BinaryIO | Path | bytes) -> dict[str, type[DataType]]:
     """
     Get a schema of the IPC file without reading data.
 
@@ -128,8 +117,8 @@ def read_ipc_schema(
 
 
 def read_parquet_schema(
-    file: Union[str, BinaryIO, Path, bytes]
-) -> Dict[str, Type[DataType]]:
+    file: str | BinaryIO | Path | bytes,
+) -> dict[str, type[DataType]]:
     """
     Get a schema of the Parquet file without reading data.
 

@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import sys
 from datetime import date, datetime, timedelta
 from inspect import isclass
-from typing import Any, Callable, List, Optional, Sequence, Type, Union, cast, overload
+from typing import Any, Callable, Sequence, cast, overload
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -58,14 +60,8 @@ except ImportError:  # pragma: no cover
 
 
 def col(
-    name: Union[
-        str,
-        List[str],
-        Sequence[PolarsDataType],
-        "pli.Series",
-        PolarsDataType,
-    ]
-) -> "pli.Expr":
+    name: (str | list[str] | Sequence[PolarsDataType] | pli.Series | PolarsDataType),
+) -> pli.Expr:
     """
     A column in a DataFrame.
     Can be used to select:
@@ -182,7 +178,7 @@ def col(
     return pli.wrap_expr(pycol(name))
 
 
-def element() -> "pli.Expr":
+def element() -> pli.Expr:
     """
     Alias for an element in evaluated in an `eval` expression
 
@@ -233,21 +229,21 @@ def element() -> "pli.Expr":
 
 
 @overload
-def count(column: str) -> "pli.Expr":
+def count(column: str) -> pli.Expr:
     ...
 
 
 @overload
-def count(column: "pli.Series") -> int:
+def count(column: pli.Series) -> int:
     ...
 
 
 @overload
-def count(column: None = None) -> "pli.Expr":
+def count(column: None = None) -> pli.Expr:
     ...
 
 
-def count(column: Optional[Union[str, "pli.Series"]] = None) -> Union["pli.Expr", int]:
+def count(column: str | pli.Series | None = None) -> pli.Expr | int:
     """
     Count the number of values in this column/context.
 
@@ -267,7 +263,7 @@ def count(column: Optional[Union[str, "pli.Series"]] = None) -> Union["pli.Expr"
     return col(column).count()
 
 
-def to_list(name: str) -> "pli.Expr":
+def to_list(name: str) -> pli.Expr:
     """
     Aggregate to list.
 
@@ -277,16 +273,16 @@ def to_list(name: str) -> "pli.Expr":
 
 
 @overload
-def std(column: str) -> "pli.Expr":
+def std(column: str) -> pli.Expr:
     ...
 
 
 @overload
-def std(column: "pli.Series") -> Optional[float]:
+def std(column: pli.Series) -> float | None:
     ...
 
 
-def std(column: Union[str, "pli.Series"]) -> Union["pli.Expr", Optional[float]]:
+def std(column: str | pli.Series) -> pli.Expr | float | None:
     """
     Get the standard deviation.
     """
@@ -296,16 +292,16 @@ def std(column: Union[str, "pli.Series"]) -> Union["pli.Expr", Optional[float]]:
 
 
 @overload
-def var(column: str) -> "pli.Expr":
+def var(column: str) -> pli.Expr:
     ...
 
 
 @overload
-def var(column: "pli.Series") -> Optional[float]:
+def var(column: pli.Series) -> float | None:
     ...
 
 
-def var(column: Union[str, "pli.Series"]) -> Union["pli.Expr", Optional[float]]:
+def var(column: str | pli.Series) -> pli.Expr | float | None:
     """
     Get the variance.
     """
@@ -315,18 +311,16 @@ def var(column: Union[str, "pli.Series"]) -> Union["pli.Expr", Optional[float]]:
 
 
 @overload
-def max(column: Union[str, List[Union["pli.Expr", str]]]) -> "pli.Expr":
+def max(column: str | list[pli.Expr | str]) -> pli.Expr:
     ...
 
 
 @overload
-def max(column: "pli.Series") -> Union[int, float]:
+def max(column: pli.Series) -> int | float:
     ...
 
 
-def max(
-    column: Union[str, List[Union["pli.Expr", str]], "pli.Series"]
-) -> Union["pli.Expr", Any]:
+def max(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     """
     Get the maximum value. Can be used horizontally or vertically.
 
@@ -348,18 +342,16 @@ def max(
 
 
 @overload
-def min(column: Union[str, List[Union["pli.Expr", str]]]) -> "pli.Expr":
+def min(column: str | list[pli.Expr | str]) -> pli.Expr:
     ...
 
 
 @overload
-def min(column: "pli.Series") -> Union[int, float]:
+def min(column: pli.Series) -> int | float:
     ...
 
 
-def min(
-    column: Union[str, List[Union["pli.Expr", str]], "pli.Series"]
-) -> Union["pli.Expr", Any]:
+def min(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     """
     Get the minimum value.
 
@@ -379,18 +371,16 @@ def min(
 
 
 @overload
-def sum(column: Union[str, List[Union["pli.Expr", str]]]) -> "pli.Expr":
+def sum(column: str | list[pli.Expr | str]) -> pli.Expr:
     ...
 
 
 @overload
-def sum(column: "pli.Series") -> Union[int, float]:
+def sum(column: pli.Series) -> int | float:
     ...
 
 
-def sum(
-    column: Union[str, List[Union["pli.Expr", str]], "pli.Series"]
-) -> Union["pli.Expr", Any]:
+def sum(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     """
     Get the sum value.
 
@@ -412,16 +402,16 @@ def sum(
 
 
 @overload
-def mean(column: str) -> "pli.Expr":
+def mean(column: str) -> pli.Expr:
     ...
 
 
 @overload
-def mean(column: "pli.Series") -> float:
+def mean(column: pli.Series) -> float:
     ...
 
 
-def mean(column: Union[str, "pli.Series"]) -> Union["pli.Expr", float]:
+def mean(column: str | pli.Series) -> pli.Expr | float:
     """
     Get the mean value.
     """
@@ -431,16 +421,16 @@ def mean(column: Union[str, "pli.Series"]) -> Union["pli.Expr", float]:
 
 
 @overload
-def avg(column: str) -> "pli.Expr":
+def avg(column: str) -> pli.Expr:
     ...
 
 
 @overload
-def avg(column: "pli.Series") -> float:
+def avg(column: pli.Series) -> float:
     ...
 
 
-def avg(column: Union[str, "pli.Series"]) -> Union["pli.Expr", float]:
+def avg(column: str | pli.Series) -> pli.Expr | float:
     """
     Alias for mean.
     """
@@ -448,16 +438,16 @@ def avg(column: Union[str, "pli.Series"]) -> Union["pli.Expr", float]:
 
 
 @overload
-def median(column: str) -> "pli.Expr":
+def median(column: str) -> pli.Expr:
     ...
 
 
 @overload
-def median(column: "pli.Series") -> Union[float, int]:
+def median(column: pli.Series) -> float | int:
     ...
 
 
-def median(column: Union[str, "pli.Series"]) -> Union["pli.Expr", float, int]:
+def median(column: str | pli.Series) -> pli.Expr | float | int:
     """
     Get the median value.
     """
@@ -467,16 +457,16 @@ def median(column: Union[str, "pli.Series"]) -> Union["pli.Expr", float, int]:
 
 
 @overload
-def n_unique(column: str) -> "pli.Expr":
+def n_unique(column: str) -> pli.Expr:
     ...
 
 
 @overload
-def n_unique(column: "pli.Series") -> int:
+def n_unique(column: pli.Series) -> int:
     ...
 
 
-def n_unique(column: Union[str, "pli.Series"]) -> Union["pli.Expr", int]:
+def n_unique(column: str | pli.Series) -> pli.Expr | int:
     """Count unique values."""
     if isinstance(column, pli.Series):
         return column.n_unique()
@@ -484,21 +474,21 @@ def n_unique(column: Union[str, "pli.Series"]) -> Union["pli.Expr", int]:
 
 
 @overload
-def first(column: str) -> "pli.Expr":
+def first(column: str) -> pli.Expr:
     ...
 
 
 @overload
-def first(column: "pli.Series") -> Any:
+def first(column: pli.Series) -> Any:
     ...
 
 
 @overload
-def first(column: None = None) -> "pli.Expr":
+def first(column: None = None) -> pli.Expr:
     ...
 
 
-def first(column: Optional[Union[str, "pli.Series"]] = None) -> Union["pli.Expr", Any]:
+def first(column: str | pli.Series | None = None) -> pli.Expr | Any:
     """
     Get the first value.
 
@@ -524,21 +514,21 @@ def first(column: Optional[Union[str, "pli.Series"]] = None) -> Union["pli.Expr"
 
 
 @overload
-def last(column: str) -> "pli.Expr":
+def last(column: str) -> pli.Expr:
     ...
 
 
 @overload
-def last(column: "pli.Series") -> Any:
+def last(column: pli.Series) -> Any:
     ...
 
 
 @overload
-def last(column: None = None) -> "pli.Expr":
+def last(column: None = None) -> pli.Expr:
     ...
 
 
-def last(column: Optional[Union[str, "pli.Series"]] = None) -> "pli.Expr":
+def last(column: str | pli.Series | None = None) -> pli.Expr:
     """
     Get the last value.
 
@@ -563,18 +553,16 @@ def last(column: Optional[Union[str, "pli.Series"]] = None) -> "pli.Expr":
 
 
 @overload
-def head(column: str, n: Optional[int]) -> "pli.Expr":
+def head(column: str, n: int | None) -> pli.Expr:
     ...
 
 
 @overload
-def head(column: "pli.Series", n: Optional[int]) -> "pli.Series":
+def head(column: pli.Series, n: int | None) -> pli.Series:
     ...
 
 
-def head(
-    column: Union[str, "pli.Series"], n: Optional[int] = None
-) -> Union["pli.Expr", "pli.Series"]:
+def head(column: str | pli.Series, n: int | None = None) -> pli.Expr | pli.Series:
     """
     Get the first n rows of an Expression.
 
@@ -591,18 +579,16 @@ def head(
 
 
 @overload
-def tail(column: str, n: Optional[int]) -> "pli.Expr":
+def tail(column: str, n: int | None) -> pli.Expr:
     ...
 
 
 @overload
-def tail(column: "pli.Series", n: Optional[int]) -> "pli.Series":
+def tail(column: pli.Series, n: int | None) -> pli.Series:
     ...
 
 
-def tail(
-    column: Union[str, "pli.Series"], n: Optional[int] = None
-) -> Union["pli.Expr", "pli.Series"]:
+def tail(column: str | pli.Series, n: int | None = None) -> pli.Expr | pli.Series:
     """
     Get the last n rows of an Expression.
 
@@ -619,11 +605,9 @@ def tail(
 
 
 def lit(
-    value: Optional[
-        Union[float, int, str, date, datetime, "pli.Series", np.ndarray, Any]
-    ],
-    dtype: Optional[Type[DataType]] = None,
-) -> "pli.Expr":
+    value: None | (float | int | str | date | datetime | pli.Series | np.ndarray | Any),
+    dtype: type[DataType] | None = None,
+) -> pli.Expr:
     """
     A literal value.
 
@@ -704,9 +688,9 @@ def lit(
 
 
 def spearman_rank_corr(
-    a: Union[str, "pli.Expr"],
-    b: Union[str, "pli.Expr"],
-) -> "pli.Expr":
+    a: str | pli.Expr,
+    b: str | pli.Expr,
+) -> pli.Expr:
     """
     Compute the spearman rank correlation between two columns.
 
@@ -725,9 +709,9 @@ def spearman_rank_corr(
 
 
 def pearson_corr(
-    a: Union[str, "pli.Expr"],
-    b: Union[str, "pli.Expr"],
-) -> "pli.Expr":
+    a: str | pli.Expr,
+    b: str | pli.Expr,
+) -> pli.Expr:
     """
     Compute the pearson's correlation between two columns.
 
@@ -746,9 +730,9 @@ def pearson_corr(
 
 
 def cov(
-    a: Union[str, "pli.Expr"],
-    b: Union[str, "pli.Expr"],
-) -> "pli.Expr":
+    a: str | pli.Expr,
+    b: str | pli.Expr,
+) -> pli.Expr:
     """
     Compute the covariance between two columns/ expressions.
 
@@ -767,10 +751,10 @@ def cov(
 
 
 def map(
-    exprs: Union[List[str], List["pli.Expr"]],
-    f: Callable[[List["pli.Series"]], "pli.Series"],
-    return_dtype: Optional[Type[DataType]] = None,
-) -> "pli.Expr":
+    exprs: list[str] | list[pli.Expr],
+    f: Callable[[list[pli.Series]], pli.Series],
+    return_dtype: type[DataType] | None = None,
+) -> pli.Expr:
     """
     Map a custom function over multiple columns/expressions and produce a single Series result.
 
@@ -792,10 +776,10 @@ def map(
 
 
 def apply(
-    exprs: List[Union[str, "pli.Expr"]],
-    f: Callable[[List["pli.Series"]], Union["pli.Series", Any]],
-    return_dtype: Optional[Type[DataType]] = None,
-) -> "pli.Expr":
+    exprs: list[str | pli.Expr],
+    f: Callable[[list[pli.Series]], pli.Series | Any],
+    return_dtype: type[DataType] | None = None,
+) -> pli.Expr:
     """
     Apply a custom function in a GroupBy context.
 
@@ -825,11 +809,11 @@ def apply(
 
 
 def map_binary(
-    a: Union[str, "pli.Expr"],
-    b: Union[str, "pli.Expr"],
-    f: Callable[["pli.Series", "pli.Series"], "pli.Series"],
-    return_dtype: Optional[Type[DataType]] = None,
-) -> "pli.Expr":
+    a: str | pli.Expr,
+    b: str | pli.Expr,
+    f: Callable[[pli.Series, pli.Series], pli.Series],
+    return_dtype: type[DataType] | None = None,
+) -> pli.Expr:
     """
      .. deprecated:: 0.10.4
        use `map` or `apply`
@@ -854,10 +838,10 @@ def map_binary(
 
 
 def fold(
-    acc: "pli.IntoExpr",
-    f: Callable[["pli.Series", "pli.Series"], "pli.Series"],
-    exprs: Union[Sequence[Union["pli.Expr", str]], "pli.Expr"],
-) -> "pli.Expr":
+    acc: pli.IntoExpr,
+    f: Callable[[pli.Series, pli.Series], pli.Series],
+    exprs: Sequence[pli.Expr | str] | pli.Expr,
+) -> pli.Expr:
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
 
@@ -882,7 +866,7 @@ def fold(
     return pli.wrap_expr(pyfold(acc._pyexpr, f, exprs))
 
 
-def any(name: Union[str, List["pli.Expr"]]) -> "pli.Expr":
+def any(name: str | list[pli.Expr]) -> pli.Expr:
     """
     Evaluate columnwise or elementwise with a bitwise OR operation.
     """
@@ -893,7 +877,7 @@ def any(name: Union[str, List["pli.Expr"]]) -> "pli.Expr":
     return col(name).any()
 
 
-def exclude(columns: Union[str, List[str]]) -> "pli.Expr":
+def exclude(columns: str | list[str]) -> pli.Expr:
     """
     Exclude certain columns from a wildcard expression.
 
@@ -949,7 +933,7 @@ def exclude(columns: Union[str, List[str]]) -> "pli.Expr":
     return col("*").exclude(columns)
 
 
-def all(name: Optional[Union[str, List["pli.Expr"]]] = None) -> "pli.Expr":
+def all(name: str | list[pli.Expr] | None = None) -> pli.Expr:
     """
     This function is two things
 
@@ -990,16 +974,14 @@ def all(name: Optional[Union[str, List["pli.Expr"]]] = None) -> "pli.Expr":
     return col(name).all()
 
 
-def groups(column: str) -> "pli.Expr":
+def groups(column: str) -> pli.Expr:
     """
     Syntactic sugar for `pl.col("foo").agg_groups()`.
     """
     return col(column).agg_groups()
 
 
-def quantile(
-    column: str, quantile: float, interpolation: str = "nearest"
-) -> "pli.Expr":
+def quantile(column: str, quantile: float, interpolation: str = "nearest") -> pli.Expr:
     """
     Syntactic sugar for `pl.col("foo").quantile(..)`.
     """
@@ -1008,44 +990,44 @@ def quantile(
 
 @overload
 def arange(
-    low: Union[int, "pli.Expr", "pli.Series"],
-    high: Union[int, "pli.Expr", "pli.Series"],
+    low: int | pli.Expr | pli.Series,
+    high: int | pli.Expr | pli.Series,
     step: int = ...,
     *,
     eager: Literal[False],
-) -> "pli.Expr":
+) -> pli.Expr:
     ...
 
 
 @overload
 def arange(
-    low: Union[int, "pli.Expr", "pli.Series"],
-    high: Union[int, "pli.Expr", "pli.Series"],
+    low: int | pli.Expr | pli.Series,
+    high: int | pli.Expr | pli.Series,
     step: int = ...,
     *,
     eager: Literal[True],
-) -> "pli.Series":
+) -> pli.Series:
     ...
 
 
 @overload
 def arange(
-    low: Union[int, "pli.Expr", "pli.Series"],
-    high: Union[int, "pli.Expr", "pli.Series"],
+    low: int | pli.Expr | pli.Series,
+    high: int | pli.Expr | pli.Series,
     step: int = ...,
     *,
     eager: bool = False,
-) -> Union["pli.Expr", "pli.Series"]:
+) -> pli.Expr | pli.Series:
     ...
 
 
 def arange(
-    low: Union[int, "pli.Expr", "pli.Series"],
-    high: Union[int, "pli.Expr", "pli.Series"],
+    low: int | pli.Expr | pli.Series,
+    high: int | pli.Expr | pli.Series,
     step: int = 1,
     *,
     eager: bool = False,
-) -> Union["pli.Expr", "pli.Series"]:
+) -> pli.Expr | pli.Series:
     """
     Create a range expression. This can be used in a `select`, `with_column` etc.
     Be sure that the range size is equal to the DataFrame you are collecting.
@@ -1076,9 +1058,9 @@ def arange(
 
 
 def argsort_by(
-    exprs: Union[Union["pli.Expr", str], Sequence[Union["pli.Expr", str]]],
-    reverse: Union[List[bool], bool] = False,
-) -> "pli.Expr":
+    exprs: pli.Expr | str | Sequence[pli.Expr | str],
+    reverse: list[bool] | bool = False,
+) -> pli.Expr:
     """
     Find the indexes that would sort the columns.
 
@@ -1103,14 +1085,14 @@ def argsort_by(
 
 def duration(
     *,
-    days: Optional[Union["pli.Expr", str]] = None,
-    seconds: Optional[Union["pli.Expr", str]] = None,
-    nanoseconds: Optional[Union["pli.Expr", str]] = None,
-    milliseconds: Optional[Union["pli.Expr", str]] = None,
-    minutes: Optional[Union["pli.Expr", str]] = None,
-    hours: Optional[Union["pli.Expr", str]] = None,
-    weeks: Optional[Union["pli.Expr", str]] = None,
-) -> "pli.Expr":
+    days: pli.Expr | str | None = None,
+    seconds: pli.Expr | str | None = None,
+    nanoseconds: pli.Expr | str | None = None,
+    milliseconds: pli.Expr | str | None = None,
+    minutes: pli.Expr | str | None = None,
+    hours: pli.Expr | str | None = None,
+    weeks: pli.Expr | str | None = None,
+) -> pli.Expr:
     """
     Create polars `Duration` from distinct time components.
 
@@ -1173,14 +1155,14 @@ def duration(
 
 
 def _datetime(
-    year: Union["pli.Expr", str],
-    month: Union["pli.Expr", str],
-    day: Union["pli.Expr", str],
-    hour: Optional[Union["pli.Expr", str]] = None,
-    minute: Optional[Union["pli.Expr", str]] = None,
-    second: Optional[Union["pli.Expr", str]] = None,
-    millisecond: Optional[Union["pli.Expr", str]] = None,
-) -> "pli.Expr":
+    year: pli.Expr | str,
+    month: pli.Expr | str,
+    day: pli.Expr | str,
+    hour: pli.Expr | str | None = None,
+    minute: pli.Expr | str | None = None,
+    second: pli.Expr | str | None = None,
+    millisecond: pli.Expr | str | None = None,
+) -> pli.Expr:
     """
     Create polars `Datetime` from distinct time components.
 
@@ -1232,10 +1214,10 @@ def _datetime(
 
 
 def _date(
-    year: Union["pli.Expr", str],
-    month: Union["pli.Expr", str],
-    day: Union["pli.Expr", str],
-) -> "pli.Expr":
+    year: pli.Expr | str,
+    month: pli.Expr | str,
+    day: pli.Expr | str,
+) -> pli.Expr:
     """
     Create polars Date from distinct time components.
 
@@ -1255,9 +1237,7 @@ def _date(
     return _datetime(year, month, day).cast(Date).alias("date")
 
 
-def concat_str(
-    exprs: Union[Sequence[Union["pli.Expr", str]], "pli.Expr"], sep: str = ""
-) -> "pli.Expr":
+def concat_str(exprs: Sequence[pli.Expr | str] | pli.Expr, sep: str = "") -> pli.Expr:
     """
     Horizontally Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8.
 
@@ -1272,7 +1252,7 @@ def concat_str(
     return pli.wrap_expr(_concat_str(exprs, sep))
 
 
-def format(fstring: str, *args: Union["pli.Expr", str]) -> "pli.Expr":
+def format(fstring: str, *args: pli.Expr | str) -> pli.Expr:
     """
     String format utility for expressions
 
@@ -1329,9 +1309,7 @@ def format(fstring: str, *args: Union["pli.Expr", str]) -> "pli.Expr":
     return concat_str(exprs, sep="")
 
 
-def concat_list(
-    exprs: Union[Sequence[Union[str, "pli.Expr", "pli.Series"]], "pli.Expr"]
-) -> "pli.Expr":
+def concat_list(exprs: Sequence[str | pli.Expr | pli.Series] | pli.Expr) -> pli.Expr:
     """
     Concat the arrays in a Series dtype List in linear time.
 
@@ -1384,7 +1362,7 @@ def concat_list(
 
 
 def collect_all(
-    lazy_frames: "List[pli.LazyFrame]",
+    lazy_frames: list[pli.LazyFrame],
     type_coercion: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
@@ -1392,7 +1370,7 @@ def collect_all(
     string_cache: bool = False,
     no_optimization: bool = False,
     slice_pushdown: bool = False,
-) -> "List[pli.DataFrame]":
+) -> list[pli.DataFrame]:
     """
     Collect multiple LazyFrames at the same time. This runs all the computation graphs in parallel on
     Polars threadpool.
@@ -1450,8 +1428,8 @@ def collect_all(
 
 
 def select(
-    exprs: Union[str, "pli.Expr", Sequence[str], Sequence["pli.Expr"], "pli.Series"]
-) -> "pli.DataFrame":
+    exprs: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | pli.Series,
+) -> pli.DataFrame:
     """
     Run polars expressions without a context.
 
@@ -1494,40 +1472,32 @@ def select(
 
 @overload
 def struct(
-    exprs: Union[
-        Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr", "pli.Series"
-    ],
+    exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: Literal[True],
-) -> "pli.Series":
+) -> pli.Series:
     ...
 
 
 @overload
 def struct(
-    exprs: Union[
-        Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr", "pli.Series"
-    ],
+    exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: Literal[False],
-) -> "pli.Expr":
+) -> pli.Expr:
     ...
 
 
 @overload
 def struct(
-    exprs: Union[
-        Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr", "pli.Series"
-    ],
+    exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: bool = False,
-) -> Union["pli.Expr", "pli.Series"]:
+) -> pli.Expr | pli.Series:
     ...
 
 
 def struct(
-    exprs: Union[
-        Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr", "pli.Series"
-    ],
+    exprs: Sequence[pli.Expr | str | pli.Series] | pli.Expr | pli.Series,
     eager: bool = False,
-) -> Union["pli.Expr", "pli.Series"]:
+) -> pli.Expr | pli.Series:
     """
     Collect several columns into a Series of dtype Struct
 
@@ -1591,44 +1561,44 @@ def struct(
 
 @overload
 def repeat(
-    value: Optional[Union[float, int, str, bool]],
-    n: Union["pli.Expr", int],
+    value: float | int | str | bool | None,
+    n: pli.Expr | int,
     *,
     eager: Literal[False] = ...,
-    name: Optional[str] = ...,
-) -> "pli.Expr":
+    name: str | None = ...,
+) -> pli.Expr:
     ...
 
 
 @overload
 def repeat(
-    value: Optional[Union[float, int, str, bool]],
-    n: Union["pli.Expr", int],
+    value: float | int | str | bool | None,
+    n: pli.Expr | int,
     *,
     eager: Literal[True],
-    name: Optional[str] = ...,
-) -> "pli.Series":
+    name: str | None = ...,
+) -> pli.Series:
     ...
 
 
 @overload
 def repeat(
-    value: Optional[Union[float, int, str, bool]],
-    n: Union["pli.Expr", int],
+    value: float | int | str | bool | None,
+    n: pli.Expr | int,
     *,
     eager: bool,
-    name: Optional[str],
-) -> Union["pli.Expr", "pli.Series"]:
+    name: str | None,
+) -> pli.Expr | pli.Series:
     ...
 
 
 def repeat(
-    value: Optional[Union[float, int, str, bool]],
-    n: Union["pli.Expr", int],
+    value: float | int | str | bool | None,
+    n: pli.Expr | int,
     *,
     eager: bool = False,
-    name: Optional[str] = None,
-) -> Union["pli.Expr", "pli.Series"]:
+    name: str | None = None,
+) -> pli.Expr | pli.Series:
     """
     Repeat a single value n times.
 
@@ -1657,29 +1627,25 @@ def repeat(
 
 @overload
 def arg_where(
-    condition: Union["pli.Expr", "pli.Series"],
+    condition: pli.Expr | pli.Series,
     eager: Literal[False] = ...,
-) -> "pli.Expr":
+) -> pli.Expr:
     ...
 
 
 @overload
-def arg_where(
-    condition: Union["pli.Expr", "pli.Series"], eager: Literal[True]
-) -> "pli.Series":
+def arg_where(condition: pli.Expr | pli.Series, eager: Literal[True]) -> pli.Series:
     ...
 
 
 @overload
-def arg_where(
-    condition: Union["pli.Expr", "pli.Series"], eager: bool
-) -> Union["pli.Expr", "pli.Series"]:
+def arg_where(condition: pli.Expr | pli.Series, eager: bool) -> pli.Expr | pli.Series:
     ...
 
 
 def arg_where(
-    condition: Union["pli.Expr", "pli.Series"], eager: bool = False
-) -> Union["pli.Expr", "pli.Series"]:
+    condition: pli.Expr | pli.Series, eager: bool = False
+) -> pli.Expr | pli.Series:
     """
     Return indices where `condition` evaluates `True`.
 

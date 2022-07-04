@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import copy
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, List, Optional, Sequence, Tuple, Type, Union
+from typing import Any, Callable, List, Sequence
 
 import numpy as np
 
@@ -32,15 +34,15 @@ from polars.datatypes import (
 
 
 def selection_to_pyexpr_list(
-    exprs: Union[str, "Expr", Sequence[Union[str, "Expr", "pli.Series"]], "pli.Series"]
-) -> List["PyExpr"]:
+    exprs: str | Expr | Sequence[str | Expr | pli.Series] | pli.Series,
+) -> List[PyExpr]:
     if isinstance(exprs, (str, Expr, pli.Series)):
         exprs = [exprs]
 
     return [expr_to_lit_or_expr(e, str_to_lit=False)._pyexpr for e in exprs]
 
 
-def wrap_expr(pyexpr: "PyExpr") -> "Expr":
+def wrap_expr(pyexpr: PyExpr) -> Expr:
     return Expr._from_pyexpr(pyexpr)
 
 
@@ -59,135 +61,135 @@ class Expr:
         return self._pyexpr.to_str()
 
     @staticmethod
-    def _from_pyexpr(pyexpr: "PyExpr") -> "Expr":
+    def _from_pyexpr(pyexpr: PyExpr) -> Expr:
         self = Expr.__new__(Expr)
         self._pyexpr = pyexpr
         return self
 
-    def __to_pyexpr(self, other: Any) -> "PyExpr":
+    def __to_pyexpr(self, other: Any) -> PyExpr:
         return self.__to_expr(other)._pyexpr
 
-    def __to_expr(self, other: Any) -> "Expr":
+    def __to_expr(self, other: Any) -> Expr:
         if isinstance(other, Expr):
             return other
         return pli.lit(other)
 
-    def __bool__(self) -> "Expr":
+    def __bool__(self) -> Expr:
         raise ValueError(
             "Since Expr are lazy, the truthiness of an Expr is ambiguous. \
             Hint: use '&' or '|' to chain Expr together, not and/or."
         )
 
-    def __invert__(self) -> "Expr":
+    def __invert__(self) -> Expr:
         return self.is_not()
 
-    def __xor__(self, other: "Expr") -> "Expr":
+    def __xor__(self, other: Expr) -> Expr:
         return wrap_expr(self._pyexpr._xor(self.__to_pyexpr(other)))
 
-    def __rxor__(self, other: "Expr") -> "Expr":
+    def __rxor__(self, other: Expr) -> Expr:
         return wrap_expr(self._pyexpr._xor(self.__to_pyexpr(other)))
 
-    def __and__(self, other: "Expr") -> "Expr":
+    def __and__(self, other: Expr) -> Expr:
         return wrap_expr(self._pyexpr._and(self.__to_pyexpr(other)))
 
-    def __rand__(self, other: Any) -> "Expr":
+    def __rand__(self, other: Any) -> Expr:
         return wrap_expr(self._pyexpr._and(self.__to_pyexpr(other)))
 
-    def __or__(self, other: "Expr") -> "Expr":
+    def __or__(self, other: Expr) -> Expr:
         return wrap_expr(self._pyexpr._or(self.__to_pyexpr(other)))
 
-    def __ror__(self, other: Any) -> "Expr":
+    def __ror__(self, other: Any) -> Expr:
         return wrap_expr(self.__to_pyexpr(other)._or(self._pyexpr))
 
-    def __add__(self, other: Any) -> "Expr":
+    def __add__(self, other: Any) -> Expr:
         return wrap_expr(self._pyexpr + self.__to_pyexpr(other))
 
-    def __radd__(self, other: Any) -> "Expr":
+    def __radd__(self, other: Any) -> Expr:
         return wrap_expr(self.__to_pyexpr(other) + self._pyexpr)
 
-    def __sub__(self, other: Any) -> "Expr":
+    def __sub__(self, other: Any) -> Expr:
         return wrap_expr(self._pyexpr - self.__to_pyexpr(other))
 
-    def __rsub__(self, other: Any) -> "Expr":
+    def __rsub__(self, other: Any) -> Expr:
         return wrap_expr(self.__to_pyexpr(other) - self._pyexpr)
 
-    def __mul__(self, other: Any) -> "Expr":
+    def __mul__(self, other: Any) -> Expr:
         return wrap_expr(self._pyexpr * self.__to_pyexpr(other))
 
-    def __rmul__(self, other: Any) -> "Expr":
+    def __rmul__(self, other: Any) -> Expr:
         return wrap_expr(self.__to_pyexpr(other) * self._pyexpr)
 
-    def __truediv__(self, other: Any) -> "Expr":
+    def __truediv__(self, other: Any) -> Expr:
         return wrap_expr(self._pyexpr / self.__to_pyexpr(other))
 
-    def __rtruediv__(self, other: Any) -> "Expr":
+    def __rtruediv__(self, other: Any) -> Expr:
         return wrap_expr(self.__to_pyexpr(other) / self._pyexpr)
 
-    def __floordiv__(self, other: Any) -> "Expr":
+    def __floordiv__(self, other: Any) -> Expr:
         return wrap_expr(self._pyexpr // self.__to_pyexpr(other))
 
-    def __rfloordiv__(self, other: Any) -> "Expr":
+    def __rfloordiv__(self, other: Any) -> Expr:
         return wrap_expr(self.__to_pyexpr(other) // self._pyexpr)
 
-    def __mod__(self, other: Any) -> "Expr":
+    def __mod__(self, other: Any) -> Expr:
         return wrap_expr(self._pyexpr % self.__to_pyexpr(other))
 
-    def __rmod__(self, other: Any) -> "Expr":
+    def __rmod__(self, other: Any) -> Expr:
         return wrap_expr(self.__to_pyexpr(other) % self._pyexpr)
 
-    def __pow__(self, power: Union[float, "Expr", int], modulo: None = None) -> "Expr":
+    def __pow__(self, power: float | Expr | int, modulo: None = None) -> Expr:
         return self.pow(power)
 
-    def __rpow__(self, base: Union[float, "Expr", int]) -> "Expr":
+    def __rpow__(self, base: float | Expr | int) -> Expr:
         return pli.expr_to_lit_or_expr(base) ** self
 
-    def __ge__(self, other: Any) -> "Expr":
+    def __ge__(self, other: Any) -> Expr:
         return self.gt_eq(self.__to_expr(other))
 
-    def __le__(self, other: Any) -> "Expr":
+    def __le__(self, other: Any) -> Expr:
         return self.lt_eq(self.__to_expr(other))
 
-    def __eq__(self, other: Any) -> "Expr":  # type: ignore[override]
+    def __eq__(self, other: Any) -> Expr:  # type: ignore[override]
         return self.eq(self.__to_expr(other))
 
-    def __ne__(self, other: Any) -> "Expr":  # type: ignore[override]
+    def __ne__(self, other: Any) -> Expr:  # type: ignore[override]
         return self.neq(self.__to_expr(other))
 
-    def __lt__(self, other: Any) -> "Expr":
+    def __lt__(self, other: Any) -> Expr:
         return self.lt(self.__to_expr(other))
 
-    def __gt__(self, other: Any) -> "Expr":
+    def __gt__(self, other: Any) -> Expr:
         return self.gt(self.__to_expr(other))
 
-    def eq(self, other: "Expr") -> "Expr":
+    def eq(self, other: Expr) -> Expr:
         return wrap_expr(self._pyexpr.eq(other._pyexpr))
 
-    def neq(self, other: "Expr") -> "Expr":
+    def neq(self, other: Expr) -> Expr:
         return wrap_expr(self._pyexpr.neq(other._pyexpr))
 
-    def gt(self, other: "Expr") -> "Expr":
+    def gt(self, other: Expr) -> Expr:
         return wrap_expr(self._pyexpr.gt(other._pyexpr))
 
-    def gt_eq(self, other: "Expr") -> "Expr":
+    def gt_eq(self, other: Expr) -> Expr:
         return wrap_expr(self._pyexpr.gt_eq(other._pyexpr))
 
-    def lt_eq(self, other: "Expr") -> "Expr":
+    def lt_eq(self, other: Expr) -> Expr:
         return wrap_expr(self._pyexpr.lt_eq(other._pyexpr))
 
-    def lt(self, other: "Expr") -> "Expr":
+    def lt(self, other: Expr) -> Expr:
         return wrap_expr(self._pyexpr.lt(other._pyexpr))
 
-    def __neg__(self) -> "Expr":
+    def __neg__(self) -> Expr:
         return pli.lit(0) - self
 
     def __array_ufunc__(
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
-    ) -> "Expr":
+    ) -> Expr:
         """
         Numpy universal functions.
         """
         out_type = ufunc(np.array([1])).dtype
-        dtype: Optional[Type[DataType]]
+        dtype: type[DataType] | None
         if "float" in str(out_type):
             dtype = Float64
         else:
@@ -195,7 +197,7 @@ class Expr:
 
         args = [inp for inp in inputs if not isinstance(inp, Expr)]
 
-        def function(s: "pli.Series") -> "pli.Series":
+        def function(s: pli.Series) -> pli.Series:
             return ufunc(s, *args, **kwargs)  # pragma: no cover
 
         if "dtype" in kwargs:
@@ -211,7 +213,7 @@ class Expr:
         self._pyexpr = pli.lit(0)._pyexpr
         self._pyexpr.__setstate__(state)
 
-    def to_physical(self) -> "Expr":
+    def to_physical(self) -> Expr:
         """
         Cast to physical representation of the logical dtype.
 
@@ -222,7 +224,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.to_physical())
 
-    def any(self) -> "Expr":
+    def any(self) -> Expr:
         """
         Check if any boolean value in a Boolean column is `True`
 
@@ -246,7 +248,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.any())
 
-    def all(self) -> "Expr":
+    def all(self) -> Expr:
         """
         Check if all boolean values in in a Boolean column are `True`.
         This method is an expression - not to be confused with polars.all
@@ -274,25 +276,25 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.all())
 
-    def sqrt(self) -> "Expr":
+    def sqrt(self) -> Expr:
         """
         Compute the square root of the elements
         """
         return self**0.5
 
-    def log10(self) -> "Expr":
+    def log10(self) -> Expr:
         """
         Return the base 10 logarithm of the input array, element-wise.
         """
         return self.log(10.0)
 
-    def exp(self) -> "Expr":
+    def exp(self) -> Expr:
         """
         Return the exponential element-wise
         """
         return wrap_expr(self._pyexpr.exp())
 
-    def alias(self, name: str) -> "Expr":
+    def alias(self, name: str) -> Expr:
         """
         Rename the output of an expression.
 
@@ -347,14 +349,15 @@ class Expr:
 
     def exclude(
         self,
-        columns: Union[
-            str,
-            List[str],
-            Union[DataType, Type[DataType]],
-            DataType,
-            Sequence[Union[DataType, Type[DataType]]],
-        ],
-    ) -> "Expr":
+        columns: (
+            str
+            | List[str]
+            | DataType
+            | type[DataType]
+            | DataType
+            | Sequence[DataType | type[DataType]]
+        ),
+    ) -> Expr:
         """
         Exclude certain columns from a wildcard/regex selection.
 
@@ -429,7 +432,7 @@ class Expr:
         else:
             return wrap_expr(self._pyexpr.exclude_dtype(columns))
 
-    def keep_name(self) -> "Expr":
+    def keep_name(self) -> Expr:
         """
         Keep the original root name of the expression.
 
@@ -479,7 +482,7 @@ class Expr:
 
         return wrap_expr(self._pyexpr.keep_name())
 
-    def prefix(self, prefix: str) -> "Expr":
+    def prefix(self, prefix: str) -> Expr:
         """
         Add a prefix the to root column name of the expression.
 
@@ -537,7 +540,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.prefix(prefix))
 
-    def suffix(self, suffix: str) -> "Expr":
+    def suffix(self, suffix: str) -> Expr:
         """
         Add a suffix the to root column name of the expression.
 
@@ -595,7 +598,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.suffix(suffix))
 
-    def map_alias(self, f: Callable[[str], str]) -> "Expr":
+    def map_alias(self, f: Callable[[str], str]) -> Expr:
         """
         Rename the output of an expression by mapping a function over the root name.
 
@@ -628,7 +631,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.map_alias(f))
 
-    def is_not(self) -> "Expr":
+    def is_not(self) -> Expr:
         """
         Negate a boolean expression.
 
@@ -671,7 +674,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.is_not())
 
-    def is_null(self) -> "Expr":
+    def is_null(self) -> Expr:
         """
         Create a boolean expression returning `True` where the expression contains null values.
 
@@ -705,7 +708,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.is_null())
 
-    def is_not_null(self) -> "Expr":
+    def is_not_null(self) -> Expr:
         """
         Create a boolean expression returning `True` where the expression does not contain null values.
 
@@ -739,7 +742,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.is_not_null())
 
-    def is_finite(self) -> "Expr":
+    def is_finite(self) -> Expr:
         """
         Create a boolean expression returning `True` where the expression values are finite.
 
@@ -771,7 +774,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.is_finite())
 
-    def is_infinite(self) -> "Expr":
+    def is_infinite(self) -> Expr:
         """
         Create a boolean expression returning `True` where the expression values are infinite.
 
@@ -803,7 +806,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.is_infinite())
 
-    def is_nan(self) -> "Expr":
+    def is_nan(self) -> Expr:
         """
         Create a boolean expression returning `True` where the expression values are NaN (Not A Number).
 
@@ -837,13 +840,13 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.is_nan())
 
-    def is_not_nan(self) -> "Expr":
+    def is_not_nan(self) -> Expr:
         """
         Create a boolean expression returning `True` where the expression values are not NaN (Not A Number).
         """
         return wrap_expr(self._pyexpr.is_not_nan())
 
-    def agg_groups(self) -> "Expr":
+    def agg_groups(self) -> Expr:
         """
         Get the group indexes of the group by operation.
         Should be used in aggregation context only.
@@ -879,7 +882,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.agg_groups())
 
-    def count(self) -> "Expr":
+    def count(self) -> Expr:
         """
         Count the number of values in this expression
 
@@ -900,14 +903,14 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.count())
 
-    def len(self) -> "Expr":
+    def len(self) -> Expr:
         """
         Alias for count
         Count the number of values in this expression
         """
         return self.count()
 
-    def slice(self, offset: Union[int, "Expr"], length: Union[int, "Expr"]) -> "Expr":
+    def slice(self, offset: int | Expr, length: int | Expr) -> Expr:
         """
         Slice the Series.
 
@@ -924,7 +927,7 @@ class Expr:
             length = pli.lit(length)
         return wrap_expr(self._pyexpr.slice(offset._pyexpr, length._pyexpr))
 
-    def append(self, other: "Expr", upcast: bool = True) -> "Expr":
+    def append(self, other: Expr, upcast: bool = True) -> Expr:
         """
         Append expressions. This is done by adding the chunks of `other` to this `Series`.
 
@@ -938,13 +941,13 @@ class Expr:
         other = expr_to_lit_or_expr(other)
         return wrap_expr(self._pyexpr.append(other._pyexpr, upcast))
 
-    def rechunk(self) -> "Expr":
+    def rechunk(self) -> Expr:
         """
         Create a single chunk of memory for this Series.
         """
         return wrap_expr(self._pyexpr.rechunk())
 
-    def drop_nulls(self) -> "Expr":
+    def drop_nulls(self) -> Expr:
         """
         Drop null values.
 
@@ -972,13 +975,13 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.drop_nulls())
 
-    def drop_nans(self) -> "Expr":
+    def drop_nans(self) -> Expr:
         """
         Drop floating point NaN values
         """
         return wrap_expr(self._pyexpr.drop_nans())
 
-    def cumsum(self, reverse: bool = False) -> "Expr":
+    def cumsum(self, reverse: bool = False) -> Expr:
         """
         Get an array with the cumulative sum computed at every element.
 
@@ -994,7 +997,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.cumsum(reverse))
 
-    def cumprod(self, reverse: bool = False) -> "Expr":
+    def cumprod(self, reverse: bool = False) -> Expr:
         """
         Get an array with the cumulative product computed at every element.
 
@@ -1010,7 +1013,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.cumprod(reverse))
 
-    def cummin(self, reverse: bool = False) -> "Expr":
+    def cummin(self, reverse: bool = False) -> Expr:
         """
         Get an array with the cumulative min computed at every element.
 
@@ -1021,7 +1024,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.cummin(reverse))
 
-    def cummax(self, reverse: bool = False) -> "Expr":
+    def cummax(self, reverse: bool = False) -> Expr:
         """
         Get an array with the cumulative max computed at every element.
 
@@ -1032,7 +1035,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.cummax(reverse))
 
-    def cumcount(self, reverse: bool = False) -> "Expr":
+    def cumcount(self, reverse: bool = False) -> Expr:
         """
         Get an array with the cumulative count computed at every element.
         Counting from 0 to len
@@ -1044,7 +1047,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.cumcount(reverse))
 
-    def floor(self) -> "Expr":
+    def floor(self) -> Expr:
         """
         Floor underlying floating point array to the lowest integers smaller or equal to the float value.
 
@@ -1052,7 +1055,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.floor())
 
-    def ceil(self) -> "Expr":
+    def ceil(self) -> Expr:
         """
         Ceil underlying floating point array to the highest integers smaller or equal to the float value.
 
@@ -1060,7 +1063,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.ceil())
 
-    def round(self, decimals: int) -> "Expr":
+    def round(self, decimals: int) -> Expr:
         """
         Round underlying floating point data by `decimals` digits.
 
@@ -1071,7 +1074,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.round(decimals))
 
-    def dot(self, other: Union["Expr", str]) -> "Expr":
+    def dot(self, other: Expr | str) -> Expr:
         """
         Compute the dot/inner product between two Expressions
 
@@ -1103,13 +1106,13 @@ class Expr:
         other = expr_to_lit_or_expr(other, str_to_lit=False)
         return wrap_expr(self._pyexpr.dot(other._pyexpr))
 
-    def mode(self) -> "Expr":
+    def mode(self) -> Expr:
         """
         Compute the most occurring value(s). Can return multiple Values
         """
         return wrap_expr(self._pyexpr.mode())
 
-    def cast(self, dtype: Union[Type[Any], DataType], strict: bool = True) -> "Expr":
+    def cast(self, dtype: type[Any] | DataType, strict: bool = True) -> Expr:
         """
         Cast between data types.
 
@@ -1147,7 +1150,7 @@ class Expr:
         dtype = py_type_to_dtype(dtype)
         return wrap_expr(self._pyexpr.cast(dtype, strict))
 
-    def sort(self, reverse: bool = False, nulls_last: bool = False) -> "Expr":
+    def sort(self, reverse: bool = False, nulls_last: bool = False) -> Expr:
         """
         Sort this column. In projection/ selection context the whole column is sorted.
         If used in a groupby context, the groups are sorted.
@@ -1162,7 +1165,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.sort_with(reverse, nulls_last))
 
-    def arg_sort(self, reverse: bool = False) -> "Expr":
+    def arg_sort(self, reverse: bool = False) -> Expr:
         """
         Get the index values that would sort this column.
 
@@ -1201,13 +1204,13 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.arg_sort(reverse))
 
-    def arg_max(self) -> "Expr":
+    def arg_max(self) -> Expr:
         """
         Get the index of the maximal value.
         """
         return wrap_expr(self._pyexpr.arg_max())
 
-    def arg_min(self) -> "Expr":
+    def arg_min(self) -> Expr:
         """
         Get the index of the minimal value.
         """
@@ -1215,9 +1218,9 @@ class Expr:
 
     def sort_by(
         self,
-        by: Union["Expr", str, List[Union["Expr", str]]],
-        reverse: Union[bool, List[bool]] = False,
-    ) -> "Expr":
+        by: Expr | str | List[Expr | str],
+        reverse: bool | List[bool] = False,
+    ) -> Expr:
         """
         Sort this column by the ordering of another column, or multiple other columns.
         In projection/ selection context the whole column is sorted.
@@ -1239,7 +1242,7 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    def take(self, index: Union[List[int], "Expr", "pli.Series", np.ndarray]) -> "Expr":
+    def take(self, index: List[int] | Expr | pli.Series | np.ndarray) -> Expr:
         """
         Take values by index.
 
@@ -1287,7 +1290,7 @@ class Expr:
             index_lit = pli.expr_to_lit_or_expr(index, str_to_lit=False)
         return pli.wrap_expr(self._pyexpr.take(index_lit._pyexpr))
 
-    def shift(self, periods: int = 1) -> "Expr":
+    def shift(self, periods: int = 1) -> Expr:
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with nulls.
@@ -1321,8 +1324,8 @@ class Expr:
         return wrap_expr(self._pyexpr.shift(periods))
 
     def shift_and_fill(
-        self, periods: int, fill_value: Union[int, float, bool, str, "Expr"]
-    ) -> "Expr":
+        self, periods: int, fill_value: int | float | bool | str | Expr
+    ) -> Expr:
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with the result of the `fill_value` expression.
@@ -1339,9 +1342,9 @@ class Expr:
 
     def fill_null(
         self,
-        fill_value: Union[int, float, bool, str, "Expr"],
-        limit: Optional[int] = None,
-    ) -> "Expr":
+        fill_value: int | float | bool | str | Expr,
+        limit: int | None = None,
+    ) -> Expr:
         """
         Fill null values using a filling strategy, literal, or Expr.
 
@@ -1406,14 +1409,14 @@ class Expr:
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
         return wrap_expr(self._pyexpr.fill_null(fill_value._pyexpr))
 
-    def fill_nan(self, fill_value: Union[str, int, float, bool, "Expr"]) -> "Expr":
+    def fill_nan(self, fill_value: str | int | float | bool | Expr) -> Expr:
         """
         Fill floating point NaN value with a fill value
         """
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
         return wrap_expr(self._pyexpr.fill_nan(fill_value._pyexpr))
 
-    def forward_fill(self, limit: Optional[int] = None) -> "Expr":
+    def forward_fill(self, limit: int | None = None) -> Expr:
         """
         Fill missing values with the latest seen values
 
@@ -1424,7 +1427,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.forward_fill(limit))
 
-    def backward_fill(self, limit: Optional[int] = None) -> "Expr":
+    def backward_fill(self, limit: int | None = None) -> Expr:
         """
         Fill missing values with the next to be seen values
 
@@ -1435,7 +1438,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.backward_fill(limit))
 
-    def reverse(self) -> "Expr":
+    def reverse(self) -> Expr:
         """
         Reverse the selection.
 
@@ -1473,31 +1476,31 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.reverse())
 
-    def std(self) -> "Expr":
+    def std(self) -> Expr:
         """
         Get standard deviation.
         """
         return wrap_expr(self._pyexpr.std())
 
-    def var(self) -> "Expr":
+    def var(self) -> Expr:
         """
         Get variance.
         """
         return wrap_expr(self._pyexpr.var())
 
-    def max(self) -> "Expr":
+    def max(self) -> Expr:
         """
         Get maximum value.
         """
         return wrap_expr(self._pyexpr.max())
 
-    def min(self) -> "Expr":
+    def min(self) -> Expr:
         """
         Get minimum value.
         """
         return wrap_expr(self._pyexpr.min())
 
-    def sum(self) -> "Expr":
+    def sum(self) -> Expr:
         """
         Get sum value.
 
@@ -1508,33 +1511,33 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.sum())
 
-    def mean(self) -> "Expr":
+    def mean(self) -> Expr:
         """
         Get mean value.
         """
         return wrap_expr(self._pyexpr.mean())
 
-    def median(self) -> "Expr":
+    def median(self) -> Expr:
         """
         Get median value using linear interpolation.
         """
         return wrap_expr(self._pyexpr.median())
 
-    def product(self) -> "Expr":
+    def product(self) -> Expr:
         """
         Compute the product of an expression
         """
         return wrap_expr(self._pyexpr.product())
 
-    def n_unique(self) -> "Expr":
+    def n_unique(self) -> Expr:
         """Count unique values."""
         return wrap_expr(self._pyexpr.n_unique())
 
-    def null_count(self) -> "Expr":
+    def null_count(self) -> Expr:
         """Count null values."""
         return wrap_expr(self._pyexpr.null_count())
 
-    def arg_unique(self) -> "Expr":
+    def arg_unique(self) -> Expr:
         """
         Get index of first unique value.
 
@@ -1570,7 +1573,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.arg_unique())
 
-    def unique(self, maintain_order: bool = False) -> "Expr":
+    def unique(self, maintain_order: bool = False) -> Expr:
         """
         Get unique values of this expression.
 
@@ -1583,19 +1586,19 @@ class Expr:
             return wrap_expr(self._pyexpr.unique_stable())
         return wrap_expr(self._pyexpr.unique())
 
-    def first(self) -> "Expr":
+    def first(self) -> Expr:
         """
         Get the first value.
         """
         return wrap_expr(self._pyexpr.first())
 
-    def last(self) -> "Expr":
+    def last(self) -> Expr:
         """
         Get the last value.
         """
         return wrap_expr(self._pyexpr.last())
 
-    def list(self) -> "Expr":
+    def list(self) -> Expr:
         """
         Aggregate to list.
 
@@ -1621,7 +1624,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.list())
 
-    def over(self, expr: Union[str, "Expr", List[Union["Expr", str]]]) -> "Expr":
+    def over(self, expr: str | Expr | List[Expr | str]) -> Expr:
         """
         Apply window function over a subgroup.
         This is similar to a groupby + aggregation + self join.
@@ -1681,13 +1684,13 @@ class Expr:
 
         return wrap_expr(self._pyexpr.over(pyexprs))
 
-    def is_unique(self) -> "Expr":
+    def is_unique(self) -> Expr:
         """
         Get mask of unique values.
         """
         return wrap_expr(self._pyexpr.is_unique())
 
-    def is_first(self) -> "Expr":
+    def is_first(self) -> Expr:
         """
         Get a mask of the first unique value.
 
@@ -1724,13 +1727,13 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.is_first())
 
-    def is_duplicated(self) -> "Expr":
+    def is_duplicated(self) -> Expr:
         """
         Get mask of duplicated values.
         """
         return wrap_expr(self._pyexpr.is_duplicated())
 
-    def quantile(self, quantile: float, interpolation: str = "nearest") -> "Expr":
+    def quantile(self, quantile: float, interpolation: str = "nearest") -> Expr:
         """
         Get quantile value.
 
@@ -1745,7 +1748,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.quantile(quantile, interpolation))
 
-    def filter(self, predicate: "Expr") -> "Expr":
+    def filter(self, predicate: Expr) -> Expr:
         """
         Filter a single column.
         Mostly useful in in aggregation context. If you want to filter on a DataFrame level, use `LazyFrame.filter`.
@@ -1757,7 +1760,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.filter(predicate._pyexpr))
 
-    def where(self, predicate: "Expr") -> "Expr":
+    def where(self, predicate: Expr) -> Expr:
         """
         Alias for filter
 
@@ -1770,10 +1773,10 @@ class Expr:
 
     def map(
         self,
-        f: Callable[["pli.Series"], Union["pli.Series", Any]],
-        return_dtype: Optional[Type[DataType]] = None,
+        f: Callable[[pli.Series], pli.Series | Any],
+        return_dtype: type[DataType] | None = None,
         agg_list: bool = False,
-    ) -> "Expr":
+    ) -> Expr:
         """
         Apply a custom python function to a Series or sequence of Series.
         The output of this custom function must be a Series.
@@ -1815,9 +1818,9 @@ class Expr:
 
     def apply(
         self,
-        f: Union[Callable[["pli.Series"], "pli.Series"], Callable[[Any], Any]],
-        return_dtype: Optional[Type[DataType]] = None,
-    ) -> "Expr":
+        f: Callable[[pli.Series], pli.Series] | Callable[[Any], Any],
+        return_dtype: type[DataType] | None = None,
+    ) -> Expr:
         """
         Apply a custom function in a GroupBy or Projection context.
 
@@ -1913,12 +1916,12 @@ class Expr:
         """
 
         # input x: Series of type list containing the group values
-        def wrap_f(x: "pli.Series") -> "pli.Series":  # pragma: no cover
+        def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
             return x.apply(f, return_dtype=return_dtype)
 
         return self.map(wrap_f, agg_list=True)
 
-    def flatten(self) -> "Expr":
+    def flatten(self) -> Expr:
         """
         Alias for explode.
 
@@ -1975,7 +1978,7 @@ class Expr:
 
         return wrap_expr(self._pyexpr.explode())
 
-    def explode(self) -> "Expr":
+    def explode(self) -> Expr:
         """
         Explode a list or utf8 Series. This means that every item is expanded to a new row.
 
@@ -2010,7 +2013,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.explode())
 
-    def take_every(self, n: int) -> "Expr":
+    def take_every(self, n: int) -> Expr:
         """
         Take every nth value in the Series and return as a new Series.
 
@@ -2035,7 +2038,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.take_every(n))
 
-    def head(self, n: Optional[Union[int, "Expr"]] = None) -> "Expr":
+    def head(self, n: int | Expr | None = None) -> Expr:
         """
         Take the first n values.
         """
@@ -2043,13 +2046,13 @@ class Expr:
             return self.slice(0, n)
         return wrap_expr(self._pyexpr.head(n))
 
-    def tail(self, n: Optional[int] = None) -> "Expr":
+    def tail(self, n: int | None = None) -> Expr:
         """
         Take the last n values.
         """
         return wrap_expr(self._pyexpr.tail(n))
 
-    def pow(self, exponent: Union[float, "Expr"]) -> "Expr":
+    def pow(self, exponent: float | Expr) -> Expr:
         """
         Raise expression to the power of exponent.
         Examples
@@ -2075,7 +2078,7 @@ class Expr:
         exponent = expr_to_lit_or_expr(exponent)
         return wrap_expr(self._pyexpr.pow(exponent._pyexpr))
 
-    def is_in(self, other: Union["Expr", List[Any], str]) -> "Expr":
+    def is_in(self, other: Expr | List[Any] | str) -> Expr:
         """
         Check if elements of this Series are in the right Series, or List values of the right Series.
 
@@ -2114,7 +2117,7 @@ class Expr:
             other = expr_to_lit_or_expr(other, str_to_lit=False)
         return wrap_expr(self._pyexpr.is_in(other._pyexpr))
 
-    def repeat_by(self, by: Union["Expr", str]) -> "Expr":
+    def repeat_by(self, by: Expr | str) -> Expr:
         """
         Repeat the elements in this Series `n` times by dictated by the number given by `by`.
         The elements are expanded into a `List`
@@ -2158,10 +2161,10 @@ class Expr:
 
     def is_between(
         self,
-        start: Union["Expr", datetime],
-        end: Union["Expr", datetime],
-        include_bounds: Union[bool, Sequence[bool]] = False,
-    ) -> "Expr":
+        start: Expr | datetime,
+        end: Expr | datetime,
+        include_bounds: bool | Sequence[bool] = False,
+    ) -> Expr:
         """
         Check if this expression is between start and end.
 
@@ -2234,7 +2237,7 @@ class Expr:
                 "include_bounds should be a boolean or [boolean, boolean]."
             )
 
-    def hash(self, seed: int = 0, **kwargs: Any) -> "Expr":
+    def hash(self, seed: int = 0, **kwargs: Any) -> Expr:
         """
         Hash the Series.
 
@@ -2272,7 +2275,7 @@ class Expr:
         # can be removed later
         return wrap_expr(self._pyexpr.hash(seed))
 
-    def reinterpret(self, signed: bool) -> "Expr":
+    def reinterpret(self, signed: bool) -> Expr:
         """
         Reinterpret the underlying bits as a signed/unsigned integer.
         This operation is only allowed for 64bit integers. For lower bits integers,
@@ -2286,7 +2289,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.reinterpret(signed))
 
-    def inspect(self, fmt: str = "{}") -> "Expr":
+    def inspect(self, fmt: str = "{}") -> Expr:
         """
         Prints the value that this expression evaluates to and passes on the value.
 
@@ -2314,13 +2317,13 @@ class Expr:
 
         """
 
-        def inspect(s: "pli.Series") -> "pli.Series":  # pragma: no cover
+        def inspect(s: pli.Series) -> pli.Series:  # pragma: no cover
             print(fmt.format(s))
             return s
 
         return self.map(inspect, return_dtype=None, agg_list=True)
 
-    def interpolate(self) -> "Expr":
+    def interpolate(self) -> Expr:
         """
         Interpolate intermediate values. The interpolation method is linear.
         """
@@ -2328,13 +2331,13 @@ class Expr:
 
     def rolling_min(
         self,
-        window_size: Union[int, str],
-        weights: Optional[List[float]] = None,
-        min_periods: Optional[int] = None,
+        window_size: int | str,
+        weights: List[float] | None = None,
+        min_periods: int | None = None,
         center: bool = False,
-        by: Optional[str] = None,
+        by: str | None = None,
         closed: str = "left",
-    ) -> "Expr":
+    ) -> Expr:
         """
         apply a rolling min (moving min) over the values in this array.
         A window of length `window_size` will traverse the array. The values that fill this window
@@ -2426,13 +2429,13 @@ class Expr:
 
     def rolling_max(
         self,
-        window_size: Union[int, str],
-        weights: Optional[List[float]] = None,
-        min_periods: Optional[int] = None,
+        window_size: int | str,
+        weights: List[float] | None = None,
+        min_periods: int | None = None,
         center: bool = False,
-        by: Optional[str] = None,
+        by: str | None = None,
         closed: str = "left",
-    ) -> "Expr":
+    ) -> Expr:
         """
         Apply a rolling max (moving max) over the values in this array.
         A window of length `window_size` will traverse the array. The values that fill this window
@@ -2524,13 +2527,13 @@ class Expr:
 
     def rolling_mean(
         self,
-        window_size: Union[int, str],
-        weights: Optional[List[float]] = None,
-        min_periods: Optional[int] = None,
+        window_size: int | str,
+        weights: List[float] | None = None,
+        min_periods: int | None = None,
         center: bool = False,
-        by: Optional[str] = None,
+        by: str | None = None,
         closed: str = "left",
-    ) -> "Expr":
+    ) -> Expr:
         """
         Apply a rolling mean (moving mean) over the values in this array.
         A window of length `window_size` will traverse the array. The values that fill this window
@@ -2620,13 +2623,13 @@ class Expr:
 
     def rolling_sum(
         self,
-        window_size: Union[int, str],
-        weights: Optional[List[float]] = None,
-        min_periods: Optional[int] = None,
+        window_size: int | str,
+        weights: List[float] | None = None,
+        min_periods: int | None = None,
         center: bool = False,
-        by: Optional[str] = None,
+        by: str | None = None,
         closed: str = "left",
-    ) -> "Expr":
+    ) -> Expr:
         """
         Apply a rolling sum (moving sum) over the values in this array.
         A window of length `window_size` will traverse the array. The values that fill this window
@@ -2700,13 +2703,13 @@ class Expr:
 
     def rolling_std(
         self,
-        window_size: Union[int, str],
-        weights: Optional[List[float]] = None,
-        min_periods: Optional[int] = None,
+        window_size: int | str,
+        weights: List[float] | None = None,
+        min_periods: int | None = None,
         center: bool = False,
-        by: Optional[str] = None,
+        by: str | None = None,
         closed: str = "left",
-    ) -> "Expr":
+    ) -> Expr:
         """
         Compute a rolling std dev
 
@@ -2769,13 +2772,13 @@ class Expr:
 
     def rolling_var(
         self,
-        window_size: Union[int, str],
-        weights: Optional[List[float]] = None,
-        min_periods: Optional[int] = None,
+        window_size: int | str,
+        weights: List[float] | None = None,
+        min_periods: int | None = None,
         center: bool = False,
-        by: Optional[str] = None,
+        by: str | None = None,
         closed: str = "left",
-    ) -> "Expr":
+    ) -> Expr:
         """
         Compute a rolling variance.
 
@@ -2838,13 +2841,13 @@ class Expr:
 
     def rolling_median(
         self,
-        window_size: Union[int, str],
-        weights: Optional[List[float]] = None,
-        min_periods: Optional[int] = None,
+        window_size: int | str,
+        weights: List[float] | None = None,
+        min_periods: int | None = None,
         center: bool = False,
-        by: Optional[str] = None,
+        by: str | None = None,
         closed: str = "left",
-    ) -> "Expr":
+    ) -> Expr:
         """
         Compute a rolling median
 
@@ -2905,13 +2908,13 @@ class Expr:
         self,
         quantile: float,
         interpolation: str = "nearest",
-        window_size: Union[int, str] = 2,
-        weights: Optional[List[float]] = None,
-        min_periods: Optional[int] = None,
+        window_size: int | str = 2,
+        weights: List[float] | None = None,
+        min_periods: int | None = None,
         center: bool = False,
-        by: Optional[str] = None,
+        by: str | None = None,
         closed: str = "left",
-    ) -> "Expr":
+    ) -> Expr:
         """
         Compute a rolling quantile
 
@@ -2981,12 +2984,12 @@ class Expr:
 
     def rolling_apply(
         self,
-        function: Callable[["pli.Series"], Any],
+        function: Callable[[pli.Series], Any],
         window_size: int,
-        weights: Optional[List[float]] = None,
-        min_periods: Optional[int] = None,
+        weights: List[float] | None = None,
+        min_periods: int | None = None,
         center: bool = False,
-    ) -> "Expr":
+    ) -> Expr:
         """
         Allows a custom rolling window function.
         Prefer the specific rolling window functions over this one, as they are faster.
@@ -3052,7 +3055,7 @@ class Expr:
             )
         )
 
-    def rolling_skew(self, window_size: int, bias: bool = True) -> "Expr":
+    def rolling_skew(self, window_size: int, bias: bool = True) -> Expr:
         """
         Compute a rolling skew
 
@@ -3065,19 +3068,19 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.rolling_skew(window_size, bias))
 
-    def abs(self) -> "Expr":
+    def abs(self) -> Expr:
         """
         Take absolute values
         """
         return wrap_expr(self._pyexpr.abs())
 
-    def argsort(self, reverse: bool = False) -> "Expr":
+    def argsort(self, reverse: bool = False) -> Expr:
         """
         alias for `arg_sort`
         """
         return self.arg_sort(reverse)
 
-    def rank(self, method: str = "average", reverse: bool = False) -> "Expr":
+    def rank(self, method: str = "average", reverse: bool = False) -> Expr:
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -3129,7 +3132,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.rank(method, reverse))
 
-    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Expr":
+    def diff(self, n: int = 1, null_behavior: str = "ignore") -> Expr:
         """
         Calculate the n-th discrete difference.
 
@@ -3165,7 +3168,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.diff(n, null_behavior))
 
-    def pct_change(self, n: int = 1) -> "Expr":
+    def pct_change(self, n: int = 1) -> Expr:
         """
         Percentage change (as fraction) between current element and most-recent
         non-null element at least n period(s) before the current element.
@@ -3206,7 +3209,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.pct_change(n))
 
-    def skew(self, bias: bool = True) -> "Expr":
+    def skew(self, bias: bool = True) -> Expr:
         r"""Compute the sample skewness of a data set.
         For normally distributed data, the skewness should be about zero. For
         unimodal continuous distributions, a skewness value greater than zero means
@@ -3244,7 +3247,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.skew(bias))
 
-    def kurtosis(self, fisher: bool = True, bias: bool = True) -> "Expr":
+    def kurtosis(self, fisher: bool = True, bias: bool = True) -> Expr:
         """Compute the kurtosis (Fisher or Pearson) of a dataset.
         Kurtosis is the fourth central moment divided by the square of the
         variance. If Fisher's definition is used, then 3.0 is subtracted from
@@ -3264,7 +3267,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.kurtosis(fisher, bias))
 
-    def clip(self, min_val: Union[int, float], max_val: Union[int, float]) -> "Expr":
+    def clip(self, min_val: int | float, max_val: int | float) -> Expr:
         """
         Clip (limit) the values in an array to any value that fits in 64 floating point range.
 
@@ -3281,19 +3284,19 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.clip(min_val, max_val))
 
-    def lower_bound(self) -> "Expr":
+    def lower_bound(self) -> Expr:
         """
         Returns a unit Series with the lowest value possible for the dtype of this expression.
         """
         return wrap_expr(self._pyexpr.lower_bound())
 
-    def upper_bound(self) -> "Expr":
+    def upper_bound(self) -> Expr:
         """
         Returns a unit Series with the highest value possible for the dtype of this expression.
         """
         return wrap_expr(self._pyexpr.upper_bound())
 
-    def sign(self) -> "Expr":
+    def sign(self) -> Expr:
         """
         Returns an element-wise indication of the sign of a number.
 
@@ -3320,7 +3323,7 @@ class Expr:
         """
         return np.sign(self)  # type: ignore
 
-    def sin(self) -> "Expr":
+    def sin(self) -> Expr:
         """
         Compute the element-wise value for Trigonometric sine on an array
 
@@ -3345,7 +3348,7 @@ class Expr:
         """
         return np.sin(self)  # type: ignore
 
-    def cos(self) -> "Expr":
+    def cos(self) -> Expr:
         """
         Compute the element-wise value for Trigonometric cosine on an array
 
@@ -3370,7 +3373,7 @@ class Expr:
         """
         return np.cos(self)  # type: ignore
 
-    def tan(self) -> "Expr":
+    def tan(self) -> Expr:
         """
         Compute the element-wise value for Trigonometric tangent on an array
 
@@ -3395,7 +3398,7 @@ class Expr:
         """
         return np.tan(self)  # type: ignore
 
-    def arcsin(self) -> "Expr":
+    def arcsin(self) -> Expr:
         """
         Compute the element-wise value for Trigonometric sine on an array
 
@@ -3419,7 +3422,7 @@ class Expr:
         """
         return np.arcsin(self)  # type: ignore
 
-    def arccos(self) -> "Expr":
+    def arccos(self) -> Expr:
         """
         Compute the element-wise value for Trigonometric cosine on an array
 
@@ -3443,7 +3446,7 @@ class Expr:
         """
         return np.arccos(self)  # type: ignore
 
-    def arctan(self) -> "Expr":
+    def arctan(self) -> Expr:
         """
         Compute the element-wise value for Trigonometric tangent on an array
 
@@ -3467,7 +3470,7 @@ class Expr:
         """
         return np.arctan(self)  # type: ignore
 
-    def reshape(self, dims: Tuple[int, ...]) -> "Expr":
+    def reshape(self, dims: tuple[int, ...]) -> Expr:
         """
         Reshape this Expr to a flat series, shape: (len,)
         or a List series, shape: (rows, cols)
@@ -3492,7 +3495,7 @@ class Expr:
         ┌───────────┐
         │ foo       │
         │ ---       │
-        │ list[i64] │
+        │ List[i64] │
         ╞═══════════╡
         │ [1, 2, 3] │
         ├╌╌╌╌╌╌╌╌╌╌╌┤
@@ -3504,7 +3507,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.reshape(dims))
 
-    def shuffle(self, seed: Optional[int] = None) -> "Expr":
+    def shuffle(self, seed: int | None = None) -> Expr:
         """
         Shuffle the contents of this expr.
 
@@ -3522,8 +3525,8 @@ class Expr:
         fraction: float = 1.0,
         with_replacement: bool = True,
         shuffle: bool = False,
-        seed: Optional[int] = None,
-    ) -> "Expr":
+        seed: int | None = None,
+    ) -> Expr:
         """
         Sample a fraction of the `Series`.
 
@@ -3544,13 +3547,13 @@ class Expr:
 
     def ewm_mean(
         self,
-        com: Optional[float] = None,
-        span: Optional[float] = None,
-        half_life: Optional[float] = None,
-        alpha: Optional[float] = None,
+        com: float | None = None,
+        span: float | None = None,
+        half_life: float | None = None,
+        alpha: float | None = None,
         adjust: bool = True,
         min_periods: int = 1,
-    ) -> "Expr":
+    ) -> Expr:
         r"""
         Exponential moving average.
 
@@ -3578,13 +3581,13 @@ class Expr:
 
     def ewm_std(
         self,
-        com: Optional[float] = None,
-        span: Optional[float] = None,
-        half_life: Optional[float] = None,
-        alpha: Optional[float] = None,
+        com: float | None = None,
+        span: float | None = None,
+        half_life: float | None = None,
+        alpha: float | None = None,
         adjust: bool = True,
         min_periods: int = 1,
-    ) -> "Expr":
+    ) -> Expr:
         r"""
         Exponential moving standard deviation.
 
@@ -3612,13 +3615,13 @@ class Expr:
 
     def ewm_var(
         self,
-        com: Optional[float] = None,
-        span: Optional[float] = None,
-        half_life: Optional[float] = None,
-        alpha: Optional[float] = None,
+        com: float | None = None,
+        span: float | None = None,
+        half_life: float | None = None,
+        alpha: float | None = None,
         adjust: bool = True,
         min_periods: int = 1,
-    ) -> "Expr":
+    ) -> Expr:
         r"""
         Exponential moving standard deviation.
 
@@ -3644,9 +3647,7 @@ class Expr:
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_var(alpha, adjust, min_periods))
 
-    def extend_constant(
-        self, value: Optional[Union[int, float, str, bool]], n: int
-    ) -> "Expr":
+    def extend_constant(self, value: int | float | str | bool | None, n: int) -> Expr:
         """
         Extend the Series with given number of values.
 
@@ -3675,7 +3676,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.extend_constant(value, n))
 
-    def value_counts(self, multithreaded: bool = False) -> "Expr":
+    def value_counts(self, multithreaded: bool = False) -> Expr:
         """
         Count all unique values and create a struct mapping value to count
 
@@ -3717,7 +3718,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.value_counts(multithreaded))
 
-    def unique_counts(self) -> "Expr":
+    def unique_counts(self) -> Expr:
         """
         Returns a count of the unique values in the order of appearance.
 
@@ -3753,7 +3754,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.unique_counts())
 
-    def log(self, base: float = math.e) -> "Expr":
+    def log(self, base: float = math.e) -> Expr:
         """
         Compute the logarithm to a given base
 
@@ -3764,7 +3765,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.log(base))
 
-    def entropy(self, base: float = math.e, normalize: bool = True) -> "Expr":
+    def entropy(self, base: float = math.e, normalize: bool = True) -> Expr:
         """
         Compute the entropy as `-sum(pk * log(pk)`.
         where `pk` are discrete probabilities.
@@ -3780,8 +3781,8 @@ class Expr:
         return wrap_expr(self._pyexpr.entropy(base, normalize))
 
     def cumulative_eval(
-        self, expr: "Expr", min_periods: int = 1, parallel: bool = False
-    ) -> "Expr":
+        self, expr: Expr, min_periods: int = 1, parallel: bool = False
+    ) -> Expr:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
 
@@ -3834,7 +3835,7 @@ class Expr:
             self._pyexpr.cumulative_eval(expr._pyexpr, min_periods, parallel)
         )
 
-    def set_sorted(self, reverse: bool = False) -> "Expr":
+    def set_sorted(self, reverse: bool = False) -> Expr:
         """
         Set this `Series` as `sorted` so that downstream code can use
         fast paths for sorted arrays.
@@ -3854,35 +3855,35 @@ class Expr:
     # the type annotation `str` with the namespace "str"
 
     @property
-    def dt(self) -> "ExprDateTimeNameSpace":
+    def dt(self) -> ExprDateTimeNameSpace:
         """
         Create an object namespace of all datetime related methods.
         """
         return ExprDateTimeNameSpace(self)
 
     @property
-    def str(self) -> "ExprStringNameSpace":
+    def str(self) -> ExprStringNameSpace:
         """
         Create an object namespace of all string related methods.
         """
         return ExprStringNameSpace(self)
 
     @property
-    def arr(self) -> "ExprListNameSpace":
+    def arr(self) -> ExprListNameSpace:
         """
         Create an object namespace of all list related methods.
         """
         return ExprListNameSpace(self)
 
     @property
-    def cat(self) -> "ExprCatNameSpace":
+    def cat(self) -> ExprCatNameSpace:
         """
         Create an object namespace of all categorical related methods.
         """
         return ExprCatNameSpace(self)
 
     @property
-    def struct(self) -> "ExprStructNameSpace":
+    def struct(self) -> ExprStructNameSpace:
         """
         Create an object namespace of all struct related methods.
         """
@@ -4013,31 +4014,31 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_lengths())
 
-    def sum(self) -> "Expr":
+    def sum(self) -> Expr:
         """
         Sum all the arrays in the list
         """
         return wrap_expr(self._pyexpr.lst_sum())
 
-    def max(self) -> "Expr":
+    def max(self) -> Expr:
         """
         Compute the max value of the arrays in the list
         """
         return wrap_expr(self._pyexpr.lst_max())
 
-    def min(self) -> "Expr":
+    def min(self) -> Expr:
         """
         Compute the min value of the arrays in the list
         """
         return wrap_expr(self._pyexpr.lst_min())
 
-    def mean(self) -> "Expr":
+    def mean(self) -> Expr:
         """
         Compute the mean value of the arrays in the list
         """
         return wrap_expr(self._pyexpr.lst_mean())
 
-    def sort(self, reverse: bool = False) -> "Expr":
+    def sort(self, reverse: bool = False) -> Expr:
         """
         Sort the arrays in the list
 
@@ -4064,7 +4065,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_sort(reverse))
 
-    def reverse(self) -> "Expr":
+    def reverse(self) -> Expr:
         """
         Reverse the arrays in the list
 
@@ -4091,15 +4092,15 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_reverse())
 
-    def unique(self) -> "Expr":
+    def unique(self) -> Expr:
         """
         Get the unique/distinct values in the list
         """
         return wrap_expr(self._pyexpr.lst_unique())
 
     def concat(
-        self, other: Union[List[Union[Expr, str]], Expr, str, "pli.Series", List[Any]]
-    ) -> "Expr":
+        self, other: List[Expr | str] | Expr | str | pli.Series | List[Any]
+    ) -> Expr:
         """
         Concat the arrays in a Series dtype List in linear time.
 
@@ -4135,7 +4136,7 @@ class ExprListNameSpace:
         ):
             return self.concat(pli.Series([other]))
 
-        other_list: List[Union[Expr, str, "pli.Series"]]
+        other_list: List[Expr | str | pli.Series]
         if not isinstance(other, list):
             other_list = [other]
         else:
@@ -4144,7 +4145,7 @@ class ExprListNameSpace:
         other_list.insert(0, wrap_expr(self._pyexpr))
         return pli.concat_list(other_list)
 
-    def get(self, index: int) -> "Expr":
+    def get(self, index: int) -> Expr:
         """
         Get the value by index in the sublists.
         So index `0` would return the first item of every sublist
@@ -4177,7 +4178,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_get(index))
 
-    def first(self) -> "Expr":
+    def first(self) -> Expr:
         """
         Get the first value of the sublists.
 
@@ -4202,7 +4203,7 @@ class ExprListNameSpace:
         """
         return self.get(0)
 
-    def last(self) -> "Expr":
+    def last(self) -> Expr:
         """
         Get the last value of the sublists.
 
@@ -4227,7 +4228,7 @@ class ExprListNameSpace:
         """
         return self.get(-1)
 
-    def contains(self, item: Union[float, str, bool, int, date, datetime]) -> "Expr":
+    def contains(self, item: float | str | bool | int | date | datetime) -> Expr:
         """
         Check if sublists contain the given item.
 
@@ -4261,7 +4262,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr).map(lambda s: s.arr.contains(item), Boolean)
 
-    def join(self, separator: str) -> "Expr":
+    def join(self, separator: str) -> Expr:
         """
         Join all string items in a sublist and place a separator between them.
         This errors if inner type of list `!= Utf8`.
@@ -4295,7 +4296,7 @@ class ExprListNameSpace:
 
         return wrap_expr(self._pyexpr.lst_join(separator))
 
-    def arg_min(self) -> "Expr":
+    def arg_min(self) -> Expr:
         """
         Retrieve the index of the minimal value in every sublist
 
@@ -4305,7 +4306,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_arg_min())
 
-    def arg_max(self) -> "Expr":
+    def arg_max(self) -> Expr:
         """
         Retrieve the index of the maximum value in every sublist
 
@@ -4315,7 +4316,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_arg_max())
 
-    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Expr":
+    def diff(self, n: int = 1, null_behavior: str = "ignore") -> Expr:
         """
         Calculate the n-th discrete difference of every sublist.
 
@@ -4341,7 +4342,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_diff(n, null_behavior))
 
-    def shift(self, periods: int = 1) -> "Expr":
+    def shift(self, periods: int = 1) -> Expr:
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with nulls.
@@ -4366,7 +4367,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_shift(periods))
 
-    def slice(self, offset: int, length: int) -> "Expr":
+    def slice(self, offset: int, length: int) -> Expr:
         """
         Slice every sublist
 
@@ -4392,7 +4393,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_slice(offset, length))
 
-    def head(self, n: int = 5) -> "Expr":
+    def head(self, n: int = 5) -> Expr:
         """
         Slice the head of every sublist
 
@@ -4416,7 +4417,7 @@ class ExprListNameSpace:
         """
         return self.slice(0, n)
 
-    def tail(self, n: int = 5) -> "Expr":
+    def tail(self, n: int = 5) -> Expr:
         """
         Slice the tail of every sublist
 
@@ -4443,8 +4444,8 @@ class ExprListNameSpace:
     def to_struct(
         self,
         n_field_strategy: str = "first_non_null",
-        name_generator: Optional[Callable[[int], str]] = None,
-    ) -> "Expr":
+        name_generator: Callable[[int], str] | None = None,
+    ) -> Expr:
         """
         Convert the series of type `List` to a series of type `Struct`.
 
@@ -4486,7 +4487,7 @@ class ExprListNameSpace:
 
         return wrap_expr(self._pyexpr.lst_to_struct(n_field_strategy, name_generator))
 
-    def eval(self, expr: "Expr", parallel: bool = False) -> "Expr":
+    def eval(self, expr: Expr, parallel: bool = False) -> Expr:
         """
         Run any polars expression against the lists' elements
 
@@ -4534,8 +4535,8 @@ class ExprStringNameSpace:
 
     def strptime(
         self,
-        datatype: Union[Type[Date], Type[Datetime], Type[Time]],
-        fmt: Optional[str] = None,
+        datatype: type[Date] | type[Datetime] | type[Time],
+        fmt: str | None = None,
         strict: bool = True,
         exact: bool = True,
     ) -> Expr:
@@ -4638,7 +4639,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_lengths())
 
-    def concat(self, delimiter: str = "-") -> "Expr":
+    def concat(self, delimiter: str = "-") -> Expr:
         """
         Vertically concat the values in the Series to a single string value.
 
@@ -5031,7 +5032,7 @@ class ExprStringNameSpace:
         ┌────────────────┐
         │ extracted_nrs  │
         │ ---            │
-        │ list[str]      │
+        │ List[str]      │
         ╞════════════════╡
         │ ["123", "45"]  │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -5229,7 +5230,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_replace_all(pattern, value))
 
-    def slice(self, start: int, length: Optional[int] = None) -> Expr:
+    def slice(self, start: int, length: int | None = None) -> Expr:
         """
         Create subslices of the string values of a Utf8 Series.
 
@@ -5258,8 +5259,8 @@ class ExprDateTimeNameSpace:
 
     def truncate(
         self,
-        every: Union[str, timedelta],
-        offset: Optional[Union[str, timedelta]] = None,
+        every: str | timedelta,
+        offset: str | timedelta | None = None,
     ) -> Expr:
         """
         Divide the date/ datetime range into buckets.
@@ -5626,7 +5627,7 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
 
-    def and_time_unit(self, tu: str, dtype: Type[DataType] = Datetime) -> Expr:
+    def and_time_unit(self, tu: str, dtype: type[DataType] = Datetime) -> Expr:
         """
         Set time unit a Series of type Datetime. This does not modify underlying data,
         and should be used to fix an incorrect time unit.
@@ -5644,7 +5645,7 @@ class ExprDateTimeNameSpace:
         """
         return self.with_time_unit(tu)
 
-    def and_time_zone(self, tz: Optional[str]) -> Expr:
+    def and_time_zone(self, tz: str | None) -> Expr:
         """
         Set time zone for a Series of type Datetime.
 
@@ -5661,7 +5662,7 @@ class ExprDateTimeNameSpace:
             lambda s: s.dt.with_time_zone(tz), return_dtype=Datetime
         )
 
-    def with_time_zone(self, tz: Optional[str]) -> Expr:
+    def with_time_zone(self, tz: str | None) -> Expr:
         """
         Set time zone for a Series of type Datetime.
 
@@ -5767,23 +5768,16 @@ class ExprDateTimeNameSpace:
 
 
 def expr_to_lit_or_expr(
-    expr: Union[
-        Expr,
-        bool,
-        int,
-        float,
-        str,
-        "pli.Series",
-        None,
-        Sequence[
-            Union[
-                int,
-                float,
-                str,
-                None,
-            ]
-        ],
-    ],
+    expr: (
+        Expr
+        | bool
+        | int
+        | float
+        | str
+        | pli.Series
+        | None
+        | Sequence[(int | float | str | None)]
+    ),
     str_to_lit: bool = True,
 ) -> Expr:
     """
@@ -5825,7 +5819,7 @@ class ExprCatNameSpace:
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
-    def set_ordering(self, ordering: str) -> "Expr":
+    def set_ordering(self, ordering: str) -> Expr:
         """
         Determine how this categorical series should be sorted.
 
@@ -5869,10 +5863,10 @@ class ExprCatNameSpace:
 
 
 def _prepare_alpha(
-    com: Optional[float] = None,
-    span: Optional[float] = None,
-    half_life: Optional[float] = None,
-    alpha: Optional[float] = None,
+    com: float | None = None,
+    span: float | None = None,
+    half_life: float | None = None,
+    alpha: float | None = None,
 ) -> float:
     if com is not None and alpha is None:
         assert com >= 0.0
@@ -5889,9 +5883,9 @@ def _prepare_alpha(
 
 
 def _prepare_rolling_window_args(
-    window_size: Union[int, str],
-    min_periods: Optional[int] = None,
-) -> Tuple[str, int]:
+    window_size: int | str,
+    min_periods: int | None = None,
+) -> tuple[str, int]:
     if isinstance(window_size, int):
         if min_periods is None:
             min_periods = window_size

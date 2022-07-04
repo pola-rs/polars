@@ -1,19 +1,8 @@
+from __future__ import annotations
+
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
-from typing import (
-    Any,
-    BinaryIO,
-    Callable,
-    Dict,
-    List,
-    Mapping,
-    Optional,
-    TextIO,
-    Tuple,
-    Type,
-    Union,
-    cast,
-)
+from typing import Any, BinaryIO, Callable, Mapping, TextIO, cast
 
 from polars.utils import format_path, handle_projection_columns
 
@@ -41,7 +30,7 @@ except ImportError:
 
 
 def _check_arg_is_1byte(
-    arg_name: str, arg: Optional[str], can_be_empty: bool = False
+    arg_name: str, arg: str | None, can_be_empty: bool = False
 ) -> None:
     if isinstance(arg, str):
         arg_byte_length = len(arg.encode("utf-8"))
@@ -56,7 +45,7 @@ def _check_arg_is_1byte(
             )
 
 
-def update_columns(df: DataFrame, new_columns: List[str]) -> DataFrame:
+def update_columns(df: DataFrame, new_columns: list[str]) -> DataFrame:
     if df.width > len(new_columns):
         cols = df.columns
         for i, name in enumerate(new_columns):
@@ -67,29 +56,29 @@ def update_columns(df: DataFrame, new_columns: List[str]) -> DataFrame:
 
 
 def read_csv(
-    file: Union[str, TextIO, BytesIO, Path, BinaryIO, bytes],
+    file: str | TextIO | BytesIO | Path | BinaryIO | bytes,
     has_header: bool = True,
-    columns: Optional[Union[List[int], List[str]]] = None,
-    new_columns: Optional[List[str]] = None,
+    columns: list[int] | list[str] | None = None,
+    new_columns: list[str] | None = None,
     sep: str = ",",
-    comment_char: Optional[str] = None,
-    quote_char: Optional[str] = r'"',
+    comment_char: str | None = None,
+    quote_char: str | None = r'"',
     skip_rows: int = 0,
-    dtypes: Optional[Union[Mapping[str, Type[DataType]], List[Type[DataType]]]] = None,
-    null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
+    dtypes: Mapping[str, type[DataType]] | list[type[DataType]] | None = None,
+    null_values: str | list[str] | dict[str, str] | None = None,
     ignore_errors: bool = False,
     parse_dates: bool = False,
-    n_threads: Optional[int] = None,
-    infer_schema_length: Optional[int] = 100,
+    n_threads: int | None = None,
+    infer_schema_length: int | None = 100,
     batch_size: int = 8192,
-    n_rows: Optional[int] = None,
+    n_rows: int | None = None,
     encoding: str = "utf8",
     low_memory: bool = False,
     rechunk: bool = True,
     use_pyarrow: bool = False,
-    storage_options: Optional[Dict] = None,
+    storage_options: dict | None = None,
     skip_rows_after_header: int = 0,
-    row_count_name: Optional[str] = None,
+    row_count_name: str | None = None,
     row_count_offset: int = 0,
     sample_size: int = 1024,
     **kwargs: Any,
@@ -361,24 +350,24 @@ def read_csv(
 
 
 def scan_csv(
-    file: Union[str, Path],
+    file: str | Path,
     has_header: bool = True,
     sep: str = ",",
-    comment_char: Optional[str] = None,
-    quote_char: Optional[str] = r'"',
+    comment_char: str | None = None,
+    quote_char: str | None = r'"',
     skip_rows: int = 0,
-    dtypes: Optional[Dict[str, Type[DataType]]] = None,
-    null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
+    dtypes: dict[str, type[DataType]] | None = None,
+    null_values: str | list[str] | dict[str, str] | None = None,
     ignore_errors: bool = False,
     cache: bool = True,
-    with_column_names: Optional[Callable[[List[str]], List[str]]] = None,
-    infer_schema_length: Optional[int] = 100,
-    n_rows: Optional[int] = None,
+    with_column_names: Callable[[list[str]], list[str]] | None = None,
+    infer_schema_length: int | None = 100,
+    n_rows: int | None = None,
     encoding: str = "utf8",
     low_memory: bool = False,
     rechunk: bool = True,
     skip_rows_after_header: int = 0,
-    row_count_name: Optional[str] = None,
+    row_count_name: str | None = None,
     row_count_offset: int = 0,
     parse_dates: bool = False,
     **kwargs: Any,
@@ -528,13 +517,13 @@ def scan_csv(
 
 
 def scan_ipc(
-    file: Union[str, Path],
-    n_rows: Optional[int] = None,
+    file: str | Path,
+    n_rows: int | None = None,
     cache: bool = True,
     rechunk: bool = True,
-    row_count_name: Optional[str] = None,
+    row_count_name: str | None = None,
     row_count_offset: int = 0,
-    storage_options: Optional[Dict] = None,
+    storage_options: dict | None = None,
     **kwargs: Any,
 ) -> LazyFrame:
     """
@@ -578,14 +567,14 @@ def scan_ipc(
 
 
 def scan_parquet(
-    file: Union[str, Path],
-    n_rows: Optional[int] = None,
+    file: str | Path,
+    n_rows: int | None = None,
     cache: bool = True,
     parallel: bool = True,
     rechunk: bool = True,
-    row_count_name: Optional[str] = None,
+    row_count_name: str | None = None,
     row_count_offset: int = 0,
-    storage_options: Optional[Dict] = None,
+    storage_options: dict | None = None,
     **kwargs: Any,
 ) -> LazyFrame:
     """
@@ -635,9 +624,9 @@ def scan_parquet(
 
 
 def read_avro(
-    file: Union[str, Path, BytesIO, BinaryIO],
-    columns: Optional[Union[List[int], List[str]]] = None,
-    n_rows: Optional[int] = None,
+    file: str | Path | BytesIO | BinaryIO,
+    columns: list[int] | list[str] | None = None,
+    n_rows: int | None = None,
     **kwargs: Any,
 ) -> DataFrame:
     """
@@ -665,13 +654,13 @@ def read_avro(
 
 
 def read_ipc(
-    file: Union[str, BinaryIO, BytesIO, Path, bytes],
-    columns: Optional[Union[List[int], List[str]]] = None,
-    n_rows: Optional[int] = None,
+    file: str | BinaryIO | BytesIO | Path | bytes,
+    columns: list[int] | list[str] | None = None,
+    n_rows: int | None = None,
     use_pyarrow: bool = False,
     memory_map: bool = True,
-    storage_options: Optional[Dict] = None,
-    row_count_name: Optional[str] = None,
+    storage_options: dict | None = None,
+    row_count_name: str | None = None,
     row_count_offset: int = 0,
     rechunk: bool = True,
     **kwargs: Any,
@@ -744,14 +733,14 @@ def read_ipc(
 
 
 def read_parquet(
-    source: Union[str, Path, BinaryIO, BytesIO, bytes],
-    columns: Optional[Union[List[int], List[str]]] = None,
-    n_rows: Optional[int] = None,
+    source: str | Path | BinaryIO | BytesIO | bytes,
+    columns: list[int] | list[str] | None = None,
+    n_rows: int | None = None,
     use_pyarrow: bool = False,
     memory_map: bool = True,
-    storage_options: Optional[Dict] = None,
+    storage_options: dict | None = None,
     parallel: bool = True,
-    row_count_name: Optional[str] = None,
+    row_count_name: str | None = None,
     row_count_offset: int = 0,
     **kwargs: Any,
 ) -> DataFrame:
@@ -827,7 +816,7 @@ def read_parquet(
         )
 
 
-def read_json(source: Union[str, IOBase], json_lines: bool = False) -> DataFrame:
+def read_json(source: str | IOBase, json_lines: bool = False) -> DataFrame:
     """
     Read into a DataFrame from JSON format.
 
@@ -842,12 +831,12 @@ def read_json(source: Union[str, IOBase], json_lines: bool = False) -> DataFrame
 
 
 def read_sql(
-    sql: Union[List[str], str],
+    sql: list[str] | str,
     connection_uri: str,
-    partition_on: Optional[str] = None,
-    partition_range: Optional[Tuple[int, int]] = None,
-    partition_num: Optional[int] = None,
-    protocol: Optional[str] = None,
+    partition_on: str | None = None,
+    partition_range: tuple[int, int] | None = None,
+    partition_num: int | None = None,
+    protocol: str | None = None,
 ) -> DataFrame:
     """
     Read a SQL query into a DataFrame.
@@ -932,11 +921,11 @@ def read_sql(
 
 
 def read_excel(
-    file: Union[str, BytesIO, Path, BinaryIO, bytes],
-    sheet_id: Optional[int] = 1,
-    sheet_name: Optional[str] = None,
-    xlsx2csv_options: Optional[dict] = None,
-    read_csv_options: Optional[dict] = None,
+    file: str | BytesIO | Path | BinaryIO | bytes,
+    sheet_id: int | None = 1,
+    sheet_name: str | None = None,
+    xlsx2csv_options: dict | None = None,
+    read_csv_options: dict | None = None,
 ) -> DataFrame:
     """
     Read Excel (XLSX) sheet into a DataFrame by converting an Excel
@@ -1059,7 +1048,7 @@ def read_excel(
     return read_csv(csv_buffer, **read_csv_options)
 
 
-def scan_ds(ds: "pa.dataset.dataset") -> "LazyFrame":
+def scan_ds(ds: pa.dataset.dataset) -> LazyFrame:
     """
     .. warning::
         This API is experimental and may change without it being considered a breaking change.

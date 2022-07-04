@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import random
 from dataclasses import dataclass
 from datetime import datetime
 from functools import reduce
-from typing import Any, Callable, Dict, List, Optional, Sequence, Union
+from typing import Any, Callable, Sequence
 
 try:
     from hypothesis import settings
@@ -257,7 +259,7 @@ def _getattr_multi(obj: object, op: str) -> Any:
 
 
 def verify_series_and_expr_api(
-    input: Series, expected: Optional[Series], op: str, *args: Any, **kwargs: Any
+    input: Series, expected: Series | None, op: str, *args: Any, **kwargs: Any
 ) -> None:
     """
     Small helper function to test element-wise functions for both the series and expressions api.
@@ -295,7 +297,7 @@ if HYPOTHESIS_INSTALLED:
     # See: https://hypothesis.readthedocs.io/
     # =====================================================================
 
-    dtype_strategy_mapping: Dict[PolarsDataType, Any] = {
+    dtype_strategy_mapping: dict[PolarsDataType, Any] = {
         Boolean: booleans(),
         Float32: floats(width=32),
         Float64: floats(width=64),
@@ -368,9 +370,9 @@ if HYPOTHESIS_INSTALLED:
         """
 
         name: str
-        dtype: Optional[PolarsDataType] = None
-        strategy: Optional["SearchStrategy"] = None
-        null_probability: Optional[float] = None
+        dtype: PolarsDataType | None = None
+        strategy: SearchStrategy | None = None
+        null_probability: float | None = None
         unique: bool = False
 
         def __post_init__(self) -> None:
@@ -402,13 +404,13 @@ if HYPOTHESIS_INSTALLED:
                         )
 
     def columns(
-        cols: Optional[Union[int, Sequence[str]]] = None,
+        cols: int | Sequence[str] | None = None,
         *,
-        dtype: Optional[Union[PolarsDataType, Sequence[PolarsDataType]]] = None,
-        min_cols: Optional[int] = 0,
-        max_cols: Optional[int] = MAX_COLS,
+        dtype: PolarsDataType | Sequence[PolarsDataType] | None = None,
+        min_cols: int | None = 0,
+        max_cols: int | None = MAX_COLS,
         unique: bool = False,
-    ) -> List[column]:
+    ) -> list[column]:
         """
         Generate a fixed sequence of `column` objects suitable for passing to the @dataframes
         strategy, or using standalone (note that this function is not itself a strategy).
@@ -460,7 +462,7 @@ if HYPOTHESIS_INSTALLED:
                 b=max_cols or MAX_COLS,
             )
         if isinstance(cols, int):
-            names: List[str] = [f"col{n}" for n in range(cols)]
+            names: list[str] = [f"col{n}" for n in range(cols)]
         else:
             names = list(cols)
 
@@ -487,17 +489,17 @@ if HYPOTHESIS_INSTALLED:
     @defines_strategy()
     def series(
         *,
-        name: Optional[Union[str, "SearchStrategy[str]"]] = None,
-        dtype: Optional[PolarsDataType] = None,
-        size: Optional[int] = None,
-        min_size: Optional[int] = 0,
-        max_size: Optional[int] = MAX_DATA_SIZE,
-        strategy: Optional["SearchStrategy"] = None,
+        name: str | SearchStrategy[str] | None = None,
+        dtype: PolarsDataType | None = None,
+        size: int | None = None,
+        min_size: int | None = 0,
+        max_size: int | None = MAX_DATA_SIZE,
+        strategy: SearchStrategy | None = None,
         null_probability: float = 0.0,
         unique: bool = False,
-        allowed_dtypes: Optional[Sequence[PolarsDataType]] = None,
-        excluded_dtypes: Optional[Sequence[PolarsDataType]] = None,
-    ) -> "SearchStrategy[Series]":
+        allowed_dtypes: Sequence[PolarsDataType] | None = None,
+        excluded_dtypes: Sequence[PolarsDataType] | None = None,
+    ) -> SearchStrategy[Series]:
         """
         Strategy for producing a polars Series.
 
@@ -625,19 +627,19 @@ if HYPOTHESIS_INSTALLED:
 
     @defines_strategy()
     def dataframes(
-        cols: Optional[Union[int, Sequence[column]]] = None,
+        cols: int | Sequence[column] | None = None,
         lazy: bool = False,
         *,
-        min_cols: Optional[int] = 0,
-        max_cols: Optional[int] = MAX_COLS,
-        size: Optional[int] = None,
-        min_size: Optional[int] = 0,
-        max_size: Optional[int] = MAX_DATA_SIZE,
-        include_cols: Optional[Sequence[column]] = None,
-        null_probability: Union[float, dict] = 0.0,
-        allowed_dtypes: Optional[Sequence[PolarsDataType]] = None,
-        excluded_dtypes: Optional[Sequence[PolarsDataType]] = None,
-    ) -> "SearchStrategy[Union[DataFrame, LazyFrame]]":
+        min_cols: int | None = 0,
+        max_cols: int | None = MAX_COLS,
+        size: int | None = None,
+        min_size: int | None = 0,
+        max_size: int | None = MAX_DATA_SIZE,
+        include_cols: Sequence[column] | None = None,
+        null_probability: float | dict[str, float] = 0.0,
+        allowed_dtypes: Sequence[PolarsDataType] | None = None,
+        excluded_dtypes: Sequence[PolarsDataType] | None = None,
+    ) -> SearchStrategy[DataFrame | LazyFrame]:
         """
         Provides a strategy for producing a DataFrame or LazyFrame.
 
@@ -730,7 +732,7 @@ if HYPOTHESIS_INSTALLED:
         ]
 
         @composite
-        def draw_frames(draw: Callable) -> Union[DataFrame, LazyFrame]:
+        def draw_frames(draw: Callable) -> DataFrame | LazyFrame:
             # if not given, create 'n' cols with random dtypes
             if cols is None:
                 n = between(
