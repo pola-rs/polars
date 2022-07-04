@@ -263,21 +263,6 @@ export const StringFunctions = (_s: any): StringFunctions => {
         .getColumn(s.name);
 
     },
-    // splitExact(by: string, options?, inclusive?) {
-    //   const n = typeof options === "boolean" ? options : options?.n;
-    //   inclusive = typeof inclusive === "boolean" ? inclusive : options.inclusive;
-    //   const s = seriesWrapper(_s);
-
-    //   return s
-    //     .toFrame()
-    //     .select(
-    //       col(s.name)
-    //         .str
-    //         .splitExact(by, n, inclusive)
-    //         .as(s.name)
-    //     )
-    //     .getColumn(s.name);
-    // },
     strip() {
       const s = _Series(_s);
 

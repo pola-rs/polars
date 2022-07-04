@@ -52,7 +52,7 @@ describe("read:csv", () => {
 2021-01-01 00:30:00,0.00298300,0.00300100
 2021-01-01 00:45:00,0.00299400,0.00304000`;
     const df = pl.readCSV(csv, {parseDates: true});
-    expect(df.dtypes).toEqual([pl.Datetime, pl.Float64, pl.Float64]);
+    expect(df.dtypes.map(dt => dt.toJSON())).toEqual([pl.Datetime("us").toJSON(), pl.Float64.toJSON(), pl.Float64.toJSON()]);
   });
   it.each`
       csv                         | nullValues

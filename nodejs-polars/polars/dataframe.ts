@@ -1708,7 +1708,7 @@ export const _DataFrame = (_df: any): DataFrame => {
       return "DataFrame";
     },
     get dtypes() {
-      return _df.dtypes();
+      return _df.dtypes().map(DataType.deserialize);
     },
     get height() {
       return _df.height;
@@ -1990,14 +1990,6 @@ export const _DataFrame = (_df: any): DataFrame => {
       values = typeof values === "string" ? [values] : values;
       index = typeof index === "string" ? [index] : index;
       columns = typeof columns === "string" ? [columns] : columns;
-      console.log({
-        values,
-        index,
-        columns,
-        aggregateFunc,
-        maintainOrder,
-        sortColumns,
-      });
 
       return _DataFrame(
         _df.pivot2(

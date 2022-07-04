@@ -97,6 +97,3 @@ namespace pl {
 global[Symbol.for("__pl__")] = pl;
 // eslint-disable-next-line no-undef
 export = pl;
-
-console.log(JSON.stringify(pl.Series([{a: 0, b: "foo", c: new Date()}, {a: 1, b: "aaa"}]).dtype, null, 2));
-// console.log(pl.Series("foo", [new Date()], pl.Datetime("ns")).dtype);

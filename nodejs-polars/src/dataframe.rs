@@ -604,8 +604,8 @@ impl JsDataFrame {
 
     /// Get datatypes
     #[napi]
-    pub fn dtypes(&self) -> Vec<JsDataType> {
-        self.df.iter().map(|s| s.dtype().into()).collect()
+    pub fn dtypes(&self) -> Vec<Wrap<DataType>> {
+        self.df.iter().map(|s| Wrap(s.dtype().clone())).collect()
     }
     #[napi]
     pub fn n_chunks(&self) -> napi::Result<u32> {

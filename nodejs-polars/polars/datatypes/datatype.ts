@@ -90,8 +90,8 @@ export abstract class DataType {
    */
   public static Datetime(timeUnit: TimeUnit, timeZone?): DataType;
   public static Datetime(timeUnit: "ms" | "ns" | "us", timeZone?): DataType;
-  public static Datetime(timeUnit, timeZone?): DataType {
-    return new _Datetime(timeUnit, timeZone);
+  public static Datetime(timeUnit, timeZone: string | null | undefined = null): DataType {
+    return new _Datetime(timeUnit, timeZone as any);
   }
   /**
    * Nested list/array type
@@ -138,7 +138,6 @@ export abstract class DataType {
     return this.toJSON();
   }
   static from(obj): DataType {
-    console.log(obj);
 
     return null as any;
   }
@@ -287,6 +286,9 @@ export namespace DataType {
     let {variant, inner} = dtype;
     if(variant === "Struct") {
       inner = [inner[0].map(fld => Field.from(fld.name, deserialize(fld.dtype)))];
+    }
+    if(variant === "List") {
+      inner = [deserialize(inner[0])];
     }
 
     return DataType[variant](...inner);

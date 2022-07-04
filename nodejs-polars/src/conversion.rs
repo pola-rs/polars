@@ -688,6 +688,7 @@ impl FromNapiValue for Wrap<DataType> {
 impl FromNapiValue for Wrap<Schema> {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
         let ty = type_of!(env, napi_val)?;
+        let env_ctx = Env::from_raw(env);
         match ty {
             ValueType::Object => {
                 let obj = Object::from_napi_value(env, napi_val)?;
@@ -696,15 +697,13 @@ impl FromNapiValue for Wrap<Schema> {
                 let fields: Vec<Field> = keys
                     .iter()
                     .map(|key| {
-                        let value = obj.get::<_, Either<String, u32>>(&key).unwrap().unwrap();
-                        let dtype = match value {
-                            Either::A(v) => str_to_polarstype(&v),
-                            Either::B(v) => num_to_polarstype(v),
-                        };
-                        let fld = Field::new(key, dtype.into());
-                        fld
+                        let value = obj.get::<_, Object>(&key)?.unwrap();
+                        let napi_val = Object::to_napi_value(env, value)?;
+                        let dtype = Wrap::<DataType>::from_napi_value(env, napi_val)?;
+
+                        Ok(Field::new(key, dtype.0))
                     })
-                    .collect();
+                    .collect::<Result<_>>()?;
                 Ok(Wrap(Schema::from(fields)))
             }
             _ => {
@@ -803,14 +802,10 @@ impl ToNapiValue for Wrap<DataType> {
             DataType::List(inner) => {
                 let env_ctx = Env::from_raw(env);
                 let mut obj = env_ctx.create_object()?;
-
-                let mut inner_arr = env_ctx.create_array(1)?;
                 let wrapped = Wrap(*inner);
 
-                inner_arr.set(0, wrapped)?;
-
                 obj.set("variant", "List")?;
-                obj.set("inner", vec![inner_arr])?;
+                obj.set("inner", vec![wrapped])?;
                 Object::to_napi_value(env, obj)
             }
             DataType::Date => String::to_napi_value(env, "Date".to_owned()),
@@ -821,7 +816,6 @@ impl ToNapiValue for Wrap<DataType> {
 
                 inner_arr.set(0, tu.to_ascii())?;
                 inner_arr.set(1, tz)?;
-
 
                 obj.set("variant", "Datetime")?;
                 obj.set("inner", inner_arr)?;
@@ -842,7 +836,6 @@ impl ToNapiValue for Wrap<DataType> {
                     fld_obj.set("name", name)?;
                     fld_obj.set("dtype", dtype)?;
                     js_flds.set(idx as u32, fld_obj)?;
-
                 }
                 obj.set("variant", "Struct")?;
                 obj.set("inner", vec![js_flds])?;

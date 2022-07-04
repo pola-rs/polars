@@ -673,7 +673,6 @@ impl AnonymousScan for JsonScan {
             .with_chunk_size(self.batch_size)
             .with_n_rows(scan_opts.n_rows)
             .finish()
-
     }
 
     fn schema(&self, infer_schema_length: Option<usize>) -> polars::prelude::Result<Schema> {

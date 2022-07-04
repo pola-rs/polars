@@ -2,7 +2,7 @@
 import pl from "@polars";
 import {Stream} from "stream";
 import fs from "fs";
-describe.only("dataframe", () => {
+describe("dataframe", () => {
   const df = pl.DataFrame([
     pl.Series("foo", [1, 2, 9], pl.Int16),
     pl.Series("bar", [6, 2, 8], pl.Int16),
@@ -1038,17 +1038,20 @@ describe.only("dataframe", () => {
     ]);
     expect(actual).toFrameEqual(expected);
   });
-  test.only("pivot", () => {
-    const df = pl.DataFrame({"a": [1, 2, 3], "b": [[1, 1], [2, 2], [3, 3]]});
+  test("pivot", () => {
+    const df = pl.DataFrame({
+      "a": pl.Series([1, 2, 3]).cast(pl.Int32),
+      "b": pl.Series([[1, 1], [2, 2], [3, 3]]).cast(pl.List(pl.Int32))
+    });
 
     const expected = pl.DataFrame(
       {
         "a": pl.Series([1, 2, 3]).cast(pl.Int32),
-        "1": pl.Series([[1, 1], null, null]).cast(pl.Int32),
-        "2": pl.Series([null, [2, 2], null]).cast(pl.Int32),
+        "1": pl.Series([[1, 1], null, null]).cast(pl.List(pl.Int32)),
+        "2": pl.Series([null, [2, 2], null]).cast(pl.List(pl.Int32)),
         "3": pl.Series([null, null, [3, 3]]).cast(pl.List(pl.Int32)),
       }
-    );
+    ).select("a", "1", "2", "3");
 
     const actual  = df.pivot("b", {index:"a", columns:"a", aggregateFunc:"first", sortColumns:true});
 
@@ -1492,13 +1495,13 @@ describe("create", () => {
       bool: pl.Bool,
       date: pl.Date,
       date_nulls: pl.Date,
-      datetime: pl.Datetime,
-      datetime_nulls: pl.Datetime,
+      datetime: pl.Datetime("ms"),
+      datetime_nulls: pl.Datetime("ms"),
       string: pl.Utf8,
       string_nulls: pl.Utf8,
       categorical: pl.Categorical,
       categorical_nulls: pl.Categorical,
-      list: pl.List,
+      list: pl.List(pl.Float64),
       float_64: pl.Float64,
       float_64_nulls: pl.Float64,
       uint_64: pl.UInt64,
@@ -1519,7 +1522,7 @@ describe("create", () => {
   });
   test("from series-array", () => {
     const s1 = pl.Series("num", [1, 2, 3]);
-    const s2 = pl.Series("date", [null, Date.now(), Date.now()], pl.Datetime);
+    const s2 = pl.Series("date", [null, Date.now(), Date.now()], pl.Datetime("ms"));
     const df = pl.DataFrame([s1, s2]);
     expect(df.getColumn("num")).toSeriesEqual(s1);
     expect(df.getColumn("date")).toSeriesEqual(s2);
