@@ -1477,7 +1477,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             **kwargs,
         )
 
-    def to_numpy(self) -> "np.ndarray":
+    def to_numpy(self) -> np.ndarray:
         """
         Convert DataFrame to a 2d numpy array.
         This operation clones data.

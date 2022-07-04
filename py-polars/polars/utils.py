@@ -41,7 +41,7 @@ def _process_null_values(
 
 
 # https://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy
-def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> "np.ndarray":
+def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
     """
 
     Parameters

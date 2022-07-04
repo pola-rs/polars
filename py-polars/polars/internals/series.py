@@ -2119,7 +2119,7 @@ class Series:
         """
         return self.dtype is Utf8
 
-    def view(self, ignore_nulls: bool = False) -> "np.ndarray":
+    def view(self, ignore_nulls: bool = False) -> np.ndarray:
         """
         Get a view into this Series data with a numpy array. This operation doesn't clone data, but does not include
         missing values. Don't use this unless you know what you are doing.
@@ -2146,7 +2146,7 @@ class Series:
         array.setflags(write=False)
         return array
 
-    def __array__(self, dtype: Any = None) -> "np.ndarray":
+    def __array__(self, dtype: Any = None) -> np.ndarray:
         if dtype:
             return self.to_numpy().__array__(dtype)
         else:
@@ -2154,7 +2154,7 @@ class Series:
 
     def __array_ufunc__(
         self,
-        ufunc: "np.ufunc",
+        ufunc: np.ufunc,
         method: str,
         *inputs: Any,
         **kwargs: Any,
@@ -2235,7 +2235,7 @@ class Series:
 
     def to_numpy(
         self, *args: Any, zero_copy_only: bool = False, **kwargs: Any
-    ) -> "np.ndarray":
+    ) -> np.ndarray:
         """
         Convert this Series to numpy. This operation clones data but is completely safe.
 
