@@ -1258,6 +1258,9 @@ def test_lazy_schema() -> None:
     ).lazy()
     assert lf.dtypes == [pl.Int64, pl.Float64, pl.Utf8]
 
+    lfe = lf.cleared()
+    assert lfe.schema == lf.schema
+
 
 def test_deadlocks_3409() -> None:
     assert (

@@ -2352,9 +2352,15 @@ class Series:
 
         return wrap_s(f(idx_array, value))
 
-    def clone(self) -> Series:
+    def cleared(self) -> "Series":
         """
-        Cheap deep clones.
+        Create an empty copy of the current Series, with identical name/dtype but no data.
+        """
+        return self.limit(0) if len(self) > 0 else self.clone()
+
+    def clone(self) -> "Series":
+        """
+        Very cheap deepcopy/clone.
         """
         return wrap_s(self._s.clone())
 

@@ -85,6 +85,9 @@ def test_init_only_columns() -> None:
         assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8, pl.List]
         assert getattr(df.schema["d"], "inner") == pl.UInt8
 
+        dfe = df.cleared()
+        assert (df.schema == dfe.schema) and (dfe.shape == df.shape)
+
 
 def test_special_char_colname_init() -> None:
     from string import punctuation
@@ -172,6 +175,9 @@ def test_init_dict() -> None:
         {"a": [1, 2, 3], "b": [4, 5, 6]}, columns=[("c", pl.Int8), ("d", pl.Int16)]
     )
     assert df.schema == {"c": pl.Int8, "d": pl.Int16}
+
+    dfe = df.cleared()
+    assert (df.schema == dfe.schema) and (len(dfe) == 0)
 
 
 def test_init_ndarray() -> None:
