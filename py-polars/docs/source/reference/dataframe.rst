@@ -81,6 +81,7 @@ Manipulation/ selection
 .. autosummary::
    :toctree: api/
 
+    DataFrame.cleared
     DataFrame.clone
     DataFrame.distinct
     DataFrame.drop

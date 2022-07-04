@@ -631,7 +631,7 @@ def test_empty() -> None:
     )
 
     a = pl.Series(name="a", values=[1, 2, 3], dtype=pl.Int16)
-    empty_a = a.clone(empty=True)
+    empty_a = a.cleared()
     assert a.dtype == empty_a.dtype
     assert len(empty_a) == 0
 

@@ -1258,7 +1258,7 @@ def test_lazy_schema() -> None:
     ).lazy()
     assert lf.dtypes == [pl.Int64, pl.Float64, pl.Utf8]
 
-    lfe = lf.clone(empty=True)
+    lfe = lf.cleared()
     assert lfe.schema == lf.schema
 
 
