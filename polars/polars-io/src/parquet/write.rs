@@ -4,7 +4,6 @@ use arrow::chunk::Chunk;
 use arrow::datatypes::DataType as ArrowDataType;
 use arrow::datatypes::PhysicalType;
 use arrow::error::Error as ArrowError;
-use arrow::io::parquet::read::ParquetError;
 use arrow::io::parquet::write::{self, FileWriter, *};
 use arrow::io::parquet::write::{DynIter, DynStreamingIterator, Encoding};
 use polars_core::prelude::*;
@@ -128,12 +127,8 @@ where
         let row_group_iter = rb_iter.filter_map(|batch| match batch.len() {
             0 => None,
             _ => {
-                let row_group = create_serializer(
-                    batch,
-                    parquet_schema.fields().to_vec(),
-                    encodings.clone(),
-                    options,
-                );
+                let row_group =
+                    create_serializer(batch, parquet_schema.fields().to_vec(), &encodings, options);
 
                 Some(row_group)
             }
@@ -152,7 +147,7 @@ where
 fn create_serializer(
     batch: Chunk<Box<dyn Array>>,
     fields: Vec<ParquetType>,
-    encodings: Vec<Vec<Encoding>>,
+    encodings: &[Vec<Encoding>],
     options: WriteOptions,
 ) -> std::result::Result<RowGroupIter<'static, ArrowError>, ArrowError> {
     let columns = batch
@@ -165,11 +160,6 @@ fn create_serializer(
             encoded_columns
                 .into_iter()
                 .map(|encoded_pages| {
-                    let encoded_pages = DynIter::new(
-                        encoded_pages
-                            .into_iter()
-                            .map(|x| x.map_err(|e| ParquetError::General(e.to_string()))),
-                    );
                     encoded_pages
                         .map(|page| {
                             compress(page?, vec![], options.compression).map_err(|x| x.into())
