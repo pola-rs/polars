@@ -94,9 +94,6 @@ def numpy_to_pyseries(
     """
     Construct a PySeries from a numpy array.
     """
-    if not _NUMPY_AVAILABLE:
-        raise ImportError("'numpy' is required for this functionality.")
-
     if not values.flags["C_CONTIGUOUS"]:
         values = np.array(values)
 
