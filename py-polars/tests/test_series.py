@@ -219,17 +219,8 @@ def test_various() -> None:
     assert a.len() == 2
     assert len(a) == 2
 
-    for b in (
-        a.slice(1, 10),
-        a.slice(1, 1),
-        a.slice(1, None),
-        a.slice(1),
-    ):
-        assert b.len() == 1
-        assert b.series_equal(pl.Series("b", [2]))
-
-    a.append(b)
-    assert a.series_equal(pl.Series("b", [1, 2, 2]))
+    a.append(a.clone())
+    assert a.series_equal(pl.Series("b", [1, 2, 1, 2]))
 
     a = pl.Series("a", range(20))
     assert a.head(5).len() == 5
@@ -659,6 +650,29 @@ def test_is_in() -> None:
     df = pl.DataFrame({"a": [1.0, 2.0], "b": [1, 4]})
 
     assert df.select(pl.col("a").is_in(pl.col("b"))).to_series() == [True, False]
+
+
+def test_slice() -> None:
+    s = pl.Series(name="a", values=[0, 1, 2, 3, 4, 5], dtype=pl.UInt8)
+    for srs_slice, expected in (
+        [s.slice(2, 3), [2, 3, 4]],
+        [s.slice(4, 1), [4]],
+        [s.slice(4, None), [4, 5]],
+        [s.slice(3), [3, 4, 5]],
+        [s.slice(-2), [4, 5]],
+    ):
+        assert srs_slice.to_list() == expected  # type: ignore[attr-defined]
+
+    for py_slice in (
+        slice(1, 2),
+        slice(0, 2, 2),
+        slice(3, -3, -1),
+        slice(1, None, -2),
+        slice(-1, -3, -1),
+        slice(-3, None, -3),
+    ):
+        # confirm series slice matches python slice
+        assert s[py_slice].to_list() == s.to_list()[py_slice]
 
 
 def test_str_slice() -> None:

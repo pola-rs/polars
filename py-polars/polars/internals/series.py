@@ -41,6 +41,7 @@ from polars.internals.construction import (
     sequence_to_pyseries,
     series_to_pyseries,
 )
+from polars.internals.functions import PolarsSlice
 from polars.utils import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
@@ -479,12 +480,7 @@ class Series:
 
         # slice
         if isinstance(item, slice):
-            start, stop, stride = item.indices(self.len())
-            out = self.slice(start, stop - start)
-            if stride != 1:
-                return out.take_every(stride)
-            else:
-                return out
+            return PolarsSlice(self).apply(item)
 
         raise NotImplementedError
 

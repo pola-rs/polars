@@ -587,14 +587,25 @@ def test_take_every() -> None:
 
 
 def test_slice() -> None:
-    df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
-    expected = pl.DataFrame({"a": [1, 3], "b": ["b", "c"]})
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
+    expected = pl.DataFrame({"a": [2, 3], "b": ["b", "c"]})
     for slice_params in (
         [1, 10],  # slice > len(df)
         [1, 2],  # slice == len(df)
         [1],  # optional len
     ):
         assert df.slice(*slice_params).frame_equal(expected)
+
+    for py_slice in (
+        slice(1, 2),
+        slice(0, 2, 2),
+        slice(3, -3, -1),
+        slice(1, None, -2),
+        slice(-1, -3, -1),
+        slice(-3, None, -3),
+    ):
+        # confirm frame slice matches python slice
+        assert df[py_slice].rows() == df.rows()[py_slice]
 
 
 def test_head_tail_limit() -> None:

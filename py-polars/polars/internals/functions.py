@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import Sequence, overload
+from typing import Sequence, Union, overload
 
 from polars import internals as pli
 from polars.datatypes import Date
@@ -255,3 +255,107 @@ def date_range(
         dt_range = dt_range.cast(Date)
 
     return dt_range
+
+
+FrameOrSeries = Union["pli.DataFrame", "pli.Series"]
+
+# TODO:
+# class LazyPolarsSlice:
+
+
+class PolarsSlice:
+    """
+    Apply python slice object to Polars DataFrame or Series,
+    with full support for negative indexing and/or stride.
+    """
+
+    stop: int
+    start: int
+    stride: int
+    slice_length: int
+    obj: FrameOrSeries
+
+    def __init__(self, obj: FrameOrSeries):
+        self.obj = obj
+
+    @staticmethod
+    def _as_original(lazy: "pli.LazyFrame", obj: FrameOrSeries) -> FrameOrSeries:
+        """
+        Return lazy variant back to its original type.
+        """
+        frame = lazy.collect()
+        return frame if isinstance(obj, pli.DataFrame) else frame.to_series()
+
+    @staticmethod
+    def _lazify(obj: FrameOrSeries) -> "pli.LazyFrame":
+        """
+        Make lazy to ensure efficent/consistent handling.
+        """
+        return obj.lazy() if isinstance(obj, pli.DataFrame) else obj.to_frame().lazy()
+
+    def _slice_positive(self, obj: "pli.LazyFrame") -> "pli.LazyFrame":
+        """
+        Logic for slices with positive stride.
+        """
+        return obj.slice(self.start, self.slice_length).take_every(self.stride)
+
+    def _slice_negative(self, obj: "pli.LazyFrame") -> "pli.LazyFrame":
+        """
+        Logic for slices with negative stride.
+        """
+        stride = abs(self.stride)
+        lazyslice = obj.slice(self.stop + 1, self.slice_length)
+        if self.slice_length == 1:
+            return lazyslice
+        else:
+            lazyslice = lazyslice.reverse()
+            return lazyslice.take_every(stride) if (stride > 1) else lazyslice
+
+    def _slice_setup(self, s: slice) -> None:
+        """
+        Normalise slice bounds, identify unbounded and/or zero-length slices.
+        """
+        obj_len = len(self.obj)
+        start, stop, stride = slice(s.start, s.stop, s.step).indices(obj_len)
+        if stride >= 1:
+            self.is_unbounded = start <= 0 and stop >= obj_len
+        else:
+            self.is_unbounded = stop is None and (
+                start is None or (start >= obj_len - 1)
+            )
+        self._positive_indices = start >= 0 and stop >= 0
+        self.slice_length = (
+            0
+            if self.obj.is_empty()
+            or (
+                (start == stop)
+                or (stride > 0 and start > stop)
+                or (stride < 0 and start < stop)
+            )
+            else abs(stop - start)
+        )
+        self.start, self.stop, self.stride = start, stop, stride
+
+    def apply(self, s: slice) -> FrameOrSeries:
+        """
+        Apply a slice operation, taking advantage of any potential fast paths.
+        """
+        self._slice_setup(s)
+
+        # check for fast-paths / early-exit
+        if self.slice_length == 0:
+            return self.obj.cleared()
+
+        elif self.is_unbounded and self.stride in (-1, 1):
+            return self.obj.reverse() if (self.stride < 0) else self.obj.clone()
+
+        elif self._positive_indices and self.stride == 1:
+            return self.obj.slice(self.start, self.slice_length)
+
+        lazyobj = self._lazify(self.obj)
+        sliced = (
+            self._slice_positive(lazyobj)
+            if self.stride > 0
+            else self._slice_negative(lazyobj)
+        )
+        return self._as_original(sliced, self.obj)
