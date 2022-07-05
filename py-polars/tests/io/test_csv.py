@@ -103,6 +103,32 @@ a,b,c
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Int64]
 
 
+def test_dtype_overwrite_with_column_name_selection() -> None:
+    csv = """
+a,b,c,d
+1,2,3,4
+1,2,3,4
+"""
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, columns=["c", "b", "d"], dtypes=[pl.Int32, pl.Utf8])
+    assert df.dtypes == [pl.Utf8, pl.Int32, pl.Int64]
+
+
+def test_dtype_overwrite_with_column_idx_selection() -> None:
+    csv = """
+a,b,c,d
+1,2,3,4
+1,2,3,4
+"""
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, columns=[2, 1, 3], dtypes=[pl.Int32, pl.Utf8])
+    # Columns without an explicit dtype set will get pl.Utf8 if dtypes is a list
+    # if the column selection is done with column indices instead of column names.
+    assert df.dtypes == [pl.Utf8, pl.Int32, pl.Utf8]
+    # Projections are sorted.
+    assert df.columns == ["b", "c", "d"]
+
+
 def test_partial_column_rename() -> None:
     csv = """
 a,b,c

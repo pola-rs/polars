@@ -17,7 +17,7 @@ except ImportError:  # pragma: no cover
     _PYARROW_AVAILABLE = False
 
 from polars.convert import from_arrow
-from polars.datatypes import DataType
+from polars.datatypes import DataType, Utf8
 from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
 
@@ -259,6 +259,32 @@ def read_csv(
         if new_columns:
             return update_columns(df, new_columns)
         return df
+
+    if projection and dtypes and isinstance(dtypes, list):
+        if len(projection) < len(dtypes):
+            raise ValueError(
+                "More dtypes overrides are specified than there are selected columns."
+            )
+
+        # Fix list of dtypes when used together with projection as polars CSV reader
+        # wants a list of dtypes for the x first columns before it does the projection.
+        dtypes_list: list[type[DataType]] = [Utf8] * (max(projection) + 1)
+
+        for idx, column_idx in enumerate(projection):
+            if idx < len(dtypes):
+                dtypes_list[column_idx] = dtypes[idx]
+
+        dtypes = dtypes_list
+
+    if columns and dtypes and isinstance(dtypes, list):
+        if len(columns) < len(dtypes):
+            raise ValueError(
+                "More dtypes overrides are specified than there are selected columns."
+            )
+
+        # Map list of dtypes when used together with selected columns as a dtypes dict
+        # so the dtypes are applied to the correct column instead of the first x columns.
+        dtypes = {column: dtype for column, dtype in zip(columns, dtypes)}
 
     if new_columns and dtypes and isinstance(dtypes, dict):
         current_columns = None
