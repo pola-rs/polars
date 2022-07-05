@@ -1,11 +1,10 @@
 # -------------------------------------------------
 # Validate Series behaviour with parameteric tests
 # -------------------------------------------------
-import random
 from typing import Optional
 
 from hypothesis import given, settings
-from hypothesis.strategies import integers, sampled_from
+from hypothesis.strategies import sampled_from
 
 import polars as pl
 from polars.testing import series  # , verify_series_and_expr_api
