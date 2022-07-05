@@ -70,7 +70,8 @@ features = [
   "concat_str",
   "row_hash",
   "reinterpret",
-  "decompress-fast",
+  # Use "decompress" instead of "decompress-fast" till zlib-ng is fixed.
+  "decompress",
   "mode",
   "extract_jsonpath",
   "lazy_regex",
