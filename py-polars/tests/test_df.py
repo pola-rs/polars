@@ -689,8 +689,9 @@ def test_groupby() -> None:
     # )
     assert df.groupby("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
 
-    df_groups = df.groupby("a").groups().sort("a")
-    assert df_groups["a"].series_equal(pl.Series("a", ["a", "b", "c"]))
+    with pytest.deprecated_call():
+        df_groups = df.groupby("a").groups().sort("a")
+        assert df_groups["a"].series_equal(pl.Series("a", ["a", "b", "c"]))
 
     with pytest.deprecated_call():
         # TODO: find a way to avoid indexing into GroupBy
@@ -699,9 +700,10 @@ def test_groupby() -> None:
             if subdf["a"][0] == "b":
                 assert subdf.shape == (3, 3)
 
-    assert df.groupby("a").get_group("c").shape == (1, 3)
-    assert df.groupby("a").get_group("b").shape == (3, 3)
-    assert df.groupby("a").get_group("a").shape == (2, 3)
+    with pytest.deprecated_call():
+        assert df.groupby("a").get_group("c").shape == (1, 3)
+        assert df.groupby("a").get_group("b").shape == (3, 3)
+        assert df.groupby("a").get_group("a").shape == (2, 3)
 
     # Use lazy API in eager groupby
     assert df.groupby("a").agg([pl.sum("b")]).shape == (3, 2)
@@ -2006,9 +2008,6 @@ def test_get_item() -> None:
     # expression
     assert df.select(pl.col("a")).frame_equal(pl.DataFrame({"a": [1.0, 2.0]}))
 
-    # numpy array
-    assert df[np.array([True, False])].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
-
     # tuple. The first element refers to the rows, the second element to columns
     assert df[:, :].frame_equal(df)
 
@@ -2025,12 +2024,16 @@ def test_get_item() -> None:
     assert df[::2].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
 
     # numpy array; assumed to be row indices if integers, or columns if strings
-    # TODO: add boolean mask support
     df[np.array([1])].frame_equal(pl.DataFrame({"a": [2.0], "b": [4]}))
     df[np.array(["a"])].frame_equal(pl.DataFrame({"a": [1.0, 2.0]}))
     # note that we cannot use floats (even if they could be casted to integer without loss)
     with pytest.raises(NotImplementedError):
         _ = df[np.array([1.0])]
+    # using boolean masks with numpy is deprecated
+    with pytest.deprecated_call():
+        assert df[np.array([True, False])].frame_equal(
+            pl.DataFrame({"a": [1.0], "b": [3]})
+        )
 
     # sequences (lists or tuples; tuple only if length != 2)
     # if strings or list of expressions, assumed to be column names
