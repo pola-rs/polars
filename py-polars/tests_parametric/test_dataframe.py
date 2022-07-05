@@ -86,4 +86,3 @@ def test_frame_slice(df: pl.DataFrame) -> None:
         assert (
             sliced_py_data == sliced_df_data
         ), f"slice [{start}:{stop}:{step}] failed on df w/len={len(df)}"
-        print(f"[{start}:{stop}:{step}]")

@@ -606,7 +606,6 @@ def test_slice() -> None:
     ):
         # confirm frame slice matches python slice
         assert df[py_slice].rows() == df.rows()[py_slice]
-        print(df.rows()[py_slice])
 
 
 def test_head_tail_limit() -> None:

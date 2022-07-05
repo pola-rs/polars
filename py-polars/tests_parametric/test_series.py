@@ -39,4 +39,3 @@ def test_series_slice(
     sliced_pl_data = srs[s].to_list()
 
     assert sliced_py_data == sliced_pl_data, f"slice [{start}:{stop}:{step}] failed"
-    print((s, len(srs)))
