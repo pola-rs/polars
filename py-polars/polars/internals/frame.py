@@ -34,6 +34,7 @@ from polars.internals.construction import (
     sequence_to_pydf,
     series_to_pydf,
 )
+from polars.internals.functions import PolarsSlice
 from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
@@ -1735,30 +1736,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         # df[:]
         if isinstance(item, slice):
-            # special case df[::-1]
-            if item.start is None and item.stop is None and item.step == -1:
-                return self.reverse()
-
-            if getattr(item, "end", False):
-                raise ValueError("A slice with steps larger than 1 is not supported.")
-            if item.start is None:
-                start = 0
-            else:
-                start = item.start
-            if item.stop is None:
-                stop = self.height
-            else:
-                stop = item.stop
-
-            length = stop - start
-            if item.step is None:
-                # df[start:stop]
-                return self.slice(start, length)
-            else:
-                # df[start:stop:step]
-                return self.select(
-                    pli.col("*").slice(start, length).take_every(item.step)
-                )
+            return PolarsSlice(self).apply(item)  # type: ignore
 
         # select rows by numpy mask or index
         # df[[1, 2, 3]]
