@@ -1,7 +1,5 @@
-from test_series import verify_series_and_expr_api
-
 import polars as pl
-from polars import testing
+from polars.testing import assert_series_equal, verify_series_and_expr_api
 
 
 def test_horizontal_agg(fruits_cars: pl.DataFrame) -> None:
@@ -54,21 +52,21 @@ def test_flatten_explode() -> None:
     expected = pl.Series("a", ["H", "e", "l", "l", "o", "W", "o", "r", "l", "d"])
 
     result: pl.Series = df.to_frame().select(pl.col("a").flatten())[:, 0]  # type: ignore
-    testing.assert_series_equal(result, expected)
+    assert_series_equal(result, expected)
 
     result: pl.Series = df.to_frame().select(pl.col("a").explode())[:, 0]  # type: ignore
-    testing.assert_series_equal(result, expected)
+    assert_series_equal(result, expected)
 
 
 def test_min_nulls_consistency() -> None:
     df = pl.DataFrame({"a": [None, 2, 3], "b": [4, None, 6], "c": [7, 5, 0]})
     out = df.select([pl.min(["a", "b", "c"])]).to_series()
     expected = pl.Series("min", [4, 2, 0])
-    testing.assert_series_equal(out, expected)
+    assert_series_equal(out, expected)
 
     out = df.select([pl.max(["a", "b", "c"])]).to_series()
     expected = pl.Series("max", [7, 5, 6])
-    testing.assert_series_equal(out, expected)
+    assert_series_equal(out, expected)
 
 
 def test_list_join_strings() -> None:

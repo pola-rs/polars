@@ -21,15 +21,6 @@ def test_cum_agg() -> None:
     verify_series_and_expr_api(s, pl.Series("a", [1, 2, 6, 12]), "cumprod")
 
 
-# TODO: exclude obvious/known overflow inside the strategy before commenting back in
-# @given(s=series(allowed_dtypes=_NUMERIC_COL_TYPES, name="a"))
-# def test_cum_agg_extra(s: pl.Series) -> None:
-#     # confirm that ops on generated Series match equivalent Expr call
-#     # note: testing codepath-equivalence, not correctness.
-#     for op in ("cumsum", "cummin", "cummax", "cumprod"):
-#         verify_series_and_expr_api(s, None, op)
-
-
 def test_init_inputs(monkeypatch: Any) -> None:
     for flag in [False, True]:
         monkeypatch.setattr(pl.internals.construction, "_PYARROW_AVAILABLE", flag)
