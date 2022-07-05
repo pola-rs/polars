@@ -794,11 +794,11 @@ def read_parquet(
     parallel
         Read the parquet file in parallel. The single threaded reader consumes less memory.
     row_count_name
-        If not None, this will insert a row count column with give name into the DataFrame
+        If not None, this will insert a row count column with give name into the DataFrame.
     row_count_offset
-        Offset to start the row_count column (only use if the name is set)
+        Offset to start the row_count column (only use if the name is set).
     **kwargs
-        kwargs for [pyarrow.parquet.read_table](https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html)
+        kwargs for `pyarrow.parquet.read_table <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html>`_.
 
     Returns
     -------

@@ -1639,7 +1639,7 @@ class Expr:
         """
         Apply window function over a subgroup.
         This is similar to a groupby + aggregation + self join.
-        Or similar to [window functions in Postgres](https://www.postgresql.org/docs/9.1/tutorial-window.html)
+        Or similar to `window functions in Postgres <https://www.postgresql.org/docs/current/tutorial-window.html>`_.
 
         Parameters
         ----------
@@ -1793,9 +1793,9 @@ class Expr:
         The output of this custom function must be a Series.
         If you want to apply a custom function elementwise over single values see `apply`.
         A use case for map is when you want to transform an expression
-        with a third-party library
+        with a third-party library.
 
-        [read more in the book](https://pola-rs.github.io/polars-book/user-guide/howcani/apply/udfs.html)
+        Read more in `the book <https://pola-rs.github.io/polars-book/user-guide/howcani/apply/udfs.html>`_.
 
         Parameters
         ----------
@@ -4574,10 +4574,9 @@ class ExprStringNameSpace:
         datatype
             Date | Datetime | Time.
         fmt
-            Format to use, see the following link for examples:
-            https://docs.rs/chrono/latest/chrono/format/strftime/index.html
-
-            example: "%y-%m-%d".
+            Format to use, refer to the
+            `chrono strftime documentation <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for specification. Example: ``"%y-%m-%d"``.
         strict
             Raise an error if any conversion fails.
         exact
@@ -4777,7 +4776,7 @@ class ExprStringNameSpace:
     def ljust(self, width: int, fillchar: str = " ") -> Expr:
         """
         Return the string left justified in a string of length width.
-        Padding is done using the specified ``fillchar``,
+        Padding is done using the specified ``fillchar``.
         The original string is returned if width is less than or equal to ``len(s)``.
 
         Parameters
@@ -4792,7 +4791,7 @@ class ExprStringNameSpace:
     def rjust(self, width: int, fillchar: str = " ") -> Expr:
         """
         Return the string right justified in a string of length width.
-        Padding is done using the specified ``fillchar``,
+        Padding is done using the specified ``fillchar``.
         The original string is returned if ``width`` is less than or equal to ``len(s)``.
 
         Parameters
@@ -4846,23 +4845,97 @@ class ExprStringNameSpace:
 
     def ends_with(self, sub: str) -> Expr:
         """
-        Check if string values end with a substring
+        Check if string values end with a substring.
 
         Parameters
         ----------
         sub
             Suffix
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"fruits": ["apple", "mango", None]})
+        >>> df.with_column(
+        ...     pl.col("fruits").str.ends_with("go").alias("has_suffix"),
+        ... )
+        shape: (3, 2)
+        ┌────────┬────────────┐
+        │ fruits ┆ has_suffix │
+        │ ---    ┆ ---        │
+        │ str    ┆ bool       │
+        ╞════════╪════════════╡
+        │ apple  ┆ false      │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ mango  ┆ true       │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null   ┆ null       │
+        └────────┴────────────┘
+
+        Using ``ends_with`` as a filter condition:
+
+        >>> df.filter(pl.col("fruits").str.ends_with("go"))
+        shape: (1, 1)
+        ┌────────┐
+        │ fruits │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │ mango  │
+        └────────┘
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+
         """
         return wrap_expr(self._pyexpr.str_ends_with(sub))
 
     def starts_with(self, sub: str) -> Expr:
         """
-        Check if string values start with a substring
+        Check if string values start with a substring.
 
         Parameters
         ----------
         sub
             Prefix
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"fruits": ["apple", "mango", None]})
+        >>> df.with_column(
+        ...     pl.col("fruits").str.starts_with("app").alias("has_prefix"),
+        ... )
+        shape: (3, 2)
+        ┌────────┬────────────┐
+        │ fruits ┆ has_prefix │
+        │ ---    ┆ ---        │
+        │ str    ┆ bool       │
+        ╞════════╪════════════╡
+        │ apple  ┆ true       │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ mango  ┆ false      │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null   ┆ null       │
+        └────────┴────────────┘
+
+        Using ``starts_with`` as a filter condition:
+
+        >>> df.filter(pl.col("fruits").str.starts_with("app"))
+        shape: (1, 1)
+        ┌────────┐
+        │ fruits │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │ apple  │
+        └────────┘
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+
         """
         return wrap_expr(self._pyexpr.str_starts_with(sub))
 
@@ -4871,12 +4944,14 @@ class ExprStringNameSpace:
         Extract the first match of json string with provided JSONPath expression.
         Throw errors if encounter invalid json strings.
         All return value will be casted to Utf8 regardless of the original value.
-        Documentation on JSONPath standard: https://goessner.net/articles/JsonPath/
+
+        Documentation on JSONPath standard can be found
+        `here <https://goessner.net/articles/JsonPath/>`_.
 
         Parameters
         ----------
         json_path
-            A valid JSON path query string
+            A valid JSON path query string.
 
         Returns
         -------
@@ -4975,6 +5050,7 @@ class ExprStringNameSpace:
         ├╌╌╌╌╌╌╌╌╌┤
         │ null    │
         └─────────┘
+
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.str_hex_encode())
@@ -5399,7 +5475,10 @@ class ExprDateTimeNameSpace:
 
     def strftime(self, fmt: str) -> Expr:
         """
-        Format Date/datetime with a formatting rule: See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+        Format Date/datetime with a formatting rule.
+
+        See `chrono strftime/strptime <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_.
+
         """
         return wrap_expr(self._pyexpr.strftime(fmt))
 
@@ -5658,8 +5737,8 @@ class ExprDateTimeNameSpace:
         Set time unit a Series of type Datetime. This does not modify underlying data,
         and should be used to fix an incorrect time unit.
 
-        ..deprecated::
-            Use `with_time_unit`
+        .. deprecated::
+            Use :func:`with_time_unit` instead.
 
 
         Parameters
@@ -5675,13 +5754,13 @@ class ExprDateTimeNameSpace:
         """
         Set time zone for a Series of type Datetime.
 
-        ..deprecated::
-            Use `with_time_zone`
+        .. deprecated::
+            Use :func:`with_time_zone` instead.
 
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` Series
+            Time zone for the `Datetime` Series.
 
         """
         return wrap_expr(self._pyexpr).map(
@@ -5695,7 +5774,7 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` Series
+            Time zone for the `Datetime` Series.
 
         """
         return wrap_expr(self._pyexpr).map(
