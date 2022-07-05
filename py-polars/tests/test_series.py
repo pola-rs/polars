@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from typing import Any, Union
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -65,6 +66,11 @@ def test_init_inputs(monkeypatch: Any) -> None:
 
     # pandas
     assert pl.Series(pd.Series([1, 2])).dtype == pl.Int64
+
+    # numpy not available
+    with patch("polars.internals.series._NUMPY_AVAILABLE", False):
+        with pytest.raises(ValueError):
+            pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
 
     # Bad inputs
     with pytest.raises(ValueError):

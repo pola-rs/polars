@@ -5,13 +5,6 @@ from datetime import date, datetime, timedelta
 from inspect import isclass
 from typing import Any, Callable, Sequence, cast, overload
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal  # pragma: no cover
-
-import numpy as np
-
 from polars import internals as pli
 from polars.datatypes import (
     DataType,
@@ -57,6 +50,18 @@ try:
     _DOCUMENTING = False
 except ImportError:  # pragma: no cover
     _DOCUMENTING = True
+
+try:
+    import numpy as np
+
+    _NUMPY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _NUMPY_AVAILABLE = False
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal  # pragma: no cover
 
 
 def col(
@@ -675,7 +680,7 @@ def lit(
             return e
         return e.alias(name)
 
-    if isinstance(value, np.ndarray):
+    if _NUMPY_AVAILABLE and isinstance(value, np.ndarray):
         return lit(pli.Series("", value))
 
     if dtype:

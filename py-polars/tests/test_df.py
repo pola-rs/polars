@@ -242,6 +242,11 @@ def test_init_ndarray() -> None:
     with pytest.raises(ValueError):
         _ = pl.DataFrame(np.random.randn(2, 2, 2))
 
+    # numpy not available
+    with patch("polars.internals.frame._NUMPY_AVAILABLE", False):
+        with pytest.raises(ValueError):
+            pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
+
 
 # TODO: Remove this test case when removing deprecated behaviour
 def test_init_ndarray_deprecated() -> None:
