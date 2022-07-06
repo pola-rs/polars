@@ -141,10 +141,10 @@ class Expr:
     def __rmod__(self, other: Any) -> Expr:
         return wrap_expr(self.__to_pyexpr(other) % self._pyexpr)
 
-    def __pow__(self, power: float | Expr | int, modulo: None = None) -> Expr:
+    def __pow__(self, power: int | float | pli.Series | Expr) -> Expr:
         return self.pow(power)
 
-    def __rpow__(self, base: float | Expr | int) -> Expr:
+    def __rpow__(self, base: int | float | Expr) -> Expr:
         return pli.expr_to_lit_or_expr(base) ** self
 
     def __ge__(self, other: Any) -> Expr:
@@ -2076,7 +2076,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.tail(n))
 
-    def pow(self, exponent: float | Expr) -> Expr:
+    def pow(self, exponent: int | float | pli.Series | Expr) -> Expr:
         """
         Raise expression to the power of exponent.
         Examples

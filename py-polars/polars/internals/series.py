@@ -434,23 +434,19 @@ class Series:
             raise ValueError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
-    def __pow__(self, power: float, modulo: None = None) -> Series:
+    def __pow__(self, power: int | float | Series) -> Series:
         if self.is_datelike():
             raise ValueError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.power(self, power)  # type: ignore
+        return self.to_frame().select(pli.col(self.name).pow(power)).to_series()
 
     def __rpow__(self, other: Any) -> Series:
         if self.is_datelike():
             raise ValueError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.power(other, self)  # type: ignore
+        return self.to_frame().select(other ** pli.col(self.name)).to_series()
 
     def __neg__(self) -> Series:
         return 0 - self
