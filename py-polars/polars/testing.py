@@ -548,7 +548,7 @@ if HYPOTHESIS_INSTALLED:
         ...     # print(s)
         >>>
         >>> s = series(dtype=pl.Int32, max_size=5)
-        >>> s.example()
+        >>> s.example()  # doctest: +IGNORE_RESULT
         shape: (4,)
         Series: '' [i64]
         [
@@ -696,11 +696,11 @@ if HYPOTHESIS_INSTALLED:
         >>>
         >>> # generate LazyFrames with at least 1 column, random dtypes, and specific size:
         >>> df = dataframes(min_cols=1, lazy=True, max_size=5)
-        >>> df.example()
+        >>> df.example()  # doctest: +SKIP
         >>>
         >>> # generate DataFrames with known colnames, random dtypes (per test, not per-frame):
         >>> df_strategy = dataframes(columns(["x", "y", "z"]))
-        >>> df.example()
+        >>> df.example()  # doctest: +SKIP
         >>>
         >>> # generate frames with explicitly named/typed columns and a fixed size:
         >>> df_strategy = dataframes(
@@ -710,7 +710,7 @@ if HYPOTHESIS_INSTALLED:
         ...     ],
         ...     size=2,
         ... )
-        >>> df_strategy.example()
+        >>> df_strategy.example()  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌───────────┬────────────┐
         │ x         ┆ y          │
