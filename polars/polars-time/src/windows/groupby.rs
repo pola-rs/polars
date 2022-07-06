@@ -140,7 +140,7 @@ pub(crate) fn groupby_values_iter_full_lookbehind(
     tu: TimeUnit,
     start_offset: usize,
 ) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + '_ {
-    debug_assert_eq!(offset.nanoseconds(), period.nanoseconds());
+    debug_assert!(offset.nanoseconds() >= period.nanoseconds());
     debug_assert!(offset.negative);
 
     let add = match tu {
@@ -334,7 +334,7 @@ pub fn groupby_values(
     // we have a (partial) lookbehind window
     if offset.negative {
         // only lookbehind
-        if offset.nanoseconds() == period.nanoseconds() {
+        if offset.nanoseconds() >= period.nanoseconds() {
             let vals = thread_offsets
                 .par_iter()
                 .copied()
