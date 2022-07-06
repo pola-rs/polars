@@ -7,10 +7,10 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 import pytz
-from test_series import verify_series_and_expr_api
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
+from polars.testing import verify_series_and_expr_api
 
 
 def test_fill_null() -> None:

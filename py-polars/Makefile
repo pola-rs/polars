@@ -27,8 +27,13 @@ test: venv
 	$(PYTHON_BIN)/maturin develop
 	$(PYTHON) -m pytest tests
 
+test-all: venv
+	$(PYTHON_BIN)/maturin develop
+	$(PYTHON) -m pytest tests
+	$(PYTHON) -m pytest tests_parametric
+
 test-with-cov: venv
-	@cd tests && ../$(PYTHON) -m pytest \
+	$(PYTHON) -m pytest \
 		--cov=polars \
 		--cov-report xml \
 		--cov-fail-under=85 \

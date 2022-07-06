@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from typing import Any, Union
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -18,15 +19,6 @@ def test_cum_agg() -> None:
     verify_series_and_expr_api(s, pl.Series("a", [1, 1, 1, 1]), "cummin")
     verify_series_and_expr_api(s, pl.Series("a", [1, 2, 3, 3]), "cummax")
     verify_series_and_expr_api(s, pl.Series("a", [1, 2, 6, 12]), "cumprod")
-
-
-# TODO: exclude obvious/known overflow inside the strategy before commenting back in
-# @given(s=series(allowed_dtypes=_NUMERIC_COL_TYPES, name="a"))
-# def test_cum_agg_extra(s: pl.Series) -> None:
-#     # confirm that ops on generated Series match equivalent Expr call
-#     # note: testing codepath-equivalence, not correctness.
-#     for op in ("cumsum", "cummin", "cummax", "cumprod"):
-#         verify_series_and_expr_api(s, None, op)
 
 
 def test_init_inputs(monkeypatch: Any) -> None:
@@ -65,6 +57,11 @@ def test_init_inputs(monkeypatch: Any) -> None:
 
     # pandas
     assert pl.Series(pd.Series([1, 2])).dtype == pl.Int64
+
+    # numpy not available
+    with patch("polars.internals.series._NUMPY_AVAILABLE", False):
+        with pytest.raises(ValueError):
+            pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
 
     # Bad inputs
     with pytest.raises(ValueError):
@@ -222,17 +219,8 @@ def test_various() -> None:
     assert a.len() == 2
     assert len(a) == 2
 
-    for b in (
-        a.slice(1, 10),
-        a.slice(1, 1),
-        a.slice(1, None),
-        a.slice(1),
-    ):
-        assert b.len() == 1
-        assert b.series_equal(pl.Series("b", [2]))
-
-    a.append(b)
-    assert a.series_equal(pl.Series("b", [1, 2, 2]))
+    a.append(a.clone())
+    assert a.series_equal(pl.Series("b", [1, 2, 1, 2]))
 
     a = pl.Series("a", range(20))
     assert a.head(5).len() == 5
@@ -630,6 +618,11 @@ def test_empty() -> None:
         pl.Series(dtype=pl.Int32), pl.Series(dtype=pl.Int64), check_dtype=False
     )
 
+    a = pl.Series(name="a", values=[1, 2, 3], dtype=pl.Int16)
+    empty_a = a.cleared()
+    assert a.dtype == empty_a.dtype
+    assert len(empty_a) == 0
+
 
 def test_describe() -> None:
     num_s = pl.Series([1, 2, 3])
@@ -657,6 +650,29 @@ def test_is_in() -> None:
     df = pl.DataFrame({"a": [1.0, 2.0], "b": [1, 4]})
 
     assert df.select(pl.col("a").is_in(pl.col("b"))).to_series() == [True, False]
+
+
+def test_slice() -> None:
+    s = pl.Series(name="a", values=[0, 1, 2, 3, 4, 5], dtype=pl.UInt8)
+    for srs_slice, expected in (
+        [s.slice(2, 3), [2, 3, 4]],
+        [s.slice(4, 1), [4]],
+        [s.slice(4, None), [4, 5]],
+        [s.slice(3), [3, 4, 5]],
+        [s.slice(-2), [4, 5]],
+    ):
+        assert srs_slice.to_list() == expected  # type: ignore[attr-defined]
+
+    for py_slice in (
+        slice(1, 2),
+        slice(0, 2, 2),
+        slice(3, -3, -1),
+        slice(1, None, -2),
+        slice(-1, -3, -1),
+        slice(-3, None, -3),
+    ):
+        # confirm series slice matches python slice
+        assert s[py_slice].to_list() == s.to_list()[py_slice]
 
 
 def test_str_slice() -> None:

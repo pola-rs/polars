@@ -4,6 +4,7 @@ from _pytest.capture import CaptureFixture
 
 import polars as pl
 from polars import col, lit, map_binary, when
+from polars.testing import assert_frame_equal
 
 
 def test_lazy() -> None:
@@ -48,6 +49,12 @@ def test_set_null() -> None:
     assert s[0] == 100
     assert s[1] is None
     assert s[2] is None
+
+
+def test_take_every() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["w", "x", "y", "z"]}).lazy()
+    expected_df = pl.DataFrame({"a": [1, 3], "b": ["w", "y"]})
+    assert_frame_equal(expected_df, df.take_every(2).collect())
 
 
 def test_agg() -> None:
@@ -1162,7 +1169,7 @@ def test_self_join() -> None:
     ).lazy()
 
     out = (
-        df.join(ldf=df, left_on="manager_id", right_on="employee_id", how="left")
+        df.join(other=df, left_on="manager_id", right_on="employee_id", how="left")
         .select(
             exprs=[
                 pl.col("employee_id"),
@@ -1258,6 +1265,9 @@ def test_lazy_schema() -> None:
     ).lazy()
     assert lf.dtypes == [pl.Int64, pl.Float64, pl.Utf8]
 
+    lfe = lf.cleared()
+    assert lfe.schema == lf.schema
+
 
 def test_deadlocks_3409() -> None:
     assert (
@@ -1279,3 +1289,21 @@ def test_deadlocks_3409() -> None:
         .with_columns([pl.col("col1").cumulative_eval(pl.element().map(lambda x: 0))])
         .to_dict(False)
     ) == {"col1": [0, 0, 0]}
+
+
+def test_predicate_count_vstack() -> None:
+    l1 = pl.DataFrame(
+        {
+            "k": ["x", "y"],
+            "v": [3, 2],
+        }
+    ).lazy()
+    l2 = pl.DataFrame(
+        {
+            "k": ["x", "y"],
+            "v": [5, 7],
+        }
+    ).lazy()
+    assert pl.concat([l1, l2]).filter(pl.count().over("k") == 2).collect()[
+        "v"
+    ].to_list() == [3, 2, 5, 7]

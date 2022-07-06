@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import Sequence, overload
+from typing import Sequence, Union, overload
 
 from polars import internals as pli
 from polars.datatypes import Date
@@ -211,7 +211,21 @@ def date_range(
         1985-01-04 00:00:00
         1985-01-05 12:00:00
         1985-01-07 00:00:00
+        1985-01-08 12:00:00
+        1985-01-10 00:00:00
+        1985-01-11 12:00:00
+        1985-01-13 00:00:00
+        1985-01-14 12:00:00
+        1985-01-16 00:00:00
+        1985-01-17 12:00:00
         ...
+        2015-06-14 00:00:00
+        2015-06-15 12:00:00
+        2015-06-17 00:00:00
+        2015-06-18 12:00:00
+        2015-06-20 00:00:00
+        2015-06-21 12:00:00
+        2015-06-23 00:00:00
         2015-06-24 12:00:00
         2015-06-26 00:00:00
         2015-06-27 12:00:00
@@ -255,3 +269,122 @@ def date_range(
         dt_range = dt_range.cast(Date)
 
     return dt_range
+
+
+FrameOrSeries = Union["pli.DataFrame", "pli.Series"]
+
+# TODO:
+# class LazyPolarsSlice:
+
+
+class PolarsSlice:
+    """
+    Apply python slice object to Polars DataFrame or Series,
+    with full support for negative indexing and/or stride.
+    """
+
+    stop: int
+    start: int
+    stride: int
+    slice_length: int
+    obj: FrameOrSeries
+
+    def __init__(self, obj: FrameOrSeries):
+        self.obj = obj
+
+    @staticmethod
+    def _as_original(lazy: "pli.LazyFrame", original: FrameOrSeries) -> FrameOrSeries:
+        """
+        Return lazy variant back to its original type.
+        """
+        frame = lazy.collect()
+        return frame if isinstance(original, pli.DataFrame) else frame.to_series()
+
+    @staticmethod
+    def _lazify(obj: FrameOrSeries) -> "pli.LazyFrame":
+        """
+        Make lazy to ensure efficent/consistent handling.
+        """
+        return obj.lazy() if isinstance(obj, pli.DataFrame) else obj.to_frame().lazy()
+
+    def _slice_positive(self, obj: "pli.LazyFrame") -> "pli.LazyFrame":
+        """
+        Logic for slices with positive stride.
+        """
+        # note: at this point stride is guaranteed to be > 1
+        return obj.slice(self.start, self.slice_length).take_every(self.stride)
+
+    def _slice_negative(self, obj: "pli.LazyFrame") -> "pli.LazyFrame":
+        """
+        Logic for slices with negative stride.
+        """
+        # apply slice before reversing (more efficient)
+        stride = abs(self.stride)
+        lazyslice = obj.slice(self.stop + 1, self.slice_length)
+
+        # potential early-exit if single row
+        if self.slice_length == 1:
+            return lazyslice
+        else:
+            # reverse frame, applying 'take_every' if stride > 1
+            lazyslice = lazyslice.reverse()
+            return lazyslice.take_every(stride) if (stride > 1) else lazyslice
+
+    def _slice_setup(self, s: slice) -> None:
+        """
+        Normalise slice bounds, identify unbounded and/or zero-length slices.
+        """
+        # can normalise slice indices as we know object size
+        obj_len = len(self.obj)
+        start, stop, stride = slice(s.start, s.stop, s.step).indices(obj_len)
+
+        # check if slice is actually unbounded
+        if stride >= 1:
+            self.is_unbounded = (start <= 0) and (stop >= obj_len)
+        else:
+            self.is_unbounded = (stop == -1) and (start >= obj_len - 1)
+
+        self._positive_indices = start >= 0 and stop >= 0
+
+        # determine slice length
+        if self.obj.is_empty():
+            self.slice_length = 0
+        elif self.is_unbounded:
+            self.slice_length = obj_len
+        else:
+            self.slice_length = (
+                0
+                if (
+                    (start == stop)
+                    or (stride > 0 and start > stop)
+                    or (stride < 0 and start < stop)
+                )
+                else abs(stop - start)
+            )
+        self.start, self.stop, self.stride = start, stop, stride
+
+    def apply(self, s: slice) -> FrameOrSeries:
+        """
+        Apply a slice operation, taking advantage of any potential fast paths.
+        """
+        # normalise slice
+        self._slice_setup(s)
+
+        # check for fast-paths / single-operation calls
+        if self.slice_length == 0:
+            return self.obj.cleared()
+
+        elif self.is_unbounded and self.stride in (-1, 1):
+            return self.obj.reverse() if (self.stride < 0) else self.obj.clone()
+
+        elif self._positive_indices and self.stride == 1:
+            return self.obj.slice(self.start, self.slice_length)
+        else:
+            # multi-operation call; make lazy
+            lazyobj = self._lazify(self.obj)
+            sliced = (
+                self._slice_positive(lazyobj)
+                if self.stride > 0
+                else self._slice_negative(lazyobj)
+            )
+            return self._as_original(sliced, self.obj)

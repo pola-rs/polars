@@ -5,8 +5,6 @@ from datetime import date, datetime, time, timedelta
 from itertools import zip_longest
 from typing import TYPE_CHECKING, Any, Iterable, Sequence
 
-import numpy as np
-
 from polars import internals as pli
 from polars.datatypes import (
     Categorical,
@@ -31,6 +29,9 @@ from polars.datatypes_constructor import (
 )
 from polars.utils import threadpool_size
 
+if TYPE_CHECKING:  # pragma: no cover
+    import pandas as pd
+
 try:
     from polars.polars import PyDataFrame, PySeries
 
@@ -38,18 +39,19 @@ try:
 except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
-if TYPE_CHECKING:  # pragma: no cover
-    import pandas as pd
+try:
+    import numpy as np
+
+    _NUMPY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _NUMPY_AVAILABLE = False
+
+try:
     import pyarrow as pa
 
     _PYARROW_AVAILABLE = True
-else:
-    try:
-        import pyarrow as pa
-
-        _PYARROW_AVAILABLE = True
-    except ImportError:  # pragma: no cover
-        _PYARROW_AVAILABLE = False
+except ImportError:  # pragma: no cover
+    _PYARROW_AVAILABLE = False
 
 
 ################################
@@ -415,28 +417,30 @@ def dict_to_pydf(
         data_series = _handle_columns_arg(data_series, columns=columns)
         return PyDataFrame(data_series)
 
-    all_numpy = True
-    for val in data.values():
-        # only start a thread pool from a reasonable size.
-        all_numpy = all_numpy and isinstance(val, np.ndarray) and len(val) > 1000
-        if not all_numpy:
-            break
+    if _NUMPY_AVAILABLE:
+        all_numpy = True
+        for val in data.values():
+            # only start a thread pool from a reasonable size.
+            all_numpy = all_numpy and isinstance(val, np.ndarray) and len(val) > 1000
+            if not all_numpy:
+                break
 
-    if all_numpy:
-        # yes, multi-threading was easier in python here
-        # we cannot run multiple threads that run python code
-        # and release the gil in pyo3
-        # it will deadlock.
+        if all_numpy:
+            # yes, multi-threading was easier in python here
+            # we cannot run multiple threads that run python code
+            # and release the gil in pyo3
+            # it will deadlock.
 
-        # dummy is threaded
-        import multiprocessing.dummy
+            # dummy is threaded
+            import multiprocessing.dummy
 
-        pool_size = threadpool_size()
-        pool = multiprocessing.dummy.Pool(pool_size)
-        data_series = pool.map(
-            lambda t: pli.Series(t[0], t[1]).inner(), [(k, v) for k, v in data.items()]
-        )
-        return PyDataFrame(data_series)
+            pool_size = threadpool_size()
+            pool = multiprocessing.dummy.Pool(pool_size)
+            data_series = pool.map(
+                lambda t: pli.Series(t[0], t[1]).inner(),
+                [(k, v) for k, v in data.items()],
+            )
+            return PyDataFrame(data_series)
 
     # fast path
     return PyDataFrame.read_dict(data)
