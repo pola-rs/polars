@@ -4883,7 +4883,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     def with_columns(
         self: DF,
-        exprs: pli.Expr | pli.Series | list[pli.Expr | pli.Series],
+        exprs: pli.Expr | pli.Series | Sequence[pli.Expr | pli.Series] | None = None,
+        **named_exprs: pli.Expr | pli.Series,
     ) -> DF:
         """
         Add or overwrite multiple columns in a DataFrame.
@@ -4893,9 +4894,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
         exprs
             List of Expressions that evaluate to columns.
 
+        **named_exprs
+            Named column Expressions, provided as kwargs.
+
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 3, 4],
@@ -4924,13 +4927,31 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴──────┴──────┴───────┘
-
+        ...
+        >>> df.with_columns(
+        ...     d=pl.col("a") * pl.col("b"),
+        ...     e=~pl.col("c"),
+        ... )
+        shape: (4, 5)
+        ┌─────┬──────┬───────┬──────┬───────┐
+        │ a   ┆ b    ┆ c     ┆ d    ┆ e     │
+        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---   │
+        │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ bool  │
+        ╞═════╪══════╪═══════╪══════╪═══════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ 0.5  ┆ false │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 2   ┆ 4.0  ┆ true  ┆ 8.0  ┆ false │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 3   ┆ 10.0 ┆ false ┆ 30.0 ┆ true  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
+        └─────┴──────┴───────┴──────┴───────┘
         """
-        if not isinstance(exprs, list):
+        if exprs is not None and not isinstance(exprs, Sequence):
             exprs = [exprs]
         return (
             self.lazy()
-            .with_columns(exprs)
+            .with_columns(exprs, **named_exprs)
             .collect(no_optimization=True, string_cache=False)
         )
 
