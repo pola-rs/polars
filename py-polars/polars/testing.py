@@ -373,7 +373,7 @@ if HYPOTHESIS_INSTALLED:
         name: str
         dtype: PolarsDataType | None = None
         strategy: SearchStrategy | None = None
-        null_probability: float = 0.0
+        null_probability: float | None = None
         unique: bool = False
 
         def __post_init__(self) -> None:
