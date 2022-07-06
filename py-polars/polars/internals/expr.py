@@ -286,7 +286,7 @@ class Expr:
         """
         Compute the square root of the elements
         """
-        return self**0.5
+        return self ** 0.5
 
     def log10(self) -> Expr:
         """
@@ -973,6 +973,7 @@ class Expr:
             Start index.
         length
             Length of the slice.
+
         Examples
         --------
 
@@ -1006,6 +1007,7 @@ class Expr:
             Expression to append
         upcast
             Cast both `Series` to the same supertype
+
         Examples
         --------
 
@@ -1801,6 +1803,7 @@ class Expr:
             Number of places to shift (may be negative).
         fill_value
             Fill None values with the result of this expression.
+
         Examples
         --------
 
@@ -2081,6 +2084,7 @@ class Expr:
     def min(self) -> Expr:
         """
         Get minimum value.
+
         Examples
         --------
 
@@ -2527,6 +2531,7 @@ class Expr:
 
         interpolation
             interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+
         Examples
         --------
 
@@ -2904,6 +2909,7 @@ class Expr:
     def pow(self, exponent: float | Expr) -> Expr:
         """
         Raise expression to the power of exponent.
+        
         Examples
         --------
 
