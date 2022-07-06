@@ -208,6 +208,7 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSiz
 
     let mut count = 0;
     let mut last_idx = 0;
+    let mut previous_empty = false;
     for offset in &offsets[1..] {
         while count < *offset {
             count += 1;
@@ -217,13 +218,19 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSiz
         // we started iterating from 1, so there is always a previous offset
         // we take the pointer to the previous element and deref that to get
         // the previous offset
-        unsafe {
-            let previous_offset = *(offset as *const i64).offset(-1);
-            if previous_offset != *offset {
-                last_idx += 1;
-            }
+        let previous_offset = unsafe { *(offset as *const i64).offset(-1) };
+
+        if !previous_empty && (previous_offset != *offset) {
+            last_idx += 1;
+        } else {
+            count += 1;
+            idx.push(last_idx);
+            last_idx += 1;
         }
+        previous_empty = previous_offset == *offset;
     }
+    // last appended index.
+    let last_idx = idx[idx.len() - 1];
     for _ in 0..(capacity - count as usize) {
         idx.push(last_idx);
     }
