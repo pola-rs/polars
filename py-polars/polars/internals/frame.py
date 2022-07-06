@@ -1966,15 +1966,14 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
         │ 3   ┆ 99  ┆ 6   │
         └─────┴─────┴─────┘
-        
-        ---------
+
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, 3, 4],
-                "b": [0.5, 4, 10, 13],
-                "c": [True, True, False, True],
-            }
-        )
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [0.5, 4, 10, 13],
+        ...         "c": [True, True, False, True],
+        ...     }
+        ... )
         >>> s = pl.Series("d", [-2.5, 15, 20.5, 0])
         >>> df.insert_at_idx(3, s)
         >>> df
@@ -2169,11 +2168,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ f64 ┆ str │
         ╞═════╪═════╪═════╡
-        │ 1   ┆ 6   ┆ a   │
+        │ 1   ┆ 6.0 ┆ a   │
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 2   ┆ 7   ┆ b   │
+        │ 2   ┆ 7.0 ┆ b   │
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 3   ┆ 8   ┆ c   │
+        │ 3   ┆ 8.0 ┆ c   │
         └─────┴─────┴─────┘
 
         See Also
@@ -2217,21 +2216,21 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ... )
         >>> df.describe()
         shape: (5, 4)
-        ┌──────────┬────────────────────┬─────┬──────┐
-        │ describe ┆ a                  ┆ b   ┆ c    │
-        │ ---      ┆ ---                ┆ --- ┆ ---  │
-        │ str      ┆ f64                ┆ f64 ┆ f64  │
-        ╞══════════╪════════════════════╪═════╪══════╡
-        │ mean     ┆ 2.2666666666666666 ┆ 5   ┆ null │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ std      ┆ 1.1015141094572205 ┆ 1   ┆ null │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ min      ┆ 1                  ┆ 4   ┆ 0.0  │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ max      ┆ 3                  ┆ 6   ┆ 1    │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ median   ┆ 2.8                ┆ 5   ┆ null │
-        └──────────┴────────────────────┴─────┴──────┘
+        ┌──────────┬──────────┬─────┬──────┐
+        │ describe ┆ a        ┆ b   ┆ c    │
+        │ ---      ┆ ---      ┆ --- ┆ ---  │
+        │ str      ┆ f64      ┆ f64 ┆ f64  │
+        ╞══════════╪══════════╪═════╪══════╡
+        │ mean     ┆ 2.266667 ┆ 5.0 ┆ null │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ std      ┆ 1.101514 ┆ 1.0 ┆ null │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ min      ┆ 1.0      ┆ 4.0 ┆ 0.0  │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ max      ┆ 3.0      ┆ 6.0 ┆ 1.0  │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ median   ┆ 2.8      ┆ 5.0 ┆ null │
+        └──────────┴──────────┴─────┴──────┘
 
         """
 
@@ -2373,11 +2372,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ f64 ┆ str │
         ╞═════╪═════╪═════╡
-        │ 3   ┆ 8   ┆ c   │
+        │ 3   ┆ 8.0 ┆ c   │
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 2   ┆ 7   ┆ b   │
+        │ 2   ┆ 7.0 ┆ b   │
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 1   ┆ 6   ┆ a   │
+        │ 1   ┆ 6.0 ┆ a   │
         └─────┴─────┴─────┘
 
         **Sort by multiple columns.**
@@ -2393,11 +2392,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ f64 ┆ str │
         ╞═════╪═════╪═════╡
-        │ 3   ┆ 64  ┆ c   │
+        │ 3   ┆ 8.0 ┆ c   │
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 2   ┆ 49  ┆ b   │
+        │ 2   ┆ 7.0 ┆ b   │
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 1   ┆ 36  ┆ a   │
+        │ 1   ┆ 6.0 ┆ a   │
         └─────┴─────┴─────┘
 
         """
@@ -2522,9 +2521,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ f64 ┆ str │
         ╞═════╪═════╪═════╡
-        │ 2   ┆ 7   ┆ b   │
+        │ 2   ┆ 7.0 ┆ b   │
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 3   ┆ 8   ┆ c   │
+        │ 3   ┆ 8.0 ┆ c   │
         └─────┴─────┴─────┘
 
         """
@@ -3162,7 +3161,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ┌─────────────────────┬────────────┬─────────────────────────────────────┐
         │ time                ┆ time_count ┆ time_agg_list                       │
         │ ---                 ┆ ---        ┆ ---                                 │
-        │ datetime[ns]        ┆ u32        ┆ list [datetime[ns]]                 │
+        │ datetime[ns]        ┆ u32        ┆ list[datetime[ns]]                  │
         ╞═════════════════════╪════════════╪═════════════════════════════════════╡
         │ 2021-12-16 00:00:00 ┆ 2          ┆ [2021-12-16 00:00:00, 2021-12-16... │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -3272,12 +3271,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ...         include_boundaries=True,
         ...     ).agg(pl.col("A").list().alias("A_agg_list"))
         ... )
-
         shape: (3, 4)
         ┌─────────────────┬─────────────────┬─────┬─────────────────┐
         │ _lower_boundary ┆ _upper_boundary ┆ idx ┆ A_agg_list      │
         │ ---             ┆ ---             ┆ --- ┆ ---             │
-        │ i64             ┆ i64             ┆ i64 ┆ list [str]      │
+        │ i64             ┆ i64             ┆ i64 ┆ list[str]       │
         ╞═════════════════╪═════════════════╪═════╪═════════════════╡
         │ 0               ┆ 3               ┆ 0   ┆ ["A", "B", "B"] │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -3370,7 +3368,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ┌─────────────────────┬────────┬────────┐
         │ time                ┆ groups ┆ values │
         │ ---                 ┆ ---    ┆ ---    │
-        │ datetime[ns]        ┆ str    ┆ i64    │
+        │ datetime[μs]        ┆ str    ┆ i64    │
         ╞═════════════════════╪════════╪════════╡
         │ 2021-02-01 00:00:00 ┆ A      ┆ 0      │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
@@ -3610,9 +3608,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ --- ┆ --- ┆ --- ┆ ---   │
         │ i64 ┆ f64 ┆ str ┆ str   │
         ╞═════╪═════╪═════╪═══════╡
-        │ 1   ┆ 6   ┆ a   ┆ x     │
+        │ 1   ┆ 6.0 ┆ a   ┆ x     │
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 2   ┆ 7   ┆ b   ┆ y     │
+        │ 2   ┆ 7.0 ┆ b   ┆ y     │
         └─────┴─────┴─────┴───────┘
 
         >>> df.join(other_df, on="ham", how="outer")
@@ -3622,13 +3620,13 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ ---  ┆ ---  ┆ --- ┆ ---   │
         │ i64  ┆ f64  ┆ str ┆ str   │
         ╞══════╪══════╪═════╪═══════╡
-        │ 1    ┆ 6    ┆ a   ┆ x     │
+        │ 1    ┆ 6.0  ┆ a   ┆ x     │
         ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 2    ┆ 7    ┆ b   ┆ y     │
+        │ 2    ┆ 7.0  ┆ b   ┆ y     │
         ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ null ┆ null ┆ d   ┆ z     │
         ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 3    ┆ 8    ┆ c   ┆ null  │
+        │ 3    ┆ 8.0  ┆ c   ┆ null  │
         └──────┴──────┴─────┴───────┘
 
         **Asof join**
@@ -3728,7 +3726,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         --------
 
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [-1, 5, 8]})
-        # Return a DataFrame by mapping each row to a tuple:
+
+        Return a DataFrame by mapping each row to a tuple:
+
         >>> df.apply(lambda t: (t[0] * 2, t[1] * 3))
         shape: (3, 2)
         ┌──────────┬──────────┐
@@ -3742,9 +3742,15 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 6        ┆ 24       │
         └──────────┴──────────┘
-        # It is better to implement this with an expression:
-        >>> (df.select([pl.col("foo") * 2, pl.col("bar") * 3]))
-        # Return a Series by mapping each row to a scalar
+
+        It is better to implement this with an expression:
+
+        >>> (
+        ...     df.select([pl.col("foo") * 2, pl.col("bar") * 3])
+        ... )  # doctest: +IGNORE_RESULT
+
+        Return a Series by mapping each row to a scalar:
+
         >>> df.apply(lambda t: (t[0] * 2 + t[1]))
         shape: (3, 1)
         ┌───────┐
@@ -3758,8 +3764,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ├╌╌╌╌╌╌╌┤
         │ 14    │
         └───────┘
-        # In this case it is better to use the following expression
-        >>> df.select(pl.col("foo") * 2 + pl.col("bar"))
+
+        In this case it is better to use the following expression:
+
+        >>> df.select(pl.col("foo") * 2 + pl.col("bar"))  # doctest: +IGNORE_RESULT
         """
         out, is_df = self._df.apply(f, return_dtype, inference_size)
         if is_df:
@@ -4026,11 +4034,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ --- ┆ --- │
         │ i64 ┆ f64 │
         ╞═════╪═════╡
-        │ 1   ┆ 6   │
+        │ 1   ┆ 6.0 │
         ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 2   ┆ 7   │
+        │ 2   ┆ 7.0 │
         ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 3   ┆ 8   │
+        │ 3   ┆ 8.0 │
         └─────┴─────┘
 
         """
@@ -4116,16 +4124,16 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def clone(self: DF) -> DF:
         """
         Cheap deepcopy/clone.
-        
+
         Examples
         --------
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, 3, 4],
-                "b": [0.5, 4, 10, 13],
-                "c": [True, True, False, True],
-            }
-        )
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [0.5, 4, 10, 13],
+        ...         "c": [True, True, False, True],
+        ...     }
+        ... )
         >>> df.clone()
         shape: (4, 3)
         ┌─────┬──────┬───────┐
@@ -4142,7 +4150,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ 4   ┆ 13.0 ┆ true  │
         └─────┴──────┴───────┘
 
-        
         """
         return self._from_pydf(self._df.clone())
 
@@ -4174,15 +4181,14 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 5
                 6
         ]]
-        
-        -------
+
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, 3, 4],
-                "b": [0.5, 4, 10, 13],
-                "c": [True, True, False, True],
-            }
-        )
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [0.5, 4, 10, 13],
+        ...         "c": [True, True, False, True],
+        ...     }
+        ... )
         >>> df.get_columns()
         [shape: (4,)
         Series: 'a' [i64]
@@ -4206,8 +4212,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
             false
             true
         ]]
-
-        
 
         """
         return list(map(lambda s: pli.wrap_s(s), self._df.get_columns()))
@@ -4260,15 +4264,15 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Returns
         -------
             DataFrame with None values replaced by the filling strategy.
-            
+
         Examples
         --------
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, None, 4],
-                "b": [0.5, 4, None, 13],
-            }
-        )
+        ...     {
+        ...         "a": [1, 2, None, 4],
+        ...         "b": [0.5, 4, None, 13],
+        ...     }
+        ... )
         >>> df.fill_null(99)
         shape: (4, 2)
         ┌─────┬──────┐
@@ -4285,7 +4289,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ 4   ┆ 13.0 │
         └─────┴──────┘
 
-        
         """
         if isinstance(strategy, pli.Expr):
             return self.lazy().fill_null(strategy).collect(no_optimization=True)
@@ -4314,16 +4317,16 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Returns
         -------
             DataFrame with NaN replaced with fill_value
-            
+
         Examples
         --------
-        
+
         >>> df = pl.DataFrame(
-            {
-                "a": [1.5, 2, float("NaN"), 4],
-                "b": [0.5, 4, float("NaN"), 13],
-            }
-        )
+        ...     {
+        ...         "a": [1.5, 2, float("NaN"), 4],
+        ...         "b": [0.5, 4, float("NaN"), 13],
+        ...     }
+        ... )
         >>> df.fill_nan(99)
         shape: (4, 2)
         ┌──────┬──────┐
@@ -4369,23 +4372,23 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ... )
         >>> df
         shape: (6, 2)
-        ┌─────────┬────────────┐
-        │ letters ┆ nrs        │
-        │ ---     ┆ ---        │
-        │ str     ┆ list [i64] │
-        ╞═════════╪════════════╡
-        │ c       ┆ [1, 2]     │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ c       ┆ [1, 3]     │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ a       ┆ [4, 3]     │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ c       ┆ [5, 5, 5]  │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ a       ┆ [6]        │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ b       ┆ [2, 1, 2]  │
-        └─────────┴────────────┘
+        ┌─────────┬───────────┐
+        │ letters ┆ nrs       │
+        │ ---     ┆ ---       │
+        │ str     ┆ list[i64] │
+        ╞═════════╪═══════════╡
+        │ c       ┆ [1, 2]    │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ c       ┆ [1, 3]    │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ a       ┆ [4, 3]    │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ c       ┆ [5, 5, 5] │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ a       ┆ [6]       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b       ┆ [2, 1, 2] │
+        └─────────┴───────────┘
         >>> df.explode("nrs")
         shape: (13, 2)
         ┌─────────┬─────┐
@@ -4503,7 +4506,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
         This function is useful to massage a DataFrame into a format where one or more columns are identifier variables
         (id_vars), while all other columns, considered measured variables (value_vars), are “unpivoted” to the row axis,
         leaving just two non-identifier columns, ‘variable’ and ‘value’.
-
 
         Parameters
         ----------
@@ -4890,21 +4892,24 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ----------
         exprs
             List of Expressions that evaluate to columns.
-            
+
         Examples
         --------
-        
+
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, 3, 4],
-                "b": [0.5, 4, 10, 13],
-                "c": [True, True, False, True],
-            }
-        )
-        >>> df.with_columns([(pl.col("a") ** 2).alias("a^2"),
-                       (pl.col("b") / 2).alias("b/2"),
-                       (pl.col("c").is_not()).alias("not c")
-                        ])
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [0.5, 4, 10, 13],
+        ...         "c": [True, True, False, True],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     [
+        ...         (pl.col("a") ** 2).alias("a^2"),
+        ...         (pl.col("b") / 2).alias("b/2"),
+        ...         (pl.col("c").is_not()).alias("not c"),
+        ...     ]
+        ... )
         shape: (4, 6)
         ┌─────┬──────┬───────┬──────┬──────┬───────┐
         │ a   ┆ b    ┆ c     ┆ a^2  ┆ b/2  ┆ not c │
@@ -4920,7 +4925,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴──────┴──────┴───────┘
 
-        
         """
         if not isinstance(exprs, list):
             exprs = [exprs]
@@ -4933,20 +4937,19 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def n_chunks(self) -> int:
         """
         Get number of chunks used by the ChunkedArrays of this DataFrame.
-        
+
         Examples
         --------
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, 3, 4],
-                "b": [0.5, 4, 10, 13],
-                "c": [True, True, False, True],
-            }
-        )
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [0.5, 4, 10, 13],
+        ...         "c": [True, True, False, True],
+        ...     }
+        ... )
         >>> df.n_chunks()
         1
 
-        
         """
         return self._df.n_chunks()
 
@@ -5130,7 +5133,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ --- ┆ --- ┆ ---  │
         │ f64 ┆ f64 ┆ str  │
         ╞═════╪═════╪══════╡
-        │ 2   ┆ 7   ┆ null │
+        │ 2.0 ┆ 7.0 ┆ null │
         └─────┴─────┴──────┘
 
         Note: the mean of booleans evaluates to null.
@@ -5141,7 +5144,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ...         "b": [True, True, True],
         ...     }
         ... )
-        # mean evaluates to null
         >>> df.mean()
         shape: (1, 2)
         ┌──────┬──────┐
@@ -5151,7 +5153,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ╞══════╪══════╡
         │ null ┆ null │
         └──────┴──────┘
-        # instead, cast to numeric type
+
+        Instead, cast to numeric type:
+
         >>> df.select(pl.all().cast(pl.UInt8)).mean()
         shape: (1, 2)
         ┌──────────┬─────┐
@@ -5189,7 +5193,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ --- ┆ --- ┆ ---  │
         │ f64 ┆ f64 ┆ str  │
         ╞═════╪═════╪══════╡
-        │ 1   ┆ 1   ┆ null │
+        │ 1.0 ┆ 1.0 ┆ null │
         └─────┴─────┴──────┘
 
         """
@@ -5215,7 +5219,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ --- ┆ --- ┆ ---  │
         │ f64 ┆ f64 ┆ str  │
         ╞═════╪═════╪══════╡
-        │ 1   ┆ 1   ┆ null │
+        │ 1.0 ┆ 1.0 ┆ null │
         └─────┴─────┴──────┘
 
         """
@@ -5241,7 +5245,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ --- ┆ --- ┆ ---  │
         │ f64 ┆ f64 ┆ str  │
         ╞═════╪═════╪══════╡
-        │ 2   ┆ 7   ┆ null │
+        │ 2.0 ┆ 7.0 ┆ null │
         └─────┴─────┴──────┘
 
         """
@@ -5254,25 +5258,13 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Examples
         --------
 
-        >>> df = pl.DataFrame({"factors": [1.0, 0.99, 1.3, 0.87]})
-        >>> df.product()
-        shape: (1, 1)
-        ┌─────────┐
-        │ factors │
-        │ ---     │
-        │ f64     │
-        ╞═════════╡
-        │ 1.1196  │
-        └─────────┘
-        
-        --------
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, 3],
-                "b": [0.5, 4, 10],
-                "c": [True, True, False],
-            }
-        )
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": [0.5, 4, 10],
+        ...         "c": [True, True, False],
+        ...     }
+        ... )
 
         >>> df.product()
         shape: (1, 3)
@@ -5283,8 +5275,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ╞═════╪══════╪═════╡
         │ 6   ┆ 20.0 ┆ 0   │
         └─────┴──────┴─────┘
-
-       
 
         """
         return self.select(pli.all().product())
@@ -5315,9 +5305,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ┌─────┬─────┬──────┐
         │ foo ┆ bar ┆ ham  │
         │ --- ┆ --- ┆ ---  │
-        │ i64 ┆ i64 ┆ str  │
+        │ f64 ┆ f64 ┆ str  │
         ╞═════╪═════╪══════╡
-        │ 2   ┆ 7   ┆ null │
+        │ 2.0 ┆ 7.0 ┆ null │
         └─────┴─────┴──────┘
 
         """
@@ -5338,17 +5328,17 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ... )
         >>> df.to_dummies()
         shape: (3, 9)
-        ┌───────┬───────┬───────┬───────┬─────┬───────┬───────┬───────┬───────┐
-        │ foo_1 ┆ foo_2 ┆ foo_3 ┆ bar_6 ┆ ... ┆ bar_8 ┆ ham_a ┆ ham_b ┆ ham_c │
-        │ ---   ┆ ---   ┆ ---   ┆ ---   ┆     ┆ ---   ┆ ---   ┆ ---   ┆ ---   │
-        │ u8    ┆ u8    ┆ u8    ┆ u8    ┆     ┆ u8    ┆ u8    ┆ u8    ┆ u8    │
-        ╞═══════╪═══════╪═══════╪═══════╪═════╪═══════╪═══════╪═══════╪═══════╡
-        │ 1     ┆ 0     ┆ 0     ┆ 1     ┆ ... ┆ 0     ┆ 1     ┆ 0     ┆ 0     │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 0     ┆ 1     ┆ 0     ┆ 0     ┆ ... ┆ 0     ┆ 0     ┆ 1     ┆ 0     │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 0     ┆ 0     ┆ 1     ┆ 0     ┆ ... ┆ 1     ┆ 0     ┆ 0     ┆ 1     │
-        └───────┴───────┴───────┴───────┴─────┴───────┴───────┴───────┴───────┘
+        ┌───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
+        │ foo_1 ┆ foo_2 ┆ foo_3 ┆ bar_6 ┆ bar_7 ┆ bar_8 ┆ ham_a ┆ ham_b ┆ ham_c │
+        │ ---   ┆ ---   ┆ ---   ┆ ---   ┆ ---   ┆ ---   ┆ ---   ┆ ---   ┆ ---   │
+        │ u8    ┆ u8    ┆ u8    ┆ u8    ┆ u8    ┆ u8    ┆ u8    ┆ u8    ┆ u8    │
+        ╞═══════╪═══════╪═══════╪═══════╪═══════╪═══════╪═══════╪═══════╪═══════╡
+        │ 1     ┆ 0     ┆ 0     ┆ 1     ┆ 0     ┆ 0     ┆ 1     ┆ 0     ┆ 0     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 0     ┆ 1     ┆ 0     ┆ 0     ┆ 1     ┆ 0     ┆ 0     ┆ 1     ┆ 0     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 0     ┆ 0     ┆ 1     ┆ 0     ┆ 0     ┆ 1     ┆ 0     ┆ 0     ┆ 1     │
+        └───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┘
 
         """
         return self._from_pydf(self._df.to_dummies())
@@ -5394,30 +5384,13 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Examples
         --------
 
-        >>> df = pl.DataFrame({"x": [1, 2, 3, 2, 1], "y": [3, 2, 1, 2, 3]})
-        >>> df.unique()
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ x   ┆ y   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 1   ┆ 3   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 2   ┆ 2   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 3   ┆ 1   │
-        └─────┴─────┘
-        
-        --------
-        
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 1, 2, 3, 4, 5],
-                "b": [0.5, 0.5, 4, 10, 13, 14],
-                "c": [True, True, True, False, True, True],
-            }
-        )
+        ...     {
+        ...         "a": [1, 1, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, True, True],
+        ...     }
+        ... )
         >>> df.unique()
         shape: (5, 3)
         ┌─────┬──────┬───────┐
@@ -5435,7 +5408,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ 5   ┆ 14.0 ┆ true  │
         └─────┴──────┴───────┘
-
 
         """
         if subset is not None and not isinstance(subset, list):
@@ -5564,9 +5536,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         shape: (3,)
         Series: 'a' [f64]
         [
-            4
-            5
-            9
+            4.0
+            5.0
+            9.0
         ]
 
         A horizontal minimum operation:
@@ -5576,9 +5548,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         shape: (3,)
         Series: 'a' [f64]
         [
-            1
-            1
-            3
+            1.0
+            1.0
+            3.0
         ]
 
         A horizontal string concatenation:
@@ -5795,19 +5767,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         --------
 
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
-        >>> df.filter(pl.col("foo") > 99).is_empty()
-        True
-        
-        --------
-        >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, 3, 4],
-                "b": [0.5, 4, 10, 13],
-                "c": [True, True, False, True],
-            }
-        )
         >>> df.is_empty()
         False
+        >>> df.filter(pl.col("foo") > 99).is_empty()
+        True
 
         """
         return self.height == 0
@@ -5832,13 +5795,13 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ... )
         >>> df.to_struct("nums")
         shape: (5,)
-        Series: 'nums' [struct[2]{'a': i64, 'b': str}]
+        Series: 'nums' [struct[2]]
         [
-                {1,"one"}
-                {2,"two"}
-                {3,"three"}
-                {4,"four"}
-                {5,"five"}
+            {1,"one"}
+            {2,"two"}
+            {3,"three"}
+            {4,"four"}
+            {5,"five"}
         ]
 
         """
@@ -5871,26 +5834,26 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ... )
         >>> df
         shape: (2, 1)
-        ┌─────────────────────────────┐
-        │ my_struct                   │
-        │ ---                         │
-        │ struct[4]{'int',...,'list'} │
-        ╞═════════════════════════════╡
-        │ {1,"a",true,[1, 2]}         │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {2,"b",null,[3]}            │
-        └─────────────────────────────┘
+        ┌─────────────────────┐
+        │ my_struct           │
+        │ ---                 │
+        │ struct[4]           │
+        ╞═════════════════════╡
+        │ {1,"a",true,[1, 2]} │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {2,"b",null,[3]}    │
+        └─────────────────────┘
         >>> df.unnest("my_struct")
         shape: (2, 4)
-        ┌─────┬─────┬──────┬────────────┐
-        │ int ┆ str ┆ bool ┆ list       │
-        │ --- ┆ --- ┆ ---  ┆ ---        │
-        │ i64 ┆ str ┆ bool ┆ list [i64] │
-        ╞═════╪═════╪══════╪════════════╡
-        │ 1   ┆ a   ┆ true ┆ [1, 2]     │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2   ┆ b   ┆ null ┆ [3]        │
-        └─────┴─────┴──────┴────────────┘
+        ┌─────┬─────┬──────┬───────────┐
+        │ int ┆ str ┆ bool ┆ list      │
+        │ --- ┆ --- ┆ ---  ┆ ---       │
+        │ i64 ┆ str ┆ bool ┆ list[i64] │
+        ╞═════╪═════╪══════╪═══════════╡
+        │ 1   ┆ a   ┆ true ┆ [1, 2]    │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ b   ┆ null ┆ [3]       │
+        └─────┴─────┴──────┴───────────┘
 
         """
         if isinstance(names, str):
@@ -6162,35 +6125,32 @@ class GroupBy(Generic[DF]):
 
         * the groupby keys
         * the group indexes aggregated as lists
-        
+
         Examples
         --------
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 1, 2, 3, 4, 5],
-                "b": [0.5, 0.5, 4, 10, 13, 14],
-                "c": [True, True, True, False, True, True],
-                "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"]
-            }
-        )
+        ...     {
+        ...         "a": [1, 1, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, True, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
 
-        >>> df.groupby("d").groups()
+        >>> df.groupby("d").groups().sort(by="d")
         shape: (3, 2)
-        ┌────────┬────────────┐
-        │ d      ┆ groups     │
-        │ ---    ┆ ---        │
-        │ str    ┆ list [u32] │
-        ╞════════╪════════════╡
-        │ Apple  ┆ [0, 2, 3]  │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ Banana ┆ [4, 5]     │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ Orange ┆ [1]        │
-        └────────┴────────────┘
+        ┌────────┬───────────┐
+        │ d      ┆ groups    │
+        │ ---    ┆ ---       │
+        │ str    ┆ list[u32] │
+        ╞════════╪═══════════╡
+        │ Apple  ┆ [0, 2, 3] │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ Banana ┆ [4, 5]    │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ Orange ┆ [1]       │
+        └────────┴───────────┘
 
-
-        
-        
         """
         warnings.warn(
             "accessing GroupBy by index is deprecated, consider using the `.agg` method",
@@ -6232,6 +6192,7 @@ class GroupBy(Generic[DF]):
         ...         "shape": ["square", "triangle", "square", "triangle", "square"],
         ...     }
         ... )
+        >>> df
         shape: (5, 3)
         ┌─────┬───────┬──────────┐
         │ id  ┆ color ┆ shape    │
@@ -6248,11 +6209,32 @@ class GroupBy(Generic[DF]):
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 4   ┆ red   ┆ square   │
         └─────┴───────┴──────────┘
-        # For each color group sample two rows
-        >>> (df.groupby("color").apply(lambda group_df: group_df.sample(2)))
-        # It is better to implement this with an expression:
-        >>> (df.filter(pl.arange(0, pl.count()).shuffle().over("color") < 2))
 
+        For each color group sample two rows:
+
+        >>> (
+        ...     df.groupby("color").apply(lambda group_df: group_df.sample(2))
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (4, 3)
+        ┌─────┬───────┬──────────┐
+        │ id  ┆ color ┆ shape    │
+        │ --- ┆ ---   ┆ ---      │
+        │ i64 ┆ str   ┆ str      │
+        ╞═════╪═══════╪══════════╡
+        │ 1   ┆ green ┆ triangle │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ green ┆ square   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 4   ┆ red   ┆ square   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ red   ┆ triangle │
+        └─────┴───────┴──────────┘
+
+        It is better to implement this with an expression:
+
+        >>> (
+        ...     df.filter(pl.arange(0, pl.count()).shuffle().over("color") < 2)
+        ... )  # doctest: +IGNORE_RESULT
 
         """
         return self._dataframe_class._from_pydf(self._df.groupby_apply(self.by, f))
@@ -6285,7 +6267,7 @@ class GroupBy(Generic[DF]):
         >>> df = pl.DataFrame(
         ...     {"foo": ["one", "two", "two", "one", "two"], "bar": [5, 3, 2, 4, 1]}
         ... )
-        >>> df.groupby("foo").agg(
+        >>> df.groupby("foo", maintain_order=True).agg(
         ...     [
         ...         pl.sum("bar").suffix("_sum"),
         ...         pl.col("bar").sort().tail(2).sum().suffix("_tail_sum"),
@@ -6353,7 +6335,6 @@ class GroupBy(Generic[DF]):
         ----------
         n
             Number of values of the group to select
-
 
         Examples
         --------
@@ -6512,7 +6493,9 @@ class GroupBy(Generic[DF]):
         ...         "baz": [1, 2, 3, 4, 5, 6],
         ...     }
         ... )
-        >>> df.groupby("foo").pivot(pivot_column="bar", values_column="baz").first()
+        >>> df.groupby("foo", maintain_order=True).pivot(
+        ...     pivot_column="bar", values_column="baz"
+        ... ).first()
         shape: (2, 4)
         ┌─────┬─────┬─────┬─────┐
         │ foo ┆ A   ┆ B   ┆ C   │
@@ -6540,19 +6523,19 @@ class GroupBy(Generic[DF]):
     def first(self) -> DF:
         """
         Aggregate the first values in the group.
-        
+
         Examples
         --------
-        
+
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, 2, 3, 4, 5],
-                "b": [0.5, 0.5, 4, 10, 13, 14],
-                "c": [True, True, True, False, False, True],
-                "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"]
-            }
-        )
-        >>> df.groupby("d").first()
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df.groupby("d", maintain_order=True).first()
         shape: (3, 4)
         ┌────────┬─────┬──────┬───────┐
         │ d      ┆ a   ┆ b    ┆ c     │
@@ -6566,26 +6549,25 @@ class GroupBy(Generic[DF]):
         │ Banana ┆ 4   ┆ 13.0 ┆ false │
         └────────┴─────┴──────┴───────┘
 
-        
         """
         return self.agg(pli.all().first())
 
     def last(self) -> DF:
         """
         Aggregate the last values in the group.
-        
+
         Examples
         --------
-        
+
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, 2, 3, 4, 5],
-                "b": [0.5, 0.5, 4, 10, 13, 14],
-                "c": [True, True, True, False, False, True],
-                "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"]
-            }
-        )
-        >>> df.groupby("d").last()
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df.groupby("d", maintain_order=True).last()
         shape: (3, 4)
         ┌────────┬─────┬──────┬───────┐
         │ d      ┆ a   ┆ b    ┆ c     │
@@ -6594,197 +6576,191 @@ class GroupBy(Generic[DF]):
         ╞════════╪═════╪══════╪═══════╡
         │ Apple  ┆ 3   ┆ 10.0 ┆ false │
         ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ Banana ┆ 5   ┆ 14.0 ┆ true  │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ Orange ┆ 2   ┆ 0.5  ┆ true  │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ Banana ┆ 5   ┆ 14.0 ┆ true  │
         └────────┴─────┴──────┴───────┘
 
-        
         """
         return self.agg(pli.all().last())
 
     def sum(self) -> DF:
         """
         Reduce the groups to the sum.
-        
+
         Examples
         --------
-        
+
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, 2, 3, 4, 5],
-                "b": [0.5, 0.5, 4, 10, 13, 14],
-                "c": [True, True, True, False, False, True],
-                "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"]
-            }
-        )
-        >>> df.groupby("d").sum()
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df.groupby("d", maintain_order=True).sum()
         shape: (3, 4)
         ┌────────┬─────┬──────┬─────┐
         │ d      ┆ a   ┆ b    ┆ c   │
         │ ---    ┆ --- ┆ ---  ┆ --- │
         │ str    ┆ i64 ┆ f64  ┆ u32 │
         ╞════════╪═════╪══════╪═════╡
-        │ Banana ┆ 9   ┆ 27.0 ┆ 1   │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ Apple  ┆ 6   ┆ 14.5 ┆ 2   │
         ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ Orange ┆ 2   ┆ 0.5  ┆ 1   │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ Banana ┆ 9   ┆ 27.0 ┆ 1   │
         └────────┴─────┴──────┴─────┘
 
-        
         """
         return self.agg(pli.all().sum())
 
     def min(self) -> DF:
         """
         Reduce the groups to the minimal value.
-        
+
         Examples
         --------
-        
+
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, 2, 3, 4, 5],
-                "b": [0.5, 0.5, 4, 10, 13, 14],
-                "c": [True, True, True, False, False, True],
-                "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"]
-            }
-        )
-        >>> df.groupby("d").min()
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df.groupby("d", maintain_order=True).min()
         shape: (3, 4)
         ┌────────┬─────┬──────┬─────┐
         │ d      ┆ a   ┆ b    ┆ c   │
         │ ---    ┆ --- ┆ ---  ┆ --- │
         │ str    ┆ i64 ┆ f64  ┆ u32 │
         ╞════════╪═════╪══════╪═════╡
-        │ Orange ┆ 2   ┆ 0.5  ┆ 1   │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ Apple  ┆ 1   ┆ 0.5  ┆ 0   │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ Orange ┆ 2   ┆ 0.5  ┆ 1   │
         ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ Banana ┆ 4   ┆ 13.0 ┆ 0   │
         └────────┴─────┴──────┴─────┘
 
-        
         """
         return self.agg(pli.all().min())
 
     def max(self) -> DF:
         """
         Reduce the groups to the maximal value.
-        
+
         Examples
         --------
-        
+
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, 2, 3, 4, 5],
-                "b": [0.5, 0.5, 4, 10, 13, 14],
-                "c": [True, True, True, False, False, True],
-                "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"]
-            }
-        )
-        >>> df.groupby("d").max()
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df.groupby("d", maintain_order=True).max()
         shape: (3, 4)
         ┌────────┬─────┬──────┬─────┐
         │ d      ┆ a   ┆ b    ┆ c   │
         │ ---    ┆ --- ┆ ---  ┆ --- │
         │ str    ┆ i64 ┆ f64  ┆ u32 │
         ╞════════╪═════╪══════╪═════╡
+        │ Apple  ┆ 3   ┆ 10.0 ┆ 1   │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ Orange ┆ 2   ┆ 0.5  ┆ 1   │
         ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ Banana ┆ 5   ┆ 14.0 ┆ 1   │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ Apple  ┆ 3   ┆ 10.0 ┆ 1   │
         └────────┴─────┴──────┴─────┘
 
-        
         """
         return self.agg(pli.all().max())
 
     def count(self) -> DF:
         """
         Count the number of values in each group.
-        
+
         Examples
         --------
-        
+
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, 2, 3, 4, 5],
-                "b": [0.5, 0.5, 4, 10, 13, 14],
-                "c": [True, True, True, False, False, True],
-                "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"]
-            }
-        )
-        >>> df.groupby("d").count()
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df.groupby("d", maintain_order=True).count()
         shape: (3, 2)
         ┌────────┬───────┐
         │ d      ┆ count │
         │ ---    ┆ ---   │
         │ str    ┆ u32   │
         ╞════════╪═══════╡
-        │ Banana ┆ 2     │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ Apple  ┆ 3     │
         ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ Orange ┆ 1     │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ Banana ┆ 2     │
         └────────┴───────┘
 
-        
         """
         return self.agg(pli.lazy_functions.count())
 
     def mean(self) -> DF:
         """
         Reduce the groups to the mean values.
-        
+
         Examples
         --------
-        
+
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, 2, 3, 4, 5],
-                "b": [0.5, 0.5, 4, 10, 13, 14],
-                "c": [True, True, True, False, False, True],
-                "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"]
-            }
-        )
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "c": [True, True, True, False, False, True],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
 
-        >>> df.groupby("d").mean()
+        >>> df.groupby("d", maintain_order=True).mean()
         shape: (3, 4)
-        ┌────────┬─────┬──────────┬──────────┐
-        │ d      ┆ a   ┆ b        ┆ c        │
-        │ ---    ┆ --- ┆ ---      ┆ ---      │
-        │ str    ┆ f64 ┆ f64      ┆ f64      │
-        ╞════════╪═════╪══════════╪══════════╡
-        │ Banana ┆ 4.5 ┆ 13.5     ┆ 0.5      │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ Apple  ┆ 2.0 ┆ 4.833333 ┆ 0.666667 │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ Orange ┆ 2.0 ┆ 0.5      ┆ 1.0      │
-        └────────┴─────┴──────────┴──────────┘
+        ┌────────┬─────┬──────────┬──────┐
+        │ d      ┆ a   ┆ b        ┆ c    │
+        │ ---    ┆ --- ┆ ---      ┆ ---  │
+        │ str    ┆ f64 ┆ f64      ┆ bool │
+        ╞════════╪═════╪══════════╪══════╡
+        │ Apple  ┆ 2.0 ┆ 4.833333 ┆ null │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ Orange ┆ 2.0 ┆ 0.5      ┆ null │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ Banana ┆ 4.5 ┆ 13.5     ┆ null │
+        └────────┴─────┴──────────┴──────┘
 
-        
         """
         return self.agg(pli.all().mean())
 
     def n_unique(self) -> DF:
         """
         Count the unique values per group.
-        
+
         Examples
         --------
-        
-        >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, 1, 3, 4, 5],
-                "b": [0.5, 0.5, 0.5, 10, 13, 14],
-                "d": ["Apple", "Banana", "Apple", "Apple", "Banana", "Banana"]
-            }
-        )
 
-        >>> df.groupby("d").n_unique()
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 1, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 0.5, 10, 13, 14],
+        ...         "d": ["Apple", "Banana", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+
+        >>> df.groupby("d", maintain_order=True).n_unique()
         shape: (2, 3)
         ┌────────┬─────┬─────┐
         │ d      ┆ a   ┆ b   │
@@ -6796,7 +6772,6 @@ class GroupBy(Generic[DF]):
         │ Banana ┆ 3   ┆ 3   │
         └────────┴─────┴─────┘
 
-        
         """
         return self.agg(pli.all().n_unique())
 
@@ -6811,32 +6786,30 @@ class GroupBy(Generic[DF]):
 
         interpolation
             interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
-            
-        
+
         Examples
         --------
-        
+
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, 2, 3, 4, 5],
-                "b": [0.5, 0.5, 4, 10, 13, 14],
-                "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"]
-            }
-        )
-        >>> df.groupby("d").quantile(1)
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "d": ["Apple", "Orange", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df.groupby("d", maintain_order=True).quantile(1)
         shape: (3, 3)
         ┌────────┬─────┬──────┐
         │ d      ┆ a   ┆ b    │
         │ ---    ┆ --- ┆ ---  │
         │ str    ┆ f64 ┆ f64  │
         ╞════════╪═════╪══════╡
-        │ Banana ┆ 5.0 ┆ 14.0 │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ Apple  ┆ 3.0 ┆ 10.0 │
         ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ Orange ┆ 2.0 ┆ 0.5  │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ Banana ┆ 5.0 ┆ 14.0 │
         └────────┴─────┴──────┘
-
 
         """
         return self.agg(pli.all().quantile(quantile, interpolation))
@@ -6844,18 +6817,18 @@ class GroupBy(Generic[DF]):
     def median(self) -> DF:
         """
         Return the median per group.
-        
+
         Examples
         --------
-        
+
         >>> df = pl.DataFrame(
-            {
-                "a": [1, 2, 2, 3, 4, 5],
-                "b": [0.5, 0.5, 4, 10, 13, 14],
-                "d": ["Apple", "Banana", "Apple", "Apple", "Banana", "Banana"]
-            }
-        )
-        >>> df.groupby("d").median()
+        ...     {
+        ...         "a": [1, 2, 2, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 4, 10, 13, 14],
+        ...         "d": ["Apple", "Banana", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df.groupby("d", maintain_order=True).median()
         shape: (2, 3)
         ┌────────┬─────┬──────┐
         │ d      ┆ a   ┆ b    │
@@ -6867,7 +6840,6 @@ class GroupBy(Generic[DF]):
         │ Banana ┆ 4.0 ┆ 13.0 │
         └────────┴─────┴──────┘
 
-        
         """
         return self.agg(pli.all().median())
 
@@ -6879,17 +6851,17 @@ class GroupBy(Generic[DF]):
         --------
 
         >>> df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
-        >>> df.groupby("a").agg_list()
+        >>> df.groupby("a", maintain_order=True).agg_list()
         shape: (2, 2)
-        ┌─────┬────────────┐
-        │ a   ┆ b          │
-        │ --- ┆ ---        │
-        │ str ┆ list [i64] │
-        ╞═════╪════════════╡
-        │ one ┆ [1, 3]     │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ two ┆ [2, 4]     │
-        └─────┴────────────┘
+        ┌─────┬───────────┐
+        │ a   ┆ b         │
+        │ --- ┆ ---       │
+        │ str ┆ list[i64] │
+        ╞═════╪═══════════╡
+        │ one ┆ [1, 3]    │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ two ┆ [2, 4]    │
+        └─────┴───────────┘
 
         """
         return self.agg(pli.all().list())
@@ -7049,18 +7021,18 @@ class GBSelection(Generic[DF]):
         ...         "bar": ["a", "b", "c", "a"],
         ...     }
         ... )
-        >>> df.groupby("bar").count()  # counts nulls
+        >>> df.groupby("bar", maintain_order=True).count()  # counts nulls
         shape: (3, 2)
         ┌─────┬───────┐
         │ bar ┆ count │
         │ --- ┆ ---   │
         │ str ┆ u32   │
         ╞═════╪═══════╡
-        │ c   ┆ 1     │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ a   ┆ 2     │
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ b   ┆ 1     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ c   ┆ 1     │
         └─────┴───────┘
 
         """
