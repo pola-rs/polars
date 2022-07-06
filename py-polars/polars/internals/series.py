@@ -434,7 +434,7 @@ class Series:
             raise ValueError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
-    def __pow__(self, power: int | float, modulo: None = None) -> Series:
+    def __pow__(self, power: int | float | Series, modulo: None = None) -> Series:
         if self.is_datelike():
             raise ValueError(
                 "first cast to integer before raising datelike dtypes to a power"

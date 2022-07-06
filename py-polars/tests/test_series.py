@@ -201,9 +201,9 @@ def test_power() -> None:
     # pow
     assert_series_equal(a**2, pl.Series([1.0, 4.0], dtype=Float64))
     assert_series_equal(b**3, pl.Series([None, 8.0], dtype=Float64))
-    assert_series_equal(a**a, pl.Series([1.0, 4.0], dtype=Float64))  # type: ignore[operator]
-    assert_series_equal(b**b, pl.Series([None, 4.0], dtype=Float64))  # type: ignore[operator]
-    assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))  # type: ignore[operator]
+    assert_series_equal(a**a, pl.Series([1.0, 4.0], dtype=Float64))
+    assert_series_equal(b**b, pl.Series([None, 4.0], dtype=Float64))
+    assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
     with pytest.raises(ValueError):
         c**2
     with pytest.raises(pl.ComputeError):
