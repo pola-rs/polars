@@ -293,12 +293,12 @@ class PolarsSlice:
         self.obj = obj
 
     @staticmethod
-    def _as_original(lazy: "pli.LazyFrame", obj: FrameOrSeries) -> FrameOrSeries:
+    def _as_original(lazy: "pli.LazyFrame", original: FrameOrSeries) -> FrameOrSeries:
         """
         Return lazy variant back to its original type.
         """
         frame = lazy.collect()
-        return frame if isinstance(obj, pli.DataFrame) else frame.to_series()
+        return frame if isinstance(original, pli.DataFrame) else frame.to_series()
 
     @staticmethod
     def _lazify(obj: FrameOrSeries) -> "pli.LazyFrame":
@@ -311,17 +311,22 @@ class PolarsSlice:
         """
         Logic for slices with positive stride.
         """
+        # note: at this point stride is guaranteed to be > 1
         return obj.slice(self.start, self.slice_length).take_every(self.stride)
 
     def _slice_negative(self, obj: "pli.LazyFrame") -> "pli.LazyFrame":
         """
         Logic for slices with negative stride.
         """
+        # apply slice before reversing (more efficient)
         stride = abs(self.stride)
         lazyslice = obj.slice(self.stop + 1, self.slice_length)
+
+        # potential early-exit if single row
         if self.slice_length == 1:
             return lazyslice
         else:
+            # reverse frame, applying 'take_every' if stride > 1
             lazyslice = lazyslice.reverse()
             return lazyslice.take_every(stride) if (stride > 1) else lazyslice
 
@@ -329,34 +334,43 @@ class PolarsSlice:
         """
         Normalise slice bounds, identify unbounded and/or zero-length slices.
         """
+        # can normalise slice indices as we know object size
         obj_len = len(self.obj)
         start, stop, stride = slice(s.start, s.stop, s.step).indices(obj_len)
+
+        # check if slice is actually unbounded
         if stride >= 1:
-            self.is_unbounded = start <= 0 and stop >= obj_len
+            self.is_unbounded = (start <= 0) and (stop >= obj_len)
         else:
-            self.is_unbounded = stop is None and (
-                start is None or (start >= obj_len - 1)
-            )
+            self.is_unbounded = (stop == -1) and (start >= obj_len - 1)
+
         self._positive_indices = start >= 0 and stop >= 0
-        self.slice_length = (
-            0
-            if self.obj.is_empty()
-            or (
-                (start == stop)
-                or (stride > 0 and start > stop)
-                or (stride < 0 and start < stop)
+
+        # determine slice length
+        if self.obj.is_empty():
+            self.slice_length = 0
+        elif self.is_unbounded:
+            self.slice_length = obj_len
+        else:
+            self.slice_length = (
+                0
+                if (
+                    (start == stop)
+                    or (stride > 0 and start > stop)
+                    or (stride < 0 and start < stop)
+                )
+                else abs(stop - start)
             )
-            else abs(stop - start)
-        )
         self.start, self.stop, self.stride = start, stop, stride
 
     def apply(self, s: slice) -> FrameOrSeries:
         """
         Apply a slice operation, taking advantage of any potential fast paths.
         """
+        # normalise slice
         self._slice_setup(s)
 
-        # check for fast-paths / early-exit
+        # check for fast-paths / single-operation calls
         if self.slice_length == 0:
             return self.obj.cleared()
 
@@ -365,11 +379,12 @@ class PolarsSlice:
 
         elif self._positive_indices and self.stride == 1:
             return self.obj.slice(self.start, self.slice_length)
-
-        lazyobj = self._lazify(self.obj)
-        sliced = (
-            self._slice_positive(lazyobj)
-            if self.stride > 0
-            else self._slice_negative(lazyobj)
-        )
-        return self._as_original(sliced, self.obj)
+        else:
+            # multi-operation call; make lazy
+            lazyobj = self._lazify(self.obj)
+            sliced = (
+                self._slice_positive(lazyobj)
+                if self.stride > 0
+                else self._slice_negative(lazyobj)
+            )
+            return self._as_original(sliced, self.obj)

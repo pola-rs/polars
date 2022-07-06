@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from functools import reduce
@@ -8,7 +9,7 @@ from typing import Any, Callable, Sequence
 
 try:
     from hypothesis import settings
-    from hypothesis.errors import InvalidArgument
+    from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
     from hypothesis.strategies import (
         SearchStrategy,
         booleans,
@@ -380,7 +381,7 @@ if HYPOTHESIS_INSTALLED:
                 self.null_probability < 0 or self.null_probability > 1
             ):
                 raise InvalidArgument(
-                    f"null_probability should be between 0.0 and 1.0 or None; found {self.null_probability}"
+                    f"null_probability should be between 0.0 and 1.0; found {self.null_probability}"
                 )
             if self.dtype is None and not self.strategy:
                 self.dtype = random.choice(strategy_dtypes)
@@ -392,10 +393,14 @@ if HYPOTHESIS_INSTALLED:
                 else:
                     # given a custom strategy, but no explicit dtype. infer one
                     # from the first non-None value that the strategy produces.
-                    sample_value_iter = (self.strategy.example() for _ in range(100))  # type: ignore[union-attr]
-                    sample_value_type = type(
-                        next(e for e in sample_value_iter if e is not None)
-                    )
+                    with warnings.catch_warnings():
+                        # note: usually you should not call "example()" outside of an interactive shell, hence
+                        # the warning. however, here it is reasonable to do so, so we catch and ignore it
+                        warnings.simplefilter("ignore", NonInteractiveExampleWarning)
+                        sample_value_iter = (self.strategy.example() for _ in range(100))  # type: ignore[union-attr]
+                        sample_value_type = type(
+                            next(e for e in sample_value_iter if e is not None)
+                        )
                     if sample_value_type is not None:
                         self.dtype = py_type_to_dtype(sample_value_type)
                     else:
