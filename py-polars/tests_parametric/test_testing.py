@@ -21,9 +21,9 @@ def test_strategy_classes(df: pl.DataFrame, lf: pl.LazyFrame, srs: pl.Series) ->
 
 @given(
     df1=dataframes(cols=5, size=5),
-    df2=dataframes(min_cols=10, max_cols=20, min_size=5, max_size=25),
+    df2=dataframes(min_cols=2, max_cols=5, min_size=3, max_size=8),
     s1=series(size=5),
-    s2=series(min_size=5, max_size=25, name="col"),
+    s2=series(min_size=3, max_size=8, name="col"),
 )
 def test_strategy_shape(
     df1: pl.DataFrame, df2: pl.DataFrame, s1: pl.Series, s2: pl.Series
@@ -31,11 +31,11 @@ def test_strategy_shape(
     assert df1.shape == (5, 5)
     assert df1.columns == ["col0", "col1", "col2", "col3", "col4"]
 
-    assert 10 <= len(df2.columns) <= 20
-    assert 5 <= len(df2) <= 25
+    assert 2 <= len(df2.columns) <= 5
+    assert 3 <= len(df2) <= 8
 
     assert s1.len() == 5
-    assert 5 <= s2.len() <= 25
+    assert 3 <= s2.len() <= 8
     assert s1.name == ""
     assert s2.name == "col"
 
