@@ -12,12 +12,6 @@ use polars_arrow::prelude::QuantileInterpolOptions;
 use std::any::Any;
 use std::borrow::Cow;
 
-impl IntoSeries for ListChunked {
-    fn into_series(self) -> Series {
-        Series(Arc::new(SeriesWrap(self)))
-    }
-}
-
 impl private::PrivateSeries for SeriesWrap<ListChunked> {
     fn _field(&self) -> Cow<Field> {
         Cow::Borrowed(self.0.ref_field())

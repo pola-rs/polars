@@ -24,12 +24,6 @@ use std::borrow::Cow;
 
 macro_rules! impl_dyn_series {
     ($ca: ident) => {
-        impl IntoSeries for $ca {
-            fn into_series(self) -> Series {
-                Series(Arc::new(SeriesWrap(self)))
-            }
-        }
-
         impl private::PrivateSeries for SeriesWrap<$ca> {
             fn _field(&self) -> Cow<Field> {
                 Cow::Borrowed(self.0.ref_field())

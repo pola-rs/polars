@@ -12,7 +12,7 @@ mod time;
 pub use self::conversion::*;
 
 use chrono::NaiveDateTime;
-#[cfg(feature = "dtype-time")]
+#[cfg(any(feature = "dtype-time", feature = "dtype-date"))]
 use chrono::NaiveTime;
 
 #[cfg(feature = "dtype-date")]
