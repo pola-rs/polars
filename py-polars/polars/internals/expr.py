@@ -938,8 +938,13 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
-        >>> df.select(pl.col("*").len())  # counts nulls
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [8, 9, 10],
+        ...         "b": [None, 4, 4],
+        ...     }
+        ... )
+        >>> df.select(pl.all().len())  # counts nulls
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -1408,7 +1413,7 @@ class Expr:
         ...         "b": [1, 1, 2, 2],
         ...     }
         ... )
-        >>> df.select(pl.col("*").mode())
+        >>> df.select(pl.all().mode())
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
