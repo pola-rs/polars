@@ -4268,22 +4268,16 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         .. seealso::
 
-            fill_nan
+            :func:`fill_nan`
 
         Parameters
         ----------
         strategy
-            One of:
-            - "backward"
-            - "forward"
-            - "mean"
-            - "min'
-            - "max"
-            - "zero"
-            - "one"
-            Or an expression.
+            One of {"backward", "forward", "min", "max", "mean", "one", "zero"}
+            or an expression.
         limit
-            if strategy is 'forward' or 'backward', this the number of consecutive null values to forward/backward fill.
+            The number of consecutive null values to forward/backward fill.
+            Only valid if ``strategy`` is 'forward' or 'backward'.
 
         Returns
         -------
@@ -4326,17 +4320,17 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         .. seealso::
 
-            fill_null
+            :func:`fill_null`
 
         Warnings
         --------
         NOTE that floating point NaNs (Not a Number) are not missing values!
-        to replace missing values, use `fill_null`.
+        to replace missing values, use :func:`fill_null`.
 
         Parameters
         ----------
         fill_value
-            value to fill NaN with
+            Value to fill NaN with.
 
         Returns
         -------

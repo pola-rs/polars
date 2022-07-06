@@ -1835,18 +1835,14 @@ class Expr:
         """
         Fill null values using a filling strategy, literal, or Expr.
 
+        Parameters
+        ----------
         fill_value
-            One of:
-            - "backward"
-            - "forward"
-            - "min"
-            - "max"
-            - "mean"
-            - "one"
-            - "zero"
-            Or an expression.
+            One of {"backward", "forward", "min", "max", "mean", "one", "zero"}
+            or an expression.
         limit
-            if strategy is 'forward' or 'backward', this the number of consecutive null values to forward/backward fill.
+            The number of consecutive null values to forward/backward fill.
+            Only valid if ``fill_value`` is 'forward' or 'backward'.
 
         Examples
         --------
@@ -1925,12 +1921,12 @@ class Expr:
 
     def forward_fill(self, limit: int | None = None) -> Expr:
         """
-        Fill missing values with the latest seen values
+        Fill missing values with the latest seen values.
 
         Parameters
         ----------
         limit
-            This the number of consecutive null values to forward/backward fill.
+            The number of consecutive null values to forward fill.
 
         Examples
         --------
@@ -1955,12 +1951,12 @@ class Expr:
 
     def backward_fill(self, limit: int | None = None) -> Expr:
         """
-        Fill missing values with the next to be seen values
+        Fill missing values with the next to be seen values.
 
         Parameters
         ----------
         limit
-            This the number of consecutive null values to forward/backward fill.
+            The number of consecutive null values to backward fill.
 
         Examples
         --------

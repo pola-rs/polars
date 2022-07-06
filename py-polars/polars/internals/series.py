@@ -2411,6 +2411,15 @@ class Series:
         """
         Fill null values using a filling strategy, literal, or Expr.
 
+        Parameters
+        ----------
+        strategy
+            One of {"backward", "forward", "min", "max", "mean", "one", "zero"}
+            or an expression.
+        limit
+            The number of consecutive null values to forward/backward fill.
+            Only valid if ``strategy`` is 'forward' or 'backward'.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, None])
@@ -2442,20 +2451,6 @@ class Series:
             "z"
         ]
 
-        Parameters
-        ----------
-        strategy
-            One of:
-            - "backward"
-            - "forward"
-            - "min"
-            - "max"
-            - "mean"
-            - "one"
-            - "zero"
-            Or an expression.
-        limit
-            if strategy is 'forward' or 'backward', this the number of consecutive null values to forward/backward fill.
         """
         if not isinstance(strategy, str):
             return self.to_frame().select(pli.col(self.name).fill_null(strategy))[
