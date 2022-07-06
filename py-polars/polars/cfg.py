@@ -112,3 +112,17 @@ class Config:
         """
         toggle_string_cache(False)
         return cls
+
+    @classmethod
+    def set_fmt_str_lengths(cls, n: int) -> type[Config]:
+        """
+        Set the number of characters used to print string values
+
+        Parameters
+        ----------
+        n
+            number of characters to print
+        """
+
+        os.environ["POLARS_FMT_STR_LEN"] = str(n)
+        return cls

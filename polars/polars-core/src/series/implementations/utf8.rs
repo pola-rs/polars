@@ -19,12 +19,6 @@ use ahash::RandomState;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use std::borrow::Cow;
 
-impl IntoSeries for Utf8Chunked {
-    fn into_series(self) -> Series {
-        Series(Arc::new(SeriesWrap(self)))
-    }
-}
-
 impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
     fn _field(&self) -> Cow<Field> {
         Cow::Borrowed(self.0.ref_field())

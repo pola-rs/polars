@@ -341,12 +341,12 @@ impl PySeries {
         }
     }
 
-    pub fn get_fmt(&self, index: usize) -> String {
+    pub fn get_fmt(&self, index: usize, str_lengths: usize) -> String {
         let val = format!("{}", self.series.get(index));
         if let DataType::Utf8 | DataType::Categorical(_) = self.series.dtype() {
             let v_trunc = &val[..val
                 .char_indices()
-                .take(15)
+                .take(str_lengths)
                 .last()
                 .map(|(i, c)| i + c.len_utf8())
                 .unwrap_or(0)];

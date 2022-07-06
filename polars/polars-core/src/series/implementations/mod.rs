@@ -64,14 +64,20 @@ impl<T> Deref for SeriesWrap<ChunkedArray<T>> {
     }
 }
 
+impl<T: PolarsDataType + 'static> IntoSeries for ChunkedArray<T>
+where
+    SeriesWrap<ChunkedArray<T>>: SeriesTrait,
+{
+    fn into_series(self) -> Series
+    where
+        Self: Sized,
+    {
+        Series(Arc::new(SeriesWrap(self)))
+    }
+}
+
 macro_rules! impl_dyn_series {
     ($ca: ident) => {
-        impl IntoSeries for $ca {
-            fn into_series(self) -> Series {
-                Series(Arc::new(SeriesWrap(self)))
-            }
-        }
-
         impl private::PrivateSeries for SeriesWrap<$ca> {
             fn _field(&self) -> Cow<Field> {
                 Cow::Borrowed(self.0.ref_field())
@@ -552,36 +558,17 @@ impl_dyn_series!(Int16Chunked);
 impl_dyn_series!(Int32Chunked);
 impl_dyn_series!(Int64Chunked);
 
-macro_rules! impl_dyn_series_numeric {
-    ($ca: ident) => {
-        impl private::PrivateSeriesNumeric for SeriesWrap<$ca> {
-            fn bit_repr_is_large(&self) -> bool {
-                $ca::bit_repr_is_large()
-            }
-            fn bit_repr_large(&self) -> UInt64Chunked {
-                self.0.bit_repr_large()
-            }
-            fn bit_repr_small(&self) -> UInt32Chunked {
-                self.0.bit_repr_small()
-            }
-        }
-    };
+impl<T: PolarsNumericType> private::PrivateSeriesNumeric for SeriesWrap<ChunkedArray<T>> {
+    fn bit_repr_is_large(&self) -> bool {
+        ChunkedArray::<T>::bit_repr_is_large()
+    }
+    fn bit_repr_large(&self) -> UInt64Chunked {
+        self.0.bit_repr_large()
+    }
+    fn bit_repr_small(&self) -> UInt32Chunked {
+        self.0.bit_repr_small()
+    }
 }
-
-impl_dyn_series_numeric!(Float32Chunked);
-impl_dyn_series_numeric!(Float64Chunked);
-#[cfg(feature = "dtype-u8")]
-impl_dyn_series_numeric!(UInt8Chunked);
-#[cfg(feature = "dtype-u16")]
-impl_dyn_series_numeric!(UInt16Chunked);
-impl_dyn_series_numeric!(UInt32Chunked);
-impl_dyn_series_numeric!(UInt64Chunked);
-#[cfg(feature = "dtype-i8")]
-impl_dyn_series_numeric!(Int8Chunked);
-#[cfg(feature = "dtype-i16")]
-impl_dyn_series_numeric!(Int16Chunked);
-impl_dyn_series_numeric!(Int32Chunked);
-impl_dyn_series_numeric!(Int64Chunked);
 
 impl private::PrivateSeriesNumeric for SeriesWrap<Utf8Chunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
