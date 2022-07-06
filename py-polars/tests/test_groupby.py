@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import polars as pl
 
 
@@ -51,3 +53,14 @@ def test_apply_after_take_in_groupby_3869() -> None:
             pl.col("v").take(pl.col("t").arg_max()).sqrt()
         )  # <- fails for sqrt, exp, log, pow, etc.
     ).to_dict(False) == {"k": ["a", "b"], "v": [1.4142135623730951, 2.0]}
+
+
+def test_groupby_rolling_negative_offset_3914() -> None:
+    df = pl.DataFrame(
+        {
+            "datetime": pl.date_range(datetime(2020, 1, 1), datetime(2020, 1, 5), "1d"),
+        }
+    )
+    assert df.groupby_rolling(index_column="datetime", period="2d", offset="-4d").agg(
+        pl.count().alias("count")
+    )["count"].to_list() == [1, 1, 1, 1, 1]
