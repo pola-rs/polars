@@ -500,9 +500,7 @@ class Series:
             s = wrap_s(PySeries.new_u32("", np.array(key, np.uint32), True))
             self.__setitem__(s, value)
         elif isinstance(key, (list, tuple)):
-            if not _NUMPY_AVAILABLE:
-                raise ImportError("'numpy' is required for this functionality.")
-            s = wrap_s(PySeries.new_u32("", np.array(key, np.uint32), True))
+            s = wrap_s(sequence_to_pyseries("", key, dtype=UInt32))
             self.__setitem__(s, value)
         elif isinstance(key, int) and not isinstance(key, bool):
             self.__setitem__([key], value)
@@ -1538,10 +1536,6 @@ class Series:
         """
         if isinstance(indices, pli.Expr):
             return pli.select(pli.lit(self).take(indices)).to_series()
-        if isinstance(indices, list):
-            if not _NUMPY_AVAILABLE:
-                raise ImportError("'numpy' is required for this functionality.")
-            indices = np.array(indices)
         return wrap_s(self._s.take(indices))
 
     def null_count(self) -> int:
