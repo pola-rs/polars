@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from functools import reduce
@@ -8,7 +9,7 @@ from typing import Any, Callable, Sequence
 
 try:
     from hypothesis import settings
-    from hypothesis.errors import InvalidArgument
+    from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
     from hypothesis.strategies import (
         SearchStrategy,
         booleans,
@@ -380,7 +381,7 @@ if HYPOTHESIS_INSTALLED:
                 self.null_probability < 0 or self.null_probability > 1
             ):
                 raise InvalidArgument(
-                    f"null_probability should be between 0.0 and 1.0 or None; found {self.null_probability}"
+                    f"null_probability should be between 0.0 and 1.0; found {self.null_probability}"
                 )
             if self.dtype is None and not self.strategy:
                 self.dtype = random.choice(strategy_dtypes)
@@ -392,10 +393,14 @@ if HYPOTHESIS_INSTALLED:
                 else:
                     # given a custom strategy, but no explicit dtype. infer one
                     # from the first non-None value that the strategy produces.
-                    sample_value_iter = (self.strategy.example() for _ in range(100))  # type: ignore[union-attr]
-                    sample_value_type = type(
-                        next(e for e in sample_value_iter if e is not None)
-                    )
+                    with warnings.catch_warnings():
+                        # note: usually you should not call "example()" outside of an interactive shell, hence
+                        # the warning. however, here it is reasonable to do so, so we catch and ignore it
+                        warnings.simplefilter("ignore", NonInteractiveExampleWarning)
+                        sample_value_iter = (self.strategy.example() for _ in range(100))  # type: ignore[union-attr]
+                        sample_value_type = type(
+                            next(e for e in sample_value_iter if e is not None)
+                        )
                     if sample_value_type is not None:
                         self.dtype = py_type_to_dtype(sample_value_type)
                     else:
@@ -548,7 +553,7 @@ if HYPOTHESIS_INSTALLED:
         ...     # print(s)
         >>>
         >>> s = series(dtype=pl.Int32, max_size=5)
-        >>> s.example()
+        >>> s.example()  # doctest: +IGNORE_RESULT
         shape: (4,)
         Series: '' [i64]
         [
@@ -696,11 +701,11 @@ if HYPOTHESIS_INSTALLED:
         >>>
         >>> # generate LazyFrames with at least 1 column, random dtypes, and specific size:
         >>> df = dataframes(min_cols=1, lazy=True, max_size=5)
-        >>> df.example()
+        >>> df.example()  # doctest: +SKIP
         >>>
         >>> # generate DataFrames with known colnames, random dtypes (per test, not per-frame):
         >>> df_strategy = dataframes(columns(["x", "y", "z"]))
-        >>> df.example()
+        >>> df.example()  # doctest: +SKIP
         >>>
         >>> # generate frames with explicitly named/typed columns and a fixed size:
         >>> df_strategy = dataframes(
@@ -710,7 +715,7 @@ if HYPOTHESIS_INSTALLED:
         ...     ],
         ...     size=2,
         ... )
-        >>> df_strategy.example()
+        >>> df_strategy.example()  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌───────────┬────────────┐
         │ x         ┆ y          │

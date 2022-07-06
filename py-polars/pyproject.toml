@@ -5,7 +5,6 @@ build-backend = "maturin"
 [project]
 name = "polars"
 dependencies = [
-  "numpy >= 1.16.0",
   "typing_extensions >= 4.0.0; python_version < '3.10'",
 ]
 requires-python = ">=3.7"
@@ -15,6 +14,7 @@ requires-python = ">=3.7"
 # (which the Rust libraries use to take advantage of Rust API changes).
 pyarrow = ["pyarrow>=4.0.*"]
 pandas = ["pyarrow>=4.0.*", "pandas"]
+numpy = ["numpy >= 1.16.0"]
 fsspec = ["fsspec"]
 connectorx = ["connectorx"]
 xlsx2csv = ["xlsx2csv"]

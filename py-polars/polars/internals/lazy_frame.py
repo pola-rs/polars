@@ -712,7 +712,7 @@ class LazyFrame(Generic[DF]):
         ...     }
         ... ).lazy()
         >>> lf.dtypes
-        [<class 'polars.datatypes.int64'>, <class 'polars.datatypes.float64'>, <class 'polars.datatypes.utf8'>]
+        [<class 'polars.datatypes.Int64'>, <class 'polars.datatypes.Float64'>, <class 'polars.datatypes.Utf8'>]
 
         See Also
         --------
@@ -746,9 +746,15 @@ class LazyFrame(Generic[DF]):
         """
         return self._from_pyldf(self._ldf.cache())
 
+    def cleared(self: LDF) -> LDF:
+        """
+        Create an empty copy of the current LazyFrame, with identical schema but no data.
+        """
+        return self._dataframe_class(columns=self.schema).lazy()
+
     def clone(self: LDF) -> LDF:
         """
-        Cheap deepcopy/clone.
+        Very cheap deepcopy/clone.
         """
         return self._from_pyldf(self._ldf.clone())
 
@@ -874,22 +880,23 @@ class LazyFrame(Generic[DF]):
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... ).lazy()
-        # does NOT work:
+
+        The following does NOT work:
         # df.groupby("a")["b"].sum().collect()
         #                ^^^^ TypeError: 'LazyGroupBy' object is not subscriptable
-        # instead, use .agg():
-        >>> df.groupby("a").agg(pl.col("b").sum()).collect()
+        instead, use .agg():
+        >>> df.groupby(by="a", maintain_order=True).agg(pl.col("b").sum()).collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
         │ str ┆ i64 │
         ╞═════╪═════╡
-        │ c   ┆ 6   │
+        │ a   ┆ 4   │
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ b   ┆ 11  │
         ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ a   ┆ 4   │
+        │ c   ┆ 6   │
         └─────┴─────┘
 
         """
@@ -985,23 +992,22 @@ class LazyFrame(Generic[DF]):
         >>> out
         shape: (6, 4)
         ┌─────────────────────┬───────┬───────┬───────┐
-        │ dt                  ┆ a_sum ┆ a_max ┆ a_min │
+        │ dt                  ┆ sum_a ┆ min_a ┆ max_a │
         │ ---                 ┆ ---   ┆ ---   ┆ ---   │
-        │ datetime[ms]        ┆ i64   ┆ i64   ┆ i64   │
+        │ datetime[μs]        ┆ i64   ┆ i64   ┆ i64   │
         ╞═════════════════════╪═══════╪═══════╪═══════╡
         │ 2020-01-01 13:45:48 ┆ 3     ┆ 3     ┆ 3     │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 2020-01-01 16:42:13 ┆ 10    ┆ 7     ┆ 3     │
+        │ 2020-01-01 16:42:13 ┆ 10    ┆ 3     ┆ 7     │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 2020-01-01 16:45:09 ┆ 15    ┆ 7     ┆ 3     │
+        │ 2020-01-01 16:45:09 ┆ 15    ┆ 3     ┆ 7     │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 2020-01-02 18:12:48 ┆ 24    ┆ 9     ┆ 3     │
+        │ 2020-01-02 18:12:48 ┆ 24    ┆ 3     ┆ 9     │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 2020-01-03 19:45:32 ┆ 11    ┆ 9     ┆ 2     │
+        │ 2020-01-03 19:45:32 ┆ 11    ┆ 2     ┆ 9     │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ 2020-01-08 23:16:43 ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴───────┴───────┴───────┘
-
 
         """
 
@@ -1776,6 +1782,27 @@ class LazyFrame(Generic[DF]):
         """
         return self._from_pyldf(self._ldf.with_row_count(name, offset))
 
+    def take_every(self: LDF, n: int) -> LDF:
+        """
+        Take every nth row in the LazyFrame and return as a new LazyFrame.
+
+        Examples
+        --------
+        >>> s = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]}).lazy()
+        >>> s.take_every(2).collect()
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 5   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 7   │
+        └─────┴─────┘
+        """
+        return self.select(pli.col("*").take_every(n))
+
     def fill_null(self: LDF, fill_value: int | str | pli.Expr) -> LDF:
         """
         Fill missing values with a literal or Expr.
@@ -1874,23 +1901,23 @@ class LazyFrame(Generic[DF]):
         ... )
         >>> df
         shape: (6, 2)
-        ┌─────────┬────────────┐
-        │ letters ┆ nrs        │
-        │ ---     ┆ ---        │
-        │ str     ┆ list [i64] │
-        ╞═════════╪════════════╡
-        │ c       ┆ [1, 2]     │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ c       ┆ [1, 3]     │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ a       ┆ [4, 3]     │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ c       ┆ [5, 5, 5]  │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ a       ┆ [6]        │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ b       ┆ [2, 1, 2]  │
-        └─────────┴────────────┘
+        ┌─────────┬───────────┐
+        │ letters ┆ nrs       │
+        │ ---     ┆ ---       │
+        │ str     ┆ list[i64] │
+        ╞═════════╪═══════════╡
+        │ c       ┆ [1, 2]    │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ c       ┆ [1, 3]    │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ a       ┆ [4, 3]    │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ c       ┆ [5, 5, 5] │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ a       ┆ [6]       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b       ┆ [2, 1, 2] │
+        └─────────┴───────────┘
         >>> df.explode("nrs")
         shape: (13, 2)
         ┌─────────┬─────┐
@@ -2179,6 +2206,7 @@ class LazyFrame(Generic[DF]):
         ----------
         names
            Names of the struct columns that will be decomposed by its fields
+
         """
         if isinstance(names, str):
             names = [names]
@@ -2357,7 +2385,8 @@ class LazyGroupBy(Generic[LDF]):
         Examples
         --------
 
-        # The function is applied by group
+        The function is applied by group.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3, 1],
@@ -2386,12 +2415,14 @@ class LazyGroupBy(Generic[LDF]):
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ c   ┆ 4   │
         └─────┴─────┘
-        # It is better to implement this with an expression:
+
+        It is better to implement this with an expression:
+
         >>> (
         ...     df.groupby("bar", maintain_order=True).agg(
         ...         pl.col("foo").sum(),
         ...     )
-        ... )
+        ... )  # doctest: +IGNORE_RESULT
 
         """
         return self._lazyframe_class._from_pyldf(self.lgb.apply(f))

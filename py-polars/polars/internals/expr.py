@@ -1,21 +1,10 @@
 from __future__ import annotations
 
 import copy
+import math
+import random
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, List, Sequence
-
-import numpy as np
-
-from polars.utils import _timedelta_to_pl_duration
-
-try:
-    from polars.polars import PyExpr
-
-    _DOCUMENTING = False
-except ImportError:  # pragma: no cover
-    _DOCUMENTING = True
-
-import math
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -31,6 +20,21 @@ from polars.datatypes import (
     UInt32,
     py_type_to_dtype,
 )
+from polars.utils import _timedelta_to_pl_duration
+
+try:
+    from polars.polars import PyExpr
+
+    _DOCUMENTING = False
+except ImportError:  # pragma: no cover
+    _DOCUMENTING = True
+
+try:
+    import numpy as np
+
+    _NUMPY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _NUMPY_AVAILABLE = False
 
 
 def selection_to_pyexpr_list(
@@ -188,6 +192,8 @@ class Expr:
         """
         Numpy universal functions.
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         out_type = ufunc(np.array([1])).dtype
         dtype: type[DataType] | None
         if "float" in str(out_type):
@@ -238,13 +244,13 @@ class Expr:
         >>> df = pl.DataFrame({"TF": [True, False], "FF": [False, False]})
         >>> df.select(pl.col("*").any())
         shape: (1, 2)
-        ┌───────┬──────┐
-        │ FF    ┆ TF   │
-        │ ---   ┆ ---  │
-        │ bool  ┆ bool │
-        ╞═══════╪══════╡
-        │ false ┆ true │
-        └───────┴──────┘
+        ┌──────┬───────┐
+        │ TF   ┆ FF    │
+        │ ---  ┆ ---   │
+        │ bool ┆ bool  │
+        ╞══════╪═══════╡
+        │ true ┆ false │
+        └──────┴───────┘
         """
         return wrap_expr(self._pyexpr.any())
 
@@ -453,7 +459,7 @@ class Expr:
         ┌─────┬────────────┐
         │ a   ┆ b_agg_list │
         │ --- ┆ ---        │
-        │ i64 ┆ list [str] │
+        │ i64 ┆ list[str]  │
         ╞═════╪════════════╡
         │ 1   ┆ ["a"]      │
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -466,17 +472,17 @@ class Expr:
 
         >>> df.groupby("a").agg(pl.col("b").list().keep_name()).sort(by="a")
         shape: (3, 2)
-        ┌─────┬────────────┐
-        │ a   ┆ b          │
-        │ --- ┆ ---        │
-        │ i64 ┆ list [str] │
-        ╞═════╪════════════╡
-        │ 1   ┆ ["a"]      │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2   ┆ ["b"]      │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 3   ┆ [null]     │
-        └─────┴────────────┘
+        ┌─────┬───────────┐
+        │ a   ┆ b         │
+        │ --- ┆ ---       │
+        │ i64 ┆ list[str] │
+        ╞═════╪═══════════╡
+        │ 1   ┆ ["a"]     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ ["b"]     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ [null]    │
+        └─────┴───────────┘
 
         """
 
@@ -894,17 +900,17 @@ class Expr:
         ...         "value": [94, 95, 96, 97, 97, 99],
         ...     }
         ... )
-        >>> df.groupby("group").agg(pl.col("value").agg_groups())
+        >>> df.groupby("group", maintain_order=True).agg(pl.col("value").agg_groups())
         shape: (2, 2)
-        ┌───────┬────────────┐
-        │ group ┆ value      │
-        │ ---   ┆ ---        │
-        │ str   ┆ list [u32] │
-        ╞═══════╪════════════╡
-        │ two   ┆ [3, 4, 5]  │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ one   ┆ [0, 1, 2]  │
-        └───────┴────────────┘
+        ┌───────┬───────────┐
+        │ group ┆ value     │
+        │ ---   ┆ ---       │
+        │ str   ┆ list[u32] │
+        ╞═══════╪═══════════╡
+        │ one   ┆ [0, 1, 2] │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ two   ┆ [3, 4, 5] │
+        └───────┴───────────┘
 
         """
         return wrap_expr(self._pyexpr.agg_groups())
@@ -1725,7 +1731,7 @@ class Expr:
         ...         "value": [1, 98, 2, 3, 99, 4],
         ...     }
         ... )
-        >>> df.groupby("group").agg(pl.col("value").take(1))
+        >>> df.groupby("group", maintain_order=True).agg(pl.col("value").take(1))
         shape: (2, 2)
         ┌───────┬───────┐
         │ group ┆ value │
@@ -1738,10 +1744,15 @@ class Expr:
         └───────┴───────┘
 
         """
-        if isinstance(index, (list, np.ndarray)):
+        if isinstance(index, list):
+            index_lit = pli.lit(pli.Series("", index, dtype=UInt32))
+        elif _NUMPY_AVAILABLE and isinstance(index, np.ndarray):
             index_lit = pli.lit(pli.Series("", index, dtype=UInt32))
         else:
-            index_lit = pli.expr_to_lit_or_expr(index, str_to_lit=False)
+            index_lit = pli.expr_to_lit_or_expr(
+                index,  # type: ignore[arg-type]
+                str_to_lit=False,
+            )
         return pli.wrap_expr(self._pyexpr.take(index_lit._pyexpr))
 
     def shift(self, periods: int = 1) -> Expr:
@@ -2348,13 +2359,13 @@ class Expr:
         ... )
         >>> df.select(pl.all().list())
         shape: (1, 2)
-        ┌────────────┬────────────┐
-        │ a          ┆ b          │
-        │ ---        ┆ ---        │
-        │ list [i64] ┆ list [i64] │
-        ╞════════════╪════════════╡
-        │ [1, 2, 3]  ┆ [4, 5, 6]  │
-        └────────────┴────────────┘
+        ┌───────────┬───────────┐
+        │ a         ┆ b         │
+        │ ---       ┆ ---       │
+        │ list[i64] ┆ list[i64] │
+        ╞═══════════╪═══════════╡
+        │ [1, 2, 3] ┆ [4, 5, 6] │
+        └───────────┴───────────┘
 
         """
         return wrap_expr(self._pyexpr.list())
@@ -2363,7 +2374,7 @@ class Expr:
         """
         Apply window function over a subgroup.
         This is similar to a groupby + aggregation + self join.
-        Or similar to [window functions in Postgres](https://www.postgresql.org/docs/9.1/tutorial-window.html)
+        Or similar to `window functions in Postgres <https://www.postgresql.org/docs/current/tutorial-window.html>`_.
 
         Parameters
         ----------
@@ -2603,9 +2614,9 @@ class Expr:
         The output of this custom function must be a Series.
         If you want to apply a custom function elementwise over single values see `apply`.
         A use case for map is when you want to transform an expression
-        with a third-party library
+        with a third-party library.
 
-        [read more in the book](https://pola-rs.github.io/polars-book/user-guide/howcani/apply/udfs.html)
+        Read more in `the book <https://pola-rs.github.io/polars-book/user-guide/howcani/apply/udfs.html>`_.
 
         Parameters
         ----------
@@ -2683,7 +2694,9 @@ class Expr:
         ...         "b": ["a", "b", "c", "c"],
         ...     }
         ... )
-        # In a selection context the function is applied by row
+
+        In a selection context the function is applied by row:
+
         >>> (
         ...     df.with_column(
         ...         pl.col("a").apply(lambda x: x * 2).alias("a_times_2"),
@@ -2703,13 +2716,17 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 1   ┆ c   ┆ 2         │
         └─────┴─────┴───────────┘
-        # It is better to implement this with an expression:
+
+        It is better to implement this with an expression:
+
         >>> (
         ...     df.with_column(
         ...         (pl.col("a") * 2).alias("a_times_2"),
         ...     )
-        ... )
-        # In a GroupBy context the function is applied by group
+        ... )  # doctest: +IGNORE_RESULT
+
+        In a GroupBy context the function is applied by group:
+
         >>> (
         ...     df.lazy()
         ...     .groupby("b", maintain_order=True)
@@ -2732,12 +2749,14 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ c   ┆ 4   │
         └─────┴─────┘
-        # It is better to implement this with an expression:
+
+        It is better to implement this with an expression:
+
         >>> (
         ...     df.groupby("b", maintain_order=True).agg(
         ...         pl.col("a").sum(),
         ...     )
-        ... )
+        ... )  # doctest: +IGNORE_RESULT
         """
 
         # input x: Series of type list containing the group values
@@ -2760,7 +2779,9 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame({"foo": ["hello", "world"]})
-        # Turn each character into a separate row
+
+        Turn each character into a separate row:
+
         >>> df.select(pl.col("foo").flatten())
         shape: (10, 1)
         ┌─────┐
@@ -2786,8 +2807,11 @@ class Expr:
         ├╌╌╌╌╌┤
         │ d   │
         └─────┘
+
         >>> df = pl.DataFrame({"foo": ["hello world"]})
-        # Turn each word into a separate row
+
+        Turn each word into a separate row:
+
         >>> df.select(pl.col("foo").str.split(by=" ").flatten())
         shape: (2, 1)
         ┌───────┐
@@ -2971,7 +2995,7 @@ class Expr:
         ┌─────────────────┐
         │ a               │
         │ ---             │
-        │ list [str]      │
+        │ list[str]       │
         ╞═════════════════╡
         │ ["x"]           │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -3081,7 +3105,7 @@ class Expr:
         ...         "a": [1, 2, 3],
         ...     }
         ... )
-        >>> df.with_column(pl.col("a").hash(0))
+        >>> df.with_column(pl.col("a").hash(0))  # doctest: +IGNORE_RESULT
         shape: (3, 1)
         ┌─────────────────────┐
         │ a                   │
@@ -3427,13 +3451,13 @@ class Expr:
         ├╌╌╌╌╌╌┤
         │ 4.5  │
         ├╌╌╌╌╌╌┤
-        │ 7    │
+        │ 7.0  │
         ├╌╌╌╌╌╌┤
-        │ 4    │
+        │ 4.0  │
         ├╌╌╌╌╌╌┤
-        │ 9    │
+        │ 9.0  │
         ├╌╌╌╌╌╌┤
-        │ 13   │
+        │ 13.0 │
         └──────┘
 
         """
@@ -3515,6 +3539,24 @@ class Expr:
         ...         ]
         ...     )
         ... )
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 3.0  │
+        ├╌╌╌╌╌╌┤
+        │ 5.0  │
+        ├╌╌╌╌╌╌┤
+        │ 7.0  │
+        ├╌╌╌╌╌╌┤
+        │ 9.0  │
+        ├╌╌╌╌╌╌┤
+        │ 11.0 │
+        └──────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -3854,22 +3896,22 @@ class Expr:
         ...         pl.col("A").rolling_apply(lambda s: s.std(), window_size=3),
         ...     ]
         ... )
-        shape: (5, 1)
-        ┌────────────────────┐
-        │ A                  │
-        │ ---                │
-        │ f64                │
-        ╞════════════════════╡
-        │ null               │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ null               │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 4.358898943540674  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 4.041451884327381  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 5.5677643628300215 │
-        └────────────────────┘
+         shape: (5, 1)
+        ┌──────────┐
+        │ A        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ null     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ null     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 4.358899 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 4.041452 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 5.567764 │
+        └──────────┘
 
         """
         if min_periods is None:
@@ -4146,6 +4188,8 @@ class Expr:
         └─────┘
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.sign(self)  # type: ignore
 
     def sin(self) -> Expr:
@@ -4171,6 +4215,8 @@ class Expr:
         └─────┘
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.sin(self)  # type: ignore
 
     def cos(self) -> Expr:
@@ -4192,10 +4238,12 @@ class Expr:
         │ --- │
         │ f64 │
         ╞═════╡
-        │ 1   │
+        │ 1.0 │
         └─────┘
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.cos(self)  # type: ignore
 
     def tan(self) -> Expr:
@@ -4221,6 +4269,8 @@ class Expr:
         └──────┘
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.tan(self)  # type: ignore
 
     def arcsin(self) -> Expr:
@@ -4236,15 +4286,17 @@ class Expr:
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").arcsin())
         shape: (1, 1)
-        ┌────────────────────┐
-        │ a                  │
-        │ ---                │
-        │ f64                │
-        ╞════════════════════╡
-        │ 1.5707963267948966 │
-        └────────────────────┘
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.570796 │
+        └──────────┘
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.arcsin(self)  # type: ignore
 
     def arccos(self) -> Expr:
@@ -4260,15 +4312,17 @@ class Expr:
         >>> df = pl.DataFrame({"a": [0.0]})
         >>> df.select(pl.col("a").arccos())
         shape: (1, 1)
-        ┌────────────────────┐
-        │ a                  │
-        │ ---                │
-        │ f64                │
-        ╞════════════════════╡
-        │ 1.5707963267948966 │
-        └────────────────────┘
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.570796 │
+        └──────────┘
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.arccos(self)  # type: ignore
 
     def arctan(self) -> Expr:
@@ -4284,15 +4338,17 @@ class Expr:
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").arctan())
         shape: (1, 1)
-        ┌────────────────────┐
-        │ a                  │
-        │ ---                │
-        │ f64                │
-        ╞════════════════════╡
-        │ 0.7853981633974483 │
-        └────────────────────┘
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.785398 │
+        └──────────┘
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.arctan(self)  # type: ignore
 
     def reshape(self, dims: tuple[int, ...]) -> Expr:
@@ -4320,7 +4376,7 @@ class Expr:
         ┌───────────┐
         │ foo       │
         │ ---       │
-        │ List[i64] │
+        │ list[i64] │
         ╞═══════════╡
         │ [1, 2, 3] │
         ├╌╌╌╌╌╌╌╌╌╌╌┤
@@ -4339,10 +4395,11 @@ class Expr:
         Parameters
         ----------
         seed
-            Seed initialization. If None given numpy is used.
+            Seed initialization. If None given, the `random` module is used to generate
+            a random seed.
         """
         if seed is None:
-            seed = int(np.random.randint(0, 10000))
+            seed = random.randint(0, 10000)
         return wrap_expr(self._pyexpr.shuffle(seed))
 
     def sample(
@@ -4528,17 +4585,17 @@ class Expr:
         ...     ]
         ... )
         shape: (3, 1)
-        ┌─────────────────────────────────────┐
-        │ id                                  │
-        │ ---                                 │
-        │ struct[2]{'id': str, 'counts': u32} │
-        ╞═════════════════════════════════════╡
-        │ {"c",3}                             │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {"b",2}                             │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {"a",1}                             │
-        └─────────────────────────────────────┘
+        ┌───────────┐
+        │ id        │
+        │ ---       │
+        │ struct[2] │
+        ╞═══════════╡
+        │ {"c",3}   │
+        ├╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"b",2}   │
+        ├╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"a",1}   │
+        └───────────┘
 
         """
         return wrap_expr(self._pyexpr.value_counts(multithreaded))
@@ -4789,9 +4846,11 @@ class ExprStructNameSpace:
         >>> df = df.with_column(
         ...     pl.col("my_struct").struct.rename_fields(["INT", "STR", "BOOL", "LIST"])
         ... )
-        # does NOT work anymore:
+
+        Does NOT work anymore:
         # df.select(pl.col("my_struct").struct.field("int"))
         #               PanicException: int not found ^^^
+
         >>> df.select(pl.col("my_struct").struct.field("INT"))
         shape: (2, 1)
         ┌─────┐
@@ -4877,15 +4936,15 @@ class ExprListNameSpace:
         ... )
         >>> df.select(pl.col("a").arr.sort())
         shape: (2, 1)
-        ┌────────────┐
-        │ a          │
-        │ ---        │
-        │ list [i64] │
-        ╞════════════╡
-        │ [1, 2, 3]  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ [1, 2, 9]  │
-        └────────────┘
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [1, 2, 3] │
+        ├╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [1, 2, 9] │
+        └───────────┘
 
         """
         return wrap_expr(self._pyexpr.lst_sort(reverse))
@@ -4904,15 +4963,15 @@ class ExprListNameSpace:
         ... )
         >>> df.select(pl.col("a").arr.reverse())
         shape: (2, 1)
-        ┌────────────┐
-        │ a          │
-        │ ---        │
-        │ list [i64] │
-        ╞════════════╡
-        │ [1, 2, 3]  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ [2, 1, 9]  │
-        └────────────┘
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [1, 2, 3] │
+        ├╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [2, 1, 9] │
+        └───────────┘
 
         """
         return wrap_expr(self._pyexpr.lst_reverse())
@@ -4948,7 +5007,7 @@ class ExprListNameSpace:
         ┌─────────────────┐
         │ a               │
         │ ---             │
-        │ list [str]      │
+        │ list[str]       │
         ╞═════════════════╡
         │ ["a", "b", "c"] │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -5337,7 +5396,7 @@ class ExprListNameSpace:
         ┌─────┬─────┬────────────┐
         │ a   ┆ b   ┆ rank       │
         │ --- ┆ --- ┆ ---        │
-        │ i64 ┆ i64 ┆ list [f32] │
+        │ i64 ┆ i64 ┆ list[f32]  │
         ╞═════╪═════╪════════════╡
         │ 1   ┆ 4   ┆ [1.0, 2.0] │
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -5373,10 +5432,9 @@ class ExprStringNameSpace:
         datatype
             Date | Datetime | Time.
         fmt
-            Format to use, see the following link for examples:
-            https://docs.rs/chrono/latest/chrono/format/strftime/index.html
-
-            example: "%y-%m-%d".
+            Format to use, refer to the
+            `chrono strftime documentation <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for specification. Example: ``"%y-%m-%d"``.
         strict
             Raise an error if any conversion fails.
         exact
@@ -5576,7 +5634,7 @@ class ExprStringNameSpace:
     def ljust(self, width: int, fillchar: str = " ") -> Expr:
         """
         Return the string left justified in a string of length width.
-        Padding is done using the specified ``fillchar``,
+        Padding is done using the specified ``fillchar``.
         The original string is returned if width is less than or equal to ``len(s)``.
 
         Parameters
@@ -5591,7 +5649,7 @@ class ExprStringNameSpace:
     def rjust(self, width: int, fillchar: str = " ") -> Expr:
         """
         Return the string right justified in a string of length width.
-        Padding is done using the specified ``fillchar``,
+        Padding is done using the specified ``fillchar``.
         The original string is returned if ``width`` is less than or equal to ``len(s)``.
 
         Parameters
@@ -5645,23 +5703,97 @@ class ExprStringNameSpace:
 
     def ends_with(self, sub: str) -> Expr:
         """
-        Check if string values end with a substring
+        Check if string values end with a substring.
 
         Parameters
         ----------
         sub
             Suffix
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"fruits": ["apple", "mango", None]})
+        >>> df.with_column(
+        ...     pl.col("fruits").str.ends_with("go").alias("has_suffix"),
+        ... )
+        shape: (3, 2)
+        ┌────────┬────────────┐
+        │ fruits ┆ has_suffix │
+        │ ---    ┆ ---        │
+        │ str    ┆ bool       │
+        ╞════════╪════════════╡
+        │ apple  ┆ false      │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ mango  ┆ true       │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null   ┆ null       │
+        └────────┴────────────┘
+
+        Using ``ends_with`` as a filter condition:
+
+        >>> df.filter(pl.col("fruits").str.ends_with("go"))
+        shape: (1, 1)
+        ┌────────┐
+        │ fruits │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │ mango  │
+        └────────┘
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+
         """
         return wrap_expr(self._pyexpr.str_ends_with(sub))
 
     def starts_with(self, sub: str) -> Expr:
         """
-        Check if string values start with a substring
+        Check if string values start with a substring.
 
         Parameters
         ----------
         sub
             Prefix
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"fruits": ["apple", "mango", None]})
+        >>> df.with_column(
+        ...     pl.col("fruits").str.starts_with("app").alias("has_prefix"),
+        ... )
+        shape: (3, 2)
+        ┌────────┬────────────┐
+        │ fruits ┆ has_prefix │
+        │ ---    ┆ ---        │
+        │ str    ┆ bool       │
+        ╞════════╪════════════╡
+        │ apple  ┆ true       │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ mango  ┆ false      │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null   ┆ null       │
+        └────────┴────────────┘
+
+        Using ``starts_with`` as a filter condition:
+
+        >>> df.filter(pl.col("fruits").str.starts_with("app"))
+        shape: (1, 1)
+        ┌────────┐
+        │ fruits │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │ apple  │
+        └────────┘
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+
         """
         return wrap_expr(self._pyexpr.str_starts_with(sub))
 
@@ -5670,12 +5802,14 @@ class ExprStringNameSpace:
         Extract the first match of json string with provided JSONPath expression.
         Throw errors if encounter invalid json strings.
         All return value will be casted to Utf8 regardless of the original value.
-        Documentation on JSONPath standard: https://goessner.net/articles/JsonPath/
+
+        Documentation on JSONPath standard can be found
+        `here <https://goessner.net/articles/JsonPath/>`_.
 
         Parameters
         ----------
         json_path
-            A valid JSON path query string
+            A valid JSON path query string.
 
         Returns
         -------
@@ -5774,6 +5908,7 @@ class ExprStringNameSpace:
         ├╌╌╌╌╌╌╌╌╌┤
         │ null    │
         └─────────┘
+
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.str_hex_encode())
@@ -5857,7 +5992,7 @@ class ExprStringNameSpace:
         ┌────────────────┐
         │ extracted_nrs  │
         │ ---            │
-        │ List[str]      │
+        │ list[str]      │
         ╞════════════════╡
         │ ["123", "45"]  │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -5922,7 +6057,7 @@ class ExprStringNameSpace:
         ┌───────────────────────┐
         │ s                     │
         │ ---                   │
-        │ list [str]            │
+        │ list[str]             │
         ╞═══════════════════════╡
         │ ["foo", "bar"]        │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -5966,19 +6101,46 @@ class ExprStringNameSpace:
         ...     )
         ... )
         shape: (4, 1)
-        ┌───────────────────────────────────────────┐
-        │ fields                                    │
-        │ ---                                       │
-        │ struct[2]{'field_0': str, 'field_1': str} │
-        ╞═══════════════════════════════════════════╡
-        │ {"a","1"}                                 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {null,null}                               │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {"c",null}                                │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {"d","4"}                                 │
-        └───────────────────────────────────────────┘
+        ┌─────────────┐
+        │ fields      │
+        │ ---         │
+        │ struct[2]   │
+        ╞═════════════╡
+        │ {"a","1"}   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {null,null} │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"c",null}  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"d","4"}   │
+        └─────────────┘
+
+
+        Split string values in column x in exactly 2 parts and assign
+        each part to a new column.
+
+        >>> pl.DataFrame({"x": ["a_1", None, "c", "d_4"]}).with_columns(
+        ...     [
+        ...         pl.col("x")
+        ...         .str.split_exact("_", 1)
+        ...         .struct.rename_fields(["first_part", "second_part"])
+        ...         .alias("fields"),
+        ...     ]
+        ... ).unnest("fields")
+        shape: (4, 3)
+        ┌──────┬────────────┬─────────────┐
+        │ x    ┆ first_part ┆ second_part │
+        │ ---  ┆ ---        ┆ ---         │
+        │ str  ┆ str        ┆ str         │
+        ╞══════╪════════════╪═════════════╡
+        │ a_1  ┆ a          ┆ 1           │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null ┆ null       ┆ null        │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ c    ┆ c          ┆ null        │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ d_4  ┆ d          ┆ 4           │
+        └──────┴────────────┴─────────────┘
 
         Returns
         -------
@@ -6008,7 +6170,9 @@ class ExprStringNameSpace:
         --------
 
         >>> df = pl.DataFrame({"id": [1, 2], "text": ["123abc", "abc456"]})
-        >>> df.with_column(pl.col("text").str.replace(r"abc\b", "ABC"))
+        >>> df.with_column(
+        ...     pl.col("text").str.replace(r"abc\b", "ABC")
+        ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌─────┬────────┐
         │ id  ┆ text   │
@@ -6198,7 +6362,10 @@ class ExprDateTimeNameSpace:
 
     def strftime(self, fmt: str) -> Expr:
         """
-        Format Date/datetime with a formatting rule: See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+        Format Date/datetime with a formatting rule.
+
+        See `chrono strftime/strptime <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_.
+
         """
         return wrap_expr(self._pyexpr.strftime(fmt))
 
@@ -6457,8 +6624,8 @@ class ExprDateTimeNameSpace:
         Set time unit a Series of type Datetime. This does not modify underlying data,
         and should be used to fix an incorrect time unit.
 
-        ..deprecated::
-            Use `with_time_unit`
+        .. deprecated::
+            Use :func:`with_time_unit` instead.
 
 
         Parameters
@@ -6474,13 +6641,13 @@ class ExprDateTimeNameSpace:
         """
         Set time zone for a Series of type Datetime.
 
-        ..deprecated::
-            Use `with_time_zone`
+        .. deprecated::
+            Use :func:`with_time_zone` instead.
 
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` Series
+            Time zone for the `Datetime` Series.
 
         """
         return wrap_expr(self._pyexpr).map(
@@ -6494,7 +6661,7 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` Series
+            Time zone for the `Datetime` Series.
 
         """
         return wrap_expr(self._pyexpr).map(
@@ -6701,7 +6868,7 @@ def _prepare_alpha(
         alpha = 2.0 / (span + 1.0)
     if half_life is not None and alpha is None:
         assert half_life > 0.0
-        alpha = 1.0 - np.exp(-np.log(2.0) / half_life)
+        alpha = 1.0 - math.exp(-math.log(2.0) / half_life)
     if alpha is None:
         raise ValueError("at least one of {com, span, half_life, alpha} should be set")
     return alpha

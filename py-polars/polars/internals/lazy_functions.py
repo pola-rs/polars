@@ -5,13 +5,6 @@ from datetime import date, datetime, timedelta
 from inspect import isclass
 from typing import Any, Callable, Sequence, cast, overload
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal  # pragma: no cover
-
-import numpy as np
-
 from polars import internals as pli
 from polars.datatypes import (
     DataType,
@@ -57,6 +50,18 @@ try:
     _DOCUMENTING = False
 except ImportError:  # pragma: no cover
     _DOCUMENTING = True
+
+try:
+    import numpy as np
+
+    _NUMPY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _NUMPY_AVAILABLE = False
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal  # pragma: no cover
 
 
 def col(
@@ -195,7 +200,7 @@ def element() -> pli.Expr:
     ┌─────┬─────┬────────────┐
     │ a   ┆ b   ┆ rank       │
     │ --- ┆ --- ┆ ---        │
-    │ i64 ┆ i64 ┆ list [f32] │
+    │ i64 ┆ i64 ┆ list[f32]  │
     ╞═════╪═════╪════════════╡
     │ 1   ┆ 4   ┆ [1.0, 2.0] │
     ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -675,7 +680,7 @@ def lit(
             return e
         return e.alias(name)
 
-    if isinstance(value, np.ndarray):
+    if _NUMPY_AVAILABLE and isinstance(value, np.ndarray):
         return lit(pli.Series("", value))
 
     if dtype:
@@ -1119,7 +1124,7 @@ def duration(
     ...         ),
     ...         (pl.col("datetime") + pl.duration(hours="add")).alias("add_hours"),
     ...     ]
-    ... )
+    ... )  # doctest: +IGNORE_RESULT
     shape: (2, 5)
     ┌────────────┬────────────┬─────────────────────┬──────────────┬─────────────────────┐
     │ add_weeks  ┆ add_days   ┆ add_seconds         ┆ add_millisec ┆ add_hours           │
@@ -1340,21 +1345,21 @@ def concat_list(exprs: Sequence[str | pli.Expr | pli.Series] | pli.Expr) -> pli.
     ...     )
     ... )
     shape: (5, 1)
-    ┌─────────────────┐
-    │ A_rolling       │
-    │ ---             │
-    │ list [f64]      │
-    ╞═════════════════╡
-    │ [null, null, 1] │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-    │ [null, 1, 2]    │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-    │ [1, 2, 9]       │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-    │ [2, 9, 2]       │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-    │ [9, 2, 13]      │
-    └─────────────────┘
+    ┌───────────────────┐
+    │ A_rolling         │
+    │ ---               │
+    │ list[f64]         │
+    ╞═══════════════════╡
+    │ [null, null, 1.0] │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ [null, 1.0, 2.0]  │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ [1.0, 2.0, 9.0]   │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ [2.0, 9.0, 2.0]   │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ [9.0, 2.0, 13.0]  │
+    └───────────────────┘
 
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
@@ -1520,15 +1525,15 @@ def struct(
     ...     }
     ... ).select([pl.struct(pl.all()).alias("my_struct")])
     shape: (2, 1)
-    ┌───────────────────────┐
-    │ my_struct             │
-    │ ---                   │
-    │ struct{int, ... list} │
-    ╞═══════════════════════╡
-    │ {1,"a",true,[1, 2]}   │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-    │ {2,"b",null,[3]}      │
-    └───────────────────────┘
+    ┌─────────────────────┐
+    │ my_struct           │
+    │ ---                 │
+    │ struct[4]           │
+    ╞═════════════════════╡
+    │ {1,"a",true,[1, 2]} │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ {2,"b",null,[3]}    │
+    └─────────────────────┘
 
     Only collect specific columns as a struct:
 
@@ -1537,19 +1542,19 @@ def struct(
     ... )
     >>> df.with_column(pl.struct(pl.col(["a", "b"])).alias("a_and_b"))
     shape: (4, 4)
-    ┌─────┬───────┬─────┬───────────────────────────────┐
-    │ a   ┆ b     ┆ c   ┆ a_and_b                       │
-    │ --- ┆ ---   ┆ --- ┆ ---                           │
-    │ i64 ┆ str   ┆ i64 ┆ struct[2]{'a': i64, 'b': str} │
-    ╞═════╪═══════╪═════╪═══════════════════════════════╡
-    │ 1   ┆ one   ┆ 9   ┆ {1,"one"}                     │
-    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-    │ 2   ┆ two   ┆ 8   ┆ {2,"two"}                     │
-    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-    │ 3   ┆ three ┆ 7   ┆ {3,"three"}                   │
-    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-    │ 4   ┆ four  ┆ 6   ┆ {4,"four"}                    │
-    └─────┴───────┴─────┴───────────────────────────────┘
+    ┌─────┬───────┬─────┬─────────────┐
+    │ a   ┆ b     ┆ c   ┆ a_and_b     │
+    │ --- ┆ ---   ┆ --- ┆ ---         │
+    │ i64 ┆ str   ┆ i64 ┆ struct[2]   │
+    ╞═════╪═══════╪═════╪═════════════╡
+    │ 1   ┆ one   ┆ 9   ┆ {1,"one"}   │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2   ┆ two   ┆ 8   ┆ {2,"two"}   │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 3   ┆ three ┆ 7   ┆ {3,"three"} │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 4   ┆ four  ┆ 6   ┆ {4,"four"}  │
+    └─────┴───────┴─────┴─────────────┘
 
     """
 
@@ -1660,14 +1665,14 @@ def arg_where(
     >>> df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
     >>> df.select(
     ...     [
-    ...         pl.col("a") % 2 == 0,
+    ...         pl.arg_where(pl.col("a") % 2 == 0),
     ...     ]
     ... ).to_series()
     shape: (2,)
-    Series: '' [u32]
+    Series: 'a' [u32]
     [
-            1
-            3
+        1
+        3
     ]
     """
     if eager:

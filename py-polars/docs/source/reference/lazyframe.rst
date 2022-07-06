@@ -46,6 +46,7 @@ Manipulation/ selection
 .. autosummary::
    :toctree: api/
 
+    LazyFrame.cleared
     LazyFrame.clone
     LazyFrame.distinct
     LazyFrame.drop
@@ -74,6 +75,7 @@ Manipulation/ selection
     LazyFrame.slice
     LazyFrame.sort
     LazyFrame.tail
+    LazyFrame.take_every
     LazyFrame.unique
     LazyFrame.unnest
     LazyFrame.with_column

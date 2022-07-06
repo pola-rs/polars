@@ -19,8 +19,11 @@ impl Executor for UnionExec {
             let mut len = self.options.slice_len as usize;
             let dfs = inputs
                 .into_iter()
-                .map(|mut input| {
-                    let df = input.execute(state)?;
+                .enumerate()
+                .map(|(idx, mut input)| {
+                    let mut state = state.clone();
+                    state.join_branch += idx;
+                    let df = input.execute(&state)?;
 
                     Ok(if offset > df.height() {
                         offset -= df.height();
@@ -54,9 +57,12 @@ impl Executor for UnionExec {
                     .map(|chunk| {
                         chunk
                             .into_par_iter()
-                            .map(|input| {
+                            .enumerate()
+                            .map(|(idx, input)| {
                                 let mut input = std::mem::take(input);
-                                input.execute(state)
+                                let mut state = state.clone();
+                                state.join_branch += idx;
+                                input.execute(&state)
                             })
                             .collect::<Result<Vec<_>>>()
                     })

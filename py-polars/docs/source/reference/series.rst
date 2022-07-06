@@ -155,6 +155,7 @@ Manipulation/ selection
     Series.argsort
     Series.cast
     Series.ceil
+    Series.cleared
     Series.clip
     Series.clone
     Series.drop_nans

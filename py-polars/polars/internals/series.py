@@ -1,36 +1,11 @@
 from __future__ import annotations
 
+import math
 import sys
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Sequence, Union, overload
 
-import numpy as np
-
-try:
-    import pyarrow as pa
-
-    _PYARROW_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    _PYARROW_AVAILABLE = False
-
-import math
-
 from polars import internals as pli
-from polars.internals.construction import (
-    arrow_to_pyseries,
-    numpy_to_pyseries,
-    pandas_to_pyseries,
-    sequence_to_pyseries,
-    series_to_pyseries,
-)
-
-try:
-    from polars.polars import PyDataFrame, PySeries
-
-    _DOCUMENTING = False
-except ImportError:  # pragma: no cover
-    _DOCUMENTING = True
-
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     Boolean,
@@ -59,6 +34,14 @@ from polars.datatypes import (
     py_type_to_dtype,
     supported_numpy_char_code,
 )
+from polars.internals.construction import (
+    arrow_to_pyseries,
+    numpy_to_pyseries,
+    pandas_to_pyseries,
+    sequence_to_pyseries,
+    series_to_pyseries,
+)
+from polars.internals.functions import PolarsSlice
 from polars.utils import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
@@ -66,6 +49,27 @@ from polars.utils import (
     _to_python_datetime,
     range_to_slice,
 )
+
+try:
+    from polars.polars import PyDataFrame, PySeries
+
+    _DOCUMENTING = False
+except ImportError:  # pragma: no cover
+    _DOCUMENTING = True
+
+try:
+    import numpy as np
+
+    _NUMPY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _NUMPY_AVAILABLE = False
+
+try:
+    import pyarrow as pa
+
+    _PYARROW_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _PYARROW_AVAILABLE = False
 
 try:
     import pandas as pd
@@ -113,7 +117,7 @@ def wrap_s(s: PySeries) -> Series:
 
 
 ArrayLike = Union[
-    Sequence[Any], "Series", "pa.Array", np.ndarray, "pd.Series", "pd.DatetimeIndex"
+    Sequence[Any], "Series", "pa.Array", "np.ndarray", "pd.Series", "pd.DatetimeIndex"
 ]
 
 
@@ -162,9 +166,9 @@ class Series:
     shape: (3,)
     Series: 'a' [f32]
     [
-            1
-            2
-            3
+        1.0
+        2.0
+        3.0
     ]
 
     It is possible to construct a Series with values as the first positional argument.
@@ -210,7 +214,7 @@ class Series:
             self._s = series_to_pyseries(name, values)
         elif _PYARROW_AVAILABLE and isinstance(values, pa.Array):
             self._s = arrow_to_pyseries(name, values)
-        elif isinstance(values, np.ndarray):
+        elif _NUMPY_AVAILABLE and isinstance(values, np.ndarray):
             self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
             if dtype is not None:
                 self._s = self.cast(dtype, strict=True)._s
@@ -435,6 +439,8 @@ class Series:
             raise ValueError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.power(self, power)  # type: ignore
 
     def __rpow__(self, other: Any) -> Series:
@@ -442,6 +448,8 @@ class Series:
             raise ValueError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.power(other, self)  # type: ignore
 
     def __neg__(self) -> Series:
@@ -472,12 +480,7 @@ class Series:
 
         # slice
         if isinstance(item, slice):
-            start, stop, stride = item.indices(self.len())
-            out = self.slice(start, stop - start)
-            if stride != 1:
-                return out.take_every(stride)
-            else:
-                return out
+            return PolarsSlice(self).apply(item)
 
         raise NotImplementedError
 
@@ -494,10 +497,15 @@ class Series:
             elif key.dtype == UInt32:
                 self._s = self.set_at_idx(key, value)._s
         # TODO: implement for these types without casting to series
-        elif isinstance(key, np.ndarray) and key.dtype == np.bool_:
+        elif _NUMPY_AVAILABLE and isinstance(key, np.ndarray) and key.dtype == np.bool_:
             # boolean numpy mask
             self._s = self.set_at_idx(np.argwhere(key)[:, 0], value)._s
-        elif isinstance(key, (np.ndarray, list, tuple)):
+        elif _NUMPY_AVAILABLE and isinstance(key, np.ndarray):
+            s = wrap_s(PySeries.new_u32("", np.array(key, np.uint32), True))
+            self.__setitem__(s, value)
+        elif isinstance(key, (list, tuple)):
+            if not _NUMPY_AVAILABLE:
+                raise ImportError("'numpy' is required for this functionality.")
             s = wrap_s(PySeries.new_u32("", np.array(key, np.uint32), True))
             self.__setitem__(s, value)
         elif isinstance(key, int) and not isinstance(key, bool):
@@ -531,8 +539,8 @@ class Series:
         shape: (2,)
         Series: '' [f64]
         [
-            1
-            1.4142135623730951
+            1.0
+            1.414214
         ]
 
         """
@@ -568,7 +576,7 @@ class Series:
         """
         Return the base 10 logarithm of the input array, element-wise.
         """
-        return np.log10(self)  # type: ignore
+        return self.log(10.0)
 
     def exp(self) -> Series:
         """
@@ -652,23 +660,23 @@ class Series:
         >>> series_num = pl.Series([1, 2, 3, 4, 5])
         >>> series_num.describe()
         shape: (6, 2)
-        ┌────────────┬────────────────────┐
-        │ statistic  ┆ value              │
-        │ ---        ┆ ---                │
-        │ str        ┆ f64                │
-        ╞════════════╪════════════════════╡
-        │ min        ┆ 1                  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ max        ┆ 5                  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ null_count ┆ 0.0                │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ mean       ┆ 3                  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ std        ┆ 1.5811388300841898 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ count      ┆ 5                  │
-        └────────────┴────────────────────┘
+        ┌────────────┬──────────┐
+        │ statistic  ┆ value    │
+        │ ---        ┆ ---      │
+        │ str        ┆ f64      │
+        ╞════════════╪══════════╡
+        │ min        ┆ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ max        ┆ 5.0      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ null_count ┆ 0.0      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ mean       ┆ 3.0      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ std        ┆ 1.581139 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ count      ┆ 5.0      │
+        └────────────┴──────────┘
 
         >>> series_str = pl.Series(["a", "a", None, "b", "c"])
         >>> series_str.describe()
@@ -811,6 +819,10 @@ class Series:
         """
         if not self.is_numeric():
             return None
+        if ddof == 1:
+            return self.to_frame().select(pli.col(self.name).std()).to_series()[0]
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.std(self.drop_nulls().view(), ddof=ddof)
 
     def var(self, ddof: int = 1) -> float | None:
@@ -833,6 +845,10 @@ class Series:
         """
         if not self.is_numeric():
             return None
+        if ddof == 1:
+            return self.to_frame().select(pli.col(self.name).var()).to_series()[0]
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.var(self.drop_nulls().view(), ddof=ddof)
 
     def median(self) -> float:
@@ -864,7 +880,7 @@ class Series:
         --------
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.quantile(0.5)
-        2
+        2.0
 
         """
         return self._s.quantile(quantile, interpolation)
@@ -1527,6 +1543,8 @@ class Series:
         if isinstance(indices, pli.Expr):
             return pli.select(pli.lit(self).take(indices)).to_series()
         if isinstance(indices, list):
+            if not _NUMPY_AVAILABLE:
+                raise ImportError("'numpy' is required for this functionality.")
             indices = np.array(indices)
         return wrap_s(self._s.take(indices))
 
@@ -2010,6 +2028,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3], dtype=pl.Int8)
+        >>> s.reverse()
         shape: (3,)
         Series: 'a' [i8]
         [
@@ -2140,6 +2159,9 @@ class Series:
         """
         Numpy universal functions.
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
+
         if self._s.n_chunks() > 1:
             self._s.rechunk(in_place=True)
 
@@ -2339,7 +2361,7 @@ class Series:
             # make sure the dtype matches
             idx = idx.cast(UInt32)
             idx_array = idx.view()
-        elif isinstance(idx, np.ndarray):
+        elif _NUMPY_AVAILABLE and isinstance(idx, np.ndarray):
             if not idx.data.c_contiguous:
                 idx_array = np.ascontiguousarray(idx, dtype=np.uint32)
             else:
@@ -2348,13 +2370,21 @@ class Series:
                     idx_array = np.array(idx_array, np.uint32)
 
         else:
+            if not _NUMPY_AVAILABLE:
+                raise ImportError("'numpy' is required for this functionality.")
             idx_array = np.array(idx, dtype=np.uint32)
 
         return wrap_s(f(idx_array, value))
 
-    def clone(self) -> Series:
+    def cleared(self) -> "Series":
         """
-        Cheap deep clones.
+        Create an empty copy of the current Series, with identical name/dtype but no data.
+        """
+        return self.limit(0) if len(self) > 0 else self.clone()
+
+    def clone(self) -> "Series":
+        """
+        Very cheap deepcopy/clone.
         """
         return wrap_s(self._s.clone())
 
@@ -2408,6 +2438,7 @@ class Series:
             ""
             "z"
         ]
+
         Parameters
         ----------
         strategy
@@ -2522,6 +2553,8 @@ class Series:
         ]
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.sign(self)  # type: ignore
 
     def sin(self) -> Series:
@@ -2537,11 +2570,13 @@ class Series:
         Series: 'a' [f64]
         [
             0.0
-            1
-            1.2246467991473532e-16
+            1.0
+            1.2246e-16
         ]
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.sin(self)  # type: ignore
 
     def cos(self) -> Series:
@@ -2556,12 +2591,14 @@ class Series:
         shape: (3,)
         Series: 'a' [f64]
         [
-            1
-            6.123233995736766e-17
-            -1e0
+            1.0
+            6.1232e-17
+            -1.0
         ]
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.cos(self)  # type: ignore
 
     def tan(self) -> Series:
@@ -2577,11 +2614,13 @@ class Series:
         Series: 'a' [f64]
         [
             0.0
-            1.633123935319537e16
-            -1.2246467991473532e-16
+            1.6331e16
+            -1.2246e-16
         ]
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.tan(self)  # type: ignore
 
     def arcsin(self) -> Series:
@@ -2596,12 +2635,14 @@ class Series:
         shape: (3,)
         Series: 'a' [f64]
         [
-            1.5707963267948966
+            1.570796
             0.0
-            -1.5707963267948966e0
+            -1.570796
         ]
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.arcsin(self)  # type: ignore
 
     def arccos(self) -> Series:
@@ -2617,11 +2658,13 @@ class Series:
         Series: 'a' [f64]
         [
             0.0
-            1.5707963267948966
-            3.141592653589793
+            1.570796
+            3.141593
         ]
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.arccos(self)  # type: ignore
 
     def arctan(self) -> Series:
@@ -2636,12 +2679,14 @@ class Series:
         shape: (3,)
         Series: 'a' [f64]
         [
-            0.7853981633974483
+            0.785398
             0.0
-            -7.853981633974483e-1
+            -0.785398
         ]
 
         """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
         return np.arctan(self)  # type: ignore
 
     def apply(
@@ -2912,10 +2957,10 @@ class Series:
         Series: 'a' [f64]
         [
             null
-            150
-            250
-            350
-            450
+            150.0
+            250.0
+            350.0
+            450.0
         ]
 
         """
@@ -3098,9 +3143,9 @@ class Series:
         [
             null
             null
-            4.358898943540674
-            4.041451884327381
-            5.5677643628300215
+            4.358899
+            4.041452
+            5.567764
         ]
 
         """
@@ -3465,13 +3510,13 @@ class Series:
         [
             null
             inf
-            1
+            1.0
             0.5
-            0.3333333333333333
+            0.333333
             0.25
             0.2
-            0.16666666666666666
-            0.14285714285714285
+            0.166667
+            0.142857
             0.125
         ]
 
@@ -3481,14 +3526,14 @@ class Series:
         [
             null
             null
-            3
-            3
-            3
-            3
-            3
-            3
-            3
-            3
+            3.0
+            3.0
+            3.0
+            3.0
+            3.0
+            3.0
+            3.0
+            3.0
         ]
         """
         return self.to_frame().select(pli.col(self.name).pct_change(n)).to_series()
@@ -3874,12 +3919,11 @@ class StringNameSpace:
         datatype
             Date, Datetime or Time.
         fmt
-            format to use, see the following link for examples:
-            https://docs.rs/chrono/latest/chrono/format/strftime/index.html
-
-            example: "%y-%m-%d".
+            Format to use, refer to the
+            `chrono strftime documentation <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for specification. Example: ``"%y-%m-%d"``.
         strict
-            raise an error if any conversion fails
+            Raise an error if any conversion fails.
         exact
             - If True, require an exact format match.
             - If False, allow the format to match anywhere in the target string.
@@ -3948,15 +3992,15 @@ class StringNameSpace:
         Examples
         --------
 
-        >>> s = pl.Series(["foo", "bar", "hello", "world"])
+        >>> s = pl.Series(["foo", None, "hello", "world"])
         >>> s.str.lengths()
         shape: (4,)
         Series: '' [u32]
         [
-                3
-                3
-                5
-                5
+            3
+            null
+            5
+            5
         ]
 
         """
@@ -3965,6 +4009,11 @@ class StringNameSpace:
     def concat(self, delimiter: str = "-") -> Series:
         """
         Vertically concat the values in the Series to a single string value.
+
+        Parameters
+        ----------
+        delimiter
+            The delimiter to insert between consecutive string values.
 
         Returns
         -------
@@ -3993,29 +4042,89 @@ class StringNameSpace:
         Returns
         -------
         Boolean mask
+
+        Examples
+        --------
+
+        >>> s = pl.Series(["Crab", "cat and dog", "rab$bit", None])
+        >>> s.str.contains("cat|bit")
+        shape: (4,)
+        Series: '' [bool]
+        [
+            false
+            true
+            true
+            null
+        ]
+        >>> s.str.contains("rab$", literal=True)
+        shape: (4,)
+        Series: '' [bool]
+        [
+            false
+            false
+            true
+            null
+        ]
+
         """
         return wrap_s(self._s.str_contains(pattern, literal))
 
     def ends_with(self, sub: str) -> Series:
         """
-        Check if string values end with a substring
+        Check if string values end with a substring.
 
         Parameters
         ----------
         sub
             Suffix
+
+        Examples
+        --------
+
+        >>> s = pl.Series("fruits", ["apple", "mango", None])
+        >>> s.str.ends_with("go")
+        shape: (3,)
+        Series: 'fruits' [bool]
+        [
+            false
+            true
+            null
+        ]
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+
         """
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.ends_with(sub)).to_series()
 
     def starts_with(self, sub: str) -> Series:
         """
-        Check if string values start with a substring
+        Check if string values start with a substring.
 
         Parameters
         ----------
         sub
             Prefix
+
+        Examples
+        --------
+
+        >>> s = pl.Series("fruits", ["apple", "mango", None])
+        >>> s.str.starts_with("app")
+        shape: (3,)
+        Series: 'fruits' [bool]
+        [
+            true
+            false
+            null
+        ]
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+
         """
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.starts_with(sub)).to_series()
@@ -4089,12 +4198,14 @@ class StringNameSpace:
         Extract the first match of json string with provided JSONPath expression.
         Throw errors if encounter invalid json strings.
         All return value will be casted to Utf8 regardless of the original value.
-        Documentation on JSONPath standard: https://goessner.net/articles/JsonPath/
+
+        Documentation on JSONPath standard can be found
+        `here <https://goessner.net/articles/JsonPath/>`_.
 
         Parameters
         ----------
         json_path
-            A valid JSON path query string
+            A valid JSON path query string.
 
         Returns
         -------
@@ -4183,16 +4294,12 @@ class StringNameSpace:
         --------
         >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t"])
         >>> s.str.extract_all(r"(\d+)")
-        shape: (2, 1)
-        ┌────────────────┐
-        │ extracted_nrs  │
-        │ ---            │
-        │ list[str]      │
-        ╞════════════════╡
-        │ ["123", "45"]  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ ["678", "910"] │
-        └────────────────┘
+        shape: (2,)
+        Series: 'foo' [list]
+        [
+            ["123", "45"]
+            ["678", "910"]
+        ]
 
         """
         s = wrap_s(self._s)
@@ -4230,58 +4337,89 @@ class StringNameSpace:
     def split(self, by: str, inclusive: bool = False) -> Series:
         """
         Split the string by a substring.
-        The return type will by of type List<Utf8>
 
         Parameters
         ----------
         by
-            substring
+            Substring to split by.
         inclusive
-            Include the split character/string in the results
+            If True, include the split character/string in the results.
+
+        Returns
+        -------
+        List of Utf8 type
+
         """
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.split(by, inclusive)).to_series()
 
     def split_exact(self, by: str, n: int, inclusive: bool = False) -> Series:
         """
-        Split the string by a substring into a struct of `n` fields.
-        The return type will by of type Struct<Utf8>
+        Split the string by a substring into a struct of ``n`` fields.
 
-        If it cannot make `n` splits, the remaiming field elements will be null
+        If it cannot make ``n`` splits, the remaining field elements will be null.
 
         Parameters
         ----------
         by
-            substring
+            Substring to split by.
         n
-            Number of splits to make
+            Number of splits to make.
         inclusive
-            Include the split character/string in the results
+            If True, include the split character/string in the results.
 
         Examples
         --------
 
-        >>> (
-        ...     pl.DataFrame({"x": ["a_1", None, "c", "d_4"]}).select(
-        ...         [
-        ...             pl.col("x").str.split_exact("_", 1).alias("fields"),
-        ...         ]
-        ...     )
+        >>> df = pl.DataFrame({"x": ["a_1", None, "c", "d_4"]})
+        >>> df.select(
+        ...     [
+        ...         pl.col("x").str.split_exact("_", 1).alias("fields"),
+        ...     ]
         ... )
         shape: (4, 1)
-        ┌───────────────────────────────────────────┐
-        │ fields                                    │
-        │ ---                                       │
-        │ struct[2]{'field_0': str, 'field_1': str} │
-        ╞═══════════════════════════════════════════╡
-        │ {"a","1"}                                 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {null,null}                               │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {"c",null}                                │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {"d","4"}                                 │
-        └───────────────────────────────────────────┘
+        ┌─────────────┐
+        │ fields      │
+        │ ---         │
+        │ struct[2]   │
+        ╞═════════════╡
+        │ {"a","1"}   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {null,null} │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"c",null}  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"d","4"}   │
+        └─────────────┘
+
+        Split column in ``n`` fields, give them a proper name in the struct and add them as columns.
+
+        >>> df.select(
+        ...     [
+        ...         pl.col("x")
+        ...         .str.split_exact("_", 1)
+        ...         .struct.rename_fields(["first_part", "second_part"])
+        ...         .alias("fields"),
+        ...     ]
+        ... ).unnest("fields")
+        shape: (4, 2)
+        ┌────────────┬─────────────┐
+        │ first_part ┆ second_part │
+        │ ---        ┆ ---         │
+        │ str        ┆ str         │
+        ╞════════════╪═════════════╡
+        │ a          ┆ 1           │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null       ┆ null        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ c          ┆ null        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ d          ┆ 4           │
+        └────────────┴─────────────┘
+
+        Returns
+        -------
+        Struct of Utf8 type
 
         """
         s = wrap_s(self._s)
@@ -4310,12 +4448,12 @@ class StringNameSpace:
         --------
 
         >>> s = pl.Series(["123abc", "abc456"])
-        >>> s.str.replace(r"abc\b", "ABC")
+        >>> s.str.replace(r"abc\b", "ABC")  # doctest: +IGNORE_RESULT
         shape: (2,)
         Series: '' [str]
         [
-                "123ABC"
-                "abc456"
+            "123ABC"
+            "abc456"
         ]
 
         """
@@ -4375,12 +4513,12 @@ class StringNameSpace:
         Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
         A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
         rather than before.
-        The original string is returned if width is less than or equal to `len(s)`.
+        The original string is returned if width is less than or equal to ``len(s)``.
 
         Parameters
         ----------
         alignment
-            Fill the value up to this length
+            Fill the value up to this length.
         """
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.zfill(alignment)).to_series()
@@ -4388,15 +4526,15 @@ class StringNameSpace:
     def ljust(self, width: int, fillchar: str = " ") -> Series:
         """
         Return the string left justified in a string of length width.
-        Padding is done using the specified `fillchar`,
-        The original string is returned if width is less than or equal to `len(s)`.
+        Padding is done using the specified ``fillchar``.
+        The original string is returned if width is less than or equal to ``len(s)``.
 
         Parameters
         ----------
         width
-            justify left to this length
+            Justify left to this length.
         fillchar
-            fill with this ASCII character
+            Fill with this ASCII character.
         """
         s = wrap_s(self._s)
         return (
@@ -4406,15 +4544,15 @@ class StringNameSpace:
     def rjust(self, width: int, fillchar: str = " ") -> Series:
         """
         Return the string right justified in a string of length width.
-        Padding is done using the specified `fillchar`,
-        The original string is returned if width is less than or equal to `len(s)`.
+        Padding is done using the specified ``fillchar``.
+        The original string is returned if width is less than or equal to ``len(s)``.
 
         Parameters
         ----------
         width
-            justify right to this length
+            Justify right to this length.
         fillchar
-            fill with this ASCII character
+            Fill with this ASCII character.
         """
         s = wrap_s(self._s)
         return (
@@ -4440,7 +4578,8 @@ class StringNameSpace:
         Parameters
         ----------
         start
-            Start of the slice (negative indexing may be used).
+            Starting index of the slice (zero-indexed). Negative indexing
+            may be used.
         length
             Optional length of the slice.
 
@@ -4471,8 +4610,8 @@ class ListNameSpace:
         shape: (2,)
         Series: '' [u32]
         [
-                3
-                1
+            3
+            1
         ]
 
         """
@@ -4568,8 +4707,8 @@ class ListNameSpace:
         shape: (2,)
         Series: '' [str]
         [
-                "foo-bar"
-                "hello-world"
+            "foo-bar"
+            "hello-world"
         ]
 
         """
@@ -4778,7 +4917,7 @@ class ListNameSpace:
         ┌─────┬─────┬────────────┐
         │ a   ┆ b   ┆ rank       │
         │ --- ┆ --- ┆ ---        │
-        │ i64 ┆ i64 ┆ list [f32] │
+        │ i64 ┆ i64 ┆ list[f32]  │
         ╞═════╪═════╪════════════╡
         │ 1   ┆ 4   ┆ [1.0, 2.0] │
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -5213,8 +5352,8 @@ class DateTimeNameSpace:
         """
         Set time unit a Series of type Datetime
 
-        ..deprecated::
-            Use `with_time_unit`
+        .. deprecated::
+            Use :func:`with_time_unit` instead.
 
         Parameters
         ----------
@@ -5227,13 +5366,13 @@ class DateTimeNameSpace:
         """
         Set time zone a Series of type Datetime.
 
-        ..deprecated::
-            Use `with_time_zone`
+        .. deprecated::
+            Use :func:`with_time_zone` instead.
 
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` Series
+            Time zone for the `Datetime` Series.
 
         """
         return wrap_s(self._s.and_time_zone(tz))
@@ -5245,7 +5384,7 @@ class DateTimeNameSpace:
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` Series
+            Time zone for the `Datetime` Series.
 
         """
         return wrap_s(self._s.and_time_zone(tz))

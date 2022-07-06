@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Mapping, Sequence, overload
 
-import numpy as np
-
 from polars.internals import DataFrame, Series
 
 if TYPE_CHECKING:  # pragma: no cover
+    import numpy as np
     import pandas as pd
     import pyarrow as pa
 
