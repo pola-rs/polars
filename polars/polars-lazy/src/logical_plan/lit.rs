@@ -125,6 +125,50 @@ impl<'a> Literal for &'a str {
     }
 }
 
+impl From<AnyValue<'_>> for LiteralValue {
+    fn from(value: AnyValue) -> Self {
+        match value {
+            AnyValue::Null => Self::Null,
+            AnyValue::Boolean(b) => Self::Boolean(b),
+            AnyValue::Utf8(s) => Self::Utf8(s.to_string()),
+            AnyValue::UInt8(u) => Self::UInt8(u),
+            AnyValue::UInt16(u) => Self::UInt16(u),
+            AnyValue::UInt32(u) => Self::UInt32(u),
+            AnyValue::UInt64(u) => Self::UInt64(u),
+            AnyValue::Int8(i) => Self::Int8(i),
+            AnyValue::Int16(i) => Self::Int16(i),
+            AnyValue::Int32(i) => Self::Int32(i),
+            AnyValue::Int64(i) => Self::Int64(i),
+            AnyValue::Float32(f) => Self::Float32(f),
+            AnyValue::Float64(f) => Self::Float64(f),
+            AnyValue::Date(d) => Self::DateTime(
+                NaiveDate::from_ymd(1970, 1, 1).and_hms(0, 0, 0) + ChronoDuration::days(d as i64),
+                TimeUnit::Milliseconds,
+            ),
+            AnyValue::Datetime(epoch, _time_unit, _time_zone) => Self::DateTime(
+                NaiveDateTime::from_timestamp(epoch, 0),
+                TimeUnit::Nanoseconds,
+            ),
+            AnyValue::Duration(chrono_duration, time_scale) => match time_scale {
+                TimeUnit::Nanoseconds => {
+                    Self::Duration(ChronoDuration::nanoseconds(chrono_duration), TimeUnit::Nanoseconds)
+                }
+                TimeUnit::Microseconds => {
+                    Self::Duration(ChronoDuration::microseconds(chrono_duration), TimeUnit::Microseconds)
+                }
+                TimeUnit::Milliseconds => {
+                    Self::Duration(ChronoDuration::milliseconds(chrono_duration), TimeUnit::Milliseconds)
+                }
+            },
+            AnyValue::Time(nano_secs_sinds_midnight) => Self::Int64(nano_secs_sinds_midnight),
+            AnyValue::List(l) => Self::Series(SpecialEq::new(l)),
+            AnyValue::Utf8Owned(o) => Self::Utf8(o),
+            AnyValue::Categorical(c, _rev_mapping) => Self::UInt32(c),
+            _ => Self::Null
+        }
+    }
+}
+
 macro_rules! make_literal {
     ($TYPE:ty, $SCALAR:ident) => {
         impl Literal for $TYPE {
