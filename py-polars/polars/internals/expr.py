@@ -2612,12 +2612,13 @@ class Expr:
     ) -> Expr:
         """
         Apply a custom python function to a Series or sequence of Series.
+
         The output of this custom function must be a Series.
-        If you want to apply a custom function elementwise over single values see `apply`.
-        A use case for map is when you want to transform an expression
+        If you want to apply a custom function elementwise over single values, see :func:`apply`.
+        A use case for ``map`` is when you want to transform an expression
         with a third-party library.
 
-        Read more in `the book <https://pola-rs.github.io/polars-book/user-guide/howcani/apply/udfs.html>`_.
+        Read more in `the book <https://pola-rs.github.io/polars-book/user-guide/dsl/custom_functions.html>`_.
 
         Parameters
         ----------
@@ -2660,24 +2661,22 @@ class Expr:
         Depending on the context it has the following behavior:
 
         * Selection
-            expected type `f`: Callable[[Any], Any]
+            Expects `f` to be of type Callable[[Any], Any].
             Applies a python function over each individual value in the column.
         * GroupBy
-            expected type `f`: Callable[[Series], Series]
+            Expects `f` to be of type Callable[[Series], Series].
             Applies a python function over each group.
 
-        Implementing logic using the .apply method is generally slower and more memory intensive
+        Implementing logic using the ``.apply`` method is generally slower and more memory intensive
         than implementing the same logic using the expression API because:
 
         - with .apply the logic is implemented in Python but with an expression the logic is implemented in Rust
-
-        - with .apply the DataFrame is materialized in memory
-
+        - with ``.apply`` the DataFrame is materialized in memory
         - expressions can be parallelised
 
         - expressions can be optimised
 
-        If possible use the expression API for best performance.
+        If possible, use the expression API for best performance.
 
         Parameters
         ----------
