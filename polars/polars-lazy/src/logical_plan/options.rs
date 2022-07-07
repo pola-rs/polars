@@ -34,7 +34,7 @@ pub struct ParquetOptions {
     pub(crate) n_rows: Option<usize>,
     pub(crate) with_columns: Option<Arc<Vec<String>>>,
     pub(crate) cache: bool,
-    pub(crate) parallel: bool,
+    pub(crate) parallel: polars_io::parquet::ParallelStrategy,
     pub(crate) rechunk: bool,
     pub(crate) row_count: Option<RowCount>,
     pub(crate) file_counter: FileCount,

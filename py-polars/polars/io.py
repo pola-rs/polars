@@ -596,7 +596,7 @@ def scan_parquet(
     file: str | Path,
     n_rows: int | None = None,
     cache: bool = True,
-    parallel: bool = True,
+    parallel: str = "auto",
     rechunk: bool = True,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
@@ -618,7 +618,8 @@ def scan_parquet(
     cache
         Cache the result after reading.
     parallel
-        Read the parquet file in parallel. The single threaded reader consumes less memory.
+        Any of { 'auto', 'columns', 'row_groups', 'none' }
+        This determines the direction of parallelism. 'auto' will try to determine the optimal direction.
     rechunk
         In case of reading multiple files via a glob pattern rechunk the final DataFrame into contiguous memory chunks.
     row_count_name
@@ -765,7 +766,7 @@ def read_parquet(
     use_pyarrow: bool = False,
     memory_map: bool = True,
     storage_options: dict | None = None,
-    parallel: bool = True,
+    parallel: str = "auto",
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     **kwargs: Any,
@@ -792,7 +793,8 @@ def read_parquet(
     storage_options
         Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
     parallel
-        Read the parquet file in parallel. The single threaded reader consumes less memory.
+        Any of { 'auto', 'columns', 'row_groups', 'none' }
+        This determines the direction of parallelism. 'auto' will try to determine the optimal direction.
     row_count_name
         If not None, this will insert a row count column with give name into the DataFrame.
     row_count_offset

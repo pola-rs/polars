@@ -1,12 +1,13 @@
 use crate::prelude::*;
 use polars_core::prelude::*;
+use polars_io::parquet::ParallelStrategy;
 use polars_io::RowCount;
 
 #[derive(Clone)]
 pub struct ScanArgsParquet {
     pub n_rows: Option<usize>,
     pub cache: bool,
-    pub parallel: bool,
+    pub parallel: ParallelStrategy,
     pub rechunk: bool,
     pub row_count: Option<RowCount>,
 }
@@ -16,7 +17,7 @@ impl Default for ScanArgsParquet {
         Self {
             n_rows: None,
             cache: true,
-            parallel: true,
+            parallel: Default::default(),
             rechunk: true,
             row_count: None,
         }
@@ -28,7 +29,7 @@ impl LazyFrame {
         path: String,
         n_rows: Option<usize>,
         cache: bool,
-        parallel: bool,
+        parallel: ParallelStrategy,
         row_count: Option<RowCount>,
         rechunk: bool,
     ) -> Result<Self> {
@@ -54,7 +55,7 @@ impl LazyFrame {
                         path_string,
                         args.n_rows,
                         args.cache,
-                        false,
+                        ParallelStrategy::None,
                         None,
                         args.rechunk,
                     )

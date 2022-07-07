@@ -57,7 +57,7 @@ def test_categorical_parquet_statistics(io_test_dir: str) -> None:
         .write_parquet(file, statistics=True)
     )
 
-    for par in [True, False]:
+    for par in ["auto", "columns", "row_groups", "none"]:
         df = (
             pl.scan_parquet(file, parallel=par)
             .filter(pl.col("book") == "bookA")

@@ -208,7 +208,7 @@ impl PyDataFrame {
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
-        parallel: bool,
+        parallel: Wrap<ParallelStrategy>,
         row_count: Option<(String, IdxSize)>,
     ) -> PyResult<Self> {
         use EitherRustPythonFile::*;
@@ -220,15 +220,15 @@ impl PyDataFrame {
                 ParquetReader::new(buf)
                     .with_projection(projection)
                     .with_columns(columns)
-                    .read_parallel(parallel)
+                    .read_parallel(parallel.0)
                     .with_n_rows(n_rows)
                     .with_row_count(row_count)
                     .finish()
             }
-            Rust(f) => ParquetReader::new(f)
+            Rust(f) => ParquetReader::new(f.into_inner())
                 .with_projection(projection)
                 .with_columns(columns)
-                .read_parallel(parallel)
+                .read_parallel(parallel.0)
                 .with_n_rows(n_rows)
                 .with_row_count(row_count)
                 .finish(),

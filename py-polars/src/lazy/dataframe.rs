@@ -4,7 +4,9 @@ use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::file::get_file_like;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
-use crate::prelude::{IdxSize, LogicalPlan, NullValues, ScanArgsIpc, ScanArgsParquet};
+use crate::prelude::{
+    IdxSize, LogicalPlan, NullValues, ParallelStrategy, ScanArgsIpc, ScanArgsParquet,
+};
 use polars::io::RowCount;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
@@ -222,7 +224,7 @@ impl PyLazyFrame {
         path: String,
         n_rows: Option<usize>,
         cache: bool,
-        parallel: bool,
+        parallel: Wrap<ParallelStrategy>,
         rechunk: bool,
         row_count: Option<(String, IdxSize)>,
     ) -> PyResult<Self> {
@@ -230,7 +232,7 @@ impl PyLazyFrame {
         let args = ScanArgsParquet {
             n_rows,
             cache,
-            parallel,
+            parallel: parallel.0,
             rechunk,
             row_count,
         };

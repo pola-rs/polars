@@ -624,7 +624,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         file: str | Path | BinaryIO,
         columns: list[int] | list[str] | None = None,
         n_rows: int | None = None,
-        parallel: bool = True,
+        parallel: str = "auto",
         row_count_name: str | None = None,
         row_count_offset: int = 0,
     ) -> DF:
@@ -640,7 +640,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         n_rows
             Stop reading from parquet file after reading ``n_rows``.
         parallel
-            Read the parquet file in parallel. The single threaded reader consumes less memory.
+            Any of { 'auto', 'columns', 'row_groups', 'none' }
+            This determines the direction of parallelism. 'auto' will try to determine the optimal direction.
         """
         if isinstance(file, (str, Path)):
             file = format_path(file)
