@@ -20,12 +20,6 @@ use polars_arrow::prelude::QuantileInterpolOptions;
 use std::borrow::Cow;
 use std::ops::{BitAnd, BitOr, BitXor};
 
-impl IntoSeries for BooleanChunked {
-    fn into_series(self) -> Series {
-        Series(Arc::new(SeriesWrap(self)))
-    }
-}
-
 impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     fn _field(&self) -> Cow<Field> {
         Cow::Borrowed(self.0.ref_field())

@@ -8,7 +8,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import Float64, Int32, Int64, UInt32, UInt64
+from polars.datatypes import Date, Float64, Int32, Int64, UInt32, UInt64
 from polars.testing import assert_series_equal, verify_series_and_expr_api
 
 
@@ -191,6 +191,31 @@ def test_arithmetic(s: pl.Series) -> None:
         2 % a
     with pytest.raises(ValueError):
         2**a
+
+
+def test_power() -> None:
+    a = pl.Series([1, 2], dtype=Int64)
+    b = pl.Series([None, 2.0], dtype=Float64)
+    c = pl.Series([date(2020, 2, 28), date(2020, 3, 1)], dtype=Date)
+
+    # pow
+    assert_series_equal(a**2, pl.Series([1.0, 4.0], dtype=Float64))
+    assert_series_equal(b**3, pl.Series([None, 8.0], dtype=Float64))
+    assert_series_equal(a**a, pl.Series([1.0, 4.0], dtype=Float64))
+    assert_series_equal(b**b, pl.Series([None, 4.0], dtype=Float64))
+    assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
+    with pytest.raises(ValueError):
+        c**2
+    with pytest.raises(pl.ComputeError):
+        a ** "hi"  # type: ignore[operator]
+
+    # rpow
+    assert_series_equal(2.0**a, pl.Series("literal", [2.0, 4.0], dtype=Float64))
+    assert_series_equal(2**b, pl.Series("literal", [None, 4.0], dtype=Float64))
+    with pytest.raises(ValueError):
+        2**c
+    with pytest.raises(pl.ComputeError):
+        "hi" ** a
 
 
 def test_add_string() -> None:

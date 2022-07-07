@@ -24,7 +24,7 @@ use comfy_table::*;
 use std::borrow::Cow;
 
 macro_rules! format_array {
-    ($limit:expr, $f:ident, $a:expr, $dtype:expr, $name:expr, $array_type:expr) => {{
+    ($f:ident, $a:expr, $dtype:expr, $name:expr, $array_type:expr) => {{
         write!(
             $f,
             "shape: ({},)\n{}: '{}' [{}]\n[\n",
@@ -34,14 +34,23 @@ macro_rules! format_array {
             $dtype
         )?;
         let truncate = matches!($a.dtype(), DataType::Utf8);
-        let limit = std::cmp::min($limit, $a.len());
+        let truncate_len = if truncate {
+            std::env::var("POLARS_FMT_STR_LEN")
+                .as_deref()
+                .unwrap_or("")
+                .parse()
+                .unwrap_or(15)
+        } else {
+            15
+        };
+        let limit = std::cmp::min(LIMIT, $a.len());
 
-        let write = |v, f: &mut Formatter| {
+        let write_fn = |v, f: &mut Formatter| {
             if truncate {
                 let v = format!("{}", v);
                 let v_trunc = &v[..v
                     .char_indices()
-                    .take(15)
+                    .take(truncate_len)
                     .last()
                     .map(|(i, c)| i + c.len_utf8())
                     .unwrap_or(0)];
@@ -59,17 +68,17 @@ macro_rules! format_array {
         if limit < $a.len() {
             for i in 0..limit / 2 {
                 let v = $a.get_any_value(i);
-                write(v, $f)?;
+                write_fn(v, $f)?;
             }
             write!($f, "\t...\n")?;
             for i in (0..limit / 2).rev() {
                 let v = $a.get_any_value($a.len() - i - 1);
-                write(v, $f)?;
+                write_fn(v, $f)?;
             }
         } else {
             for i in 0..limit {
                 let v = $a.get_any_value(i);
-                write(v, $f)?;
+                write_fn(v, $f)?;
             }
         }
 
@@ -79,7 +88,6 @@ macro_rules! format_array {
 
 #[cfg(feature = "object")]
 fn format_object_array(
-    limit: usize,
     f: &mut Formatter<'_>,
     object: &Series,
     name: &str,
@@ -87,6 +95,8 @@ fn format_object_array(
 ) -> fmt::Result {
     match object.dtype() {
         DataType::Object(inner_type) => {
+            let limit = std::cmp::min(LIMIT, object.len());
+
             write!(
                 f,
                 "shape: ({},)\n{}: '{}' [o][{}]\n[\n",
@@ -107,40 +117,31 @@ fn format_object_array(
     }
 }
 
-macro_rules! set_limit {
-    ($self:ident) => {
-        std::cmp::min($self.len(), LIMIT)
-    };
-}
-
 impl<T> Debug for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let limit = set_limit!(self);
-        let dtype = format!("{:?}", T::get_dtype());
-        format_array!(limit, f, self, dtype, self.name(), "ChunkedArray")
+        let dt = format!("{}", T::get_dtype());
+        format_array!(f, self, dt, self.name(), "ChunkedArray")
     }
 }
 
 impl Debug for ChunkedArray<BooleanType> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let limit = set_limit!(self);
-        format_array!(limit, f, self, "bool", self.name(), "ChunkedArray")
+        format_array!(f, self, "bool", self.name(), "ChunkedArray")
     }
 }
 
 impl Debug for Utf8Chunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        format_array!(80, f, self, "str", self.name(), "ChunkedArray")
+        format_array!(f, self, "str", self.name(), "ChunkedArray")
     }
 }
 
 impl Debug for ListChunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let limit = set_limit!(self);
-        format_array!(limit, f, self, "list", self.name(), "ChunkedArray")
+        format_array!(f, self, "list", self.name(), "ChunkedArray")
     }
 }
 
@@ -150,8 +151,7 @@ where
     T: PolarsObject,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let limit = set_limit!(self);
-
+        let limit = std::cmp::min(LIMIT, self.len());
         let taker = self.take_rand();
         let inner_type = T::type_name();
         write!(
@@ -189,114 +189,68 @@ where
 
 impl Debug for Series {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let limit = set_limit!(self);
-
         match self.dtype() {
-            DataType::Boolean => format_array!(
-                limit,
-                f,
-                self.bool().unwrap(),
-                "bool",
-                self.name(),
-                "Series"
-            ),
+            DataType::Boolean => {
+                format_array!(f, self.bool().unwrap(), "bool", self.name(), "Series")
+            }
             DataType::Utf8 => {
-                format_array!(limit, f, self.utf8().unwrap(), "str", self.name(), "Series")
+                format_array!(f, self.utf8().unwrap(), "str", self.name(), "Series")
             }
             DataType::UInt8 => {
-                format_array!(limit, f, self.u8().unwrap(), "u8", self.name(), "Series")
+                format_array!(f, self.u8().unwrap(), "u8", self.name(), "Series")
             }
             DataType::UInt16 => {
-                format_array!(limit, f, self.u16().unwrap(), "u16", self.name(), "Series")
+                format_array!(f, self.u16().unwrap(), "u16", self.name(), "Series")
             }
             DataType::UInt32 => {
-                format_array!(limit, f, self.u32().unwrap(), "u32", self.name(), "Series")
+                format_array!(f, self.u32().unwrap(), "u32", self.name(), "Series")
             }
             DataType::UInt64 => {
-                format_array!(limit, f, self.u64().unwrap(), "u64", self.name(), "Series")
+                format_array!(f, self.u64().unwrap(), "u64", self.name(), "Series")
             }
             DataType::Int8 => {
-                format_array!(limit, f, self.i8().unwrap(), "i8", self.name(), "Series")
+                format_array!(f, self.i8().unwrap(), "i8", self.name(), "Series")
             }
             DataType::Int16 => {
-                format_array!(limit, f, self.i16().unwrap(), "i16", self.name(), "Series")
+                format_array!(f, self.i16().unwrap(), "i16", self.name(), "Series")
             }
             DataType::Int32 => {
-                format_array!(limit, f, self.i32().unwrap(), "i32", self.name(), "Series")
+                format_array!(f, self.i32().unwrap(), "i32", self.name(), "Series")
             }
             DataType::Int64 => {
-                format_array!(limit, f, self.i64().unwrap(), "i64", self.name(), "Series")
+                format_array!(f, self.i64().unwrap(), "i64", self.name(), "Series")
             }
             DataType::Float32 => {
-                format_array!(limit, f, self.f32().unwrap(), "f32", self.name(), "Series")
+                format_array!(f, self.f32().unwrap(), "f32", self.name(), "Series")
             }
             DataType::Float64 => {
-                format_array!(limit, f, self.f64().unwrap(), "f64", self.name(), "Series")
+                format_array!(f, self.f64().unwrap(), "f64", self.name(), "Series")
             }
             #[cfg(feature = "dtype-date")]
-            DataType::Date => format_array!(
-                limit,
-                f,
-                self.date().unwrap(),
-                "date",
-                self.name(),
-                "Series"
-            ),
+            DataType::Date => format_array!(f, self.date().unwrap(), "date", self.name(), "Series"),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
                 let dt = format!("{}", self.dtype());
-                format_array!(
-                    limit,
-                    f,
-                    self.datetime().unwrap(),
-                    &dt,
-                    self.name(),
-                    "Series"
-                )
+                format_array!(f, self.datetime().unwrap(), &dt, self.name(), "Series")
             }
             #[cfg(feature = "dtype-time")]
-            DataType::Time => format_array!(
-                limit,
-                f,
-                self.time().unwrap(),
-                "time",
-                self.name(),
-                "Series"
-            ),
+            DataType::Time => format_array!(f, self.time().unwrap(), "time", self.name(), "Series"),
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(_) => {
                 let dt = format!("{}", self.dtype());
-                format_array!(
-                    limit,
-                    f,
-                    self.duration().unwrap(),
-                    &dt,
-                    self.name(),
-                    "Series"
-                )
+                format_array!(f, self.duration().unwrap(), &dt, self.name(), "Series")
             }
-            DataType::List(_) => format_array!(
-                limit,
-                f,
-                self.list().unwrap(),
-                "list",
-                self.name(),
-                "Series"
-            ),
+            DataType::List(_) => {
+                format_array!(f, self.list().unwrap(), "list", self.name(), "Series")
+            }
             #[cfg(feature = "object")]
-            DataType::Object(_) => format_object_array(limit, f, self, self.name(), "Series"),
+            DataType::Object(_) => format_object_array(f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => format_array!(
-                limit,
-                f,
-                self.categorical().unwrap(),
-                "cat",
-                self.name(),
-                "Series"
-            ),
+            DataType::Categorical(_) => {
+                format_array!(f, self.categorical().unwrap(), "cat", self.name(), "Series")
+            }
             #[cfg(feature = "dtype-struct")]
             dt @ DataType::Struct(_) => format_array!(
-                limit,
                 f,
                 self.struct_().unwrap(),
                 format!("{}", dt),
@@ -365,13 +319,15 @@ impl Display for DataFrame {
             );
 
             let max_n_cols = std::env::var("POLARS_FMT_MAX_COLS")
-                .unwrap_or_else(|_| "8".to_string())
+                .as_deref()
+                .unwrap_or("")
                 .parse()
                 .unwrap_or(8);
 
             let max_n_rows = {
                 let max_n_rows = std::env::var("POLARS_FMT_MAX_ROWS")
-                    .unwrap_or_else(|_| "8".to_string())
+                    .as_deref()
+                    .unwrap_or("")
                     .parse()
                     .unwrap_or(8);
                 if max_n_rows < 2 {
@@ -810,7 +766,6 @@ mod test {
         builder.append_slice(None);
         let list = builder.finish().into_series();
 
-        println!("{:?}", list);
         assert_eq!(
             r#"shape: (2,)
 Series: 'a' [list]
@@ -853,10 +808,9 @@ Series: '' [datetime[ns]]
     #[test]
     fn test_fmt_chunkedarray() {
         let ca = Int32Chunked::new("Date", &[Some(1), None, Some(3)]);
-        println!("{:?}", ca);
         assert_eq!(
             r#"shape: (3,)
-ChunkedArray: 'Date' [Int32]
+ChunkedArray: 'Date' [i32]
 [
 	1
 	null
@@ -865,7 +819,6 @@ ChunkedArray: 'Date' [Int32]
             format!("{:?}", ca)
         );
         let ca = Utf8Chunked::new("name", &["a", "b"]);
-        println!("{:?}", ca);
         assert_eq!(
             r#"shape: (2,)
 ChunkedArray: 'name' [str]
@@ -880,7 +833,6 @@ ChunkedArray: 'name' [str]
     #[test]
     fn test_fmt_series() {
         let s = Series::new("foo", &["Somelongstringto eeat wit me oundaf"]);
-        dbg!(&s);
         assert_eq!(
             r#"shape: (1,)
 Series: 'foo' [str]
@@ -891,7 +843,6 @@ Series: 'foo' [str]
         );
 
         let s = Series::new("foo", &["😀😁😂😃😄😅😆😇😈😉😊😋😌😎😏😐😑😒😓"]);
-        dbg!(&s);
         assert_eq!(
             r#"shape: (1,)
 Series: 'foo' [str]
@@ -902,7 +853,6 @@ Series: 'foo' [str]
         );
 
         let s = Series::new("foo", &["yzäöüäöüäöüäö"]);
-        dbg!(&s);
         assert_eq!(
             r#"shape: (1,)
 Series: 'foo' [str]
