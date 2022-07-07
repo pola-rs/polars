@@ -74,6 +74,40 @@ impl From<IpcScanOptions> for IpcScanOptionsInner {
     }
 }
 
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct IpcStreamScanOptions {
+    pub n_rows: Option<usize>,
+    pub with_columns: Option<Arc<Vec<String>>>,
+    pub cache: bool,
+    pub row_count: Option<RowCount>,
+    pub rechunk: bool,
+}
+
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct IpcStreamScanOptionsInner {
+    pub(crate) n_rows: Option<usize>,
+    pub(crate) with_columns: Option<Arc<Vec<String>>>,
+    pub(crate) cache: bool,
+    pub(crate) row_count: Option<RowCount>,
+    pub(crate) rechunk: bool,
+    pub(crate) file_counter: FileCount,
+}
+
+impl From<IpcStreamScanOptions> for IpcStreamScanOptionsInner {
+    fn from(options: IpcStreamScanOptions) -> Self {
+        Self {
+            n_rows: options.n_rows,
+            with_columns: options.with_columns,
+            cache: options.cache,
+            row_count: options.row_count,
+            rechunk: options.rechunk,
+            file_counter: Default::default(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Copy, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {

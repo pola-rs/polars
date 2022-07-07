@@ -266,6 +266,27 @@ impl PredicatePushDown {
                 };
                 Ok(lp)
             }
+            #[cfg(feature = "ipc_streaming")]
+            IpcStreamScan {
+                path,
+                schema,
+                output_schema,
+                predicate,
+                aggregate,
+                options,
+            } => {
+                let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
+
+                let lp = IpcStreamScan {
+                    path,
+                    schema,
+                    output_schema,
+                    predicate,
+                    aggregate,
+                    options,
+                };
+                Ok(lp)
+            }
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,

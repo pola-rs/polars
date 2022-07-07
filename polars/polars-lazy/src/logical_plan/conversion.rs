@@ -246,6 +246,24 @@ pub(crate) fn to_alp(
                 .collect(),
             options,
         },
+        #[cfg(feature = "ipc_streaming")]
+        LogicalPlan::IpcStreamScan {
+            path,
+            schema,
+            predicate,
+            aggregate,
+            options,
+        } => ALogicalPlan::IpcStreamScan {
+            path,
+            schema,
+            output_schema: None,
+            predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
+            aggregate: aggregate
+                .into_iter()
+                .map(|expr| to_aexpr(expr, expr_arena))
+                .collect(),
+            options,
+        },
         #[cfg(feature = "parquet")]
         LogicalPlan::ParquetScan {
             path,
@@ -731,6 +749,21 @@ pub(crate) fn node_to_lp(
             aggregate,
             options,
         } => LogicalPlan::IpcScan {
+            path,
+            schema,
+            predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
+            aggregate: nodes_to_exprs(&aggregate, expr_arena),
+            options,
+        },
+        #[cfg(feature = "ipc_streaming")]
+        ALogicalPlan::IpcStreamScan {
+            path,
+            schema,
+            output_schema: _,
+            predicate,
+            aggregate,
+            options,
+        } => LogicalPlan::IpcStreamScan {
             path,
             schema,
             predicate: predicate.map(|n| node_to_expr(n, expr_arena)),

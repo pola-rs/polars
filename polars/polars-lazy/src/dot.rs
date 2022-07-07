@@ -386,6 +386,36 @@ impl LogicalPlan {
                     self.write_dot(acc_str, prev_node, &current_node, id)
                 }
             }
+            #[cfg(feature = "ipc_streaming")]
+            IpcStreamScan {
+                path,
+                schema,
+                options,
+                predicate,
+                ..
+            } => {
+                let total_columns = schema.len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = &options.with_columns {
+                    n_columns = format!("{}", columns.len());
+                }
+
+                let pred = fmt_predicate(predicate.as_ref());
+                let current_node = format!(
+                    "IPC STREAM SCAN {};\nπ {}/{};\nσ {} [{:?}]",
+                    path.to_string_lossy(),
+                    n_columns,
+                    total_columns,
+                    pred,
+                    (branch, id)
+                );
+                if id == 0 {
+                    self.write_dot(acc_str, prev_node, &current_node, id)?;
+                    write!(acc_str, "\"{}\"", current_node)
+                } else {
+                    self.write_dot(acc_str, prev_node, &current_node, id)
+                }
+            }
             Join {
                 input_left,
                 input_right,

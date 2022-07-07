@@ -3,6 +3,8 @@
 mod csv;
 #[cfg(feature = "ipc")]
 mod ipc;
+#[cfg(feature = "ipc_streaming")]
+mod ipc_stream;
 #[cfg(feature = "parquet")]
 mod parquet;
 #[cfg(feature = "python")]
@@ -16,11 +18,18 @@ pub use anonymous_scan::*;
 pub use csv::*;
 #[cfg(feature = "ipc")]
 pub use ipc::*;
+#[cfg(feature = "ipc_streaming")]
+pub use ipc_stream::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
 use std::borrow::Cow;
 
-#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+#[cfg(any(
+    feature = "parquet",
+    feature = "csv-file",
+    feature = "ipc",
+    feature = "ipc_streaming"
+))]
 use polars_core::datatypes::PlHashMap;
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
@@ -29,7 +38,12 @@ use polars_core::toggle_string_cache;
 use std::sync::Arc;
 
 use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
-#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+#[cfg(any(
+    feature = "parquet",
+    feature = "csv-file",
+    feature = "ipc",
+    feature = "ipc_streaming"
+))]
 use crate::logical_plan::optimizer::file_caching::FileCacher;
 use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
@@ -40,7 +54,12 @@ use crate::physical_plan::state::ExecutionState;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+#[cfg(any(
+    feature = "parquet",
+    feature = "csv-file",
+    feature = "ipc",
+    feature = "ipc_streaming"
+))]
 use crate::prelude::file_caching::find_column_union_and_fingerprints;
 use crate::prelude::{
     drop_nulls::ReplaceDropNulls, fast_projection::FastProjection,
@@ -49,7 +68,12 @@ use crate::prelude::{
 
 use crate::logical_plan::FETCH_ROWS;
 use crate::prelude::delay_rechunk::DelayRechunk;
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+#[cfg(any(
+    feature = "parquet",
+    feature = "csv-file",
+    feature = "ipc",
+    feature = "ipc_streaming"
+))]
 use crate::prelude::file_caching::collect_fingerprints;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 use polars_arrow::prelude::QuantileInterpolOptions;
@@ -536,7 +560,12 @@ impl LazyFrame {
         let simplify_expr = self.opt_state.simplify_expr;
         let slice_pushdown = self.opt_state.slice_pushdown;
 
-        #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+        #[cfg(any(
+            feature = "parquet",
+            feature = "csv-file",
+            feature = "ipc",
+            feature = "ipc_streaming"
+        ))]
         let agg_scan_projection = self.opt_state.file_caching;
         let aggregate_pushdown = self.opt_state.aggregate_pushdown;
 
@@ -580,7 +609,12 @@ impl LazyFrame {
             lp_arena.replace(lp_top, alp);
         }
 
-        #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+        #[cfg(any(
+            feature = "parquet",
+            feature = "csv-file",
+            feature = "ipc",
+            feature = "ipc_streaming"
+        ))]
         if agg_scan_projection {
             // we do this so that expressions are simplified created by the pushdown optimizations
             // we must clean up the predicates, because the agg_scan_projection
@@ -696,13 +730,18 @@ impl LazyFrame {
         }
 
         let finger_prints = if file_caching {
-            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            #[cfg(any(
+                feature = "parquet",
+                feature = "csv-file",
+                feature = "ipc",
+                feature = "ipc_streaming"
+            ))]
             {
                 let mut fps = Vec::with_capacity(8);
                 collect_fingerprints(lp_top, &mut fps, &lp_arena, &expr_arena);
                 Some(fps)
             }
-            #[cfg(not(any(feature = "ipc", feature = "parquet", feature = "csv-file")))]
+            #[cfg(not(any(feature = "ipc", feature = "ipc_streaming", feature = "parquet", feature = "csv-file")))]
             {
                 None
             }
@@ -1186,6 +1225,13 @@ impl LazyFrame {
             }
             #[cfg(feature = "ipc")]
             LogicalPlan::IpcScan { options, .. } => {
+                options.row_count = Some(RowCount {
+                    name: name.to_string(),
+                    offset: offset.unwrap_or(0),
+                });
+            }
+            #[cfg(feature = "ipc_streaming")]
+            LogicalPlan::IpcStreamScan { options, .. } => {
                 options.row_count = Some(RowCount {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),

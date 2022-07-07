@@ -1,5 +1,7 @@
 #[cfg(feature = "ipc")]
 use crate::logical_plan::IpcScanOptionsInner;
+#[cfg(feature = "ipc_streaming")]
+use crate::logical_plan::IpcStreamScanOptionsInner;
 #[cfg(feature = "parquet")]
 use crate::logical_plan::ParquetOptions;
 use crate::logical_plan::{det_melt_schema, Context, CsvParserOptions};
@@ -8,7 +10,12 @@ use crate::utils::{aexprs_to_schema, PushNode};
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
-#[cfg(any(feature = "ipc", feature = "csv-file", feature = "parquet"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "ipc_streaming",
+    feature = "csv-file",
+    feature = "parquet"
+))]
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -59,6 +66,16 @@ pub enum ALogicalPlan {
         // schema of the projected file
         output_schema: Option<SchemaRef>,
         options: IpcScanOptionsInner,
+        predicate: Option<Node>,
+        aggregate: Vec<Node>,
+    },
+    #[cfg(feature = "ipc_streaming")]
+    IpcStreamScan {
+        path: PathBuf,
+        schema: SchemaRef,
+        // schema of the projected file
+        output_schema: Option<SchemaRef>,
+        options: IpcStreamScanOptionsInner,
         predicate: Option<Node>,
         aggregate: Vec<Node>,
     },
@@ -169,6 +186,12 @@ impl ALogicalPlan {
             } => output_schema.as_ref().unwrap_or(schema),
             #[cfg(feature = "ipc")]
             IpcScan {
+                schema,
+                output_schema,
+                ..
+            } => output_schema.as_ref().unwrap_or(schema),
+            #[cfg(feature = "ipc_streaming")]
+            IpcStreamScan {
                 schema,
                 output_schema,
                 ..
@@ -316,7 +339,29 @@ impl ALogicalPlan {
                     options: options.clone(),
                 }
             }
+            #[cfg(feature = "ipc_streaming")]
+            IpcStreamScan {
+                path,
+                schema,
+                output_schema,
+                options,
+                predicate,
+                ..
+            } => {
+                let mut new_predicate = None;
+                if predicate.is_some() {
+                    new_predicate = exprs.pop()
+                }
 
+                IpcStreamScan {
+                    path: path.clone(),
+                    schema: schema.clone(),
+                    output_schema: output_schema.clone(),
+                    predicate: new_predicate,
+                    aggregate: exprs,
+                    options: options.clone(),
+                }
+            }
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
@@ -468,6 +513,17 @@ impl ALogicalPlan {
                     container.push(*node)
                 }
             }
+            #[cfg(feature = "ipc_streaming")]
+            IpcStreamScan {
+                predicate,
+                aggregate,
+                ..
+            } => {
+                container.extend_from_slice(aggregate);
+                if let Some(node) = predicate {
+                    container.push(*node)
+                }
+            }
             #[cfg(feature = "csv-file")]
             CsvScan {
                 predicate,
@@ -544,6 +600,8 @@ impl ALogicalPlan {
             ParquetScan { .. } => return,
             #[cfg(feature = "ipc")]
             IpcScan { .. } => return,
+            #[cfg(feature = "ipc_streaming")]
+            IpcStreamScan { .. } => return,
             #[cfg(feature = "csv-file")]
             CsvScan { .. } => return,
             DataFrameScan { .. } => return,

@@ -16,6 +16,7 @@ compile = []
 default = ["compile", "private"]
 parquet = ["polars-core/parquet", "polars-io/parquet"]
 ipc = ["polars-io/ipc"]
+ipc_streaming = ["polars-io/ipc_streaming"]
 csv-file = ["polars-io/csv-file"]
 temporal = ["polars-core/temporal", "polars-time", "dtype-datetime"]
 # debugging purposes
@@ -94,6 +95,7 @@ test = [
   "abs",
   "parquet",
   "ipc",
+  "ipc_streaming",
   "dtype-date",
 ]
 
@@ -113,6 +115,7 @@ test_all = [
   "abs",
   "parquet",
   "ipc",
+  "ipc_streaming",
   "dtype-date",
 ]
 

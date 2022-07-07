@@ -72,6 +72,28 @@ impl fmt::Debug for LogicalPlan {
                     predicate
                 )
             }
+            #[cfg(feature = "ipc_streaming")]
+            IpcStreamScan {
+                path,
+                schema,
+                options,
+                predicate,
+                ..
+            } => {
+                let total_columns = schema.len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = &options.with_columns {
+                    n_columns = format!("{}", columns.len());
+                }
+                write!(
+                    f,
+                    "IPC STREAM SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    path.to_string_lossy(),
+                    n_columns,
+                    total_columns,
+                    predicate
+                )
+            }
             Selection { predicate, input } => {
                 write!(f, "FILTER {:?}\nFROM\n{:?}", predicate, input)
             }

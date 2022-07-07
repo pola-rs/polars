@@ -33,7 +33,7 @@
 //! let df_read = IpcStreamReader::new(buf).finish().unwrap();
 //! assert!(df.frame_equal(&df_read));
 //! ```
-use crate::{finish_reader, ArrowReader, ArrowResult};
+use crate::{finish_reader, ArrowReader, ArrowResult, PhysicalIoExpr, ScanAggregation};
 use crate::{prelude::*, WriterFactory};
 use arrow::io::ipc::read::{StreamMetadata, StreamState};
 use arrow::io::ipc::write::WriteOptions;
@@ -104,6 +104,43 @@ impl<R: Read + Seek> IpcStreamReader<R> {
     pub fn with_projection(mut self, projection: Option<Vec<usize>>) -> Self {
         self.projection = projection;
         self
+    }
+
+    // todo! hoist to lazy crate
+    #[cfg(feature = "lazy")]
+    pub fn finish_with_scan_ops(
+        mut self,
+        predicate: Option<Arc<dyn PhysicalIoExpr>>,
+        aggregate: Option<&[ScanAggregation]>,
+        projection: Option<Vec<usize>>,
+    ) -> Result<DataFrame> {
+        let rechunk = self.rechunk;
+        let metadata = self.metadata()?;
+
+        let sorted_projection = projection.clone().map(|mut proj| {
+            proj.sort_unstable();
+            proj
+        });
+
+        let schema = if let Some(projection) = &sorted_projection {
+            apply_projection(&metadata.schema, projection)
+        } else {
+            metadata.schema.clone()
+        };
+
+        let reader = read::StreamReader::new(&mut self.reader, metadata, sorted_projection);
+
+        let include_row_count = self.row_count.is_some();
+        finish_reader(
+            reader,
+            rechunk,
+            self.n_rows,
+            predicate,
+            aggregate,
+            &schema,
+            self.row_count,
+        )
+            .map(|df| fix_column_order(df, projection, include_row_count))
     }
 
     fn metadata(&mut self) -> Result<StreamMetadata> {

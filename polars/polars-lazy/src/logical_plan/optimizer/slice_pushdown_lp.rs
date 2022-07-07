@@ -167,7 +167,27 @@ impl SlicePushDown {
                 Ok(lp)
 
             }
+            #[cfg(feature = "ipc_streaming")]
+            (IpcStreamScan {path,
+                schema,
+                output_schema,
+                predicate,
+                aggregate,
+                options
+            }, Some(state)) if state.offset == 0 && predicate.is_none() => {
+                let mut options = options;
+                options.n_rows = Some(state.len as usize);
+                let lp = IpcStreamScan {
+                    path,
+                    schema,
+                    output_schema,
+                    predicate,
+                    aggregate,
+                    options
+                };
 
+                Ok(lp)
+            }
             #[cfg(feature = "csv-file")]
             (CsvScan {
                 path,

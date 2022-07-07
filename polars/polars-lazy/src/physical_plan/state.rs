@@ -1,6 +1,16 @@
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "ipc_streaming",
+    feature = "parquet",
+    feature = "csv-file"
+))]
 use super::file_cache::FileCache;
-#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "ipc_streaming",
+    feature = "parquet",
+    feature = "csv-file"
+))]
 use crate::prelude::file_caching::FileFingerPrint;
 use parking_lot::{Mutex, RwLock};
 use polars_core::frame::groupby::GroupsProxy;
@@ -16,7 +26,12 @@ pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
     df_cache: Arc<Mutex<PlHashMap<String, DataFrame>>>,
     // cache file reads until all branches got there file, then we delete it
-    #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+    #[cfg(any(
+        feature = "ipc",
+        feature = "ipc_streaming",
+        feature = "parquet",
+        feature = "csv-file"
+    ))]
     pub(crate) file_cache: FileCache,
     pub(crate) schema_cache: Arc<RwLock<Vec<Option<SchemaRef>>>>,
     /// Used by Window Expression to prevent redundant grouping
@@ -30,16 +45,31 @@ pub struct ExecutionState {
 }
 
 impl ExecutionState {
-    #[cfg(not(any(feature = "parquet", feature = "csv-file", feature = "ipc")))]
+    #[cfg(not(any(
+        feature = "parquet",
+        feature = "csv-file",
+        feature = "ipc",
+        feature = "ipc_streaming"
+    )))]
     pub(crate) fn with_finger_prints(finger_prints: Option<usize>) -> Self {
         Self::new()
     }
-    #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+    #[cfg(any(
+        feature = "ipc",
+        feature = "ipc_streaming",
+        feature = "parquet",
+        feature = "csv-file"
+    ))]
     pub(crate) fn with_finger_prints(finger_prints: Option<Vec<FileFingerPrint>>) -> Self {
         Self {
             df_cache: Arc::new(Mutex::new(PlHashMap::default())),
             schema_cache: Default::default(),
-            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            #[cfg(any(
+                feature = "ipc",
+                feature = "ipc_streaming",
+                feature = "parquet",
+                feature = "csv-file"
+            ))]
             file_cache: FileCache::new(finger_prints),
             group_tuples: Arc::new(Mutex::new(PlHashMap::default())),
             join_tuples: Arc::new(Mutex::new(PlHashMap::default())),
@@ -53,7 +83,12 @@ impl ExecutionState {
         Self {
             df_cache: Arc::new(Mutex::new(PlHashMap::default())),
             schema_cache: Default::default(),
-            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            #[cfg(any(
+                feature = "ipc",
+                feature = "ipc_streaming",
+                feature = "parquet",
+                feature = "csv-file"
+            ))]
             file_cache: FileCache::new(None),
             group_tuples: Arc::new(Mutex::new(PlHashMap::default())),
             join_tuples: Arc::new(Mutex::new(PlHashMap::default())),

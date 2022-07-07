@@ -3,7 +3,12 @@ use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_io::aggregations::ScanAggregation;
 
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "ipc_streaming",
+    feature = "parquet",
+    feature = "csv-file"
+))]
 fn aggregate_expr_to_scan_agg(
     aggregate: Vec<Node>,
     expr_arena: &mut Arena<AExpr>,
@@ -130,6 +135,28 @@ impl DefaultPlanner {
 
                 let aggregate = aggregate_expr_to_scan_agg(aggregate, expr_arena);
                 Ok(Box::new(executors::IpcExec {
+                    path,
+                    schema,
+                    predicate,
+                    aggregate,
+                    options,
+                }))
+            }
+            #[cfg(feature = "ipc_streaming")]
+            IpcStreamScan {
+                path,
+                schema,
+                output_schema: _,
+                predicate,
+                aggregate,
+                options,
+            } => {
+                let predicate = predicate
+                    .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
+                    .map_or(Ok(None), |v| v.map(Some))?;
+
+                let aggregate = aggregate_expr_to_scan_agg(aggregate, expr_arena);
+                Ok(Box::new(executors::IpcStreamExec {
                     path,
                     schema,
                     predicate,

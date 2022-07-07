@@ -11,6 +11,8 @@ use polars_io::csv::CsvEncoding;
 use polars_io::csv_core::utils::infer_file_schema;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcReader;
+#[cfg(feature = "ipc_streaming")]
+use polars_io::ipc::IpcStreamReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
 use polars_io::RowCount;
@@ -133,6 +135,28 @@ impl LogicalPlanBuilder {
             options: options.into(),
         }
         .into())
+    }
+
+    #[cfg(feature = "ipc_streaming")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "ipc_streaming")))]
+    pub fn scan_ipc_stream<P: Into<PathBuf>>(
+        path: P,
+        options: IpcStreamScanOptions,
+    ) -> Result<Self> {
+        use polars_io::SerReader as _;
+
+        let path = path.into();
+        let file = std::fs::File::open(&path)?;
+        let schema = Arc::new(IpcStreamReader::new(file).schema()?);
+
+        Ok(LogicalPlan::IpcStreamScan {
+            path,
+            schema,
+            predicate: None,
+            aggregate: vec![],
+            options: options.into(),
+        }
+            .into())
     }
 
     #[allow(clippy::too_many_arguments)]

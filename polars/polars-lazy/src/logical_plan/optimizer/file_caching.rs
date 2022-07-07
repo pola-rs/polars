@@ -105,6 +105,22 @@ pub(crate) fn collect_fingerprints(
             };
             fps.push(fp);
         }
+        #[cfg(feature = "ipc_streaming")]
+        IpcStreamScan {
+            path,
+            options,
+            predicate,
+            ..
+        } => {
+            let slice = (0, options.n_rows);
+            let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
+            let fp = FileFingerPrint {
+                path: path.clone(),
+                predicate,
+                slice,
+            };
+            fps.push(fp);
+        }
         DataFrameScan { .. } => (),
         lp => {
             for input in lp.get_inputs() {
@@ -148,6 +164,25 @@ pub(crate) fn find_column_union_and_fingerprints(
         }
         #[cfg(feature = "parquet")]
         ParquetScan {
+            path,
+            options,
+            schema,
+            predicate,
+            ..
+        } => {
+            let slice = (0, options.n_rows);
+            let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
+            process_with_columns(
+                path,
+                &options.with_columns,
+                predicate,
+                slice,
+                columns,
+                schema,
+            );
+        }
+        #[cfg(feature = "ipc_streaming")]
+        IpcStreamScan {
             path,
             options,
             schema,
@@ -304,6 +339,62 @@ impl OptimizationRule for FileCacher {
 
                     options.with_columns = with_columns;
                     let lp = ALogicalPlan::IpcScan {
+                        path: finger_print.path.clone(),
+                        schema,
+                        output_schema,
+                        predicate,
+                        aggregate,
+                        options: options.clone(),
+                    };
+                    Some(self.finish_rewrite(
+                        lp,
+                        expr_arena,
+                        lp_arena,
+                        &finger_print,
+                        options.with_columns,
+                    ))
+                } else {
+                    unreachable!()
+                }
+            }
+            #[cfg(feature = "ipc_streaming")]
+            ALogicalPlan::IpcStreamScan { .. } => {
+                let lp = std::mem::take(lp);
+                if let ALogicalPlan::IpcStreamScan {
+                    path,
+                    schema,
+                    output_schema,
+                    predicate,
+                    aggregate,
+                    mut options,
+                } = lp
+                {
+                    let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
+                    let finger_print = FileFingerPrint {
+                        path,
+                        predicate: predicate_expr,
+                        slice: (0, options.n_rows),
+                    };
+
+                    let with_columns = self.extract_columns_and_count(&finger_print);
+                    options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
+                    let with_columns = with_columns.map(|t| t.1);
+                    // prevent infinite loop
+                    if options.with_columns == with_columns {
+                        let lp = ALogicalPlan::IpcStreamScan {
+                            path: finger_print.path,
+                            schema,
+                            output_schema,
+                            predicate,
+                            aggregate,
+                            options,
+                        };
+                        lp_arena.replace(node, lp);
+                        return None;
+                    }
+
+                    options.with_columns = with_columns;
+                    let lp = ALogicalPlan::IpcStreamScan {
                         path: finger_print.path.clone(),
                         schema,
                         output_schema,

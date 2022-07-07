@@ -96,7 +96,7 @@ fn update_scan_schema(
     // this is only needed for parsers that sort the projections
     // currently these are:
     // sorting parsers: csv,
-    // non-sorting: parquet, ipc
+    // non-sorting: parquet, ipc, ipc_streaming
     sort_projections: bool,
 ) -> Schema {
     let mut new_schema = Schema::with_capacity(acc_projections.len());
@@ -437,7 +437,38 @@ impl ProjectionPushDown {
                 };
                 Ok(lp)
             }
+            #[cfg(feature = "ipc_streaming")]
+            IpcStreamScan {
+                path,
+                schema,
+                predicate,
+                aggregate,
+                mut options,
+                ..
+            } => {
+                let with_columns = get_scan_columns(&mut acc_projections, expr_arena);
+                let output_schema = if with_columns.is_none() {
+                    None
+                } else {
+                    Some(Arc::new(update_scan_schema(
+                        &acc_projections,
+                        expr_arena,
+                        &*schema,
+                        false,
+                    )))
+                };
+                options.with_columns = with_columns;
 
+                let lp = IpcStreamScan {
+                    path,
+                    schema,
+                    output_schema,
+                    predicate,
+                    aggregate,
+                    options,
+                };
+                Ok(lp)
+            }
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,

@@ -2,6 +2,8 @@
 mod csv;
 #[cfg(feature = "ipc")]
 mod ipc;
+#[cfg(feature = "ipc_streaming")]
+mod ipc_stream;
 #[cfg(feature = "parquet")]
 mod parquet;
 
@@ -18,19 +20,21 @@ use std::path::Path;
 pub(crate) use csv::CsvExec;
 #[cfg(feature = "ipc")]
 pub(crate) use ipc::IpcExec;
+#[cfg(feature = "ipc_streaming")]
+pub(crate) use ipc_stream::IpcStreamExec;
 #[cfg(feature = "parquet")]
 pub(crate) use parquet::ParquetExec;
 
-#[cfg(any(feature = "ipc", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "ipc_streaming", feature = "parquet"))]
 type Projection = Option<Vec<usize>>;
-#[cfg(any(feature = "ipc", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "ipc_streaming", feature = "parquet"))]
 type StopNRows = Option<usize>;
-#[cfg(any(feature = "ipc", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "ipc_streaming", feature = "parquet"))]
 type Aggregation<'a> = Option<&'a [ScanAggregation]>;
-#[cfg(any(feature = "ipc", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "ipc_streaming", feature = "parquet"))]
 type Predicate = Option<Arc<dyn PhysicalIoExpr>>;
 
-#[cfg(any(feature = "ipc", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "ipc_streaming", feature = "parquet"))]
 fn prepare_scan_args<'a>(
     path: &Path,
     predicate: &Option<Arc<dyn PhysicalExpr>>,

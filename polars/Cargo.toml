@@ -46,7 +46,7 @@ json = ["polars-io", "polars-io/json"]
 ipc = ["polars-io", "polars-io/ipc", "polars-lazy/ipc"]
 
 # support for arrows streaming ipc file parsing
-ipc_streaming = ["polars-io", "polars-io/ipc_streaming", "polars-lazy/ipc"]
+ipc_streaming = ["polars-io", "polars-io/ipc_streaming", "polars-lazy/ipc_streaming"]
 
 # support for apache avro file parsing
 avro = ["polars-io", "polars-io/avro"]
