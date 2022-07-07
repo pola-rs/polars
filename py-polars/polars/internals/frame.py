@@ -1392,6 +1392,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 - "brotli"
                 - "lz4"
                 - "zstd"
+
+            The default compression "lz4" (actually lz4raw) has very good performance, but may not yet been supported
+            by older readers. If you want more compatability guarantees, consider using "snappy".
         compression_level
             Supported by {'gzip', 'brotli', 'zstd'}
                 - "gzip"

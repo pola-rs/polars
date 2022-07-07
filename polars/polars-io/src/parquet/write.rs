@@ -15,9 +15,6 @@ pub use write::{BrotliLevel, CompressionOptions as ParquetCompression, GzipLevel
 
 /// Write a DataFrame to parquet format
 ///
-/// # Example
-///
-///
 #[must_use]
 pub struct ParquetWriter<W> {
     writer: W,
@@ -44,6 +41,9 @@ where
     }
 
     /// Set the compression used. Defaults to `Lz4Raw`.
+    ///
+    /// The default compression `Lz4Raw` has very good performance, but may not yet been supported
+    /// by older readers. If you want more compatability guarantees, consider using `Snappy`.
     pub fn with_compression(mut self, compression: write::CompressionOptions) -> Self {
         self.compression = compression;
         self
