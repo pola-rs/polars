@@ -131,40 +131,51 @@ impl From<AnyValue<'_>> for LiteralValue {
             AnyValue::Null => Self::Null,
             AnyValue::Boolean(b) => Self::Boolean(b),
             AnyValue::Utf8(s) => Self::Utf8(s.to_string()),
+            #[cfg(feature = "dtype-u8")]
             AnyValue::UInt8(u) => Self::UInt8(u),
+            #[cfg(feature = "dtype-u16")]
             AnyValue::UInt16(u) => Self::UInt16(u),
             AnyValue::UInt32(u) => Self::UInt32(u),
             AnyValue::UInt64(u) => Self::UInt64(u),
+            #[cfg(feature = "dtype-i8")]
             AnyValue::Int8(i) => Self::Int8(i),
+            #[cfg(feature = "dtype-i16")]
             AnyValue::Int16(i) => Self::Int16(i),
             AnyValue::Int32(i) => Self::Int32(i),
             AnyValue::Int64(i) => Self::Int64(i),
             AnyValue::Float32(f) => Self::Float32(f),
             AnyValue::Float64(f) => Self::Float64(f),
+            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
             AnyValue::Date(d) => Self::DateTime(
                 NaiveDate::from_ymd(1970, 1, 1).and_hms(0, 0, 0) + ChronoDuration::days(d as i64),
                 TimeUnit::Milliseconds,
             ),
+            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
             AnyValue::Datetime(epoch, _time_unit, _time_zone) => Self::DateTime(
                 NaiveDateTime::from_timestamp(epoch, 0),
                 TimeUnit::Nanoseconds,
             ),
+            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
             AnyValue::Duration(chrono_duration, time_scale) => match time_scale {
-                TimeUnit::Nanoseconds => {
-                    Self::Duration(ChronoDuration::nanoseconds(chrono_duration), TimeUnit::Nanoseconds)
-                }
-                TimeUnit::Microseconds => {
-                    Self::Duration(ChronoDuration::microseconds(chrono_duration), TimeUnit::Microseconds)
-                }
-                TimeUnit::Milliseconds => {
-                    Self::Duration(ChronoDuration::milliseconds(chrono_duration), TimeUnit::Milliseconds)
-                }
+                TimeUnit::Nanoseconds => Self::Duration(
+                    ChronoDuration::nanoseconds(chrono_duration),
+                    TimeUnit::Nanoseconds,
+                ),
+                TimeUnit::Microseconds => Self::Duration(
+                    ChronoDuration::microseconds(chrono_duration),
+                    TimeUnit::Microseconds,
+                ),
+                TimeUnit::Milliseconds => Self::Duration(
+                    ChronoDuration::milliseconds(chrono_duration),
+                    TimeUnit::Milliseconds,
+                ),
             },
+            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
             AnyValue::Time(nano_secs_sinds_midnight) => Self::Int64(nano_secs_sinds_midnight),
             AnyValue::List(l) => Self::Series(SpecialEq::new(l)),
             AnyValue::Utf8Owned(o) => Self::Utf8(o),
-            AnyValue::Categorical(c, _rev_mapping) => Self::UInt32(c),
-            _ => Self::Null
+            AnyValue::Categorical(c, rev_mapping) => Self::Utf8(rev_mapping.get(c).to_string()),
+            _ => panic!("Unsupporten AnyValue type variant, cannot convert to Literal"),
         }
     }
 }
