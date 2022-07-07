@@ -2813,7 +2813,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     def groupby(
         self: DF,
-        by: str | pli.Expr | Sequence[str] | Sequence[pli.Expr],
+        by: str | pli.Expr | Sequence[str | pli.Expr],
         maintain_order: bool = False,
     ) -> GroupBy[DF]:
         """

@@ -817,7 +817,7 @@ class LazyFrame(Generic[DF]):
 
     def select(
         self: LDF,
-        exprs: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | pli.Series,
+        exprs: str | pli.Expr | Sequence[str | pli.Expr] | pli.Series,
     ) -> LDF:
         """
         Select columns from this DataFrame.
