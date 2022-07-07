@@ -191,6 +191,30 @@ fn test_ipc_globbing() -> Result<()> {
     Ok(())
 }
 
+#[test]
+#[cfg(not(target_os = "windows"))]
+fn test_ipc_stream_globbing() -> Result<()> {
+    // for side effects
+    init_files();
+    let glob = "../../examples/datasets/*.ipc_stream";
+    let df = LazyFrame::scan_ipc_stream(
+        glob.into(),
+        ScanArgsIpcStream {
+            n_rows: None,
+            cache: true,
+            rechunk: false,
+            row_count: None,
+        },
+    )?
+    .collect()?;
+    assert_eq!(df.shape(), (54, 4));
+    let cal = df.column("calories")?;
+    assert_eq!(cal.get(0), AnyValue::Int64(45));
+    assert_eq!(cal.get(53), AnyValue::Int64(194));
+
+    Ok(())
+}
+
 fn slice_at_union(lp_arena: &Arena<ALogicalPlan>, lp: Node) -> bool {
     (&lp_arena).iter(lp).all(|(_, lp)| {
         if let ALogicalPlan::Union { options, .. } = lp {
@@ -255,9 +279,10 @@ fn test_union_and_agg_projections() -> Result<()> {
     // hashmap, if that doesn't set them sorted the vstack will panic.
     let lf1 = LazyFrame::scan_parquet(GLOB_PARQUET.into(), Default::default())?;
     let lf2 = LazyFrame::scan_ipc(GLOB_IPC.into(), Default::default())?;
-    let lf3 = LazyCsvReader::new(GLOB_CSV.into()).finish()?;
+    let lf3 = LazyFrame::scan_ipc_stream(GLOB_IPC_STREAM.into(), Default::default())?;
+    let lf4 = LazyCsvReader::new(GLOB_CSV.into()).finish()?;
 
-    for lf in [lf1, lf2, lf3] {
+    for lf in [lf1, lf2, lf3, lf4] {
         let lf = lf.filter(col("category").eq(lit("vegetables"))).select([
             col("fats_g").sum().alias("sum"),
             col("fats_g").cast(DataType::Float64).mean().alias("mean"),
@@ -272,7 +297,12 @@ fn test_union_and_agg_projections() -> Result<()> {
 }
 
 #[test]
-#[cfg(all(feature = "ipc", feature = "csv-file"))]
+#[cfg(all(
+    feature = "ipc",
+    feature = "csv-file",
+    feature = "parquet",
+    feature = "ipc_streaming"
+))]
 fn test_slice_filter() -> Result<()> {
     init_files();
     let _guard = SINGLE_LOCK.lock().unwrap();
@@ -290,6 +320,10 @@ fn test_slice_filter() -> Result<()> {
         .slice(offset, len)
         .collect()?;
     let df3 = scan_foods_ipc()
+        .filter(col("category").eq(lit("fruit")))
+        .slice(offset, len)
+        .collect()?;
+    let df4 = scan_foods_ipc_stream()
         .filter(col("category").eq(lit("fruit")))
         .slice(offset, len)
         .collect()?;
@@ -312,10 +346,17 @@ fn test_slice_filter() -> Result<()> {
         .filter(col("category").eq(lit("fruit")))
         .slice(offset, len)
         .collect()?;
+    let df4_ = scan_foods_ipc_stream()
+        .collect()?
+        .lazy()
+        .filter(col("category").eq(lit("fruit")))
+        .slice(offset, len)
+        .collect()?;
 
     assert_eq!(df1.shape(), df1_.shape());
     assert_eq!(df2.shape(), df2_.shape());
     assert_eq!(df3.shape(), df3_.shape());
+    assert_eq!(df4.shape(), df4_.shape());
 
     Ok(())
 }
@@ -362,6 +403,24 @@ fn test_row_count_on_files() -> Result<()> {
         );
 
         let lf = LazyFrame::scan_ipc(FOODS_IPC.to_string(), Default::default())?
+            .with_row_count("rc", Some(offset));
+
+        assert!(row_count_at_scan(lf.clone()));
+        let df = lf.clone().collect()?;
+        let rc = df.column("rc")?;
+        assert_eq!(
+            rc.idx()?.into_no_null_iter().collect::<Vec<_>>(),
+            (offset..27 + offset).collect::<Vec<_>>()
+        );
+
+        let out = lf
+            .filter(col("rc").gt(lit(-1)))
+            .select([col("calories")])
+            .collect()?;
+        assert!(out.column("calories").is_ok());
+        assert_eq!(out.shape(), (27, 1));
+
+        let lf = LazyFrame::scan_ipc_stream(FOODS_IPC_STREAM.to_string(), Default::default())?
             .with_row_count("rc", Some(offset));
 
         assert!(row_count_at_scan(lf.clone()));

@@ -741,7 +741,12 @@ impl LazyFrame {
                 collect_fingerprints(lp_top, &mut fps, &lp_arena, &expr_arena);
                 Some(fps)
             }
-            #[cfg(not(any(feature = "ipc", feature = "ipc_streaming", feature = "parquet", feature = "csv-file")))]
+            #[cfg(not(any(
+                feature = "ipc",
+                feature = "ipc_streaming",
+                feature = "parquet",
+                feature = "csv-file"
+            )))]
             {
                 None
             }

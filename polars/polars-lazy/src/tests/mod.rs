@@ -47,8 +47,10 @@ use std::iter::FromIterator;
 static GLOB_PARQUET: &str = "../../examples/datasets/*.parquet";
 static GLOB_CSV: &str = "../../examples/datasets/*.csv";
 static GLOB_IPC: &str = "../../examples/datasets/*.ipc";
+static GLOB_IPC_STREAM: &str = "../../examples/datasets/*.ipc_stream";
 static FOODS_CSV: &str = "../../examples/datasets/foods1.csv";
 static FOODS_IPC: &str = "../../examples/datasets/foods1.ipc";
+static FOODS_IPC_STREAM: &str = "../../examples/datasets/foods1.ipc_stream";
 static FOODS_PARQUET: &str = "../../examples/datasets/foods1.parquet";
 
 fn scan_foods_csv() -> LazyFrame {
@@ -57,6 +59,10 @@ fn scan_foods_csv() -> LazyFrame {
 
 fn scan_foods_ipc() -> LazyFrame {
     LazyFrame::scan_ipc(FOODS_IPC.to_string(), Default::default()).unwrap()
+}
+
+fn scan_foods_ipc_stream() -> LazyFrame {
+    LazyFrame::scan_ipc_stream(FOODS_IPC_STREAM.to_string(), Default::default()).unwrap()
 }
 
 fn init_files() {

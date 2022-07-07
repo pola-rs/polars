@@ -34,6 +34,13 @@ pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {
                     },
                 ..
             } => true,
+            IpcStreamScan {
+                options:
+                    IpcStreamScanOptionsInner {
+                        row_count: Some(_), ..
+                    },
+                ..
+            } => true,
             _ => false,
         }
     })
@@ -58,6 +65,9 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
             | IpcScan {
                 predicate: Some(_), ..
             } => true,
+            IpcStreamScan {
+                predicate: Some(_), ..
+            } => true,
             _ => false,
         }
     })
@@ -72,6 +82,7 @@ fn slice_at_scan(q: LazyFrame) -> bool {
             CsvScan { options, .. } => options.n_rows.is_some(),
             ParquetScan { options, .. } => options.n_rows.is_some(),
             IpcScan { options, .. } => options.n_rows.is_some(),
+            IpcStreamScan { options, .. } => options.n_rows.is_some(),
             _ => false,
         }
     })

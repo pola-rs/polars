@@ -140,7 +140,7 @@ impl<R: Read + Seek> IpcStreamReader<R> {
             &schema,
             self.row_count,
         )
-            .map(|df| fix_column_order(df, projection, include_row_count))
+        .map(|df| fix_column_order(df, projection, include_row_count))
     }
 
     fn metadata(&mut self) -> Result<StreamMetadata> {

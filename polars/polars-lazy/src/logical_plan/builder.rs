@@ -156,7 +156,7 @@ impl LogicalPlanBuilder {
             aggregate: vec![],
             options: options.into(),
         }
-            .into())
+        .into())
     }
 
     #[allow(clippy::too_many_arguments)]
