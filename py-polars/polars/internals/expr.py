@@ -2695,7 +2695,7 @@ class Expr:
         ...     }
         ... )
 
-        In a selection context the function is applied by row:
+        In a selection context, the function is applied by row.
 
         >>> (
         ...     df.with_column(
@@ -2767,7 +2767,7 @@ class Expr:
 
     def flatten(self) -> Expr:
         """
-        Alias for explode.
+        Alias for :func:`explode`.
 
         Explode a list or utf8 Series. This means that every item is expanded to a new row.
 
@@ -2778,10 +2778,9 @@ class Expr:
         Examples
         --------
 
+        The following example turns each character into a separate row:
+
         >>> df = pl.DataFrame({"foo": ["hello", "world"]})
-
-        Turn each character into a separate row:
-
         >>> df.select(pl.col("foo").flatten())
         shape: (10, 1)
         ┌─────┐
@@ -2808,10 +2807,9 @@ class Expr:
         │ d   │
         └─────┘
 
+        This example turns each word into a separate row:
+
         >>> df = pl.DataFrame({"foo": ["hello world"]})
-
-        Turn each word into a separate row:
-
         >>> df.select(pl.col("foo").str.split(by=" ").flatten())
         shape: (2, 1)
         ┌───────┐
@@ -2823,13 +2821,16 @@ class Expr:
         ├╌╌╌╌╌╌╌┤
         │ world │
         └───────┘
+
         """
 
         return wrap_expr(self._pyexpr.explode())
 
     def explode(self) -> Expr:
         """
-        Explode a list or utf8 Series. This means that every item is expanded to a new row.
+        Explode a list or utf8 Series.
+
+        This means that every item is expanded to a new row.
 
         Returns
         -------
