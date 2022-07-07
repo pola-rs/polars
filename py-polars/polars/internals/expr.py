@@ -286,7 +286,7 @@ class Expr:
         """
         Compute the square root of the elements
         """
-        return self ** 0.5
+        return self**0.5
 
     def log10(self) -> Expr:
         """
@@ -2909,7 +2909,7 @@ class Expr:
     def pow(self, exponent: float | Expr) -> Expr:
         """
         Raise expression to the power of exponent.
-        
+
         Examples
         --------
 
