@@ -109,7 +109,7 @@ impl<R: Read + Seek> IpcStreamReader<R> {
     fn metadata(&mut self) -> Result<StreamMetadata> {
         match &self.metadata {
             None => {
-                let metadata = read::read_stream_metadata(&mut self.reader).unwrap();
+                let metadata = read::read_stream_metadata(&mut self.reader)?;
                 self.metadata = Option::from(metadata.clone());
                 Ok(metadata)
             }

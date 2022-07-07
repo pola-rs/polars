@@ -95,6 +95,13 @@ mod test {
     }
 
     #[test]
+    fn test_read_invalid_stream() {
+        let buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+        assert!(IpcStreamReader::new(buf.clone()).arrow_schema().is_err());
+        assert!(IpcStreamReader::new(buf).finish().is_err());
+    }
+
+    #[test]
     fn test_write_with_compression() {
         let mut df = create_df();
 
