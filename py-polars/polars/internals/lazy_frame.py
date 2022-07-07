@@ -1486,7 +1486,7 @@ class LazyFrame(Generic[DF]):
         └─────┴──────┴───────┴──────┴──────┴───────┘
         ...
         >>> # Support for kwarg expressions is considered EXPERIMENTAL.
-        >>> # requires opt-in via `pl.Config`, eg:
+        >>> # Currently requires opt-in via `pl.Config`, eg:
         >>> pl.Config.set_with_columns_kwargs(True)
         >>> ldf.with_columns(
         ...     d=pl.col("a") * pl.col("b"),

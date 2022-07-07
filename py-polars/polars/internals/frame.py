@@ -4927,8 +4927,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴──────┴──────┴───────┘
         ...
-        >>> # Support for kwarg expressions is currently EXPERIMENTAL:
-        >>> # requires opt-in via `pl.Config.set_with_columns_kwargs(True)`
+        >>> # Support for kwarg expressions is considered EXPERIMENTAL.
+        >>> # Currently requires opt-in via `pl.Config`, eg:
+        >>> pl.Config.set_with_columns_kwargs(True)
         >>> df.with_columns(
         ...     d=pl.col("a") * pl.col("b"),
         ...     e=pl.col("c").is_not(),
