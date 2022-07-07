@@ -22,7 +22,7 @@ class WhenThenThen:
 
     def when(self, predicate: pli.Expr | bool) -> WhenThenThen:
         """
-        Start another when, then, otherwise layer.
+        Start another "when, then, otherwise" layer.
         """
         predicate = pli.expr_to_lit_or_expr(predicate)
         return WhenThenThen(self.pywhenthenthen.when(predicate._pyexpr))
@@ -42,7 +42,10 @@ class WhenThenThen:
         """
         Values to return in case of the predicate being `True`.
 
-        See Also: the `when` function.
+        See Also
+        --------
+        when : Start another when, then, otherwise layer.
+        otherwise : Values to return in case of the predicate being `False`.
         """
         expr_ = pli.expr_to_lit_or_expr(expr)
         return WhenThenThen(self.pywhenthenthen.then(expr_._pyexpr))
@@ -56,7 +59,10 @@ class WhenThenThen:
         """
         Values to return in case of the predicate being `False`.
 
-        See Also: the `when` function.
+        See Also
+        --------
+        when : Start another when, then, otherwise layer.
+        then : Values to return in case of the predicate being `True`.
         """
         expr = pli.expr_to_lit_or_expr(expr)
         return pli.wrap_expr(self.pywhenthenthen.otherwise(expr._pyexpr))
@@ -72,7 +78,7 @@ class WhenThen:
 
     def when(self, predicate: pli.Expr | bool) -> WhenThenThen:
         """
-        Start another when, then, otherwise layer.
+        Start another "when, then, otherwise" layer.
         """
         predicate = pli.expr_to_lit_or_expr(predicate)
         return WhenThenThen(self._pywhenthen.when(predicate._pyexpr))
@@ -81,7 +87,10 @@ class WhenThen:
         """
         Values to return in case of the predicate being `False`.
 
-        See Also: the `when` function.
+        See Also
+        --------
+        when : Start another when, then, otherwise layer.
+        then : Values to return in case of the predicate being `True`.
         """
         expr = pli.expr_to_lit_or_expr(expr)
         return pli.wrap_expr(self._pywhenthen.otherwise(expr._pyexpr))
@@ -110,7 +119,10 @@ class When:
         """
         Values to return in case of the predicate being `True`.
 
-        See Also: the `when` function.
+        See Also
+        --------
+        when : Start another when, then, otherwise layer.
+        otherwise : Values to return in case of the predicate being `False`.
         """
         expr = pli.expr_to_lit_or_expr(expr)
         pywhenthen = self._pywhen.then(expr._pyexpr)
@@ -119,11 +131,10 @@ class When:
 
 def when(expr: pli.Expr | bool) -> When:
     """
-    Start a when, then, otherwise expression.
+    Start a "when, then, otherwise" expression.
 
     Examples
     --------
-
     Below we add a column with the value 1, where column "foo" > 2 and the value -1 where it isn't.
 
     >>> df = pl.DataFrame({"foo": [1, 3, 4], "bar": [3, 4, 0]})
@@ -163,6 +174,10 @@ def when(expr: pli.Expr | bool) -> When:
     │ 4   ┆ 0   ┆ 1       │
     └─────┴─────┴─────────┘
 
+    See Also
+    --------
+    then : Values to return in case of the predicate being `True`.
+    otherwise : Values to return in case of the predicate being `False`.
     """
     expr = pli.expr_to_lit_or_expr(expr)
     pw = pywhen(expr._pyexpr)
