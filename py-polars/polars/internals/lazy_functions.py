@@ -820,9 +820,10 @@ def map_binary(
     return_dtype: type[DataType] | None = None,
 ) -> pli.Expr:
     """
-     .. deprecated:: 0.10.4
-       use `map` or `apply`
     Map a custom function over two columns and produce a single Series result.
+
+    .. deprecated:: 0.10.4
+        Use :func:`map` or :func:`apply` instead.
 
     Parameters
     ----------

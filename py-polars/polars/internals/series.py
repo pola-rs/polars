@@ -5227,7 +5227,7 @@ class DateTimeNameSpace:
         Go from Date/Datetime to python DateTime objects
 
         .. deprecated:: 0.13.23
-            Use :func:`Series.to_list`.
+            Use :func:`Series.to_list` instead.
 
         """
         return (self.timestamp("ms") / 1000).apply(

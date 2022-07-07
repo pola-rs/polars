@@ -2024,7 +2024,7 @@ class LazyFrame(Generic[DF]):
     ) -> LDF:
         """
         .. deprecated:: 0.13.13
-            Please use `unique`
+            Use :func:`unique` instead.
         """
         return self.unique(maintain_order, subset, keep)
 

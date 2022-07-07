@@ -979,7 +979,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ) -> str | None:  # pragma: no cover
         """
         .. deprecated:: 0.13.12
-            Please use `write_json`
+            Use :func:`write_json` instead.
         """
         warnings.warn(
             "'to_json' is deprecated. please use 'write_json'", DeprecationWarning
@@ -1167,7 +1167,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ) -> str | None:  # pragma: no cover
         """
         .. deprecated:: 0.13.12
-            Please use `write_csv`
+            Use :func:`write_csv` instead.
         """
         warnings.warn(
             "'to_csv' is deprecated. please use 'write_csv'", DeprecationWarning
@@ -1204,7 +1204,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ) -> None:  # pragma: no cover
         """
         .. deprecated:: 0.13.12
-            Please use `write_avro`
+            Use :func:`write_avro` instead.
         """
         warnings.warn(
             "'to_avro' is deprecated. please use 'write_avro'", DeprecationWarning
@@ -1243,7 +1243,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ) -> None:  # pragma: no cover
         """
         .. deprecated:: 0.13.12
-            Please use `write_ipc`
+            Use :func:`write_ipc` instead.
         """
         warnings.warn(
             "'to_ipc' is deprecated. please use 'write_ipc'", DeprecationWarning
@@ -1489,7 +1489,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ) -> None:  # pragma: no cover
         """
         .. deprecated:: 0.13.12
-            Please use `write_parquet`
+            Use :func:`write_parquet` instead.
         """
         warnings.warn(
             "'to_parquet' is deprecated. please use 'write_parquet'", DeprecationWarning
@@ -5393,7 +5393,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ) -> DF:
         """
         .. deprecated:: 0.13.13
-            Please use `unique`
+            Use :func:`unique` instead.
         """
         return self.unique(maintain_order, subset, keep)
 
@@ -6102,7 +6102,7 @@ class GroupBy(Generic[DF]):
         Select a single group as a new DataFrame.
 
         .. deprecated:: 0.13.32
-            Please use `partition_by`
+            Use :func:`partition_by` instead.
 
         Parameters
         ----------
