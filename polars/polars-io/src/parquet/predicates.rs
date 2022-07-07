@@ -1,3 +1,4 @@
+use crate::predicates::PhysicalIoExpr;
 use crate::ArrowResult;
 use arrow::array::Array;
 use arrow::compute::concatenate::concatenate;
@@ -85,4 +86,25 @@ pub(crate) fn collect_statistics(
     } else {
         Some(BatchStats { schema, stats })
     })
+}
+
+pub(super) fn read_this_row_group(
+    predicate: Option<&Arc<dyn PhysicalIoExpr>>,
+    file_metadata: &arrow::io::parquet::read::FileMetaData,
+    schema: &ArrowSchema,
+) -> Result<bool> {
+    if let Some(pred) = &predicate {
+        if let Some(pred) = pred.as_stats_evaluator() {
+            if let Some(stats) = collect_statistics(&file_metadata.row_groups, schema)? {
+                let should_read = pred.should_read(&stats);
+                // a parquet file may not have statistics of all columns
+                if matches!(should_read, Ok(false)) {
+                    return Ok(false);
+                } else if !matches!(should_read, Err(PolarsError::NotFound(_))) {
+                    let _ = should_read?;
+                }
+            }
+        }
+    }
+    Ok(true)
 }

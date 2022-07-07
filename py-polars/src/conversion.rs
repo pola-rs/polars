@@ -853,3 +853,19 @@ pub(crate) fn parse_strategy(strat: &str, limit: FillNullLimit) -> PyResult<Fill
         Ok(strat)
     }
 }
+impl FromPyObject<'_> for Wrap<ParallelStrategy> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let unit = match ob.str()?.to_str()? {
+            "auto" => ParallelStrategy::Auto,
+            "columns" => ParallelStrategy::Columns,
+            "row_groups" => ParallelStrategy::RowGroups,
+            "none" => ParallelStrategy::None,
+            _ => {
+                return Err(PyValueError::new_err(
+                    "expected one of {'auto', 'columns', 'row_groups', 'none'}",
+                ))
+            }
+        };
+        Ok(Wrap(unit))
+    }
+}

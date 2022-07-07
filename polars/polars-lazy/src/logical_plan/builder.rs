@@ -88,7 +88,7 @@ impl LogicalPlanBuilder {
         path: P,
         n_rows: Option<usize>,
         cache: bool,
-        parallel: bool,
+        parallel: polars_io::parquet::ParallelStrategy,
         row_count: Option<RowCount>,
         rechunk: bool,
     ) -> Result<Self> {

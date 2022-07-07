@@ -171,7 +171,7 @@ class LazyFrame(Generic[DF]):
         file: str,
         n_rows: int | None = None,
         cache: bool = True,
-        parallel: bool = True,
+        parallel: str = "auto",
         rechunk: bool = True,
         row_count_name: str | None = None,
         row_count_offset: int = 0,
