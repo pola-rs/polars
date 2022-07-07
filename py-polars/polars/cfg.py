@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from typing import Optional, Union
 
 from polars.string_cache import toggle_string_cache
 
@@ -104,6 +105,19 @@ class Config:
         """
         toggle_string_cache(True)
         return cls
+
+    @classmethod
+    def set_with_columns_kwargs(
+        cls, enable: Optional[bool] = None
+    ) -> Union[type[Config], bool]:
+        """
+        Enable experimental support for kwargs in `with_columns` method.
+        """
+        if enable is None:
+            return bool(int(os.environ.get("POLARS_WITH_COLUMNS_KWARGS", 0)))
+        else:
+            os.environ["POLARS_WITH_COLUMNS_KWARGS"] = "1" if enable else "0"
+            return cls
 
     @classmethod
     def unset_global_string_cache(cls) -> type[Config]:

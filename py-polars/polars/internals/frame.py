@@ -4893,7 +4893,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ----------
         exprs
             List of Expressions that evaluate to columns.
-
         **named_exprs
             Named column Expressions, provided as kwargs.
 
@@ -4928,9 +4927,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴──────┴──────┴───────┘
         ...
+        >>> # Support for kwarg expressions is currently EXPERIMENTAL:
+        >>> # requires opt-in via `pl.Config.set_with_columns_kwargs(True)`
         >>> df.with_columns(
         ...     d=pl.col("a") * pl.col("b"),
-        ...     e=~pl.col("c"),
+        ...     e=pl.col("c").is_not(),
         ... )
         shape: (4, 5)
         ┌─────┬──────┬───────┬──────┬───────┐

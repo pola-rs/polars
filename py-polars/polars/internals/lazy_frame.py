@@ -27,6 +27,7 @@ except ImportError:  # pragma: no cover
 
 
 from polars import internals as pli
+from polars.cfg import Config
 from polars.datatypes import DataType, py_type_to_dtype
 from polars.utils import (
     _in_notebook,
@@ -1485,9 +1486,11 @@ class LazyFrame(Generic[DF]):
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴──────┴──────┴───────┘
         ...
+        >>> # Support for kwarg expressions is currently EXPERIMENTAL:
+        >>> # requires opt-in via `pl.Config.set_with_columns_kwargs(True)`
         >>> ldf.with_columns(
         ...     d=pl.col("a") * pl.col("b"),
-        ...     e=~pl.col("c"),
+        ...     e=pl.col("c").is_not(),
         ... ).collect()
         shape: (4, 5)
         ┌─────┬──────┬───────┬──────┬───────┐
@@ -1504,17 +1507,22 @@ class LazyFrame(Generic[DF]):
         │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
         └─────┴──────┴───────┴──────┴───────┘
         """
-        if not (exprs or named_exprs):
-            raise ValueError(
-                "expected at least one of 'exprs' or **named_exprs; both empty"
+        if named_exprs and not Config.set_with_columns_kwargs():
+            raise RuntimeError(
+                "**kwargs support is experimental; requires opt-in via `pl.Config.set_with_columns_kwargs(True)`"
             )
+        elif exprs is None and not named_exprs:
+            raise ValueError("Expected at least one of 'exprs' or **named_exprs")
+
         exprs = (
             []
             if exprs is None
             else ([exprs] if isinstance(exprs, pli.Expr) else list(exprs))
         )
-        exprs.extend(expr.alias(name) for name, expr in named_exprs.items())
-
+        exprs.extend(
+            (pli.lit(expr).alias(name) if isinstance(expr, str) else expr.alias(name))
+            for name, expr in named_exprs.items()
+        )
         pyexprs = []
         for e in exprs:
             if isinstance(e, pli.Expr):
@@ -1522,7 +1530,7 @@ class LazyFrame(Generic[DF]):
             elif isinstance(e, pli.Series):
                 pyexprs.append(pli.lit(e)._pyexpr)
             else:
-                raise ValueError(f"expected an expression, got {e}")
+                raise ValueError(f"Expected an expression, got {e}")
 
         return self._from_pyldf(self._ldf.with_columns(pyexprs))
 
