@@ -1,22 +1,30 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Mapping, Sequence, overload
+import warnings
+from typing import Any, Mapping, Sequence, overload
 
 from polars.internals import DataFrame, Series
 
-if TYPE_CHECKING:  # pragma: no cover
+try:
     import numpy as np
-    import pandas as pd
+
+    _NUMPY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _NUMPY_AVAILABLE = False
+
+try:
     import pyarrow as pa
 
     _PYARROW_AVAILABLE = True
-else:
-    try:
-        import pyarrow as pa
+except ImportError:  # pragma: no cover
+    _PYARROW_AVAILABLE = False
 
-        _PYARROW_AVAILABLE = True
-    except ImportError:  # pragma: no cover
-        _PYARROW_AVAILABLE = False
+try:
+    import pandas as pd
+
+    _PANDAS_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _PANDAS_AVAILABLE = False
 
 
 def from_dict(
@@ -60,58 +68,8 @@ def from_dict(
     return DataFrame._from_dict(data=data, columns=columns)  # type: ignore
 
 
-def from_records(
-    data: np.ndarray | Sequence[Sequence[Any]],
-    columns: Sequence[str] | None = None,
-    orient: str | None = None,
-) -> DataFrame:
-    """
-    Construct a DataFrame from a numpy ndarray or sequence of sequences.
-
-    Note that this is slower than creating from columnar memory.
-
-    Parameters
-    ----------
-    data : numpy ndarray or Sequence of sequences
-        Two-dimensional data represented as numpy ndarray or sequence of sequences.
-    columns : Sequence of str, default None
-        Column labels to use for resulting DataFrame. Must match data dimensions.
-        If not specified, columns will be named `column_0`, `column_1`, etc.
-    orient : {'col', 'row'}, default None
-        Whether to interpret two-dimensional data as columns or as rows. If None,
-        the orientation is inferred by matching the columns and data dimensions. If
-        this does not yield conclusive results, column orientation is used.
-
-    Returns
-    -------
-    DataFrame
-
-    Examples
-    --------
-
-    >>> data = [[1, 2, 3], [4, 5, 6]]
-    >>> df = pl.from_records(data, columns=["a", "b"])
-    >>> df
-        shape: (3, 2)
-    ┌─────┬─────┐
-    │ a   ┆ b   │
-    │ --- ┆ --- │
-    │ i64 ┆ i64 │
-    ╞═════╪═════╡
-    │ 1   ┆ 4   │
-    ├╌╌╌╌╌┼╌╌╌╌╌┤
-    │ 2   ┆ 5   │
-    ├╌╌╌╌╌┼╌╌╌╌╌┤
-    │ 3   ┆ 6   │
-    └─────┴─────┘
-
-    """
-    return DataFrame._from_records(data, columns=columns, orient=orient)
-
-
 def from_dicts(
-    dicts: Sequence[dict[str, Any]],
-    infer_schema_length: int | None = 50,
+    dicts: Sequence[dict[str, Any]], infer_schema_length: int | None = 50
 ) -> DataFrame:
     """
     Construct a DataFrame from a sequence of dictionaries.
@@ -149,6 +107,115 @@ def from_dicts(
 
     """
     return DataFrame._from_dicts(dicts, infer_schema_length)
+
+
+def from_records(
+    data: Sequence[Sequence[Any]],
+    columns: Sequence[str] | None = None,
+    orient: str | None = None,
+) -> DataFrame:
+    """
+    Construct a DataFrame from a numpy ndarray or sequence of sequences.
+
+    Note that this is slower than creating from columnar memory.
+
+    Parameters
+    ----------
+    data : numpy ndarray or Sequence of sequences
+        Two-dimensional data represented as numpy ndarray or sequence of sequences.
+    columns : Sequence of str, default None
+        Column labels to use for resulting DataFrame. Must match data dimensions.
+        If not specified, columns will be named `column_0`, `column_1`, etc.
+    orient : {'col', 'row'}, default None
+        Whether to interpret two-dimensional data as columns or as rows. If None,
+        the orientation is inferred by matching the columns and data dimensions. If
+        this does not yield conclusive results, column orientation is used.
+
+    Returns
+    -------
+    DataFrame
+
+    Examples
+    --------
+
+    >>> data = [[1, 2, 3], [4, 5, 6]]
+    >>> df = pl.from_records(data, columns=["a", "b"])
+    >>> df
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 4   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 5   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 3   ┆ 6   │
+    └─────┴─────┘
+
+    """
+    if _NUMPY_AVAILABLE and isinstance(data, np.ndarray):
+        warnings.warn(
+            "using `from_records` with a numpy ndarray is deprecated, "
+            "use `from_numpy` instead",
+            DeprecationWarning,
+        )
+        return DataFrame._from_numpy(data, columns=columns, orient=orient)
+    else:
+        return DataFrame._from_records(data, columns=columns, orient=orient)
+
+
+def from_numpy(
+    data: np.ndarray,
+    columns: Sequence[str] | None = None,
+    orient: str | None = None,
+) -> DataFrame:
+    """
+    Construct a DataFrame from a numpy ndarray.
+
+    Note that this is slower than creating from columnar memory.
+
+    Parameters
+    ----------
+    data : numpy ndarray
+        Two-dimensional data represented as a numpy ndarray.
+    columns : Sequence of str, default None
+        Column labels to use for resulting DataFrame. Must match data dimensions.
+        If not specified, columns will be named `column_0`, `column_1`, etc.
+    orient : {'col', 'row'}, default None
+        Whether to interpret two-dimensional data as columns or as rows. If None,
+        the orientation is inferred by matching the columns and data dimensions. If
+        this does not yield conclusive results, column orientation is used.
+
+    Returns
+    -------
+    DataFrame
+
+    Examples
+    --------
+
+    >>> import numpy as np
+    >>> data = np.array([[1, 2, 3], [4, 5, 6]])
+    >>> df = pl.from_numpy(data, columns=["a", "b"], orient="col")
+    >>> df
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 4   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 5   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 3   ┆ 6   │
+    └─────┴─────┘
+
+    """
+    if not _NUMPY_AVAILABLE:
+        raise ImportError("'numpy' is required when using from_numpy().")
+    return DataFrame._from_numpy(data, columns=columns, orient=orient)
 
 
 # Note that we cannot overload because pyarrow has no stubs :(
@@ -209,9 +276,7 @@ def from_arrow(
 
     """
     if not _PYARROW_AVAILABLE:
-        raise ImportError(
-            "'pyarrow' is required when using from_arrow()."
-        )  # pragma: no cover
+        raise ImportError("'pyarrow' is required when using from_arrow().")
     if isinstance(a, pa.Table):
         return DataFrame._from_arrow(a, rechunk=rechunk)
     elif isinstance(a, (pa.Array, pa.ChunkedArray)):
@@ -296,14 +361,9 @@ def from_pandas(
 
     """
     if not _PYARROW_AVAILABLE:
-        raise ImportError(  # pragma: no cover
-            "'pyarrow' is required when using from_pandas()."
-        )
-
-    try:
-        import pandas as pd
-    except ImportError as e:  # pragma: no cover
-        raise ImportError("'pandas' is required when using from_pandas().") from e
+        raise ImportError("'pyarrow' is required when using from_pandas().")
+    if not _PANDAS_AVAILABLE:
+        raise ImportError("'pandas' is required when using from_pandas().")
 
     if isinstance(df, (pd.Series, pd.DatetimeIndex)):
         return Series._from_pandas("", df, nan_to_none=nan_to_none)
