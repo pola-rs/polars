@@ -175,6 +175,7 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             AnyValue::Time(nano_secs_sinds_midnight) => Ok(Self::Int64(nano_secs_sinds_midnight)),
             AnyValue::List(l) => Ok(Self::Series(SpecialEq::new(l))),
             AnyValue::Utf8Owned(o) => Ok(Self::Utf8(o)),
+            #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(c, rev_mapping) => Ok(Self::Utf8(rev_mapping.get(c).to_string())),
             _ => Err(PolarsError::ComputeError(
                 "Unsupporten AnyValue type variant, cannot convert to Literal".into(),
