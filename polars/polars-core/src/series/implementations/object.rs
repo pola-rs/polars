@@ -10,15 +10,6 @@ use ahash::RandomState;
 use std::any::Any;
 use std::borrow::Cow;
 
-impl<T> IntoSeries for ObjectChunked<T>
-where
-    T: PolarsObject,
-{
-    fn into_series(self) -> Series {
-        Series(Arc::new(SeriesWrap(self)))
-    }
-}
-
 impl<T> PrivateSeriesNumeric for SeriesWrap<ObjectChunked<T>> {}
 
 impl<T> PrivateSeries for SeriesWrap<ObjectChunked<T>>

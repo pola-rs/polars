@@ -3,6 +3,7 @@ Module for formatting output data in HTML.
 """
 from __future__ import annotations
 
+import os
 from textwrap import dedent
 from types import TracebackType
 from typing import Iterable
@@ -92,6 +93,7 @@ class HTMLFormatter:
         """
         Writes the body of an HTML table.
         """
+        str_lengths = int(os.environ.get("POLARS_FMT_STR_LEN", "15"))
         with Tag(self.elements, "tbody"):
             for r in self.row_idx:
                 with Tag(self.elements, "tr"):
@@ -106,7 +108,9 @@ class HTMLFormatter:
                                 if series.dtype == Object:
                                     self.elements.append(f"{series[r]}")
                                 else:
-                                    self.elements.append(f"{series._s.get_fmt(r)}")
+                                    self.elements.append(
+                                        f"{series._s.get_fmt(r, str_lengths)}"
+                                    )
 
     def write(self, inner: str) -> None:
         self.elements.append(inner)
