@@ -615,6 +615,9 @@ pub trait ChunkExpandAtIndex<T> {
 
 macro_rules! impl_chunk_expand {
     ($self:ident, $length:ident, $index:ident) => {{
+        if $self.is_empty() {
+            return $self.clone();
+        }
         let opt_val = $self.get($index);
         match opt_val {
             Some(val) => ChunkedArray::full($self.name(), val, $length),

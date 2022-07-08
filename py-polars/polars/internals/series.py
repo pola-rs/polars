@@ -117,7 +117,13 @@ def wrap_s(s: PySeries) -> Series:
 
 
 ArrayLike = Union[
-    Sequence[Any], "Series", "pa.Array", "np.ndarray", "pd.Series", "pd.DatetimeIndex"
+    Sequence[Any],
+    "Series",
+    "pa.Array",
+    "pa.ChunkedArray",
+    "np.ndarray",
+    "pd.Series",
+    "pd.DatetimeIndex",
 ]
 
 
@@ -212,7 +218,7 @@ class Series:
             self._s = sequence_to_pyseries(name, [], dtype=dtype)
         elif isinstance(values, Series):
             self._s = series_to_pyseries(name, values)
-        elif _PYARROW_AVAILABLE and isinstance(values, pa.Array):
+        elif _PYARROW_AVAILABLE and isinstance(values, (pa.Array, pa.ChunkedArray)):
             self._s = arrow_to_pyseries(name, values)
         elif _NUMPY_AVAILABLE and isinstance(values, np.ndarray):
             self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
