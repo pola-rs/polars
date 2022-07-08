@@ -2,9 +2,9 @@
 import io
 import os
 from pathlib import Path
-from typing import List, Union
+from typing import List
 
-import pyarrow as pa
+import pandas as pd
 import pytest
 
 import polars as pl
@@ -134,3 +134,12 @@ def test_glob_ipc(io_test_dir: str) -> None:
         path = os.path.join(io_test_dir, "small*.ipc")
         assert pl.scan_ipc(path).collect().shape == (3, 12)
         assert pl.read_ipc(path).shape == (3, 12)
+
+
+def test_from_float16() -> None:
+    # Create a feather file with a 16-bit floating point column
+    pandas_df = pd.DataFrame({"column": [1.0]}, dtype="float16")
+    f = io.BytesIO()
+    pandas_df.to_feather(f)
+    f.seek(0)
+    assert pl.read_ipc(f).dtypes == [pl.Float32]
