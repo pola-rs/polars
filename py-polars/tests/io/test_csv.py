@@ -168,7 +168,7 @@ def test_partial_column_rename() -> None:
     "col_input, col_out", [([0, 1], ["a", "b"]), ([0, 2], ["a", "c"]), (["b"], ["b"])]
 )
 def test_read_csv_columns_argument(
-    col_input: Union[List[int], List[str]], col_out: List[str]
+    col_input: list[int] | list[str], col_out: list[str]
 ) -> None:
     csv = textwrap.dedent(
         """\
@@ -337,7 +337,7 @@ def test_ignore_parse_dates() -> None:
     ).encode()
 
     headers = ["a", "b", "c"]
-    dtypes: Dict[str, Type[DataType]] = {
+    dtypes: dict[str, type[DataType]] = {
         k: pl.Utf8 for k in headers
     }  # Forces Utf8 type for every column
     df = pl.read_csv(csv, columns=headers, dtypes=dtypes)

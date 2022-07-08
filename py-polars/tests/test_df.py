@@ -2174,7 +2174,7 @@ def test_preservation_of_subclasses() -> None:
     # and connect these classes together
     class MyLazyFrame(pl.LazyFrame):
         @property
-        def _dataframe_class(cls) -> "Type[MyDataFrame]":
+        def _dataframe_class(cls) -> type[MyDataFrame]:
             return MyDataFrame
 
     class MyDataFrame(pl.DataFrame):

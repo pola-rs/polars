@@ -34,7 +34,7 @@ def test_apply_none() -> None:
     assert out_df["a"].to_list() == (df["a"] * df["b"]).to_list()
 
     # check if we can return None
-    def func(s: List) -> Optional[int]:
+    def func(s: list) -> int | None:
         if s[0][0] == 190:
             return None
         else:

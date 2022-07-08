@@ -29,9 +29,9 @@ from polars.testing import assert_series_equal, series  # , verify_series_and_ex
 @settings(max_examples=500)
 def test_series_slice(
     srs: pl.Series,
-    start: Optional[int],
-    stop: Optional[int],
-    step: Optional[int],
+    start: int | None,
+    stop: int | None,
+    step: int | None,
 ) -> None:
     py_data = srs.to_list()
 
