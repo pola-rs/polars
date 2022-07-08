@@ -55,7 +55,7 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.internals import DataFrame, LazyFrame, Series, col
+from polars.internals import DataFrame, LazyFrame, Series, col, lit
 
 if HYPOTHESIS_INSTALLED:
     # TODO: increase the number of iterations during CI checkins?
@@ -208,13 +208,15 @@ def _assert_series_inner(
         can_be_subtracted = False
 
     check_exact = check_exact or not can_be_subtracted or left.dtype == Boolean
-
     if check_dtype:
         if left.dtype != right.dtype:
             raise_assert_detail(obj, "Dtype mismatch", left.dtype, right.dtype)
 
     # create mask of which (if any) values are unequal
     unequal = left != right
+    if unequal.any() and left.dtype in (Float32, Float64):
+        # handle NaN values (which compare unequal to themselves)
+        unequal = unequal & ~((left.is_nan() & right.is_nan()).fill_null(lit(False)))
 
     # assert exact, or with tolerance
     if unequal.any():
