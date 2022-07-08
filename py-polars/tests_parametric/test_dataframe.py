@@ -1,6 +1,8 @@
 # ----------------------------------------------------
 # Validate DataFrame behaviour with parameteric tests
 # ----------------------------------------------------
+from __future__ import annotations
+
 from hypothesis import example, given, settings
 from hypothesis.strategies import integers
 

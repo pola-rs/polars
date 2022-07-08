@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import io
 import typing
 from datetime import date, datetime, time, timedelta

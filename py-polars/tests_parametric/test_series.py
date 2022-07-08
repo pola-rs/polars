@@ -1,6 +1,8 @@
 # -------------------------------------------------
 # Validate Series behaviour with parameteric tests
 # -------------------------------------------------
+from __future__ import annotations
+
 from typing import Optional
 
 from hypothesis import given, settings

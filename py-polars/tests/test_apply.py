@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import typing
 from datetime import date, datetime, timedelta
 from functools import reduce

@@ -1,4 +1,6 @@
 # flake8: noqa: W191,E101
+from __future__ import annotations
+
 from os import path
 from pathlib import Path
 
