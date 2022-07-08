@@ -142,7 +142,7 @@ def test_from_pandas_datetime() -> None:
     assert s.dt.second()[0] == 20
 
     date_times = pd.date_range(
-        "2021-06-24 00:00:00", "2021-06-24 10:00:00", freq="1H", inclusive="left"
+        "2021-06-24 00:00:00", "2021-06-24 10:00:00", freq="1H", closed="left"
     )
     s = pl.from_pandas(date_times)
     assert s[0] == datetime(2021, 6, 24, 0, 0)
