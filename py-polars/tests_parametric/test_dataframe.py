@@ -1,16 +1,17 @@
-# -------------------------------------------------
-# Validate Series behaviour with parameteric tests
-# -------------------------------------------------
+# ----------------------------------------------------
+# Validate DataFrame behaviour with parameteric tests
+# ----------------------------------------------------
 from hypothesis import example, given, settings
 from hypothesis.strategies import integers
 
 import polars as pl
-from polars.testing import column, dataframes
+from polars.testing import assert_frame_equal, column, dataframes
 
 
 @given(df=dataframes())
 def test_repr(df: pl.DataFrame) -> None:
     assert isinstance(repr(df), str)
+    assert_frame_equal(df, df, check_exact=True)
     # print(df)
 
 

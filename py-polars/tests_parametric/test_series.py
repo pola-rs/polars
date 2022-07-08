@@ -7,7 +7,7 @@ from hypothesis import given, settings
 from hypothesis.strategies import sampled_from
 
 import polars as pl
-from polars.testing import series  # , verify_series_and_expr_api
+from polars.testing import assert_series_equal, series  # , verify_series_and_expr_api
 
 # # TODO: exclude obvious/known overflow inside the strategy before commenting back in
 # @given(s=series(allowed_dtypes=_NUMERIC_COL_TYPES, name="a"))
@@ -38,3 +38,4 @@ def test_series_slice(
     sliced_pl_data = srs[s].to_list()
 
     assert sliced_py_data == sliced_pl_data, f"slice [{start}:{stop}:{step}] failed"
+    assert_series_equal(srs, srs, check_exact=True)

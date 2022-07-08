@@ -55,7 +55,7 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.internals import DataFrame, LazyFrame, Series, col
+from polars.internals import DataFrame, LazyFrame, Series, col, lit
 
 if HYPOTHESIS_INSTALLED:
     # TODO: increase the number of iterations during CI checkins?
@@ -80,6 +80,7 @@ def assert_frame_equal(
     check_column_names: bool = True,
     rtol: float = 1.0e-5,
     atol: float = 1.0e-8,
+    nans_compare_equal: bool = True,
 ) -> None:
     """
     Raise detailed AssertionError if `left` does not equal `right`.
@@ -88,19 +89,21 @@ def assert_frame_equal(
     Parameters
     ----------
     left
-        the dataframe to compare
+        the dataframe to compare.
     right
-        the dataframe to compare with
+        the dataframe to compare with.
     check_dtype
-        if True, data types need to match exactly
+        if True, data types need to match exactly.
     check_exact
-        if False, test if values are within tolerance of each other (see `rtol` & `atol`)
+        if False, test if values are within tolerance of each other (see `rtol` & `atol`).
     check_column_names
-        if True, dataframes must have the same column names in the same order
+        if True, dataframes must have the same column names in the same order.
     rtol
-        relative tolerance for inexact checking. Fraction of values in `right`
+        relative tolerance for inexact checking. Fraction of values in `right`.
     atol
         absolute tolerance for inexact checking.
+    nans_compare_equal
+        if your assert/test requires float NaN != NaN, set this to False.
 
     Examples
     --------
@@ -136,7 +139,14 @@ def assert_frame_equal(
     # this does not assume a particular order
     for c in left.columns:
         _assert_series_inner(
-            left[c], right[c], check_dtype, check_exact, atol, rtol, obj
+            left[c],
+            right[c],
+            check_dtype,
+            check_exact,
+            nans_compare_equal,
+            atol,
+            rtol,
+            obj,
         )
 
 
@@ -148,6 +158,7 @@ def assert_series_equal(
     check_exact: bool = False,
     rtol: float = 1.0e-5,
     atol: float = 1.0e-8,
+    nans_compare_equal: bool = True,
 ) -> None:
     """
     Raise detailed AssertionError if `left` does not equal `right`.
@@ -155,19 +166,21 @@ def assert_series_equal(
     Parameters
     ----------
     left
-        the series to compare
+        the series to compare.
     right
-        the series to compare with
+        the series to compare with.
     check_dtype
-        if True, data types need to match exactly
+        if True, data types need to match exactly.
     check_names
-        if True, names need to match
+        if True, names need to match.
     check_exact
-        if False, test if values are within tolerance of each other (see `rtol` & `atol`)
+        if False, test if values are within tolerance of each other (see `rtol` & `atol`).
     rtol
-        relative tolerance for inexact checking. Fraction of values in `right`
+        relative tolerance for inexact checking. Fraction of values in `right`.
     atol
         absolute tolerance for inexact checking.
+    nans_compare_equal
+        if your assert/test requires float NaN != NaN, set this to False.
 
     Examples
     --------
@@ -187,7 +200,9 @@ def assert_series_equal(
         if left.name != right.name:
             raise_assert_detail(obj, "Name mismatch", left.name, right.name)
 
-    _assert_series_inner(left, right, check_dtype, check_exact, atol, rtol, obj)
+    _assert_series_inner(
+        left, right, check_dtype, check_exact, nans_compare_equal, atol, rtol, obj
+    )
 
 
 def _assert_series_inner(
@@ -195,6 +210,7 @@ def _assert_series_inner(
     right: Series,
     check_dtype: bool,
     check_exact: bool,
+    nans_compare_equal: bool,
     atol: float,
     rtol: float,
     obj: str,
@@ -208,13 +224,15 @@ def _assert_series_inner(
         can_be_subtracted = False
 
     check_exact = check_exact or not can_be_subtracted or left.dtype == Boolean
-
     if check_dtype:
         if left.dtype != right.dtype:
             raise_assert_detail(obj, "Dtype mismatch", left.dtype, right.dtype)
 
     # create mask of which (if any) values are unequal
     unequal = left != right
+    if unequal.any() and nans_compare_equal and left.dtype in (Float32, Float64):
+        # handle NaN values (which compare unequal to themselves)
+        unequal = unequal & ~((left.is_nan() & right.is_nan()).fill_null(lit(False)))
 
     # assert exact, or with tolerance
     if unequal.any():
