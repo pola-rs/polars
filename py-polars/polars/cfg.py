@@ -10,6 +10,9 @@ class Config:
     """
     Configure polars
     """
+    # class-local boolean flags can be used for options that don't have
+    # a Rust component (so no need to register environment variables).
+    with_columns_kwargs: bool = False
 
     @classmethod
     def set_utf8_tables(cls) -> type[Config]:
@@ -53,7 +56,6 @@ class Config:
         n
             number of rows to print
         """
-
         os.environ["POLARS_FMT_MAX_ROWS"] = str(n)
         return cls
 
@@ -94,7 +96,6 @@ class Config:
         └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
 
         """
-
         os.environ["POLARS_FMT_MAX_COLS"] = str(n)
         return cls
 
@@ -105,19 +106,6 @@ class Config:
         """
         toggle_string_cache(True)
         return cls
-
-    @classmethod
-    def set_with_columns_kwargs(
-        cls, enable: Optional[bool] = None
-    ) -> Union[type[Config], bool]:
-        """
-        Enable experimental support for kwargs in `with_columns` method.
-        """
-        if enable is None:
-            return bool(int(os.environ.get("POLARS_WITH_COLUMNS_KWARGS", 0)))
-        else:
-            os.environ["POLARS_WITH_COLUMNS_KWARGS"] = "1" if enable else "0"
-            return cls
 
     @classmethod
     def unset_global_string_cache(cls) -> type[Config]:

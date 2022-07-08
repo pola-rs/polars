@@ -2406,7 +2406,7 @@ def test_with_columns() -> None:
     assert_frame_equal(dx, expected)
 
     # as **kwargs (experimental feature: requires opt-in)
-    pl.Config.set_with_columns_kwargs(True)
+    pl.Config.with_columns_kwargs = True
 
     dx = df.with_columns(
         d=pl.col("a") * pl.col("b"),

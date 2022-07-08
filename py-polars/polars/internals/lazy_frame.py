@@ -1486,8 +1486,9 @@ class LazyFrame(Generic[DF]):
         └─────┴──────┴───────┴──────┴──────┴───────┘
         ...
         >>> # Support for kwarg expressions is considered EXPERIMENTAL.
-        >>> # Currently requires opt-in via `pl.Config`, eg:
-        >>> pl.Config.set_with_columns_kwargs(True)
+        >>> # Currently requires opt-in via `pl.Config` boolean flag:
+        >>>
+        >>> pl.Config.with_columns_kwargs = True
         >>> ldf.with_columns(
         ...     d=pl.col("a") * pl.col("b"),
         ...     e=pl.col("c").is_not(),
@@ -1507,7 +1508,7 @@ class LazyFrame(Generic[DF]):
         │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
         └─────┴──────┴───────┴──────┴───────┘
         """
-        if named_exprs and not Config.set_with_columns_kwargs():
+        if named_exprs and not Config.with_columns_kwargs:
             raise RuntimeError(
                 "**kwargs support is experimental; requires opt-in via `pl.Config.set_with_columns_kwargs(True)`"
             )
