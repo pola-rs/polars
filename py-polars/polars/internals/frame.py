@@ -1906,6 +1906,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         Reverse the DataFrame.
 
+        Examples
+        --------
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "key": ["a", "b", "c"],
@@ -4243,6 +4246,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def get_column(self, name: str) -> pli.Series:
         """
         Get a single column as Series by name.
+
+        Parameters
+        ----------
+        name : str
+            Name of the column to retrieve.
 
         Examples
         --------

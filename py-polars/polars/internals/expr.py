@@ -1795,7 +1795,7 @@ class Expr:
     ) -> Expr:
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
-        with the result of the `fill_value` expression.
+        with the result of the ``fill_value`` expression.
 
         Parameters
         ----------
@@ -1981,6 +1981,9 @@ class Expr:
     def reverse(self) -> Expr:
         """
         Reverse the selection.
+
+        Examples
+        --------
 
         >>> df = pl.DataFrame(
         ...     {
