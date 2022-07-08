@@ -27,6 +27,7 @@ except ImportError:  # pragma: no cover
 
 
 from polars import internals as pli
+from polars.cfg import Config
 from polars.datatypes import DataType, py_type_to_dtype
 from polars.utils import (
     _in_notebook,
@@ -1440,7 +1441,8 @@ class LazyFrame(Generic[DF]):
 
     def with_columns(
         self: LDF,
-        exprs: pli.Expr | pli.Series | list[pli.Expr | pli.Series],
+        exprs: pli.Expr | pli.Series | Sequence[pli.Expr | pli.Series] | None = None,
+        **named_exprs: pli.Expr | pli.Series,
     ) -> LDF:
         """
         Add or overwrite multiple columns in a DataFrame.
@@ -1449,19 +1451,87 @@ class LazyFrame(Generic[DF]):
         ----------
         exprs
             List of Expressions that evaluate to columns.
+        **named_exprs
+            Named column Expressions, provided as kwargs.
+
+        Examples
+        --------
+        >>> ldf = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [0.5, 4, 10, 13],
+        ...         "c": [True, True, False, True],
+        ...     }
+        ... ).lazy()
+        >>> ldf.with_columns(
+        ...     [
+        ...         (pl.col("a") ** 2).alias("a^2"),
+        ...         (pl.col("b") / 2).alias("b/2"),
+        ...         (pl.col("c").is_not()).alias("not c"),
+        ...     ]
+        ... ).collect()
+        shape: (4, 6)
+        ┌─────┬──────┬───────┬──────┬──────┬───────┐
+        │ a   ┆ b    ┆ c     ┆ a^2  ┆ b/2  ┆ not c │
+        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---  ┆ ---   │
+        │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ f64  ┆ bool  │
+        ╞═════╪══════╪═══════╪══════╪══════╪═══════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ 1.0  ┆ 0.25 ┆ false │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 2   ┆ 4.0  ┆ true  ┆ 4.0  ┆ 2.0  ┆ false │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 3   ┆ 10.0 ┆ false ┆ 9.0  ┆ 5.0  ┆ true  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
+        └─────┴──────┴───────┴──────┴──────┴───────┘
+        ...
+        >>> # Support for kwarg expressions is considered EXPERIMENTAL.
+        >>> # Currently requires opt-in via `pl.Config` boolean flag:
+        >>>
+        >>> pl.Config.with_columns_kwargs = True
+        >>> ldf.with_columns(
+        ...     d=pl.col("a") * pl.col("b"),
+        ...     e=pl.col("c").is_not(),
+        ... ).collect()
+        shape: (4, 5)
+        ┌─────┬──────┬───────┬──────┬───────┐
+        │ a   ┆ b    ┆ c     ┆ d    ┆ e     │
+        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---   │
+        │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ bool  │
+        ╞═════╪══════╪═══════╪══════╪═══════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ 0.5  ┆ false │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 2   ┆ 4.0  ┆ true  ┆ 8.0  ┆ false │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 3   ┆ 10.0 ┆ false ┆ 30.0 ┆ true  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
+        └─────┴──────┴───────┴──────┴───────┘
         """
-        if isinstance(exprs, pli.Expr):
-            return self.with_column(exprs)
+        if named_exprs and not Config.with_columns_kwargs:
+            raise RuntimeError(
+                "**kwargs support is experimental; requires opt-in via `pl.Config.set_with_columns_kwargs(True)`"
+            )
+        elif exprs is None and not named_exprs:
+            raise ValueError("Expected at least one of 'exprs' or **named_exprs")
 
+        exprs = (
+            []
+            if exprs is None
+            else ([exprs] if isinstance(exprs, pli.Expr) else list(exprs))
+        )
+        exprs.extend(
+            (pli.lit(expr).alias(name) if isinstance(expr, str) else expr.alias(name))
+            for name, expr in named_exprs.items()
+        )
         pyexprs = []
-
         for e in exprs:
             if isinstance(e, pli.Expr):
                 pyexprs.append(e._pyexpr)
             elif isinstance(e, pli.Series):
                 pyexprs.append(pli.lit(e)._pyexpr)
             else:
-                raise ValueError(f"expected and expression, got {e}")
+                raise ValueError(f"Expected an expression, got {e}")
 
         return self._from_pyldf(self._ldf.with_columns(pyexprs))
 

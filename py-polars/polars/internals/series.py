@@ -1031,16 +1031,17 @@ class Series:
 
     def alias(self, name: str) -> Series:
         """
-        Rename the Series
+        Returns a copy of the Series with a new alias/name.
 
         Parameters
         ----------
         name
-            New name
+            New name.
 
-        Returns
-        -------
-
+        Examples
+        --------
+        >>> srs = pl.Series("x", [1, 2, 3])
+        >>> new_aliased_srs = srs.alias("y")
         """
         s = self.clone()
         s._s.rename(name)

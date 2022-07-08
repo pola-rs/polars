@@ -381,7 +381,7 @@ if HYPOTHESIS_INSTALLED:
                 self.null_probability < 0 or self.null_probability > 1
             ):
                 raise InvalidArgument(
-                    f"null_probability should be between 0.0 and 1.0; found {self.null_probability}"
+                    f"null_probability should be between 0.0 and 1.0, or None; found {self.null_probability}"
                 )
             if self.dtype is None and not self.strategy:
                 self.dtype = random.choice(strategy_dtypes)
@@ -660,7 +660,7 @@ if HYPOTHESIS_INSTALLED:
         max_cols : int, optional
             if not passing an exact size, can set a maximum value here (defaults to MAX_COLS).
         size : int, optional
-            if set, will create a Series of exactly this size (and ignore min/max len params).
+            if set, will create a DataFrame of exactly this size (and ignore min/max len params).
         min_size : int, optional
             if not passing an exact size, set the minimum number of rows in the DataFrame.
         max_size : int, optional
