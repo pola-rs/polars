@@ -1,4 +1,5 @@
 use super::*;
+#[allow(unused_imports)]
 use std::ops::Deref;
 
 impl SeriesOps for Wrap<TimeChunked> {

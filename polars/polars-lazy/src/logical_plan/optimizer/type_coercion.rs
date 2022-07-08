@@ -1,3 +1,4 @@
+#[cfg(feature = "is_in")]
 use crate::dsl::function_expr::FunctionExpr;
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;

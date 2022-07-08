@@ -1,3 +1,4 @@
+#![allow(clippy::needless_borrow)]
 use crate::logical_plan::Context;
 use crate::prelude::iterator::ArenaExprIter;
 use crate::prelude::*;
@@ -103,7 +104,7 @@ fn update_scan_schema(
     let mut new_cols = Vec::with_capacity(acc_projections.len());
     for node in acc_projections.iter() {
         for name in aexpr_to_root_names(*node, expr_arena) {
-            let item = schema.get_full(&*name).unwrap();
+            let item = schema.get_full(&name).unwrap();
             new_cols.push(item);
         }
     }
@@ -258,12 +259,9 @@ impl ProjectionPushDown {
                         for (_, ae) in (&*expr_arena).iter(*e) {
                             if let AExpr::Alias(_, name) = ae {
                                 if projected_names.remove(name) {
-                                    acc_projections = acc_projections
-                                        .into_iter()
-                                        .filter(|expr| {
-                                            !aexpr_to_root_names(*expr, expr_arena).contains(name)
-                                        })
-                                        .collect();
+                                    acc_projections.retain(|expr| {
+                                        !aexpr_to_root_names(*expr, expr_arena).contains(name)
+                                    });
                                 }
                             }
                         }
@@ -354,7 +352,7 @@ impl ProjectionPushDown {
                         Some(Arc::new(update_scan_schema(
                             &acc_projections,
                             expr_arena,
-                            &*schema,
+                            &schema,
                             true,
                         )))
                     };
@@ -392,7 +390,7 @@ impl ProjectionPushDown {
                     schema = Arc::new(update_scan_schema(
                         &acc_projections,
                         expr_arena,
-                        &*schema,
+                        &schema,
                         false,
                     ));
                     projection = Some(acc_projections);
@@ -421,7 +419,7 @@ impl ProjectionPushDown {
                     Some(Arc::new(update_scan_schema(
                         &acc_projections,
                         expr_arena,
-                        &*schema,
+                        &schema,
                         false,
                     )))
                 };
@@ -454,7 +452,7 @@ impl ProjectionPushDown {
                     Some(Arc::new(update_scan_schema(
                         &acc_projections,
                         expr_arena,
-                        &*schema,
+                        &schema,
                         false,
                     )))
                 };
@@ -480,7 +478,7 @@ impl ProjectionPushDown {
                     Some(Arc::new(update_scan_schema(
                         &acc_projections,
                         expr_arena,
-                        &*options.schema,
+                        &options.schema,
                         true,
                     )))
                 };
@@ -503,7 +501,7 @@ impl ProjectionPushDown {
                     Some(Arc::new(update_scan_schema(
                         &acc_projections,
                         expr_arena,
-                        &*schema,
+                        &schema,
                         true,
                     )))
                 };
@@ -890,12 +888,12 @@ impl ProjectionPushDown {
 
                 for proj in &mut local_projection {
                     for name in aexpr_to_root_names(*proj, expr_arena) {
-                        if name.contains(suffix.as_ref()) && schema_after_join.get(&*name).is_none()
+                        if name.contains(suffix.as_ref()) && schema_after_join.get(&name).is_none()
                         {
                             let new_name = &name.as_ref()[..name.len() - suffix.len()];
 
                             let renamed =
-                                aexpr_assign_renamed_root(*proj, expr_arena, &*name, new_name);
+                                aexpr_assign_renamed_root(*proj, expr_arena, &name, new_name);
 
                             let aliased = expr_arena.add(AExpr::Alias(renamed, name));
                             *proj = aliased;

@@ -20,7 +20,7 @@ pub fn field_to_rust(obj: &PyAny) -> PyResult<Field> {
 
 // PyList<Field> which you get by calling `list(schema)`
 pub fn pyarrow_schema_to_rust(obj: &PyList) -> PyResult<Schema> {
-    obj.into_iter().map(|fld| field_to_rust(fld)).collect()
+    obj.into_iter().map(field_to_rust).collect()
 }
 
 pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
@@ -41,7 +41,7 @@ pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
     unsafe {
         let field = ffi::import_field_from_c(schema.as_ref()).map_err(PyPolarsErr::from)?;
         let array = ffi::import_array_from_c(*array, field.data_type).map_err(PyPolarsErr::from)?;
-        Ok(array.into())
+        Ok(array)
     }
 }
 

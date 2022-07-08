@@ -1,3 +1,4 @@
+#![allow(clippy::needless_borrow)]
 pub mod array;
 pub mod bit_util;
 mod bitmap;

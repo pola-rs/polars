@@ -1,3 +1,4 @@
+#![allow(clippy::borrow_deref_ref)]
 mod ffi;
 
 use polars::prelude::*;

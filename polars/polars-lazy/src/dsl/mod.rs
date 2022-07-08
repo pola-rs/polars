@@ -18,7 +18,6 @@ mod options;
 pub mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
-use polars_time::series::SeriesOpsTime;
 
 use crate::prelude::*;
 use crate::utils::has_expr;
@@ -617,6 +616,7 @@ impl Expr {
         }
     }
 
+    #[cfg(feature = "row_hash")]
     fn map_private(self, function_expr: FunctionExpr, fmt_str: &'static str) -> Self {
         Expr::Function {
             input: vec![self],
@@ -1400,6 +1400,7 @@ impl Expr {
     }
 
     #[allow(clippy::type_complexity)]
+    #[cfg(feature = "rolling_window")]
     fn finish_rolling(
         self,
         options: RollingOptions,

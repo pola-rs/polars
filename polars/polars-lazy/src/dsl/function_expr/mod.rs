@@ -57,8 +57,6 @@ impl FunctionExpr {
             })
         };
 
-        let same_type = || map_dtype(&|dtype| dtype.clone());
-
         use FunctionExpr::*;
         match self {
             NullCount => with_dtype(IDX_DTYPE),
@@ -74,17 +72,19 @@ impl FunctionExpr {
                 with_dtype(DataType::Boolean)
             }
             #[cfg(feature = "date_offset")]
-            DateOffset(_) => same_type(),
+            DateOffset(_) => map_dtype(&|dtype| dtype.clone()),
         }
     }
 }
 
+#[allow(unused_macros)]
 macro_rules! wrap {
     ($e:expr) => {
         SpecialEq::new(Arc::new($e))
     };
 }
 
+#[allow(unused_macros)]
 macro_rules! map_with_args {
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
@@ -96,6 +96,7 @@ macro_rules! map_with_args {
     }};
 }
 
+#[allow(unused_macros)]
 macro_rules! map_owned_with_args {
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {

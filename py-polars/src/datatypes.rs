@@ -64,10 +64,10 @@ impl From<DataType> for PyDataType {
     }
 }
 
-impl Into<DataType> for PyDataType {
-    fn into(self) -> DataType {
+impl From<PyDataType> for DataType {
+    fn from(dt: PyDataType) -> DataType {
         use DataType::*;
-        match self {
+        match dt {
             PyDataType::Int8 => Int8,
             PyDataType::Int16 => Int16,
             PyDataType::Int32 => Int32,

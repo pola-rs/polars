@@ -1,6 +1,7 @@
 use crate::logical_plan::Context;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
+#[cfg(feature = "chunked_ids")]
 use polars_arrow::export::arrow::Either;
 use polars_core::frame::groupby::{GroupBy, GroupsProxy};
 use polars_core::frame::hash_join::{

@@ -6,7 +6,9 @@ use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::{GroupByMethod, GroupsProxy};
 use polars_core::utils::NoNull;
-use polars_core::{prelude::*, POOL};
+use polars_core::prelude::*;
+#[cfg(feature = "dtype-struct")]
+use polars_core::POOL;
 use std::borrow::Cow;
 use std::sync::Arc;
 

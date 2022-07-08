@@ -907,6 +907,7 @@ impl Series {
     }
 }
 
+#[allow(clippy::explicit_auto_deref)]
 impl Deref for Series {
     type Target = dyn SeriesTrait;
 
@@ -915,6 +916,7 @@ impl Deref for Series {
     }
 }
 
+#[allow(clippy::explicit_auto_deref)]
 impl<'a> AsRef<(dyn SeriesTrait + 'a)> for Series {
     fn as_ref(&self) -> &(dyn SeriesTrait + 'a) {
         &*self.0

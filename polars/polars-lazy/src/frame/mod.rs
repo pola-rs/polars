@@ -1,3 +1,4 @@
+#![allow(clippy::needless_borrow)]
 //! Lazy variant of a [DataFrame](polars_core::frame::DataFrame).
 #[cfg(feature = "csv-file")]
 mod csv;
@@ -715,12 +716,12 @@ impl LazyFrame {
             planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
         let state = ExecutionState::with_finger_prints(finger_prints);
-        let out = physical_plan.execute(&state);
+        
         #[cfg(feature = "dtype-categorical")]
         if use_string_cache {
             toggle_string_cache(!use_string_cache);
         }
-        out
+        physical_plan.execute(&state)
     }
 
     /// Filter by some predicate expression.

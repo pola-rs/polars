@@ -19,6 +19,7 @@ pub struct CsvParserOptions {
     pub(crate) with_columns: Option<Arc<Vec<String>>>,
     pub(crate) low_memory: bool,
     pub(crate) ignore_errors: bool,
+    #[allow(dead_code)] //only read in features
     pub(crate) cache: bool,
     pub(crate) null_values: Option<NullValues>,
     pub(crate) rechunk: bool,
@@ -33,6 +34,7 @@ pub struct CsvParserOptions {
 pub struct ParquetOptions {
     pub(crate) n_rows: Option<usize>,
     pub(crate) with_columns: Option<Arc<Vec<String>>>,
+    #[allow(dead_code)]
     pub(crate) cache: bool,
     pub(crate) parallel: polars_io::parquet::ParallelStrategy,
     pub(crate) rechunk: bool,
@@ -55,6 +57,7 @@ pub struct IpcScanOptions {
 pub struct IpcScanOptionsInner {
     pub(crate) n_rows: Option<usize>,
     pub(crate) with_columns: Option<Arc<Vec<String>>>,
+    #[allow(dead_code)]
     pub(crate) cache: bool,
     pub(crate) row_count: Option<RowCount>,
     pub(crate) rechunk: bool,

@@ -1,6 +1,8 @@
 #![feature(vec_into_raw_parts)]
 #![allow(clippy::nonstandard_macro_braces)] // needed because clippy does not understand proc macro of pyo3
 #![allow(clippy::transmute_undefined_repr)]
+#![allow(clippy::borrow_deref_ref)] // generates a lot of false positives
+#![allow(clippy::needless_borrow)] // generates a lot of false positives
 #[macro_use]
 extern crate polars;
 extern crate core;

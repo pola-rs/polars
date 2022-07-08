@@ -1,11 +1,16 @@
+#[cfg(feature = "list_eval")]
 use crate::dsl::eval::prepare_eval_expr;
+#[allow(unused_imports)]
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
+#[allow(unused_imports)]
 use parking_lot::Mutex;
+#[allow(unused_imports)]
 use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::series::ops::NullBehavior;
 use polars_ops::prelude::*;
+#[allow(unused_imports)]
 use rayon::prelude::*;
 
 /// Specialized expressions for [`Series`] of [`DataType::List`].

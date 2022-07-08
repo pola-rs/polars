@@ -160,7 +160,7 @@ impl ChunkCast for ListChunked {
                 let mut ca = if child_type.to_physical() != self.inner_dtype() {
                     let chunks = self
                         .downcast_iter()
-                        .map(|list| cast_inner_list_type(list, &**child_type))
+                        .map(|list| cast_inner_list_type(list, child_type))
                         .collect::<Result<_>>()?;
                     ListChunked::from_chunks(self.name(), chunks)
                 } else {
