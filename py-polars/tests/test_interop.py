@@ -396,3 +396,9 @@ def test_cat_int_types_3500() -> None:
         for t in [int_dict_type, uint_dict_type]:
             s = pl.from_arrow(pyarrow_array.cast(t))
             assert s.series_equal(pl.Series(["a", "a", "b"]).cast(pl.Categorical))
+
+
+def test_from_pyarrow_chunked_array() -> None:
+    column = pa.chunked_array([[1], [2]])
+    series = pl.Series("column", column)
+    assert series.to_list() == [1, 2]

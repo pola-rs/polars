@@ -1215,3 +1215,8 @@ def test_time_microseconds_3843() -> None:
     in_val = [time(0, 9, 11, 558332)]
     s = pl.Series(in_val)
     assert s.to_list() == in_val
+
+
+def test_year_empty_df() -> None:
+    df = pl.DataFrame(pl.Series(name="date", dtype=pl.Date))
+    assert df.select(pl.col("date").dt.year()).dtypes == [pl.Int32]
