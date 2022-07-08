@@ -125,6 +125,65 @@ impl<'a> Literal for &'a str {
     }
 }
 
+impl TryFrom<AnyValue<'_>> for LiteralValue {
+    type Error = PolarsError;
+    fn try_from(value: AnyValue) -> Result<Self> {
+        match value {
+            AnyValue::Null => Ok(Self::Null),
+            AnyValue::Boolean(b) => Ok(Self::Boolean(b)),
+            AnyValue::Utf8(s) => Ok(Self::Utf8(s.to_string())),
+            #[cfg(feature = "dtype-u8")]
+            AnyValue::UInt8(u) => Ok(Self::UInt8(u)),
+            #[cfg(feature = "dtype-u16")]
+            AnyValue::UInt16(u) => Ok(Self::UInt16(u)),
+            AnyValue::UInt32(u) => Ok(Self::UInt32(u)),
+            AnyValue::UInt64(u) => Ok(Self::UInt64(u)),
+            #[cfg(feature = "dtype-i8")]
+            AnyValue::Int8(i) => Ok(Self::Int8(i)),
+            #[cfg(feature = "dtype-i16")]
+            AnyValue::Int16(i) => Ok(Self::Int16(i)),
+            AnyValue::Int32(i) => Ok(Self::Int32(i)),
+            AnyValue::Int64(i) => Ok(Self::Int64(i)),
+            AnyValue::Float32(f) => Ok(Self::Float32(f)),
+            AnyValue::Float64(f) => Ok(Self::Float64(f)),
+            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            AnyValue::Date(d) => Ok(Self::DateTime(
+                NaiveDate::from_ymd(1970, 1, 1).and_hms(0, 0, 0) + ChronoDuration::days(d as i64),
+                TimeUnit::Milliseconds,
+            )),
+            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            AnyValue::Datetime(epoch, _time_unit, _time_zone) => Ok(Self::DateTime(
+                NaiveDateTime::from_timestamp(epoch, 0),
+                TimeUnit::Nanoseconds,
+            )),
+            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            AnyValue::Duration(chrono_duration, time_scale) => Ok(match time_scale {
+                TimeUnit::Nanoseconds => Self::Duration(
+                    ChronoDuration::nanoseconds(chrono_duration),
+                    TimeUnit::Nanoseconds,
+                ),
+                TimeUnit::Microseconds => Self::Duration(
+                    ChronoDuration::microseconds(chrono_duration),
+                    TimeUnit::Microseconds,
+                ),
+                TimeUnit::Milliseconds => Self::Duration(
+                    ChronoDuration::milliseconds(chrono_duration),
+                    TimeUnit::Milliseconds,
+                ),
+            }),
+            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            AnyValue::Time(nano_secs_sinds_midnight) => Ok(Self::Int64(nano_secs_sinds_midnight)),
+            AnyValue::List(l) => Ok(Self::Series(SpecialEq::new(l))),
+            AnyValue::Utf8Owned(o) => Ok(Self::Utf8(o)),
+            #[cfg(feature = "dtype-categorical")]
+            AnyValue::Categorical(c, rev_mapping) => Ok(Self::Utf8(rev_mapping.get(c).to_string())),
+            _ => Err(PolarsError::ComputeError(
+                "Unsupporten AnyValue type variant, cannot convert to Literal".into(),
+            )),
+        }
+    }
+}
+
 macro_rules! make_literal {
     ($TYPE:ty, $SCALAR:ident) => {
         impl Literal for $TYPE {
