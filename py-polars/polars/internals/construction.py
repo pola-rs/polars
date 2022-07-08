@@ -446,6 +446,64 @@ def dict_to_pydf(
     return PyDataFrame.read_dict(data)
 
 
+def sequence_to_pydf(
+    data: Sequence[Any],
+    columns: ColumnsType | None = None,
+    orient: str | None = None,
+) -> PyDataFrame:
+    """
+    Construct a PyDataFrame from a sequence.
+    """
+    data_series: list[PySeries]
+
+    if len(data) == 0:
+        return dict_to_pydf({}, columns=columns)
+
+    elif isinstance(data[0], pli.Series):
+        series_names = [s.name for s in data]
+        columns, dtypes = _unpack_columns(columns or series_names, n_expected=len(data))
+        data_series = []
+        for i, s in enumerate(data):
+            if not s.name:  # TODO: Replace by `if s.name is None` once allowed
+                s.rename(columns[i], in_place=True)
+
+            new_dtype = dtypes.get(columns[i])
+            if new_dtype and new_dtype != s.dtype:
+                s = s.cast(new_dtype)
+
+            data_series.append(s.inner())
+
+    elif isinstance(data[0], dict):
+        pydf = PyDataFrame.read_dicts(data)
+        if columns:
+            pydf = _post_apply_columns(pydf, columns)
+        return pydf
+
+    elif isinstance(data[0], Sequence) and not isinstance(data[0], str):
+        # Infer orientation
+        if orient is None and columns is not None:
+            orient = "col" if len(columns) == len(data) else "row"
+
+        if orient == "row":
+            pydf = PyDataFrame.read_rows(data)
+            if columns:
+                pydf = _post_apply_columns(pydf, columns)
+            return pydf
+        else:
+            columns, dtypes = _unpack_columns(columns, n_expected=len(data))
+            data_series = [
+                pli.Series(columns[i], data[i], dtypes.get(columns[i])).inner()
+                for i in range(len(data))
+            ]
+
+    else:
+        columns, dtypes = _unpack_columns(columns, n_expected=1)
+        data_series = [pli.Series(columns[0], data, dtypes.get(columns[0])).inner()]
+
+    data_series = _handle_columns_arg(data_series, columns=columns)
+    return PyDataFrame(data_series)
+
+
 def numpy_to_pydf(
     data: np.ndarray,
     columns: ColumnsType | None = None,
@@ -500,64 +558,6 @@ def numpy_to_pydf(
             ]
     else:
         raise ValueError("A numpy array should not have more than two dimensions.")
-
-    data_series = _handle_columns_arg(data_series, columns=columns)
-    return PyDataFrame(data_series)
-
-
-def sequence_to_pydf(
-    data: Sequence[Any],
-    columns: ColumnsType | None = None,
-    orient: str | None = None,
-) -> PyDataFrame:
-    """
-    Construct a PyDataFrame from a sequence.
-    """
-    data_series: list[PySeries]
-
-    if len(data) == 0:
-        return dict_to_pydf({}, columns=columns)
-
-    elif isinstance(data[0], pli.Series):
-        series_names = [s.name for s in data]
-        columns, dtypes = _unpack_columns(columns or series_names, n_expected=len(data))
-        data_series = []
-        for i, s in enumerate(data):
-            if not s.name:  # TODO: Replace by `if s.name is None` once allowed
-                s.rename(columns[i], in_place=True)
-
-            new_dtype = dtypes.get(columns[i])
-            if new_dtype and new_dtype != s.dtype:
-                s = s.cast(new_dtype)
-
-            data_series.append(s.inner())
-
-    elif isinstance(data[0], dict):
-        pydf = PyDataFrame.read_dicts(data)
-        if columns:
-            pydf = _post_apply_columns(pydf, columns)
-        return pydf
-
-    elif isinstance(data[0], Sequence) and not isinstance(data[0], str):
-        # Infer orientation
-        if orient is None and columns is not None:
-            orient = "col" if len(columns) == len(data) else "row"
-
-        if orient == "row":
-            pydf = PyDataFrame.read_rows(data)
-            if columns:
-                pydf = _post_apply_columns(pydf, columns)
-            return pydf
-        else:
-            columns, dtypes = _unpack_columns(columns, n_expected=len(data))
-            data_series = [
-                pli.Series(columns[i], data[i], dtypes.get(columns[i])).inner()
-                for i in range(len(data))
-            ]
-
-    else:
-        columns, dtypes = _unpack_columns(columns, n_expected=1)
-        data_series = [pli.Series(columns[0], data, dtypes.get(columns[0])).inner()]
 
     data_series = _handle_columns_arg(data_series, columns=columns)
     return PyDataFrame(data_series)
