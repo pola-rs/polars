@@ -168,7 +168,7 @@ def test_list_append() -> None:
     out = df.select([pl.col("a").arr.concat([1, 4])])
     assert out["a"][0].to_list() == [1, 2, 1, 4]
 
-    out_s = df["a"].arr.concat(([4, 1]))
+    out_s = df["a"].arr.concat([4, 1])
     assert out_s[0].to_list() == [1, 2, 4, 1]
 
 
