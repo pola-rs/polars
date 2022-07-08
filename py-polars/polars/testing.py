@@ -139,7 +139,14 @@ def assert_frame_equal(
     # this does not assume a particular order
     for c in left.columns:
         _assert_series_inner(
-            left[c], right[c], check_dtype, check_exact, nans_compare_equal, atol, rtol, obj
+            left[c],
+            right[c],
+            check_dtype,
+            check_exact,
+            nans_compare_equal,
+            atol,
+            rtol,
+            obj,
         )
 
 
@@ -193,7 +200,9 @@ def assert_series_equal(
         if left.name != right.name:
             raise_assert_detail(obj, "Name mismatch", left.name, right.name)
 
-    _assert_series_inner(left, right, check_dtype, check_exact, nans_compare_equal, atol, rtol, obj)
+    _assert_series_inner(
+        left, right, check_dtype, check_exact, nans_compare_equal, atol, rtol, obj
+    )
 
 
 def _assert_series_inner(
