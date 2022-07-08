@@ -41,7 +41,6 @@ def from_dict(
 
     Examples
     --------
-
     >>> data = {"a": [1, 2], "b": [3, 4]}
     >>> df = pl.from_dict(data)
     >>> df
@@ -92,7 +91,7 @@ def from_records(
     >>> data = [[1, 2, 3], [4, 5, 6]]
     >>> df = pl.from_records(data, columns=["a", "b"])
     >>> df
-        shape: (3, 2)
+    shape: (3, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │

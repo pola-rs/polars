@@ -5968,7 +5968,6 @@ class GroupBy(Generic[DF]):
 
     Examples
     --------
-
     >>> df = pl.DataFrame({"foo": ["a", "a", "b"], "bar": [1, 2, 3]})
     >>> for group in df.groupby("foo"):
     ...     print(group)

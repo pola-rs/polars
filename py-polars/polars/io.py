@@ -1090,7 +1090,6 @@ def scan_ds(ds: pa.dataset.dataset) -> LazyFrame:
 
     Examples
     --------
-
     >>> import pyarrow.dataset as ds
     >>> dset = ds.dataset("s3://my-partitioned-folder/", format="ipc")  # doctest: +SKIP
     >>> out = (
