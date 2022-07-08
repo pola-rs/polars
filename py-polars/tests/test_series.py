@@ -1631,3 +1631,9 @@ def test_reverse() -> None:
 
     s = pl.Series("values", ["a", "b", None, "y", "x"])
     assert s.reverse().to_list() == ["x", "y", None, "b", "a"]
+
+
+def test_mutable_borrowed_append_3915() -> None:
+    s = pl.Series("s", [1, 2, 3])
+    s.append(s)
+    assert s.to_list() == [1, 2, 3, 1, 2, 3]

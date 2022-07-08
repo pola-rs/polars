@@ -1301,10 +1301,16 @@ class Series:
         ]
 
         """
-        if append_chunks:
-            self._s.append(other._s)
-        else:
-            self._s.extend(other._s)
+        try:
+            if append_chunks:
+                self._s.append(other._s)
+            else:
+                self._s.extend(other._s)
+        except RuntimeError as e:
+            if str(e) == "Already mutably borrowed":
+                return self.append(other.clone(), append_chunks)
+            else:
+                raise e
 
     def filter(self, predicate: Series | list) -> Series:
         """
