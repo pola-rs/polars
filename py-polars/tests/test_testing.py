@@ -17,7 +17,8 @@ def test_compare_series_empty_equal() -> None:
     assert_series_equal(srs1, srs2)
 
 
-def test_compare_series_nans_are_equal() -> None:
+def test_compare_series_nans_assert_equal() -> None:
+    # NaN values do not _compare_ equal, but should _assert_ as equal here
     nan = float("NaN")
 
     srs1 = pl.Series([1.0, 2.0, nan])
@@ -80,6 +81,7 @@ def test_compare_series_value_exact_mismatch() -> None:
 
 
 def test_compare_frame_equal_nans() -> None:
+    # NaN values do not _compare_ equal, but should _assert_ as equal here
     nan = float("NaN")
 
     df1 = pl.DataFrame(
