@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from typing import Optional, Union
 
 from polars.string_cache import toggle_string_cache
 
@@ -10,6 +9,7 @@ class Config:
     """
     Configure polars
     """
+
     # class-local boolean flags can be used for options that don't have
     # a Rust component (so no need to register environment variables).
     with_columns_kwargs: bool = False
