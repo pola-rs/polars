@@ -23,7 +23,8 @@ impl IpcExec {
             .with_n_rows(n_rows)
             .with_row_count(std::mem::take(&mut self.options.row_count))
             .set_rechunk(self.options.rechunk)
-            .finish_with_scan_ops(predicate, aggregate, projection)
+            .with_projection(projection)
+            .finish_with_scan_ops(predicate, aggregate)
     }
 }
 

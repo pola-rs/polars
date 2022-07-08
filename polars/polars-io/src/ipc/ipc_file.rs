@@ -115,26 +115,19 @@ impl<R: Read + Seek> IpcReader<R> {
         mut self,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&[ScanAggregation]>,
-        projection: Option<Vec<usize>>,
     ) -> Result<DataFrame> {
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
 
-        let sorted_projection = projection.clone().map(|mut proj| {
-            proj.sort_unstable();
-            proj
-        });
-
-        let schema = if let Some(projection) = &sorted_projection {
+        let schema = if let Some(projection) = &self.projection {
             apply_projection(&metadata.schema, projection)
         } else {
             metadata.schema.clone()
         };
 
         let reader =
-            read::FileReader::new(&mut self.reader, metadata, sorted_projection, self.n_rows);
+            read::FileReader::new(&mut self.reader, metadata, self.projection, self.n_rows);
 
-        let include_row_count = self.row_count.is_some();
         finish_reader(
             reader,
             rechunk,
@@ -144,7 +137,6 @@ impl<R: Read + Seek> IpcReader<R> {
             &schema,
             self.row_count,
         )
-        .map(|df| fix_column_order(df, projection, include_row_count))
     }
 }
 
@@ -187,22 +179,16 @@ where
             self.projection = Some(prj);
         }
 
-        let sorted_projection = self.projection.clone().map(|mut proj| {
-            proj.sort_unstable();
-            proj
-        });
-
-        let schema = if let Some(projection) = &sorted_projection {
+        let schema = if let Some(projection) = &self.projection {
             apply_projection(&metadata.schema, projection)
         } else {
             metadata.schema.clone()
         };
 
-        let include_row_count = self.row_count.is_some();
         let ipc_reader = read::FileReader::new(
             &mut self.reader,
             metadata.clone(),
-            sorted_projection,
+            self.projection,
             self.n_rows,
         );
         finish_reader(
@@ -214,31 +200,6 @@ where
             &schema,
             self.row_count,
         )
-        .map(|df| fix_column_order(df, self.projection, include_row_count))
-    }
-}
-
-fn fix_column_order(df: DataFrame, projection: Option<Vec<usize>>, row_count: bool) -> DataFrame {
-    if let Some(proj) = projection {
-        let offset = if row_count { 1 } else { 0 };
-        let mut args = (0..proj.len()).zip(proj).collect::<Vec<_>>();
-        // first el of tuple is argument index
-        // second el is the projection index
-        args.sort_unstable_by_key(|tpl| tpl.1);
-        let cols = df.get_columns();
-
-        let iter = args.iter().map(|tpl| cols[tpl.0 + offset].clone());
-        let cols = if row_count {
-            let mut new_cols = vec![df.get_columns()[0].clone()];
-            new_cols.extend(iter);
-            new_cols
-        } else {
-            iter.collect()
-        };
-
-        DataFrame::new_no_checks(cols)
-    } else {
-        df
     }
 }
 
@@ -415,10 +376,10 @@ mod test {
 
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
         let mut df = df![
-            "a" => ["x", "y", "z"],
-            "b" => [123, 456, 789],
-            "c" => [4.5, 10.0, 10.0],
-            "d" => ["misc", "other", "value"],
+            "letters" => ["x", "y", "z"],
+            "ints" => [123, 456, 789],
+            "floats" => [4.5, 10.0, 10.0],
+            "other" => ["misc", "other", "value"],
         ]
         .unwrap();
         IpcWriter::new(&mut buf)
@@ -426,22 +387,22 @@ mod test {
             .expect("ipc writer");
         buf.set_position(0);
         let expected = df![
-            "a" => ["x", "y", "z"],
-            "c" => [4.5, 10.0, 10.0],
-            "d" => ["misc", "other", "value"],
-            "b" => [123, 456, 789],
+            "letters" => ["x", "y", "z"],
+            "floats" => [4.5, 10.0, 10.0],
+            "other" => ["misc", "other", "value"],
+            "ints" => [123, 456, 789],
         ]
         .unwrap();
-        let df_read = IpcReader::new(buf)
+        let df_read = IpcReader::new(&mut buf)
             .with_columns(Some(vec![
-                "a".to_string(),
-                "c".to_string(),
-                "d".to_string(),
-                "b".to_string(),
+                "letters".to_string(),
+                "floats".to_string(),
+                "other".to_string(),
+                "ints".to_string(),
             ]))
             .finish()
             .unwrap();
-        df_read.frame_equal(&expected);
+        assert!(df_read.frame_equal(&expected));
     }
 
     #[test]
