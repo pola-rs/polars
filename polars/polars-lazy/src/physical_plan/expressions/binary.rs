@@ -332,9 +332,18 @@ impl PhysicalExpr for BinaryExpr {
             // Both are or a flat series
             // so we can flatten the Series and apply the operators
             _ => {
+                // Check if the group state of `ac_a` differs from the original `GroupTuples`.
+                // If this is the case we might need to align the groups. But only if `ac_b` is not a
+                // `Literal` as literals don't have any groups, the changed group order does not matter
+                // in that case
+                let different_group_state =
+                    |ac_a: &AggregationContext, ac_b: &AggregationContext| {
+                        (ac_a.update_groups != UpdateGroups::No)
+                            && !matches!(ac_b.agg_state(), AggState::Literal(_))
+                    };
+
                 // the groups state differs, so we aggregate both and flatten again to make them align
-                if ac_l.update_groups != UpdateGroups::No || ac_r.update_groups != UpdateGroups::No
-                {
+                if different_group_state(&ac_l, &ac_r) || different_group_state(&ac_r, &ac_l) {
                     // use the aggregated state to determine the new groups
                     let lhs = ac_l.aggregated();
                     ac_l.with_update_groups(UpdateGroups::WithSeriesLenOwned(lhs.clone()));

@@ -242,3 +242,32 @@ fn test_null_commutativity() {
     assert_eq!(out.column("a").unwrap().get(0), AnyValue::Boolean(true));
     assert_eq!(out.column("b").unwrap().get(0), AnyValue::Boolean(true));
 }
+
+#[test]
+fn test_binary_over_3930() -> Result<()> {
+    let df = df![
+        "class" => ["a", "a", "a", "b", "b", "b"],
+        "score" => [0.2, 0.5, 0.1, 0.3, 0.4, 0.2]
+    ]?;
+
+    let ss = col("score").pow(2);
+    let mdiff = (ss.clone().shift(-1) - ss.shift(1)) / lit(2);
+    let out = df.lazy().select([mdiff.over([col("class")])]).collect()?;
+
+    let out = out.column("score")?;
+    let out = out.f64()?;
+
+    assert_eq!(
+        Vec::from(out),
+        &[
+            None,
+            Some(-0.015000000000000003),
+            None,
+            None,
+            Some(-0.024999999999999994),
+            None
+        ]
+    );
+
+    Ok(())
+}
