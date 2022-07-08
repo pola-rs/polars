@@ -131,13 +131,14 @@ impl<R: Read + Seek> IpcReader<R> {
             metadata.schema.clone()
         };
 
-        let reader = read::FileReader::new(&mut self.reader, metadata, sorted_projection);
+        let reader =
+            read::FileReader::new(&mut self.reader, metadata, sorted_projection, self.n_rows);
 
         let include_row_count = self.row_count.is_some();
         finish_reader(
             reader,
             rechunk,
-            self.n_rows,
+            None,
             predicate,
             aggregate,
             &schema,
@@ -198,12 +199,16 @@ where
         };
 
         let include_row_count = self.row_count.is_some();
-        let ipc_reader =
-            read::FileReader::new(&mut self.reader, metadata.clone(), sorted_projection);
+        let ipc_reader = read::FileReader::new(
+            &mut self.reader,
+            metadata.clone(),
+            sorted_projection,
+            self.n_rows,
+        );
         finish_reader(
             ipc_reader,
             rechunk,
-            self.n_rows,
+            None,
             None,
             None,
             &schema,

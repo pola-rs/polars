@@ -172,11 +172,11 @@ thiserror = "^1.0"
 
 [dependencies.arrow]
 package = "arrow2"
-git = "https://github.com/jorgecarleitao/arrow2"
-# git = "https://github.com/ritchie46/arrow2"
-rev = "f5f6b7e3aa10b80dc574abacf96b30e0927410fe"
+# git = "https://github.com/jorgecarleitao/arrow2"
+git = "https://github.com/ritchie46/arrow2"
+# rev = "98e49133b2e56e51e30335830485b3cf768eb5a2"
 # path = "../../../arrow2"
-# branch = "arity_assign"
+branch = "fix_cast_dict"
 # version = "0.12"
 default-features = false
 features = [
