@@ -388,17 +388,17 @@ class DataFrame(metaclass=DataFrameMetaClass):
     @classmethod
     def _from_records(
         cls: type[DF],
-        data: np.ndarray | Sequence[Sequence[Any]],
+        data: Sequence[Sequence[Any]],
         columns: Sequence[str] | None = None,
         orient: str | None = None,
     ) -> DF:
         """
-        Construct a DataFrame from a numpy ndarray or sequence of sequences.
+        Construct a DataFrame from a sequence of sequences.
 
         Parameters
         ----------
-        data : numpy ndarray or Sequence of sequences
-            Two-dimensional data represented as numpy ndarray or sequence of sequences.
+        data : Sequence of sequences
+            Two-dimensional data represented as a sequence of sequences.
         columns : Sequence of str, default None
             Column labels to use for resulting DataFrame. Must match data dimensions.
             If not specified, columns will be named `column_0`, `column_1`, etc.
@@ -411,15 +411,35 @@ class DataFrame(metaclass=DataFrameMetaClass):
         -------
         DataFrame
         """
-        if _NUMPY_AVAILABLE and isinstance(data, np.ndarray):
-            pydf = numpy_to_pydf(data, columns=columns, orient=orient)
-        else:
-            pydf = sequence_to_pydf(
-                data,  # type: ignore[arg-type]
-                columns=columns,
-                orient=orient,
-            )
-        return cls._from_pydf(pydf)
+        return cls._from_pydf(sequence_to_pydf(data, columns=columns, orient=orient))
+
+    @classmethod
+    def _from_numpy(
+        cls: type[DF],
+        data: np.ndarray,
+        columns: Sequence[str] | None = None,
+        orient: str | None = None,
+    ) -> DF:
+        """
+        Construct a DataFrame from a numpy ndarray.
+
+        Parameters
+        ----------
+        data : numpy ndarray
+            Two-dimensional data represented as a numpy ndarray.
+        columns : Sequence of str, default None
+            Column labels to use for resulting DataFrame. Must match data dimensions.
+            If not specified, columns will be named `column_0`, `column_1`, etc.
+        orient : {'col', 'row'}, default None
+            Whether to interpret two-dimensional data as columns or as rows. If None,
+            the orientation is inferred by matching the columns and data dimensions. If
+            this does not yield conclusive results, column orientation is used.
+
+        Returns
+        -------
+        DataFrame
+        """
+        return cls._from_pydf(numpy_to_pydf(data, columns=columns, orient=orient))
 
     @classmethod
     def _from_arrow(
