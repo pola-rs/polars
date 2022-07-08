@@ -164,3 +164,25 @@ fn test_is_in_categorical_3420() -> Result<()> {
     assert!(out?.frame_equal(&expected));
     Ok(())
 }
+
+#[test]
+fn test_predicate_pushdown_blocked_by_outer_join() -> Result<()> {
+    let df1 = df! {
+        "a" => ["a1", "a2"],
+        "b" => ["b1", "b2"]
+    }?;
+    let df2 = df! {
+        "b" => ["b2", "b3"],
+        "c" => ["c2", "c3"]
+    }?;
+    let df = df1.lazy().outer_join(df2.lazy(), col("b"), col("b"));
+    let out = df.clone().filter(col("a").eq(lit("a1"))).collect()?;
+    let null: Option<&str> = None;
+    let expected = df![
+        "a" => ["a1"],
+        "b" => ["b1"],
+        "c" => [null],
+    ]?;
+    assert!(out.frame_equal_missing(&expected));
+    Ok(())
+}

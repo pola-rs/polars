@@ -402,7 +402,10 @@ impl PredicatePushDown {
                         |e: &AExpr| matches!(e, AExpr::IsUnique(_) | AExpr::Duplicated(_));
 
                     let checks_nulls =
-                        |e: &AExpr| matches!(e, AExpr::IsNull(_) | AExpr::IsNotNull(_));
+                        |e: &AExpr| matches!(e, AExpr::IsNull(_) | AExpr::IsNotNull(_)) ||
+                            // any operation that checks for equality or ordering can be wrong because
+                            // the join can produce null values
+                            matches!(e, AExpr::BinaryExpr {op, ..} if !matches!(op, Operator::NotEq));
                     if has_aexpr(predicate, expr_arena, matches)
                         // join might create null values.
                         || has_aexpr(predicate, expr_arena, checks_nulls)
