@@ -445,7 +445,6 @@ if HYPOTHESIS_INSTALLED:
         --------
         >>> from polars.testing import columns
         >>> from string import punctuation
-        >>> import polars as pl
         >>>
         >>> def test_special_char_colname_init() -> None:
         ...     cols = [(c.name, c.dtype) for c in columns(punctuation)]
@@ -545,7 +544,6 @@ if HYPOTHESIS_INSTALLED:
         --------
         >>> from polars.testing import series
         >>> from hypothesis import given
-        >>> import polars as pl
         >>>
         >>> @given(df=series())
         ... def test_repr(s: pl.Series) -> None:
