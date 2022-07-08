@@ -2,7 +2,7 @@
 import sys
 import typing
 from builtins import range
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from io import BytesIO
 from typing import Any, Iterator, Type
 from unittest.mock import patch
@@ -1431,12 +1431,14 @@ def test_repeat_by() -> None:
 
 
 def test_join_dates() -> None:
-    date_times = pd.date_range(
-        "2021-06-24 00:00:00", "2021-06-24 10:00:00", freq="1H", closed="left"
+    dts_in = pl.date_range(
+        datetime(2021, 6, 24),
+        datetime(2021, 6, 24, 10, 0, 0),
+        interval=timedelta(hours=1),
+        closed="left",
     )
     dts = (
-        pl.from_pandas(date_times)
-        .cast(int)
+        dts_in.cast(int)
         .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))
         .cast(pl.Datetime)
     )
@@ -1449,7 +1451,8 @@ def test_join_dates() -> None:
             "value": [2, 3, 4, 1, 2, 3, 5, 1, 2, 3],
         }
     )
-    df.join(df, on="datetime")
+    out = df.join(df, on="datetime")
+    assert len(out) == len(df)
 
 
 def test_asof_cross_join() -> None:
