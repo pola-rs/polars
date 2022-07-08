@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Type
-
 import numpy as np
 import pytest
 

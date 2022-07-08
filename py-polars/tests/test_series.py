@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, Union
+from typing import Any
 from unittest.mock import patch
 
 import numpy as np

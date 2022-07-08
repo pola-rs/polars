@@ -3,7 +3,6 @@ from __future__ import annotations
 import typing
 from datetime import date, datetime, timedelta
 from functools import reduce
-from typing import List, Optional
 
 import numpy as np
 

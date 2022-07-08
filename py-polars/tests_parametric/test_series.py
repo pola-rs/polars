@@ -3,8 +3,6 @@
 # -------------------------------------------------
 from __future__ import annotations
 
-from typing import Optional
-
 from hypothesis import given, settings
 from hypothesis.strategies import sampled_from
 

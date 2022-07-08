@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import typing
 from datetime import datetime
-from typing import Dict, Sequence, Type, Union
+from typing import Sequence
 from unittest.mock import patch
 
 import numpy as np
@@ -57,10 +57,10 @@ def test_to_numpy() -> None:
         values: list,
         pl_dtype: type[pl.DataType],
         np_dtype: (
-            type[np.signedinteger] |
-            type[np.unsignedinteger] |
-            type[np.floating] |
-            type[np.object_]
+            type[np.signedinteger]
+            | type[np.unsignedinteger]
+            | type[np.floating]
+            | type[np.object_]
         ),
     ) -> None:
         pl_series_to_numpy_array = np.array(pl.Series(name, values, pl_dtype))
