@@ -1239,14 +1239,49 @@ def _date(
 
 def concat_str(exprs: Sequence[pli.Expr | str] | pli.Expr, sep: str = "") -> pli.Expr:
     """
-    Horizontally Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8.
+    Horizontally concat Utf8 Series in linear time. Non-Utf8 columns are cast to Utf8.
 
     Parameters
     ----------
     exprs
-        Columns to concat into a Utf8 Series
+        Columns to concat into a Utf8 Series.
     sep
         String value that will be used to separate the values.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": ["dogs", "cats", None],
+    ...         "c": ["play", "swim", "walk"],
+    ...     }
+    ... )
+    >>> df.with_columns(
+    ...     [
+    ...         pl.concat_str(
+    ...             [
+    ...                 pl.col("a") * 2,
+    ...                 pl.col("b"),
+    ...                 pl.col("c"),
+    ...             ],
+    ...             sep=" ",
+    ...         ).alias("full_sentence"),
+    ...     ]
+    ... )
+    shape: (3, 4)
+    ┌─────┬──────┬──────┬───────────────┐
+    │ a   ┆ b    ┆ c    ┆ full_sentence │
+    │ --- ┆ ---  ┆ ---  ┆ ---           │
+    │ i64 ┆ str  ┆ str  ┆ str           │
+    ╞═════╪══════╪══════╪═══════════════╡
+    │ 1   ┆ dogs ┆ play ┆ 2 dogs play   │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2   ┆ cats ┆ swim ┆ 4 cats swim   │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 3   ┆ null ┆ walk ┆ null          │
+    └─────┴──────┴──────┴───────────────┘
+
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_concat_str(exprs, sep))
