@@ -133,7 +133,9 @@ class LazyFrame(Generic[DF]):
         parse_dates: bool = False,
     ) -> LDF:
         """
-        See Also: `pl.scan_csv`
+        See Also
+        --------
+        scan_csv
         """
         dtype_list: list[tuple[str, type[DataType]]] | None = None
         if dtypes is not None:
@@ -179,7 +181,9 @@ class LazyFrame(Generic[DF]):
         storage_options: dict | None = None,
     ) -> LDF:
         """
-        See Also: `pl.scan_parquet`
+        See Also
+        --------
+        scan_ipc, scan_csv
         """
 
         # try fsspec scanner
@@ -214,7 +218,9 @@ class LazyFrame(Generic[DF]):
         storage_options: dict | None = None,
     ) -> LDF:
         """
-        See Also: `pl.scan_ipc`
+        See Also
+        --------
+        scan_parquet, scan_csv
         """
         if isinstance(file, (str, Path)):
             file = format_path(file)
@@ -241,7 +247,9 @@ class LazyFrame(Generic[DF]):
     @classmethod
     def from_json(cls, json: str) -> LazyFrame:
         """
-        See Also pl.read_json
+        See Also
+        --------
+        read_json
         """
         f = StringIO(json)
         return cls.read_json(f)
@@ -252,7 +260,11 @@ class LazyFrame(Generic[DF]):
         file: str | Path | IOBase,
     ) -> LazyFrame:
         """
-        See Also pl.read_json
+        Read into a DataFrame from JSON format.
+
+        See Also
+        --------
+        write_json
         """
         if isinstance(file, StringIO):
             file = BytesIO(file.getvalue().encode())
@@ -303,6 +315,10 @@ class LazyFrame(Generic[DF]):
             Write to this file instead of returning a string.
         to_string
             Ignore file argument and return a string.
+
+        See Also
+        --------
+        read_json
         """
         if isinstance(file, (str, Path)):
             file = format_path(file)
@@ -356,7 +372,6 @@ class LazyFrame(Generic[DF]):
 
         Examples
         --------
-
         >>> def cast_str_to_int(data, col_name):
         ...     return data.with_column(pl.col(col_name).cast(pl.Int64))
         ...
@@ -717,7 +732,7 @@ class LazyFrame(Generic[DF]):
 
         See Also
         --------
-        schema : Return a dict of [column name, dtype]
+        schema : Returns a {colname:dtype} mapping.
         """
         return self._ldf.dtypes()
 

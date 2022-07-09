@@ -17,7 +17,7 @@ def test_repr(df: pl.DataFrame) -> None:
     # print(df)
 
 
-@given(df=dataframes(min_size=1, min_cols=1, null_probability=0.25))
+@given(df=dataframes(min_size=1, min_cols=1, max_size=10, null_probability=0.25))
 @example(df=pl.DataFrame(columns=["x", "y", "z"]))
 @example(df=pl.DataFrame())
 def test_null_count(df: pl.DataFrame) -> None:
@@ -34,25 +34,25 @@ def test_null_count(df: pl.DataFrame) -> None:
 
 @given(
     df=dataframes(
-        max_size=20,
+        max_size=10,
         cols=[
             column(
                 "start",
                 dtype=pl.Int8,
                 null_probability=0.15,
-                strategy=integers(min_value=-12, max_value=12),
+                strategy=integers(min_value=-8, max_value=8),
             ),
             column(
                 "stop",
                 dtype=pl.Int8,
                 null_probability=0.15,
-                strategy=integers(min_value=-10, max_value=10),
+                strategy=integers(min_value=-6, max_value=6),
             ),
             column(
                 "step",
                 dtype=pl.Int8,
                 null_probability=0.15,
-                strategy=integers(min_value=-8, max_value=8).filter(lambda x: x != 0),
+                strategy=integers(min_value=-4, max_value=4).filter(lambda x: x != 0),
             ),
             column("misc", dtype=pl.Int32),
         ],

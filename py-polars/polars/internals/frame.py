@@ -796,7 +796,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         json_lines: bool = False,
     ) -> DF:
         """
-        See Also pl.read_json
+        See Also
+        --------
+        read_json
         """
         if isinstance(file, StringIO):
             file = BytesIO(file.getvalue().encode())
@@ -2204,7 +2206,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         See Also
         --------
-        schema : Return a dict of [column name, dtype]
+        schema : Returns a {colname:dtype} mapping.
         """
         return self._df.dtypes()
 
@@ -2533,7 +2535,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
@@ -2562,7 +2563,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         Get first N rows as DataFrame.
 
-        See Also `DataFrame.head`
+        See Also
+        --------
+        head, tail, slice
 
         Parameters
         ----------
@@ -6014,7 +6017,6 @@ class GroupBy(Generic[DF]):
 
     Examples
     --------
-
     >>> df = pl.DataFrame({"foo": ["a", "a", "b"], "bar": [1, 2, 3]})
     >>> for group in df.groupby("foo"):
     ...     print(group)
@@ -6535,7 +6537,6 @@ class GroupBy(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": ["one", "one", "one", "two", "two", "two"],
@@ -6543,7 +6544,7 @@ class GroupBy(Generic[DF]):
         ...         "baz": [1, 2, 3, 4, 5, 6],
         ...     }
         ... )
-        >>> df.groupby("foo", maintain_order=True).pivot(
+        >>> df.groupby("foo", maintain_order=True).pivot(  # doctest: +SKIP
         ...     pivot_column="bar", values_column="baz"
         ... ).first()
         shape: (2, 4)
@@ -6576,7 +6577,6 @@ class GroupBy(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
@@ -6608,7 +6608,6 @@ class GroupBy(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
@@ -6640,7 +6639,6 @@ class GroupBy(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
@@ -6672,7 +6670,6 @@ class GroupBy(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
@@ -6704,7 +6701,6 @@ class GroupBy(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
@@ -6736,7 +6732,6 @@ class GroupBy(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
@@ -6768,7 +6763,6 @@ class GroupBy(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
@@ -6801,7 +6795,6 @@ class GroupBy(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 1, 3, 4, 5],
@@ -6839,7 +6832,6 @@ class GroupBy(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
@@ -6870,7 +6862,6 @@ class GroupBy(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 2, 3, 4, 5],
@@ -6899,7 +6890,6 @@ class GroupBy(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
         >>> df.groupby("a", maintain_order=True).agg_list()
         shape: (2, 2)

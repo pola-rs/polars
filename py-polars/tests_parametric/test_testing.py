@@ -118,6 +118,7 @@ def test_strategy_dtypes(
         include_cols=[column(name="colx", null_probability=0.20)],
     ),
 )
+@settings(max_examples=50)
 def test_strategy_null_probability(
     s: pl.Series,
     df1: pl.DataFrame,

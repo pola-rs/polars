@@ -5679,7 +5679,6 @@ class ExprStringNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": ["Crab", "cat and dog", "rab$bit", None]})
         >>> df.select(
         ...     [
@@ -5703,6 +5702,10 @@ class ExprStringNameSpace:
         │ null        ┆ null  ┆ null    │
         └─────────────┴───────┴─────────┘
 
+        See Also
+        --------
+        starts_with : Check if string values start with a substring.
+        ends_with : Check if string values end with a substring.
         """
         return wrap_expr(self._pyexpr.str_contains(pattern, literal))
 
@@ -5713,11 +5716,10 @@ class ExprStringNameSpace:
         Parameters
         ----------
         sub
-            Suffix
+            Suffix substring.
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"fruits": ["apple", "mango", None]})
         >>> df.with_column(
         ...     pl.col("fruits").str.ends_with("go").alias("has_suffix"),
@@ -5750,7 +5752,7 @@ class ExprStringNameSpace:
         See Also
         --------
         contains : Check if string contains a substring that matches a regex.
-
+        starts_with : Check if string values start with a substring.
         """
         return wrap_expr(self._pyexpr.str_ends_with(sub))
 
@@ -5761,11 +5763,10 @@ class ExprStringNameSpace:
         Parameters
         ----------
         sub
-            Prefix
+            Prefix substring.
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"fruits": ["apple", "mango", None]})
         >>> df.with_column(
         ...     pl.col("fruits").str.starts_with("app").alias("has_prefix"),
@@ -5798,7 +5799,7 @@ class ExprStringNameSpace:
         See Also
         --------
         contains : Check if string contains a substring that matches a regex.
-
+        ends_with : Check if string values end with a substring.
         """
         return wrap_expr(self._pyexpr.str_starts_with(sub))
 
@@ -5822,7 +5823,6 @@ class ExprStringNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {"json_val": ['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}']}
         ... )
@@ -6173,7 +6173,6 @@ class ExprStringNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"id": [1, 2], "text": ["123abc", "abc456"]})
         >>> df.with_column(
         ...     pl.col("text").str.replace(r"abc\b", "ABC")

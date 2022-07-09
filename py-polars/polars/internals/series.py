@@ -4045,7 +4045,6 @@ class StringNameSpace:
 
         Examples
         --------
-
         >>> s = pl.Series(["Crab", "cat and dog", "rab$bit", None])
         >>> s.str.contains("cat|bit")
         shape: (4,)
@@ -4076,7 +4075,7 @@ class StringNameSpace:
         Parameters
         ----------
         sub
-            Suffix
+            Suffix substring.
 
         Examples
         --------
@@ -4094,7 +4093,7 @@ class StringNameSpace:
         See Also
         --------
         contains : Check if string contains a substring that matches a regex.
-
+        starts_with : Check if string values start with a substring.
         """
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.ends_with(sub)).to_series()
@@ -4106,11 +4105,10 @@ class StringNameSpace:
         Parameters
         ----------
         sub
-            Prefix
+            Prefix substring.
 
         Examples
         --------
-
         >>> s = pl.Series("fruits", ["apple", "mango", None])
         >>> s.str.starts_with("app")
         shape: (3,)
@@ -4124,7 +4122,7 @@ class StringNameSpace:
         See Also
         --------
         contains : Check if string contains a substring that matches a regex.
-
+        ends_with : Check if string values end with a substring.
         """
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.starts_with(sub)).to_series()
@@ -4213,7 +4211,6 @@ class StringNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {"json_val": ['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}']}
         ... )
@@ -4250,7 +4247,6 @@ class StringNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [
@@ -4370,7 +4366,6 @@ class StringNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"x": ["a_1", None, "c", "d_4"]})
         >>> df.select(
         ...     [
@@ -4446,7 +4441,6 @@ class StringNameSpace:
 
         Examples
         --------
-
         >>> s = pl.Series(["123abc", "abc456"])
         >>> s.str.replace(r"abc\b", "ABC")  # doctest: +IGNORE_RESULT
         shape: (2,)
@@ -4604,7 +4598,6 @@ class ListNameSpace:
 
         Examples
         --------
-
         >>> s = pl.Series([[1, 2, 3], [5]])
         >>> s.arr.lengths()
         shape: (2,)
@@ -4701,7 +4694,6 @@ class ListNameSpace:
 
         Examples
         --------
-
         >>> s = pl.Series([["foo", "bar"], ["hello", "world"]])
         >>> s.arr.join(separator="-")
         shape: (2,)
@@ -4777,7 +4769,6 @@ class ListNameSpace:
 
         Examples
         --------
-
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.diff()
         shape: (2,)
@@ -4803,7 +4794,6 @@ class ListNameSpace:
 
         Examples
         --------
-
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.shift()
         shape: (2,)
@@ -4829,7 +4819,6 @@ class ListNameSpace:
 
         Examples
         --------
-
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.slice(1, 2)
         shape: (2,)
@@ -4855,7 +4844,6 @@ class ListNameSpace:
 
         Examples
         --------
-
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.head(2)
         shape: (2,)
@@ -4879,7 +4867,6 @@ class ListNameSpace:
 
         Examples
         --------
-
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.tail(2)
         shape: (2,)
@@ -4908,7 +4895,6 @@ class ListNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
         >>> df.with_column(
         ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
@@ -4979,7 +4965,6 @@ class DateTimeNameSpace:
 
         Examples
         --------
-
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
@@ -5501,7 +5486,6 @@ class CatNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {"cats": ["z", "z", "k", "a", "b"], "vals": [3, 1, 2, 2, 3]}
         ... ).with_columns(

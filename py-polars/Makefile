@@ -31,6 +31,7 @@ test-all: venv
 	$(PYTHON_BIN)/maturin develop
 	$(PYTHON) -m pytest tests
 	$(PYTHON) -m pytest tests_parametric
+	$(PYTHON) tests/run_doc_examples.py
 
 test-with-cov: venv
 	$(PYTHON) -m pytest \

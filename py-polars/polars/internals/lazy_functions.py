@@ -82,7 +82,6 @@ def col(
 
     Examples
     --------
-
     >>> df = pl.DataFrame(
     ...     {
     ...         "ham": [1, 2, 3],
@@ -896,10 +895,8 @@ def exclude(columns: str | list[str]) -> pli.Expr:
     columns
         Column(s) to exclude from selection
 
-
     Examples
     --------
-
     >>> df = pl.DataFrame(
     ...     {
     ...         "a": [1, 2, 3],
@@ -1272,7 +1269,6 @@ def format(fstring: str, *args: pli.Expr | str) -> pli.Expr:
 
     Examples
     --------
-
     >>> df = pl.DataFrame(
     ...     {
     ...         "a": ["a", "b", "c"],
@@ -1452,7 +1448,6 @@ def select(
 
     Examples
     --------
-
     >>> foo = pl.Series("foo", [1, 2, 3])
     >>> bar = pl.Series("bar", [3, 2, 1])
     >>> pl.select(
@@ -1517,7 +1512,6 @@ def struct(
 
     Examples
     --------
-
     >>> pl.DataFrame(
     ...     {
     ...         "int": [1, 2],
@@ -1663,7 +1657,6 @@ def arg_where(
 
     Examples
     --------
-
     >>> df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
     >>> df.select(
     ...     [

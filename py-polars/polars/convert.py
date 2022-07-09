@@ -49,7 +49,6 @@ def from_dict(
 
     Examples
     --------
-
     >>> data = {"a": [1, 2], "b": [3, 4]}
     >>> df = pl.from_dict(data)
     >>> df

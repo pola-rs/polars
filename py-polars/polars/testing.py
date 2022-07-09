@@ -68,7 +68,7 @@ if HYPOTHESIS_INSTALLED:
     # else:
     settings.load_profile("polars.default")
 
-MAX_DATA_SIZE = 50
+MAX_DATA_SIZE = 20
 MAX_COLS = 8
 
 
@@ -569,7 +569,7 @@ if HYPOTHESIS_INSTALLED:
         ...     # print(s)
         >>>
         >>> s = series(dtype=pl.Int32, max_size=5)
-        >>> s.example()  # doctest: +IGNORE_RESULT
+        >>> s.example()  # doctest: +SKIP
         shape: (4,)
         Series: '' [i64]
         [
@@ -731,7 +731,7 @@ if HYPOTHESIS_INSTALLED:
         ...     ],
         ...     size=2,
         ... )
-        >>> df_strategy.example()  # doctest: +IGNORE_RESULT
+        >>> df_strategy.example()  # doctest: +SKIP
         shape: (2, 2)
         ┌───────────┬────────────┐
         │ x         ┆ y          │
