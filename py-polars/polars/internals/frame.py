@@ -1908,7 +1908,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "key": ["a", "b", "c"],
@@ -1928,6 +1927,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ a   ┆ 1   │
         └─────┴─────┘
+
         """
         return self.select(pli.col("*").reverse())
 

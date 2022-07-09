@@ -4961,7 +4961,6 @@ class ExprListNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [[3, 2, 1], [9, 1, 2]],
