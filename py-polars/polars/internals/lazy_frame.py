@@ -1815,16 +1815,16 @@ class LazyFrame(Generic[DF]):
         """
         Add a column at index 0 that counts the rows.
 
-        ..warning::
+        .. warning::
             This can have a negative effect on query performance.
-            This may for instance block predicate pushdown optimization.
+            This may, for instance, block predicate pushdown optimization.
 
         Parameters
         ----------
         name
             Name of the column to add.
         offset
-            Start the row count at this offset
+            Start the row count at this offset.
 
         Examples
         --------
@@ -1890,16 +1890,14 @@ class LazyFrame(Generic[DF]):
         """
         Fill floating point NaN values.
 
-        ..warning::
-
-            NOTE that floating point NaN (No a Number) are not missing values!
-            to replace missing values, use `fill_null`.
-
+        .. warning::
+            Note that floating point NaN (Not a Number) are not missing values!
+            To replace missing values, use :func:`fill_null` instead.
 
         Parameters
         ----------
         fill_value
-            Value to fill the NaN values with
+            Value to fill the NaN values with.
         """
         if not isinstance(fill_value, pli.Expr):
             fill_value = pli.lit(fill_value)
@@ -2026,7 +2024,7 @@ class LazyFrame(Generic[DF]):
     ) -> LDF:
         """
         .. deprecated:: 0.13.13
-            Please use `unique`
+            Use :func:`unique` instead.
         """
         return self.unique(maintain_order, subset, keep)
 

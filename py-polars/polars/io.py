@@ -166,11 +166,12 @@ def read_csv(
         particular storage connection.
         e.g. host, port, username, password, etc.
     skip_rows_after_header
-        Skip these number of rows when the header is parsed
+        Skip this number of rows when the header is parsed.
     row_count_name
-        If not None, this will insert a row count column with give name into the DataFrame
+        If not None, this will insert a row count column with the given name into
+        the DataFrame.
     row_count_offset
-        Offset to start the row_count column (only use if the name is set)
+        Offset to start the row_count column (only used if the name is set).
     sample_size:
         Set the sample size. This is used to sample statistics to estimate the allocation needed.
 
@@ -457,11 +458,12 @@ def scan_csv(
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
     skip_rows_after_header
-        Skip these number of rows when the header is parsed
+        Skip this number of rows when the header is parsed.
     row_count_name
-        If not None, this will insert a row count column with give name into the DataFrame
+        If not None, this will insert a row count column with the given name into
+        the DataFrame.
     row_count_offset
-        Offset to start the row_count column (only use if the name is set)
+        Offset to start the row_count column (only used if the name is set).
     parse_dates
         Try to automatically parse dates. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
@@ -475,11 +477,11 @@ def scan_csv(
     ...     )  # select only 2 columns (other columns will not be read)
     ...     .filter(
     ...         pl.col("a") > 10
-    ...     )  # the filter is pushed down the the scan, so less data read in memory
+    ...     )  # the filter is pushed down the scan, so less data is read into memory
     ...     .fetch(100)  # pushed a limit of 100 rows to the scan level
     ... )  # doctest: +SKIP
 
-    We can use `with_column_names` to modify the header before scanning:
+    We can use ``with_column_names`` to modify the header before scanning:
 
     >>> df = pl.DataFrame(
     ...     {"BrEeZaH": [1, 2, 3, 4], "LaNgUaGe": ["is", "terrible", "to", "read"]}
@@ -502,7 +504,6 @@ def scan_csv(
     ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
     │ 4       ┆ read     │
     └─────────┴──────────┘
-
 
     """
 
@@ -903,7 +904,6 @@ def read_sql(
 
     Examples
     --------
-
     ## Single threaded
     Read a DataFrame from a SQL query using a single thread:
 
@@ -958,7 +958,7 @@ def read_excel(
     """
     Read Excel (XLSX) sheet into a DataFrame by converting an Excel
     sheet with ``xlsx2csv.Xlsx2csv().convert()`` to CSV and parsing
-    the CSV output with ``pl.read_csv()``.
+    the CSV output with :func:`read_csv`.
 
     Parameters
     ----------
@@ -975,7 +975,7 @@ def read_excel(
         Extra options passed to ``xlsx2csv.Xlsx2csv()``.
         e.g.: ``{"skip_empty_lines": True}``
     read_csv_options
-        Extra options passed to ``read_csv()`` for parsing
+        Extra options passed to :func:`read_csv` for parsing
         the CSV file returned by ``xlsx2csv.Xlsx2csv().convert()``
         e.g.: ``{"has_header": False, "new_columns": ["a", "b", "c"], infer_schema_length=None}``
 
@@ -985,7 +985,6 @@ def read_excel(
 
     Examples
     --------
-
     Read "My Datasheet" sheet from Excel sheet file to a DataFrame.
 
     >>> excel_file = "test.xlsx"
@@ -997,7 +996,7 @@ def read_excel(
 
     Read sheet 3 from Excel sheet file to a DataFrame while skipping
     empty lines in the sheet. As sheet 3 does not have header row,
-    pass the needed settings to ``read_csv()``.
+    pass the needed settings to :func:`read_csv`.
 
     >>> excel_file = "test.xlsx"
     >>> pl.read_excel(
@@ -1008,7 +1007,7 @@ def read_excel(
     ... )  # doctest: +SKIP
 
     If the correct datatypes can't be determined by polars, look
-    at ``read_csv()`` documentation to see which options you can pass
+    at :func:`read_csv` documentation to see which options you can pass
     to fix this issue. For example ``"infer_schema_length": None``
     can be used to read the whole data twice, once to infer the
     correct output types and once to actually convert the input to
@@ -1023,8 +1022,7 @@ def read_excel(
 
     Alternative
     -----------
-
-    If ``read_excel()`` does not work or you need to read other types
+    If :func:`read_excel` does not work or you need to read other types
     of spreadsheet files, you can try pandas ``pd.read_excel()``
     (supports `xls`, `xlsx`, `xlsm`, `xlsb`, `odf`, `ods` and `odt`).
 
@@ -1078,19 +1076,20 @@ def read_excel(
 
 def scan_ds(ds: pa.dataset.dataset) -> LazyFrame:
     """
+    Scan a pyarrow dataset.
+
+    This can be useful to connect to cloud or partitioned datasets.
+
     .. warning::
         This API is experimental and may change without it being considered a breaking change.
-
-    Scan a pyarrow dataset. This can be useful to connect to cloud or partitioned datasets.
 
     Parameters
     ----------
     ds
-     Pyarrow dataset to scan.
+        Pyarrow dataset to scan.
 
     Examples
     --------
-
     >>> import pyarrow.dataset as ds
     >>> dset = ds.dataset("s3://my-partitioned-folder/", format="ipc")  # doctest: +SKIP
     >>> out = (

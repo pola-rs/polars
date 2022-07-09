@@ -820,9 +820,10 @@ def map_binary(
     return_dtype: type[DataType] | None = None,
 ) -> pli.Expr:
     """
-     .. deprecated:: 0.10.4
-       use `map` or `apply`
     Map a custom function over two columns and produce a single Series result.
+
+    .. deprecated:: 0.10.4
+        Use :func:`map` or :func:`apply` instead.
 
     Parameters
     ----------
@@ -1048,9 +1049,9 @@ def arange(
     high
         Upper bound of range.
     step
-        Step size of the range
+        Step size of the range.
     eager
-        If eager evaluation is `True`, a Series is returned instead of an Expr
+        If eager evaluation is `True`, a Series is returned instead of an Expr.
     """
     low = pli.expr_to_lit_or_expr(low, str_to_lit=False)
     high = pli.expr_to_lit_or_expr(high, str_to_lit=False)
@@ -1444,6 +1445,7 @@ def select(
     ----------
     exprs
         Expressions to run
+
     Returns
     -------
     DataFrame

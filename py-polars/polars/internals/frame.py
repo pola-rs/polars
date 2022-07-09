@@ -979,7 +979,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ) -> str | None:  # pragma: no cover
         """
         .. deprecated:: 0.13.12
-            Please use `write_json`
+            Use :func:`write_json` instead.
         """
         warnings.warn(
             "'to_json' is deprecated. please use 'write_json'", DeprecationWarning
@@ -1167,7 +1167,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ) -> str | None:  # pragma: no cover
         """
         .. deprecated:: 0.13.12
-            Please use `write_csv`
+            Use :func:`write_csv` instead.
         """
         warnings.warn(
             "'to_csv' is deprecated. please use 'write_csv'", DeprecationWarning
@@ -1204,7 +1204,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ) -> None:  # pragma: no cover
         """
         .. deprecated:: 0.13.12
-            Please use `write_avro`
+            Use :func:`write_avro` instead.
         """
         warnings.warn(
             "'to_avro' is deprecated. please use 'write_avro'", DeprecationWarning
@@ -1243,7 +1243,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ) -> None:  # pragma: no cover
         """
         .. deprecated:: 0.13.12
-            Please use `write_ipc`
+            Use :func:`write_ipc` instead.
         """
         warnings.warn(
             "'to_ipc' is deprecated. please use 'write_ipc'", DeprecationWarning
@@ -1489,7 +1489,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ) -> None:  # pragma: no cover
         """
         .. deprecated:: 0.13.12
-            Please use `write_parquet`
+            Use :func:`write_parquet` instead.
         """
         warnings.warn(
             "'to_parquet' is deprecated. please use 'write_parquet'", DeprecationWarning
@@ -1906,6 +1906,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         Reverse the DataFrame.
 
+        Examples
+        --------
         >>> df = pl.DataFrame(
         ...     {
         ...         "key": ["a", "b", "c"],
@@ -1925,6 +1927,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ a   ┆ 1   │
         └─────┴─────┘
+
         """
         return self.select(pli.col("*").reverse())
 
@@ -4244,6 +4247,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         Get a single column as Series by name.
 
+        Parameters
+        ----------
+        name : str
+            Name of the column to retrieve.
+
         Examples
         --------
 
@@ -4268,22 +4276,16 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         .. seealso::
 
-            fill_nan
+            :func:`fill_nan`
 
         Parameters
         ----------
         strategy
-            One of:
-            - "backward"
-            - "forward"
-            - "mean"
-            - "min'
-            - "max"
-            - "zero"
-            - "one"
-            Or an expression.
+            One of {"backward", "forward", "min", "max", "mean", "one", "zero"}
+            or an expression.
         limit
-            if strategy is 'forward' or 'backward', this the number of consecutive null values to forward/backward fill.
+            The number of consecutive null values to forward/backward fill.
+            Only valid if ``strategy`` is 'forward' or 'backward'.
 
         Returns
         -------
@@ -4326,17 +4328,17 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         .. seealso::
 
-            fill_null
+            :func:`fill_null`
 
         Warnings
         --------
         NOTE that floating point NaNs (Not a Number) are not missing values!
-        to replace missing values, use `fill_null`.
+        to replace missing values, use :func:`fill_null`.
 
         Parameters
         ----------
         fill_value
-            value to fill NaN with
+            Value to fill NaN with.
 
         Returns
         -------
@@ -5399,7 +5401,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ) -> DF:
         """
         .. deprecated:: 0.13.13
-            Please use `unique`
+            Use :func:`unique` instead.
         """
         return self.unique(maintain_order, subset, keep)
 
@@ -6108,7 +6110,7 @@ class GroupBy(Generic[DF]):
         Select a single group as a new DataFrame.
 
         .. deprecated:: 0.13.32
-            Please use `partition_by`
+            Use :func:`partition_by` instead.
 
         Parameters
         ----------

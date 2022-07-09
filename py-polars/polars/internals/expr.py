@@ -256,9 +256,10 @@ class Expr:
 
     def all(self) -> Expr:
         """
-        Check if all boolean values in in a Boolean column are `True`.
-        This method is an expression - not to be confused with polars.all
-        which is a function to select all columns
+        Check if all boolean values in a Boolean column are `True`.
+
+        This method is an expression - not to be confused with
+        :func:`polars.all` which is a function to select all columns.
 
         Returns
         -------
@@ -1795,7 +1796,7 @@ class Expr:
     ) -> Expr:
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
-        with the result of the `fill_value` expression.
+        with the result of the ``fill_value`` expression.
 
         Parameters
         ----------
@@ -1835,18 +1836,14 @@ class Expr:
         """
         Fill null values using a filling strategy, literal, or Expr.
 
+        Parameters
+        ----------
         fill_value
-            One of:
-            - "backward"
-            - "forward"
-            - "min"
-            - "max"
-            - "mean"
-            - "one"
-            - "zero"
-            Or an expression.
+            One of {"backward", "forward", "min", "max", "mean", "one", "zero"}
+            or an expression.
         limit
-            if strategy is 'forward' or 'backward', this the number of consecutive null values to forward/backward fill.
+            The number of consecutive null values to forward/backward fill.
+            Only valid if ``fill_value`` is 'forward' or 'backward'.
 
         Examples
         --------
@@ -1925,12 +1922,12 @@ class Expr:
 
     def forward_fill(self, limit: int | None = None) -> Expr:
         """
-        Fill missing values with the latest seen values
+        Fill missing values with the latest seen values.
 
         Parameters
         ----------
         limit
-            This the number of consecutive null values to forward/backward fill.
+            The number of consecutive null values to forward fill.
 
         Examples
         --------
@@ -1955,12 +1952,12 @@ class Expr:
 
     def backward_fill(self, limit: int | None = None) -> Expr:
         """
-        Fill missing values with the next to be seen values
+        Fill missing values with the next to be seen values.
 
         Parameters
         ----------
         limit
-            This the number of consecutive null values to forward/backward fill.
+            The number of consecutive null values to backward fill.
 
         Examples
         --------
@@ -1985,6 +1982,9 @@ class Expr:
     def reverse(self) -> Expr:
         """
         Reverse the selection.
+
+        Examples
+        --------
 
         >>> df = pl.DataFrame(
         ...     {
@@ -2616,12 +2616,13 @@ class Expr:
     ) -> Expr:
         """
         Apply a custom python function to a Series or sequence of Series.
+
         The output of this custom function must be a Series.
-        If you want to apply a custom function elementwise over single values see `apply`.
-        A use case for map is when you want to transform an expression
+        If you want to apply a custom function elementwise over single values, see :func:`apply`.
+        A use case for ``map`` is when you want to transform an expression
         with a third-party library.
 
-        Read more in `the book <https://pola-rs.github.io/polars-book/user-guide/howcani/apply/udfs.html>`_.
+        Read more in `the book <https://pola-rs.github.io/polars-book/user-guide/dsl/custom_functions.html>`_.
 
         Parameters
         ----------
@@ -2664,24 +2665,22 @@ class Expr:
         Depending on the context it has the following behavior:
 
         * Selection
-            expected type `f`: Callable[[Any], Any]
+            Expects `f` to be of type Callable[[Any], Any].
             Applies a python function over each individual value in the column.
         * GroupBy
-            expected type `f`: Callable[[Series], Series]
+            Expects `f` to be of type Callable[[Series], Series].
             Applies a python function over each group.
 
-        Implementing logic using the .apply method is generally slower and more memory intensive
+        Implementing logic using the ``.apply`` method is generally slower and more memory intensive
         than implementing the same logic using the expression API because:
 
         - with .apply the logic is implemented in Python but with an expression the logic is implemented in Rust
-
-        - with .apply the DataFrame is materialized in memory
-
+        - with ``.apply`` the DataFrame is materialized in memory
         - expressions can be parallelised
 
         - expressions can be optimised
 
-        If possible use the expression API for best performance.
+        If possible, use the expression API for best performance.
 
         Parameters
         ----------
@@ -2700,7 +2699,7 @@ class Expr:
         ...     }
         ... )
 
-        In a selection context the function is applied by row:
+        In a selection context, the function is applied by row.
 
         >>> (
         ...     df.with_column(
@@ -2772,7 +2771,7 @@ class Expr:
 
     def flatten(self) -> Expr:
         """
-        Alias for explode.
+        Alias for :func:`explode`.
 
         Explode a list or utf8 Series. This means that every item is expanded to a new row.
 
@@ -2783,10 +2782,9 @@ class Expr:
         Examples
         --------
 
+        The following example turns each character into a separate row:
+
         >>> df = pl.DataFrame({"foo": ["hello", "world"]})
-
-        Turn each character into a separate row:
-
         >>> df.select(pl.col("foo").flatten())
         shape: (10, 1)
         ┌─────┐
@@ -2813,10 +2811,9 @@ class Expr:
         │ d   │
         └─────┘
 
+        This example turns each word into a separate row:
+
         >>> df = pl.DataFrame({"foo": ["hello world"]})
-
-        Turn each word into a separate row:
-
         >>> df.select(pl.col("foo").str.split(by=" ").flatten())
         shape: (2, 1)
         ┌───────┐
@@ -2828,13 +2825,16 @@ class Expr:
         ├╌╌╌╌╌╌╌┤
         │ world │
         └───────┘
+
         """
 
         return wrap_expr(self._pyexpr.explode())
 
     def explode(self) -> Expr:
         """
-        Explode a list or utf8 Series. This means that every item is expanded to a new row.
+        Explode a list or utf8 Series.
+
+        This means that every item is expanded to a new row.
 
         Returns
         -------
@@ -4961,7 +4961,6 @@ class ExprListNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [[3, 2, 1], [9, 1, 2]],
