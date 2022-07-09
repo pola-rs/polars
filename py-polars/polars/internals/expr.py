@@ -256,9 +256,10 @@ class Expr:
 
     def all(self) -> Expr:
         """
-        Check if all boolean values in in a Boolean column are `True`.
-        This method is an expression - not to be confused with polars.all
-        which is a function to select all columns
+        Check if all boolean values in a Boolean column are `True`.
+
+        This method is an expression - not to be confused with
+        :func:`polars.all` which is a function to select all columns.
 
         Returns
         -------
