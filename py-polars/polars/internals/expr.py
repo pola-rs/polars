@@ -6257,7 +6257,6 @@ class ExprDateTimeNameSpace:
     ) -> Expr:
         """
         Divide the date/ datetime range into buckets.
-        Data must be sorted, if not the output does not make sense.
 
         The `every` and `offset` arguments are created with
         the following string language:

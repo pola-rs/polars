@@ -4934,7 +4934,6 @@ class DateTimeNameSpace:
             This API is experimental and may change without it being considered a breaking change.
 
         Divide the date/ datetime range into buckets.
-        Data must be sorted, if not the output does not make sense.
 
         The `every` and `offset` argument are created with the
         the following string language:
