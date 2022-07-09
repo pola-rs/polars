@@ -1,6 +1,8 @@
 # ------------------------------------------------
 # Test/validate Polars' hypothesis strategy units
 # ------------------------------------------------
+from __future__ import annotations
+
 from hypothesis import given, settings
 from hypothesis.strategies import sampled_from
 

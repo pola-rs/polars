@@ -1,4 +1,6 @@
 # flake8: noqa: W191,E101
+from __future__ import annotations
+
 import io
 import os
 from pathlib import Path
@@ -11,11 +13,11 @@ import polars as pl
 
 
 @pytest.fixture
-def compressions() -> List[str]:
+def compressions() -> list[str]:
     return ["uncompressed", "lz4", "zstd"]
 
 
-def test_from_to_buffer(df: pl.DataFrame, compressions: List[str]) -> None:
+def test_from_to_buffer(df: pl.DataFrame, compressions: list[str]) -> None:
     for compression in compressions:
         buf = io.BytesIO()
         df.write_ipc(buf, compression=compression)  # type: ignore
@@ -25,7 +27,7 @@ def test_from_to_buffer(df: pl.DataFrame, compressions: List[str]) -> None:
 
 
 def test_from_to_file(
-    io_test_dir: str, df: pl.DataFrame, compressions: List[str]
+    io_test_dir: str, df: pl.DataFrame, compressions: list[str]
 ) -> None:
     f_ipc = os.path.join(io_test_dir, "small.ipc")
 
@@ -74,7 +76,7 @@ def test_compressed_simple() -> None:
         assert df_read.frame_equal(df)
 
 
-def test_ipc_schema(compressions: List[str]) -> None:
+def test_ipc_schema(compressions: list[str]) -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["a", None], "c": [True, False]})
 
     for compression in compressions:
@@ -86,7 +88,7 @@ def test_ipc_schema(compressions: List[str]) -> None:
 
 
 def test_ipc_schema_from_file(
-    io_test_dir: str, df_no_lists: pl.DataFrame, compressions: List[str]
+    io_test_dir: str, df_no_lists: pl.DataFrame, compressions: list[str]
 ) -> None:
     df = df_no_lists
     f_ipc = os.path.join(io_test_dir, "small.ipc")

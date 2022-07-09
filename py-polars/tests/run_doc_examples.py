@@ -18,6 +18,8 @@ instance, in the past, the printout of dataframes has changed from rounded corne
 facilitate such a change, whilst not immediately having to add IGNORE_RESULT directives everywhere or changing all
 outputs, set `IGNORE_RESULT_ALL=True` below. Do note that this does mean no output is being checked anymore.
 """
+from __future__ import annotations
+
 import doctest
 import importlib
 import sys

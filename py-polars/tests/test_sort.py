@@ -1,4 +1,4 @@
-from typing import List, Union
+from __future__ import annotations
 
 import pytest
 
@@ -38,7 +38,7 @@ def test_sort_by() -> None:
         {"a": [1, 2, 3, 4, 5], "b": [1, 1, 1, 2, 2], "c": [2, 3, 1, 2, 1]}
     )
 
-    by: List[Union[pl.Expr, str]]
+    by: list[pl.Expr | str]
     for by in [["b", "c"], [pl.col("b"), "c"]]:  # type: ignore
         out = df.select([pl.col("a").sort_by(by)])
         assert out["a"].to_list() == [3, 1, 2, 5, 4]

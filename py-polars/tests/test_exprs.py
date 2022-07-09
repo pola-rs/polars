@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import polars as pl
 from polars.testing import assert_series_equal, verify_series_and_expr_api
 

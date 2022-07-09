@@ -1,4 +1,6 @@
 # flake8: noqa: W191,E101
+from __future__ import annotations
+
 import io
 import os
 from typing import List
@@ -11,11 +13,11 @@ import polars as pl
 
 
 @pytest.fixture
-def compressions() -> List[str]:
+def compressions() -> list[str]:
     return ["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"]
 
 
-def test_to_from_buffer(df: pl.DataFrame, compressions: List[str]) -> None:
+def test_to_from_buffer(df: pl.DataFrame, compressions: list[str]) -> None:
     for compression in compressions:
         if compression == "lzo":
             # lzo compression is not supported now
@@ -39,7 +41,7 @@ def test_to_from_buffer(df: pl.DataFrame, compressions: List[str]) -> None:
 
 
 def test_to_from_file(
-    io_test_dir: str, df: pl.DataFrame, compressions: List[str]
+    io_test_dir: str, df: pl.DataFrame, compressions: list[str]
 ) -> None:
     f = os.path.join(io_test_dir, "small.parquet")
     for compression in compressions:

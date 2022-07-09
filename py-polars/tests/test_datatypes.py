@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import inspect
 
 import polars as pl
@@ -6,11 +8,11 @@ import polars.datatypes as datatypes
 
 def test_dtype_init_equivalence() -> None:
     # check "DataType.__new__" behaviour for all datatypes
-    all_datatypes = set(
+    all_datatypes = {
         dtype
         for dtype in (getattr(datatypes, attr) for attr in dir(datatypes))
         if inspect.isclass(dtype) and issubclass(dtype, datatypes.DataType)
-    )
+    }
     for dtype in all_datatypes:
         assert dtype == dtype()
 

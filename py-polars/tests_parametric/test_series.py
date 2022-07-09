@@ -1,7 +1,7 @@
 # -------------------------------------------------
 # Validate Series behaviour with parameteric tests
 # -------------------------------------------------
-from typing import Optional
+from __future__ import annotations
 
 from hypothesis import given, settings
 from hypothesis.strategies import sampled_from
@@ -27,9 +27,9 @@ from polars.testing import assert_series_equal, series  # , verify_series_and_ex
 @settings(max_examples=500)
 def test_series_slice(
     srs: pl.Series,
-    start: Optional[int],
-    stop: Optional[int],
-    step: Optional[int],
+    start: int | None,
+    stop: int | None,
+    step: int | None,
 ) -> None:
     py_data = srs.to_list()
 

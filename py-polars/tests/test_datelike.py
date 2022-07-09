@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import io
 import typing
 from datetime import date, datetime, time, timedelta
@@ -985,7 +987,7 @@ def test_datetime_units() -> None:
     names = set(df.columns)
 
     for unit in DTYPE_TEMPORAL_UNITS:
-        subset = names - set([unit])
+        subset = names - {unit}
 
         assert (
             len(set(df.select([pl.all().exclude(pl.Datetime(unit))]).columns) - subset)

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime
 
 import numpy as np
@@ -25,8 +27,8 @@ def test_type_coercion_when_then_otherwise_2806() -> None:
         pl.DataFrame({"names": ["foo", "spam", "spam"], "nrs": [1, 2, 3]})
         .select(
             [
-                pl.when((pl.col("names") == "spam"))
-                .then((pl.col("nrs") * 2))
+                pl.when(pl.col("names") == "spam")
+                .then(pl.col("nrs") * 2)
                 .otherwise(pl.lit("other"))
                 .alias("new_col"),
             ]

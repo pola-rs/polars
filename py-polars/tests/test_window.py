@@ -1,4 +1,4 @@
-from typing import Type
+from __future__ import annotations
 
 import numpy as np
 import pytest
@@ -7,7 +7,7 @@ import polars as pl
 
 
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64, pl.Int32])
-def test_std(dtype: Type[pl.DataType]) -> None:
+def test_std(dtype: type[pl.DataType]) -> None:
     if dtype == pl.Int32:
         df = pl.DataFrame(
             [

@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from datetime import date, datetime
-from typing import Any, Union
+from typing import Any
 from unittest.mock import patch
 
 import numpy as np
@@ -458,7 +460,7 @@ def test_set_np_array(dtype: Any) -> None:
 
 
 @pytest.mark.parametrize("idx", [[0, 2], (0, 2)])
-def test_set_list_and_tuple(idx: Union[list, tuple]) -> None:
+def test_set_list_and_tuple(idx: list | tuple) -> None:
     a = pl.Series("a", [1, 2, 3])
     a[idx] = 4
     assert_series_equal(a, pl.Series("a", [4, 2, 4]))

@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import typing
 from datetime import datetime
-from typing import Dict, Sequence, Type, Union
+from typing import Sequence
 from unittest.mock import patch
 
 import numpy as np
@@ -53,13 +55,13 @@ def test_to_numpy() -> None:
     def test_series_to_numpy(
         name: str,
         values: list,
-        pl_dtype: Type[pl.DataType],
-        np_dtype: Union[
-            Type[np.signedinteger],
-            Type[np.unsignedinteger],
-            Type[np.floating],
-            Type[np.object_],
-        ],
+        pl_dtype: type[pl.DataType],
+        np_dtype: (
+            type[np.signedinteger]
+            | type[np.unsignedinteger]
+            | type[np.floating]
+            | type[np.object_]
+        ),
     ) -> None:
         pl_series_to_numpy_array = np.array(pl.Series(name, values, pl_dtype))
         numpy_array = np.array(values, dtype=np_dtype)
@@ -216,7 +218,7 @@ def test_from_dict() -> None:
 
 
 def test_from_dict_struct() -> None:
-    data: Dict[str, Union[Dict, Sequence]] = {
+    data: dict[str, dict | Sequence] = {
         "a": {"b": [1, 3], "c": [2, 4]},
         "d": [5, 6],
     }
