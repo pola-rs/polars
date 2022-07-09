@@ -24,7 +24,7 @@ from typing import (
 
 from polars import internals as pli
 from polars._html import NotebookFormatter
-from polars.datatypes import Boolean, DataType, UInt32, Utf8, py_type_to_dtype
+from polars.datatypes import Boolean, DataType, Struct, UInt32, Utf8, py_type_to_dtype
 from polars.internals.construction import (
     ColumnsType,
     arrow_to_pydf,
@@ -2206,7 +2206,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         return self._df.dtypes()
 
     @property
-    def schema(self) -> dict[str, type[DataType]]:
+    def schema(self) -> dict[str, type[DataType] | dict]:
         """
         Get a dict[column name, DataType]
 
@@ -2223,7 +2223,21 @@ class DataFrame(metaclass=DataFrameMetaClass):
         {'foo': <class 'polars.datatypes.Int64'>, 'bar': <class 'polars.datatypes.Float64'>, 'ham': <class 'polars.datatypes.Utf8'>}
 
         """
-        return dict(zip(self.columns, self.dtypes))
+        # to recursively pull nested dtypes
+        def _parse_dtype(field_data: pli.Series) -> type[DataType] | dict:
+            if not isinstance(field_data.dtype, Struct):
+                return field_data.dtype
+
+            fields = field_data.struct.fields
+            nested_dtypes = {}
+
+            for field in fields:
+                _field_data = field_data.struct.field(field)
+                nested_dtypes[field] = _parse_dtype(_field_data)
+
+            return nested_dtypes
+
+        return {col: _parse_dtype(self.get_column(col)) for col in self.columns}
 
     def describe(self: DF) -> DF:
         """

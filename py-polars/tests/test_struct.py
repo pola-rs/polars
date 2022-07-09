@@ -186,8 +186,12 @@ def test_struct_cols() -> None:
     # struct column
     df = build_struct_df([{"struct_col": {"inner": 1}}])
     assert df.columns == ["struct_col"]
-    assert df.schema == {"struct_col": pl.Struct}
+    assert df.schema == {"struct_col": {"inner": pl.Int64}}
     assert df["struct_col"].struct.field("inner").to_list() == [1]
+
+    # double nested struct
+    df = build_struct_df([{"struct_col": {"inner1": {"inner2": 1}}}])
+    assert df.schema == {"struct_col": {"inner1": {"inner2": pl.Int64}}}
 
     # struct in struct
     df = build_struct_df([{"nested_struct_col": {"struct_col": {"inner": 1}}}])
