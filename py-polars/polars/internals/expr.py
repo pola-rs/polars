@@ -241,7 +241,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"TF": [True, False], "FF": [False, False]})
-        >>> df.select(pl.col("*").any())
+        >>> df.select(pl.all().any())
         shape: (1, 2)
         ┌──────┬───────┐
         │ TF   ┆ FF    │
@@ -399,7 +399,7 @@ class Expr:
         │ 3   ┆ null ┆ 1    │
         └─────┴──────┴──────┘
         >>> df.select(
-        ...     pl.col("*").exclude("b"),
+        ...     pl.all().exclude("b"),
         ... )
         shape: (3, 2)
         ┌─────┬──────┐
@@ -616,7 +616,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(
-        ...     pl.col("*").reverse().map_alias(lambda colName: colName + "_reverse")
+        ...     pl.all().reverse().map_alias(lambda colName: colName + "_reverse")
         ... )
         shape: (2, 2)
         ┌───────────┬───────────┐
@@ -757,7 +757,7 @@ class Expr:
         ...         "B": [3.0, np.inf],
         ...     }
         ... )
-        >>> df.select(pl.col("*").is_finite())
+        >>> df.select(pl.all().is_finite())
         shape: (2, 2)
         ┌──────┬───────┐
         │ A    ┆ B     │
@@ -788,7 +788,7 @@ class Expr:
         ...         "B": [3.0, np.inf],
         ...     }
         ... )
-        >>> df.select(pl.col("*").is_infinite())
+        >>> df.select(pl.all().is_infinite())
         shape: (2, 2)
         ┌───────┬───────┐
         │ A     ┆ B     │
@@ -910,7 +910,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
-        >>> df.select(pl.col("*").count())  # counts nulls
+        >>> df.select(pl.all().count())  # counts nulls
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -963,7 +963,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
-        >>> df.select(pl.col("*").slice(1, 2))
+        >>> df.select(pl.all().slice(1, 2))
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -996,7 +996,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
-        >>> df.select(pl.col("*").head(1).append(pl.col("*").tail(1)))
+        >>> df.select(pl.all().head(1).append(pl.all().tail(1)))
         shape: (2, 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
@@ -1893,7 +1893,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
-        >>> df.select(pl.col("*").forward_fill())
+        >>> df.select(pl.all().forward_fill())
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -1922,7 +1922,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
-        >>> df.select(pl.col("*").backward_fill())
+        >>> df.select(pl.all().backward_fill())
         shape: (3, 2)
         ┌──────┬─────┐
         │ a    ┆ b   │
@@ -2166,7 +2166,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [None, 1, None], "b": [1, 2, 3]})
-        >>> df.select(pl.col("*").null_count())
+        >>> df.select(pl.all().null_count())
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │

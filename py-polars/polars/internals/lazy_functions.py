@@ -886,7 +886,7 @@ def exclude(columns: str | list[str]) -> pli.Expr:
 
     Syntactic sugar for:
 
-    >>> pl.col("*").exclude(columns)  # doctest: +SKIP
+    >>> pl.all().exclude(columns)  # doctest: +SKIP
 
     Parameters
     ----------
