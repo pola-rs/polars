@@ -925,7 +925,7 @@ class Expr:
 
     def len(self) -> Expr:
         """
-        Alias for count
+        Alias for :func:`count`.
         Count the number of values in this expression
 
         Examples
@@ -1022,10 +1022,9 @@ class Expr:
         """
         Drop null values.
 
-        Warnings
-        --------
-        NOTE that null values are not floating point NaN values!
-        To drop NaN values, use `drop_nans()`.
+        .. warning::
+            Note that null values are not floating point NaN values!
+            To drop NaN values, use :func:`drop_nans`.
 
         Examples
         --------
@@ -1052,10 +1051,10 @@ class Expr:
     def drop_nans(self) -> Expr:
         """
         Drop floating point NaN values
-        Warnings
-        --------
-        NOTE that NaN values are not null values!
-        To drop null values, use `drop_nulls()`.
+
+        .. warning::
+            Note that NaN values are not null values!
+            To drop null values, use :func:`drop_nulls`.
 
         Examples
         --------
@@ -3077,6 +3076,8 @@ class Expr:
         """
         Prints the value that this expression evaluates to and passes on the value.
 
+        Examples
+        --------
         >>> df = pl.DataFrame({"foo": [1, 1, 2]})
         >>> df.select(pl.col("foo").cumsum().inspect("value is: {}").alias("bar"))
         value is: shape: (3,)

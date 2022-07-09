@@ -219,7 +219,7 @@ Column names
 ------------
    Expressions that help renaming/ selecting columns by name.
 
-   A wildcard `col("*")`/`pl.all()` selects all columns in a DataFrame.
+   A wildcard ``col("*")``/:func:`polars.all()` selects all columns in a DataFrame.
 
    >>> df.select(pl.all())
 
