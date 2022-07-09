@@ -98,8 +98,16 @@ impl PhysicalExpr for ApplyExpr {
                     // collection of empty list leads to a null dtype
                     // see: #3687
                     if s.len() == 0 {
-                        let s = self.function.call_udf(&mut [s.clone()])?;
-                        let ca = ListChunked::full(s.name(), &s, 0);
+                        // create input for the function to determine the output dtype
+                        // see #3946
+                        let agg = ac.aggregated();
+                        let agg = agg.list().unwrap();
+                        let input_dtype = agg.inner_dtype();
+
+                        let input = Series::full_null("", 0, &input_dtype);
+
+                        let output = self.function.call_udf(&mut [input])?;
+                        let ca = ListChunked::full(ac.series().name(), &output, 0);
                         return Ok(self.finish_apply_groups(ac, ca));
                     }
 

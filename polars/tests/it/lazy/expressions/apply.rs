@@ -82,3 +82,26 @@ fn test_expand_list() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_apply_groups_empty() -> Result<()> {
+    let df = df![
+        "id" => [1, 1],
+        "hi" => ["here", "here"]
+    ]?;
+
+    let out = df
+        .lazy()
+        .filter(col("id").eq(lit(2)))
+        .groupby([col("id")])
+        .agg([col("hi").drop_nulls().unique()])
+        .collect()?;
+
+    assert_eq!(
+        out.dtypes(),
+        &[DataType::Int32, DataType::List(Box::new(DataType::Utf8))]
+    );
+    assert_eq!(out.shape(), (0, 2));
+
+    Ok(())
+}
