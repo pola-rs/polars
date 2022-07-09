@@ -71,7 +71,6 @@ class Config:
 
         Examples
         --------
-
         >>> pl.cfg.Config.set_tbl_cols(5)
         >>> df = pl.DataFrame({str(i): [i] for i in range(100)})
         >>> df

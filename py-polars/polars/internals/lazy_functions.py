@@ -188,7 +188,6 @@ def element() -> pli.Expr:
 
     Examples
     --------
-
     A horizontal rank computation by taking the elements of a list
 
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
@@ -624,7 +623,6 @@ def lit(
 
     Examples
     --------
-
     Literal integer:
 
     >>> pl.lit(1)  # doctest: +IGNORE_RESULT
@@ -951,7 +949,6 @@ def all(name: str | list[pli.Expr] | None = None) -> pli.Expr:
 
     Examples
     --------
-
     Sum all columns
 
     >>> df = pl.DataFrame(
@@ -1322,7 +1319,6 @@ def concat_list(exprs: Sequence[str | pli.Expr | pli.Series] | pli.Expr) -> pli.
 
     Examples
     --------
-
     Create lagged columns and collect them into a list. This mimics a rolling window.
 
     >>> df = pl.DataFrame(

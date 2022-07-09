@@ -852,7 +852,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "A": [1, 2, 3, 4, 5],
@@ -1087,7 +1086,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> import pandas
         >>> df = pl.DataFrame(
         ...     {
@@ -1135,7 +1133,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3, 4, 5],
@@ -1260,7 +1257,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
         >>> df.to_dicts()
         [{'foo': 1, 'bar': 4}, {'foo': 2, 'bar': 5}, {'foo': 3, 'bar': 6}]
@@ -1303,7 +1299,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
         >>> df.transpose(include_header=True)
         shape: (2, 4)
@@ -1515,7 +1510,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
         ... )
@@ -1944,7 +1938,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
         ... )
@@ -1978,7 +1971,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
         >>> s = pl.Series("baz", [97, 98, 99])
         >>> df.insert_at_idx(1, s)  # returns None
@@ -2037,7 +2029,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
@@ -2100,7 +2091,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
         >>> df.height
         5
@@ -2115,7 +2105,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
         >>> df.width
         1
@@ -2130,7 +2119,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
@@ -2386,7 +2374,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
@@ -2501,7 +2488,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
         >>> s = pl.Series([10, 20, 30])
         >>> df.replace("foo", s)  # works in-place!
@@ -2779,7 +2765,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> def cast_str_to_int(data, col_name):
         ...     return data.with_column(pl.col(col_name).cast(pl.Int64))
         ...
@@ -2816,7 +2801,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 3, 5],
@@ -2980,7 +2964,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> dates = [
         ...     "2020-01-01 13:45:48",
         ...     "2020-01-01 16:42:13",
@@ -3099,7 +3082,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> from datetime import datetime
         >>> # create an example dataframe
         >>> df = pl.DataFrame(
@@ -3373,7 +3355,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         Upsample a DataFrame by a certain interval.
 
         >>> from datetime import datetime
@@ -3506,7 +3487,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> from datetime import datetime
         >>> gdp = pl.DataFrame(
         ...     {
@@ -3754,7 +3734,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [-1, 5, 8]})
 
         Return a DataFrame by mapping each row to a tuple:
@@ -3816,7 +3795,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 3, 5],
@@ -3949,7 +3927,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df1 = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2],
@@ -4011,7 +3988,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df1 = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
         >>> df2 = pl.DataFrame({"foo": [10, 20, 30], "bar": [40, 50, 60]})
         >>> df1.extend(df2)  # returns None
@@ -4049,7 +4025,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
@@ -4195,7 +4170,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
         >>> df.get_columns()
         [shape: (3,)
@@ -4257,7 +4231,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
         >>> df.get_column("foo")
         shape: (3,)
@@ -4349,7 +4322,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1.5, 2, float("NaN"), 4],
@@ -4489,7 +4461,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": ["one", "one", "one", "two", "two", "two"],
@@ -4550,7 +4521,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": ["x", "y", "z"],
@@ -4643,7 +4613,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": ["A", "A", "B", "B", "C"],
@@ -4801,7 +4770,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 3, 1],
@@ -4827,7 +4795,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 3, 1],
@@ -5310,7 +5277,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 3],
@@ -5436,7 +5402,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 1, 2, 3, 4, 5],
@@ -5683,7 +5648,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 3, 5],
@@ -5785,7 +5749,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, None, 9, 10],
@@ -5818,7 +5781,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
         >>> df.is_empty()
         False
@@ -5839,7 +5801,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 3, 4, 5],
@@ -5872,7 +5833,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-
         >>> df = (
         ...     pl.DataFrame(
         ...         {
@@ -6121,7 +6081,6 @@ class GroupBy(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": ["one", "one", "one", "two", "two", "two"],
@@ -6214,7 +6173,7 @@ class GroupBy(Generic[DF]):
 
     def apply(self, f: Callable[[DataFrame], DataFrame]) -> DF:
         """
-         Apply a function over the groups as a sub-DataFrame.
+        Apply a function over the groups as a sub-DataFrame.
 
         Implementing logic using this .apply method is generally slower and more memory intensive
         than implementing the same logic using the expression API because:
@@ -6225,18 +6184,17 @@ class GroupBy(Generic[DF]):
 
         If possible use the expression API for best performance.
 
-         Parameters
-         ----------
-         f
-             Custom function.
+        Parameters
+        ----------
+        f
+            Custom function.
 
-         Returns
-         -------
-         DataFrame
+        Returns
+        -------
+        DataFrame
 
-         Examples
-         --------
-
+        Examples
+        --------
         >>> df = pl.DataFrame(
         ...     {
         ...         "id": [0, 1, 2, 3, 4],
@@ -6315,7 +6273,6 @@ class GroupBy(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {"foo": ["one", "two", "two", "one", "two"], "bar": [5, 3, 2, 4, 1]}
         ... )
@@ -6390,7 +6347,6 @@ class GroupBy(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "letters": ["c", "c", "a", "c", "a", "b"],
@@ -6454,7 +6410,6 @@ class GroupBy(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "letters": ["c", "c", "a", "c", "a", "b"],
@@ -7054,7 +7009,6 @@ class GBSelection(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, None, 3, 4],

@@ -939,7 +939,6 @@ class Series:
 
         Examples
         --------
-
         >>> s = pl.Series("id", ["a", "b", "b", "c", "c", "c"])
         >>> s.unique_counts()
         shape: (3,)
@@ -968,7 +967,6 @@ class Series:
 
         Examples
         --------
-
         >>> a = pl.Series([0.99, 0.005, 0.005])
         >>> a.entropy(normalize=True)
         0.06293300616044681
@@ -1004,7 +1002,6 @@ class Series:
 
         Examples
         --------
-
         >>> s = pl.Series("values", [1, 2, 3, 4, 5])
         >>> s.cumulative_eval(pl.element().first() - pl.element().last() ** 2)
         shape: (5,)
@@ -2540,7 +2537,6 @@ class Series:
 
         Examples
         --------
-
         >>> s = pl.Series("foo", [-9, -8, 0, 4])
         >>> s.sign()  #
         shape: (4,)
@@ -2793,7 +2789,6 @@ class Series:
 
         Examples
         --------
-
         >>> s1 = pl.Series([1, 2, 3, 4, 5])
         >>> s2 = pl.Series([5, 4, 3, 2, 1])
         >>> s1.zip_with(s1 < s2, s2)
@@ -3778,7 +3773,6 @@ class Series:
 
         Examples
         --------
-
         >>> s = pl.Series([1, 2, 3])
         >>> s.extend_constant(99, n=2)
         shape: (5,)
@@ -3934,7 +3928,6 @@ class StringNameSpace:
 
         Examples
         --------
-
         Dealing with different formats.
 
         >>> s = pl.Series(
@@ -3991,7 +3984,6 @@ class StringNameSpace:
 
         Examples
         --------
-
         >>> s = pl.Series(["foo", None, "hello", "world"])
         >>> s.str.lengths()
         shape: (4,)
@@ -4079,7 +4071,6 @@ class StringNameSpace:
 
         Examples
         --------
-
         >>> s = pl.Series("fruits", ["apple", "mango", None])
         >>> s.str.ends_with("go")
         shape: (3,)
