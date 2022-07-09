@@ -3056,35 +3056,36 @@ class Expr:
 
     def hash(self, seed: int = 0, **kwargs: Any) -> Expr:
         """
-        Hash the Series.
+        Hash the elements in the selection.
 
-        The hash value is of type `UInt64`
+        The hash value is of type `UInt64`.
 
         Parameters
         ----------
         seed
-            seed parameter
+            The random seed to set.
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [1, 2, 3],
+        ...         "a": [1, 2, None],
+        ...         "b": ["x", None, "z"],
         ...     }
         ... )
-        >>> df.with_column(pl.col("a").hash(0))  # doctest: +IGNORE_RESULT
-        shape: (3, 1)
-        ┌─────────────────────┐
-        │ a                   │
-        │ ---                 │
-        │ u64                 │
-        ╞═════════════════════╡
-        │ 2818902862237899908 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 1584708464793912000 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 8337078092773689561 │
-        └─────────────────────┘
+        >>> df.with_column(pl.all().hash(0))  # doctest: +IGNORE_RESULT
+        shape: (3, 2)
+        ┌──────────────────────┬──────────────────────┐
+        │ a                    ┆ b                    │
+        │ ---                  ┆ ---                  │
+        │ u64                  ┆ u64                  │
+        ╞══════════════════════╪══════════════════════╡
+        │ 1156793252771347292  ┆ 16009526192193213963 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5223293301138196316  ┆ 12128596533331663936 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 12128596533331663936 ┆ 97974125653717906    │
+        └──────────────────────┴──────────────────────┘
 
         """
         # kwargs is for backward compatibility
