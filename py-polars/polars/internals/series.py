@@ -3617,12 +3617,29 @@ class Series:
 
         Only works for the following dtypes: {Int32, Int64, Float32, Float64, UInt32}.
 
-        If you want to clip other dtypes, consider writing a when -> then -> otherwise expression
+        If you want to clip other dtypes, consider writing a "when, then, otherwise" expression.
+        See :func:`when` for more information.
 
         Parameters
         ----------
-        min_val, max_val
-            Minimum and maximum value.
+        min_val
+            Minimum value.
+        max_val
+            Maximum value.
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", [-50, 5, None, 50])
+        >>> s.clip(1, 10)
+        shape: (4,)
+        Series: 'foo' [i64]
+        [
+            1
+            5
+            null
+            10
+        ]
+
         """
         return self.to_frame().select(pli.col(self.name).clip(min_val, max_val))[
             self.name

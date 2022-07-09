@@ -4101,7 +4101,8 @@ class Expr:
 
         Only works for the following dtypes: {Int32, Int64, Float32, Float64, UInt32}.
 
-        If you want to clip other dtypes, consider writing a when -> then -> otherwise expression
+        If you want to clip other dtypes, consider writing a "when, then, otherwise" expression.
+        See :func:`when` for more information.
 
         Parameters
         ----------
@@ -4109,6 +4110,26 @@ class Expr:
             Minimum value.
         max_val
             Maximum value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
+        >>> df.with_column(pl.col("foo").clip(1, 10).alias("foo_clipped"))
+        shape: (4, 2)
+        ┌──────┬─────────────┐
+        │ foo  ┆ foo_clipped │
+        │ ---  ┆ ---         │
+        │ i64  ┆ i64         │
+        ╞══════╪═════════════╡
+        │ -50  ┆ 1           │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5    ┆ 5           │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null ┆ null        │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 50   ┆ 10          │
+        └──────┴─────────────┘
+
         """
         return wrap_expr(self._pyexpr.clip(min_val, max_val))
 
