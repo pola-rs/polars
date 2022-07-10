@@ -297,7 +297,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             | pli.Series
         ) = None,
         columns: ColumnsType | None = None,
-        orient: str | None = None,
+        orient: Literal["col", "row"] | None = None,
     ):
         if data is None:
             self._df = dict_to_pydf({}, columns=columns)
@@ -390,7 +390,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         cls: type[DF],
         data: Sequence[Sequence[Any]],
         columns: Sequence[str] | None = None,
-        orient: str | None = None,
+        orient: Literal["col", "row"] | None = None,
     ) -> DF:
         """
         Construct a DataFrame from a sequence of sequences.
@@ -418,7 +418,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         cls: type[DF],
         data: np.ndarray,
         columns: Sequence[str] | None = None,
-        orient: str | None = None,
+        orient: Literal["col", "row"] | None = None,
     ) -> DF:
         """
         Construct a DataFrame from a numpy ndarray.
