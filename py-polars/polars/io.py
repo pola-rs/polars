@@ -869,19 +869,21 @@ def read_sql(
 ) -> DataFrame:
     """
     Read a SQL query into a DataFrame.
-    Make sure to install connectorx>=0.2
 
-    # Sources
-    Supports reading a sql query from the following data sources:
+    .. note::
+        Make sure to install connectorx>=0.2.2. Read the documentation
+        `here <https://sfu-db.github.io/connector-x/intro.html>`_.
 
-    * Postgres
-    * Mysql
-    * Sqlite
-    * Redshift (through postgres protocol)
-    * Clickhouse (through mysql protocol)
+    Reading a SQL query from the following data sources are supported:
 
-    ## Source not supported?
-    If a database source is not supported, pandas can be used to load the query:
+        * Postgres
+        * Mysql
+        * Sqlite
+        * Redshift (through postgres protocol)
+        * Clickhouse (through mysql protocol)
+
+    If a database source is not supported, an alternative solution is to first use pandas
+    to load the SQL query, then converting the result into a polars DataFrame:
 
     >>> import pandas as pd
     >>> df = pl.from_pandas(pd.read_sql(sql, engine))  # doctest: +SKIP
@@ -889,29 +891,28 @@ def read_sql(
     Parameters
     ----------
     sql
-        raw sql query.
+        Raw SQL query / queries.
     connection_uri
-        connectorx connection uri:
-            - "postgresql://username:password@server:port/database"
+        Connectorx connection uri, for example
+
+        * "postgresql://username:password@server:port/database"
     partition_on
-      the column on which to partition the result.
+        The column on which to partition the result.
     partition_range
-      the value range of the partition column.
+        The value range of the partition column.
     partition_num
-      how many partitions to generate.
+        How many partitions to generate.
     protocol
-      backend-specific transfer protocol directive; see connectorx documentation for details.
+        Backend-specific transfer protocol directive; see connectorx documentation for details.
 
     Examples
     --------
-    ## Single threaded
     Read a DataFrame from a SQL query using a single thread:
 
     >>> uri = "postgresql://username:password@server:port/database"
     >>> query = "SELECT * FROM lineitem"
     >>> pl.read_sql(query, uri)  # doctest: +SKIP
 
-    ## Using 10 threads
     Read a DataFrame in parallel using 10 threads by automatically partitioning the provided SQL on the partition column:
 
     >>> uri = "postgresql://username:password@server:port/database"
@@ -920,7 +921,6 @@ def read_sql(
     ...     query, uri, partition_on="partition_col", partition_num=10
     ... )  # doctest: +SKIP
 
-    ## Using
     Read a DataFrame in parallel using 2 threads by explicitly providing two SQL queries:
 
     >>> uri = "postgresql://username:password@server:port/database"
@@ -928,7 +928,7 @@ def read_sql(
     ...     "SELECT * FROM lineitem WHERE partition_col <= 10",
     ...     "SELECT * FROM lineitem WHERE partition_col > 10",
     ... ]
-    >>> pl.read_sql(uri, queries)  # doctest: +SKIP
+    >>> pl.read_sql(queries, uri)  # doctest: +SKIP
 
     """
     if _WITH_CX:
