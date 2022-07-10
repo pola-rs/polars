@@ -95,6 +95,11 @@ fn get_input(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> [Option<Node>; 2]
     inputs
 }
 
+fn print_date_str_comparison_warning() {
+    eprintln!("Warning: Comparing date/datetime/time column to string value, this will lead to string comparison and is unlikely what you want.\n\
+    If this is intended, consider using an explicit cast to silence this warning.")
+}
+
 impl OptimizationRule for TypeCoercionRule {
     fn optimize_expr(
         &self,
@@ -193,6 +198,18 @@ impl OptimizationRule for TypeCoercionRule {
                             if op.is_comparison() && dt.is_numeric() =>
                         {
                             return None
+                        }
+                        #[cfg(feature = "dtype-date")]
+                        (DataType::Date, DataType::Utf8, op) if op.is_comparison() => {
+                            print_date_str_comparison_warning()
+                        }
+                        #[cfg(feature = "dtype-datetime")]
+                        (DataType::Datetime(_, _), DataType::Utf8, op) if op.is_comparison() => {
+                            print_date_str_comparison_warning()
+                        }
+                        #[cfg(feature = "dtype-time")]
+                        (DataType::Time, DataType::Utf8, op) if op.is_comparison() => {
+                            print_date_str_comparison_warning()
                         }
                         _ => {}
                     }
