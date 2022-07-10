@@ -29,6 +29,7 @@ except ImportError:  # pragma: no cover
 from polars import internals as pli
 from polars.cfg import Config
 from polars.datatypes import DataType, py_type_to_dtype
+from polars.internals.functions import LazyPolarsSlice
 from polars.utils import (
     _in_notebook,
     _prepare_row_count_args,
@@ -352,10 +353,12 @@ class LazyFrame(Generic[DF]):
             )
         return self
 
-    def __getitem__(self, item: int | range | slice) -> None:
-        raise TypeError(
-            "'LazyFrame' object is not subscriptable. Use 'select()' or 'filter()' instead."
-        )
+    def __getitem__(self: LDF, item: int | range | slice) -> LazyFrame:
+        if not isinstance(item, slice):
+            raise TypeError(
+                "'LazyFrame' object is not subscriptable (aside from slicing). Use 'select()' or 'filter()' instead."
+            )
+        return LazyPolarsSlice(self).apply(item)
 
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
@@ -1773,6 +1776,10 @@ class LazyFrame(Generic[DF]):
         └─────┴─────┴─────┘
 
         """
+        if length and length < 0:
+            raise ValueError(
+                f"Negative slice lengths ({length}) are invalid for LazyFrame"
+            )
         return self._from_pyldf(self._ldf.slice(offset, length))
 
     def limit(self: LDF, n: int = 5) -> LDF:

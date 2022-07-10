@@ -273,9 +273,6 @@ def date_range(
 
 FrameOrSeries = Union["pli.DataFrame", "pli.Series"]
 
-# TODO:
-# class LazyPolarsSlice:
-
 
 class PolarsSlice:
     """
@@ -287,6 +284,7 @@ class PolarsSlice:
     start: int
     stride: int
     slice_length: int
+    is_unbounded: bool
     obj: FrameOrSeries
 
     def __init__(self, obj: FrameOrSeries):
@@ -318,17 +316,9 @@ class PolarsSlice:
         """
         Logic for slices with negative stride.
         """
-        # apply slice before reversing (more efficient)
         stride = abs(self.stride)
-        lazyslice = obj.slice(self.stop + 1, self.slice_length)
-
-        # potential early-exit if single row
-        if self.slice_length == 1:
-            return lazyslice
-        else:
-            # reverse frame, applying 'take_every' if stride > 1
-            lazyslice = lazyslice.reverse()
-            return lazyslice.take_every(stride) if (stride > 1) else lazyslice
+        lazyslice = obj.slice(self.stop + 1, self.slice_length).reverse()
+        return lazyslice.take_every(stride) if (stride > 1) else lazyslice
 
     def _slice_setup(self, s: slice) -> None:
         """
@@ -343,8 +333,6 @@ class PolarsSlice:
             self.is_unbounded = (start <= 0) and (stop >= obj_len)
         else:
             self.is_unbounded = (stop == -1) and (start >= obj_len - 1)
-
-        self._positive_indices = start >= 0 and stop >= 0
 
         # determine slice length
         if self.obj.is_empty():
@@ -377,10 +365,13 @@ class PolarsSlice:
         elif self.is_unbounded and self.stride in (-1, 1):
             return self.obj.reverse() if (self.stride < 0) else self.obj.clone()
 
-        elif self._positive_indices and self.stride == 1:
+        elif self.start >= 0 and self.stop >= 0 and self.stride == 1:
             return self.obj.slice(self.start, self.slice_length)
+
+        elif self.stride < 0 and self.slice_length == 1:
+            return self.obj.slice(self.stop + 1, 1)
         else:
-            # multi-operation call; make lazy
+            # multi-operation calls; make lazy
             lazyobj = self._lazify(self.obj)
             sliced = (
                 self._slice_positive(lazyobj)
@@ -388,3 +379,100 @@ class PolarsSlice:
                 else self._slice_negative(lazyobj)
             )
             return self._as_original(sliced, self.obj)
+
+
+class LazyPolarsSlice:
+    """
+    Apply python slice object to Polars LazyFrame. Only slices with efficient
+    computation paths mapping directly to existing lazy methods are supported.
+    """
+
+    obj: "pli.LazyFrame"
+
+    def __init__(self, obj: "pli.LazyFrame"):
+        self.obj = obj
+
+    def apply(self, s: slice) -> "pli.LazyFrame":
+        """
+        Apply a slice operation. Note that LazyFrame is designed primarily for efficient
+        computation and does not know its own length so, unlike DataFrame, certain slice
+        patterns (such as those requiring negative stop/step) may not be supported.
+        """
+        start = s.start or 0
+        step = s.step or 1
+
+        # fail on operations that require length to do efficiently
+        if s.stop and s.stop < 0:
+            raise ValueError("Negative stop is not supported for lazy slices")
+        if step < 0 and (start > 0 or s.stop is not None) and (start != s.stop):
+            if not (start > 0 > step and s.stop is None):
+                raise ValueError(
+                    "Negative stride is not supported in conjunction with start+stop"
+                )
+
+        # ---------------------------------------
+        # empty slice patterns.
+        # ---------------------------------------
+        # [:0]
+        # [i:<=i]
+        # [i:>=i:-k]
+        if step > 0 and (s.stop is not None and start >= s.stop):
+            return self.obj.cleared()
+        elif step < 0 and (s.stop is not None and s.stop >= s.start >= 0):
+            return self.obj.cleared()
+
+        # ---------------------------------------
+        # straight-though mappings for "reverse"
+        # and/or "take_every"
+        # ---------------------------------------
+        # [:]    => clone()
+        # [::k]  => take_every(k),
+        # [::-1] => reverse(),
+        # [::-k] => reverse().take_every(abs(k))
+        elif start == 0 and s.stop is None:
+            if step == 1:
+                return self.obj.clone()
+            elif step > 1:
+                return self.obj.take_every(step)
+            elif step == -1:
+                return self.obj.reverse()
+            elif step < -1:
+                return self.obj.reverse().take_every(abs(step))
+
+        elif start > 0 > step and s.stop is None:
+            obj = self.obj.head(s.start + 1).reverse()
+            return obj if (abs(step) == 1) else obj.take_every(abs(step))
+
+        # ---------------------------------------
+        # straight-though mappings for "head"
+        # ---------------------------------------
+        # [:j]    => head(j)
+        # [:j:k]  => head(j).take_every(k)
+        elif start == 0 and (s.stop or 0) >= 1:
+            obj = self.obj.head(s.stop)
+            return obj if (step == 1) else obj.take_every(step)
+
+        # ---------------------------------------
+        # straight-though mappings for "tail"
+        # ---------------------------------------
+        # [-i:]    => tail(abs(i))
+        # [-i::k]  => tail(abs(i)).take_every(k)
+        elif start < 0 and s.stop is None:
+            obj = self.obj.tail(abs(start))
+            return obj if (step == 1) else obj.take_every(step)
+
+        # ---------------------------------------
+        # straight-though mappings for "slice"
+        # ---------------------------------------
+        # [i:]     => slice(i)
+        # [i:j]    => slice(i,j-i)
+        # [i:j:k]  => slice(i,j-i).take_every(k)
+        elif start > 0 and (s.stop is None or s.stop >= 0):
+            slice_length = None if (s.stop is None) else (s.stop - start)
+            obj = self.obj.slice(start, slice_length)
+            return obj if (step == 1) else obj.take_every(step)
+
+        raise ValueError(
+            f"The given slice {s} is not supported by lazy computation; consider a "
+            f"more efficient approach, or construct explicitly with other methods"
+        )

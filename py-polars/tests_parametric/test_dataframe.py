@@ -78,7 +78,7 @@ def test_frame_slice(df: pl.DataFrame) -> None:
     #
     # given the average number of rows in the frames, and the value of
     # max_examples, this will result in close to 5000 test permutations,
-    # running in around ~3 secs (depending on hardware/etc).
+    # running in around ~1.5 secs (depending on hardware/etc).
     py_data = df.rows()
 
     for start, stop, step, _ in py_data:
