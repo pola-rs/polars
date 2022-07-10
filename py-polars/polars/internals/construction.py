@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import warnings
 from contextlib import suppress
 from datetime import date, datetime, time, timedelta
 from itertools import zip_longest
@@ -527,55 +526,56 @@ def numpy_to_pydf(
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a numpy ndarray."""
     shape = data.shape
-    n_columns = (
-        0
-        if shape == (0,)
-        else (
-            1
-            if len(shape) == 1
-            else (shape[1] if orient in ("row", None) else shape[0])
+
+    # Unpack columns
+    if shape == (0,):
+        n_columns = 0
+
+    elif len(shape) == 1:
+        n_columns = 1
+
+    elif len(shape) == 2:
+        # Infer orientation
+        if orient is None and columns is not None:
+            orient = "col" if len(columns) == shape[0] else "row"
+
+        if orient == "row":
+            n_columns = shape[1]
+        elif orient == "col" or orient is None:
+            n_columns = shape[0]
+        else:
+            raise ValueError(
+                f"orient must be one of {{'col', 'row', None}}, got {orient} instead."
+            )
+
+    else:
+        raise ValueError(
+            "Cannot create DataFrame from numpy array with more than two dimensions."
         )
-    )
-    columns, dtypes = _unpack_columns(columns, n_expected=n_columns)
-    if columns and len(columns) != n_columns:
+
+    if columns is not None and len(columns) != n_columns:
         raise ValueError("Dimensions of columns arg must match data dimensions.")
 
+    columns, dtypes = _unpack_columns(columns, n_expected=n_columns)
+
+    # Convert data to series
     if shape == (0,):
         data_series = []
 
     elif len(shape) == 1:
         data_series = [pli.Series(columns[0], data, dtypes.get(columns[0])).inner()]
 
-    elif len(shape) == 2:
-        # Infer orientation
-        if orient is None:
-            warnings.warn(
-                "Default orientation for constructing DataFrame from numpy "
-                'array will change from "row" to "column" in a future version. '
-                "Specify orientation explicitly to silence this warning.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            orient = "row"
-        # Exchange if-block above for block below when removing warning
-        # if orientation is None and columns is not None:
-        #     orientation = "col" if len(columns) == shape[0] else "row"
+    else:
         if orient == "row":
             data_series = [
                 pli.Series(columns[i], data[:, i], dtypes.get(columns[i])).inner()
                 for i in range(n_columns)
             ]
-        elif orient == "col":
+        else:
             data_series = [
                 pli.Series(columns[i], data[i], dtypes.get(columns[i])).inner()
                 for i in range(n_columns)
             ]
-        else:
-            raise ValueError(
-                f"orient must be one of {{'col', 'row', None}}, got {orient} instead."
-            )
-    else:
-        raise ValueError("A numpy array should not have more than two dimensions.")
 
     data_series = _handle_columns_arg(data_series, columns=columns)
     return PyDataFrame(data_series)
