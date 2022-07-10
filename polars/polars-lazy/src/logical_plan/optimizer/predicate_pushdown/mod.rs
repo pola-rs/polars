@@ -500,11 +500,7 @@ impl PredicatePushDown {
                     }
                 });
                 let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
-                Ok(if local_predicates.is_empty() {
-                    self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena)
-                } else {
-                    lp
-                })
+                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
             // Pushed down passed these nodes
             lp @ Cache { .. } |  lp @ Sort { .. } => {
