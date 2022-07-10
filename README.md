@@ -22,7 +22,7 @@
 ## Blazingly fast DataFrames in Rust, Python & Node.js
 
 Polars is a blazingly fast DataFrames library implemented in Rust using
-[Apache Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html) as memory model.
+[Apache Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html) as the memory model.
 
   * Lazy | eager execution
   * Multi-threaded
@@ -85,7 +85,7 @@ shape: (5, 8)
 
 ## Performance 🚀🚀
 
-Polars is very fast, and in fact is one of the best performing solutions available.
+Polars is very fast. In fact, it is one of the best performing solutions available.
 See the results in [h2oai's db-benchmark](https://h2oai.github.io/db-benchmark/).
 
 
