@@ -19,6 +19,7 @@ Conversion
     from_arrow
     from_dict
     from_dicts
+    from_numpy
     from_pandas
     from_records
 
