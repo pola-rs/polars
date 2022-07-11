@@ -20,9 +20,6 @@ pub mod string;
 mod struct_;
 use polars_time::series::SeriesOpsTime;
 
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 use crate::prelude::*;
 use crate::utils::has_expr;
 
