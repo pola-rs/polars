@@ -188,7 +188,6 @@ def element() -> pli.Expr:
 
     Examples
     --------
-
     A horizontal rank computation by taking the elements of a list
 
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
@@ -624,7 +623,6 @@ def lit(
 
     Examples
     --------
-
     Literal integer:
 
     >>> pl.lit(1)  # doctest: +IGNORE_RESULT
@@ -888,7 +886,7 @@ def exclude(columns: str | list[str]) -> pli.Expr:
 
     Syntactic sugar for:
 
-    >>> pl.col("*").exclude(columns)  # doctest: +SKIP
+    >>> pl.all().exclude(columns)  # doctest: +SKIP
 
     Parameters
     ----------
@@ -951,7 +949,6 @@ def all(name: str | list[pli.Expr] | None = None) -> pli.Expr:
 
     Examples
     --------
-
     Sum all columns
 
     >>> df = pl.DataFrame(
@@ -1242,14 +1239,49 @@ def _date(
 
 def concat_str(exprs: Sequence[pli.Expr | str] | pli.Expr, sep: str = "") -> pli.Expr:
     """
-    Horizontally Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8.
+    Horizontally concat Utf8 Series in linear time. Non-Utf8 columns are cast to Utf8.
 
     Parameters
     ----------
     exprs
-        Columns to concat into a Utf8 Series
+        Columns to concat into a Utf8 Series.
     sep
         String value that will be used to separate the values.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": ["dogs", "cats", None],
+    ...         "c": ["play", "swim", "walk"],
+    ...     }
+    ... )
+    >>> df.with_columns(
+    ...     [
+    ...         pl.concat_str(
+    ...             [
+    ...                 pl.col("a") * 2,
+    ...                 pl.col("b"),
+    ...                 pl.col("c"),
+    ...             ],
+    ...             sep=" ",
+    ...         ).alias("full_sentence"),
+    ...     ]
+    ... )
+    shape: (3, 4)
+    ┌─────┬──────┬──────┬───────────────┐
+    │ a   ┆ b    ┆ c    ┆ full_sentence │
+    │ --- ┆ ---  ┆ ---  ┆ ---           │
+    │ i64 ┆ str  ┆ str  ┆ str           │
+    ╞═════╪══════╪══════╪═══════════════╡
+    │ 1   ┆ dogs ┆ play ┆ 2 dogs play   │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2   ┆ cats ┆ swim ┆ 4 cats swim   │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 3   ┆ null ┆ walk ┆ null          │
+    └─────┴──────┴──────┴───────────────┘
+
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_concat_str(exprs, sep))
@@ -1322,7 +1354,6 @@ def concat_list(exprs: Sequence[str | pli.Expr | pli.Series] | pli.Expr) -> pli.
 
     Examples
     --------
-
     Create lagged columns and collect them into a list. This mimics a rolling window.
 
     >>> df = pl.DataFrame(

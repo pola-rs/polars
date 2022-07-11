@@ -939,7 +939,6 @@ class Series:
 
         Examples
         --------
-
         >>> s = pl.Series("id", ["a", "b", "b", "c", "c", "c"])
         >>> s.unique_counts()
         shape: (3,)
@@ -968,7 +967,6 @@ class Series:
 
         Examples
         --------
-
         >>> a = pl.Series([0.99, 0.005, 0.005])
         >>> a.entropy(normalize=True)
         0.06293300616044681
@@ -1004,7 +1002,6 @@ class Series:
 
         Examples
         --------
-
         >>> s = pl.Series("values", [1, 2, 3, 4, 5])
         >>> s.cumulative_eval(pl.element().first() - pl.element().last() ** 2)
         shape: (5,)
@@ -1967,10 +1964,30 @@ class Series:
         """
         Cast to physical representation of the logical dtype.
 
-        Date -> Int32
-        Datetime -> Int64
-        Time -> Int64
-        other -> other
+        - :func:`polars.datatypes.Date` -> :func:`polars.datatypes.Int32`
+        - :func:`polars.datatypes.Datetime` -> :func:`polars.datatypes.Int64`
+        - :func:`polars.datatypes.Time` -> :func:`polars.datatypes.Int64`
+        - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
+        - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
+        - Other data types will be left unchanged.
+
+        Examples
+        --------
+        Replicating the pandas
+        `pd.Series.factorize <https://pandas.pydata.org/docs/reference/api/pandas.Series.factorize.html>`_
+        method.
+
+        >>> s = pl.Series("values", ["a", None, "x", "a"])
+        >>> s.cast(pl.Categorical).to_physical()
+        shape: (4,)
+        Series: 'values' [u32]
+        [
+            0
+            null
+            1
+            0
+        ]
+
         """
         return wrap_s(self._s.to_physical())
 
@@ -2540,7 +2557,6 @@ class Series:
 
         Examples
         --------
-
         >>> s = pl.Series("foo", [-9, -8, 0, 4])
         >>> s.sign()  #
         shape: (4,)
@@ -2793,7 +2809,6 @@ class Series:
 
         Examples
         --------
-
         >>> s1 = pl.Series([1, 2, 3, 4, 5])
         >>> s2 = pl.Series([5, 4, 3, 2, 1])
         >>> s1.zip_with(s1 < s2, s2)
@@ -3602,12 +3617,29 @@ class Series:
 
         Only works for the following dtypes: {Int32, Int64, Float32, Float64, UInt32}.
 
-        If you want to clip other dtypes, consider writing a when -> then -> otherwise expression
+        If you want to clip other dtypes, consider writing a "when, then, otherwise" expression.
+        See :func:`when` for more information.
 
         Parameters
         ----------
-        min_val, max_val
-            Minimum and maximum value.
+        min_val
+            Minimum value.
+        max_val
+            Maximum value.
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", [-50, 5, None, 50])
+        >>> s.clip(1, 10)
+        shape: (4,)
+        Series: 'foo' [i64]
+        [
+            1
+            5
+            null
+            10
+        ]
+
         """
         return self.to_frame().select(pli.col(self.name).clip(min_val, max_val))[
             self.name
@@ -3778,7 +3810,6 @@ class Series:
 
         Examples
         --------
-
         >>> s = pl.Series([1, 2, 3])
         >>> s.extend_constant(99, n=2)
         shape: (5,)
@@ -3934,7 +3965,6 @@ class StringNameSpace:
 
         Examples
         --------
-
         Dealing with different formats.
 
         >>> s = pl.Series(
@@ -3991,7 +4021,6 @@ class StringNameSpace:
 
         Examples
         --------
-
         >>> s = pl.Series(["foo", None, "hello", "world"])
         >>> s.str.lengths()
         shape: (4,)
@@ -4079,7 +4108,6 @@ class StringNameSpace:
 
         Examples
         --------
-
         >>> s = pl.Series("fruits", ["apple", "mango", None])
         >>> s.str.ends_with("go")
         shape: (3,)

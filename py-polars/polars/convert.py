@@ -87,7 +87,6 @@ def from_dicts(
 
     Examples
     --------
-
     >>> data = [{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]
     >>> df = pl.from_dicts(data)
     >>> df
@@ -136,7 +135,6 @@ def from_records(
 
     Examples
     --------
-
     >>> data = [[1, 2, 3], [4, 5, 6]]
     >>> df = pl.from_records(data, columns=["a", "b"])
     >>> df
@@ -193,7 +191,6 @@ def from_numpy(
 
     Examples
     --------
-
     >>> import numpy as np
     >>> data = np.array([[1, 2, 3], [4, 5, 6]])
     >>> df = pl.from_numpy(data, columns=["a", "b"], orient="col")

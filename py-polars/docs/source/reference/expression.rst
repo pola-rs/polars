@@ -176,7 +176,6 @@ Manipulation/ selection
 
     Expr.append
     Expr.arg_sort
-    Expr.arg_sort
     Expr.argsort
     Expr.backward_fill
     Expr.cast
@@ -220,7 +219,7 @@ Column names
 ------------
    Expressions that help renaming/ selecting columns by name.
 
-   A wildcard `col("*")`/`pl.all()` selects all columns in a DataFrame.
+   A wildcard ``col("*")``/:func:`polars.all()` selects all columns in a DataFrame.
 
    >>> df.select(pl.all())
 

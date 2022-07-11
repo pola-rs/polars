@@ -223,10 +223,43 @@ class Expr:
         """
         Cast to physical representation of the logical dtype.
 
-        Date -> Int32
-        Datetime -> Int64
-        Time -> Int64
-        other -> other
+        - :func:`polars.datatypes.Date` -> :func:`polars.datatypes.Int32`
+        - :func:`polars.datatypes.Datetime` -> :func:`polars.datatypes.Int64`
+        - :func:`polars.datatypes.Time` -> :func:`polars.datatypes.Int64`
+        - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
+        - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
+        - Other data types will be left unchanged.
+
+        Examples
+        --------
+        Replicating the pandas
+        `pd.factorize <https://pandas.pydata.org/docs/reference/api/pandas.factorize.html>`_
+        function.
+
+        >>> pl.DataFrame({"vals": ["a", "x", None, "a"]}).with_columns(
+        ...     [
+        ...         pl.col("vals").cast(pl.Categorical),
+        ...         pl.col("vals")
+        ...         .cast(pl.Categorical)
+        ...         .to_physical()
+        ...         .alias("vals_physical"),
+        ...     ]
+        ... )
+        shape: (4, 2)
+        ┌──────┬───────────────┐
+        │ vals ┆ vals_physical │
+        │ ---  ┆ ---           │
+        │ cat  ┆ u32           │
+        ╞══════╪═══════════════╡
+        │ a    ┆ 0             │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ x    ┆ 1             │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null ┆ null          │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ a    ┆ 0             │
+        └──────┴───────────────┘
+
         """
         return wrap_expr(self._pyexpr.to_physical())
 
@@ -240,9 +273,8 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"TF": [True, False], "FF": [False, False]})
-        >>> df.select(pl.col("*").any())
+        >>> df.select(pl.all().any())
         shape: (1, 2)
         ┌──────┬───────┐
         │ TF   ┆ FF    │
@@ -267,7 +299,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {"TT": [True, True], "TF": [True, False], "FF": [False, False]}
         ... )
@@ -312,7 +343,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 3],
@@ -381,7 +411,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 3],
@@ -403,7 +432,7 @@ class Expr:
         │ 3   ┆ null ┆ 1    │
         └─────┴──────┴──────┘
         >>> df.select(
-        ...     pl.col("*").exclude("b"),
+        ...     pl.all().exclude("b"),
         ... )
         shape: (3, 2)
         ┌─────┬──────┐
@@ -445,7 +474,6 @@ class Expr:
 
         Examples
         --------
-
         A groupby aggregation often changes the name of a column.
         With `keep_name` we can keep the original name of the column
 
@@ -491,11 +519,10 @@ class Expr:
 
     def prefix(self, prefix: str) -> Expr:
         """
-        Add a prefix the to root column name of the expression.
+        Add a prefix to the root column name of the expression.
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "A": [1, 2, 3, 4, 5],
@@ -549,11 +576,10 @@ class Expr:
 
     def suffix(self, suffix: str) -> Expr:
         """
-        Add a suffix the to root column name of the expression.
+        Add a suffix to the root column name of the expression.
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "A": [1, 2, 3, 4, 5],
@@ -612,10 +638,10 @@ class Expr:
         Parameters
         ----------
         f
-            function that maps root name to new name
+            Function that maps root name to new name.
+
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "A": [1, 2],
@@ -623,7 +649,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(
-        ...     pl.col("*").reverse().map_alias(lambda colName: colName + "_reverse")
+        ...     pl.all().reverse().map_alias(lambda colName: colName + "_reverse")
         ... )
         shape: (2, 2)
         ┌───────────┬───────────┐
@@ -635,6 +661,7 @@ class Expr:
         ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 1         ┆ 3         │
         └───────────┴───────────┘
+
         """
         return wrap_expr(self._pyexpr.map_alias(f))
 
@@ -644,7 +671,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [True, False, False],
@@ -687,7 +713,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, None, 1, 5],
@@ -721,7 +746,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, None, 1, 5],
@@ -760,14 +784,13 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "A": [1.0, 2],
         ...         "B": [3.0, np.inf],
         ...     }
         ... )
-        >>> df.select(pl.col("*").is_finite())
+        >>> df.select(pl.all().is_finite())
         shape: (2, 2)
         ┌──────┬───────┐
         │ A    ┆ B     │
@@ -792,14 +815,13 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "A": [1.0, 2],
         ...         "B": [3.0, np.inf],
         ...     }
         ... )
-        >>> df.select(pl.col("*").is_infinite())
+        >>> df.select(pl.all().is_infinite())
         shape: (2, 2)
         ┌───────┬───────┐
         │ A     ┆ B     │
@@ -819,7 +841,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, None, 1, 5],
@@ -853,7 +874,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, None, 1, 5],
@@ -877,6 +897,7 @@ class Expr:
         ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 5    ┆ 5.0 ┆ true         ┆ true         │
         └──────┴─────┴──────────────┴──────────────┘
+
         """
         return wrap_expr(self._pyexpr.is_not_nan())
 
@@ -887,7 +908,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "group": [
@@ -922,9 +942,8 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
-        >>> df.select(pl.col("*").count())  # counts nulls
+        >>> df.select(pl.all().count())  # counts nulls
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -939,12 +958,11 @@ class Expr:
 
     def len(self) -> Expr:
         """
-        Alias for count
+        Alias for :func:`count`.
         Count the number of values in this expression
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [8, 9, 10],
@@ -977,9 +995,8 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
-        >>> df.select(pl.col("*").slice(1, 2))
+        >>> df.select(pl.all().slice(1, 2))
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -1005,15 +1022,14 @@ class Expr:
         Parameters
         ----------
         other
-            Expression to append
+            Expression to append.
         upcast
-            Cast both `Series` to the same supertype
+            Cast both `Series` to the same supertype.
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
-        >>> df.select(pl.col("*").head(1).append(pl.col("*").tail(1)))
+        >>> df.select(pl.all().head(1).append(pl.all().tail(1)))
         shape: (2, 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
@@ -1039,14 +1055,12 @@ class Expr:
         """
         Drop null values.
 
-        Warnings
-        --------
-        NOTE that null values are not floating point NaN values!
-        To drop NaN values, use `drop_nans()`.
+        .. warning::
+            Note that null values are not floating point NaN values!
+            To drop NaN values, use :func:`drop_nans`.
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {"a": [8, 9, 10, 11], "b": [None, 4.0, 4.0, float("nan")]}
         ... )
@@ -1070,14 +1084,13 @@ class Expr:
     def drop_nans(self) -> Expr:
         """
         Drop floating point NaN values
-        Warnings
-        --------
-        NOTE that NaN values are not null values!
-        To drop null values, use `drop_nulls()`.
+
+        .. warning::
+            Note that NaN values are not null values!
+            To drop null values, use :func:`drop_nulls`.
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {"a": [8, 9, 10, 11], "b": [None, 4.0, 4.0, float("nan")]}
         ... )
@@ -1113,7 +1126,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
         >>> df.select(
         ...     [
@@ -1154,7 +1166,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
         >>> df.select(
         ...     [
@@ -1190,7 +1201,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
         >>> df.select(
         ...     [
@@ -1226,7 +1236,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
         >>> df.select(
         ...     [
@@ -1264,7 +1273,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
         >>> df.select(
         ...     [
@@ -1297,7 +1305,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [0.3, 0.5, 1.0, 1.1]})
         >>> df.select(pl.col("a").floor())
         shape: (4, 1)
@@ -1325,7 +1332,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [0.3, 0.5, 1.0, 1.1]})
         >>> df.select(pl.col("a").ceil())
         shape: (4, 1)
@@ -1356,7 +1362,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [0.33, 0.52, 1.02, 1.17]})
         >>> df.select(pl.col("a").round(1))
         shape: (4, 1)
@@ -1383,11 +1388,10 @@ class Expr:
         Parameters
         ----------
         other
-            Expression to compute dot product with
+            Expression to compute dot product with.
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 3, 5],
@@ -1415,7 +1419,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 1, 2, 3],
@@ -1443,13 +1446,13 @@ class Expr:
         Parameters
         ----------
         dtype
-            DataType to cast to
+            DataType to cast to.
         strict
-            Throw an error if a cast could not be done for instance due to an overflow
+            Throw an error if a cast could not be done.
+            For instance, due to an overflow.
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 2, 3], "b": ["4", "5", "6"]})
         >>> df.with_columns(
         ...     [
@@ -1489,7 +1492,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "group": [
@@ -1572,7 +1574,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [20, 10, 30],
@@ -1600,7 +1601,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [20, 10, 30],
@@ -1624,7 +1624,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [20, 10, 30],
@@ -1663,7 +1662,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "group": [
@@ -1720,7 +1718,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "group": [
@@ -1770,7 +1767,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
         >>> df.select(pl.col("foo").shift(1))
         shape: (4, 1)
@@ -1807,7 +1803,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
         >>> df.select(pl.col("foo").shift_and_fill(1, "a"))
         shape: (4, 1)
@@ -1847,7 +1842,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
         >>> df.fill_null("zero")
         shape: (3, 2)
@@ -1899,7 +1893,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {"a": [1.0, None, float("nan")], "b": [4.0, float("nan"), 6]}
         ... )
@@ -1931,9 +1924,8 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
-        >>> df.select(pl.col("*").forward_fill())
+        >>> df.select(pl.all().forward_fill())
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -1961,9 +1953,8 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
-        >>> df.select(pl.col("*").backward_fill())
+        >>> df.select(pl.all().backward_fill())
         shape: (3, 2)
         ┌──────┬─────┐
         │ a    ┆ b   │
@@ -1985,7 +1976,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "A": [1, 2, 3, 4, 5],
@@ -2026,7 +2016,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").std())
         shape: (1, 1)
@@ -2046,7 +2035,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").var())
         shape: (1, 1)
@@ -2067,7 +2055,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").max())
         shape: (1, 1)
@@ -2087,7 +2074,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").min())
         shape: (1, 1)
@@ -2113,7 +2099,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").sum())
         shape: (1, 1)
@@ -2134,7 +2119,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").mean())
         shape: (1, 1)
@@ -2155,7 +2139,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").median())
         shape: (1, 1)
@@ -2175,7 +2158,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
         >>> df.select(pl.col("a").product())
         shape: (1, 1)
@@ -2195,7 +2177,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
         >>> df.select(pl.col("a").n_unique())
         shape: (1, 1)
@@ -2216,9 +2197,8 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [None, 1, None], "b": [1, 2, 3]})
-        >>> df.select(pl.col("*").null_count())
+        >>> df.select(pl.all().null_count())
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -2236,7 +2216,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
         >>> df.select(pl.col("a").arg_unique())
         shape: (3, 1)
@@ -2277,7 +2256,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
         >>> df.select(pl.col("a").unique())
         shape: (2, 1)
@@ -2313,7 +2291,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
         >>> df.select(pl.col("a").first())
         shape: (1, 1)
@@ -2333,7 +2310,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
         >>> df.select(pl.col("a").last())
         shape: (1, 1)
@@ -2354,7 +2330,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 3],
@@ -2387,7 +2362,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "groups": [1, 1, 2, 2, 1, 2, 3, 3, 1],
@@ -2440,7 +2414,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
         >>> df.select(pl.col("a").is_unique())
         shape: (3, 1)
@@ -2468,7 +2441,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "num": [1, 2, 3, 1, 5],
@@ -2501,7 +2473,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
         >>> df.select(pl.col("a").is_duplicated())
         shape: (3, 1)
@@ -2534,7 +2505,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [0, 1, 2, 3, 4, 5]})
         >>> df.select(pl.col("a").quantile(0.3))
         shape: (1, 1)
@@ -2633,7 +2603,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "sine": [0.0, 1.0, 0.0, -1.0],
@@ -2691,7 +2660,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 2, 3, 1],
@@ -2781,7 +2749,6 @@ class Expr:
 
         Examples
         --------
-
         The following example turns each character into a separate row:
 
         >>> df = pl.DataFrame({"foo": ["hello", "world"]})
@@ -2842,7 +2809,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"b": [[1, 2, 3], [4, 5, 6]]})
         >>> df.select(pl.col("b").explode())
         shape: (6, 1)
@@ -2873,7 +2839,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7, 8, 9]})
         >>> df.select(pl.col("foo").take_every(3))
         shape: (3, 1)
@@ -2912,7 +2877,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
         >>> df.select(pl.col("foo").pow(3))
         shape: (4, 1)
@@ -2989,7 +2953,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": ["x", "y", "z"],
@@ -3043,7 +3006,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "num": [1, 2, 3, 4, 5],
@@ -3094,36 +3056,36 @@ class Expr:
 
     def hash(self, seed: int = 0, **kwargs: Any) -> Expr:
         """
-        Hash the Series.
+        Hash the elements in the selection.
 
-        The hash value is of type `UInt64`
+        The hash value is of type `UInt64`.
 
         Parameters
         ----------
         seed
-            seed parameter
+            The random seed to set.
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [1, 2, 3],
+        ...         "a": [1, 2, None],
+        ...         "b": ["x", None, "z"],
         ...     }
         ... )
-        >>> df.with_column(pl.col("a").hash(0))  # doctest: +IGNORE_RESULT
-        shape: (3, 1)
-        ┌─────────────────────┐
-        │ a                   │
-        │ ---                 │
-        │ u64                 │
-        ╞═════════════════════╡
-        │ 2818902862237899908 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 1584708464793912000 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 8337078092773689561 │
-        └─────────────────────┘
+        >>> df.with_column(pl.all().hash(0))  # doctest: +IGNORE_RESULT
+        shape: (3, 2)
+        ┌──────────────────────┬──────────────────────┐
+        │ a                    ┆ b                    │
+        │ ---                  ┆ ---                  │
+        │ u64                  ┆ u64                  │
+        ╞══════════════════════╪══════════════════════╡
+        │ 1156793252771347292  ┆ 16009526192193213963 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5223293301138196316  ┆ 12128596533331663936 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 12128596533331663936 ┆ 97974125653717906    │
+        └──────────────────────┴──────────────────────┘
 
         """
         # kwargs is for backward compatibility
@@ -3148,6 +3110,8 @@ class Expr:
         """
         Prints the value that this expression evaluates to and passes on the value.
 
+        Examples
+        --------
         >>> df = pl.DataFrame({"foo": [1, 1, 2]})
         >>> df.select(pl.col("foo").cumsum().inspect("value is: {}").alias("bar"))
         value is: shape: (3,)
@@ -3245,7 +3209,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
         >>> (
         ...     df.select(
@@ -3342,7 +3305,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
         >>> (
         ...     df.select(
@@ -3440,7 +3402,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"A": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0]})
         >>> df.select(
         ...     [
@@ -3536,7 +3497,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
         >>> (
         ...     df.select(
@@ -3891,7 +3851,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "A": [1.0, 2.0, 9.0, 2.0, 13.0],
@@ -3978,11 +3937,10 @@ class Expr:
             - 'random': Like 'ordinal', but the rank for ties is not dependent
             on the order that the values occur in `a`.
         reverse
-            reverse the operation
+            Reverse the operation.
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [0, 1, 2, 2, 4]})
         >>> df.select(pl.col("a").rank())
         shape: (5, 1)
@@ -4018,7 +3976,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [20, 10, 30],
@@ -4055,7 +4012,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [10, 11, 12, None, 12],
@@ -4146,7 +4102,8 @@ class Expr:
 
         Only works for the following dtypes: {Int32, Int64, Float32, Float64, UInt32}.
 
-        If you want to clip other dtypes, consider writing a when -> then -> otherwise expression
+        If you want to clip other dtypes, consider writing a "when, then, otherwise" expression.
+        See :func:`when` for more information.
 
         Parameters
         ----------
@@ -4154,6 +4111,26 @@ class Expr:
             Minimum value.
         max_val
             Maximum value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
+        >>> df.with_column(pl.col("foo").clip(1, 10).alias("foo_clipped"))
+        shape: (4, 2)
+        ┌──────┬─────────────┐
+        │ foo  ┆ foo_clipped │
+        │ ---  ┆ ---         │
+        │ i64  ┆ i64         │
+        ╞══════╪═════════════╡
+        │ -50  ┆ 1           │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5    ┆ 5           │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null ┆ null        │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 50   ┆ 10          │
+        └──────┴─────────────┘
+
         """
         return wrap_expr(self._pyexpr.clip(min_val, max_val))
 
@@ -4175,7 +4152,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [-9, -8, 0, 4]})
         >>> df.select(pl.col("foo").sign())
         shape: (4, 1)
@@ -4208,7 +4184,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [0.0]})
         >>> df.select(pl.col("a").sin())
         shape: (1, 1)
@@ -4235,7 +4210,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [0.0]})
         >>> df.select(pl.col("a").cos())
         shape: (1, 1)
@@ -4262,7 +4236,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").tan().round(2))
         shape: (1, 1)
@@ -4375,7 +4348,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7, 8, 9]})
         >>> df.select(pl.col("foo").reshape((3, 3)))
         shape: (3, 1)
@@ -4548,7 +4520,6 @@ class Expr:
 
         Examples
         --------
-
         >>> s = pl.Series([1, 2, 3])
         >>> s.extend_constant(99, n=2)
         shape: (5,)
@@ -4579,7 +4550,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "id": ["a", "b", "b", "c", "c", "c"],
@@ -4615,7 +4585,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "id": ["a", "b", "b", "c", "c", "c"],
@@ -4797,7 +4766,6 @@ class ExprStructNameSpace:
 
         Examples
         --------
-
         >>> df = (
         ...     pl.DataFrame(
         ...         {
@@ -4836,7 +4804,6 @@ class ExprStructNameSpace:
 
         Examples
         --------
-
         >>> df = (
         ...     pl.DataFrame(
         ...         {
@@ -4887,7 +4854,6 @@ class ExprListNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [1, 2], "bar": [["a", "b"], ["c"]]})
         >>> df.select(pl.col("bar").arr.lengths())
         shape: (2, 1)
@@ -4934,7 +4900,6 @@ class ExprListNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [[3, 2, 1], [9, 1, 2]],
@@ -5000,7 +4965,6 @@ class ExprListNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [["a"], ["x"]],
@@ -5048,7 +5012,6 @@ class ExprListNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
         >>> df.select(pl.col("foo").arr.get(0))
         shape: (3, 1)
@@ -5073,7 +5036,6 @@ class ExprListNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
         >>> df.select(pl.col("foo").arr.first())
         shape: (3, 1)
@@ -5098,7 +5060,6 @@ class ExprListNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
         >>> df.select(pl.col("foo").arr.last())
         shape: (3, 1)
@@ -5132,7 +5093,6 @@ class ExprListNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
         >>> df.select(pl.col("foo").arr.contains(1))
         shape: (3, 1)
@@ -5167,7 +5127,6 @@ class ExprListNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"s": [["a", "b", "c"], ["x", "y"]]})
         >>> df.select(pl.col("s").arr.join(" "))
         shape: (2, 1)
@@ -5218,7 +5177,6 @@ class ExprListNameSpace:
 
         Examples
         --------
-
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.diff()
         shape: (2,)
@@ -5243,7 +5201,6 @@ class ExprListNameSpace:
 
         Examples
         --------
-
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.shift()
         shape: (2,)
@@ -5263,13 +5220,12 @@ class ExprListNameSpace:
         Parameters
         ----------
         offset
-            Take the values from this index offset
+            Take the values from this index offset.
         length
-            The length of the slice to take
+            The length of the slice to take.
 
         Examples
         --------
-
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.slice(1, 2)
         shape: (2,)
@@ -5293,7 +5249,6 @@ class ExprListNameSpace:
 
         Examples
         --------
-
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.head(2)
         shape: (2,)
@@ -5317,7 +5272,6 @@ class ExprListNameSpace:
 
         Examples
         --------
-
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
         >>> s.arr.tail(2)
         shape: (2,)
@@ -5349,7 +5303,6 @@ class ExprListNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
         >>> df.select([pl.col("a").arr.to_struct()])
         shape: (2, 1)
@@ -5392,7 +5345,6 @@ class ExprListNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
         >>> df.with_column(
         ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
@@ -5448,7 +5400,6 @@ class ExprStringNameSpace:
 
         Examples
         --------
-
         Dealing with different formats.
 
         >>> s = pl.Series(
@@ -5508,7 +5459,6 @@ class ExprStringNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"s": [None, "bears", "110"]})
         >>> df.select(["s", pl.col("s").str.lengths().alias("len")])
         shape: (3, 2)
@@ -5542,7 +5492,6 @@ class ExprStringNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"foo": [1, None, 2]})
         >>> df.select(pl.col("foo").str.concat("-"))
         shape: (1, 1)
@@ -5601,7 +5550,6 @@ class ExprStringNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "num": [-10, -1, 0, 1, 10, 100, 1000, 10000, 100000, 1000000, None],
@@ -5941,7 +5889,6 @@ class ExprStringNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [
@@ -6055,7 +6002,6 @@ class ExprStringNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"s": ["foo bar", "foo-bar", "foo bar baz"]})
         >>> df.select(pl.col("s").str.split(by=" "))
         shape: (3, 1)
@@ -6097,7 +6043,6 @@ class ExprStringNameSpace:
 
         Examples
         --------
-
         >>> (
         ...     pl.DataFrame({"x": ["a_1", None, "c", "d_4"]}).select(
         ...         [
@@ -6287,7 +6232,6 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
@@ -6827,7 +6771,6 @@ class ExprCatNameSpace:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {"cats": ["z", "z", "k", "a", "b"], "vals": [3, 1, 2, 2, 3]}
         ... ).with_columns(

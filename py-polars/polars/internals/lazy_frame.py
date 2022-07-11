@@ -694,7 +694,6 @@ class LazyFrame(Generic[DF]):
 
         Examples
         --------
-
         >>> df = (
         ...     pl.DataFrame(
         ...         {
@@ -791,7 +790,6 @@ class LazyFrame(Generic[DF]):
 
         Examples
         --------
-
         >>> lf = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
@@ -845,7 +843,6 @@ class LazyFrame(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
@@ -888,7 +885,6 @@ class LazyFrame(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": ["a", "b", "a", "b", "b", "c"],
@@ -983,7 +979,6 @@ class LazyFrame(Generic[DF]):
 
         Examples
         --------
-
         >>> dates = [
         ...     "2020-01-01 13:45:48",
         ...     "2020-01-01 16:42:13",
@@ -1316,7 +1311,6 @@ class LazyFrame(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
@@ -1561,7 +1555,6 @@ class LazyFrame(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 3, 5],
@@ -1644,7 +1637,6 @@ class LazyFrame(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 3, 5],
@@ -1699,7 +1691,6 @@ class LazyFrame(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 3, 5],
@@ -1751,7 +1742,6 @@ class LazyFrame(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": ["x", "y", "z"],
@@ -1843,7 +1833,6 @@ class LazyFrame(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [1, 3, 5],
@@ -1975,7 +1964,6 @@ class LazyFrame(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "letters": ["c", "c", "a", "c", "a", "b"],
@@ -2178,7 +2166,6 @@ class LazyFrame(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": ["x", "y", "z"],
@@ -2253,7 +2240,6 @@ class LazyFrame(Generic[DF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, None, 9, 10],
@@ -2316,7 +2302,6 @@ class LazyGroupBy(Generic[LDF]):
 
         Examples
         --------
-
         >>> (
         ...     pl.scan_csv("data.csv")
         ...     .groupby("groups")
@@ -2343,7 +2328,6 @@ class LazyGroupBy(Generic[LDF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "letters": ["c", "c", "a", "c", "a", "b"],
@@ -2401,7 +2385,6 @@ class LazyGroupBy(Generic[LDF]):
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "letters": ["c", "c", "a", "c", "a", "b"],
@@ -2467,7 +2450,6 @@ class LazyGroupBy(Generic[LDF]):
 
         Examples
         --------
-
         The function is applied by group.
 
         >>> df = pl.DataFrame(
