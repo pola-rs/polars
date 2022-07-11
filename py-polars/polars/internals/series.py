@@ -2401,12 +2401,31 @@ class Series:
     def cleared(self) -> "Series":
         """
         Create an empty copy of the current Series, with identical name/dtype but no data.
+
+        See Also
+        --------
+        clone : Cheap deepcopy/clone.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [None, True, False])
+        >>> s.cleared()
+        shape: (0,)
+        Series: 'a' [bool]
+        [
+        ]
+
         """
         return self.limit(0) if len(self) > 0 else self.clone()
 
     def clone(self) -> "Series":
         """
         Very cheap deepcopy/clone.
+
+        See Also
+        --------
+        cleared : Create an empty copy of the current Series, with identical
+            schema but no data.
         """
         return wrap_s(self._s.clone())
 

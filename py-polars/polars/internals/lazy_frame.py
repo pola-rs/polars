@@ -767,12 +767,40 @@ class LazyFrame(Generic[DF]):
     def cleared(self: LDF) -> LDF:
         """
         Create an empty copy of the current LazyFrame, with identical schema but no data.
+
+        See Also
+        --------
+        clone : Cheap deepcopy/clone.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [None, 2, 3, 4],
+        ...         "b": [0.5, None, 2.5, 13],
+        ...         "c": [True, True, False, None],
+        ...     }
+        ... ).lazy()
+        >>> df.cleared().fetch()
+        shape: (0, 3)
+        ┌─────┬─────┬──────┐
+        │ a   ┆ b   ┆ c    │
+        │ --- ┆ --- ┆ ---  │
+        │ i64 ┆ f64 ┆ bool │
+        ╞═════╪═════╪══════╡
+        └─────┴─────┴──────┘
+
         """
         return self._dataframe_class(columns=self.schema).lazy()
 
     def clone(self: LDF) -> LDF:
         """
         Very cheap deepcopy/clone.
+
+        See Also
+        --------
+        cleared : Create an empty copy of the current LazyFrame, with identical
+            schema but no data.
         """
         return self._from_pyldf(self._ldf.clone())
 
