@@ -231,7 +231,6 @@ pub struct ReadParquetOptions {
     pub columns: Option<Vec<String>>,
     pub projection: Option<Vec<i64>>,
     pub n_rows: Option<i64>,
-    pub parallel: Option<bool>,
     pub row_count: Option<JsRowCount>,
 }
 
@@ -239,6 +238,7 @@ pub struct ReadParquetOptions {
 pub fn read_parquet(
     path_or_buffer: Either<String, Buffer>,
     options: ReadParquetOptions,
+    parallel: Wrap<ParallelStrategy>
 ) -> napi::Result<JsDataFrame> {
     let columns = options.columns;
 
@@ -247,7 +247,6 @@ pub fn read_parquet(
         .map(|projection| projection.into_iter().map(|p| p as usize).collect());
     let row_count = options.row_count.map(|rc| rc.into());
     let n_rows = options.n_rows.map(|nr| nr as usize);
-    let parallel = options.parallel.unwrap_or(true);
 
     let result = match path_or_buffer {
         Either::A(path) => {
@@ -256,7 +255,7 @@ pub fn read_parquet(
             ParquetReader::new(reader)
                 .with_projection(projection)
                 .with_columns(columns)
-                .read_parallel(parallel)
+                .read_parallel(parallel.0)
                 .with_n_rows(n_rows)
                 .with_row_count(row_count)
                 .finish()
@@ -266,7 +265,7 @@ pub fn read_parquet(
             ParquetReader::new(cursor)
                 .with_projection(projection)
                 .with_columns(columns)
-                .read_parallel(parallel)
+                .read_parallel(parallel.0)
                 .with_n_rows(n_rows)
                 .with_row_count(row_count)
                 .finish()

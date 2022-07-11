@@ -142,7 +142,7 @@ describe("scan", () => {
         nRows: 4
       }).writeParquet(parquetpath);
 
-    const df = pl.readParquet(parquetpath);
+    const df = pl.scanParquet(parquetpath).collectSync();
 
     expect(df.shape).toEqual({height: 4, width: 4});
   });
@@ -174,7 +174,7 @@ describe("parquet", () => {
   });
 
   test("read:options", () => {
-    const df = pl.readParquet(parquetpath, {nRows: 4});
+    const df = pl.readParquet(parquetpath, {numRows: 4});
     expect(df.shape).toEqual({height: 4, width: 4});
   });
 
@@ -184,7 +184,7 @@ describe("parquet", () => {
   });
 
   test("scan:options", () => {
-    const df = pl.scanParquet(parquetpath, {nRows: 4}).collectSync();
+    const df = pl.scanParquet(parquetpath, {numRows: 4}).collectSync();
     expect(df.shape).toEqual({height: 4, width: 4});
   });
 });

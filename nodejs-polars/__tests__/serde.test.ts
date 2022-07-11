@@ -1,16 +1,13 @@
 import pl from "@polars";
 import path from "path";
 describe("serde", () => {
-  test.only("lazyframe:json", () => {
+  test("lazyframe:json", () => {
     const df = pl.scanCSV(path.resolve("../examples/datasets/foods1.csv"));
     const buf = df.serialize("json");
-    console.log(buf.toString());
     const deserde = pl.LazyDataFrame.deserialize(buf, "json");
-    console.log(deserde);
-    // const expected = df.collectSync();
+    const expected = df.collectSync();
     const actual = deserde.collectSync();
-    console.log(actual);
-    // expect(actual).toFrameEqual(expected);
+    expect(actual).toFrameEqual(expected);
   });
 
   test.skip("lazyframe:bincode", () => {

@@ -716,6 +716,27 @@ impl FromNapiValue for Wrap<Schema> {
     }
 }
 
+impl FromNapiValue for Wrap<ParallelStrategy> {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        let s = String::from_napi_value(env, napi_val)?;
+
+        let unit = match s.as_ref() {
+            "auto" => ParallelStrategy::Auto,
+            "columns" => ParallelStrategy::Columns,
+            "row_groups" => ParallelStrategy::RowGroups,
+            "none" => ParallelStrategy::None,
+            _ => {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "expected one of {'auto', 'columns', 'row_groups', 'none'}".to_owned(),
+                ))
+            }
+        };
+        Ok(Wrap(unit))
+    }
+}
+
+
 pub enum TypedArrayBuffer {
     Int8(Int8Array),
     Int16(Int16Array),
