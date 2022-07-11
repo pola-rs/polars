@@ -118,10 +118,11 @@ def read_csv(
         Overwrite dtypes during inference.
     null_values
         Values to interpret as null values. You can provide a:
-          - ``str``: All values equal to this string will be null.
-          - ``List[str]``: A null value per column.
-          - ``Dict[str, str]``: A dictionary that maps column name to a
-                                null value string.
+
+        - ``str``: All values equal to this string will be null.
+        - ``List[str]``: A null value per column.
+        - ``Dict[str, str]``: A dictionary that maps column name to a
+          null value string.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         First try ``infer_schema_length=0`` to read all columns as
@@ -175,6 +176,11 @@ def read_csv(
     Returns
     -------
     DataFrame
+
+    See Also
+    --------
+    scan_csv : Lazily read from a CSV file or multiple files via glob patterns.
+
     """
 
     # Map legacy arguments to current ones and remove them from kwargs.
@@ -426,10 +432,11 @@ def scan_csv(
         Overwrite dtypes during inference.
     null_values
         Values to interpret as null values. You can provide a:
-          - ``str``: All values equal to this string will be null.
-          - ``List[str]``: A null value per column.
-          - ``Dict[str, str]``: A dictionary that maps column name to a
-                                null value string.
+
+        - ``str``: All values equal to this string will be null.
+        - ``List[str]``: A null value per column.
+        - ``Dict[str, str]``: A dictionary that maps column name to a
+          null value string.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         First try ``infer_schema_length=0`` to read all columns as
@@ -464,6 +471,14 @@ def scan_csv(
     parse_dates
         Try to automatically parse dates. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
+
+    Returns
+    -------
+    LazyFrame
+
+    See Also
+    --------
+    read_csv : Read a CSV file into a DataFrame.
 
     Examples
     --------
