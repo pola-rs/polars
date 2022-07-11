@@ -4566,9 +4566,10 @@ class StringNameSpace:
 
     def ljust(self, width: int, fillchar: str = " ") -> Series:
         """
-        Return the string left justified in a string of length width.
+        Return the string left justified in a string of length ``width``.
+
         Padding is done using the specified ``fillchar``.
-        The original string is returned if width is less than or equal to ``len(s)``.
+        The original string is returned if ``width`` is less than or equal to ``len(s)``.
 
         Parameters
         ----------
@@ -4576,6 +4577,20 @@ class StringNameSpace:
             Justify left to this length.
         fillchar
             Fill with this ASCII character.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", ["cow", "monkey", None, "hippopotamus"])
+        >>> s.str.ljust(8, "*")
+        shape: (4,)
+        Series: 'a' [str]
+        [
+            "cow*****"
+            "monkey**"
+            null
+            "hippopotamus"
+        ]
+
         """
         s = wrap_s(self._s)
         return (
@@ -4584,9 +4599,10 @@ class StringNameSpace:
 
     def rjust(self, width: int, fillchar: str = " ") -> Series:
         """
-        Return the string right justified in a string of length width.
+        Return the string right justified in a string of length ``width``.
+
         Padding is done using the specified ``fillchar``.
-        The original string is returned if width is less than or equal to ``len(s)``.
+        The original string is returned if ``width`` is less than or equal to ``len(s)``.
 
         Parameters
         ----------
@@ -4594,6 +4610,20 @@ class StringNameSpace:
             Justify right to this length.
         fillchar
             Fill with this ASCII character.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", ["cow", "monkey", None, "hippopotamus"])
+        >>> s.str.rjust(8, "*")
+        shape: (4,)
+        Series: 'a' [str]
+        [
+            "*****cow"
+            "**monkey"
+            null
+            "hippopotamus"
+        ]
+
         """
         s = wrap_s(self._s)
         return (
