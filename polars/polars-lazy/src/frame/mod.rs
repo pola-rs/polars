@@ -95,7 +95,6 @@ impl IntoLazy for DataFrame {
 #[derive(Clone, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(bound(deserialize = "'de: 'static")))]
-
 #[must_use]
 pub struct LazyFrame {
     pub logical_plan: LogicalPlan,
