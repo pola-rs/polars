@@ -939,12 +939,15 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn join<E: AsRef<[Expr]>>(
-        self,
+        mut self,
         other: LazyFrame,
         left_on: E,
         right_on: E,
         how: JoinType,
     ) -> LazyFrame {
+        // if any of the nodes reads from files we must activate this this plan as well.
+        self.opt_state.file_caching |= other.opt_state.file_caching;
+
         let left_on = left_on.as_ref().to_vec();
         let right_on = right_on.as_ref().to_vec();
         self.join_builder()
@@ -1432,7 +1435,11 @@ impl JoinBuilder {
 
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
-        let opt_state = self.lf.opt_state;
+        let mut opt_state = self.lf.opt_state;
+        let other = self.other.expect("with not set");
+
+        // if any of the nodes reads from files we must activate this this plan as well.
+        opt_state.file_caching |= other.opt_state.file_caching;
 
         let suffix = match self.suffix {
             None => Cow::Borrowed("_right"),
@@ -1443,7 +1450,7 @@ impl JoinBuilder {
             .lf
             .get_plan_builder()
             .join(
-                self.other.expect("with not set").logical_plan,
+                other.logical_plan,
                 self.left_on,
                 self.right_on,
                 JoinOptions {

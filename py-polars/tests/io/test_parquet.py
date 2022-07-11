@@ -176,3 +176,12 @@ def test_chunked_round_trip() -> None:
     df.write_parquet(f)
     f.seek(0)
     assert pl.read_parquet(f).frame_equal(df)
+
+
+def test_lazy_self_join_file_cache_prop_3979(io_test_dir: str) -> None:
+    path = os.path.join(io_test_dir, "small.parquet")
+    a = pl.scan_parquet(path)
+    b = pl.DataFrame({"a": [1]}).lazy()
+
+    assert a.join(b, how="cross").collect().shape == (3, 17)
+    assert b.join(a, how="cross").collect().shape == (3, 17)
