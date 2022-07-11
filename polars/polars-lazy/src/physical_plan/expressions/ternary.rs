@@ -1,4 +1,4 @@
-use crate::physical_plan::state::ExecutionState;
+use crate::physical_plan::state::{ExecutionState, StateFlags};
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
@@ -87,9 +87,9 @@ impl PhysicalExpr for TernaryExpr {
         &self.expr
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
-        let mut state = state.clone();
+        let mut state = state.split();
         // don't cache window functions as they run in parallel
-        state.cache_window = false;
+        state.flags.remove(StateFlags::CACHE_WINDOW_EXPR);
         let mask_series = self.predicate.evaluate(df, &state)?;
         let mut mask = mask_series.bool()?.clone();
 

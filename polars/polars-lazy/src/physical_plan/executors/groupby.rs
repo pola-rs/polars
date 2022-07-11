@@ -40,7 +40,7 @@ pub(super) fn groupby_helper(
     keys: Vec<Series>,
     aggs: &[Arc<dyn PhysicalExpr>],
     apply: Option<&Arc<dyn DataFrameUdf>>,
-    state: &ExecutionState,
+    state: &mut ExecutionState,
     maintain_order: bool,
     slice: Option<(i64, usize)>,
 ) -> Result<DataFrame> {
@@ -91,8 +91,8 @@ pub(super) fn groupby_helper(
 }
 
 impl Executor for GroupByExec {
-    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
-        if state.verbose {
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+        if state.verbose() {
             eprintln!("keys/aggregates are not partitionable: running default HASH AGGREGATION")
         }
         let df = self.input.execute(state)?;

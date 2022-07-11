@@ -8,7 +8,7 @@ pub(crate) struct PythonScanExec {
 }
 
 impl Executor for PythonScanExec {
-    fn execute(&mut self, _cache: &ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, _state: &mut ExecutionState) -> Result<DataFrame> {
         let with_columns = self.options.with_columns.take();
         Python::with_gil(|py| {
             let pl = PyModule::import(py, "polars").unwrap();

@@ -14,12 +14,12 @@ impl FilterExec {
 }
 
 impl Executor for FilterExec {
-    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
         let df = self.input.execute(state)?;
         let s = self.predicate.evaluate(&df, state)?;
         let mask = s.bool().expect("filter predicate wasn't of type boolean");
         let df = df.filter(mask)?;
-        if state.verbose {
+        if state.verbose() {
             eprintln!("dataframe filtered");
         }
         Ok(df)

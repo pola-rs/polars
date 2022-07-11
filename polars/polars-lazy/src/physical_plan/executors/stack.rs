@@ -12,7 +12,7 @@ pub struct StackExec {
 }
 
 impl Executor for StackExec {
-    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
         let mut df = self.input.execute(state)?;
 
         state.set_schema(self.input_schema.clone());

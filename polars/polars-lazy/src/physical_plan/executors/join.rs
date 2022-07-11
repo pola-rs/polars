@@ -42,28 +42,28 @@ impl JoinExec {
 }
 
 impl Executor for JoinExec {
-    fn execute<'a>(&'a mut self, state: &'a ExecutionState) -> Result<DataFrame> {
-        if state.verbose {
+    fn execute<'a>(&'a mut self, state: &'a mut ExecutionState) -> Result<DataFrame> {
+        if state.verbose() {
             eprintln!("join parallel: {}", self.parallel);
         };
         let mut input_left = self.input_left.take().unwrap();
         let mut input_right = self.input_right.take().unwrap();
 
         let (df_left, df_right) = if self.parallel {
-            let state_left = state;
-            let mut state_right = state.clone();
-            state_right.join_branch += 1;
+            let mut state_right = state.split();
+            let mut state_left = state.split();
+            state_right.branch_idx += 1;
             // propagate the fetch_rows static value to the spawning threads.
             let fetch_rows = FETCH_ROWS.with(|fetch_rows| fetch_rows.get());
 
             POOL.join(
                 move || {
                     FETCH_ROWS.with(|fr| fr.set(fetch_rows));
-                    input_left.execute(state_left)
+                    input_left.execute(&mut state_left)
                 },
                 move || {
                     FETCH_ROWS.with(|fr| fr.set(fetch_rows));
-                    input_right.execute(&state_right)
+                    input_right.execute(&mut state_right)
                 },
             )
         } else {
@@ -131,10 +131,10 @@ impl Executor for JoinExec {
             Some(self.suffix.clone().into_owned()),
             self.slice,
             true,
-            state.verbose,
+            state.verbose(),
         );
 
-        if state.verbose {
+        if state.verbose() {
             eprintln!("{:?} join dataframes finished", self.how);
         };
         df

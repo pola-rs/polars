@@ -15,7 +15,7 @@ pub struct ProjectionExec {
 }
 
 impl Executor for ProjectionExec {
-    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
         let df = self.input.execute(state)?;
         state.set_schema(self.input_schema.clone());
 

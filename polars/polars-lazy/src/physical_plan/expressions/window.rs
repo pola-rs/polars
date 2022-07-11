@@ -246,9 +246,9 @@ impl PhysicalExpr for WindowExpr {
         };
 
         // Try to get cached grouptuples
-        let (groups, _, cache_key) = if state.cache_window {
+        let (groups, _, cache_key) = if state.cache_window() {
             let mut cache_key = String::with_capacity(32 * groupby_columns.len());
-            write!(&mut cache_key, "{}", state.join_branch).unwrap();
+            write!(&mut cache_key, "{}", state.branch_idx).unwrap();
             for s in &groupby_columns {
                 cache_key.push_str(s.name());
             }
@@ -284,7 +284,7 @@ impl PhysicalExpr for WindowExpr {
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
         let cache_gb = |gb: GroupBy| {
-            if state.cache_window {
+            if state.cache_window() {
                 let groups = gb.take_groups();
                 let mut gt_map = state.group_tuples.lock();
                 gt_map.insert(cache_key.clone(), groups);
@@ -435,7 +435,7 @@ impl PhysicalExpr for WindowExpr {
                 };
 
                 // try to get cached join_tuples
-                let join_opt_ids = if state.cache_window {
+                let join_opt_ids = if state.cache_window() {
                     let mut jt_map = state.join_tuples.lock();
                     // we run sequential and partitioned
                     // and every partition run the cache should be empty so we expect a max of 1.
@@ -455,7 +455,7 @@ impl PhysicalExpr for WindowExpr {
                     out.rename(name.as_ref());
                 }
 
-                if state.cache_window {
+                if state.cache_window() {
                     let mut jt_map = state.join_tuples.lock();
                     jt_map.insert(cache_key, join_opt_ids);
                 }

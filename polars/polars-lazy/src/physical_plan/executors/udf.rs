@@ -8,7 +8,7 @@ pub(crate) struct UdfExec {
 }
 
 impl Executor for UdfExec {
-    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
         let df = self.input.execute(state)?;
         self.function.call_udf(df)
     }

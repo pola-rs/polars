@@ -1273,6 +1273,7 @@ name = "polars-lazy"
 version = "0.22.6"
 dependencies = [
  "ahash",
+ "bitflags",
  "glob",
  "parking_lot",
  "polars-arrow",
