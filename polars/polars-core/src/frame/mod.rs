@@ -13,7 +13,7 @@ use crate::prelude::*;
 use crate::utils::{get_supertype, split_ca, split_df, NoNull};
 
 #[cfg(feature = "describe")]
-use crate::utils::concat_df;
+use crate::utils::concat_df_unchecked;
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -2395,7 +2395,7 @@ impl DataFrame {
         tmp.push(describe_cast(&self.max()));
         headers.push("max".to_string());
 
-        let mut summary = concat_df(&tmp).expect("unable to create dataframe");
+        let mut summary = concat_df_unchecked(&tmp);
 
         summary
             .insert_at_idx(0, Series::new("describe", headers))
