@@ -73,8 +73,8 @@ MAX_COLS = 8
 
 
 def assert_frame_equal(
-    left: DataFrame,
-    right: DataFrame,
+    left: DataFrame | LazyFrame,
+    right: DataFrame | LazyFrame,
     check_dtype: bool = True,
     check_exact: bool = False,
     check_column_names: bool = True,
@@ -84,7 +84,6 @@ def assert_frame_equal(
 ) -> None:
     """
     Raise detailed AssertionError if `left` does not equal `right`.
-
 
     Parameters
     ----------
@@ -112,25 +111,24 @@ def assert_frame_equal(
     >>> pl.testing.assert_frame_equal(df1, df2)  # doctest: +SKIP
     """
 
-    obj = "DataFrame"
+    if isinstance(left, LazyFrame) and isinstance(right, LazyFrame):
+        left, right = left.collect(), right.collect()
+        obj = "LazyFrame"
+    else:
+        obj = "DataFrame"
 
     if not (isinstance(left, DataFrame) and isinstance(right, DataFrame)):
         raise_assert_detail(obj, "Type mismatch", type(left), type(right))
-
-    if left.shape[0] != right.shape[0]:
+    elif left.shape[0] != right.shape[0]:
         raise_assert_detail(obj, "Length mismatch", left.shape, right.shape)
 
     # this assumes we want it in the same order
     union_cols = list(set(left.columns).union(set(right.columns)))
     for c in union_cols:
         if c not in right.columns:
-            raise AssertionError(
-                f"column {c} in left dataframe, but not in right dataframe"
-            )
+            raise AssertionError(f"column {c} in left frame, but not in right")
         if c not in left.columns:
-            raise AssertionError(
-                f"column {c} in right dataframe, but not in left dataframe"
-            )
+            raise AssertionError(f"column {c} in right frame, but not in left")
 
     if check_column_names:
         if left.columns != right.columns:
@@ -139,8 +137,8 @@ def assert_frame_equal(
     # this does not assume a particular order
     for c in left.columns:
         _assert_series_inner(
-            left[c],
-            right[c],
+            left[c],  # type: ignore
+            right[c],  # type: ignore
             check_dtype,
             check_exact,
             nans_compare_equal,
