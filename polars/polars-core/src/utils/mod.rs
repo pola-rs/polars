@@ -823,6 +823,19 @@ where
     Ok(acc_df)
 }
 
+/// Concat the DataFrames to a single DataFrame.
+pub fn concat_df_unchecked<'a, I>(dfs: I) -> DataFrame
+where
+    I: IntoIterator<Item = &'a DataFrame>,
+{
+    let mut iter = dfs.into_iter();
+    let mut acc_df = iter.next().unwrap().clone();
+    for df in iter {
+        acc_df.vstack_mut_unchecked(df);
+    }
+    acc_df
+}
+
 pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> Result<DataFrame> {
     let mut iter = dfs.into_iter();
     let mut acc_df = iter.next().unwrap();
