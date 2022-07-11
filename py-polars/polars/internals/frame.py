@@ -46,7 +46,7 @@ from polars.utils import (
     range_to_slice,
 )
 
-from .lazy_frame import LazyFrame, wrap_ldf  # noqa: F401
+from .lazy_frame import LazyFrame  # noqa: F401
 
 try:
     from polars.polars import PyDataFrame, PySeries
@@ -64,8 +64,6 @@ except ImportError:  # pragma: no cover
 
 try:
     import pyarrow as pa
-    import pyarrow.compute
-    import pyarrow.parquet
 
     _PYARROW_AVAILABLE = True
 except ImportError:  # pragma: no cover
