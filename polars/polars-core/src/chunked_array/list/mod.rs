@@ -1,16 +1,17 @@
 //! Special list utility methods
 mod iterator;
 
+use crate::chunked_array::Settings;
 use crate::prelude::*;
 
 impl ListChunked {
     #[cfg(feature = "private")]
     pub fn set_fast_explode(&mut self) {
-        self.bit_settings |= 1 << 2;
+        self.bit_settings.insert(Settings::FAST_EXPLODE_LIST)
     }
 
     pub(crate) fn can_fast_explode(&self) -> bool {
-        self.bit_settings & 1 << 2 != 0
+        self.bit_settings.contains(Settings::FAST_EXPLODE_LIST)
     }
 
     pub(crate) fn is_nested(&self) -> bool {

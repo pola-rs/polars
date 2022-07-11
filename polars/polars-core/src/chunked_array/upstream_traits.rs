@@ -24,7 +24,7 @@ impl<T> Default for ChunkedArray<T> {
             chunks: Default::default(),
             phantom: PhantomData,
             categorical_map: None,
-            bit_settings: 0,
+            bit_settings: Default::default(),
         }
     }
 }
@@ -306,7 +306,7 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
             chunks: vec![arr],
             phantom: PhantomData,
             categorical_map: None,
-            bit_settings: 0,
+            bit_settings: Default::default(),
         }
     }
 }
