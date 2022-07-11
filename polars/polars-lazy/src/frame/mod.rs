@@ -93,10 +93,13 @@ impl IntoLazy for DataFrame {
 /// It really is an abstraction over a logical plan. The methods of this struct will incrementally
 /// modify a logical plan until output is requested (via [collect](crate::frame::LazyFrame::collect))
 #[derive(Clone, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(bound(deserialize = "'de: 'static")))]
+
 #[must_use]
 pub struct LazyFrame {
     pub logical_plan: LogicalPlan,
-    pub(crate) opt_state: OptState,
+    pub opt_state: OptState,
 }
 
 impl From<LogicalPlan> for LazyFrame {
@@ -109,6 +112,7 @@ impl From<LogicalPlan> for LazyFrame {
 }
 
 #[derive(Copy, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// State of the allowed optimizations
 pub struct OptState {
     pub projection_pushdown: bool,

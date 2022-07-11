@@ -20,6 +20,9 @@ pub mod string;
 mod struct_;
 use polars_time::series::SeriesOpsTime;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use crate::prelude::*;
 use crate::utils::has_expr;
 
@@ -59,12 +62,18 @@ pub fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
 
 /// Intermediate state of `when(..).then(..).otherwise(..)` expr.
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(bound(deserialize = "'de: 'static")))]
+
 pub struct When {
     predicate: Expr,
 }
 
 /// Intermediate state of `when(..).then(..).otherwise(..)` expr.
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(bound(deserialize = "'de: 'static")))]
+
 pub struct WhenThen {
     predicate: Expr,
     then: Expr,
@@ -79,6 +88,8 @@ pub struct WhenThen {
 /// .otherwise(..)`
 /// ```
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(bound(deserialize = "'de: 'static")))]
 #[must_use]
 pub struct WhenThenThen {
     predicates: Vec<Expr>,
