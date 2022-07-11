@@ -179,19 +179,19 @@ def date_range(
     high
         Upper bound of the date range.
     interval
-        Interval periods
-        A python timedelta object or a polars duration `str`
-        e.g.: "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
-    closed {None, 'left', 'right', 'both', 'none'}
+        Interval periods. It can be a python timedelta object, like ``timedelta(days=10)``,
+        or a polars duration string, such as ``3d12h4m25s`` representing 3 days, 12 hours,
+        4 minutes, and 25 seconds.
+    closed : {None, 'left', 'right', 'both', 'none'}
         Make the interval closed to the 'left', 'right', 'none' or 'both' sides.
     name
         Name of the output Series.
-    time_unit
-        Set the time unit; one of {'ns', 'us', 'ms'}.
+    time_unit : {'ns', 'us', 'ms'}
+        Set the time unit.
 
     Notes
     -----
-    If both `low` and `high` are passed as date types (not datetime), and the
+    If both ``low`` and ``high`` are passed as date types (not datetime), and the
     interval granularity is no finer than 1d, the returned range is also of
     type date. All other permutations return a datetime Series.
 
@@ -201,38 +201,9 @@ def date_range(
 
     Examples
     --------
-    >>> from datetime import datetime, date
-    >>> pl.date_range(datetime(1985, 1, 1), datetime(2015, 7, 1), "1d12h")
-    shape: (7426,)
-    Series: '' [datetime[ns]]
-    [
-        1985-01-01 00:00:00
-        1985-01-02 12:00:00
-        1985-01-04 00:00:00
-        1985-01-05 12:00:00
-        1985-01-07 00:00:00
-        1985-01-08 12:00:00
-        1985-01-10 00:00:00
-        1985-01-11 12:00:00
-        1985-01-13 00:00:00
-        1985-01-14 12:00:00
-        1985-01-16 00:00:00
-        1985-01-17 12:00:00
-        ...
-        2015-06-14 00:00:00
-        2015-06-15 12:00:00
-        2015-06-17 00:00:00
-        2015-06-18 12:00:00
-        2015-06-20 00:00:00
-        2015-06-21 12:00:00
-        2015-06-23 00:00:00
-        2015-06-24 12:00:00
-        2015-06-26 00:00:00
-        2015-06-27 12:00:00
-        2015-06-29 00:00:00
-        2015-06-30 12:00:00
-    ]
+    Using polars duration string to specify the interval:
 
+    >>> from datetime import date
     >>> pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", name="drange")
     shape: (3,)
     Series: 'drange' [date]
@@ -241,6 +212,28 @@ def date_range(
         2022-02-01
         2022-03-01
     ]
+
+    Using `timedelta` object to specify the interval:
+
+    >>> from datetime import datetime, timedelta
+    >>> pl.date_range(
+    ...     datetime(1985, 1, 1),
+    ...     datetime(1985, 1, 10),
+    ...     timedelta(days=1, hours=12),
+    ...     time_unit="ms",
+    ... )
+    shape: (7,)
+    Series: '' [datetime[ms]]
+    [
+        1985-01-01 00:00:00
+        1985-01-02 12:00:00
+        1985-01-04 00:00:00
+        1985-01-05 12:00:00
+        1985-01-07 00:00:00
+        1985-01-08 12:00:00
+        1985-01-10 00:00:00
+    ]
+
     """
     if isinstance(interval, timedelta):
         interval = _timedelta_to_pl_duration(interval)
