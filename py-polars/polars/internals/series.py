@@ -3416,30 +3416,31 @@ class Series:
         """
         Hash the Series.
 
-        The hash value is of type `UInt64`
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.hash(k0=42)  # doctest: +IGNORE_RESULT
-        shape: (3,)
-        Series: 'a' [u64]
-        [
-                18040498172617206516
-                5352755651785478209
-                3939059409923356085
-        ]
+        The hash value is of type `UInt64`.
 
         Parameters
         ----------
         k0
-            seed parameter
+            Seed parameter.
         k1
-            seed parameter
+            Seed parameter.
         k2
-            seed parameter
+            Seed parameter.
         k3
-            seed parameter
+            Seed parameter.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.hash(k0=42)
+        shape: (3,)
+        Series: 'a' [u64]
+        [
+            16679613936015749658
+            17801292685721255234
+            516997424509290289
+        ]
+
         """
         return wrap_s(self._s.hash(k0, k1, k2, k3))
 
