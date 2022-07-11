@@ -526,11 +526,13 @@ pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, rechunk: bool) -> Result<LazyFra
             .get_mut(0)
             .ok_or_else(|| PolarsError::ComputeError("empty container given".into()))?,
     );
-    let opt_state = lf.opt_state;
+    let mut opt_state = lf.opt_state;
     let mut lps = Vec::with_capacity(inputs.len());
     lps.push(lf.logical_plan);
 
     for lf in &mut inputs[1..] {
+        // ensure we enable file caching if any lf has it enabled
+        opt_state.file_caching |= lf.opt_state.file_caching;
         let lp = std::mem::take(&mut lf.logical_plan);
         lps.push(lp)
     }
