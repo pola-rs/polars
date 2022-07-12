@@ -1,37 +1,11 @@
 import {DataType} from "./datatype";
 export {DataType};
 
-import {jsTypeToPolarsType} from "../internals/construction";
 import pli from "../internals/polars_internal";
 
-// export type DtypeToPrimitive<T> = T extends DataType.Bool ? boolean :
-//  T extends DataType.Utf8 ? string :
-//  T extends DataType.Categorical ? string :
-//  T extends DataType.Datetime ? number | Date :
-//  T extends DataType.Date ? Date :
-//  T extends DataType.UInt64 ? bigint : number
-
-// export type PrimitiveToDtype<T> = T extends boolean ? DataType.Bool :
-//  T extends string ? DataType.Utf8 :
-//  T extends Date ? DataType.Datetime :
-//  T extends number ? DataType.Float64 :
-//  T extends bigint ? DataType.Int64 :
-//  T extends ArrayLike<any> ? DataType.List :
-//  DataType.Object
 
 export type TypedArray = Int8Array | Int16Array | Int32Array | BigInt64Array | Uint8Array | Uint16Array | Uint32Array | BigInt64Array | Float32Array | Float64Array;
 
-// export type DtypeToTypedArray<T> = T extends DataType.Int8 ? Int8Array :
-// T extends DataType.Int16 ? Int16Array :
-// T extends DataType.Int32 ? Int32Array :
-// T extends DataType.Int64 ? BigInt64Array :
-// T extends DataType.UInt8 ? Uint8Array :
-// T extends DataType.UInt16 ? Uint16Array :
-// T extends DataType.UInt32 ? Uint32Array :
-// T extends DataType.UInt64 ? BigInt64Array :
-// T extends DataType.Float32 ? Float32Array :
-// T extends DataType.Float64 ? Float64Array :
-// never
 
 export type Optional<T> = T | undefined | null;
 export enum _DataType {

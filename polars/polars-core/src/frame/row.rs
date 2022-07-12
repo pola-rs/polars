@@ -180,13 +180,13 @@ impl DataFrame {
     }
 }
 
-type Tracker = PlHashMap<String, PlHashSet<DataType>>;
+type Tracker = PlIndexMap<String, PlHashSet<DataType>>;
 
 pub fn infer_schema(
     iter: impl Iterator<Item = Vec<(String, impl Into<DataType>)>>,
     infer_schema_length: usize,
 ) -> Schema {
-    let mut values: Tracker = Tracker::new();
+    let mut values: Tracker = Tracker::default();
     let len = iter.size_hint().1.unwrap_or(infer_schema_length);
 
     let max_infer = std::cmp::min(len, infer_schema_length);

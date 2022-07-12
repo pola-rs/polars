@@ -40,7 +40,7 @@ impl TypeName for Wrap<Utf8Chunked> {
     }
 }
 /// Safety.
-/// it is up to the consumer to make sure the item is valid/
+/// it is up to the consumer to make sure the item is valid
 pub(crate) trait ToSeries {
     unsafe fn to_series(&self) -> Series;
 }
@@ -157,7 +157,7 @@ impl<'a> ToNapiValue for Wrap<AnyValue<'a>> {
                 }
                 Object::to_napi_value(env, obj)
             }
-            _ => todo!(), // Value::Object(obj) => unsafe { Map::to_napi_value(env, obj) },
+            _ => todo!(),
         }
     }
 }
@@ -713,6 +713,17 @@ impl FromNapiValue for Wrap<Schema> {
                 ))
             }
         }
+    }
+}
+impl ToNapiValue for Wrap<Schema> {
+    unsafe fn to_napi_value(napi_env: sys::napi_env, val: Self) -> Result<sys::napi_value> {
+        let env = Env::from_raw(napi_env);
+        let mut schema = env.create_object()?;
+
+        for (name, dtype) in val.0.iter() {
+            schema.set(name, Wrap(dtype.clone()))?;
+        };
+        Object::to_napi_value(napi_env, schema)
     }
 }
 

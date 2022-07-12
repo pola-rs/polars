@@ -624,6 +624,10 @@ impl JsDataFrame {
     pub fn width(&self) -> i64 {
         self.df.width() as i64
     }
+    #[napi(getter)]
+    pub fn schema(&self) -> Wrap<Schema> {
+        self.df.schema().into()
+    }
     #[napi]
     pub fn hstack_mut(&mut self, columns: Array) -> napi::Result<()> {
         let columns = to_series_collection(columns);
