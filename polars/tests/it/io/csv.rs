@@ -640,7 +640,7 @@ fn test_header_with_comments() -> Result<()> {
 #[test]
 #[cfg(feature = "temporal")]
 fn test_ignore_parse_dates() -> Result<()> {
-    // if parse dates is set, a given schema should still prevale above date parsing.
+    // if parse dates is set, a given schema should still prevail above date parsing.
     let csv = r#"a,b,c
 1,i,16200126
 2,j,16250130

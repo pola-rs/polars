@@ -253,7 +253,7 @@ fn test_window_mapping() -> Result<()> {
     assert!(out.column("foo")?.series_equal_missing(&expected));
 
     // now sorted
-    // this will tragger a fast path
+    // this will trigger a fast path
     let df = df.sort(["fruits"], vec![false])?;
 
     let out = df
