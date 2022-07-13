@@ -333,6 +333,10 @@ pub fn groupby_values(
 
     // we have a (partial) lookbehind window
     if offset.negative {
+        if offset.nanoseconds() > period.nanoseconds() * 2 {
+            panic!("Lookbehind prior to the index column is not yet supported. The index column values must be part of the window")
+        }
+
         // only lookbehind
         if offset.nanoseconds() >= period.nanoseconds() {
             let vals = thread_offsets
