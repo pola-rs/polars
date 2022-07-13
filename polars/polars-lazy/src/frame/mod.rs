@@ -103,7 +103,10 @@ impl From<LogicalPlan> for LazyFrame {
     fn from(plan: LogicalPlan) -> Self {
         Self {
             logical_plan: plan,
-            opt_state: Default::default(),
+            opt_state: OptState {
+                file_caching: true,
+                ..Default::default()
+            },
         }
     }
 }
