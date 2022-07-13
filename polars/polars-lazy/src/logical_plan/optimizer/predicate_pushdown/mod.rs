@@ -531,7 +531,7 @@ impl PredicatePushDown {
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> Result<ALogicalPlan> {
-        let acc_predicates = PlHashMap::with_capacity(32);
+        let acc_predicates = PlHashMap::new();
         self.push_down(logical_plan, acc_predicates, lp_arena, expr_arena)
     }
 }

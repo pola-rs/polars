@@ -229,8 +229,9 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSiz
         }
         previous_empty = previous_offset == *offset;
     }
-    // last appended index.
-    let last_idx = idx[idx.len() - 1];
+    // undo latest increment
+    last_idx -= 1;
+
     for _ in 0..(capacity - count as usize) {
         idx.push(last_idx);
     }

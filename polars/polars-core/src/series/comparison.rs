@@ -8,7 +8,8 @@ use crate::series::arithmetic::coerce_lhs_rhs;
     feature = "dtype-duration",
     feature = "dtype-datetime",
     feature = "dtype-date",
-    feature = "dtype-time"
+    feature = "dtype-time",
+    feature = "dtype-struct"
 ))]
 use std::ops::Deref;
 

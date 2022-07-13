@@ -49,7 +49,7 @@ impl DataFrame {
 
         for (i, s) in columns.iter().enumerate() {
             // Safety:
-            // offsets are not take longer than the Series.
+            // offsets don't have indices exceeding Series length.
             if let Ok((exploded, offsets)) = get_exploded(s) {
                 let col_idx = self.check_name_to_idx(s.name())?;
 
