@@ -38,11 +38,17 @@ pub(crate) fn arrow_schema_to_empty_df(schema: &ArrowSchema) -> DataFrame {
 pub(crate) fn apply_predicate(
     df: &mut DataFrame,
     predicate: Option<&dyn PhysicalIoExpr>,
+    parallel: bool,
 ) -> Result<()> {
     if let (Some(predicate), false) = (&predicate, df.is_empty()) {
         let s = predicate.evaluate(df)?;
         let mask = s.bool().expect("filter predicates was not of type boolean");
-        *df = df.filter(mask)?;
+
+        if parallel {
+            *df = df.filter(mask)?;
+        } else {
+            *df = df._filter_seq(mask)?;
+        }
     }
     Ok(())
 }

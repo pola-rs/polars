@@ -136,7 +136,7 @@ fn rg_to_dfs(
             df.with_row_count_mut(&rc.name, Some(previous_row_count + rc.offset));
         }
 
-        apply_predicate(&mut df, predicate.as_deref())?;
+        apply_predicate(&mut df, predicate.as_deref(), true)?;
         apply_aggregations(&mut df, aggregate)?;
 
         previous_row_count += current_row_count;
@@ -201,7 +201,7 @@ fn rg_to_dfs_par(
                 df.with_row_count_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
             }
 
-            apply_predicate(&mut df, predicate.as_deref())?;
+            apply_predicate(&mut df, predicate.as_deref(), false)?;
             apply_aggregations(&mut df, aggregate)?;
 
             Ok(Some(df))
