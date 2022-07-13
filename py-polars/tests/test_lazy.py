@@ -1334,3 +1334,15 @@ def test_predicate_count_vstack() -> None:
     assert pl.concat([l1, l2]).filter(pl.count().over("k") == 2).collect()[
         "v"
     ].to_list() == [3, 2, 5, 7]
+
+
+def test_explode_inner_lists_3985() -> None:
+    df = pl.DataFrame(
+        data={"id": [1, 1, 1], "categories": [["a"], ["b"], ["a", "c"]]}
+    ).lazy()
+
+    assert (
+        df.groupby("id")
+        .agg(pl.col("categories"))
+        .with_column(pl.col("categories").arr.eval(pl.element().explode()))
+    ).collect().to_dict(False) == {"id": [1], "categories": [["a", "b", "a", "c"]]}

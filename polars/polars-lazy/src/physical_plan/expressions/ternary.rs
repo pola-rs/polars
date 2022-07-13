@@ -99,6 +99,14 @@ impl PhysicalExpr for TernaryExpr {
         let (truthy, falsy) = POOL.install(|| rayon::join(op_truthy, op_falsy));
         let mut truthy = truthy?;
         let mut falsy = falsy?;
+
+        if truthy.is_empty() {
+            return Ok(truthy);
+        }
+        if falsy.is_empty() {
+            return Ok(falsy);
+        }
+
         expand_lengths(&mut truthy, &mut falsy, &mut mask);
 
         truthy.zip_with(&mask, &falsy)

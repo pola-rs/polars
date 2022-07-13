@@ -42,17 +42,15 @@ impl LazyFrame {
     }
 
     fn concat_impl(lfs: Vec<LazyFrame>, args: ScanArgsParquet) -> Result<LazyFrame> {
-        concat(&lfs, args.rechunk)
-            .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
-            .map(|mut lf| {
-                if let Some(n_rows) = args.n_rows {
-                    lf = lf.slice(0, n_rows as IdxSize)
-                };
-                if let Some(rc) = args.row_count {
-                    lf = lf.with_row_count(&rc.name, Some(rc.offset))
-                };
-                lf
-            })
+        concat(&lfs, args.rechunk).map(|mut lf| {
+            if let Some(n_rows) = args.n_rows {
+                lf = lf.slice(0, n_rows as IdxSize)
+            };
+            if let Some(rc) = args.row_count {
+                lf = lf.with_row_count(&rc.name, Some(rc.offset))
+            };
+            lf
+        })
     }
 
     /// Create a LazyFrame directly from a parquet scan.
