@@ -85,7 +85,11 @@ pub trait IntoLazy {
 impl IntoLazy for DataFrame {
     /// Convert the `DataFrame` into a lazy `DataFrame`
     fn lazy(self) -> LazyFrame {
-        LogicalPlanBuilder::from_existing_df(self).build().into()
+        let lp = LogicalPlanBuilder::from_existing_df(self).build();
+        LazyFrame {
+            logical_plan: lp,
+            opt_state: Default::default(),
+        }
     }
 }
 
@@ -103,7 +107,10 @@ impl From<LogicalPlan> for LazyFrame {
     fn from(plan: LogicalPlan) -> Self {
         Self {
             logical_plan: plan,
-            opt_state: Default::default(),
+            opt_state: OptState {
+                file_caching: true,
+                ..Default::default()
+            },
         }
     }
 }
