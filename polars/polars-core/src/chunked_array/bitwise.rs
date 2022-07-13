@@ -132,10 +132,7 @@ impl BitOr for &BooleanChunked {
         let chunks = lhs
             .downcast_iter()
             .zip(rhs.downcast_iter())
-            .map(|(lhs, rhs)| {
-                Box::new(compute::boolean_kleene::or(lhs, rhs).expect("should be same size"))
-                    as ArrayRef
-            })
+            .map(|(lhs, rhs)| Box::new(compute::boolean_kleene::or(lhs, rhs)) as ArrayRef)
             .collect();
         BooleanChunked::from_chunks(self.name(), chunks)
     }
@@ -236,10 +233,7 @@ impl BitAnd for &BooleanChunked {
         let chunks = lhs
             .downcast_iter()
             .zip(rhs.downcast_iter())
-            .map(|(lhs, rhs)| {
-                Box::new(compute::boolean_kleene::and(lhs, rhs).expect("should be same size"))
-                    as ArrayRef
-            })
+            .map(|(lhs, rhs)| Box::new(compute::boolean_kleene::and(lhs, rhs)) as ArrayRef)
             .collect();
         BooleanChunked::from_chunks(self.name(), chunks)
     }
