@@ -291,3 +291,34 @@ def test_ternary_none_struct() -> None:
             {"sum": 2, "count": 1},
         ],
     }
+
+
+def test_when_then_edge_cases_3994() -> None:
+    df = pl.DataFrame(data={"id": [1, 1], "type": [2, 2]})
+
+    # this tests if lazy correctly assigns the list schema to the column aggregation
+    assert (
+        df.lazy()
+        .groupby(["id"])
+        .agg(pl.col("type"))
+        .with_column(
+            pl.when(pl.col("type").arr.lengths() == 0)
+            .then(pl.lit(None))
+            .otherwise(pl.col("type"))
+            .keep_name()
+        )
+        .collect()
+    ).to_dict(False) == {"id": [1], "type": [[2, 2]]}
+
+    # this tests ternary with an empty argument
+    assert (
+        df.filter(pl.col("id") == 42)
+        .groupby(["id"])
+        .agg(pl.col("type"))
+        .with_column(
+            pl.when(pl.col("type").arr.lengths == 0)
+            .then(pl.lit(None))
+            .otherwise(pl.col("type"))
+            .keep_name()
+        )
+    ).to_dict(False) == {"id": [], "type": []}

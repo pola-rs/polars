@@ -156,7 +156,7 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
                 NaiveDateTime::from_timestamp(epoch, 0),
                 TimeUnit::Nanoseconds,
             )),
-            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
             AnyValue::Duration(chrono_duration, time_scale) => Ok(match time_scale {
                 TimeUnit::Nanoseconds => Self::Duration(
                     ChronoDuration::nanoseconds(chrono_duration),

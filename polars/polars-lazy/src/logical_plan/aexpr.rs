@@ -191,9 +191,20 @@ impl AExpr {
                 name,
                 arena.get(*expr).get_type(schema, ctxt, arena)?,
             )),
-            Column(name) => schema
-                .get_field(name)
-                .ok_or_else(|| PolarsError::NotFound(name.to_string())),
+            Column(name) => {
+                let field = schema
+                    .get_field(name)
+                    .ok_or_else(|| PolarsError::NotFound(name.to_string()));
+
+                match ctxt {
+                    Context::Default => field,
+                    Context::Aggregation => field.map(|mut field| {
+                        let dtype = DataType::List(Box::new(field.data_type().clone()));
+                        field.coerce(dtype);
+                        field
+                    }),
+                }
+            }
             Literal(sv) => Ok(Field::new("literal", sv.get_datatype())),
             BinaryExpr { left, right, op } => {
                 use DataType::*;
