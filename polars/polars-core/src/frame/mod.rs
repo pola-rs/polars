@@ -164,11 +164,20 @@ impl DataFrame {
         POOL.install(|| self.columns.par_iter().map(|s| func(s)).collect())
     }
 
+    // reduce monomorphization
     fn try_apply_columns_par(
         &self,
         func: &(dyn Fn(&Series) -> Result<Series> + Send + Sync),
     ) -> Result<Vec<Series>> {
         POOL.install(|| self.columns.par_iter().map(|s| func(s)).collect())
+    }
+
+    // reduce monomorphization
+    fn try_apply_columns(
+        &self,
+        func: &(dyn Fn(&Series) -> Result<Series> + Send + Sync),
+    ) -> Result<Vec<Series>> {
+        self.columns.iter().map(|s| func(s)).collect()
     }
 
     /// Get the index of the column.
@@ -1470,6 +1479,12 @@ impl DataFrame {
             DataType::Utf8 => s.filter_threaded(mask, true),
             _ => s.filter(mask),
         })?;
+        Ok(DataFrame::new_no_checks(new_col))
+    }
+
+    /// Same as `filter` but does not parallelize.
+    pub fn _filter_seq(&self, mask: &BooleanChunked) -> Result<Self> {
+        let new_col = self.try_apply_columns(&|s| s.filter(mask))?;
         Ok(DataFrame::new_no_checks(new_col))
     }
 
