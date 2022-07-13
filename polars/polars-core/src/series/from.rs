@@ -247,12 +247,9 @@ impl Series {
                 let keys = keys.as_any().downcast_ref::<PrimitiveArray<u32>>().unwrap();
                 let values = values.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
 
-                let mut builder = CategoricalChunkedBuilder::new(name, keys.len());
-                let iter = keys
-                    .into_iter()
-                    .map(|opt_key| opt_key.map(|k| values.value_unchecked(*k as usize)));
-                builder.drain_iter(iter);
-                Ok(builder.finish().into_series())
+                // Safety
+                // the invariants of an Arrow Dictionary guarantee the keys are in bounds
+                Ok(CategoricalChunked::from_keys_and_values(name, keys, values).into_series())
             }
             #[cfg(not(feature = "dtype-u8"))]
             ArrowDataType::LargeBinary | ArrowDataType::Binary => {

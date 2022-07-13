@@ -1,4 +1,5 @@
 use super::*;
+use crate::use_string_cache;
 use arrow::array::DictionaryArray;
 use arrow::datatypes::IntegerType;
 use polars_arrow::compute::cast::cast;
@@ -77,6 +78,33 @@ impl From<&CategoricalChunked> for DictionaryArray<i64> {
                         .unwrap()
                 }
             }
+        }
+    }
+}
+
+impl CategoricalChunked {
+    /// # Safety
+    /// The caller must ensure that index values in the `keys` are in within bounds of the `values` length.
+    pub(crate) unsafe fn from_keys_and_values(
+        name: &str,
+        keys: &PrimitiveArray<u32>,
+        values: &Utf8Array<i64>,
+    ) -> Self {
+        if use_string_cache() {
+            // todo!
+            // we probably can make this faster as we have more information.
+            let mut builder = CategoricalChunkedBuilder::new(name, keys.len());
+            let iter = keys
+                .into_iter()
+                .map(|opt_key| opt_key.map(|k| values.value_unchecked(*k as usize)));
+            builder.drain_iter(iter);
+            builder.finish()
+        } else {
+            CategoricalChunked::from_chunks_original(
+                name,
+                vec![Box::new(keys.clone())],
+                RevMapping::Local(values.clone()),
+            )
         }
     }
 }
