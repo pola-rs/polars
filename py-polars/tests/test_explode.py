@@ -29,3 +29,17 @@ def test_explode_empty_df_3902() -> None:
         }
     )
     assert df.explode("second").frame_equal(expected)
+
+
+def test_explode_empty_list_4003() -> None:
+    df = pl.DataFrame(
+        [
+            {"id": 1, "nested": []},
+            {"id": 2, "nested": [1]},
+            {"id": 3, "nested": [2]},
+        ]
+    )
+    assert df.explode("nested").to_dict(False) == {
+        "id": [1, 2, 3],
+        "nested": [None, 1, 2],
+    }
