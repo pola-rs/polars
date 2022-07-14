@@ -5,7 +5,7 @@ use crate::error::PyPolarsErr;
 use crate::list_construction::py_seq_to_list;
 use crate::utils::reinterpret;
 use crate::{
-    arrow_interop,
+    apply_method_all_arrow_series2, arrow_interop,
     npy::{aligned_array, get_refcnt},
     prelude::*,
 };
@@ -921,7 +921,7 @@ impl PySeries {
 
         let out = match output_type {
             Some(DataType::Int8) => {
-                let ca: Int8Chunked = apply_method_all_arrow_series!(
+                let ca: Int8Chunked = apply_method_all_arrow_series2!(
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
@@ -932,7 +932,7 @@ impl PySeries {
                 ca.into_series()
             }
             Some(DataType::Int16) => {
-                let ca: Int16Chunked = apply_method_all_arrow_series!(
+                let ca: Int16Chunked = apply_method_all_arrow_series2!(
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
@@ -943,7 +943,7 @@ impl PySeries {
                 ca.into_series()
             }
             Some(DataType::Int32) => {
-                let ca: Int32Chunked = apply_method_all_arrow_series!(
+                let ca: Int32Chunked = apply_method_all_arrow_series2!(
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
@@ -954,7 +954,7 @@ impl PySeries {
                 ca.into_series()
             }
             Some(DataType::Int64) => {
-                let ca: Int64Chunked = apply_method_all_arrow_series!(
+                let ca: Int64Chunked = apply_method_all_arrow_series2!(
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
@@ -965,7 +965,7 @@ impl PySeries {
                 ca.into_series()
             }
             Some(DataType::UInt8) => {
-                let ca: UInt8Chunked = apply_method_all_arrow_series!(
+                let ca: UInt8Chunked = apply_method_all_arrow_series2!(
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
@@ -976,7 +976,7 @@ impl PySeries {
                 ca.into_series()
             }
             Some(DataType::UInt16) => {
-                let ca: UInt16Chunked = apply_method_all_arrow_series!(
+                let ca: UInt16Chunked = apply_method_all_arrow_series2!(
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
@@ -987,7 +987,7 @@ impl PySeries {
                 ca.into_series()
             }
             Some(DataType::UInt32) => {
-                let ca: UInt32Chunked = apply_method_all_arrow_series!(
+                let ca: UInt32Chunked = apply_method_all_arrow_series2!(
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
@@ -998,7 +998,7 @@ impl PySeries {
                 ca.into_series()
             }
             Some(DataType::UInt64) => {
-                let ca: UInt64Chunked = apply_method_all_arrow_series!(
+                let ca: UInt64Chunked = apply_method_all_arrow_series2!(
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
@@ -1009,7 +1009,7 @@ impl PySeries {
                 ca.into_series()
             }
             Some(DataType::Float32) => {
-                let ca: Float32Chunked = apply_method_all_arrow_series!(
+                let ca: Float32Chunked = apply_method_all_arrow_series2!(
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
@@ -1020,7 +1020,7 @@ impl PySeries {
                 ca.into_series()
             }
             Some(DataType::Float64) => {
-                let ca: Float64Chunked = apply_method_all_arrow_series!(
+                let ca: Float64Chunked = apply_method_all_arrow_series2!(
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
@@ -1031,7 +1031,7 @@ impl PySeries {
                 ca.into_series()
             }
             Some(DataType::Boolean) => {
-                let ca: BooleanChunked = apply_method_all_arrow_series!(
+                let ca: BooleanChunked = apply_method_all_arrow_series2!(
                     series,
                     apply_lambda_with_bool_out_type,
                     py,
@@ -1042,7 +1042,7 @@ impl PySeries {
                 ca.into_series()
             }
             Some(DataType::Date) => {
-                let ca: Int32Chunked = apply_method_all_arrow_series!(
+                let ca: Int32Chunked = apply_method_all_arrow_series2!(
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
@@ -1053,7 +1053,7 @@ impl PySeries {
                 ca.into_date().into_series()
             }
             Some(DataType::Datetime(tu, tz)) => {
-                let ca: Int64Chunked = apply_method_all_arrow_series!(
+                let ca: Int64Chunked = apply_method_all_arrow_series2!(
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
@@ -1064,7 +1064,7 @@ impl PySeries {
                 ca.into_datetime(tu, tz).into_series()
             }
             Some(DataType::Utf8) => {
-                let ca: Utf8Chunked = apply_method_all_arrow_series!(
+                let ca: Utf8Chunked = apply_method_all_arrow_series2!(
                     series,
                     apply_lambda_with_utf8_out_type,
                     py,
@@ -1075,7 +1075,7 @@ impl PySeries {
                 ca.into_series()
             }
             Some(DataType::Object(_)) => {
-                let ca: ObjectChunked<ObjectValue> = apply_method_all_arrow_series!(
+                let ca: ObjectChunked<ObjectValue> = apply_method_all_arrow_series2!(
                     series,
                     apply_lambda_with_object_out_type,
                     py,
@@ -1086,10 +1086,10 @@ impl PySeries {
                 ca.into_series()
             }
             None => {
-                return apply_method_all_arrow_series!(series, apply_lambda_unknown, py, lambda);
+                return apply_method_all_arrow_series2!(series, apply_lambda_unknown, py, lambda);
             }
 
-            _ => return apply_method_all_arrow_series!(series, apply_lambda, py, lambda),
+            _ => return apply_method_all_arrow_series2!(series, apply_lambda, py, lambda),
         };
 
         Ok(PySeries::new(out))

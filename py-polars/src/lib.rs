@@ -1,9 +1,8 @@
 #![feature(vec_into_raw_parts)]
 #![allow(clippy::nonstandard_macro_braces)] // needed because clippy does not understand proc macro of pyo3
 #![allow(clippy::transmute_undefined_repr)]
-#[macro_use]
-extern crate polars;
 extern crate core;
+extern crate polars;
 
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
