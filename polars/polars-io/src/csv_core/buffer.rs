@@ -332,10 +332,14 @@ where
     #[inline]
     fn parse_bytes(
         &mut self,
-        bytes: &[u8],
+        mut bytes: &[u8],
         ignore_errors: bool,
-        _needs_escaping: bool,
+        needs_escaping: bool,
     ) -> Result<()> {
+        if needs_escaping && bytes.len() > 2 {
+            bytes = &bytes[1..bytes.len() - 1]
+        }
+
         match &mut self.compiled {
             None => slow_datetime_parser(self, bytes, ignore_errors),
             Some(compiled) => {
