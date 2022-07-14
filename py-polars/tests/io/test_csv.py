@@ -8,12 +8,24 @@ import textwrap
 import zlib
 from datetime import date
 from pathlib import Path
-from typing import Dict, List, Type, Union
 
 import pytest
 
 import polars as pl
 from polars import DataType
+
+
+def test_quoted_date() -> None:
+    csv = textwrap.dedent(
+        """a,b
+    "2022-01-01",1
+    "2022-01-02",2
+    """
+    )
+
+    expected = pl.DataFrame({"a": [date(2022, 1, 1), date(2022, 1, 2)], "b": [1, 2]})
+
+    assert pl.read_csv(csv.encode(), parse_dates=True).frame_equal(expected)
 
 
 def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
