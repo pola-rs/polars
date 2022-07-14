@@ -530,7 +530,7 @@ null-value,b,bar,
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .has_header(false)
-        .with_null_values(NullValues::AllColumns("null-value".to_string()).into())
+        .with_null_values(NullValues::AllColumnsSingle("null-value".to_string()).into())
         .finish()?;
     assert!(df.get_columns()[0].null_count() > 0);
     Ok(())
@@ -773,7 +773,7 @@ fn test_null_values_infer_schema() -> Result<()> {
 5,6"#;
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
-        .with_null_values(Some(NullValues::AllColumns("NA".into())))
+        .with_null_values(Some(NullValues::AllColumnsSingle("NA".into())))
         .finish()?;
     let expected = &[DataType::Int64, DataType::Int64];
     assert_eq!(df.dtypes(), expected);

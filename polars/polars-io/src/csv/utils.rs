@@ -325,12 +325,12 @@ pub fn infer_file_schema(
                         None => {
                             column_types[i].insert(infer_field_schema(&s, parse_dates));
                         }
-                        Some(NullValues::Columns(names)) => {
-                            if !names.iter().any(|name| name == s.as_ref()) {
+                        Some(NullValues::AllColumns(names)) => {
+                            if !names.iter().any(|nv| nv == s.as_ref()) {
                                 column_types[i].insert(infer_field_schema(&s, parse_dates));
                             }
                         }
-                        Some(NullValues::AllColumns(name)) => {
+                        Some(NullValues::AllColumnsSingle(name)) => {
                             if s.as_ref() != name {
                                 column_types[i].insert(infer_field_schema(&s, parse_dates));
                             }
