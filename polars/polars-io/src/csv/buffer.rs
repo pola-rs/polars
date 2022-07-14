@@ -1,7 +1,7 @@
+use crate::csv::parser::{is_whitespace, skip_whitespace};
+use crate::csv::read_impl::RunningSize;
+use crate::csv::utils::escape_field;
 use crate::csv::CsvEncoding;
-use crate::csv_core::csv::RunningSize;
-use crate::csv_core::parser::{is_whitespace, skip_whitespace};
-use crate::csv_core::utils::escape_field;
 use arrow::array::Utf8Array;
 use arrow::bitmap::MutableBitmap;
 use polars_arrow::prelude::FromDataUtf8;
