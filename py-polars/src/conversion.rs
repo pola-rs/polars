@@ -158,9 +158,9 @@ impl<'a> FromPyObject<'a> for Wrap<Utf8Chunked> {
 impl<'a> FromPyObject<'a> for Wrap<NullValues> {
     fn extract(ob: &'a PyAny) -> PyResult<Self> {
         if let Ok(s) = ob.extract::<String>() {
-            Ok(Wrap(NullValues::AllColumns(s)))
+            Ok(Wrap(NullValues::AllColumnsSingle(s)))
         } else if let Ok(s) = ob.extract::<Vec<String>>() {
-            Ok(Wrap(NullValues::Columns(s)))
+            Ok(Wrap(NullValues::AllColumns(s)))
         } else if let Ok(s) = ob.extract::<Vec<(String, String)>>() {
             Ok(Wrap(NullValues::Named(s)))
         } else {

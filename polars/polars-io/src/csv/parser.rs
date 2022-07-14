@@ -1,4 +1,5 @@
 use super::buffer::*;
+use crate::csv::read::NullValuesCompiled;
 use num::traits::Pow;
 use polars_core::prelude::*;
 
@@ -373,13 +374,13 @@ fn skip_this_line(bytes: &[u8], quote: Option<u8>) -> &[u8] {
 /// * `buffers` - Parsed output will be written to these buffers. Except for UTF8 data. The offsets of the
 ///               fields are written to the buffers. The UTF8 data will be parsed later.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn parse_lines(
+pub(super) fn parse_lines(
     mut bytes: &[u8],
     offset: usize,
     delimiter: u8,
     comment_char: Option<u8>,
     quote_char: Option<u8>,
-    null_values: Option<&Vec<String>>,
+    null_values: Option<&NullValuesCompiled>,
     projection: &[usize],
     buffers: &mut [Buffer],
     ignore_parser_errors: bool,
@@ -465,17 +466,16 @@ pub(crate) fn parse_lines(
                         let mut add_null = false;
 
                         // if we have null values argument, check if this field equal null value
-                        if let Some(null_values) = &null_values {
-                            if let Some(null_value) = null_values.get(processed_fields) {
-                                let field = if needs_escaping && !field.is_empty() {
-                                    &field[1..field.len() - 1]
-                                } else {
-                                    field
-                                };
-                                if field == null_value.as_bytes() {
-                                    add_null = true;
-                                }
-                            }
+                        if let Some(null_values) = null_values {
+                            let field = if needs_escaping && !field.is_empty() {
+                                &field[1..field.len() - 1]
+                            } else {
+                                field
+                            };
+
+                            // safety:
+                            // process fields is in bounds
+                            add_null = unsafe { null_values.is_null(field, processed_fields) }
                         }
                         if add_null {
                             buf.add_null()

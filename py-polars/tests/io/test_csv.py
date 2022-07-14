@@ -549,3 +549,26 @@ def test_csv_whitepsace_delimiter_at_end_do_not_skip() -> None:
         "column_5": [None],
         "column_6": [None],
     }
+
+
+def test_csv_multiple_null_values() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, None, 4],
+            "b": ["2022-01-01", "__NA__", "", "NA"],
+        }
+    )
+
+    f = io.BytesIO()
+    df.write_csv(f)
+    f.seek(0)
+
+    df2 = pl.read_csv(f, null_values=["__NA__", "NA"])
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2, None, 4],
+            "b": ["2022-01-01", None, "", None],
+        }
+    )
+
+    assert df2.frame_equal(expected)

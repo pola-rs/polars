@@ -13,29 +13,63 @@ pub enum CsvEncoding {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum NullValues {
     /// A single value that's used for all columns
-    AllColumns(String),
-    /// A different null value per column
-    Columns(Vec<String>),
+    AllColumnsSingle(String),
+    /// Multiple values that are used for all columns
+    AllColumns(Vec<String>),
     /// Tuples that map column names to null value of that column
     Named(Vec<(String, String)>),
 }
 
+pub(super) enum NullValuesCompiled {
+    /// A single value that's used for all columns
+    AllColumnsSingle(String),
+    // Multiple null values that are null for all columns
+    AllColumns(Vec<String>),
+    /// A different null value per column, computed from `NullValues::Named`
+    Columns(Vec<String>),
+}
+
+impl NullValuesCompiled {
+    pub(super) fn apply_projection(&mut self, projections: &[usize]) {
+        if let Self::Columns(nv) = self {
+            let nv = projections
+                .iter()
+                .map(|i| std::mem::take(&mut nv[*i]))
+                .collect::<Vec<_>>();
+
+            *self = NullValuesCompiled::Columns(nv);
+        }
+    }
+
+    /// Safety
+    /// The caller must ensure that `index` is in bounds
+    pub(super) unsafe fn is_null(&self, field: &[u8], index: usize) -> bool {
+        use NullValuesCompiled::*;
+        match self {
+            AllColumnsSingle(v) => v.as_bytes() == field,
+            AllColumns(v) => v.iter().any(|v| v.as_bytes() == field),
+            Columns(v) => {
+                debug_assert!(index < v.len());
+                v.get_unchecked(index).as_bytes() == field
+            }
+        }
+    }
+}
+
 impl NullValues {
-    /// Use the schema and the null values to produce a null value for every column.
-    pub(crate) fn process(self, schema: &Schema) -> Result<Vec<String>> {
-        let out = match self {
-            NullValues::Columns(v) => v,
-            NullValues::AllColumns(v) => (0..schema.len()).map(|_| v.clone()).collect(),
+    pub(super) fn compile(self, schema: &Schema) -> Result<NullValuesCompiled> {
+        Ok(match self {
+            NullValues::AllColumnsSingle(v) => NullValuesCompiled::AllColumnsSingle(v),
+            NullValues::AllColumns(v) => NullValuesCompiled::AllColumns(v),
             NullValues::Named(v) => {
                 let mut null_values = vec!["".to_string(); schema.len()];
                 for (name, null_value) in v {
                     let i = schema.try_index_of(&name)?;
                     null_values[i] = null_value;
                 }
-                null_values
+                NullValuesCompiled::Columns(null_values)
             }
-        };
-        Ok(out)
+        })
     }
 }
 

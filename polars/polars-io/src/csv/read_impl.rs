@@ -1,4 +1,5 @@
 use crate::aggregations::ScanAggregation;
+use crate::csv::read::NullValuesCompiled;
 use crate::csv::utils::*;
 use crate::csv::{buffer::*, parser::*};
 use crate::csv::{CsvEncoding, NullValues};
@@ -77,7 +78,7 @@ pub(crate) struct CoreReader<'a> {
     low_memory: bool,
     comment_char: Option<u8>,
     quote_char: Option<u8>,
-    null_values: Option<Vec<String>>,
+    null_values: Option<NullValuesCompiled>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&'a [ScanAggregation]>,
     to_cast: &'a [Field],
@@ -237,7 +238,7 @@ impl<'a> CoreReader<'a> {
         }
 
         // create a null value for every column
-        let mut null_values = null_values.map(|nv| nv.process(&schema)).transpose()?;
+        let mut null_values = null_values.map(|nv| nv.compile(&schema)).transpose()?;
 
         if let Some(cols) = columns {
             let mut prj = Vec::with_capacity(cols.len());
@@ -247,11 +248,9 @@ impl<'a> CoreReader<'a> {
             }
 
             // update null values with projection
-            null_values = null_values.map(|mut nv| {
-                prj.iter()
-                    .map(|i| std::mem::take(&mut nv[*i]))
-                    .collect::<Vec<_>>()
-            });
+            if let Some(nv) = null_values.as_mut() {
+                nv.apply_projection(&prj);
+            }
 
             projection = Some(prj);
         }
