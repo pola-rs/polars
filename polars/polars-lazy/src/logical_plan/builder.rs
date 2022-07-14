@@ -6,9 +6,9 @@ use parking_lot::Mutex;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
-use polars_io::csv::CsvEncoding;
 #[cfg(feature = "csv-file")]
-use polars_io::csv_core::utils::infer_file_schema;
+use polars_io::csv::utils::infer_file_schema;
+use polars_io::csv::CsvEncoding;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcReader;
 #[cfg(feature = "parquet")]
@@ -16,8 +16,8 @@ use polars_io::parquet::ParquetReader;
 use polars_io::RowCount;
 #[cfg(feature = "csv-file")]
 use polars_io::{
+    csv::utils::{get_reader_bytes, is_compressed},
     csv::NullValues,
-    csv_core::utils::{get_reader_bytes, is_compressed},
 };
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;

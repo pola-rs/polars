@@ -1,7 +1,7 @@
 use crate::aggregations::ScanAggregation;
+use crate::csv::utils::*;
+use crate::csv::{buffer::*, parser::*};
 use crate::csv::{CsvEncoding, NullValues};
-use crate::csv_core::utils::*;
-use crate::csv_core::{buffer::*, parser::*};
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::update_row_counts;

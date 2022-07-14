@@ -1,5 +1,5 @@
-use crate::csv_core::parser::*;
-use crate::csv_core::utils::*;
+use crate::csv::parser::*;
+use crate::csv::utils::*;
 use crate::mmap::ReaderBytes;
 use crate::ndjson_core::buffer::*;
 use crate::prelude::*;

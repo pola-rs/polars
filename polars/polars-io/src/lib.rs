@@ -11,9 +11,8 @@ pub mod avro;
 #[cfg(feature = "csv-file")]
 #[cfg_attr(docsrs, doc(cfg(feature = "csv-file")))]
 pub mod csv;
-#[cfg(feature = "csv-file")]
-#[cfg_attr(docsrs, doc(cfg(feature = "csv-file")))]
-pub mod csv_core;
+#[cfg(feature = "parquet")]
+#[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
 pub mod export;
 #[cfg(any(feature = "ipc", feature = "ipc_streaming"))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "ipc", feature = "ipc_streaming"))))]

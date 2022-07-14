@@ -1,9 +1,7 @@
-use crate::csv::CsvEncoding;
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
-use crate::csv_core::parser::next_line_position_naive;
-use crate::csv_core::parser::{
-    next_line_position, skip_bom, skip_line_ending, SplitFields, SplitLines,
-};
+use crate::csv::parser::next_line_position_naive;
+use crate::csv::parser::{next_line_position, skip_bom, skip_line_ending, SplitFields, SplitLines};
+use crate::csv::CsvEncoding;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::NullValues;
 use once_cell::sync::Lazy;
