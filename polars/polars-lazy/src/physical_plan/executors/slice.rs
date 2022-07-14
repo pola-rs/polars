@@ -9,7 +9,7 @@ pub struct SliceExec {
 }
 
 impl Executor for SliceExec {
-    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
         let df = self.input.execute(state)?;
         Ok(df.slice(self.offset, self.len as usize))
     }

@@ -9,7 +9,7 @@ pub struct MeltExec {
 }
 
 impl Executor for MeltExec {
-    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
         let df = self.input.execute(state)?;
         let args = std::mem::take(Arc::make_mut(&mut self.args));
         df.melt2(args)

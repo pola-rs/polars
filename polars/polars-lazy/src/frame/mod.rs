@@ -721,8 +721,8 @@ impl LazyFrame {
         let mut physical_plan =
             planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
-        let state = ExecutionState::with_finger_prints(finger_prints);
-        let out = physical_plan.execute(&state);
+        let mut state = ExecutionState::with_finger_prints(finger_prints);
+        let out = physical_plan.execute(&mut state);
         #[cfg(feature = "dtype-categorical")]
         if use_string_cache {
             toggle_string_cache(!use_string_cache);

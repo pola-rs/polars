@@ -140,17 +140,17 @@ fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> usize {
 // by sampling data.
 fn can_run_partitioned(keys: &[Series], original_df: &DataFrame, state: &ExecutionState) -> bool {
     if std::env::var("POLARS_NO_PARTITION").is_ok() {
-        if state.verbose {
+        if state.verbose() {
             eprintln!("POLARS_NO_PARTITION set: running default HASH AGGREGATION")
         }
         false
     } else if std::env::var("POLARS_FORCE_PARTITION").is_ok() {
-        if state.verbose {
+        if state.verbose() {
             eprintln!("POLARS_FORCE_PARTITION set: running partitioned HASH AGGREGATION")
         }
         true
     } else if original_df.height() < 1000 && !cfg!(test) {
-        if state.verbose {
+        if state.verbose() {
             eprintln!("DATAFRAME < 1000 rows: running default HASH AGGREGATION")
         }
         false
@@ -176,12 +176,12 @@ fn can_run_partitioned(keys: &[Series], original_df: &DataFrame, state: &Executi
                 (estimate_unique_count(keys, sample_size), "estimated")
             }
         };
-        if state.verbose {
+        if state.verbose() {
             eprintln!("{} unique values: {}", sampled_method, unique_estimate);
         }
 
         if unique_estimate > unique_count_boundary {
-            if state.verbose {
+            if state.verbose() {
                 eprintln!("estimated unique count: {} exceeded the boundary: {}, running default HASH AGGREGATION",unique_estimate, unique_count_boundary)
             }
             false
@@ -192,7 +192,7 @@ fn can_run_partitioned(keys: &[Series], original_df: &DataFrame, state: &Executi
 }
 
 impl Executor for PartitionGroupByExec {
-    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
         let dfs = {
             let original_df = self.input.execute(state)?;
 
@@ -213,7 +213,7 @@ impl Executor for PartitionGroupByExec {
                     self.slice,
                 );
             }
-            if state.verbose {
+            if state.verbose() {
                 eprintln!("run PARTITIONED HASH AGGREGATION")
             }
 

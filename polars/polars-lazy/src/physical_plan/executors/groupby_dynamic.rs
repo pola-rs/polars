@@ -14,12 +14,12 @@ pub(crate) struct GroupByDynamicExec {
 
 impl Executor for GroupByDynamicExec {
     #[cfg(not(feature = "dynamic_groupby"))]
-    fn execute(&mut self, _state: &ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, _state: &mut ExecutionState) -> Result<DataFrame> {
         panic!("activate feature dynamic_groupby")
     }
 
     #[cfg(feature = "dynamic_groupby")]
-    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
         let mut df = self.input.execute(state)?;
         df.as_single_chunk_par();
         state.set_schema(self.input_schema.clone());

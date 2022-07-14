@@ -1,4 +1,3 @@
-use crate::physical_plan::executors::POLARS_VERBOSE;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::prelude::*;
@@ -9,7 +8,7 @@ pub struct CacheExec {
 }
 
 impl Executor for CacheExec {
-    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
         if let Some(df) = state.cache_hit(&self.key) {
             return Ok(df);
         }
@@ -17,7 +16,7 @@ impl Executor for CacheExec {
         // cache miss
         let df = self.input.execute(state)?;
         state.store_cache(std::mem::take(&mut self.key), df.clone());
-        if std::env::var(POLARS_VERBOSE).is_ok() {
+        if state.verbose() {
             println!("cache set {:?}", self.key);
         }
         Ok(df)

@@ -1,4 +1,4 @@
-use crate::physical_plan::state::ExecutionState;
+use crate::physical_plan::state::{ExecutionState, StateFlags};
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::series::unstable::UnstableSeries;
@@ -92,9 +92,9 @@ impl PhysicalExpr for BinaryExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
-        let mut state = state.clone();
+        let mut state = state.split();
         // don't cache window functions as they run in parallel
-        state.cache_window = false;
+        state.flags.remove(StateFlags::CACHE_WINDOW_EXPR);
         let (lhs, rhs) = POOL.install(|| {
             rayon::join(
                 || self.left.evaluate(df, &state),
@@ -538,9 +538,9 @@ mod stats {
                 _ => Ok(true),
             };
             out.map(|read| {
-                if state.verbose && read {
+                if state.verbose() && read {
                     eprintln!("parquet file must be read, statistics not sufficient to for predicate.")
-                } else if state.verbose && !read {
+                } else if state.verbose() && !read {
                     eprintln!("parquet file can be skipped, the statistics were sufficient to apply the predicate.")
                 };
                 read

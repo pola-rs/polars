@@ -29,11 +29,10 @@ pub(super) use self::{
 
 use super::*;
 use crate::logical_plan::FETCH_ROWS;
+use crate::physical_plan::state::StateFlags;
 use polars_core::POOL;
 use rayon::prelude::*;
 use std::path::PathBuf;
-
-const POLARS_VERBOSE: &str = "POLARS_VERBOSE";
 
 fn set_n_rows(n_rows: Option<usize>) -> Option<usize> {
     let fetch_rows = FETCH_ROWS.with(|fetch_rows| fetch_rows.get());
@@ -102,14 +101,14 @@ fn execute_projection_cached_window_fns(
 
     for mut partition in windows {
         // clear the cache for every partitioned group
-        let mut state = state.clone();
+        let mut state = state.split();
         state.clear_expr_cache();
 
         // don't bother caching if we only have a single window function in this partition
         if partition.1.len() == 1 {
-            state.cache_window = false;
+            state.flags.remove(StateFlags::CACHE_WINDOW_EXPR)
         } else {
-            state.cache_window = true;
+            state.flags.insert(StateFlags::CACHE_WINDOW_EXPR);
         }
 
         partition.1.sort_unstable_by_key(|(_idx, explode, _)| {
@@ -119,14 +118,19 @@ fn execute_projection_cached_window_fns(
         });
 
         for (index, _, e) in partition.1 {
-            // caching more than one window expression is a complicated topic for another day
-            // see issue #2523
-            state.cache_window = e
-                .as_expression()
+            if e.as_expression()
                 .into_iter()
                 .filter(|e| matches!(e, Expr::Window { .. }))
                 .count()
-                == 1;
+                == 1
+            {
+                state.flags.insert(StateFlags::CACHE_WINDOW_EXPR)
+            }
+            // caching more than one window expression is a complicated topic for another day
+            // see issue #2523
+            else {
+                state.flags.remove(StateFlags::CACHE_WINDOW_EXPR)
+            }
 
             let s = e.evaluate(df, &state)?;
             selected_columns.push((index, s));
@@ -141,7 +145,7 @@ fn execute_projection_cached_window_fns(
 pub(crate) fn evaluate_physical_expressions(
     df: &DataFrame,
     exprs: &[Arc<dyn PhysicalExpr>],
-    state: &ExecutionState,
+    state: &mut ExecutionState,
     has_windows: bool,
 ) -> Result<DataFrame> {
     let zero_length = df.height() == 0;

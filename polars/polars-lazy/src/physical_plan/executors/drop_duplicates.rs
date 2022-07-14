@@ -8,7 +8,7 @@ pub(crate) struct DropDuplicatesExec {
 }
 
 impl Executor for DropDuplicatesExec {
-    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
         let df = self.input.execute(state)?;
         let subset = self.options.subset.as_ref().map(|v| &***v);
         let keep = self.options.keep_strategy;
