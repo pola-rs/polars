@@ -20,7 +20,7 @@ from polars.datatypes import (
     UInt32,
     py_type_to_dtype,
 )
-from polars.utils import _timedelta_to_pl_duration
+from polars.utils import _timedelta_to_pl_duration, deprecated_alias
 
 try:
     from polars.polars import PyExpr
@@ -3088,7 +3088,8 @@ class Expr:
                 "include_bounds should be a boolean or [boolean, boolean]."
             )
 
-    def hash(self, seed: int = 0, **kwargs: Any) -> Expr:
+    @deprecated_alias(seed="k0")
+    def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> Expr:
         """
         Hash the elements in the selection.
 
@@ -3096,8 +3097,14 @@ class Expr:
 
         Parameters
         ----------
-        seed
-            The random seed to set.
+        k0
+            Seed parameter.
+        k1
+            Seed parameter.
+        k2
+            Seed parameter.
+        k3
+            Seed parameter.
 
         Examples
         --------
@@ -3122,9 +3129,7 @@ class Expr:
         └──────────────────────┴──────────────────────┘
 
         """
-        # kwargs is for backward compatibility
-        # can be removed later
-        return wrap_expr(self._pyexpr.hash(seed))
+        return wrap_expr(self._pyexpr.hash(k0, k1, k2, k3))
 
     def reinterpret(self, signed: bool) -> Expr:
         """

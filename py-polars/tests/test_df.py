@@ -1509,6 +1509,33 @@ def test_hash_rows() -> None:
     assert df.select([pl.col("a").hash().alias("foo")])["foo"].dtype == pl.UInt64
 
 
+def test_reproducible_hash_with_seeds() -> None:
+    """Tests the reproducibility of DataFrame.hash_rows, Series.hash, and Expr.hash.
+
+    cf. issue #3966, hashes must always be reproducible across sessions when using
+    the same seeds.
+
+    """
+    df = pl.DataFrame({"s": [1234, None, 5678]})
+    seeds = (11, 22, 33, 44)
+    expected = pl.Series(
+        "s",
+        [
+            15801072432137883943,
+            988796329533502010,
+            9604537446374444741,
+        ],
+        dtype=pl.UInt64,
+    )
+
+    result = df.hash_rows(*seeds)
+    assert_series_equal(expected, result, check_names=False, check_exact=True)
+    result = df["s"].hash(*seeds)
+    assert_series_equal(expected, result, check_names=False, check_exact=True)
+    result = df.select([pl.col("s").hash(*seeds)])["s"]
+    assert_series_equal(expected, result, check_names=False, check_exact=True)
+
+
 def test_create_df_from_object() -> None:
     class Foo:
         def __init__(self, value: int) -> None:
