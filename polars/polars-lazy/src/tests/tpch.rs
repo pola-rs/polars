@@ -80,6 +80,7 @@ fn test_q2() -> Result<()> {
         .sort_by_exprs(
             [cols(["s_acctbal", "n_name", "s_name", "p_partkey"])],
             [true, false, false, false],
+            false,
         )
         .limit(100);
 

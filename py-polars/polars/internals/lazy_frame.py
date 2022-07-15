@@ -560,17 +560,13 @@ class LazyFrame(Generic[DF]):
         nulls_last
             Place null values last. Can only be used if sorted by a single column.
         """
-        if nulls_last and not isinstance(by, str):
-            raise ValueError(
-                "nulls_last can only be combined with 'by' argument of type str"
-            )
         if type(by) is str:
             return self._from_pyldf(self._ldf.sort(by, reverse, nulls_last))
         if type(reverse) is bool:
             reverse = [reverse]
 
         by = pli.selection_to_pyexpr_list(by)
-        return self._from_pyldf(self._ldf.sort_by_exprs(by, reverse))
+        return self._from_pyldf(self._ldf.sort_by_exprs(by, reverse, nulls_last))
 
     def collect(
         self,

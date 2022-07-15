@@ -291,13 +291,14 @@ impl LazyFrame {
     /// /// Sort DataFrame by 'sepal.width' column
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .sort_by_exprs(vec![col("sepal.width")], vec![false])
+    ///         .sort_by_exprs(vec![col("sepal.width")], vec![false], false)
     /// }
     /// ```
     pub fn sort_by_exprs<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
         self,
         by_exprs: E,
         reverse: B,
+        nulls_last: bool,
     ) -> Self {
         let by_exprs = by_exprs.as_ref().to_vec();
         let reverse = reverse.as_ref().to_vec();
@@ -307,7 +308,7 @@ impl LazyFrame {
             let opt_state = self.get_opt_state();
             let lp = self
                 .get_plan_builder()
-                .sort(by_exprs, reverse, false)
+                .sort(by_exprs, reverse, nulls_last)
                 .build();
             Self::from_logical_plan(lp, opt_state)
         }
