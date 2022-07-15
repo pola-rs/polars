@@ -2178,8 +2178,8 @@ impl Expr {
 
     #[cfg(feature = "row_hash")]
     /// Compute the hash of every element
-    pub fn hash(self, seed: usize) -> Expr {
-        self.map_private(FunctionExpr::Hash(seed), "hash")
+    pub fn hash(self, k0: u64, k1: u64, k2: u64, k3: u64) -> Expr {
+        self.map_private(FunctionExpr::Hash(k0, k1, k2, k3), "hash")
     }
 
     #[cfg(feature = "strings")]
