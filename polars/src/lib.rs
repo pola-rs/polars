@@ -233,6 +233,7 @@
 //!     - `cumulative_eval` - Apply expressions over cumulatively increasing windows.
 //!     - `argwhere` Get indices where condition holds.
 //!     - `date_offset` Add an offset to dates that take months and leap years into account.
+//!     - `trigo` Add trigonometry functionality.
 //! * `DataFrame` pretty printing
 //!     - `fmt` - Activate DataFrame formatting
 //!

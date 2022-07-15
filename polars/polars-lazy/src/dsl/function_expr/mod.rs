@@ -7,6 +7,8 @@ mod pow;
 mod strings;
 #[cfg(any(feature = "temporal", feature = "date_offset"))]
 mod temporal;
+#[cfg(feature = "trigo")]
+mod trigo;
 
 use super::*;
 use polars_core::prelude::*;
@@ -35,6 +37,23 @@ pub enum FunctionExpr {
     StringEndsWith(String),
     #[cfg(feature = "date_offset")]
     DateOffset(Duration),
+    #[cfg(feature = "trigo")]
+    Trigo(TrigoType),
+}
+
+#[cfg(feature = "trigo")]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+pub enum TrigoType {
+    Sin,
+    Cos,
+    Tan,
+    ArcSin,
+    ArcCos,
+    ArcTan,
+    Sinh,
+    Cosh,
+    Tanh,
 }
 
 impl FunctionExpr {
@@ -75,6 +94,8 @@ impl FunctionExpr {
             }
             #[cfg(feature = "date_offset")]
             DateOffset(_) => same_type(),
+            #[cfg(feature = "trigo")]
+            Trigo(_) => float_dtype(),
         }
     }
 }
@@ -152,6 +173,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "date_offset")]
             DateOffset(offset) => {
                 map_owned_with_args!(temporal::date_offset, offset)
+            }
+            #[cfg(feature = "trigo")]
+            Trigo(trigotype) => {
+                map_with_args!(trigo::trigo, trigotype)
             }
         }
     }
