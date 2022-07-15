@@ -94,8 +94,6 @@ def test_argsort_nulls() -> None:
         None,
         None,
     ]
-    with pytest.raises(ValueError):
-        a.to_frame().sort(by=["a", "b"], nulls_last=True)
 
 
 def test_argsort_window_functions() -> None:
@@ -120,3 +118,16 @@ def test_sort_nans_3740() -> None:
         }
     )
     assert df.sort("val")["key"].to_list() == [2, 4, 1, 5, 3]
+
+
+def test_sort_by_exps_nulls_last() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 3, -2, None, 1],
+        }
+    ).with_row_count()
+
+    assert df.sort(pl.col("a") ** 2, nulls_last=True).to_dict(False) == {
+        "row_nr": [0, 4, 2, 1, 3],
+        "a": [1, 1, -2, 3, None],
+    }
