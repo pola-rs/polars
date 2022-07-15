@@ -880,9 +880,18 @@ def any(name: str | list[pli.Expr]) -> pli.Expr:
     return col(name).any()
 
 
-def exclude(columns: str | list[str]) -> pli.Expr:
+def exclude(
+    columns: (
+        str
+        | list[str]
+        | DataType
+        | type[DataType]
+        | DataType
+        | Sequence[DataType | type[DataType]]
+    ),
+) -> pli.Expr:
     """
-    Exclude certain columns from a wildcard expression.
+    Exclude certain columns from a wildcard/regex selection.
 
     Syntactic sugar for:
 
@@ -892,43 +901,82 @@ def exclude(columns: str | list[str]) -> pli.Expr:
     ----------
     columns
         Column(s) to exclude from selection
+        This can be:
+
+        - a column name, or multiple column names
+        - a regular expression starting with `^` and ending with `$`
+        - a dtype or multiple dtypes
 
     Examples
     --------
     >>> df = pl.DataFrame(
     ...     {
-    ...         "a": [1, 2, 3],
-    ...         "b": ["a", "b", None],
-    ...         "c": [None, 2, 1],
+    ...         "aa": [1, 2, 3],
+    ...         "ba": ["a", "b", None],
+    ...         "cc": [None, 2.5, 1.5],
     ...     }
     ... )
     >>> df
     shape: (3, 3)
     ┌─────┬──────┬──────┐
-    │ a   ┆ b    ┆ c    │
+    │ aa  ┆ ba   ┆ cc   │
     │ --- ┆ ---  ┆ ---  │
-    │ i64 ┆ str  ┆ i64  │
+    │ i64 ┆ str  ┆ f64  │
     ╞═════╪══════╪══════╡
     │ 1   ┆ a    ┆ null │
     ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-    │ 2   ┆ b    ┆ 2    │
+    │ 2   ┆ b    ┆ 2.5  │
     ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-    │ 3   ┆ null ┆ 1    │
+    │ 3   ┆ null ┆ 1.5  │
     └─────┴──────┴──────┘
 
-    >>> df.select(pl.exclude("b"))
+    Exclude by column name(s):
+
+    >>> df.select(pl.exclude("ba"))
     shape: (3, 2)
     ┌─────┬──────┐
-    │ a   ┆ c    │
+    │ aa  ┆ cc   │
     │ --- ┆ ---  │
-    │ i64 ┆ i64  │
+    │ i64 ┆ f64  │
     ╞═════╪══════╡
     │ 1   ┆ null │
     ├╌╌╌╌╌┼╌╌╌╌╌╌┤
-    │ 2   ┆ 2    │
+    │ 2   ┆ 2.5  │
     ├╌╌╌╌╌┼╌╌╌╌╌╌┤
-    │ 3   ┆ 1    │
+    │ 3   ┆ 1.5  │
     └─────┴──────┘
+
+    Exclude by regex, e.g. removing all columns whose names end with the letter "a":
+
+    >>> df.select(pl.exclude("^.*a$"))
+    shape: (3, 1)
+    ┌──────┐
+    │ cc   │
+    │ ---  │
+    │ f64  │
+    ╞══════╡
+    │ null │
+    ├╌╌╌╌╌╌┤
+    │ 2.5  │
+    ├╌╌╌╌╌╌┤
+    │ 1.5  │
+    └──────┘
+
+    Exclude by dtype(s), e.g. removing all columns of type Int64 or Float64:
+
+    >>> df.select(pl.exclude([pl.Int64, pl.Float64]))
+    shape: (3, 1)
+    ┌──────┐
+    │ ba   │
+    │ ---  │
+    │ str  │
+    ╞══════╡
+    │ a    │
+    ├╌╌╌╌╌╌┤
+    │ b    │
+    ├╌╌╌╌╌╌┤
+    │ null │
+    └──────┘
 
     """
     return col("*").exclude(columns)
