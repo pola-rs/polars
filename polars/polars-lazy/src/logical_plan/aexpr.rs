@@ -257,7 +257,8 @@ impl AExpr {
                 use AAggExpr::*;
                 match agg {
                     Max(expr) | Sum(expr) | Min(expr) | First(expr) | Last(expr) => {
-                        arena.get(*expr).to_field(schema, ctxt, arena)
+                        // default context because `col()` would return a list in aggregation context
+                        arena.get(*expr).to_field(schema, Context::Default, arena)
                     }
                     Median(expr) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
@@ -272,7 +273,9 @@ impl AExpr {
                         Ok(field)
                     }
                     List(expr) => {
-                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        // default context because `col()` would return a list in aggregation context
+                        let mut field =
+                            arena.get(*expr).to_field(schema, Context::Default, arena)?;
                         field.coerce(DataType::List(field.data_type().clone().into()));
                         Ok(field)
                     }
