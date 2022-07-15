@@ -1,7 +1,7 @@
 use super::*;
 
 pub struct Utf8ChunkedBuilder {
-    pub builder: MutableUtf8Array<i64>,
+    pub(crate) builder: MutableUtf8Array<i64>,
     pub capacity: usize,
     field: Field,
 }

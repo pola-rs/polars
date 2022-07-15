@@ -1,7 +1,7 @@
 use super::*;
 
 pub struct BooleanChunkedBuilder {
-    array_builder: MutableBooleanArray,
+    pub(crate) array_builder: MutableBooleanArray,
     field: Field,
 }
 
