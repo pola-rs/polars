@@ -2401,12 +2401,31 @@ class Series:
     def cleared(self) -> "Series":
         """
         Create an empty copy of the current Series, with identical name/dtype but no data.
+
+        See Also
+        --------
+        clone : Cheap deepcopy/clone.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [None, True, False])
+        >>> s.cleared()
+        shape: (0,)
+        Series: 'a' [bool]
+        [
+        ]
+
         """
         return self.limit(0) if len(self) > 0 else self.clone()
 
     def clone(self) -> "Series":
         """
         Very cheap deepcopy/clone.
+
+        See Also
+        --------
+        cleared : Create an empty copy of the current Series, with identical
+            schema but no data.
         """
         return wrap_s(self._s.clone())
 
@@ -3397,30 +3416,31 @@ class Series:
         """
         Hash the Series.
 
-        The hash value is of type `UInt64`
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.hash(k0=42)  # doctest: +IGNORE_RESULT
-        shape: (3,)
-        Series: 'a' [u64]
-        [
-                18040498172617206516
-                5352755651785478209
-                3939059409923356085
-        ]
+        The hash value is of type `UInt64`.
 
         Parameters
         ----------
         k0
-            seed parameter
+            Seed parameter.
         k1
-            seed parameter
+            Seed parameter.
         k2
-            seed parameter
+            Seed parameter.
         k3
-            seed parameter
+            Seed parameter.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.hash(k0=42)
+        shape: (3,)
+        Series: 'a' [u64]
+        [
+            16679613936015749658
+            17801292685721255234
+            516997424509290289
+        ]
+
         """
         return wrap_s(self._s.hash(k0, k1, k2, k3))
 
@@ -4547,9 +4567,10 @@ class StringNameSpace:
 
     def ljust(self, width: int, fillchar: str = " ") -> Series:
         """
-        Return the string left justified in a string of length width.
+        Return the string left justified in a string of length ``width``.
+
         Padding is done using the specified ``fillchar``.
-        The original string is returned if width is less than or equal to ``len(s)``.
+        The original string is returned if ``width`` is less than or equal to ``len(s)``.
 
         Parameters
         ----------
@@ -4557,6 +4578,20 @@ class StringNameSpace:
             Justify left to this length.
         fillchar
             Fill with this ASCII character.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", ["cow", "monkey", None, "hippopotamus"])
+        >>> s.str.ljust(8, "*")
+        shape: (4,)
+        Series: 'a' [str]
+        [
+            "cow*****"
+            "monkey**"
+            null
+            "hippopotamus"
+        ]
+
         """
         s = wrap_s(self._s)
         return (
@@ -4565,9 +4600,10 @@ class StringNameSpace:
 
     def rjust(self, width: int, fillchar: str = " ") -> Series:
         """
-        Return the string right justified in a string of length width.
+        Return the string right justified in a string of length ``width``.
+
         Padding is done using the specified ``fillchar``.
-        The original string is returned if width is less than or equal to ``len(s)``.
+        The original string is returned if ``width`` is less than or equal to ``len(s)``.
 
         Parameters
         ----------
@@ -4575,6 +4611,20 @@ class StringNameSpace:
             Justify right to this length.
         fillchar
             Fill with this ASCII character.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", ["cow", "monkey", None, "hippopotamus"])
+        >>> s.str.rjust(8, "*")
+        shape: (4,)
+        Series: 'a' [str]
+        [
+            "*****cow"
+            "**monkey"
+            null
+            "hippopotamus"
+        ]
+
         """
         s = wrap_s(self._s)
         return (

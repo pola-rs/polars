@@ -585,7 +585,7 @@ class LazyFrame(Generic[DF]):
         """
         Collect into a DataFrame.
 
-        Note: use `fetch` if you want to run this query on the first `n` rows only.
+        Note: use :func:`fetch` if you want to run your query on the first `n` rows only.
         This can be a huge time saver in debugging queries.
 
         Parameters
@@ -642,8 +642,9 @@ class LazyFrame(Generic[DF]):
         slice_pushdown: bool = True,
     ) -> DF:
         """
-        Fetch is like a collect operation, but it overwrites the number of rows read by every scan
-        operation. This is a utility that helps debug a query on a smaller number of rows.
+        Fetch is like a :func:`collect` operation, but it overwrites the number of rows read
+        by every scan operation. This is a utility that helps debug a query on a smaller number
+        of rows.
 
         Note that the fetch does not guarantee the final number of rows in the DataFrame.
         Filter, join operations and a lower number of rows available in the scanned file influence
@@ -767,12 +768,40 @@ class LazyFrame(Generic[DF]):
     def cleared(self: LDF) -> LDF:
         """
         Create an empty copy of the current LazyFrame, with identical schema but no data.
+
+        See Also
+        --------
+        clone : Cheap deepcopy/clone.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [None, 2, 3, 4],
+        ...         "b": [0.5, None, 2.5, 13],
+        ...         "c": [True, True, False, None],
+        ...     }
+        ... ).lazy()
+        >>> df.cleared().fetch()
+        shape: (0, 3)
+        ┌─────┬─────┬──────┐
+        │ a   ┆ b   ┆ c    │
+        │ --- ┆ --- ┆ ---  │
+        │ i64 ┆ f64 ┆ bool │
+        ╞═════╪═════╪══════╡
+        └─────┴─────┴──────┘
+
         """
         return self._dataframe_class(columns=self.schema).lazy()
 
     def clone(self: LDF) -> LDF:
         """
         Very cheap deepcopy/clone.
+
+        See Also
+        --------
+        cleared : Create an empty copy of the current LazyFrame, with identical
+            schema but no data.
         """
         return self._from_pyldf(self._ldf.clone())
 
@@ -1774,8 +1803,10 @@ class LazyFrame(Generic[DF]):
 
     def limit(self: LDF, n: int = 5) -> LDF:
         """
-        Limit the DataFrame to the first `n` rows. Note if you don't want the rows to be scanned,
-        use the `fetch` operation.
+        Limit the LazyFrame to the first `n` rows.
+
+        Note if you don't want the rows to be scanned, use the :func:`fetch` operation
+        instead.
 
         Parameters
         ----------
@@ -1786,12 +1817,13 @@ class LazyFrame(Generic[DF]):
 
     def head(self: LDF, n: int = 5) -> LDF:
         """
-        Gets the first `n` rows of the DataFrame. You probably don't want to use this!
+        Gets the first `n` rows of the DataFrame.
 
-        Consider using the `fetch` operation. The `fetch` operation will truly load the first `n`
-        rows lazily.
+        You probably don't want to use this!
+        Consider using the :func:`fetch` operation instead. The :func:`fetch` operation will truly
+        load the first `n` rows lazily.
 
-        This operation instead loads all the rows and only applies the `head` at the end.
+        This operation instead loads all the rows and only applies the ``head`` at the end.
 
         Parameters
         ----------

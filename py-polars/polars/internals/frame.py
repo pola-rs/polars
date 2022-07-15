@@ -4125,12 +4125,40 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def cleared(self: DF) -> DF:
         """
         Create an empty copy of the current DataFrame, with identical schema but no data.
+
+        See Also
+        --------
+        clone : Cheap deepcopy/clone.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [None, 2, 3, 4],
+        ...         "b": [0.5, None, 2.5, 13],
+        ...         "c": [True, True, False, None],
+        ...     }
+        ... )
+        >>> df.cleared()
+        shape: (0, 3)
+        ┌─────┬─────┬──────┐
+        │ a   ┆ b   ┆ c    │
+        │ --- ┆ --- ┆ ---  │
+        │ i64 ┆ f64 ┆ bool │
+        ╞═════╪═════╪══════╡
+        └─────┴─────┴──────┘
+
         """
         return self.head(0) if len(self) > 0 else self.clone()
 
     def clone(self: DF) -> DF:
         """
         Cheap deepcopy/clone.
+
+        See Also
+        --------
+        cleared : Create an empty copy of the current DataFrame, with identical
+            schema but no data.
 
         Examples
         --------
@@ -5712,36 +5740,38 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ) -> pli.Series:
         """
         Hash and combine the rows in this DataFrame.
-        Hash value is UInt64.
+
+        The hash value is of type `UInt64`.
 
         Parameters
         ----------
         k0
-            seed parameter
+            Seed parameter.
         k1
-            seed parameter
+            Seed parameter.
         k2
-            seed parameter
+            Seed parameter.
         k3
-            seed parameter
+            Seed parameter.
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
-        ...         "ham": ["a", "b", "c"],
+        ...         "foo": [1, None, 3, 4],
+        ...         "ham": ["a", "b", None, "d"],
         ...     }
         ... )
-        >>> df.hash(k0=42)  # doctest: +SKIP
-        shape: (3,)
+        >>> df.hash_rows(k0=42)
+        shape: (4,)
         Series: '' [u64]
         [
-            1208206736888326229
-            8040480609798856146
-            18282897888575762835
+            13491910696687648691
+            5223969663565791681
+            4754614259239603444
+            162820313037838626
         ]
+
         """
         return pli.wrap_s(self._df.hash_rows(k0, k1, k2, k3))
 
