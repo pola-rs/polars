@@ -9,6 +9,11 @@ from polars.utils import format_path, handle_projection_columns
 try:
     import pyarrow as pa
 
+    # do not remove these
+    import pyarrow.csv
+    import pyarrow.feather
+    import pyarrow.parquet
+
     _PYARROW_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _PYARROW_AVAILABLE = False
