@@ -363,6 +363,42 @@ impl PyExpr {
         self.clone().inner.abs().into()
     }
 
+    pub fn sin(&self) -> PyExpr {
+        self.clone().inner.sin().into()
+    }
+
+    pub fn cos(&self) -> PyExpr {
+        self.clone().inner.cos().into()
+    }
+
+    pub fn tan(&self) -> PyExpr {
+        self.clone().inner.tan().into()
+    }
+
+    pub fn arcsin(&self) -> PyExpr {
+        self.clone().inner.arcsin().into()
+    }
+
+    pub fn arccos(&self) -> PyExpr {
+        self.clone().inner.arccos().into()
+    }
+
+    pub fn arctan(&self) -> PyExpr {
+        self.clone().inner.arctan().into()
+    }
+
+    pub fn sinh(&self) -> PyExpr {
+        self.clone().inner.sinh().into()
+    }
+
+    pub fn cosh(&self) -> PyExpr {
+        self.clone().inner.cosh().into()
+    }
+
+    pub fn tanh(&self) -> PyExpr {
+        self.clone().inner.tanh().into()
+    }
+
     pub fn is_duplicated(&self) -> PyExpr {
         self.clone().inner.is_duplicated().into()
     }

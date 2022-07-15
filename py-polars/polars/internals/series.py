@@ -2594,7 +2594,7 @@ class Series:
 
     def sin(self) -> Series:
         """
-        Compute the element-wise value for Trigonometric sine.
+        Compute the element-wise value for trigonometric sine.
 
         Examples
         --------
@@ -2610,13 +2610,11 @@ class Series:
         ]
 
         """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.sin(self)  # type: ignore
+        return self.to_frame().select(pli.col(self.name).sin()).to_series()
 
     def cos(self) -> Series:
         """
-        Compute the element-wise value for Trigonometric cosine.
+        Compute the element-wise value for trigonometric cosine.
 
         Examples
         --------
@@ -2632,13 +2630,11 @@ class Series:
         ]
 
         """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.cos(self)  # type: ignore
+        return self.to_frame().select(pli.col(self.name).cos()).to_series()
 
     def tan(self) -> Series:
         """
-        Compute the element-wise value for Trigonometric tangent.
+        Compute the element-wise value for trigonometric tangent.
 
         Examples
         --------
@@ -2654,13 +2650,11 @@ class Series:
         ]
 
         """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.tan(self)  # type: ignore
+        return self.to_frame().select(pli.col(self.name).tan()).to_series()
 
     def arcsin(self) -> Series:
         """
-        Compute the element-wise value for Trigonometric Inverse sine.
+        Compute the element-wise value for trigonometric arcsine.
 
         Examples
         --------
@@ -2676,13 +2670,11 @@ class Series:
         ]
 
         """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.arcsin(self)  # type: ignore
+        return self.to_frame().select(pli.col(self.name).arcsin()).to_series()
 
     def arccos(self) -> Series:
         """
-        Compute the element-wise value for Trigonometric Inverse cosine.
+        Compute the element-wise value for trigonometric arccosine.
 
         Examples
         --------
@@ -2698,13 +2690,11 @@ class Series:
         ]
 
         """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.arccos(self)  # type: ignore
+        return self.to_frame().select(pli.col(self.name).arccos()).to_series()
 
     def arctan(self) -> Series:
         """
-        Compute the element-wise value for Trigonometric Inverse tangent.
+        Compute the element-wise value for trigonometric arctangent.
 
         Examples
         --------
@@ -2720,9 +2710,67 @@ class Series:
         ]
 
         """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.arctan(self)  # type: ignore
+        return self.to_frame().select(pli.col(self.name).arctan()).to_series()
+
+    def sinh(self) -> Series:
+        """
+        Compute the element-wise value for trigonometric hyperbolic sine.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> s = pl.Series("a", np.array((1.0, 0.0, -1)))
+        >>> s.arctan()
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+            0.785398
+            0.0
+            -0.785398
+        ]
+
+        """
+        return self.to_frame().select(pli.col(self.name).sinh()).to_series()
+
+    def cosh(self) -> Series:
+        """
+        Compute the element-wise value for trigonometric hyperbolic cosine.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> s = pl.Series("a", np.array((1.0, 0.0, -1)))
+        >>> s.arctan()
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+            0.785398
+            0.0
+            -0.785398
+        ]
+
+        """
+        return self.to_frame().select(pli.col(self.name).cosh()).to_series()
+
+    def tanh(self) -> Series:
+        """
+        Compute the element-wise value for trigonometric hyperbolic tangent.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> s = pl.Series("a", np.array((1.0, 0.0, -1)))
+        >>> s.arctan()
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+            0.785398
+            0.0
+            -0.785398
+        ]
+
+        """
+        return self.to_frame().select(pli.col(self.name).tanh()).to_series()
 
     def apply(
         self,
