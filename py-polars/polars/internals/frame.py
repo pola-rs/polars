@@ -65,6 +65,10 @@ except ImportError:  # pragma: no cover
 try:
     import pyarrow as pa
 
+    # do not remove these
+    import pyarrow.compute
+    import pyarrow.parquet
+
     _PYARROW_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _PYARROW_AVAILABLE = False

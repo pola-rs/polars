@@ -39,6 +39,13 @@ def test_to_from_buffer(df: pl.DataFrame, compressions: list[str]) -> None:
             read_df = pl.read_parquet(buf)
             assert df.frame_equal(read_df, null_equal=True)
 
+    for use_pyarrow in [True, False]:
+        buf = io.BytesIO()
+        df.write_parquet(buf, use_pyarrow=use_pyarrow)
+        buf.seek(0)
+        read_df = pl.read_parquet(buf, use_pyarrow=use_pyarrow)
+        assert df.frame_equal(read_df, null_equal=True)
+
 
 def test_to_from_file(
     io_test_dir: str, df: pl.DataFrame, compressions: list[str]
