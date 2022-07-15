@@ -23,7 +23,7 @@ impl StructNameSpace {
                             .unwrap_or_else(|| panic!("{} not found", name2));
                         fld.data_type().clone()
                     } else {
-                        unreachable!()
+                        panic!("not a struct type: {}", dtype);
                     }
                 }),
             )

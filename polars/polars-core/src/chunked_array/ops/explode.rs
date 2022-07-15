@@ -1,3 +1,4 @@
+use crate::chunked_array::builder::AnonymousOwnedListBuilder;
 use crate::prelude::*;
 use arrow::bitmap::Bitmap;
 use arrow::{array::*, bitmap::MutableBitmap, buffer::Buffer};
@@ -141,9 +142,13 @@ impl ExplodeByOffsets for BooleanChunked {
             if o == last {
                 if start != last {
                     let vals = arr.slice(start, last - start);
-                    let vals_ref = vals.as_any().downcast_ref::<BooleanArray>().unwrap();
-                    for val in vals_ref {
-                        builder.append_option(val)
+
+                    if vals.null_count() == 0 {
+                        builder
+                            .array_builder
+                            .extend_trusted_len_values(vals.values_iter())
+                    } else {
+                        builder.array_builder.extend_trusted_len(vals.into_iter());
                     }
                 }
                 builder.append_null();
@@ -152,16 +157,48 @@ impl ExplodeByOffsets for BooleanChunked {
             last = o;
         }
         let vals = arr.slice(start, last - start);
-        let vals_ref = vals.as_any().downcast_ref::<BooleanArray>().unwrap();
-        for val in vals_ref {
-            builder.append_option(val)
+        if vals.null_count() == 0 {
+            builder
+                .array_builder
+                .extend_trusted_len_values(vals.values_iter())
+        } else {
+            builder.array_builder.extend_trusted_len(vals.into_iter());
         }
         builder.finish().into()
     }
 }
 impl ExplodeByOffsets for ListChunked {
-    fn explode_by_offsets(&self, _offsets: &[i64]) -> Series {
-        panic!("cannot explode List of Lists")
+    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+        debug_assert_eq!(self.chunks.len(), 1);
+        let arr = self.downcast_iter().next().unwrap();
+
+        let cap = ((arr.len() as f32) * 1.5) as usize;
+        let inner_type = self.inner_dtype();
+        let mut builder = AnonymousOwnedListBuilder::new(self.name(), cap, Some(inner_type));
+
+        let mut start = offsets[0] as usize;
+        let mut last = start;
+        for &o in &offsets[1..] {
+            let o = o as usize;
+            if o == last {
+                if start != last {
+                    let vals = arr.slice(start, last - start);
+                    let ca = ListChunked::from_chunks("", vec![Box::new(vals)]);
+                    for s in &ca {
+                        builder.append_opt_series(s.as_ref())
+                    }
+                }
+                builder.append_null();
+                start = o;
+            }
+            last = o;
+        }
+        let vals = arr.slice(start, last - start);
+        let ca = ListChunked::from_chunks("", vec![Box::new(vals)]);
+        for s in &ca {
+            builder.append_opt_series(s.as_ref())
+        }
+        builder.finish().into()
     }
 }
 impl ExplodeByOffsets for Utf8Chunked {
@@ -180,9 +217,12 @@ impl ExplodeByOffsets for Utf8Chunked {
             if o == last {
                 if start != last {
                     let vals = arr.slice(start, last - start);
-                    let vals_ref = vals.as_any().downcast_ref::<LargeStringArray>().unwrap();
-                    for val in vals_ref {
-                        builder.append_option(val)
+                    if vals.null_count() == 0 {
+                        builder
+                            .builder
+                            .extend_trusted_len_values(vals.values_iter())
+                    } else {
+                        builder.builder.extend_trusted_len(vals.into_iter());
                     }
                 }
                 builder.append_null();
@@ -191,9 +231,12 @@ impl ExplodeByOffsets for Utf8Chunked {
             last = o;
         }
         let vals = arr.slice(start, last - start);
-        let vals_ref = vals.as_any().downcast_ref::<LargeStringArray>().unwrap();
-        for val in vals_ref {
-            builder.append_option(val)
+        if vals.null_count() == 0 {
+            builder
+                .builder
+                .extend_trusted_len_values(vals.values_iter())
+        } else {
+            builder.builder.extend_trusted_len(vals.into_iter());
         }
         builder.finish().into()
     }

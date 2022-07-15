@@ -532,3 +532,25 @@ def test_is_in_struct() -> None:
         "struct_elem": [{"a": 1, "b": 11}],
         "struct_list": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 3, "b": 13}]],
     }
+
+
+def test_nested_explode_4026() -> None:
+    df = pl.DataFrame(
+        {
+            "data": [
+                [
+                    {"account_id": 10, "values": [1, 2]},
+                    {"account_id": 11, "values": [10, 20]},
+                ]
+            ],
+            "day": ["monday"],
+        }
+    )
+
+    assert df.explode("data").to_dict(False) == {
+        "data": [
+            {"account_id": 10, "values": [1, 2]},
+            {"account_id": 11, "values": [10, 20]},
+        ],
+        "day": ["monday", "monday"],
+    }
