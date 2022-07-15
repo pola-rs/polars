@@ -200,3 +200,13 @@ def test_deprecated() -> None:
         df.lazy().join(other=other.lazy(), on="a").collect().to_numpy(),
         result.to_numpy(),
     )
+
+
+def test_join_on_expressions() -> None:
+    df_a = pl.DataFrame({"a": [1, 2, 3]})
+
+    df_b = pl.DataFrame({"b": [1, 4, 9, 9, 0]})
+
+    assert df_a.join(df_b, left_on=(pl.col("a") ** 2).cast(int), right_on=pl.col("b"))[
+        "a"
+    ].to_list() == [1, 4, 9, 9]

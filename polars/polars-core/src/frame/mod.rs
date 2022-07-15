@@ -1076,32 +1076,34 @@ impl DataFrame {
 
     /// Add a new column to this `DataFrame` or replace an existing one.
     pub fn with_column<S: IntoSeries>(&mut self, column: S) -> Result<&mut Self> {
-        let mut series = column.into_series();
+        fn inner(df: &mut DataFrame, mut series: Series) -> Result<&mut DataFrame> {
+            let height = df.height();
+            if series.len() == 1 && height > 1 {
+                series = series.expand_at_index(0, height);
+            }
 
-        let height = self.height();
-        if series.len() == 1 && height > 1 {
-            series = series.expand_at_index(0, height);
+            if series.len() == height || df.is_empty() {
+                df.add_column_by_search(series)?;
+                Ok(df)
+            }
+            // special case for literals
+            else if height == 0 && series.len() == 1 {
+                let s = series.slice(0, 0);
+                df.add_column_by_search(s)?;
+                Ok(df)
+            } else {
+                Err(PolarsError::ShapeMisMatch(
+                    format!(
+                        "Could not add column. The Series length {} differs from the DataFrame height: {}",
+                        series.len(),
+                        df.height()
+                    )
+                        .into(),
+                ))
+            }
         }
-
-        if series.len() == height || self.is_empty() {
-            self.add_column_by_search(series)?;
-            Ok(self)
-        }
-        // special case for literals
-        else if height == 0 && series.len() == 1 {
-            let s = series.slice(0, 0);
-            self.add_column_by_search(s)?;
-            Ok(self)
-        } else {
-            Err(PolarsError::ShapeMisMatch(
-                format!(
-                    "Could not add column. The Series length {} differs from the DataFrame height: {}",
-                    series.len(),
-                    self.height()
-                )
-                .into(),
-            ))
-        }
+        let series = column.into_series();
+        inner(self, series)
     }
 
     fn add_column_by_schema(&mut self, s: Series, schema: &Schema) -> Result<()> {
