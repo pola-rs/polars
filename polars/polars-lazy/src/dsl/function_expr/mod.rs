@@ -146,7 +146,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Hash(k0, k1, k2, k3) => {
                 let f = move |s: &mut [Series]| {
                     let s = &s[0];
-                    Ok(s.hash(ahash::RandomState::with_seeds(k0, k1, k2, k3)).into_series())
+                    Ok(s.hash(ahash::RandomState::with_seeds(k0, k1, k2, k3))
+                        .into_series())
                 };
                 wrap!(f)
             }
