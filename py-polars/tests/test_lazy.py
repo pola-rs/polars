@@ -26,6 +26,12 @@ def test_lazy() -> None:
     df.groupby("a").agg(pl.list("b"))
 
 
+def test_lazyframe_membership_operator() -> None:
+    ldf = pl.DataFrame({"name": ["Jane", "John"], "age": [20, 30]}).lazy()
+    assert "name" in ldf
+    assert "phone" not in ldf
+
+
 def test_apply() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     new = df.lazy().with_column(col("a").map(lambda s: s * 2).alias("foo")).collect()

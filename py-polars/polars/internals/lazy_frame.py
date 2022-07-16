@@ -360,6 +360,9 @@ class LazyFrame(Generic[DF]):
             )
         return LazyPolarsSlice(self).apply(item)
 
+    def __contains__(self: LDF, key: str) -> bool:
+        return key in self.columns
+
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
         Apply a function on Self.

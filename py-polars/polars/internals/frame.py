@@ -1598,6 +1598,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         except Exception:
             raise AttributeError(item)
 
+    def __contains__(self, key: str) -> bool:
+        return key in self.columns
+
     def __iter__(self) -> Iterator[Any]:
         return self.get_columns().__iter__()
 
