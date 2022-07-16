@@ -2104,7 +2104,12 @@ class LazyFrame(Generic[DF]):
 
     def drop_nulls(self: LDF, subset: list[str] | str | None = None) -> LDF:
         """
-        Drop rows with null values from this DataFrame.
+        Drop rows with null values from this LazyFrame.
+
+        Parameters
+        ----------
+        subset
+            Subset of column(s) on which ``drop_nulls`` will be applied.
 
         Examples
         --------

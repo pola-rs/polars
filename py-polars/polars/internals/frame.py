@@ -2650,6 +2650,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         Return a new DataFrame where the null values are dropped.
 
+        Parameters
+        ----------
+        subset
+            Subset of column(s) on which ``drop_nulls`` will be applied.
+
         Examples
         --------
         >>> df = pl.DataFrame(
