@@ -1621,7 +1621,7 @@ def test_apply_dataframe_return() -> None:
     assert out.frame_equal(expected, null_equal=True)
 
 
-def test_groupby_cat_list() -> None:  # noqa: W191,E101
+def test_groupby_cat_list() -> None:
     grouped = (
         pl.DataFrame(
             [

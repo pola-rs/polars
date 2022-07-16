@@ -1071,7 +1071,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     def to_pandas(
         self, *args: Any, date_as_object: bool = False, **kwargs: Any
-    ) -> pd.DataFrame:  # noqa: F821
+    ) -> pd.DataFrame:
         """
         Cast to a pandas DataFrame.
         This requires that pandas and pyarrow are installed.
