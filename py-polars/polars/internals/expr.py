@@ -4210,7 +4210,7 @@ class Expr:
 
     def sin(self) -> Expr:
         """
-        Compute the element-wise value for trigonometric sine on an array.
+        Compute the element-wise value for the sine.
 
         Returns
         -------
@@ -4234,7 +4234,7 @@ class Expr:
 
     def cos(self) -> Expr:
         """
-        Compute the element-wise value for trigonometric cosine on an array.
+        Compute the element-wise value for the cosine.
 
         Returns
         -------
@@ -4258,7 +4258,7 @@ class Expr:
 
     def tan(self) -> Expr:
         """
-        Compute the element-wise value for trigonometric tangent on an array.
+        Compute the element-wise value for the tangent.
 
         Returns
         -------
@@ -4282,7 +4282,7 @@ class Expr:
 
     def arcsin(self) -> Expr:
         """
-        Compute the element-wise value for trigonometric arcsine on an array.
+        Compute the element-wise value for the inverse sine.
 
         Returns
         -------
@@ -4306,7 +4306,7 @@ class Expr:
 
     def arccos(self) -> Expr:
         """
-        Compute the element-wise value for trigonometric arccosine on an array.
+        Compute the element-wise value for the inverse cosine.
 
         Returns
         -------
@@ -4330,7 +4330,7 @@ class Expr:
 
     def arctan(self) -> Expr:
         """
-        Compute the element-wise value for trigonometric arctangent on an array.
+        Compute the element-wise value for the inverse tangent.
 
         Returns
         -------
@@ -4354,7 +4354,7 @@ class Expr:
 
     def sinh(self) -> Expr:
         """
-        Compute the element-wise value for trigonometric hyperbolic sine on an array.
+        Compute the element-wise value for the hyperbolic sine.
 
         Returns
         -------
@@ -4363,14 +4363,14 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1.0]})
-        >>> df.select(pl.col("a").arctan())
+        >>> df.select(pl.col("a").sinh())
         shape: (1, 1)
         ┌──────────┐
         │ a        │
         │ ---      │
         │ f64      │
         ╞══════════╡
-        │ 0.785398 │
+        │ 1.175201 │
         └──────────┘
 
         """
@@ -4378,7 +4378,7 @@ class Expr:
 
     def cosh(self) -> Expr:
         """
-        Compute the element-wise value for trigonometric hyperbolic cosine on an array.
+        Compute the element-wise value for the hyperbolic cosine.
 
         Returns
         -------
@@ -4387,14 +4387,14 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1.0]})
-        >>> df.select(pl.col("a").arctan())
+        >>> df.select(pl.col("a").cosh())
         shape: (1, 1)
         ┌──────────┐
         │ a        │
         │ ---      │
         │ f64      │
         ╞══════════╡
-        │ 0.785398 │
+        │ 1.543081 │
         └──────────┘
 
         """
@@ -4402,7 +4402,7 @@ class Expr:
 
     def tanh(self) -> Expr:
         """
-        Compute the element-wise value for trigonometric hyperbolic tangent on an array.
+        Compute the element-wise value for the hyperbolic tangent.
 
         Returns
         -------
@@ -4411,14 +4411,14 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1.0]})
-        >>> df.select(pl.col("a").arctan())
+        >>> df.select(pl.col("a").tanh())
         shape: (1, 1)
         ┌──────────┐
         │ a        │
         │ ---      │
         │ f64      │
         ╞══════════╡
-        │ 0.785398 │
+        │ 0.761594 │
         └──────────┘
 
         """

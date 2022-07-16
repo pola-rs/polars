@@ -2594,12 +2594,12 @@ class Series:
 
     def sin(self) -> Series:
         """
-        Compute the element-wise value for trigonometric sine.
+        Compute the element-wise value for the sine.
 
         Examples
         --------
-        >>> import numpy as np
-        >>> s = pl.Series("a", np.array((0.0, np.pi / 2.0, np.pi)))
+        >>> import math
+        >>> s = pl.Series("a", [0.0, math.pi / 2.0, math.pi])
         >>> s.sin()
         shape: (3,)
         Series: 'a' [f64]
@@ -2614,12 +2614,12 @@ class Series:
 
     def cos(self) -> Series:
         """
-        Compute the element-wise value for trigonometric cosine.
+        Compute the element-wise value for the cosine.
 
         Examples
         --------
-        >>> import numpy as np
-        >>> s = pl.Series("a", np.array((0.0, np.pi / 2.0, np.pi)))
+        >>> import math
+        >>> s = pl.Series("a", [0.0, math.pi / 2.0, math.pi])
         >>> s.cos()
         shape: (3,)
         Series: 'a' [f64]
@@ -2634,12 +2634,12 @@ class Series:
 
     def tan(self) -> Series:
         """
-        Compute the element-wise value for trigonometric tangent.
+        Compute the element-wise value for the tangent.
 
         Examples
         --------
-        >>> import numpy as np
-        >>> s = pl.Series("a", np.array((0.0, np.pi / 2.0, np.pi)))
+        >>> import math
+        >>> s = pl.Series("a", [0.0, math.pi / 2.0, math.pi])
         >>> s.tan()
         shape: (3,)
         Series: 'a' [f64]
@@ -2654,12 +2654,11 @@ class Series:
 
     def arcsin(self) -> Series:
         """
-        Compute the element-wise value for trigonometric arcsine.
+        Compute the element-wise value for the inverse sine.
 
         Examples
         --------
-        >>> import numpy as np
-        >>> s = pl.Series("a", np.array((1.0, 0.0, -1)))
+        >>> s = pl.Series("a", [1.0, 0.0, -1.0])
         >>> s.arcsin()
         shape: (3,)
         Series: 'a' [f64]
@@ -2674,12 +2673,11 @@ class Series:
 
     def arccos(self) -> Series:
         """
-        Compute the element-wise value for trigonometric arccosine.
+        Compute the element-wise value for the inverse cosine.
 
         Examples
         --------
-        >>> import numpy as np
-        >>> s = pl.Series("a", np.array((1.0, 0.0, -1)))
+        >>> s = pl.Series("a", [1.0, 0.0, -1.0])
         >>> s.arccos()
         shape: (3,)
         Series: 'a' [f64]
@@ -2694,12 +2692,11 @@ class Series:
 
     def arctan(self) -> Series:
         """
-        Compute the element-wise value for trigonometric arctangent.
+        Compute the element-wise value for the inverse tangent.
 
         Examples
         --------
-        >>> import numpy as np
-        >>> s = pl.Series("a", np.array((1.0, 0.0, -1)))
+        >>> s = pl.Series("a", [1.0, 0.0, -1.0])
         >>> s.arctan()
         shape: (3,)
         Series: 'a' [f64]
@@ -2714,19 +2711,18 @@ class Series:
 
     def sinh(self) -> Series:
         """
-        Compute the element-wise value for trigonometric hyperbolic sine.
+        Compute the element-wise value for the hyperbolic sine.
 
         Examples
         --------
-        >>> import numpy as np
-        >>> s = pl.Series("a", np.array((1.0, 0.0, -1)))
-        >>> s.arctan()
+        >>> s = pl.Series("a", [1.0, 0.0, -1.0])
+        >>> s.sinh()
         shape: (3,)
         Series: 'a' [f64]
         [
-            0.785398
+            1.175201
             0.0
-            -0.785398
+            -1.175201
         ]
 
         """
@@ -2734,19 +2730,18 @@ class Series:
 
     def cosh(self) -> Series:
         """
-        Compute the element-wise value for trigonometric hyperbolic cosine.
+        Compute the element-wise value for the hyperbolic cosine.
 
         Examples
         --------
-        >>> import numpy as np
-        >>> s = pl.Series("a", np.array((1.0, 0.0, -1)))
-        >>> s.arctan()
+        >>> s = pl.Series("a", [1.0, 0.0, -1.0])
+        >>> s.cosh()
         shape: (3,)
         Series: 'a' [f64]
         [
-            0.785398
-            0.0
-            -0.785398
+            1.543081
+            1.0
+            1.543081
         ]
 
         """
@@ -2754,19 +2749,18 @@ class Series:
 
     def tanh(self) -> Series:
         """
-        Compute the element-wise value for trigonometric hyperbolic tangent.
+        Compute the element-wise value for the hyperbolic tangent.
 
         Examples
         --------
-        >>> import numpy as np
-        >>> s = pl.Series("a", np.array((1.0, 0.0, -1)))
-        >>> s.arctan()
+        >>> s = pl.Series("a", [1.0, 0.0, -1.0])
+        >>> s.tanh()
         shape: (3,)
         Series: 'a' [f64]
         [
-            0.785398
+            0.761594
             0.0
-            -0.785398
+            -0.761594
         ]
 
         """
