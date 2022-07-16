@@ -2331,8 +2331,8 @@ class Series:
         """
         Convert this Series to a pandas Series
         """
-        if not _PYARROW_AVAILABLE:
-            raise ImportError(  # pragma: no cover
+        if not _PYARROW_AVAILABLE:  # pragma: no cover
+            raise ImportError(
                 "'pyarrow' is required for converting a 'polars' Series to a 'pandas' Series."
             )
         return self.to_arrow().to_pandas()

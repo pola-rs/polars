@@ -45,10 +45,8 @@ def _scan_ds_impl(
     -------
 
     """
-    if not _PYARROW_AVAILABLE:
-        raise ImportError(  # pragma: no cover
-            "'pyarrow' is required for scanning from pyarrow datasets."
-        )
+    if not _PYARROW_AVAILABLE:  # pragma: no cover
+        raise ImportError("'pyarrow' is required for scanning from pyarrow datasets.")
     return pl.from_arrow(ds.to_table(columns=with_columns))  # type: ignore
 
 

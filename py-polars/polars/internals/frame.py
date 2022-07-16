@@ -320,8 +320,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             self._df = series_to_pydf(data, columns=columns)
 
         elif _PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
-            if not _PYARROW_AVAILABLE:
-                raise ImportError(  # pragma: no cover
+            if not _PYARROW_AVAILABLE:  # pragma: no cover
+                raise ImportError(
                     "'pyarrow' is required for converting a pandas DataFrame to a polars DataFrame."
                 )
             self._df = pandas_to_pydf(data, columns=columns)
@@ -819,8 +819,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Data types that do copy:
             - CategoricalType
         """
-        if not _PYARROW_AVAILABLE:
-            raise ImportError(  # pragma: no cover
+        if not _PYARROW_AVAILABLE:  # pragma: no cover
+            raise ImportError(
                 "'pyarrow' is required for converting a polars DataFrame to an Arrow Table."
             )
         record_batches = self._df.to_arrow()
@@ -1101,10 +1101,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         <class 'pandas.core.frame.DataFrame'>
 
         """
-        if not _PYARROW_AVAILABLE:
-            raise ImportError(  # pragma: no cover
-                "'pyarrow' is required when using to_pandas()."
-            )
+        if not _PYARROW_AVAILABLE:  # pragma: no cover
+            raise ImportError("'pyarrow' is required when using to_pandas().")
         record_batches = self._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
         return tbl.to_pandas(*args, date_as_object=date_as_object, **kwargs)
@@ -1443,8 +1441,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             file = format_path(file)
 
         if use_pyarrow:
-            if not _PYARROW_AVAILABLE:
-                raise ImportError(  # pragma: no cover
+            if not _PYARROW_AVAILABLE:  # pragma: no cover
+                raise ImportError(
                     "'pyarrow' is required when using 'write_parquet(..., use_pyarrow=True)'."
                 )
 
