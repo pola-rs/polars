@@ -509,6 +509,13 @@ def test_from_arrow() -> None:
     assert pl.from_arrow(tbl).shape == (2, 5)
 
 
+def test_dataframe_membership_operator() -> None:
+    # cf. issue #4032
+    df = pl.DataFrame({"name": ["Jane", "John"], "age": [20, 30]})
+    assert "name" in df
+    assert "phone" not in df
+
+
 def test_sort() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
     with pytest.deprecated_call():
