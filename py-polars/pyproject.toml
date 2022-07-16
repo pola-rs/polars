@@ -19,6 +19,9 @@ fsspec = ["fsspec"]
 connectorx = ["connectorx"]
 xlsx2csv = ["xlsx2csv"]
 
+[tool.black]
+preview = true
+
 [tool.isort]
 profile = "black"
 
