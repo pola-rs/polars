@@ -108,6 +108,7 @@ Computations
     Series.arg_true
     Series.arg_unique
     Series.cos
+    Series.cosh
     Series.cummax
     Series.cummin
     Series.cumprod
@@ -140,9 +141,11 @@ Computations
     Series.rolling_var
     Series.sign
     Series.sin
+    Series.sinh
     Series.skew
     Series.sqrt
     Series.tan
+    Series.tanh
     Series.unique
 
 Manipulation/ selection
