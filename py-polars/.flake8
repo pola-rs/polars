@@ -1,7 +1,12 @@
 [flake8]
-# just stop shouting as black decides line lengths.
-max-line-length = 180
-# E203, W503: due to black fmt
-ignore = E203,W503
-exclude = docs, venv, target
-
+# Satisfy black: https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html#flake8
+# TODO: Handle long lines adequately
+max-line-length = 160
+extend-ignore = E203
+per-file-ignores =
+    __init__.py:F401
+    tests/*.py: E101, W191
+extend-exclude =
+    # Automatically generated test artifacts
+    venv/,
+    target/,
