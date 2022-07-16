@@ -996,7 +996,8 @@ def test_read_missing_file() -> None:
 
 
 def test_set() -> None:
-    """Setting a dataframe using indices is deprecated. We keep these tests because we only generate a warning"""
+    """Setting a dataframe using indices is deprecated. We keep these tests because we only generate a warning
+    """
     with pytest.deprecated_call():
         np.random.seed(1)
         df = pl.DataFrame(

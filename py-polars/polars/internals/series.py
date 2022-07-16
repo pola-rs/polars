@@ -201,7 +201,6 @@ class Series:
         strict: bool = True,
         nan_to_null: bool = False,
     ):
-
         # Handle case where values are passed as the first argument
         if name is not None and not isinstance(name, str):
             if values is None:
@@ -358,7 +357,8 @@ class Series:
             f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
             raise ValueError(
-                f"cannot do arithmetic with series of dtype: {self.dtype} and argument of type: {type(other)}"
+                f"cannot do arithmetic with series of dtype: {self.dtype} and argument"
+                f" of type: {type(other)}"
             )
         return wrap_s(f(other))
 
@@ -2249,7 +2249,8 @@ class Series:
             return wrap_s(series)
         else:
             raise NotImplementedError(
-                f"Only `__call__` is implemented for numpy ufuncs on a Series, got `{method}`."
+                "Only `__call__` is implemented for numpy ufuncs on a Series, got"
+                f" `{method}`."
             )
 
     def to_numpy(
@@ -2333,7 +2334,8 @@ class Series:
         """
         if not _PYARROW_AVAILABLE:
             raise ImportError(  # pragma: no cover
-                "'pyarrow' is required for converting a 'polars' Series to a 'pandas' Series."
+                "'pyarrow' is required for converting a 'polars' Series to a 'pandas'"
+                " Series."
             )
         return self.to_arrow().to_pandas()
 
@@ -2377,7 +2379,8 @@ class Series:
         f = get_ffi_func("set_at_idx_<>", self.dtype, self._s)
         if f is None:
             raise ValueError(
-                f"could not find the FFI function needed to set at idx for series {self._s}"
+                "could not find the FFI function needed to set at idx for series"
+                f" {self._s}"
             )
         if isinstance(idx, Series):
             # make sure the dtype matches

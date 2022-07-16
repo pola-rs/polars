@@ -20,7 +20,6 @@ def test_rolling_kernels_and_groupby_rolling() -> None:
     )
     for period in ["1d", "2d", "3d"]:
         for closed in ["left", "right", "none", "both"]:
-
             out1 = df.select(
                 [
                     pl.col("dt"),

@@ -179,7 +179,8 @@ def test_struct_cols() -> None:
     """Test that struct columns can be imported and work as expected."""
 
     def build_struct_df(data: list) -> DataFrame:
-        """Build Polars df from list of dicts. Can't import directly because of issue #3145."""
+        """Build Polars df from list of dicts. Can't import directly because of issue #3145.
+        """
         arrow_df = pa.Table.from_pylist(data)
         polars_df = pl.from_arrow(arrow_df)
         assert isinstance(polars_df, DataFrame)
@@ -478,12 +479,18 @@ def test_struct_schema_on_append_extend_3452() -> None:
     housing1, housing2 = pl.Series(housing1_data), pl.Series(housing2_data)
     with pytest.raises(
         pl.SchemaError,
-        match="cannot append field with name: address to struct with field name: city, please check your schema",
+        match=(
+            "cannot append field with name: address to struct with field name: city,"
+            " please check your schema"
+        ),
     ):
         housing1.append(housing2, append_chunks=True)
     with pytest.raises(
         pl.SchemaError,
-        match="cannot extend field with name: address to struct with field name: city, please check your schema",
+        match=(
+            "cannot extend field with name: address to struct with field name: city,"
+            " please check your schema"
+        ),
     ):
         housing1.append(housing2, append_chunks=False)
 

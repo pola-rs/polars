@@ -39,11 +39,13 @@ def _check_arg_is_1byte(
         if can_be_empty:
             if arg_byte_length > 1:
                 raise ValueError(
-                    f'{arg_name}="{arg}" should be a single byte character or empty, but is {arg_byte_length} bytes long.'
+                    f'{arg_name}="{arg}" should be a single byte character or empty,'
+                    f" but is {arg_byte_length} bytes long."
                 )
         elif arg_byte_length != 1:
             raise ValueError(
-                f'{arg_name}="{arg}" should be a single byte character, but is {arg_byte_length} bytes long.'
+                f'{arg_name}="{arg}" should be a single byte character, but is'
+                f" {arg_byte_length} bytes long."
             )
 
 
@@ -303,7 +305,8 @@ def read_csv(
         if columns:
             if len(columns) < len(new_columns):
                 raise ValueError(
-                    "More new column names are specified than there are selected columns."
+                    "More new column names are specified than there are selected"
+                    " columns."
                 )
 
             # Get column names of requested columns.
@@ -314,7 +317,8 @@ def read_csv(
             if projection:
                 if columns and len(columns) < len(new_columns):
                     raise ValueError(
-                        "More new column names are specified than there are selected columns."
+                        "More new column names are specified than there are selected"
+                        " columns."
                     )
                 # Convert column indices from projection to 'column_1', 'column_2', ... column names.
                 current_columns = [
@@ -761,7 +765,8 @@ def read_ipc(
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
                 raise ImportError(
-                    "'pyarrow' is required when using 'read_ipc(..., use_pyarrow=True)'."
+                    "'pyarrow' is required when using 'read_ipc(...,"
+                    " use_pyarrow=True)'."
                 )
 
             tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
@@ -840,7 +845,8 @@ def read_parquet(
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
                 raise ImportError(
-                    "'pyarrow' is required when using 'read_parquet(..., use_pyarrow=True)'."
+                    "'pyarrow' is required when using 'read_parquet(...,"
+                    " use_pyarrow=True)'."
                 )
 
             return from_arrow(  # type: ignore[return-value]

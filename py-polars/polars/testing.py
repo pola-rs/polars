@@ -397,7 +397,8 @@ if HYPOTHESIS_INSTALLED:
                 self.null_probability < 0 or self.null_probability > 1
             ):
                 raise InvalidArgument(
-                    f"null_probability should be between 0.0 and 1.0, or None; found {self.null_probability}"
+                    "null_probability should be between 0.0 and 1.0, or None; found"
+                    f" {self.null_probability}"
                 )
             if self.dtype is None and not self.strategy:
                 self.dtype = random.choice(strategy_dtypes)
@@ -585,7 +586,8 @@ if HYPOTHESIS_INSTALLED:
         ]
         if null_probability and (null_probability < 0 or null_probability > 1):
             raise InvalidArgument(
-                f"null_probability should be between 0.0 and 1.0; found {null_probability}"
+                "null_probability should be between 0.0 and 1.0; found"
+                f" {null_probability}"
             )
         null_probability = float(null_probability or 0.0)
 

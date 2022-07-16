@@ -23,7 +23,8 @@ def test_tables(environ: None) -> None:
     pl.Config.set_ascii_tables()
     df_asci = str(df)
     assert (
-        df_asci == "shape: (3, 3)\n"
+        df_asci
+        == "shape: (3, 3)\n"
         "+-----+-----+-----+\n"
         "| a   | b   | c   |\n"
         "| --- | --- | --- |\n"
@@ -40,7 +41,8 @@ def test_tables(environ: None) -> None:
     pl.Config.set_utf8_tables()
     df_utf8 = str(df)
     assert (
-        df_utf8 == "shape: (3, 3)\n"
+        df_utf8
+        == "shape: (3, 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -101,7 +103,8 @@ def test_set_tbl_rows(environ: None) -> None:
 
     pl.Config.set_tbl_rows(1)
     assert (
-        str(df) == "shape: (4, 3)\n"
+        str(df)
+        == "shape: (4, 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -116,7 +119,8 @@ def test_set_tbl_rows(environ: None) -> None:
     )
     pl.Config.set_tbl_rows(2)
     assert (
-        str(df) == "shape: (4, 3)\n"
+        str(df)
+        == "shape: (4, 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -131,7 +135,8 @@ def test_set_tbl_rows(environ: None) -> None:
     )
     pl.Config.set_tbl_rows(3)
     assert (
-        str(df) == "shape: (4, 3)\n"
+        str(df)
+        == "shape: (4, 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -148,7 +153,8 @@ def test_set_tbl_rows(environ: None) -> None:
     )
     pl.Config.set_tbl_rows(4)
     assert (
-        str(df) == "shape: (4, 3)\n"
+        str(df)
+        == "shape: (4, 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -174,7 +180,8 @@ def test_set_tbl_rows(environ: None) -> None:
 
     pl.Config.set_tbl_rows(3)
     assert (
-        str(df) == "shape: (5, 3)\n"
+        str(df)
+        == "shape: (5, 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -192,7 +199,6 @@ def test_set_tbl_rows(environ: None) -> None:
 
 
 def test_string_cache(environ: None) -> None:
-
     df1 = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
     df2 = pl.DataFrame({"a": ["foo", "spam", "eggs"], "c": [3, 2, 2]})
 

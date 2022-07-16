@@ -80,8 +80,8 @@ class Expr:
 
     def __bool__(self) -> Expr:
         raise ValueError(
-            "Since Expr are lazy, the truthiness of an Expr is ambiguous. \
-            Hint: use '&' or '|' to chain Expr together, not and/or."
+            "Since Expr are lazy, the truthiness of an Expr is ambiguous.            "
+            " Hint: use '&' or '|' to chain Expr together, not and/or."
         )
 
     def __invert__(self) -> Expr:
@@ -6954,7 +6954,8 @@ def expr_to_lit_or_expr(
         return pli.lit(pli.Series("", [expr]))
     else:
         raise ValueError(
-            f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with pl.lit or pl.col"
+            f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with"
+            " pl.lit or pl.col"
         )
 
 
