@@ -1779,8 +1779,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 return self._from_pydf(self._df.select(item))
             if item.dtype == bool:
                 warnings.warn(
-                    "index notation '[]' is deprecated for boolean masks. Consider"
-                    " using 'filter'.",
+                    "index notation '[]' is deprecated for boolean masks."
+                    " Consider using 'filter'.",
                     DeprecationWarning,
                 )
                 return self._from_pydf(self._df.filter(pli.Series("", item).inner()))
@@ -1813,8 +1813,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self, key: str | list | tuple[Any, str | int], value: Any
     ) -> None:  # pragma: no cover
         warnings.warn(
-            "setting a DataFrame by indexing is deprecated; Consider using"
-            " DataFrame.with_column",
+            "setting a DataFrame by indexing is deprecated;"
+            " Consider using DataFrame.with_column",
             DeprecationWarning,
         )
         # df["foo"] = series

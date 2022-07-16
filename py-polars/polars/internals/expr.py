@@ -80,7 +80,7 @@ class Expr:
 
     def __bool__(self) -> Expr:
         raise ValueError(
-            "Since Expr are lazy, the truthiness of an Expr is ambiguous.            "
+            "Since Expr are lazy, the truthiness of an Expr is ambiguous."
             " Hint: use '&' or '|' to chain Expr together, not and/or."
         )
 
