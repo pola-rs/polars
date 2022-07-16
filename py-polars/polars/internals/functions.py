@@ -20,7 +20,7 @@ try:
     from polars.polars import py_hor_concat_df as _hor_concat_df
 
     _DOCUMENTING = False
-except ImportError:  # pragma: no cover
+except ImportError:
     _DOCUMENTING = True
 
 

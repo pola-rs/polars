@@ -21,7 +21,7 @@ except ImportError:
 try:
     from polars.polars import ipc_schema as _ipc_schema
     from polars.polars import parquet_schema as _parquet_schema
-except ImportError:  # pragma: no cover
+except ImportError:
     pass
 
 

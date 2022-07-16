@@ -15,7 +15,7 @@ try:
     import pyarrow.parquet
 
     _PYARROW_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _PYARROW_AVAILABLE = False
 
 from polars.convert import from_arrow
