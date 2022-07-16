@@ -29,7 +29,7 @@ from polars.datatypes_constructor import (
 )
 from polars.utils import threadpool_size
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:
     import pandas as pd
 
 try:
