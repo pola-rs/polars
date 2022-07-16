@@ -4773,11 +4773,38 @@ class StringNameSpace:
             Starting index of the slice (zero-indexed). Negative indexing
             may be used.
         length
-            Optional length of the slice.
+            Optional length of the slice. If None (default), the slice is taken to the end
+            of the string.
 
         Returns
         -------
         Series of Utf8 type
+
+        Examples
+        --------
+        >>> s = pl.Series("s", ["pear", None, "papaya", "dragonfruit"])
+        >>> s.str.slice(-3)
+        shape: (4,)
+        Series: 's' [str]
+        [
+            "ear"
+            null
+            "aya"
+            "uit"
+        ]
+
+        Using the optional `length` parameter
+
+        >>> s.str.slice(4, length=3)
+        shape: (4,)
+        Series: 's' [str]
+        [
+            ""
+            null
+            "ya"
+            "onf"
+        ]
+
         """
         return wrap_s(self._s.str_slice(start, length))
 

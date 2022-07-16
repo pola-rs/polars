@@ -6400,11 +6400,54 @@ class ExprStringNameSpace:
             Starting index of the slice (zero-indexed). Negative indexing
             may be used.
         length
-            Optional length of the slice.
+            Optional length of the slice. If None (default), the slice is taken to the end
+            of the string.
 
         Returns
         -------
         Series of Utf8 type
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
+        >>> df.with_column(
+        ...     pl.col("s").str.slice(-3).alias("s_sliced"),
+        ... )
+        shape: (4, 2)
+        ┌─────────────┬──────────┐
+        │ s           ┆ s_sliced │
+        │ ---         ┆ ---      │
+        │ str         ┆ str      │
+        ╞═════════════╪══════════╡
+        │ pear        ┆ ear      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ null        ┆ null     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ papaya      ┆ aya      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ dragonfruit ┆ uit      │
+        └─────────────┴──────────┘
+
+        Using the optional `length` parameter
+
+        >>> df.with_column(
+        ...     pl.col("s").str.slice(4, length=3).alias("s_sliced"),
+        ... )
+        shape: (4, 2)
+        ┌─────────────┬──────────┐
+        │ s           ┆ s_sliced │
+        │ ---         ┆ ---      │
+        │ str         ┆ str      │
+        ╞═════════════╪══════════╡
+        │ pear        ┆          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ null        ┆ null     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ papaya      ┆ ya       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ dragonfruit ┆ onf      │
+        └─────────────┴──────────┘
+
         """
         return wrap_expr(self._pyexpr.str_slice(start, length))
 
