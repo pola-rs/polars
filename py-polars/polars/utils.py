@@ -28,7 +28,7 @@ except ImportError:
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
 else:
-    from typing_extensions import TypeGuard  # pragma: no cover
+    from typing_extensions import TypeGuard
 
 
 def _process_null_values(

@@ -16,7 +16,7 @@ from typing import Any, Callable, Generic, Sequence, TypeVar, overload
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
-    from typing_extensions import Literal  # pragma: no cover
+    from typing_extensions import Literal
 
 try:
     from polars.polars import PyExpr, PyLazyFrame, PyLazyGroupBy

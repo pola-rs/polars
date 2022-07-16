@@ -38,4 +38,5 @@ exclude_lines = [
   "@overload",
   "except ImportError",
   "if TYPE_CHECKING:",
+  "from typing_extensions import ",
 ]
