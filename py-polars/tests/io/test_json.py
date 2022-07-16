@@ -1,10 +1,7 @@
-# flake8: noqa: W191,E101
 from __future__ import annotations
 
 import io
 import os
-
-import pytest
 
 import polars as pl
 

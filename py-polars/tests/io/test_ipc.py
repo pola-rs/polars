@@ -1,10 +1,8 @@
-# flake8: noqa: W191,E101
 from __future__ import annotations
 
 import io
 import os
 from pathlib import Path
-from typing import List
 
 import pandas as pd
 import pytest

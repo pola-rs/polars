@@ -1,4 +1,3 @@
-# flake8: noqa: W191,E101
 from __future__ import annotations
 
 import sys
@@ -6,7 +5,7 @@ import typing
 from builtins import range
 from datetime import date, datetime, timedelta
 from io import BytesIO
-from typing import Any, Iterator, Type
+from typing import Any, Iterator
 from unittest.mock import patch
 
 import numpy as np
@@ -24,7 +23,7 @@ else:
 
 
 def test_version() -> None:
-    _version = pl.__version__
+    pl.__version__
 
 
 def test_null_count() -> None:
@@ -2152,9 +2151,9 @@ def test_join_suffixes() -> None:
 
     for how in ["left", "inner", "outer", "cross"]:
         # no need for an assert, we error if wrong
-        _df = df_a.join(df_b, on="A", suffix="_y", how=how)["B_y"]
+        df_a.join(df_b, on="A", suffix="_y", how=how)["B_y"]
 
-    _df = df_a.join_asof(df_b, on="A", suffix="_y")["B_y"]
+    df_a.join_asof(df_b, on="A", suffix="_y")["B_y"]
 
 
 def test_preservation_of_subclasses() -> None:

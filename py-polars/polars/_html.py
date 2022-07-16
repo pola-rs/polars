@@ -42,7 +42,12 @@ class Tag:
 
 
 class HTMLFormatter:
-    def __init__(self, df: DataFrame, max_cols: int = 75, max_rows: int = 40):  # type: ignore  # noqa
+    def __init__(
+        self,
+        df: DataFrame,  # type: ignore[name-defined] # noqa: F821
+        max_cols: int = 75,
+        max_rows: int = 40,
+    ):
         self.df = df
         self.elements: list[str] = []
         self.max_cols = max_cols
