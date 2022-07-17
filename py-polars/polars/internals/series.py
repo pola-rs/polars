@@ -4588,9 +4588,9 @@ class StringNameSpace:
             .to_series()
         )
 
-    def replace(self, pattern: str, value: str) -> Series:
+    def replace(self, pattern: str, value: str, literal: bool = False) -> Series:
         """
-        Replace first regex match with a string value.
+        Replace first matching regex/literal substring with a new string value.
 
         Parameters
         ----------
@@ -4598,10 +4598,12 @@ class StringNameSpace:
             A valid regex pattern.
         value
             Substring to replace.
+        literal
+             Treat pattern as a literal string.
 
         See Also
         --------
-        replace_all : Replace all regex matches with a string value.
+        replace_all : Replace all matching regex/literal substrings.
 
         Examples
         --------
@@ -4615,11 +4617,11 @@ class StringNameSpace:
         ]
 
         """
-        return wrap_s(self._s.str_replace(pattern, value))
+        return wrap_s(self._s.str_replace(pattern, value, literal))
 
-    def replace_all(self, pattern: str, value: str) -> Series:
+    def replace_all(self, pattern: str, value: str, literal: bool = False) -> Series:
         """
-        Replace all regex matches with a string value.
+        Replace all matching regex/literal substrings with a new string value.
 
         Parameters
         ----------
@@ -4627,10 +4629,12 @@ class StringNameSpace:
             A valid regex pattern.
         value
             Substring to replace.
+        literal
+             Treat pattern as a literal string.
 
         See Also
         --------
-        replace : Replace first regex match with a string value.
+        replace : Replace first matching regex/literal substring.
 
         Examples
         --------
@@ -4643,7 +4647,7 @@ class StringNameSpace:
             "123-123"
         ]
         """
-        return wrap_s(self._s.str_replace_all(pattern, value))
+        return wrap_s(self._s.str_replace_all(pattern, value, literal))
 
     def strip(self) -> Series:
         """
