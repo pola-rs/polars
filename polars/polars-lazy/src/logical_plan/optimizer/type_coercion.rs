@@ -95,6 +95,23 @@ fn get_input(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> [Option<Node>; 2]
     inputs
 }
 
+fn get_schema(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> Option<&SchemaRef> {
+    get_input(lp_arena, lp_node)[0].map(|input| lp_arena.get(input).schema(lp_arena))
+}
+
+fn get_aexpr_and_type<'a>(
+    expr_arena: &'a Arena<AExpr>,
+    e: Node,
+    input_schema: &Schema,
+) -> Option<(&'a AExpr, DataType)> {
+    let ae = expr_arena.get(e);
+    Some((
+        ae,
+        ae.get_type(input_schema, Context::Default, expr_arena)
+            .ok()?,
+    ))
+}
+
 fn print_date_str_comparison_warning() {
     eprintln!("Warning: Comparing date/datetime/time column to string value, this will lead to string comparison and is unlikely what you want.\n\
     If this is intended, consider using an explicit cast to silence this warning.")
@@ -115,55 +132,46 @@ impl OptimizationRule for TypeCoercionRule {
                 falsy: falsy_node,
                 predicate,
             } => {
-                if let Some(input) = get_input(lp_arena, lp_node)[0] {
-                    let input_schema = lp_arena.get(input).schema(lp_arena);
-                    let truthy = expr_arena.get(truthy_node);
-                    let falsy = expr_arena.get(falsy_node);
-                    let type_true = truthy
-                        .get_type(input_schema, Context::Default, expr_arena)
-                        .expect("could not dtype");
-                    let type_false = falsy
-                        .get_type(input_schema, Context::Default, expr_arena)
-                        .expect("could not dtype");
+                let input_schema = get_schema(lp_arena, lp_node)?;
+                let (truthy, type_true) =
+                    get_aexpr_and_type(expr_arena, truthy_node, input_schema)?;
+                let (falsy, type_false) = get_aexpr_and_type(expr_arena, falsy_node, input_schema)?;
 
-                    if type_true == type_false {
-                        None
-                    } else {
-                        let st = get_supertype(&type_true, &type_false).expect("supertype");
-                        let st = modify_supertype(st, truthy, falsy, &type_true, &type_false);
-
-                        // only cast if the type is not already the super type.
-                        // this can prevent an expensive flattening and subsequent aggregation
-                        // in a groupby context. To be able to cast the groups need to be
-                        // flattened
-                        let new_node_truthy = if type_true != st {
-                            expr_arena.add(AExpr::Cast {
-                                expr: truthy_node,
-                                data_type: st.clone(),
-                                strict: false,
-                            })
-                        } else {
-                            truthy_node
-                        };
-
-                        let new_node_falsy = if type_false != st {
-                            expr_arena.add(AExpr::Cast {
-                                expr: falsy_node,
-                                data_type: st,
-                                strict: false,
-                            })
-                        } else {
-                            falsy_node
-                        };
-
-                        Some(AExpr::Ternary {
-                            truthy: new_node_truthy,
-                            falsy: new_node_falsy,
-                            predicate,
-                        })
-                    }
-                } else {
+                if type_true == type_false {
                     None
+                } else {
+                    let st = get_supertype(&type_true, &type_false).expect("supertype");
+                    let st = modify_supertype(st, truthy, falsy, &type_true, &type_false);
+
+                    // only cast if the type is not already the super type.
+                    // this can prevent an expensive flattening and subsequent aggregation
+                    // in a groupby context. To be able to cast the groups need to be
+                    // flattened
+                    let new_node_truthy = if type_true != st {
+                        expr_arena.add(AExpr::Cast {
+                            expr: truthy_node,
+                            data_type: st.clone(),
+                            strict: false,
+                        })
+                    } else {
+                        truthy_node
+                    };
+
+                    let new_node_falsy = if type_false != st {
+                        expr_arena.add(AExpr::Cast {
+                            expr: falsy_node,
+                            data_type: st,
+                            strict: false,
+                        })
+                    } else {
+                        falsy_node
+                    };
+
+                    Some(AExpr::Ternary {
+                        truthy: new_node_truthy,
+                        falsy: new_node_falsy,
+                        predicate,
+                    })
                 }
             }
             AExpr::BinaryExpr {
@@ -171,178 +179,164 @@ impl OptimizationRule for TypeCoercionRule {
                 op,
                 right: node_right,
             } => {
-                if let Some(input) = get_input(lp_arena, lp_node)[0] {
-                    let input_schema = lp_arena.get(input).schema(lp_arena);
+                let input_schema = get_schema(lp_arena, lp_node)?;
+                let (left, type_left) = get_aexpr_and_type(expr_arena, node_left, input_schema)?;
+                let (right, type_right) = get_aexpr_and_type(expr_arena, node_right, input_schema)?;
 
-                    let left = expr_arena.get(node_left);
-                    let right = expr_arena.get(node_right);
-
-                    let type_left = left
-                        .get_type(input_schema, Context::Default, expr_arena)
-                        .ok()?;
-                    let type_right = right
-                        .get_type(input_schema, Context::Default, expr_arena)
-                        .ok()?;
-
-                    // don't coerce string with number comparisons. They must error
-                    match (&type_left, &type_right, op) {
-                        #[cfg(not(feature = "dtype-categorical"))]
-                        (DataType::Utf8, dt, op) | (dt, DataType::Utf8, op)
-                            if op.is_comparison() && dt.is_numeric() =>
-                        {
-                            return None
-                        }
-                        #[cfg(feature = "dtype-categorical")]
-                        (DataType::Utf8 | DataType::Categorical(_), dt, op)
-                        | (dt, DataType::Utf8 | DataType::Categorical(_), op)
-                            if op.is_comparison() && dt.is_numeric() =>
-                        {
-                            return None
-                        }
-                        #[cfg(feature = "dtype-date")]
-                        (DataType::Date, DataType::Utf8, op) if op.is_comparison() => {
-                            print_date_str_comparison_warning()
-                        }
-                        #[cfg(feature = "dtype-datetime")]
-                        (DataType::Datetime(_, _), DataType::Utf8, op) if op.is_comparison() => {
-                            print_date_str_comparison_warning()
-                        }
-                        #[cfg(feature = "dtype-time")]
-                        (DataType::Time, DataType::Utf8, op) if op.is_comparison() => {
-                            print_date_str_comparison_warning()
-                        }
-                        _ => {}
+                // don't coerce string with number comparisons. They must error
+                match (&type_left, &type_right, op) {
+                    #[cfg(not(feature = "dtype-categorical"))]
+                    (DataType::Utf8, dt, op) | (dt, DataType::Utf8, op)
+                        if op.is_comparison() && dt.is_numeric() =>
+                    {
+                        return None
                     }
+                    #[cfg(feature = "dtype-categorical")]
+                    (DataType::Utf8 | DataType::Categorical(_), dt, op)
+                    | (dt, DataType::Utf8 | DataType::Categorical(_), op)
+                        if op.is_comparison() && dt.is_numeric() =>
+                    {
+                        return None
+                    }
+                    #[cfg(feature = "dtype-date")]
+                    (DataType::Date, DataType::Utf8, op) if op.is_comparison() => {
+                        print_date_str_comparison_warning()
+                    }
+                    #[cfg(feature = "dtype-datetime")]
+                    (DataType::Datetime(_, _), DataType::Utf8, op) if op.is_comparison() => {
+                        print_date_str_comparison_warning()
+                    }
+                    #[cfg(feature = "dtype-time")]
+                    (DataType::Time, DataType::Utf8, op) if op.is_comparison() => {
+                        print_date_str_comparison_warning()
+                    }
+                    _ => {}
+                }
+
+                #[allow(unused_mut, unused_assignments)]
+                let mut compare_cat_to_string = false;
+                #[cfg(feature = "dtype-categorical")]
+                {
+                    compare_cat_to_string = matches!(
+                        op,
+                        Operator::Eq
+                            | Operator::NotEq
+                            | Operator::Gt
+                            | Operator::Lt
+                            | Operator::GtEq
+                            | Operator::LtEq
+                    ) && (matches!(type_left, DataType::Categorical(_))
+                        && type_right == DataType::Utf8)
+                        || (type_left == DataType::Utf8
+                            && matches!(type_right, DataType::Categorical(_)));
+                }
+
+                let datetime_arithmetic = matches!(op, Operator::Minus | Operator::Plus)
+                    && matches!(
+                        (&type_left, &type_right),
+                        (DataType::Datetime(_, _), DataType::Duration(_))
+                            | (DataType::Duration(_), DataType::Datetime(_, _))
+                            | (DataType::Date, DataType::Duration(_))
+                            | (DataType::Duration(_), DataType::Date)
+                    );
+
+                let list_arithmetic = op.is_arithmetic()
+                    && matches!(
+                        (&type_left, &type_right),
+                        (DataType::List(_), _) | (_, DataType::List(_))
+                    );
+
+                // Special path for list arithmetic
+                if list_arithmetic {
+                    match (&type_left, &type_right) {
+                        (DataType::List(inner), _) => {
+                            return if type_right != **inner {
+                                let new_node_right = expr_arena.add(AExpr::Cast {
+                                    expr: node_right,
+                                    data_type: *inner.clone(),
+                                    strict: false,
+                                });
+
+                                Some(AExpr::BinaryExpr {
+                                    left: node_left,
+                                    op,
+                                    right: new_node_right,
+                                })
+                            } else {
+                                None
+                            };
+                        }
+                        (_, DataType::List(inner)) => {
+                            return if type_left != **inner {
+                                let new_node_left = expr_arena.add(AExpr::Cast {
+                                    expr: node_left,
+                                    data_type: *inner.clone(),
+                                    strict: false,
+                                });
+
+                                Some(AExpr::BinaryExpr {
+                                    left: new_node_left,
+                                    op,
+                                    right: node_right,
+                                })
+                            } else {
+                                None
+                            };
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+
+                if type_left == type_right || compare_cat_to_string || datetime_arithmetic {
+                    None
+                } else {
+                    let st = get_supertype(&type_left, &type_right)
+                        .expect("could not find supertype of binary expr");
+                    let mut st = modify_supertype(st, left, right, &type_left, &type_right);
 
                     #[allow(unused_mut, unused_assignments)]
-                    let mut compare_cat_to_string = false;
+                    let mut cat_str_arithmetic = false;
+
                     #[cfg(feature = "dtype-categorical")]
                     {
-                        compare_cat_to_string =
-                            matches!(
-                                op,
-                                Operator::Eq
-                                    | Operator::NotEq
-                                    | Operator::Gt
-                                    | Operator::Lt
-                                    | Operator::GtEq
-                                    | Operator::LtEq
-                            ) && (matches!(type_left, DataType::Categorical(_))
-                                && type_right == DataType::Utf8)
-                                || (type_left == DataType::Utf8
-                                    && matches!(type_right, DataType::Categorical(_)));
+                        cat_str_arithmetic = (matches!(type_left, DataType::Categorical(_))
+                            && type_right == DataType::Utf8)
+                            || (type_left == DataType::Utf8
+                                && matches!(type_right, DataType::Categorical(_)));
                     }
 
-                    let datetime_arithmetic = matches!(op, Operator::Minus | Operator::Plus)
-                        && matches!(
-                            (&type_left, &type_right),
-                            (DataType::Datetime(_, _), DataType::Duration(_))
-                                | (DataType::Duration(_), DataType::Datetime(_, _))
-                                | (DataType::Date, DataType::Duration(_))
-                                | (DataType::Duration(_), DataType::Date)
-                        );
-
-                    let list_arithmetic = op.is_arithmetic()
-                        && matches!(
-                            (&type_left, &type_right),
-                            (DataType::List(_), _) | (_, DataType::List(_))
-                        );
-
-                    // Special path for list arithmetic
-                    if list_arithmetic {
-                        match (&type_left, &type_right) {
-                            (DataType::List(inner), _) => {
-                                return if type_right != **inner {
-                                    let new_node_right = expr_arena.add(AExpr::Cast {
-                                        expr: node_right,
-                                        data_type: *inner.clone(),
-                                        strict: false,
-                                    });
-
-                                    Some(AExpr::BinaryExpr {
-                                        left: node_left,
-                                        op,
-                                        right: new_node_right,
-                                    })
-                                } else {
-                                    None
-                                };
-                            }
-                            (_, DataType::List(inner)) => {
-                                return if type_left != **inner {
-                                    let new_node_left = expr_arena.add(AExpr::Cast {
-                                        expr: node_left,
-                                        data_type: *inner.clone(),
-                                        strict: false,
-                                    });
-
-                                    Some(AExpr::BinaryExpr {
-                                        left: new_node_left,
-                                        op,
-                                        right: node_right,
-                                    })
-                                } else {
-                                    None
-                                };
-                            }
-                            _ => unreachable!(),
-                        }
+                    if cat_str_arithmetic {
+                        st = DataType::Utf8
                     }
 
-                    if type_left == type_right || compare_cat_to_string || datetime_arithmetic {
-                        None
-                    } else {
-                        let st = get_supertype(&type_left, &type_right)
-                            .expect("could not find supertype of binary expr");
-
-                        let mut st = modify_supertype(st, left, right, &type_left, &type_right);
-
-                        #[allow(unused_mut, unused_assignments)]
-                        let mut cat_str_arithmetic = false;
-
-                        #[cfg(feature = "dtype-categorical")]
-                        {
-                            cat_str_arithmetic = (matches!(type_left, DataType::Categorical(_))
-                                && type_right == DataType::Utf8)
-                                || (type_left == DataType::Utf8
-                                    && matches!(type_right, DataType::Categorical(_)));
-                        }
-
-                        if cat_str_arithmetic {
-                            st = DataType::Utf8
-                        }
-
-                        // only cast if the type is not already the super type.
-                        // this can prevent an expensive flattening and subsequent aggregation
-                        // in a groupby context. To be able to cast the groups need to be
-                        // flattened
-                        let new_node_left = if type_left != st {
-                            expr_arena.add(AExpr::Cast {
-                                expr: node_left,
-                                data_type: st.clone(),
-                                strict: false,
-                            })
-                        } else {
-                            node_left
-                        };
-                        let new_node_right = if type_right != st {
-                            expr_arena.add(AExpr::Cast {
-                                expr: node_right,
-                                data_type: st,
-                                strict: false,
-                            })
-                        } else {
-                            node_right
-                        };
-
-                        Some(AExpr::BinaryExpr {
-                            left: new_node_left,
-                            op,
-                            right: new_node_right,
+                    // only cast if the type is not already the super type.
+                    // this can prevent an expensive flattening and subsequent aggregation
+                    // in a groupby context. To be able to cast the groups need to be
+                    // flattened
+                    let new_node_left = if type_left != st {
+                        expr_arena.add(AExpr::Cast {
+                            expr: node_left,
+                            data_type: st.clone(),
+                            strict: false,
                         })
-                    }
-                } else {
-                    None
+                    } else {
+                        node_left
+                    };
+                    let new_node_right = if type_right != st {
+                        expr_arena.add(AExpr::Cast {
+                            expr: node_right,
+                            data_type: st,
+                            strict: false,
+                        })
+                    } else {
+                        node_right
+                    };
+
+                    Some(AExpr::BinaryExpr {
+                        left: new_node_left,
+                        op,
+                        right: new_node_right,
+                    })
                 }
             }
             #[cfg(feature = "is_in")]
@@ -351,47 +345,59 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
-                if let Some(input_node) = get_input(lp_arena, lp_node)[0] {
-                    let input_schema = lp_arena.get(input_node).schema(lp_arena);
-                    let left_node = input[0];
-                    let other_node = input[1];
-                    let left = expr_arena.get(left_node);
-                    let other = expr_arena.get(other_node);
+                let input_schema = get_schema(lp_arena, lp_node)?;
+                let other_node = input[1];
+                let (_, type_left) = get_aexpr_and_type(expr_arena, input[0], input_schema)?;
+                let (_, type_other) = get_aexpr_and_type(expr_arena, other_node, input_schema)?;
 
-                    let type_left = left
-                        .get_type(input_schema, Context::Default, expr_arena)
-                        .ok()?;
-                    let type_other = other
-                        .get_type(input_schema, Context::Default, expr_arena)
-                        .ok()?;
+                match (&type_left, type_other) {
+                    (DataType::Categorical(Some(rev_map)), DataType::Utf8)
+                        if rev_map.is_global() =>
+                    {
+                        let mut input = input.clone();
 
-                    match (&type_left, type_other) {
-                        (DataType::Categorical(Some(rev_map)), DataType::Utf8)
-                            if rev_map.is_global() =>
-                        {
-                            let mut input = input.clone();
+                        let casted_expr = AExpr::Cast {
+                            expr: other_node,
+                            data_type: DataType::Categorical(None),
+                            // does not matter
+                            strict: false,
+                        };
+                        let other_input = expr_arena.add(casted_expr);
+                        input[1] = other_input;
 
-                            let casted_expr = AExpr::Cast {
-                                expr: other_node,
-                                data_type: DataType::Categorical(None),
-                                // does not matter
-                                strict: false,
-                            };
-                            let other_input = expr_arena.add(casted_expr);
-                            input[1] = other_input;
-
-                            Some(AExpr::Function {
-                                function: FunctionExpr::IsIn,
-                                input,
-                                options,
-                            })
-                        }
-                        _ => None,
+                        Some(AExpr::Function {
+                            function: FunctionExpr::IsIn,
+                            input,
+                            options,
+                        })
                     }
-                } else {
-                    None
+                    _ => None,
                 }
             }
+            AExpr::Function {
+                // only for `DataType::Unknown` as it still has to be set.
+                function:
+                    FunctionExpr::FillNull {
+                        super_type: DataType::Unknown,
+                    },
+                ref input,
+                options,
+            } => {
+                let input_schema = get_schema(lp_arena, lp_node)?;
+                let other_node = input[1];
+                let (left, type_left) = get_aexpr_and_type(expr_arena, input[0], input_schema)?;
+                let (fill_value, type_fill_value) =
+                    get_aexpr_and_type(expr_arena, other_node, input_schema)?;
+                let super_type = get_supertype(&type_left, &type_fill_value).ok()?;
+                let super_type =
+                    modify_supertype(super_type, left, fill_value, &type_left, &type_fill_value);
+                Some(AExpr::Function {
+                    function: FunctionExpr::FillNull { super_type },
+                    input: input.clone(),
+                    options,
+                })
+            }
+
             _ => None,
         }
     }
