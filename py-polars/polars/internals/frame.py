@@ -5738,8 +5738,13 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         return self.select(pli.col("*").take_every(n))
 
+    @deprecated_alias(k0="seed", k1="seed_1", k2="seed_2", k3="seed_3")
     def hash_rows(
-        self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3
+        self,
+        seed: int = 0,
+        seed_1: int | None = None,
+        seed_2: int | None = None,
+        seed_3: int | None = None,
     ) -> pli.Series:
         """
         Hash and combine the rows in this DataFrame.
@@ -5748,14 +5753,14 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Parameters
         ----------
-        k0
-            Seed parameter.
-        k1
-            Seed parameter.
-        k2
-            Seed parameter.
-        k3
-            Seed parameter.
+        seed
+            Random seed parameter. Defaults to 0.
+        seed_1
+            Random seed parameter. Defaults to `seed` if not set.
+        seed_2
+            Random seed parameter. Defaults to `seed` if not set.
+        seed_3
+            Random seed parameter. Defaults to `seed` if not set.
 
         Examples
         --------
@@ -5765,17 +5770,21 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ...         "ham": ["a", "b", None, "d"],
         ...     }
         ... )
-        >>> df.hash_rows(k0=42)
+        >>> df.hash_rows(seed=42)
         shape: (4,)
         Series: '' [u64]
         [
-            13491910696687648691
-            5223969663565791681
-            4754614259239603444
-            162820313037838626
+            1381515935931787907
+            14326417405130769253
+            12561864296213327929
+            11391467306893437193
         ]
 
         """
+        k0 = seed
+        k1 = seed_1 if seed_1 is not None else seed
+        k2 = seed_2 if seed_2 is not None else seed
+        k3 = seed_3 if seed_3 is not None else seed
         return pli.wrap_s(self._df.hash_rows(k0, k1, k2, k3))
 
     def interpolate(self: DF) -> DF:

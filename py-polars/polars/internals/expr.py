@@ -20,7 +20,7 @@ from polars.datatypes import (
     UInt32,
     py_type_to_dtype,
 )
-from polars.utils import _timedelta_to_pl_duration, deprecated_alias
+from polars.utils import _timedelta_to_pl_duration
 
 try:
     from polars.polars import PyExpr
@@ -3088,8 +3088,13 @@ class Expr:
                 "include_bounds should be a boolean or [boolean, boolean]."
             )
 
-    @deprecated_alias(seed="k0")
-    def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> Expr:
+    def hash(
+        self,
+        seed: int = 0,
+        seed_1: int | None = None,
+        seed_2: int | None = None,
+        seed_3: int | None = None,
+    ) -> Expr:
         """
         Hash the elements in the selection.
 
@@ -3097,14 +3102,14 @@ class Expr:
 
         Parameters
         ----------
-        k0
-            Seed parameter.
-        k1
-            Seed parameter.
-        k2
-            Seed parameter.
-        k3
-            Seed parameter.
+        seed
+            Random seed parameter. Defaults to 0.
+        seed_1
+            Random seed parameter. Defaults to `seed` if not set.
+        seed_2
+            Random seed parameter. Defaults to `seed` if not set.
+        seed_3
+            Random seed parameter. Defaults to `seed` if not set.
 
         Examples
         --------
@@ -3129,6 +3134,10 @@ class Expr:
         └──────────────────────┴──────────────────────┘
 
         """
+        k0 = seed
+        k1 = seed_1 if seed_1 is not None else seed
+        k2 = seed_2 if seed_2 is not None else seed
+        k3 = seed_3 if seed_3 is not None else seed
         return wrap_expr(self._pyexpr.hash(k0, k1, k2, k3))
 
     def reinterpret(self, signed: bool) -> Expr:
