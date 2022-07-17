@@ -1096,6 +1096,7 @@ def test_hashing_on_python_objects() -> None:
     df = pl.DataFrame({"a": [1, 1, 3, 4], "b": [1, 1, 2, 2]})
 
     class Foo:
+<<<<<<< HEAD
         def __init__(self):  # type: ignore[no-untyped-def]
             pass
 
@@ -1103,6 +1104,15 @@ def test_hashing_on_python_objects() -> None:
             return 0
 
         def __eq__(self, other):  # type: ignore[no-untyped-def]
+=======
+        def __init__(self) -> None:
+            pass
+
+        def __hash__(self) -> int:
+            return 0
+
+        def __eq__(self, other: Any) -> bool:
+>>>>>>> eac2e46db (Disallow untyped calls in mypy check)
             return True
 
     df = df.with_column(pl.col("a").apply(lambda x: Foo()).alias("foo"))
@@ -1304,10 +1314,17 @@ def test_transpose() -> None:
 
 def test_extension() -> None:
     class Foo:
+<<<<<<< HEAD
         def __init__(self, value):  # type: ignore[no-untyped-def]
             self.value = value
 
         def __repr__(self):  # type: ignore[no-untyped-def]
+=======
+        def __init__(self, value: Any) -> None:
+            self.value = value
+
+        def __repr__(self) -> str:
+>>>>>>> eac2e46db (Disallow untyped calls in mypy check)
             return f"foo({self.value})"
 
     foos = [Foo(1), Foo(2), Foo(3)]
