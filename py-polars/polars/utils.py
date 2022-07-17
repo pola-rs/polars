@@ -41,7 +41,7 @@ def _process_null_values(
 
 
 # https://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy
-def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
+def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:  # type: ignore[type-arg]
     """
 
     Parameters
@@ -131,7 +131,7 @@ def is_int_sequence(val: Sequence[object]) -> TypeGuard[Sequence[int]]:
     return _is_iterable_of(val, Sequence, int)
 
 
-def _is_iterable_of(val: Iterable, itertype: type, eltype: type) -> bool:
+def _is_iterable_of(val: Iterable[Any], itertype: type, eltype: type) -> bool:
     return isinstance(val, itertype) and all(isinstance(x, eltype) for x in val)
 
 
@@ -255,7 +255,7 @@ def threadpool_size() -> int:
     return _pool_size()
 
 
-def deprecated_alias(**aliases: str) -> Callable:
+def deprecated_alias(**aliases: str) -> Callable[[Any], Any]:
     """Decorator for deprecated function and method arguments.
 
     Use as follows:
@@ -265,9 +265,9 @@ def deprecated_alias(**aliases: str) -> Callable:
         ...
     """
 
-    def deco(f: Callable) -> Callable:
+    def deco(f: Callable[[Any], Any]) -> Callable[[Any], Any]:
         @functools.wraps(f)
-        def wrapper(*args: Any, **kwargs: Any) -> Callable:
+        def wrapper(*args: Any, **kwargs: Any) -> Callable[[Any], Any]:
             rename_kwargs(f.__name__, kwargs, aliases)
             return f(*args, **kwargs)
 

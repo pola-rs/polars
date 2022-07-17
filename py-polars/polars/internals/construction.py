@@ -89,7 +89,7 @@ def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySe
 
 
 def numpy_to_pyseries(
-    name: str, values: np.ndarray, strict: bool = True, nan_to_null: bool = False
+    name: str, values: np.ndarray, strict: bool = True, nan_to_null: bool = False  # type: ignore[type-arg]
 ) -> PySeries:
     """
     Construct a PySeries from a numpy array.

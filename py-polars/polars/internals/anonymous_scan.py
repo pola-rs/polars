@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pickle
 from functools import partial
+from typing import Any
 
 import polars as pl
 from polars import internals as pli
@@ -52,7 +53,7 @@ def _scan_ds_impl(
     return pl.from_arrow(ds.to_table(columns=with_columns))  # type: ignore
 
 
-def _scan_ds(ds: pa.dataset.dataset) -> pli.LazyFrame:
+def _scan_ds(ds: pa.dataset.dataset) -> pli.LazyFrame[Any]:
     """
     This pickles the partially applied function `_scan_ds_impl`. That bytes are then send to in the polars
     logical plan. It can be deserialized once executed and ran.
@@ -83,8 +84,8 @@ def _scan_ipc_impl(uri: str, with_columns: list[str] | None) -> pli.DataFrame:
 
 def _scan_ipc_fsspec(
     file: str,
-    storage_options: dict | None = None,
-) -> pli.LazyFrame:
+    storage_options: dict[str, Any] | None = None,
+) -> pli.LazyFrame[Any]:
     func = partial(_scan_ipc_impl, file)
     func_serialized = pickle.dumps(func)
 
@@ -111,8 +112,8 @@ def _scan_parquet_impl(uri: str, with_columns: list[str] | None) -> pli.DataFram
 
 def _scan_parquet_fsspec(
     file: str,
-    storage_options: dict | None = None,
-) -> pli.LazyFrame:
+    storage_options: dict[str, Any] | None = None,
+) -> pli.LazyFrame[Any]:
     func = partial(_scan_parquet_impl, file)
     func_serialized = pickle.dumps(func)
 

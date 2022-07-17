@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import Sequence, Union, overload
+from typing import Any, Sequence, Union, overload
 
 from polars import internals as pli
 from polars.datatypes import Date
@@ -56,7 +56,7 @@ def concat(
 
 @overload
 def concat(
-    items: Sequence[pli.LazyFrame],
+    items: Sequence[pli.LazyFrame[Any]],
     rechunk: bool = True,
     how: str = "vertical",
 ) -> pli.LazyFrame:
@@ -71,12 +71,11 @@ def concat(
 ) -> pli.Expr:
     ...
 
-
 def concat(
     items: (
         Sequence[pli.DataFrame]
         | Sequence[pli.Series]
-        | Sequence[pli.LazyFrame]
+        | Sequence[pli.LazyFrame[Any]]
         | Sequence[pli.Expr]
     ),
     rechunk: bool = True,
@@ -102,6 +101,8 @@ def concat(
 
     Examples
     --------
+
+
     >>> df1 = pl.DataFrame({"a": [1], "b": [3]})
     >>> df2 = pl.DataFrame({"a": [2], "b": [4]})
     >>> pl.concat([df1, df2])
@@ -120,7 +121,7 @@ def concat(
     if not len(items) > 0:
         raise ValueError("cannot concat empty list")
 
-    out: pli.Series | pli.DataFrame | pli.LazyFrame | pli.Expr
+    out: pli.Series | pli.DataFrame[Any] | pli.LazyFrame | pli.Expr
     first = items[0]
     if isinstance(first, pli.DataFrame):
         if how == "vertical":

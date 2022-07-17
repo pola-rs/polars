@@ -1737,7 +1737,7 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    def take(self, index: List[int] | Expr | pli.Series | np.ndarray) -> Expr:
+    def take(self, index: List[int] | Expr | pli.Series | np.ndarray) -> Expr:  # type: ignore[type-arg]
         """
         Take values by index.
 

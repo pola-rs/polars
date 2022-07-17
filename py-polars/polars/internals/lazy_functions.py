@@ -608,7 +608,7 @@ def tail(column: str | pli.Series, n: int | None = None) -> pli.Expr | pli.Serie
 
 
 def lit(
-    value: None | (float | int | str | date | datetime | pli.Series | np.ndarray | Any),
+    value: None | (float | int | str | date | datetime | pli.Series | np.ndarray | Any),  # type: ignore [type-arg]
     dtype: type[DataType] | None = None,
 ) -> pli.Expr:
     """

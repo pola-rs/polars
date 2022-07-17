@@ -40,7 +40,7 @@ except ImportError:  # pragma: no cover
     _NUMPY_AVAILABLE = False
 
 if not _DOCUMENTING:
-    _POLARS_TYPE_TO_CONSTRUCTOR: dict[PolarsDataType, Callable] = {
+    _POLARS_TYPE_TO_CONSTRUCTOR: dict[PolarsDataType, Callable[[str, Sequence[Any], bool], PySeries]] = {
         Float32: PySeries.new_opt_f32,
         Float64: PySeries.new_opt_f64,
         Int8: PySeries.new_opt_i8,
@@ -93,7 +93,7 @@ if _NUMPY_AVAILABLE and not _DOCUMENTING:
     }
 
 
-def numpy_type_to_constructor(dtype: type[np.dtype]) -> Callable[..., PySeries]:
+def numpy_type_to_constructor(dtype: type[np.dtype]) -> Callable[[str, Any, bool], PySeries]:
     """
     Get the right PySeries constructor for the given Polars dtype.
     """
