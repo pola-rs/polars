@@ -133,7 +133,7 @@ def test_apply_numpy_out_3057() -> None:
     assert (
         df.groupby("id", maintain_order=True)
         .agg(
-            pl.apply(["y", "t"], lambda lst: np.trapz(y=lst[0], x=lst[1])).alias(  # type: ignore[no-untyped-call]
+            pl.apply(["y", "t"], lambda lst: np.trapz(y=lst[0], x=lst[1])).alias(
                 "result"
             )
         )
