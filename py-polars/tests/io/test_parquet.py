@@ -101,7 +101,7 @@ def test_parquet_chunks() -> None:
         f = io.BytesIO()
         # repeat until it has case instances
         df = pd.DataFrame(
-            np.tile([1.0, pd.to_datetime("2010-10-10")], [case, 1]),  # type: ignore[no-untyped-call]
+            np.tile([1.0, pd.to_datetime("2010-10-10")], [case, 1]),
             columns=["floats", "dates"],
         )
 
