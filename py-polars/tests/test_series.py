@@ -1442,8 +1442,23 @@ def test_is_between_datetime() -> None:
 
 
 @pytest.mark.parametrize(
-    "f", ["sin", "cos", "tan", "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh"]
+    "f",
+    [
+        "sin",
+        "cos",
+        "tan",
+        "arcsin",
+        "arccos",
+        "arctan",
+        "sinh",
+        "cosh",
+        "tanh",
+        "arcsinh",
+        "arccosh",
+        "arctanh",
+    ],
 )
+@pytest.mark.filterwarnings("ignore:invalid value encountered:RuntimeWarning")
 def test_trigonometric(f: str) -> None:
     s = pl.Series("a", [0.0])
     expected = pl.Series("a", getattr(np, f)(s.to_numpy()))

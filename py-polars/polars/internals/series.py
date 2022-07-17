@@ -2709,6 +2709,68 @@ class Series:
         """
         return self.to_frame().select(pli.col(self.name).arctan()).to_series()
 
+    def arcsinh(self) -> Series:
+        """
+        Compute the element-wise value for the inverse hyperbolic sine.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.0, 0.0, -1.0])
+        >>> s.arcsinh()
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+            0.881374
+            0.0
+            -0.881374
+        ]
+
+        """
+        return self.to_frame().select(pli.col(self.name).arcsinh()).to_series()
+
+    def arccosh(self) -> Series:
+        """
+        Compute the element-wise value for the inverse hyperbolic cosine.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [5.0, 1.0, 0.0, -1.0])
+        >>> s.arccosh()
+        shape: (4,)
+        Series: 'a' [f64]
+        [
+            2.292432
+            0.0
+            NaN
+            NaN
+        ]
+
+        """
+        return self.to_frame().select(pli.col(self.name).arccosh()).to_series()
+
+    def arctanh(self) -> Series:
+        """
+        Compute the element-wise value for the inverse hyperbolic tangent.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [2.0, 1.0, 0.5, 0.0, -0.5, -1.0, -1.1])
+        >>> s.arctanh()
+        shape: (7,)
+        Series: 'a' [f64]
+        [
+            NaN
+            inf
+            0.549306
+            0.0
+            -0.549306
+            -inf
+            NaN
+        ]
+
+        """
+        return self.to_frame().select(pli.col(self.name).arctanh()).to_series()
+
     def sinh(self) -> Series:
         """
         Compute the element-wise value for the hyperbolic sine.

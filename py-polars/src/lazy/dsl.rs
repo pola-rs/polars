@@ -399,6 +399,18 @@ impl PyExpr {
         self.clone().inner.tanh().into()
     }
 
+    pub fn arcsinh(&self) -> PyExpr {
+        self.clone().inner.arcsinh().into()
+    }
+
+    pub fn arccosh(&self) -> PyExpr {
+        self.clone().inner.arccosh().into()
+    }
+
+    pub fn arctanh(&self) -> PyExpr {
+        self.clone().inner.arctanh().into()
+    }
+
     pub fn is_duplicated(&self) -> PyExpr {
         self.clone().inner.is_duplicated().into()
     }

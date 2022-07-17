@@ -4424,6 +4424,78 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.tanh())
 
+    def arcsinh(self) -> Expr:
+        """
+        Compute the element-wise value for the inverse hyperbolic sine.
+
+        Returns
+        -------
+        Series of dtype Float64
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1.0]})
+        >>> df.select(pl.col("a").arcsinh())
+        shape: (1, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.881374 │
+        └──────────┘
+
+        """
+        return wrap_expr(self._pyexpr.arcsinh())
+
+    def arccosh(self) -> Expr:
+        """
+        Compute the element-wise value for the inverse hyperbolic cosine.
+
+        Returns
+        -------
+        Series of dtype Float64
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1.0]})
+        >>> df.select(pl.col("a").arccosh())
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 0.0 │
+        └─────┘
+
+        """
+        return wrap_expr(self._pyexpr.arccosh())
+
+    def arctanh(self) -> Expr:
+        """
+        Compute the element-wise value for the inverse hyperbolic tangent.
+
+        Returns
+        -------
+        Series of dtype Float64
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1.0]})
+        >>> df.select(pl.col("a").arctanh())
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ inf │
+        └─────┘
+
+        """
+        return wrap_expr(self._pyexpr.arctanh())
+
     def reshape(self, dims: tuple[int, ...]) -> Expr:
         """
         Reshape this Expr to a flat series, shape: (len,)
