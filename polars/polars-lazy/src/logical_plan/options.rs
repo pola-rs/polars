@@ -38,6 +38,7 @@ pub struct ParquetOptions {
     pub(crate) rechunk: bool,
     pub(crate) row_count: Option<RowCount>,
     pub(crate) file_counter: FileCount,
+    pub(crate) low_memory: bool,
 }
 
 #[derive(Clone, Debug)]

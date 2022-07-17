@@ -15,20 +15,20 @@ try:
     from polars.polars import pool_size as _pool_size
 
     _DOCUMENTING = False
-except ImportError:  # pragma: no cover
+except ImportError:
     _DOCUMENTING = True
 
 try:
     import numpy as np
 
     _NUMPY_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _NUMPY_AVAILABLE = False
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
 else:
-    from typing_extensions import TypeGuard  # pragma: no cover
+    from typing_extensions import TypeGuard
 
 
 def _process_null_values(

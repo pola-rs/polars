@@ -176,7 +176,7 @@ def test_init_ndarray() -> None:
     assert df.frame_equal(truth)
 
     # 2D array - default to column orientation
-    df = pl.DataFrame(np.array([[1, 2], [3, 4]]), orient="column")
+    df = pl.DataFrame(np.array([[1, 2], [3, 4]]), orient="col")
     truth = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
     assert df.frame_equal(truth)
 

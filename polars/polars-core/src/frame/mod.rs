@@ -160,6 +160,11 @@ impl DataFrame {
     }
 
     // reduce monomorphization
+    fn apply_columns(&self, func: &(dyn Fn(&Series) -> Series)) -> Vec<Series> {
+        self.columns.iter().map(|s| func(s)).collect()
+    }
+
+    // reduce monomorphization
     fn apply_columns_par(&self, func: &(dyn Fn(&Series) -> Series + Send + Sync)) -> Vec<Series> {
         POOL.install(|| self.columns.par_iter().map(|s| func(s)).collect())
     }
@@ -2186,13 +2191,19 @@ impl DataFrame {
         if offset == 0 && length == self.height() {
             return self.clone();
         }
-        let col = POOL.install(|| {
-            self.columns
-                .par_iter()
-                .map(|s| s.slice(offset, length))
-                .collect::<Vec<_>>()
-        });
-        DataFrame::new_no_checks(col)
+        DataFrame::new_no_checks(self.apply_columns_par(&|s| s.slice(offset, length)))
+    }
+
+    #[must_use]
+    pub fn _slice_and_realloc(&self, offset: i64, length: usize) -> Self {
+        if offset == 0 && length == self.height() {
+            return self.clone();
+        }
+        DataFrame::new_no_checks(self.apply_columns(&|s| {
+            let mut out = s.slice(offset, length);
+            out.shrink_to_fit();
+            out
+        }))
     }
 
     /// Get the head of the `DataFrame`.

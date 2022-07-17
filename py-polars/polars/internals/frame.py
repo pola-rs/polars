@@ -52,14 +52,14 @@ try:
     from polars.polars import PyDataFrame, PySeries
 
     _DOCUMENTING = False
-except ImportError:  # pragma: no cover
+except ImportError:
     _DOCUMENTING = True
 
 try:
     import numpy as np
 
     _NUMPY_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _NUMPY_AVAILABLE = False
 
 try:
@@ -70,20 +70,20 @@ try:
     import pyarrow.parquet
 
     _PYARROW_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _PYARROW_AVAILABLE = False
 
 try:
     import pandas as pd
 
     _PANDAS_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _PANDAS_AVAILABLE = False
 
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
-    from typing_extensions import Literal  # pragma: no cover
+    from typing_extensions import Literal
 
 # A type variable used to refer to a polars.DataFrame or any subclass of it.
 # Used to annotate DataFrame methods which returns the same type as self.
@@ -299,7 +299,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             | pli.Series
         ) = None,
         columns: ColumnsType | None = None,
-        orient: str | None = None,
+        orient: Literal["col", "row"] | None = None,
     ):
         if data is None:
             self._df = dict_to_pydf({}, columns=columns)
@@ -320,8 +320,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             self._df = series_to_pydf(data, columns=columns)
 
         elif _PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
-            if not _PYARROW_AVAILABLE:
-                raise ImportError(  # pragma: no cover
+            if not _PYARROW_AVAILABLE:  # pragma: no cover
+                raise ImportError(
                     "'pyarrow' is required for converting a pandas DataFrame to a polars DataFrame."
                 )
             self._df = pandas_to_pydf(data, columns=columns)
@@ -392,7 +392,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         cls: type[DF],
         data: Sequence[Sequence[Any]],
         columns: Sequence[str] | None = None,
-        orient: str | None = None,
+        orient: Literal["col", "row"] | None = None,
     ) -> DF:
         """
         Construct a DataFrame from a sequence of sequences.
@@ -420,7 +420,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         cls: type[DF],
         data: np.ndarray,
         columns: Sequence[str] | None = None,
-        orient: str | None = None,
+        orient: Literal["col", "row"] | None = None,
     ) -> DF:
         """
         Construct a DataFrame from a numpy ndarray.
@@ -649,21 +649,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         parallel: str = "auto",
         row_count_name: str | None = None,
         row_count_offset: int = 0,
+        low_memory: bool = False,
     ) -> DF:
         """
-        Read into a DataFrame from a parquet file.
-
-        Parameters
-        ----------
-        file
-            Path to a file or a file-like object. Any valid filepath can be used.
-        columns
-            Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
-        n_rows
-            Stop reading from parquet file after reading ``n_rows``.
-        parallel
-            Any of { 'auto', 'columns', 'row_groups', 'none' }
-            This determines the direction of parallelism. 'auto' will try to determine the optimal direction.
+        See Also: `pl.read_csv`
         """
         if isinstance(file, (str, Path)):
             file = format_path(file)
@@ -678,6 +667,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 parallel=parallel,
                 row_count_name=row_count_name,
                 row_count_offset=row_count_offset,
+                low_memory=low_memory,
             )
 
             if columns is None:
@@ -698,6 +688,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             n_rows,
             parallel,
             _prepare_row_count_args(row_count_name, row_count_offset),
+            low_memory=low_memory,
         )
         return self
 
@@ -819,8 +810,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Data types that do copy:
             - CategoricalType
         """
-        if not _PYARROW_AVAILABLE:
-            raise ImportError(  # pragma: no cover
+        if not _PYARROW_AVAILABLE:  # pragma: no cover
+            raise ImportError(
                 "'pyarrow' is required for converting a polars DataFrame to an Arrow Table."
             )
         record_batches = self._df.to_arrow()
@@ -1101,10 +1092,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         <class 'pandas.core.frame.DataFrame'>
 
         """
-        if not _PYARROW_AVAILABLE:
-            raise ImportError(  # pragma: no cover
-                "'pyarrow' is required when using to_pandas()."
-            )
+        if not _PYARROW_AVAILABLE:  # pragma: no cover
+            raise ImportError("'pyarrow' is required when using to_pandas().")
         record_batches = self._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
         return tbl.to_pandas(*args, date_as_object=date_as_object, **kwargs)
@@ -1443,8 +1432,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             file = format_path(file)
 
         if use_pyarrow:
-            if not _PYARROW_AVAILABLE:
-                raise ImportError(  # pragma: no cover
+            if not _PYARROW_AVAILABLE:  # pragma: no cover
+                raise ImportError(
                     "'pyarrow' is required when using 'write_parquet(..., use_pyarrow=True)'."
                 )
 

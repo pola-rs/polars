@@ -15,7 +15,7 @@ try:
     import pyarrow.parquet
 
     _PYARROW_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _PYARROW_AVAILABLE = False
 
 from polars.convert import from_arrow
@@ -619,6 +619,7 @@ def scan_parquet(
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     storage_options: dict | None = None,
+    low_memory: bool = False,
     **kwargs: Any,
 ) -> LazyFrame:
     """
@@ -648,6 +649,8 @@ def scan_parquet(
         Extra options that make sense for ``fsspec.open()`` or a
         particular storage connection.
         e.g. host, port, username, password, etc.
+    low_memory: bool
+        Reduce memory pressure at the expense of performance.
     """
 
     # Map legacy arguments to current ones and remove them from kwargs.
@@ -665,6 +668,7 @@ def scan_parquet(
         row_count_name=row_count_name,
         row_count_offset=row_count_offset,
         storage_options=storage_options,
+        low_memory=low_memory,
     )
 
 
@@ -787,6 +791,7 @@ def read_parquet(
     parallel: str = "auto",
     row_count_name: str | None = None,
     row_count_offset: int = 0,
+    low_memory: bool = False,
     **kwargs: Any,
 ) -> DataFrame:
     """
@@ -817,6 +822,8 @@ def read_parquet(
         If not None, this will insert a row count column with give name into the DataFrame.
     row_count_offset
         Offset to start the row_count column (only use if the name is set).
+    low_memory: bool
+        Reduce memory pressure at the expense of performance.
     **kwargs
         kwargs for `pyarrow.parquet.read_table <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html>`_.
 
@@ -859,6 +866,7 @@ def read_parquet(
             parallel=parallel,
             row_count_name=row_count_name,
             row_count_offset=row_count_offset,
+            low_memory=low_memory,
         )
 
 

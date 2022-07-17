@@ -9,7 +9,7 @@ try:
         SchemaError,
         ShapeError,
     )
-except ImportError:  # pragma: no cover
+except ImportError:
     # They are only redefined for documentation purposes
     # when there is no binary yet
 

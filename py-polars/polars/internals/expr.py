@@ -26,14 +26,14 @@ try:
     from polars.polars import PyExpr
 
     _DOCUMENTING = False
-except ImportError:  # pragma: no cover
+except ImportError:
     _DOCUMENTING = True
 
 try:
     import numpy as np
 
     _NUMPY_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _NUMPY_AVAILABLE = False
 
 
@@ -203,8 +203,8 @@ class Expr:
 
         args = [inp for inp in inputs if not isinstance(inp, Expr)]
 
-        def function(s: pli.Series) -> pli.Series:
-            return ufunc(s, *args, **kwargs)  # pragma: no cover
+        def function(s: pli.Series) -> pli.Series:  # pragma: no cover
+            return ufunc(s, *args, **kwargs)
 
         if "dtype" in kwargs:
             dtype = kwargs["dtype"]
@@ -5618,20 +5618,16 @@ class ExprStringNameSpace:
         └────────────┘
 
         """
-        if not issubclass(datatype, DataType):
-            raise ValueError(
-                f"expected: {DataType} got: {datatype}"
-            )  # pragma: no cover
+        if not issubclass(datatype, DataType):  # pragma: no cover
+            raise ValueError(f"expected: {DataType} got: {datatype}")
         if datatype == Date:
             return wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact))
         elif datatype == Datetime:
             return wrap_expr(self._pyexpr.str_parse_datetime(fmt, strict, exact))
         elif datatype == Time:
             return wrap_expr(self._pyexpr.str_parse_time(fmt, strict, exact))
-        else:
-            raise ValueError(
-                "dtype should be of type {Date, Datetime, Time}"
-            )  # pragma: no cover
+        else:  # pragma: no cover
+            raise ValueError("dtype should be of type {Date, Datetime, Time}")
 
     def lengths(self) -> Expr:
         """
@@ -6323,9 +6319,9 @@ class ExprStringNameSpace:
             return wrap_expr(self._pyexpr.str_split_exact_inclusive(by, n))
         return wrap_expr(self._pyexpr.str_split_exact(by, n))
 
-    def replace(self, pattern: str, value: str) -> Expr:
+    def replace(self, pattern: str, value: str, literal: bool = False) -> Expr:
         """
-        Replace first regex match with a string value.
+        Replace first matching regex/literal substring with a new string value.
 
         Parameters
         ----------
@@ -6333,10 +6329,12 @@ class ExprStringNameSpace:
             Regex pattern.
         value
             Replacement string.
+        literal
+             Treat pattern as a literal string.
 
         See Also
         --------
-        replace_all : Replace substring on all regex pattern matches.
+        replace_all : Replace all matching regex/literal substrings.
 
         Examples
         --------
@@ -6356,11 +6354,11 @@ class ExprStringNameSpace:
         └─────┴────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_replace(pattern, value))
+        return wrap_expr(self._pyexpr.str_replace(pattern, value, literal))
 
-    def replace_all(self, pattern: str, value: str) -> Expr:
+    def replace_all(self, pattern: str, value: str, literal: bool = False) -> Expr:
         """
-        Replace substring on all regex pattern matches.
+        Replace all matching regex/literal substrings with a new string value.
 
         Parameters
         ----------
@@ -6368,10 +6366,12 @@ class ExprStringNameSpace:
             Regex pattern.
         value
             Replacement string.
+        literal
+             Treat pattern as a literal string.
 
         See Also
         --------
-        replace : Replace first regex match with a string value.
+        replace : Replace first matching regex/literal substring.
 
         Examples
         --------
@@ -6388,7 +6388,7 @@ class ExprStringNameSpace:
         │ 2   ┆ 123-123 │
         └─────┴─────────┘
         """
-        return wrap_expr(self._pyexpr.str_replace_all(pattern, value))
+        return wrap_expr(self._pyexpr.str_replace_all(pattern, value, literal))
 
     def slice(self, start: int, length: int | None = None) -> Expr:
         """

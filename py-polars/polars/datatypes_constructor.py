@@ -29,14 +29,14 @@ try:
     from polars.polars import PySeries
 
     _DOCUMENTING = False
-except ImportError:  # pragma: no cover
+except ImportError:
     _DOCUMENTING = True
 
 try:
     import numpy as np
 
     _NUMPY_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _NUMPY_AVAILABLE = False
 
 if not _DOCUMENTING:
@@ -101,10 +101,8 @@ def numpy_type_to_constructor(dtype: type[np.dtype]) -> Callable[..., PySeries]:
         return _NUMPY_TYPE_TO_CONSTRUCTOR[dtype]
     except KeyError:
         return PySeries.new_object
-    except NameError:
-        raise ImportError(
-            "'numpy' is required for this functionality."
-        )  # pragma: no cover
+    except NameError:  # pragma: no cover
+        raise ImportError("'numpy' is required for this functionality.")
 
 
 if not _DOCUMENTING:

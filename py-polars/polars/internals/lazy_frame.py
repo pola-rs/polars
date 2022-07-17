@@ -16,13 +16,13 @@ from typing import Any, Callable, Generic, Sequence, TypeVar, overload
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
-    from typing_extensions import Literal  # pragma: no cover
+    from typing_extensions import Literal
 
 try:
     from polars.polars import PyExpr, PyLazyFrame, PyLazyGroupBy
 
     _DOCUMENTING = False
-except ImportError:  # pragma: no cover
+except ImportError:
     _DOCUMENTING = True
 
 
@@ -42,7 +42,7 @@ try:
     import pyarrow as pa
 
     _PYARROW_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _PYARROW_AVAILABLE = False
 
 # Used to type any type or subclass of LazyFrame.
@@ -180,6 +180,7 @@ class LazyFrame(Generic[DF]):
         row_count_name: str | None = None,
         row_count_offset: int = 0,
         storage_options: dict | None = None,
+        low_memory: bool = False,
     ) -> LDF:
         """
         See Also
@@ -204,6 +205,7 @@ class LazyFrame(Generic[DF]):
             parallel,
             rechunk,
             _prepare_row_count_args(row_count_name, row_count_offset),
+            low_memory,
         )
         return self
 
@@ -1804,8 +1806,10 @@ class LazyFrame(Generic[DF]):
         """
         Limit the LazyFrame to the first `n` rows.
 
-        Note if you don't want the rows to be scanned, use the :func:`fetch` operation
-        instead.
+        .. note::
+            Consider using the :func:`fetch` operation when you only want to test your query.
+            The :func:`fetch` operation will load the first `n` rows at the scan level, whereas
+            the :func:`head`/:func:`limit` are applied at the end.
 
         Parameters
         ----------
@@ -1818,9 +1822,10 @@ class LazyFrame(Generic[DF]):
         """
         Gets the first `n` rows of the DataFrame.
 
-        You probably don't want to use this!
-        Consider using the :func:`fetch` operation instead. The :func:`fetch` operation will truly
-        load the first `n` rows lazily.
+        .. note::
+            Consider using the :func:`fetch` operation when you only want to test your query.
+            The :func:`fetch` operation will load the first `n` rows at the scan level, whereas
+            the :func:`head`/:func:`limit` are applied at the end.
 
         This operation instead loads all the rows and only applies the ``head`` at the end.
 

@@ -227,6 +227,7 @@ impl PyLazyFrame {
         parallel: Wrap<ParallelStrategy>,
         rechunk: bool,
         row_count: Option<(String, IdxSize)>,
+        low_memory: bool,
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let args = ScanArgsParquet {
@@ -235,6 +236,7 @@ impl PyLazyFrame {
             parallel: parallel.0,
             rechunk,
             row_count,
+            low_memory,
         };
         let lf = LazyFrame::scan_parquet(path, args).map_err(PyPolarsErr::from)?;
         Ok(lf.into())
