@@ -1499,8 +1499,8 @@ impl PyExpr {
     pub fn entropy(&self, base: f64, normalize: bool) -> Self {
         self.inner.clone().entropy(base, normalize).into()
     }
-    pub fn hash(&self, k0: u64, k1: u64, k2: u64, k3: u64) -> Self {
-        self.inner.clone().hash(k0, k1, k2, k3).into()
+    pub fn hash(&self, seed: u64, seed_1: u64, seed_2: u64, seed_3: u64) -> Self {
+        self.inner.clone().hash(seed, seed_1, seed_2, seed_3).into()
     }
 }
 
