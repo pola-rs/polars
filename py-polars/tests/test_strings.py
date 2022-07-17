@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import polars as pl
 import pytest
+
+import polars as pl
 
 
 def test_extract_binary() -> None:
