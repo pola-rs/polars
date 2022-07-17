@@ -960,7 +960,7 @@ def read_sql(
         tbl = cx.read_sql(
             conn=connection_uri,
             query=sql,
-            return_type="arrow",
+            return_type="arrow2",
             partition_on=partition_on,
             partition_range=partition_range,
             partition_num=partition_num,
