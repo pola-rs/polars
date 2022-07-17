@@ -944,7 +944,12 @@ impl DataFrame {
                 let ca_left = s_left.categorical().unwrap();
                 let new_rev_map = ca_left.merge_categorical_map(s_right.categorical().unwrap())?;
                 let logical = s.u32().unwrap().clone();
-                CategoricalChunked::from_cats_and_rev_map(logical, new_rev_map).into_series()
+                // safety:
+                // categorical maps are merged
+                unsafe {
+                    CategoricalChunked::from_cats_and_rev_map_unchecked(logical, new_rev_map)
+                        .into_series()
+                }
             }
             dt @ DataType::Datetime(_, _)
             | dt @ DataType::Time

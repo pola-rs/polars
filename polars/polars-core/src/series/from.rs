@@ -62,7 +62,7 @@ impl Series {
             #[cfg(feature = "dtype-categorical")]
             Categorical(rev_map) => {
                 let cats = UInt32Chunked::from_chunks(name, chunks);
-                CategoricalChunked::from_cats_and_rev_map(cats, rev_map.clone().unwrap())
+                CategoricalChunked::from_cats_and_rev_map_unchecked(cats, rev_map.clone().unwrap())
                     .into_series()
             }
             Boolean => BooleanChunked::from_chunks(name, chunks).into_series(),

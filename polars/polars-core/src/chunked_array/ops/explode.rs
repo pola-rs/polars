@@ -341,7 +341,12 @@ impl ChunkExplode for ListChunked {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(rev_map) => {
                 let cats = s.u32().unwrap().clone();
-                s = CategoricalChunked::from_cats_and_rev_map(cats, rev_map.unwrap()).into_series();
+                // safety:
+                // rev_map is from same array, so we are still in bounds
+                s = unsafe {
+                    CategoricalChunked::from_cats_and_rev_map_unchecked(cats, rev_map.unwrap())
+                        .into_series()
+                };
             }
             #[cfg(feature = "dtype-date")]
             DataType::Date => s = s.into_date(),

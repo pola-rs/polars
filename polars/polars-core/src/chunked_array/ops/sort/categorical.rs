@@ -38,10 +38,14 @@ impl CategoricalChunked {
                     let sorted = ca.sort(options.descending);
                     let arr = sorted.downcast_iter().next().unwrap().clone();
                     let rev_map = RevMapping::Local(arr);
-                    CategoricalChunked::from_cats_and_rev_map(
-                        self.logical().clone(),
-                        Arc::new(rev_map),
-                    )
+                    // safety:
+                    // we only reordered the indexes so we are still in bounds
+                    unsafe {
+                        CategoricalChunked::from_cats_and_rev_map_unchecked(
+                            self.logical().clone(),
+                            Arc::new(rev_map),
+                        )
+                    }
                 }
                 RevMapping::Global(_, _, _) => {
                     // a global rev map must always point to the same string values
@@ -61,15 +65,26 @@ impl CategoricalChunked {
                     );
                     let cats: NoNull<UInt32Chunked> =
                         vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
-                    CategoricalChunked::from_cats_and_rev_map(
-                        cats.into_inner(),
-                        self.get_rev_map().clone(),
-                    )
+                    // safety:
+                    // we only reordered the indexes so we are still in bounds
+                    unsafe {
+                        CategoricalChunked::from_cats_and_rev_map_unchecked(
+                            cats.into_inner(),
+                            self.get_rev_map().clone(),
+                        )
+                    }
                 }
             }
         } else {
             let cats = self.logical().sort_with(options);
-            CategoricalChunked::from_cats_and_rev_map(cats, self.get_rev_map().clone())
+            // safety:
+            // we only reordered the indexes so we are still in bounds
+            unsafe {
+                CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    cats,
+                    self.get_rev_map().clone(),
+                )
+            }
         }
     }
 

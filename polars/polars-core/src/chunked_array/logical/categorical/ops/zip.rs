@@ -16,6 +16,13 @@ impl CategoricalChunked {
             _ => self.logical().zip_with(mask, other.logical())?,
         };
         let new_state = self.merge_categorical_map(other)?;
-        Ok(CategoricalChunked::from_cats_and_rev_map(cats, new_state))
+
+        // Safety:
+        // we checked the rev_maps.
+        unsafe {
+            Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
+                cats, new_state,
+            ))
+        }
     }
 }

@@ -31,7 +31,14 @@ impl Series {
                 let arr = ca.logical().chunks()[chunk_idx].clone();
                 let cats = UInt32Chunked::from_chunks("", vec![arr]);
 
-                let new = CategoricalChunked::from_cats_and_rev_map(cats, ca.get_rev_map().clone());
+                // safety:
+                // we only take a single chunk and change nothing about the index/rev_map mapping
+                let new = unsafe {
+                    CategoricalChunked::from_cats_and_rev_map_unchecked(
+                        cats,
+                        ca.get_rev_map().clone(),
+                    )
+                };
 
                 let arr: DictionaryArray<u32> = (&new).into();
                 Box::new(arr) as ArrayRef
