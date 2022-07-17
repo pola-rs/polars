@@ -6,7 +6,7 @@ try:
     from polars.polars import when as pywhen
 
     _DOCUMENTING = False
-except ImportError:  # pragma: no cover
+except ImportError:
     _DOCUMENTING = True
 
 from polars import internals as pli

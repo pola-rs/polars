@@ -47,4 +47,10 @@ module = ["pyarrow.*", "polars.polars", "matplotlib.*", "fsspec.*", "connectorx"
 ignore_missing_imports = true
 
 [tool.coverage.report]
-exclude_lines = ["pragma: no cover", "@overload"]
+exclude_lines = [
+  "pragma: no cover",
+  "@overload",
+  "except ImportError",
+  "if TYPE_CHECKING:",
+  "from typing_extensions import ",
+]

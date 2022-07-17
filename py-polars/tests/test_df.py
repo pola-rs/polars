@@ -19,7 +19,7 @@ from polars.testing import assert_frame_equal, assert_series_equal, columns
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
-    from typing_extensions import Literal  # pragma: no cover
+    from typing_extensions import Literal
 
 
 def test_version() -> None:

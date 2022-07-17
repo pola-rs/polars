@@ -9,7 +9,7 @@ try:
     import pyarrow as pa
 
     _PYARROW_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _PYARROW_AVAILABLE = False
 
 from _ctypes import _SimpleCData  # type: ignore
@@ -18,7 +18,7 @@ try:
     from polars.polars import dtype_str_repr
 
     _DOCUMENTING = False
-except ImportError:  # pragma: no cover
+except ImportError:
     _DOCUMENTING = True
 
 
