@@ -4210,7 +4210,7 @@ class Expr:
 
     def sin(self) -> Expr:
         """
-        Compute the element-wise value for Trigonometric sine on an array
+        Compute the element-wise value for the sine.
 
         Returns
         -------
@@ -4230,13 +4230,11 @@ class Expr:
         └─────┘
 
         """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.sin(self)  # type: ignore
+        return wrap_expr(self._pyexpr.sin())
 
     def cos(self) -> Expr:
         """
-        Compute the element-wise value for Trigonometric cosine on an array
+        Compute the element-wise value for the cosine.
 
         Returns
         -------
@@ -4256,13 +4254,11 @@ class Expr:
         └─────┘
 
         """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.cos(self)  # type: ignore
+        return wrap_expr(self._pyexpr.cos())
 
     def tan(self) -> Expr:
         """
-        Compute the element-wise value for Trigonometric tangent on an array
+        Compute the element-wise value for the tangent.
 
         Returns
         -------
@@ -4282,13 +4278,11 @@ class Expr:
         └──────┘
 
         """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.tan(self)  # type: ignore
+        return wrap_expr(self._pyexpr.tan())
 
     def arcsin(self) -> Expr:
         """
-        Compute the element-wise value for Trigonometric sine on an array
+        Compute the element-wise value for the inverse sine.
 
         Returns
         -------
@@ -4308,13 +4302,11 @@ class Expr:
         └──────────┘
 
         """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.arcsin(self)  # type: ignore
+        return wrap_expr(self._pyexpr.arcsin())
 
     def arccos(self) -> Expr:
         """
-        Compute the element-wise value for Trigonometric cosine on an array
+        Compute the element-wise value for the inverse cosine.
 
         Returns
         -------
@@ -4334,13 +4326,11 @@ class Expr:
         └──────────┘
 
         """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.arccos(self)  # type: ignore
+        return wrap_expr(self._pyexpr.arccos())
 
     def arctan(self) -> Expr:
         """
-        Compute the element-wise value for Trigonometric tangent on an array
+        Compute the element-wise value for the inverse tangent.
 
         Returns
         -------
@@ -4360,9 +4350,79 @@ class Expr:
         └──────────┘
 
         """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.arctan(self)  # type: ignore
+        return wrap_expr(self._pyexpr.arctan())
+
+    def sinh(self) -> Expr:
+        """
+        Compute the element-wise value for the hyperbolic sine.
+
+        Returns
+        -------
+        Series of dtype Float64
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1.0]})
+        >>> df.select(pl.col("a").sinh())
+        shape: (1, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.175201 │
+        └──────────┘
+
+        """
+        return wrap_expr(self._pyexpr.sinh())
+
+    def cosh(self) -> Expr:
+        """
+        Compute the element-wise value for the hyperbolic cosine.
+
+        Returns
+        -------
+        Series of dtype Float64
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1.0]})
+        >>> df.select(pl.col("a").cosh())
+        shape: (1, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.543081 │
+        └──────────┘
+
+        """
+        return wrap_expr(self._pyexpr.cosh())
+
+    def tanh(self) -> Expr:
+        """
+        Compute the element-wise value for the hyperbolic tangent.
+
+        Returns
+        -------
+        Series of dtype Float64
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1.0]})
+        >>> df.select(pl.col("a").tanh())
+        shape: (1, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.761594 │
+        └──────────┘
+
+        """
+        return wrap_expr(self._pyexpr.tanh())
 
     def reshape(self, dims: tuple[int, ...]) -> Expr:
         """

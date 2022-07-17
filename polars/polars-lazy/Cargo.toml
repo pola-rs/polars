@@ -33,6 +33,7 @@ dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object"]
 date_offset = []
+trigo = []
 
 true_div = []
 
