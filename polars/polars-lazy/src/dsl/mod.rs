@@ -1112,25 +1112,22 @@ impl Expr {
     }
 
     fn fill_null_impl(self, fill_value: Expr) -> Self {
-        self.map_many(
-            |s| {
-                let a = &s[0];
-                let b = &s[1];
+        let input = vec![self, fill_value];
 
-                if !a.null_count() == 0 {
-                    Ok(a.clone())
-                } else {
-                    let st = get_supertype(a.dtype(), b.dtype())?;
-                    let a = a.cast(&st)?;
-                    let b = b.cast(&st)?;
-                    let mask = a.is_not_null();
-                    a.zip_with_same_type(&mask, &b)
-                }
+        Expr::Function {
+            input,
+            // super type will be replaced by type coercion
+            function: FunctionExpr::FillNull {
+                // will be set by `type_coercion`.
+                super_type: DataType::Unknown,
             },
-            &[fill_value],
-            GetOutput::super_type(),
-        )
-        .with_fmt("fill_null")
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: false,
+                auto_explode: false,
+                fmt_str: "fill_null",
+            },
+        }
     }
 
     /// Replace the null values by a value.
