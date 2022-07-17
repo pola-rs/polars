@@ -62,7 +62,7 @@ def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
     if not _NUMPY_AVAILABLE:
         raise ImportError("'numpy' is required for this functionality.")
     ptr_ctype = ctypes.cast(ptr, ctypes.POINTER(ptr_type))
-    return np.ctypeslib.as_array(ptr_ctype, (len,))  # type: ignore
+    return np.ctypeslib.as_array(ptr_ctype, (len,))
 
 
 def _timedelta_to_pl_duration(td: timedelta) -> str:

@@ -195,8 +195,8 @@ def test_deprecated() -> None:
     with pytest.deprecated_call():
         df.lazy().join(ldf=other.lazy(), on="a").collect()
 
-    np.testing.assert_equal(df.join(other=other, on="a").to_numpy(), result.to_numpy())  # type: ignore[no-untyped-call]
-    np.testing.assert_equal(  # type: ignore[no-untyped-call]
+    np.testing.assert_equal(df.join(other=other, on="a").to_numpy(), result.to_numpy())
+    np.testing.assert_equal(
         df.lazy().join(other=other.lazy(), on="a").collect().to_numpy(),
         result.to_numpy(),
     )
