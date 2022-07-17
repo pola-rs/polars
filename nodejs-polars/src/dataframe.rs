@@ -195,11 +195,9 @@ pub fn read_json(
         .map(|s| match s.as_ref() {
             "lines" => Ok(JsonFormat::JsonLines),
             "json" => Ok(JsonFormat::Json),
-            _ => {
-                return Err(napi::Error::from_reason(
-                    "format must be 'json' or `lines'".to_owned(),
-                ))
-            }
+            _ => Err(napi::Error::from_reason(
+                "format must be 'json' or `lines'".to_owned(),
+            )),
         })
         .unwrap()?;
     let df = match path_or_buffer {
@@ -384,7 +382,7 @@ pub fn from_rows(
             let obj = rows
                 .get::<Object>(idx as u32)
                 .unwrap_or(None)
-                .unwrap_or(env.create_object().unwrap());
+                .unwrap_or_else(|| env.create_object().unwrap());
             Row(schema
                 .iter_fields()
                 .map(|fld| {

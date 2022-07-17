@@ -3,7 +3,6 @@ use crate::lazy::dsl::JsExpr;
 use polars_core::functions as pl_functions;
 use polars_core::prelude::DataFrame;
 
-use crate::prelude::{Wrap, Expr};
 #[napi]
 pub fn horizontal_concat(dfs: Vec<&JsDataFrame>) -> napi::Result<JsDataFrame> {
     let dfs: Vec<DataFrame> = dfs.iter().map(|df| df.df.clone()).collect();

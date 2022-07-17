@@ -79,10 +79,7 @@ impl JsLazyFrame {
                 ))
             }
         };
-        let mut opt_state = OptState::default();
-        opt_state.file_caching = true;
-        let lf = LazyFrame::from(lp).with_optimizations(opt_state);
-        Ok(lf.into())
+        Ok(LazyFrame::from(lp).into())
     }
     #[napi(factory)]
     pub fn clone_external(lf: &JsLazyFrame) -> napi::Result<JsLazyFrame> {

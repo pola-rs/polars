@@ -1,4 +1,3 @@
-use crate::datatypes::JsDataType;
 use crate::lazy::dsl::JsExpr;
 use crate::prelude::*;
 use napi::bindgen_prelude::*;
@@ -444,11 +443,9 @@ impl FromNapiValue for Wrap<PivotAgg> {
             "median" => Ok(Wrap(PivotAgg::Median)),
             "count" => Ok(Wrap(PivotAgg::Count)),
             "last" => Ok(Wrap(PivotAgg::Last)),
-            s => {
-                return Err(napi::Error::from_reason(
-                    format!("aggregation {} not supported", s).to_owned(),
-                ))
-            }
+            s => Err(napi::Error::from_reason(
+                format!("aggregation {} not supported", s).to_owned(),
+            )),
         }
     }
 }
@@ -572,56 +569,6 @@ impl From<(usize, usize)> for Shape {
     }
 }
 
-pub(crate) fn str_to_polarstype(dtype: &str) -> DataType {
-    match dtype {
-        "Int8" => DataType::Int8,
-        "Int16" => DataType::Int16,
-        "Int32" => DataType::Int32,
-        "Int64" => DataType::Int64,
-        "UInt8" => DataType::UInt8,
-        "UInt16" => DataType::UInt16,
-        "UInt32" => DataType::UInt32,
-        "UInt64" => DataType::UInt64,
-        "Float32" => DataType::Float32,
-        "Float64" => DataType::Float64,
-        "Bool" => DataType::Boolean,
-        "Utf8" => DataType::Utf8,
-        "List" => DataType::List(DataType::Null.into()),
-        "Date" => DataType::Date,
-        "Datetime" => DataType::Datetime(TimeUnit::Milliseconds, None),
-        "Time" => DataType::Time,
-        "Object" => DataType::Object("object"),
-        "Categorical" => DataType::Categorical(None),
-        "Struct" => DataType::Struct(vec![]),
-        tp => panic!("Type {} not implemented in str_to_polarstype", tp),
-    }
-}
-
-// Don't change the order of these!
-pub(crate) fn num_to_polarstype(n: u32) -> DataType {
-    match n {
-        0 => DataType::Int8,
-        1 => DataType::Int16,
-        2 => DataType::Int32,
-        3 => DataType::Int64,
-        4 => DataType::UInt8,
-        5 => DataType::UInt16,
-        6 => DataType::UInt32,
-        7 => DataType::UInt64,
-        8 => DataType::Float32,
-        9 => DataType::Float64,
-        10 => DataType::Boolean,
-        11 => DataType::Utf8,
-        12 => DataType::List(DataType::Null.into()),
-        13 => DataType::Date,
-        14 => DataType::Datetime(TimeUnit::Milliseconds, None),
-        15 => DataType::Time,
-        16 => DataType::Object("object"),
-        17 => DataType::Categorical(None),
-        18 => DataType::Struct(vec![]),
-        tp => panic!("Type {} not implemented in num_to_polarstype", tp),
-    }
-}
 impl FromNapiValue for Wrap<TimeUnit> {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> JsResult<Self> {
         let tu = String::from_napi_value(env, napi_val)?;
@@ -688,7 +635,6 @@ impl FromNapiValue for Wrap<DataType> {
 impl FromNapiValue for Wrap<Schema> {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
         let ty = type_of!(env, napi_val)?;
-        let env_ctx = Env::from_raw(env);
         match ty {
             ValueType::Object => {
                 let obj = Object::from_napi_value(env, napi_val)?;
@@ -706,12 +652,10 @@ impl FromNapiValue for Wrap<Schema> {
                     .collect::<Result<_>>()?;
                 Ok(Wrap(Schema::from(fields)))
             }
-            _ => {
-                return Err(Error::new(
-                    Status::InvalidArg,
-                    "not a valid conversion to 'Schema'".to_owned(),
-                ))
-            }
+            _ => Err(Error::new(
+                Status::InvalidArg,
+                "not a valid conversion to 'Schema'".to_owned(),
+            )),
         }
     }
 }
@@ -722,7 +666,7 @@ impl ToNapiValue for Wrap<Schema> {
 
         for (name, dtype) in val.0.iter() {
             schema.set(name, Wrap(dtype.clone()))?;
-        };
+        }
         Object::to_napi_value(napi_env, schema)
     }
 }
@@ -746,7 +690,6 @@ impl FromNapiValue for Wrap<ParallelStrategy> {
         Ok(Wrap(unit))
     }
 }
-
 
 pub enum TypedArrayBuffer {
     Int8(Int8Array),

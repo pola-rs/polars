@@ -15,20 +15,14 @@ pub struct JsWriteStream<'a> {
 }
 
 impl<'a> JsFileLike<'a> {
-    pub fn new(obj: JsObject, env: &'a napi::Env) -> Self {
-        JsFileLike {
-            inner: obj,
-            env: env,
-        }
+    pub fn new(inner: JsObject, env: &'a napi::Env) -> Self {
+        JsFileLike { inner, env }
     }
 }
 
 impl<'a> JsWriteStream<'a> {
-    pub fn new(obj: JsObject, env: &'a napi::Env) -> Self {
-        JsWriteStream {
-            inner: obj,
-            env: env,
-        }
+    pub fn new(inner: JsObject, env: &'a napi::Env) -> Self {
+        JsWriteStream { inner, env }
     }
 }
 pub struct ThreadsafeWriteable {
