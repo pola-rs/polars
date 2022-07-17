@@ -41,6 +41,7 @@ impl ParquetExec {
             .read_parallel(self.options.parallel)
             .with_row_count(std::mem::take(&mut self.options.row_count))
             .set_rechunk(self.options.rechunk)
+            .set_low_memory(self.options.low_memory)
             ._finish_with_scan_ops(
                 predicate,
                 aggregate,

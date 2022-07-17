@@ -91,6 +91,7 @@ impl LogicalPlanBuilder {
         parallel: polars_io::parquet::ParallelStrategy,
         row_count: Option<RowCount>,
         rechunk: bool,
+        low_memory: bool,
     ) -> Result<Self> {
         use polars_io::SerReader as _;
 
@@ -111,6 +112,7 @@ impl LogicalPlanBuilder {
                 row_count,
                 rechunk,
                 file_counter: Default::default(),
+                low_memory,
             },
         }
         .into())

@@ -41,6 +41,7 @@ pub struct ParquetReader<R: Read + Seek> {
     projection: Option<Vec<usize>>,
     parallel: ParallelStrategy,
     row_count: Option<RowCount>,
+    low_memory: bool,
 }
 
 impl<R: MmapBytesReader> ParquetReader<R> {
@@ -67,6 +68,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
             aggregate,
             self.parallel,
             self.row_count,
+            self.low_memory,
         )
         .map(|mut df| {
             if rechunk {
@@ -74,6 +76,13 @@ impl<R: MmapBytesReader> ParquetReader<R> {
             };
             df
         })
+    }
+
+    /// Try to reduce memory pressure at the expense of performance. If setting this does not reduce memory
+    /// enough, turn off parallelization.
+    pub fn set_low_memory(mut self, low_memory: bool) -> Self {
+        self.low_memory = low_memory;
+        self
     }
 
     /// Read the parquet file in parallel (default). The single threaded reader consumes less memory.
@@ -127,6 +136,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             projection: None,
             parallel: Default::default(),
             row_count: None,
+            low_memory: false,
         }
     }
 
@@ -153,6 +163,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             None,
             self.parallel,
             self.row_count,
+            self.low_memory,
         )
         .map(|mut df| {
             if self.rechunk {
