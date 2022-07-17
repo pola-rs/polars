@@ -1,9 +1,7 @@
-# flake8: noqa: W191,E101
 from __future__ import annotations
 
 import io
 import os
-from typing import List
 
 import numpy as np
 import pandas as pd

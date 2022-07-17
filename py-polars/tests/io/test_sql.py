@@ -11,7 +11,7 @@ def test_read_sql() -> None:
     import tempfile
 
     try:
-        import connectorx  # noqa
+        import connectorx  # noqa: F401
 
         with tempfile.TemporaryDirectory() as tmpdir_name:
             test_db = os.path.join(tmpdir_name, "test.db")
