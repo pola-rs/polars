@@ -884,9 +884,9 @@ impl ToNapiValue for Wrap<DataType> {
 impl FromNapiValue for Wrap<NullValues> {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> JsResult<Self> {
         if let Ok(s) = String::from_napi_value(env, napi_val) {
-            Ok(Wrap(NullValues::AllColumns(s)))
+            Ok(Wrap(NullValues::AllColumnsSingle(s)))
         } else if let Ok(s) = Vec::<String>::from_napi_value(env, napi_val) {
-            Ok(Wrap(NullValues::Columns(s)))
+            Ok(Wrap(NullValues::AllColumns(s)))
         } else if let Ok(s) = HashMap::<String, String>::from_napi_value(env, napi_val) {
             let null_values: Vec<(String, String)> = s.into_iter().collect();
             Ok(Wrap(NullValues::Named(null_values)))
@@ -902,8 +902,8 @@ impl FromNapiValue for Wrap<NullValues> {
 impl ToNapiValue for Wrap<NullValues> {
     unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> napi::Result<sys::napi_value> {
         match val.0 {
-            NullValues::AllColumns(s) => String::to_napi_value(env, s),
-            NullValues::Columns(arr) => Vec::<String>::to_napi_value(env, arr),
+            NullValues::AllColumnsSingle(s) => String::to_napi_value(env, s),
+            NullValues::AllColumns(arr) => Vec::<String>::to_napi_value(env, arr),
             NullValues::Named(obj) => {
                 let o: HashMap<String, String> = obj.into_iter().collect();
                 HashMap::<String, String>::to_napi_value(env, o)

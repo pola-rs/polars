@@ -145,9 +145,15 @@ impl JsLazyFrame {
         .into()
     }
     #[napi]
-    pub fn sort_by_exprs(&self, by_column: Vec<&JsExpr>, reverse: Vec<bool>) -> JsLazyFrame {
+    pub fn sort_by_exprs(
+        &self,
+        by_column: Vec<&JsExpr>,
+        reverse: Vec<bool>,
+        nulls_last: bool,
+    ) -> JsLazyFrame {
         let ldf = self.ldf.clone();
-        ldf.sort_by_exprs(by_column.to_exprs(), reverse).into()
+        ldf.sort_by_exprs(by_column.to_exprs(), reverse, nulls_last)
+            .into()
     }
     #[napi]
     pub fn cache(&self) -> JsLazyFrame {
@@ -609,13 +615,19 @@ pub struct ScanParquetOptions {
     pub cache: Option<bool>,
     pub rechunk: Option<bool>,
     pub row_count: Option<JsRowCount>,
+    pub low_memory: Option<bool>,
 }
 
 #[napi]
-pub fn scan_parquet(path: String, options: ScanParquetOptions, parallel: Wrap<ParallelStrategy>) -> napi::Result<JsLazyFrame> {
+pub fn scan_parquet(
+    path: String,
+    options: ScanParquetOptions,
+    parallel: Wrap<ParallelStrategy>,
+) -> napi::Result<JsLazyFrame> {
     let n_rows = options.n_rows.map(|i| i as usize);
     let cache = options.cache.unwrap_or(true);
     let rechunk = options.rechunk.unwrap_or(false);
+    let low_memory = options.low_memory.unwrap_or(false);
     let row_count: Option<RowCount> = options.row_count.map(|rc| rc.into());
     let args = ScanArgsParquet {
         n_rows,
@@ -623,6 +635,7 @@ pub fn scan_parquet(path: String, options: ScanParquetOptions, parallel: Wrap<Pa
         parallel: parallel.0,
         rechunk,
         row_count,
+        low_memory,
     };
     let lf = LazyFrame::scan_parquet(path, args).map_err(JsPolarsErr::from)?;
     Ok(lf.into())

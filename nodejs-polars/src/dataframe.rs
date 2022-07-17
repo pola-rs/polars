@@ -238,7 +238,7 @@ pub struct ReadParquetOptions {
 pub fn read_parquet(
     path_or_buffer: Either<String, Buffer>,
     options: ReadParquetOptions,
-    parallel: Wrap<ParallelStrategy>
+    parallel: Wrap<ParallelStrategy>,
 ) -> napi::Result<JsDataFrame> {
     let columns = options.columns;
 
@@ -1293,7 +1293,7 @@ impl JsDataFrame {
     #[napi]
     pub fn write_csv(
         &mut self,
-        path_or_buffer: Either<String, napi::JsObject>,
+        path_or_buffer: JsUnknown,
         options: WriteCsvOptions,
         env: Env,
     ) -> napi::Result<()> {
@@ -1303,8 +1303,11 @@ impl JsDataFrame {
         let quote = options.quote.unwrap_or(",".to_owned());
         let quote = quote.as_bytes()[0];
 
-        match path_or_buffer {
-            Either::A(path) => {
+        match path_or_buffer.get_type()? {
+            ValueType::String => {
+                let path: napi::JsString = unsafe { path_or_buffer.cast() };
+                let path = path.into_utf8()?.into_owned()?;
+
                 let f = std::fs::File::create(path).unwrap();
                 let f = BufWriter::new(f);
                 CsvWriter::new(f)
@@ -1314,7 +1317,8 @@ impl JsDataFrame {
                     .finish(&mut self.df)
                     .map_err(JsPolarsErr::from)?;
             }
-            Either::B(inner) => {
+            ValueType::Object => {
+                let inner: napi::JsObject = unsafe { path_or_buffer.cast() };
                 let writeable = JsWriteStream { inner, env: &env };
 
                 CsvWriter::new(writeable)
@@ -1324,6 +1328,7 @@ impl JsDataFrame {
                     .finish(&mut self.df)
                     .map_err(JsPolarsErr::from)?;
             }
+            _ => panic!(),
         };
         Ok(())
     }
@@ -1331,14 +1336,17 @@ impl JsDataFrame {
     #[napi]
     pub fn write_parquet(
         &mut self,
-        path_or_buffer: Either<String, napi::JsObject>,
+        path_or_buffer: JsUnknown,
         compression: Wrap<ParquetCompression>,
         env: Env,
     ) -> napi::Result<()> {
         let compression = compression.0;
 
-        match path_or_buffer {
-            Either::A(path) => {
+        match path_or_buffer.get_type()? {
+            ValueType::String => {
+                let path: napi::JsString = unsafe { path_or_buffer.cast() };
+                let path = path.into_utf8()?.into_owned()?;
+
                 let f = std::fs::File::create(path).unwrap();
                 let f = BufWriter::new(f);
                 ParquetWriter::new(f)
@@ -1346,7 +1354,8 @@ impl JsDataFrame {
                     .finish(&mut self.df)
                     .map_err(JsPolarsErr::from)?;
             }
-            Either::B(inner) => {
+            ValueType::Object => {
+                let inner: napi::JsObject = unsafe { path_or_buffer.cast() };
                 let writeable = JsWriteStream { inner, env: &env };
 
                 ParquetWriter::new(writeable)
@@ -1354,20 +1363,23 @@ impl JsDataFrame {
                     .finish(&mut self.df)
                     .map_err(JsPolarsErr::from)?;
             }
+            _ => panic!(),
         };
         Ok(())
     }
     #[napi]
     pub fn write_ipc(
         &mut self,
-        path_or_buffer: Either<String, napi::JsObject>,
+        path_or_buffer: JsUnknown,
         compression: Wrap<Option<IpcCompression>>,
         env: Env,
     ) -> napi::Result<()> {
         let compression = compression.0;
 
-        match path_or_buffer {
-            Either::A(path) => {
+        match path_or_buffer.get_type()? {
+            ValueType::String => {
+                let path: napi::JsString = unsafe { path_or_buffer.cast() };
+                let path = path.into_utf8()?.into_owned()?;
                 let f = std::fs::File::create(path).unwrap();
                 let f = BufWriter::new(f);
                 IpcWriter::new(f)
@@ -1375,20 +1387,22 @@ impl JsDataFrame {
                     .finish(&mut self.df)
                     .map_err(JsPolarsErr::from)?;
             }
-            Either::B(inner) => {
+            ValueType::Object => {
+                let inner: napi::JsObject = unsafe { path_or_buffer.cast() };
                 let writeable = JsWriteStream { inner, env: &env };
                 IpcWriter::new(writeable)
                     .with_compression(compression)
                     .finish(&mut self.df)
                     .map_err(JsPolarsErr::from)?;
             }
+            _ => panic!(),
         };
         Ok(())
     }
     #[napi]
     pub fn write_json(
         &mut self,
-        path_or_buffer: Either<String, napi::JsObject>,
+        path_or_buffer: JsUnknown,
         options: WriteJsonOptions,
         env: Env,
     ) -> napi::Result<()> {
@@ -1403,8 +1417,10 @@ impl JsDataFrame {
             }
         };
 
-        match path_or_buffer {
-            Either::A(path) => {
+        match path_or_buffer.get_type()? {
+            ValueType::String => {
+                let path: napi::JsString = unsafe { path_or_buffer.cast() };
+                let path = path.into_utf8()?.into_owned()?;
                 let f = std::fs::File::create(path).unwrap();
                 let f = BufWriter::new(f);
                 JsonWriter::new(f)
@@ -1412,7 +1428,8 @@ impl JsDataFrame {
                     .finish(&mut self.df)
                     .map_err(JsPolarsErr::from)?;
             }
-            Either::B(inner) => {
+            ValueType::Object => {
+                let inner: napi::JsObject = unsafe { path_or_buffer.cast() };
                 let writeable = JsWriteStream { inner, env: &env };
                 JsonWriter::new(writeable)
                     .with_json_format(json_format)
@@ -1420,13 +1437,14 @@ impl JsDataFrame {
                     .map_err(JsPolarsErr::from)
                     .unwrap()
             }
+            _ => panic!(),
         };
         Ok(())
     }
     #[napi]
     pub fn write_avro(
         &mut self,
-        path_or_buffer: Either<String, napi::JsObject>,
+        path_or_buffer: JsUnknown,
         compression: String,
         env: Env,
     ) -> napi::Result<()> {
@@ -1438,8 +1456,10 @@ impl JsDataFrame {
             s => return Err(JsPolarsErr::Other(format!("compression {} not supported", s)).into()),
         };
 
-        match path_or_buffer {
-            Either::A(path) => {
+        match path_or_buffer.get_type()? {
+            ValueType::String => {
+                let path: napi::JsString = unsafe { path_or_buffer.cast() };
+                let path = path.into_utf8()?.into_owned()?;
                 let f = std::fs::File::create(path).unwrap();
                 let f = BufWriter::new(f);
                 AvroWriter::new(f)
@@ -1447,7 +1467,8 @@ impl JsDataFrame {
                     .finish(&mut self.df)
                     .map_err(JsPolarsErr::from)?;
             }
-            Either::B(inner) => {
+            ValueType::Object => {
+                let inner: napi::JsObject = unsafe { path_or_buffer.cast() };
                 let writeable = JsWriteStream { inner, env: &env };
 
                 AvroWriter::new(writeable)
@@ -1455,6 +1476,7 @@ impl JsDataFrame {
                     .finish(&mut self.df)
                     .map_err(JsPolarsErr::from)?;
             }
+            _ => panic!(),
         };
         Ok(())
     }
