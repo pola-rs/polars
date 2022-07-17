@@ -54,6 +54,9 @@ pub enum TrigoType {
     Sinh,
     Cosh,
     Tanh,
+    ArcSinh,
+    ArcCosh,
+    ArcTanh,
 }
 
 impl FunctionExpr {

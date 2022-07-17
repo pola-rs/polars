@@ -1337,6 +1337,51 @@ impl Expr {
         }
     }
 
+    /// Compute the hyperbolic sine of the given expression
+    #[cfg(feature = "trigo")]
+    pub fn arcsinh(self) -> Self {
+        Expr::Function {
+            input: vec![self],
+            function: FunctionExpr::Trigo(TrigoType::ArcSinh),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: false,
+                auto_explode: false,
+                fmt_str: "arcsinh",
+            },
+        }
+    }
+
+    /// Compute the hyperbolic cosine of the given expression
+    #[cfg(feature = "trigo")]
+    pub fn arccosh(self) -> Self {
+        Expr::Function {
+            input: vec![self],
+            function: FunctionExpr::Trigo(TrigoType::ArcCosh),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: false,
+                auto_explode: false,
+                fmt_str: "arccosh",
+            },
+        }
+    }
+
+    /// Compute the hyperbolic tangent of the given expression
+    #[cfg(feature = "trigo")]
+    pub fn arctanh(self) -> Self {
+        Expr::Function {
+            input: vec![self],
+            function: FunctionExpr::Trigo(TrigoType::ArcTanh),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: false,
+                auto_explode: false,
+                fmt_str: "arctanh",
+            },
+        }
+    }
+
     /// Filter a single column
     /// Should be used in aggregation context. If you want to filter on a DataFrame level, use
     /// [LazyFrame::filter](LazyFrame::filter)

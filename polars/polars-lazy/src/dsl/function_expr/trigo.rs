@@ -36,6 +36,9 @@ where
         TrigoType::Sinh => sinh(ca),
         TrigoType::Cosh => cosh(ca),
         TrigoType::Tanh => tanh(ca),
+        TrigoType::ArcSinh => arcsinh(ca),
+        TrigoType::ArcCosh => arccosh(ca),
+        TrigoType::ArcTanh => arctanh(ca),
     }
 }
 
@@ -118,4 +121,31 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     Ok(ca.apply(|v| v.tanh()).into_series())
+}
+
+fn arcsinh<T>(ca: &ChunkedArray<T>) -> Result<Series>
+where
+    T: PolarsFloatType,
+    T::Native: num::Float,
+    ChunkedArray<T>: IntoSeries,
+{
+    Ok(ca.apply(|v| v.asinh()).into_series())
+}
+
+fn arccosh<T>(ca: &ChunkedArray<T>) -> Result<Series>
+where
+    T: PolarsFloatType,
+    T::Native: num::Float,
+    ChunkedArray<T>: IntoSeries,
+{
+    Ok(ca.apply(|v| v.acosh()).into_series())
+}
+
+fn arctanh<T>(ca: &ChunkedArray<T>) -> Result<Series>
+where
+    T: PolarsFloatType,
+    T::Native: num::Float,
+    ChunkedArray<T>: IntoSeries,
+{
+    Ok(ca.apply(|v| v.atanh()).into_series())
 }
