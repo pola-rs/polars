@@ -315,6 +315,12 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         is_not_null.reduce(|lhs, rhs| lhs.bitand(rhs)).unwrap()
     }
 
+    fn shrink_to_fit(&mut self) {
+        self.0.fields_mut().iter_mut().for_each(|s| {
+            s.shrink_to_fit();
+        });
+    }
+
     fn reverse(&self) -> Series {
         self.0.apply_fields(|s| s.reverse()).into_series()
     }

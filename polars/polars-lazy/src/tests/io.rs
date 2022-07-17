@@ -154,8 +154,7 @@ fn test_parquet_globbing() -> Result<()> {
             n_rows: None,
             cache: true,
             parallel: Default::default(),
-            rechunk: false,
-            row_count: None,
+            ..Default::default()
         },
     )?
     .collect()?;

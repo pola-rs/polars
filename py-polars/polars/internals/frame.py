@@ -649,21 +649,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         parallel: str = "auto",
         row_count_name: str | None = None,
         row_count_offset: int = 0,
+        low_memory: bool = False,
     ) -> DF:
         """
-        Read into a DataFrame from a parquet file.
-
-        Parameters
-        ----------
-        file
-            Path to a file or a file-like object. Any valid filepath can be used.
-        columns
-            Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
-        n_rows
-            Stop reading from parquet file after reading ``n_rows``.
-        parallel
-            Any of { 'auto', 'columns', 'row_groups', 'none' }
-            This determines the direction of parallelism. 'auto' will try to determine the optimal direction.
+        See Also: `pl.read_csv`
         """
         if isinstance(file, (str, Path)):
             file = format_path(file)
@@ -678,6 +667,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 parallel=parallel,
                 row_count_name=row_count_name,
                 row_count_offset=row_count_offset,
+                low_memory=low_memory,
             )
 
             if columns is None:
@@ -698,6 +688,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             n_rows,
             parallel,
             _prepare_row_count_args(row_count_name, row_count_offset),
+            low_memory=low_memory,
         )
         return self
 
