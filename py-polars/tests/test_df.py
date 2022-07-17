@@ -1533,13 +1533,13 @@ def test_hashing_on_python_objects() -> None:
     df = pl.DataFrame({"a": [1, 1, 3, 4], "b": [1, 1, 2, 2]})
 
     class Foo:
-        def __init__(self):  # type: ignore
+        def __init__(self) -> None:
             pass
 
-        def __hash__(self):  # type: ignore
+        def __hash__(self) -> int:
             return 0
 
-        def __eq__(self, other):  # type: ignore
+        def __eq__(self, other: Any) -> bool:
             return True
 
     df = df.with_column(pl.col("a").apply(lambda x: Foo()).alias("foo"))
@@ -1741,10 +1741,10 @@ def test_transpose() -> None:
 
 def test_extension() -> None:
     class Foo:
-        def __init__(self, value):  # type: ignore
+        def __init__(self, value: Any) -> None:
             self.value = value
 
-        def __repr__(self):  # type: ignore
+        def __repr__(self) -> str:
             return f"foo({self.value})"
 
     foos = [Foo(1), Foo(2), Foo(3)]
