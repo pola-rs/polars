@@ -6323,9 +6323,9 @@ class ExprStringNameSpace:
             return wrap_expr(self._pyexpr.str_split_exact_inclusive(by, n))
         return wrap_expr(self._pyexpr.str_split_exact(by, n))
 
-    def replace(self, pattern: str, value: str) -> Expr:
+    def replace(self, pattern: str, value: str, literal: bool = False) -> Expr:
         """
-        Replace first regex match with a string value.
+        Replace first matching regex/literal substring with a new string value.
 
         Parameters
         ----------
@@ -6333,10 +6333,12 @@ class ExprStringNameSpace:
             Regex pattern.
         value
             Replacement string.
+        literal
+             Treat pattern as a literal string.
 
         See Also
         --------
-        replace_all : Replace substring on all regex pattern matches.
+        replace_all : Replace all matching regex/literal substrings.
 
         Examples
         --------
@@ -6356,11 +6358,11 @@ class ExprStringNameSpace:
         └─────┴────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_replace(pattern, value))
+        return wrap_expr(self._pyexpr.str_replace(pattern, value, literal))
 
-    def replace_all(self, pattern: str, value: str) -> Expr:
+    def replace_all(self, pattern: str, value: str, literal: bool = False) -> Expr:
         """
-        Replace substring on all regex pattern matches.
+        Replace all matching regex/literal substrings with a new string value.
 
         Parameters
         ----------
@@ -6368,10 +6370,12 @@ class ExprStringNameSpace:
             Regex pattern.
         value
             Replacement string.
+        literal
+             Treat pattern as a literal string.
 
         See Also
         --------
-        replace : Replace first regex match with a string value.
+        replace : Replace first matching regex/literal substring.
 
         Examples
         --------
@@ -6388,7 +6392,7 @@ class ExprStringNameSpace:
         │ 2   ┆ 123-123 │
         └─────┴─────────┘
         """
-        return wrap_expr(self._pyexpr.str_replace_all(pattern, value))
+        return wrap_expr(self._pyexpr.str_replace_all(pattern, value, literal))
 
     def slice(self, start: int, length: int | None = None) -> Expr:
         """

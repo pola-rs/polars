@@ -591,10 +591,14 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_replace(&self, pat: String, val: String) -> PyExpr {
+    pub fn str_replace(&self, pat: String, val: String, literal: Option<bool>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            match ca.replace(&pat, &val) {
+            let replaced = match literal {
+                Some(true) => ca.replace_literal(&pat, &val),
+                _ => ca.replace(&pat, &val),
+            };
+            match replaced {
                 Ok(ca) => Ok(ca.into_series()),
                 Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
             }
@@ -606,10 +610,14 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_replace_all(&self, pat: String, val: String) -> PyExpr {
+    pub fn str_replace_all(&self, pat: String, val: String, literal: Option<bool>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            match ca.replace_all(&pat, &val) {
+            let replaced = match literal {
+                Some(true) => ca.replace_literal_all(&pat, &val),
+                _ => ca.replace_all(&pat, &val),
+            };
+            match replaced {
                 Ok(ca) => Ok(ca.into_series()),
                 Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
             }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import polars as pl
+import pytest
 
 
 def test_extract_binary() -> None:
@@ -60,6 +61,73 @@ def test_null_comparisons() -> None:
     s = pl.Series("s", [None, "str", "a"])
     assert (s.shift() == s).null_count() == 0
     assert (s.shift() != s).null_count() == 0
+
+
+def test_replace() -> None:
+    df = pl.DataFrame(
+        data=[(1, "* * text"), (2, "(with) special\n * chars **etc...?$")],
+        columns=["idx", "text"],
+        orient="row",
+    )
+    for pattern, replacement, as_literal, expected in (
+        (r"\*", "-", False, ["- * text", "(with) special\n - chars **etc...?$"]),
+        (r"*", "-", True, ["- * text", "(with) special\n - chars **etc...?$"]),
+        (r"^\(", "[", False, ["* * text", "[with) special\n * chars **etc...?$"]),
+        (r"^\(", "[", True, ["* * text", "(with) special\n * chars **etc...?$"]),
+        (r"t$", "an", False, ["* * texan", "(with) special\n * chars **etc...?$"]),
+        (r"t$", "an", True, ["* * text", "(with) special\n * chars **etc...?$"]),
+    ):
+        # series
+        assert (
+            expected
+            == df["text"]
+            .str.replace(pattern, replacement, literal=as_literal)
+            .to_list()
+        )
+        # expr
+        assert (
+            expected
+            == df.select(
+                pl.col("text").str.replace(pattern, replacement, literal=as_literal)
+            )["text"].to_list()
+        )
+
+
+def test_replace_all() -> None:
+    df = pl.DataFrame(
+        data=[(1, "* * text"), (2, "(with) special * chars **etc...?$")],
+        columns=["idx", "text"],
+        orient="row",
+    )
+    for pattern, replacement, as_literal, expected in (
+        (r"\*", "-", False, ["- - text", "(with) special - chars --etc...?$"]),
+        (r"*", "-", True, ["- - text", "(with) special - chars --etc...?$"]),
+        (r"\W", "", False, ["text", "withspecialcharsetc"]),
+        (r".?$", "", True, ["* * text", "(with) special * chars **etc.."]),
+        (
+            r"(\b)[\w\s]{2,}(\b)",
+            "$1(blah)$3",
+            False,
+            ["* * (blah)", "((blah)) (blah) * (blah) **(blah)...?$"],
+        ),
+    ):
+        # series
+        assert (
+            expected
+            == df["text"]
+            .str.replace_all(pattern, replacement, literal=as_literal)
+            .to_list()
+        )
+        # expr
+        assert (
+            expected
+            == df.select(
+                pl.col("text").str.replace_all(pattern, replacement, literal=as_literal)
+            )["text"].to_list()
+        )
+        # invalid regex (but valid literal - requires "literal=True")
+        with pytest.raises(pl.ComputeError):
+            df["text"].str.replace_all("*", "")
 
 
 def test_extract_all_count() -> None:
