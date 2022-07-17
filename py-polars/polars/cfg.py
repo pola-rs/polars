@@ -71,7 +71,7 @@ class Config:
 
         Examples
         --------
-        >>> pl.cfg.Config.set_tbl_cols(5)
+        >>> pl.cfg.Config.set_tbl_cols(5)  # doctest: +IGNORE_RESULT
         >>> df = pl.DataFrame({str(i): [i] for i in range(100)})
         >>> df
         shape: (1, 100)
@@ -83,7 +83,7 @@ class Config:
         │ 0   ┆ 1   ┆ 2   ┆ ... ┆ 98  ┆ 99  │
         └─────┴─────┴─────┴─────┴─────┴─────┘
 
-        >>> pl.cfg.Config.set_tbl_cols(10)
+        >>> pl.cfg.Config.set_tbl_cols(10)  # doctest: +IGNORE_RESULT
         >>> df
         shape: (1, 100)
         ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
