@@ -26,11 +26,7 @@ profile = "black"
 files = ["polars", "tests"]
 namespace_packages = true
 show_error_codes = true
-<<<<<<< HEAD
 python_version = 3.7
-=======
-python-version = 3.7
->>>>>>> 75cf33427 (Update)
 
 warn_unused_configs = true
 disallow_subclassing_any = true
