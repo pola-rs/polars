@@ -74,5 +74,16 @@ def test_windows_not_cached() -> None:
         ldf.collect()
 
 
+def test_cross_join() -> None:
+    # triggers > 100 rows implementation
+    # https://github.com/pola-rs/polars/blob/5f5acb2a523ce01bc710768b396762b8e69a9e07/polars/polars-core/src/frame/cross_join.rs#L34
+    df1 = pl.DataFrame({"col1": ["a"], "col2": ["d"]})
+    df2 = pl.DataFrame({"frame2": pl.arange(0, 100, eager=True)})
+    out = df2.join(df1, how="cross")
+    df2 = pl.DataFrame({"frame2": pl.arange(0, 101, eager=True)})
+    assert df2.join(df1, how="cross").slice(0, 100).frame_equal(out)
+
+
 if __name__ == "__main__":
     test_windows_not_cached()
+    test_cross_join()

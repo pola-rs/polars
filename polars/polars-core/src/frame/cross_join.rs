@@ -36,7 +36,7 @@ impl DataFrame {
                     (0..total_rows).map(|i| i % n_rows_right).collect_trusted();
                 // Safety:
                 // take right is in bounds
-                unsafe { self.take_unchecked(&take_right.into_inner()) }
+                unsafe { other.take_unchecked(&take_right.into_inner()) }
             } else {
                 let iter = (0..n_rows_left).map(|_| other);
                 concat_df_unchecked(iter)
