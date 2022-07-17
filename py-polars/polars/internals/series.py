@@ -2222,7 +2222,7 @@ class Series:
 
             # Get minimum dtype needed to be able to cast all input arguments to the
             # same dtype.
-            dtype_char_minimum = np.result_type(*args).char
+            dtype_char_minimum = np.result_type(*args).char  # type: ignore[no-untyped-call]
 
             # Get all possible output dtypes for ufunc.
             # Input dtypes and output dtypes seem to always match for ufunc.types,
@@ -2236,7 +2236,7 @@ class Series:
             # Get the first ufunc dtype from all possible ufunc dtypes for which
             # the input arguments can be safely cast to that ufunc dtype.
             for dtype_ufunc in dtypes_ufunc:
-                if np.can_cast(dtype_char_minimum, dtype_ufunc):
+                if np.can_cast(dtype_char_minimum, dtype_ufunc):  # type: ignore[no-untyped-call]
                     dtype_char_minimum = dtype_ufunc
                     break
 

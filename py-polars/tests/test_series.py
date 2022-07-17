@@ -989,7 +989,7 @@ def test_to_numpy() -> None:
     a = pl.Series("a", [1, 2, 3])
     assert np.all(a.to_numpy() == np.array([1, 2, 3]))
     a = pl.Series("a", [1, 2, None])
-    np.testing.assert_array_equal(a.to_numpy(), np.array([1.0, 2.0, np.nan]))
+    np.testing.assert_array_equal(a.to_numpy(), np.array([1.0, 2.0, np.nan]))  # type: ignore[no-untyped-call]
 
 
 def test_from_sequences() -> None:
