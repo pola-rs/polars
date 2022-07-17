@@ -151,7 +151,7 @@ def concat(
 
 def _ensure_datetime(value: date | datetime) -> tuple[datetime, bool]:
     is_date_type = False
-    if isinstance(value, date) and not isinstance(value, datetime):
+    if not isinstance(value, datetime):
         value = datetime(value.year, value.month, value.day)
         is_date_type = True
     return value, is_date_type
