@@ -2170,6 +2170,9 @@ impl DataFrame {
     /// ```
     #[must_use]
     pub fn slice(&self, offset: i64, length: usize) -> Self {
+        if offset == 0 && length == self.height() {
+            return self.clone();
+        }
         let col = self
             .columns
             .iter()
@@ -2180,6 +2183,9 @@ impl DataFrame {
 
     #[must_use]
     pub fn slice_par(&self, offset: i64, length: usize) -> Self {
+        if offset == 0 && length == self.height() {
+            return self.clone();
+        }
         let col = POOL.install(|| {
             self.columns
                 .par_iter()
