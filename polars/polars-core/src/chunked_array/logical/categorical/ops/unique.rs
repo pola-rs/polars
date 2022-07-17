@@ -13,15 +13,24 @@ impl CategoricalChunked {
                     UInt32Chunked::from_iter_values(self.logical().name(), map.keys().copied())
                 }
             };
-            let mut out = CategoricalChunked::from_cats_and_rev_map(ca, cat_map.clone());
-            out.set_fast_unique(true);
-            Ok(out)
+            // safety:
+            // we only removed some indexes so we are still in bounds
+            unsafe {
+                let mut out =
+                    CategoricalChunked::from_cats_and_rev_map_unchecked(ca, cat_map.clone());
+                out.set_fast_unique(true);
+                Ok(out)
+            }
         } else {
             let ca = self.logical().unique()?;
-            Ok(CategoricalChunked::from_cats_and_rev_map(
-                ca,
-                cat_map.clone(),
-            ))
+            // safety:
+            // we only removed some indexes so we are still in bounds
+            unsafe {
+                Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    ca,
+                    cat_map.clone(),
+                ))
+            }
         }
     }
 

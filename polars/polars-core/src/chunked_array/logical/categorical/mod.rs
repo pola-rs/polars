@@ -74,16 +74,25 @@ impl CategoricalChunked {
         self.bit_settings & 1 << 1 != 0
     }
 
-    pub(crate) fn from_cats_and_rev_map(idx: UInt32Chunked, rev_map: Arc<RevMapping>) -> Self {
+    /// Create a [`CategoricalChunked`] from an array of `idx` and an existing [`RevMapping`]:  `rev_map`.
+    ///
+    /// # Safety
+    /// Invariant in `v < rev_map.len() for v in idx` must be hold.
+    pub unsafe fn from_cats_and_rev_map_unchecked(
+        idx: UInt32Chunked,
+        rev_map: Arc<RevMapping>,
+    ) -> Self {
         let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(idx);
         logical.2 = Some(DataType::Categorical(Some(rev_map)));
         Self {
             logical,
-            bit_settings: 0,
+            bit_settings: Default::default(),
         }
     }
 
-    pub(crate) fn set_rev_map(&mut self, rev_map: Arc<RevMapping>, keep_fast_unique: bool) {
+    /// # Safety
+    /// The existing index values must be in bounds of the new [`RevMapping`].
+    pub(crate) unsafe fn set_rev_map(&mut self, rev_map: Arc<RevMapping>, keep_fast_unique: bool) {
         self.logical.2 = Some(DataType::Categorical(Some(rev_map)));
         if !keep_fast_unique {
             self.set_fast_unique(false)

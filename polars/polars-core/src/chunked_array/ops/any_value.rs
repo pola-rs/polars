@@ -48,7 +48,8 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
                 #[cfg(feature = "dtype-categorical")]
                 DataType::Categorical(Some(rev_map)) => {
                     let cats = s.u32().unwrap().clone();
-                    let out = CategoricalChunked::from_cats_and_rev_map(cats, rev_map.clone());
+                    let out =
+                        CategoricalChunked::from_cats_and_rev_map_unchecked(cats, rev_map.clone());
                     s = out.into_series();
                 }
                 DataType::Date

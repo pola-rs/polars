@@ -428,7 +428,17 @@ pub struct Pivot<'df> {
 // Takes a `DataFrame` that only consists of the column aggregates that are pivoted by
 // the values in `columns`
 fn finish_logical_type(column: &mut Series, dtype: &DataType) {
-    *column = column.cast(dtype).unwrap();
+    *column = match dtype {
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(Some(rev_map)) => {
+            let ca = column.u32().unwrap();
+            unsafe {
+                CategoricalChunked::from_cats_and_rev_map_unchecked(ca.clone(), rev_map.clone())
+            }
+            .into_series()
+        }
+        _ => column.cast(dtype).unwrap(),
+    };
 }
 
 impl<'df> Pivot<'df> {

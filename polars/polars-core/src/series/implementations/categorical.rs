@@ -27,7 +27,9 @@ impl IntoSeries for CategoricalChunked {
 
 impl SeriesWrap<CategoricalChunked> {
     fn finish_with_state(&self, keep_fast_unique: bool, cats: UInt32Chunked) -> CategoricalChunked {
-        let mut out = CategoricalChunked::from_cats_and_rev_map(cats, self.0.get_rev_map().clone());
+        let mut out = unsafe {
+            CategoricalChunked::from_cats_and_rev_map_unchecked(cats, self.0.get_rev_map().clone())
+        };
         if keep_fast_unique && self.0.can_fast_unique() {
             out.set_fast_unique(true)
         }
@@ -127,7 +129,9 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         let cats = left.zip_outer_join_column(&right, opt_join_tuples);
         let cats = cats.u32().unwrap().clone();
 
-        CategoricalChunked::from_cats_and_rev_map(cats, new_rev_map).into_series()
+        unsafe {
+            CategoricalChunked::from_cats_and_rev_map_unchecked(cats, new_rev_map).into_series()
+        }
     }
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
         self.0.logical().group_tuples(multithreaded, sorted)
@@ -196,7 +200,9 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             let other = other.categorical()?;
             self.0.logical_mut().extend(other.logical());
             let new_rev_map = self.0.merge_categorical_map(other)?;
-            self.0.set_rev_map(new_rev_map, false);
+            // safety:
+            // rev_maps are merged
+            unsafe { self.0.set_rev_map(new_rev_map, false) };
             Ok(())
         } else {
             Err(PolarsError::SchemaMisMatch(
