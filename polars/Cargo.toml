@@ -118,7 +118,7 @@ timezones = ["polars-core/timezones"]
 string_justify = ["polars-lazy/string_justify", "polars-ops/string_justify"]
 arg_where = ["polars-lazy/arg_where"]
 date_offset = ["polars-lazy/date_offset"]
-trigo = ["polars-lazy/trigo"]
+trigonometry = ["polars-lazy/trigonometry"]
 
 test = [
   "lazy",

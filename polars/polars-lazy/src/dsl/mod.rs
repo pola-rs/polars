@@ -43,8 +43,8 @@ pub use options::*;
 
 use crate::dsl::function_expr::FunctionExpr;
 
-#[cfg(feature = "trigo")]
-use crate::dsl::function_expr::TrigoType;
+#[cfg(feature = "trigonometry")]
+use crate::dsl::function_expr::TrigonometricFunction;
 
 use polars_arrow::array::default_arrays::FromData;
 #[cfg(feature = "diff")]
@@ -1203,11 +1203,11 @@ impl Expr {
     }
 
     /// Compute the sine of the given expression
-    #[cfg(feature = "trigo")]
+    #[cfg(feature = "trigonometry")]
     pub fn sin(self) -> Self {
         Expr::Function {
             input: vec![self],
-            function: FunctionExpr::Trigo(TrigoType::Sin),
+            function: FunctionExpr::Trigonometry(TrigonometricFunction::Sin),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: false,
@@ -1218,11 +1218,11 @@ impl Expr {
     }
 
     /// Compute the cosine of the given expression
-    #[cfg(feature = "trigo")]
+    #[cfg(feature = "trigonometry")]
     pub fn cos(self) -> Self {
         Expr::Function {
             input: vec![self],
-            function: FunctionExpr::Trigo(TrigoType::Cos),
+            function: FunctionExpr::Trigonometry(TrigonometricFunction::Cos),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: false,
@@ -1233,11 +1233,11 @@ impl Expr {
     }
 
     /// Compute the tangent of the given expression
-    #[cfg(feature = "trigo")]
+    #[cfg(feature = "trigonometry")]
     pub fn tan(self) -> Self {
         Expr::Function {
             input: vec![self],
-            function: FunctionExpr::Trigo(TrigoType::Tan),
+            function: FunctionExpr::Trigonometry(TrigonometricFunction::Tan),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: false,
@@ -1248,11 +1248,11 @@ impl Expr {
     }
 
     /// Compute the arcsine of the given expression
-    #[cfg(feature = "trigo")]
+    #[cfg(feature = "trigonometry")]
     pub fn arcsin(self) -> Self {
         Expr::Function {
             input: vec![self],
-            function: FunctionExpr::Trigo(TrigoType::ArcSin),
+            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcSin),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: false,
@@ -1263,11 +1263,11 @@ impl Expr {
     }
 
     /// Compute the arccosine of the given expression
-    #[cfg(feature = "trigo")]
+    #[cfg(feature = "trigonometry")]
     pub fn arccos(self) -> Self {
         Expr::Function {
             input: vec![self],
-            function: FunctionExpr::Trigo(TrigoType::ArcCos),
+            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcCos),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: false,
@@ -1278,11 +1278,11 @@ impl Expr {
     }
 
     /// Compute the arctangent of the given expression
-    #[cfg(feature = "trigo")]
+    #[cfg(feature = "trigonometry")]
     pub fn arctan(self) -> Self {
         Expr::Function {
             input: vec![self],
-            function: FunctionExpr::Trigo(TrigoType::ArcTan),
+            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcTan),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: false,
@@ -1293,11 +1293,11 @@ impl Expr {
     }
 
     /// Compute the hyperbolic sine of the given expression
-    #[cfg(feature = "trigo")]
+    #[cfg(feature = "trigonometry")]
     pub fn sinh(self) -> Self {
         Expr::Function {
             input: vec![self],
-            function: FunctionExpr::Trigo(TrigoType::Sinh),
+            function: FunctionExpr::Trigonometry(TrigonometricFunction::Sinh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: false,
@@ -1308,11 +1308,11 @@ impl Expr {
     }
 
     /// Compute the hyperbolic cosine of the given expression
-    #[cfg(feature = "trigo")]
+    #[cfg(feature = "trigonometry")]
     pub fn cosh(self) -> Self {
         Expr::Function {
             input: vec![self],
-            function: FunctionExpr::Trigo(TrigoType::Cosh),
+            function: FunctionExpr::Trigonometry(TrigonometricFunction::Cosh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: false,
@@ -1323,16 +1323,61 @@ impl Expr {
     }
 
     /// Compute the hyperbolic tangent of the given expression
-    #[cfg(feature = "trigo")]
+    #[cfg(feature = "trigonometry")]
     pub fn tanh(self) -> Self {
         Expr::Function {
             input: vec![self],
-            function: FunctionExpr::Trigo(TrigoType::Tanh),
+            function: FunctionExpr::Trigonometry(TrigonometricFunction::Tanh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "tanh",
+            },
+        }
+    }
+
+    /// Compute the hyperbolic sine of the given expression
+    #[cfg(feature = "trigonometry")]
+    pub fn arcsinh(self) -> Self {
+        Expr::Function {
+            input: vec![self],
+            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcSinh),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: false,
+                auto_explode: false,
+                fmt_str: "arcsinh",
+            },
+        }
+    }
+
+    /// Compute the hyperbolic cosine of the given expression
+    #[cfg(feature = "trigonometry")]
+    pub fn arccosh(self) -> Self {
+        Expr::Function {
+            input: vec![self],
+            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcCosh),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: false,
+                auto_explode: false,
+                fmt_str: "arccosh",
+            },
+        }
+    }
+
+    /// Compute the hyperbolic tangent of the given expression
+    #[cfg(feature = "trigonometry")]
+    pub fn arctanh(self) -> Self {
+        Expr::Function {
+            input: vec![self],
+            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcTanh),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: false,
+                auto_explode: false,
+                fmt_str: "arctanh",
             },
         }
     }

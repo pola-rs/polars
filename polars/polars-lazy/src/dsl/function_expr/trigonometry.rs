@@ -2,40 +2,49 @@ use super::*;
 use num::Float;
 use polars_core::export::num;
 
-pub(super) fn trigo(s: &Series, trigotype: TrigoType) -> Result<Series> {
+pub(super) fn apply_trigonometric_function(
+    s: &Series,
+    trig_function: TrigonometricFunction,
+) -> Result<Series> {
     use DataType::*;
     match s.dtype() {
         Float32 => {
             let ca = s.f32().unwrap();
-            trigo_float(ca, trigotype)
+            apply_trigonometric_function_to_float(ca, trig_function)
         }
         Float64 => {
             let ca = s.f64().unwrap();
-            trigo_float(ca, trigotype)
+            apply_trigonometric_function_to_float(ca, trig_function)
         }
         _ => {
             let s = s.cast(&DataType::Float64)?;
-            trigo(&s, trigotype)
+            apply_trigonometric_function(&s, trig_function)
         }
     }
 }
 
-fn trigo_float<T>(ca: &ChunkedArray<T>, trigotype: TrigoType) -> Result<Series>
+fn apply_trigonometric_function_to_float<T>(
+    ca: &ChunkedArray<T>,
+    trig_function: TrigonometricFunction,
+) -> Result<Series>
 where
     T: PolarsFloatType,
     T::Native: num::Float,
     ChunkedArray<T>: IntoSeries,
 {
-    match trigotype {
-        TrigoType::Sin => sin(ca),
-        TrigoType::Cos => cos(ca),
-        TrigoType::Tan => tan(ca),
-        TrigoType::ArcSin => arcsin(ca),
-        TrigoType::ArcCos => arccos(ca),
-        TrigoType::ArcTan => arctan(ca),
-        TrigoType::Sinh => sinh(ca),
-        TrigoType::Cosh => cosh(ca),
-        TrigoType::Tanh => tanh(ca),
+    match trig_function {
+        TrigonometricFunction::Sin => sin(ca),
+        TrigonometricFunction::Cos => cos(ca),
+        TrigonometricFunction::Tan => tan(ca),
+        TrigonometricFunction::ArcSin => arcsin(ca),
+        TrigonometricFunction::ArcCos => arccos(ca),
+        TrigonometricFunction::ArcTan => arctan(ca),
+        TrigonometricFunction::Sinh => sinh(ca),
+        TrigonometricFunction::Cosh => cosh(ca),
+        TrigonometricFunction::Tanh => tanh(ca),
+        TrigonometricFunction::ArcSinh => arcsinh(ca),
+        TrigonometricFunction::ArcCosh => arccosh(ca),
+        TrigonometricFunction::ArcTanh => arctanh(ca),
     }
 }
 
@@ -118,4 +127,31 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     Ok(ca.apply(|v| v.tanh()).into_series())
+}
+
+fn arcsinh<T>(ca: &ChunkedArray<T>) -> Result<Series>
+where
+    T: PolarsFloatType,
+    T::Native: num::Float,
+    ChunkedArray<T>: IntoSeries,
+{
+    Ok(ca.apply(|v| v.asinh()).into_series())
+}
+
+fn arccosh<T>(ca: &ChunkedArray<T>) -> Result<Series>
+where
+    T: PolarsFloatType,
+    T::Native: num::Float,
+    ChunkedArray<T>: IntoSeries,
+{
+    Ok(ca.apply(|v| v.acosh()).into_series())
+}
+
+fn arctanh<T>(ca: &ChunkedArray<T>) -> Result<Series>
+where
+    T: PolarsFloatType,
+    T::Native: num::Float,
+    ChunkedArray<T>: IntoSeries,
+{
+    Ok(ca.apply(|v| v.atanh()).into_series())
 }

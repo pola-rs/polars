@@ -123,8 +123,11 @@ Computations
 
     Expr.abs
     Expr.arccos
+    Expr.arccosh
     Expr.arcsin
+    Expr.arcsinh
     Expr.arctan
+    Expr.arctanh
     Expr.arg_unique
     Expr.cos
     Expr.cosh

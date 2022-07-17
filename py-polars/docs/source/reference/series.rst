@@ -103,8 +103,11 @@ Computations
 
     Series.abs
     Series.arccos
+    Series.arccosh
     Series.arcsin
+    Series.arcsinh
     Series.arctan
+    Series.arctanh
     Series.arg_true
     Series.arg_unique
     Series.cos

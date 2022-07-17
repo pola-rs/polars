@@ -109,7 +109,7 @@ features = [
   "arg_where",
   "timezones",
   "date_offset",
-  "trigo",
+  "trigonometry",
 ]
 
 # [patch.crates-io]
