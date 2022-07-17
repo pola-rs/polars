@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import warnings
 from datetime import date, datetime, time, timedelta
 from itertools import zip_longest
@@ -52,6 +53,11 @@ try:
     _PYARROW_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _PYARROW_AVAILABLE = False
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal  # pragma: no cover
 
 
 ################################
@@ -449,7 +455,7 @@ def dict_to_pydf(
 def sequence_to_pydf(
     data: Sequence[Any],
     columns: ColumnsType | None = None,
-    orient: str | None = None,
+    orient: Literal["col", "row"] | None = None,
 ) -> PyDataFrame:
     """
     Construct a PyDataFrame from a sequence.
@@ -507,7 +513,7 @@ def sequence_to_pydf(
 def numpy_to_pydf(
     data: np.ndarray,
     columns: ColumnsType | None = None,
-    orient: str | None = None,
+    orient: Literal["col", "row"] | None = None,
 ) -> PyDataFrame:
     """
     Construct a PyDataFrame from a numpy ndarray.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import warnings
 from typing import Any, Mapping, Sequence, overload
 
@@ -25,6 +26,11 @@ try:
     _PANDAS_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _PANDAS_AVAILABLE = False
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal  # pragma: no cover
 
 
 def from_dict(
@@ -110,7 +116,7 @@ def from_dicts(
 def from_records(
     data: Sequence[Sequence[Any]],
     columns: Sequence[str] | None = None,
-    orient: str | None = None,
+    orient: Literal["col", "row"] | None = None,
 ) -> DataFrame:
     """
     Construct a DataFrame from a numpy ndarray or sequence of sequences.
@@ -166,7 +172,7 @@ def from_records(
 def from_numpy(
     data: np.ndarray,
     columns: Sequence[str] | None = None,
-    orient: str | None = None,
+    orient: Literal["col", "row"] | None = None,
 ) -> DataFrame:
     """
     Construct a DataFrame from a numpy ndarray.
