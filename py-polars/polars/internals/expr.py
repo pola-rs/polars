@@ -3088,7 +3088,13 @@ class Expr:
                 "include_bounds should be a boolean or [boolean, boolean]."
             )
 
-    def hash(self, seed: int = 0, **kwargs: Any) -> Expr:
+    def hash(
+        self,
+        seed: int = 0,
+        seed_1: int | None = None,
+        seed_2: int | None = None,
+        seed_3: int | None = None,
+    ) -> Expr:
         """
         Hash the elements in the selection.
 
@@ -3097,7 +3103,13 @@ class Expr:
         Parameters
         ----------
         seed
-            The random seed to set.
+            Random seed parameter. Defaults to 0.
+        seed_1
+            Random seed parameter. Defaults to `seed` if not set.
+        seed_2
+            Random seed parameter. Defaults to `seed` if not set.
+        seed_3
+            Random seed parameter. Defaults to `seed` if not set.
 
         Examples
         --------
@@ -3107,24 +3119,26 @@ class Expr:
         ...         "b": ["x", None, "z"],
         ...     }
         ... )
-        >>> df.with_column(pl.all().hash(0))  # doctest: +IGNORE_RESULT
+        >>> df.with_column(pl.all().hash(10, 20, 30, 40))
         shape: (3, 2)
         ┌──────────────────────┬──────────────────────┐
         │ a                    ┆ b                    │
         │ ---                  ┆ ---                  │
         │ u64                  ┆ u64                  │
         ╞══════════════════════╪══════════════════════╡
-        │ 1156793252771347292  ┆ 16009526192193213963 │
+        │ 2461716855791224000  ┆ 16174362112783765148 │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 5223293301138196316  ┆ 12128596533331663936 │
+        │ 13569566217648818014 ┆ 11638928888656214026 │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 12128596533331663936 ┆ 97974125653717906    │
+        │ 11638928888656214026 ┆ 6351727772611549480  │
         └──────────────────────┴──────────────────────┘
 
         """
-        # kwargs is for backward compatibility
-        # can be removed later
-        return wrap_expr(self._pyexpr.hash(seed))
+        k0 = seed
+        k1 = seed_1 if seed_1 is not None else seed
+        k2 = seed_2 if seed_2 is not None else seed
+        k3 = seed_3 if seed_3 is not None else seed
+        return wrap_expr(self._pyexpr.hash(k0, k1, k2, k3))
 
     def reinterpret(self, signed: bool) -> Expr:
         """

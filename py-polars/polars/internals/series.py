@@ -47,6 +47,7 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _ptr_to_numpy,
     _to_python_datetime,
+    deprecated_alias,
     range_to_slice,
 )
 
@@ -3516,7 +3517,14 @@ class Series:
             series._s.shrink_to_fit()
             return series
 
-    def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> pli.Series:
+    @deprecated_alias(k0="seed", k1="seed_1", k2="seed_2", k3="seed_3")
+    def hash(
+        self,
+        seed: int = 0,
+        seed_1: int | None = None,
+        seed_2: int | None = None,
+        seed_3: int | None = None,
+    ) -> pli.Series:
         """
         Hash the Series.
 
@@ -3524,28 +3532,32 @@ class Series:
 
         Parameters
         ----------
-        k0
-            Seed parameter.
-        k1
-            Seed parameter.
-        k2
-            Seed parameter.
-        k3
-            Seed parameter.
+        seed
+            Random seed parameter. Defaults to 0.
+        seed_1
+            Random seed parameter. Defaults to `seed` if not set.
+        seed_2
+            Random seed parameter. Defaults to `seed` if not set.
+        seed_3
+            Random seed parameter. Defaults to `seed` if not set.
 
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.hash(k0=42)
+        >>> s.hash(seed=42)
         shape: (3,)
         Series: 'a' [u64]
         [
-            16679613936015749658
-            17801292685721255234
-            516997424509290289
+            89438004737668041
+            14107061265552512458
+            15437026767517145468
         ]
 
         """
+        k0 = seed
+        k1 = seed_1 if seed_1 is not None else seed
+        k2 = seed_2 if seed_2 is not None else seed
+        k3 = seed_3 if seed_3 is not None else seed
         return wrap_s(self._s.hash(k0, k1, k2, k3))
 
     def reinterpret(self, signed: bool = True) -> Series:

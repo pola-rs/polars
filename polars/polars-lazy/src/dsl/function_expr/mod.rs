@@ -21,7 +21,7 @@ pub enum FunctionExpr {
     NullCount,
     Pow,
     #[cfg(feature = "row_hash")]
-    Hash(usize),
+    Hash(u64, u64, u64, u64),
     #[cfg(feature = "is_in")]
     IsIn,
     #[cfg(feature = "arg_where")]
@@ -86,7 +86,7 @@ impl FunctionExpr {
             NullCount => with_dtype(IDX_DTYPE),
             Pow => float_dtype(),
             #[cfg(feature = "row_hash")]
-            Hash(_) => with_dtype(DataType::UInt64),
+            Hash(..) => with_dtype(DataType::UInt64),
             #[cfg(feature = "is_in")]
             IsIn => with_dtype(DataType::Boolean),
             #[cfg(feature = "arg_where")]
@@ -146,10 +146,11 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 wrap!(pow::pow)
             }
             #[cfg(feature = "row_hash")]
-            Hash(seed) => {
+            Hash(k0, k1, k2, k3) => {
                 let f = move |s: &mut [Series]| {
                     let s = &s[0];
-                    Ok(s.hash(ahash::RandomState::with_seed(seed)).into_series())
+                    Ok(s.hash(ahash::RandomState::with_seeds(k0, k1, k2, k3))
+                        .into_series())
                 };
                 wrap!(f)
             }
