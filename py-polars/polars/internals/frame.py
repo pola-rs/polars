@@ -5874,8 +5874,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     def unnest(self: DF, names: str | list[str]) -> DF:
         """
-        Decompose a struct into its fields. The fields will be inserted in to the `DataFrame` on the
-        location of the `struct` type.
+        Decompose a struct into its fields.
+
+        The fields will be inserted into the `DataFrame` on the location of the
+        `struct` type.
 
         Parameters
         ----------
@@ -5884,40 +5886,38 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
-        >>> df = (
-        ...     pl.DataFrame(
-        ...         {
-        ...             "int": [1, 2],
-        ...             "str": ["a", "b"],
-        ...             "bool": [True, None],
-        ...             "list": [[1, 2], [3]],
-        ...         }
-        ...     )
-        ...     .to_struct("my_struct")
-        ...     .to_frame()
-        ... )
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "before": ["foo", "bar"],
+        ...         "t_a": [1, 2],
+        ...         "t_b": ["a", "b"],
+        ...         "t_c": [True, None],
+        ...         "t_d": [[1, 2], [3]],
+        ...         "after": ["baz", "womp"],
+        ...     }
+        ... ).select(["before", pl.struct(pl.col("^t_.$")).alias("t_struct"), "after"])
         >>> df
-        shape: (2, 1)
-        ┌─────────────────────┐
-        │ my_struct           │
-        │ ---                 │
-        │ struct[4]           │
-        ╞═════════════════════╡
-        │ {1,"a",true,[1, 2]} │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {2,"b",null,[3]}    │
-        └─────────────────────┘
-        >>> df.unnest("my_struct")
-        shape: (2, 4)
-        ┌─────┬─────┬──────┬───────────┐
-        │ int ┆ str ┆ bool ┆ list      │
-        │ --- ┆ --- ┆ ---  ┆ ---       │
-        │ i64 ┆ str ┆ bool ┆ list[i64] │
-        ╞═════╪═════╪══════╪═══════════╡
-        │ 1   ┆ a   ┆ true ┆ [1, 2]    │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2   ┆ b   ┆ null ┆ [3]       │
-        └─────┴─────┴──────┴───────────┘
+        shape: (2, 3)
+        ┌────────┬─────────────────────┬───────┐
+        │ before ┆ t_struct            ┆ after │
+        │ ---    ┆ ---                 ┆ ---   │
+        │ str    ┆ struct[4]           ┆ str   │
+        ╞════════╪═════════════════════╪═══════╡
+        │ foo    ┆ {1,"a",true,[1, 2]} ┆ baz   │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ bar    ┆ {2,"b",null,[3]}    ┆ womp  │
+        └────────┴─────────────────────┴───────┘
+        >>> df.unnest("t_struct")
+        shape: (2, 6)
+        ┌────────┬─────┬─────┬──────┬───────────┬───────┐
+        │ before ┆ t_a ┆ t_b ┆ t_c  ┆ t_d       ┆ after │
+        │ ---    ┆ --- ┆ --- ┆ ---  ┆ ---       ┆ ---   │
+        │ str    ┆ i64 ┆ str ┆ bool ┆ list[i64] ┆ str   │
+        ╞════════╪═════╪═════╪══════╪═══════════╪═══════╡
+        │ foo    ┆ 1   ┆ a   ┆ true ┆ [1, 2]    ┆ baz   │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ bar    ┆ 2   ┆ b   ┆ null ┆ [3]       ┆ womp  │
+        └────────┴─────┴─────┴──────┴───────────┴───────┘
 
         """
         if isinstance(names, str):
