@@ -234,8 +234,8 @@ impl JsSeries {
     // GETTERS
     //
     #[napi(getter)]
-    pub fn dtype(&self) -> JsDataType {
-        self.series.dtype().into()
+    pub fn dtype(&self) -> Wrap<DataType> {
+        Wrap(self.series.dtype().clone())
     }
 
     #[napi(getter)]
@@ -538,11 +538,6 @@ impl JsSeries {
         Ok(ca.into_series().into())
     }
 
-    #[napi]
-    pub fn arg_true(&self) -> napi::Result<JsSeries> {
-        let ca = self.series.arg_true().map_err(JsPolarsErr::from)?;
-        Ok(ca.into_series().into())
-    }
     #[napi]
     pub fn sample_n(
         &self,

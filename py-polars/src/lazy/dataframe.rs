@@ -227,6 +227,7 @@ impl PyLazyFrame {
         parallel: Wrap<ParallelStrategy>,
         rechunk: bool,
         row_count: Option<(String, IdxSize)>,
+        low_memory: bool,
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let args = ScanArgsParquet {
@@ -235,6 +236,7 @@ impl PyLazyFrame {
             parallel: parallel.0,
             rechunk,
             row_count,
+            low_memory,
         };
         let lf = LazyFrame::scan_parquet(path, args).map_err(PyPolarsErr::from)?;
         Ok(lf.into())
@@ -458,7 +460,7 @@ impl PyLazyFrame {
         let strategy = match strategy {
             "forward" => AsofStrategy::Forward,
             "backward" => AsofStrategy::Backward,
-            _ => panic!("expected on of {{'forward', 'backward'}}"),
+            _ => panic!("expected one of {{'forward', 'backward'}}"),
         };
 
         let ldf = self.ldf.clone();

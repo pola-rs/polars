@@ -1038,6 +1038,25 @@ describe("dataframe", () => {
     ]);
     expect(actual).toFrameEqual(expected);
   });
+  test("pivot", () => {
+    const df = pl.DataFrame({
+      "a": pl.Series([1, 2, 3]).cast(pl.Int32),
+      "b": pl.Series([[1, 1], [2, 2], [3, 3]]).cast(pl.List(pl.Int32))
+    });
+
+    const expected = pl.DataFrame(
+      {
+        "a": pl.Series([1, 2, 3]).cast(pl.Int32),
+        "1": pl.Series([[1, 1], null, null]).cast(pl.List(pl.Int32)),
+        "2": pl.Series([null, [2, 2], null]).cast(pl.List(pl.Int32)),
+        "3": pl.Series([null, null, [3, 3]]).cast(pl.List(pl.Int32)),
+      }
+    ).select("a", "1", "2", "3");
+
+    const actual  = df.pivot("b", {index:"a", columns:"a", aggregateFunc:"first", sortColumns:true});
+
+    expect(actual).toFrameEqual(expected, true);
+  });
 });
 describe("join", () => {
   test("on", () => {
@@ -1268,6 +1287,24 @@ describe("join", () => {
     });
     expect(actual).toFrameEqual(expected);
   });
+  test("asof_cross_join", () => {
+    const left = pl.DataFrame({"a": [-10, 5, 10], "left_val": ["a", "b", "c"]});
+    const right = pl.DataFrame({"a": [1, 2, 3, 6, 7], "right_val": [1, 2, 3, 6, 7]});
+
+    //  only test dispatch of asof join
+    let out = left.joinAsof(right, {on:"a"});
+    expect(out.shape).toEqual({height: 3, width: 3});
+
+    out = left.lazy().joinAsof(right.lazy(), {on:"a"}).collectSync();
+    expect(out.shape).toEqual({height: 3, width: 3});
+
+    // only test dispatch of cross join
+    out = left.join(right, {how:"cross"});
+    expect(out.shape).toEqual({height: 15, width: 4});
+
+    left.lazy().join(right.lazy(), {how:"cross"}).collectSync();
+    expect(out.shape).toEqual({height: 15, width: 4});
+  });
 });
 describe("io", () => {
   const df = pl.DataFrame([
@@ -1458,13 +1495,13 @@ describe("create", () => {
       bool: pl.Bool,
       date: pl.Date,
       date_nulls: pl.Date,
-      datetime: pl.Datetime,
-      datetime_nulls: pl.Datetime,
+      datetime: pl.Datetime("ms"),
+      datetime_nulls: pl.Datetime("ms"),
       string: pl.Utf8,
       string_nulls: pl.Utf8,
       categorical: pl.Categorical,
       categorical_nulls: pl.Categorical,
-      list: pl.List,
+      list: pl.List(pl.Float64),
       float_64: pl.Float64,
       float_64_nulls: pl.Float64,
       uint_64: pl.UInt64,
@@ -1485,7 +1522,7 @@ describe("create", () => {
   });
   test("from series-array", () => {
     const s1 = pl.Series("num", [1, 2, 3]);
-    const s2 = pl.Series("date", [null, Date.now(), Date.now()], pl.Datetime);
+    const s2 = pl.Series("date", [null, Date.now(), Date.now()], pl.Datetime("ms"));
     const df = pl.DataFrame([s1, s2]);
     expect(df.getColumn("num")).toSeriesEqual(s1);
     expect(df.getColumn("date")).toSeriesEqual(s2);

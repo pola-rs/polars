@@ -16,11 +16,6 @@ import pytest
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal, columns
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal  # pragma: no cover
-
 
 def test_version() -> None:
     pl.__version__
@@ -50,7 +45,7 @@ def test_init_only_columns() -> None:
     for no_data in (None, {}, []):
         df = pl.DataFrame(
             data=no_data,
-            columns=[  # type: ignore
+            columns=[  # type: ignore[arg-type]
                 ("a", pl.Date),
                 ("b", pl.UInt64),
                 ("c", pl.datatypes.Int8),
@@ -181,7 +176,7 @@ def test_init_ndarray() -> None:
     assert df.frame_equal(truth)
 
     # 2D array - default to column orientation
-    df = pl.DataFrame(np.array([[1, 2], [3, 4]]), orient="column")
+    df = pl.DataFrame(np.array([[1, 2], [3, 4]]), orient="col")
     truth = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
     assert df.frame_equal(truth)
 
@@ -228,6 +223,13 @@ def test_init_ndarray() -> None:
     # 3D array
     with pytest.raises(ValueError):
         _ = pl.DataFrame(np.random.randn(2, 2, 2))
+
+    # Wrong orient value
+    with pytest.raises(ValueError):
+        df = pl.DataFrame(
+            np.array([[1, 2, 3], [4, 5, 6]]),
+            orient="wrong",  # type: ignore[arg-type]
+        )
 
     # numpy not available
     with patch("polars.internals.frame._NUMPY_AVAILABLE", False):
@@ -343,6 +345,10 @@ def test_init_seq_of_seq() -> None:
     )
     assert df.schema == {"a": pl.Float32, "b": pl.Float32}
     assert df.rows() == [(1.0, 2.0), (3.0, 4.0)]
+
+    # Wrong orient value
+    with pytest.raises(ValueError):
+        df = pl.DataFrame(((1, 2), (3, 4)), orient="wrong")  # type: ignore[arg-type]
 
 
 def test_init_1d_sequence() -> None:
@@ -474,8 +480,8 @@ def test_selection() -> None:
     assert df.select_at_idx(0).name == "a"
     assert (df["a"] == df["a"]).sum() == 3
     assert (df["c"] == df["a"].cast(str)).sum() == 0
-    assert df[:, "a":"b"].shape == (3, 2)  # type: ignore
-    assert df[:, "a":"c"].columns == ["a", "b", "c"]  # type: ignore
+    assert df[:, "a":"b"].shape == (3, 2)  # type: ignore[misc]
+    assert df[:, "a":"c"].columns == ["a", "b", "c"]  # type: ignore[misc]
     expect = pl.DataFrame({"c": ["b"]})
     assert df[1, [2]].frame_equal(expect)
     expect = pl.DataFrame({"b": [1.0, 3.0]})
@@ -700,7 +706,7 @@ def test_groupby() -> None:
 
     with pytest.deprecated_call():
         # TODO: find a way to avoid indexing into GroupBy
-        for subdf in df.groupby("a"):  # type: ignore
+        for subdf in df.groupby("a"):  # type: ignore[attr-defined]
             # TODO: add __next__() to GroupBy
             if subdf["a"][0] == "b":
                 assert subdf.shape == (3, 3)
@@ -873,7 +879,7 @@ def test_vstack(in_place: bool) -> None:
     if in_place:
         assert df1.frame_equal(expected)
     else:
-        assert out.frame_equal(expected)  # type: ignore
+        assert out.frame_equal(expected)  # type: ignore[union-attr]
 
 
 def test_extend() -> None:
@@ -995,17 +1001,17 @@ def test_set() -> None:
 
         # row and col selection have to be int or str
         with pytest.raises(ValueError):
-            df[:, [1]] = 1  # type: ignore
+            df[:, [1]] = 1  # type: ignore[index]
         with pytest.raises(ValueError):
-            df[True, :] = 1  # type: ignore
+            df[True, :] = 1  # type: ignore[index]
 
         # needs to be a 2 element tuple
         with pytest.raises(ValueError):
-            df[(1, 2, 3)] = 1  # type: ignore
+            df[(1, 2, 3)] = 1  # type: ignore[index]
 
         # we cannot index with any type, such as bool
         with pytest.raises(NotImplementedError):
-            df[True] = 1  # type: ignore
+            df[True] = 1  # type: ignore[index]
 
 
 def test_melt() -> None:
@@ -1134,7 +1140,7 @@ def test_from_arrow_table() -> None:
     data = {"a": [1, 2], "b": [1, 2]}
     tbl = pa.table(data)
 
-    df: pl.DataFrame = pl.from_arrow(tbl)  # type: ignore
+    df: pl.DataFrame = pl.from_arrow(tbl)  # type: ignore[assignment]
     df.frame_equal(pl.DataFrame(data))
 
 
@@ -1192,7 +1198,7 @@ def test_column_names() -> None:
             "b": pa.array([1, 2, 3, 4, 5], pa.int64()),
         }
     )
-    df: pl.DataFrame = pl.from_arrow(tbl)  # type: ignore
+    df: pl.DataFrame = pl.from_arrow(tbl)  # type: ignore[assignment]
     assert df.columns == ["a", "b"]
 
 
@@ -1217,10 +1223,10 @@ def test_lazy_functions() -> None:
     )
     expected = 1.0
     assert np.isclose(out.select_at_idx(0), expected)
-    assert np.isclose(pl.var(df["b"]), expected)  # type: ignore
+    assert np.isclose(pl.var(df["b"]), expected)  # type: ignore[arg-type]
     expected = 1.0
     assert np.isclose(out.select_at_idx(1), expected)
-    assert np.isclose(pl.std(df["b"]), expected)  # type: ignore
+    assert np.isclose(pl.std(df["b"]), expected)  # type: ignore[arg-type]
     expected = 3
     assert np.isclose(out.select_at_idx(2), expected)
     assert np.isclose(pl.max(df["b"]), expected)
@@ -1335,7 +1341,7 @@ def test_literal_series() -> None:
     )
     out = (
         df.lazy()
-        .with_column(pl.Series("e", [2, 1, 3]))  # type: ignore
+        .with_column(pl.Series("e", [2, 1, 3]))  # type: ignore[arg-type]
         .with_column(pl.col("e").cast(pl.Float32))
         .collect()
     )
@@ -1533,6 +1539,7 @@ def test_hashing_on_python_objects() -> None:
     df = pl.DataFrame({"a": [1, 1, 3, 4], "b": [1, 1, 2, 2]})
 
     class Foo:
+<<<<<<< HEAD
         def __init__(self) -> None:
             pass
 
@@ -1540,6 +1547,15 @@ def test_hashing_on_python_objects() -> None:
             return 0
 
         def __eq__(self, other: Any) -> bool:
+=======
+        def __init__(self):  # type: ignore[no-untyped-def]
+            pass
+
+        def __hash__(self):  # type: ignore[no-untyped-def]
+            return 0
+
+        def __eq__(self, other):  # type: ignore[no-untyped-def]
+>>>>>>> master
             return True
 
     df = df.with_column(pl.col("a").apply(lambda x: Foo()).alias("foo"))
@@ -1741,10 +1757,10 @@ def test_transpose() -> None:
 
 def test_extension() -> None:
     class Foo:
-        def __init__(self, value: Any) -> None:
+        def __init__(self, value):  # type: ignore[no-untyped-def]
             self.value = value
 
-        def __repr__(self) -> str:
+        def __repr__(self):  # type: ignore[no-untyped-def]
             return f"foo({self.value})"
 
     foos = [Foo(1), Foo(2), Foo(3)]
@@ -1920,9 +1936,9 @@ def test_shrink_to_fit(in_place: bool) -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
 
     if in_place:
-        assert df.shrink_to_fit(typing.cast(Literal[True], in_place)) is None
+        assert df.shrink_to_fit(in_place) is None
     else:
-        assert df.shrink_to_fit(typing.cast(Literal[False], in_place)).frame_equal(df)
+        assert df.shrink_to_fit(in_place).frame_equal(df)
 
 
 def test_arithmetic() -> None:
@@ -1982,7 +1998,7 @@ def test_arithmetic() -> None:
 
     # cannot do arithmetic with a sequence
     with pytest.raises(ValueError, match="Operation not supported"):
-        _ = df + [1]  # type: ignore
+        _ = df + [1]  # type: ignore[operator]
 
 
 def test_add_string() -> None:

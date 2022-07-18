@@ -52,14 +52,14 @@ try:
     from polars.polars import PyDataFrame, PySeries
 
     _DOCUMENTING = False
-except ImportError:  # pragma: no cover
+except ImportError:
     _DOCUMENTING = True
 
 try:
     import numpy as np
 
     _NUMPY_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _NUMPY_AVAILABLE = False
 
 try:
@@ -70,20 +70,20 @@ try:
     import pyarrow.parquet
 
     _PYARROW_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _PYARROW_AVAILABLE = False
 
 try:
     import pandas as pd
 
     _PANDAS_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _PANDAS_AVAILABLE = False
 
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
-    from typing_extensions import Literal  # pragma: no cover
+    from typing_extensions import Literal
 
 # A type variable used to refer to a polars.DataFrame or any subclass of it.
 # Used to annotate DataFrame methods which returns the same type as self.
@@ -166,7 +166,7 @@ class DataFrameMetaClass(type):
             # LazyFrame subclass by setting `cls._lazyframe_class`. We must therefore
             # dynamically create a subclass of LazyFrame with `_dataframe_class` set
             # to `cls` in order to preserve types after `.lazy().collect()` roundtrips.
-            cls._lazyframe_class = type(  # type: ignore
+            cls._lazyframe_class = type(  # type: ignore[assignment]
                 f"Lazy{name}",
                 (LazyFrame,),
                 {"_dataframe_class": cls},
@@ -289,17 +289,17 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     def __init__(
         self,
-        data: None
-        | (
+        data: (
             dict[str, Sequence[Any]]
             | Sequence[Any]
             | np.ndarray
             | pa.Table
             | pd.DataFrame
             | pli.Series
+            | None
         ) = None,
         columns: ColumnsType | None = None,
-        orient: str | None = None,
+        orient: Literal["col", "row"] | None = None,
     ):
         if data is None:
             self._df = dict_to_pydf({}, columns=columns)
@@ -320,8 +320,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             self._df = series_to_pydf(data, columns=columns)
 
         elif _PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
-            if not _PYARROW_AVAILABLE:
-                raise ImportError(  # pragma: no cover
+            if not _PYARROW_AVAILABLE:  # pragma: no cover
+                raise ImportError(
                     "'pyarrow' is required for converting a pandas DataFrame to a polars DataFrame."
                 )
             self._df = pandas_to_pydf(data, columns=columns)
@@ -392,7 +392,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         cls: type[DF],
         data: Sequence[Sequence[Any]],
         columns: Sequence[str] | None = None,
-        orient: str | None = None,
+        orient: Literal["col", "row"] | None = None,
     ) -> DF:
         """
         Construct a DataFrame from a sequence of sequences.
@@ -420,7 +420,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         cls: type[DF],
         data: np.ndarray,
         columns: Sequence[str] | None = None,
-        orient: str | None = None,
+        orient: Literal["col", "row"] | None = None,
     ) -> DF:
         """
         Construct a DataFrame from a numpy ndarray.
@@ -649,21 +649,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         parallel: str = "auto",
         row_count_name: str | None = None,
         row_count_offset: int = 0,
+        low_memory: bool = False,
     ) -> DF:
         """
-        Read into a DataFrame from a parquet file.
-
-        Parameters
-        ----------
-        file
-            Path to a file or a file-like object. Any valid filepath can be used.
-        columns
-            Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
-        n_rows
-            Stop reading from parquet file after reading ``n_rows``.
-        parallel
-            Any of { 'auto', 'columns', 'row_groups', 'none' }
-            This determines the direction of parallelism. 'auto' will try to determine the optimal direction.
+        See Also: `pl.read_csv`
         """
         if isinstance(file, (str, Path)):
             file = format_path(file)
@@ -678,6 +667,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 parallel=parallel,
                 row_count_name=row_count_name,
                 row_count_offset=row_count_offset,
+                low_memory=low_memory,
             )
 
             if columns is None:
@@ -698,6 +688,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             n_rows,
             parallel,
             _prepare_row_count_args(row_count_name, row_count_offset),
+            low_memory=low_memory,
         )
         return self
 
@@ -819,8 +810,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Data types that do copy:
             - CategoricalType
         """
-        if not _PYARROW_AVAILABLE:
-            raise ImportError(  # pragma: no cover
+        if not _PYARROW_AVAILABLE:  # pragma: no cover
+            raise ImportError(
                 "'pyarrow' is required for converting a polars DataFrame to an Arrow Table."
             )
         record_batches = self._df.to_arrow()
@@ -1101,10 +1092,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         <class 'pandas.core.frame.DataFrame'>
 
         """
-        if not _PYARROW_AVAILABLE:
-            raise ImportError(  # pragma: no cover
-                "'pyarrow' is required when using to_pandas()."
-            )
+        if not _PYARROW_AVAILABLE:  # pragma: no cover
+            raise ImportError("'pyarrow' is required when using to_pandas().")
         record_batches = self._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
         return tbl.to_pandas(*args, date_as_object=date_as_object, **kwargs)
@@ -1443,8 +1432,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             file = format_path(file)
 
         if use_pyarrow:
-            if not _PYARROW_AVAILABLE:
-                raise ImportError(  # pragma: no cover
+            if not _PYARROW_AVAILABLE:  # pragma: no cover
+                raise ImportError(
                     "'pyarrow' is required when using 'write_parquet(..., use_pyarrow=True)'."
                 )
 
@@ -1530,10 +1519,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         else:
             return out
 
-    def __getstate__(self):  # type: ignore
+    def __getstate__(self) -> list[pli.Series]:
         return self.get_columns()
 
-    def __setstate__(self, state):  # type: ignore
+    def __setstate__(self, state) -> None:  # type: ignore[no-untyped-def]
         self._df = DataFrame(state)._df
 
     def __mul__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
@@ -1761,7 +1750,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         # df[:]
         if isinstance(item, slice):
-            return PolarsSlice(self).apply(item)  # type: ignore
+            return PolarsSlice(self).apply(item)  # type: ignore[return-value]
 
         # select rows by numpy mask or index
         # df[[1, 2, 3]]
@@ -1838,7 +1827,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             if isinstance(col_selection, str):
                 s = self.__getitem__(col_selection)
             elif isinstance(col_selection, int):
-                s = self[:, col_selection]  # type: ignore
+                s = self[:, col_selection]  # type: ignore[assignment]
             else:
                 raise ValueError(f"column selection not understood: {col_selection}")
 
@@ -2856,19 +2845,19 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> df.groupby("a")["b"].sum().sort(by="a")
+        >>> df.groupby("a").agg(pl.col("b").sum()).sort(by="a")
         shape: (3, 2)
-        ┌─────┬───────┐
-        │ a   ┆ b_sum │
-        │ --- ┆ ---   │
-        │ str ┆ i64   │
-        ╞═════╪═══════╡
-        │ a   ┆ 4     │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ b   ┆ 11    │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ c   ┆ 6     │
-        └─────┴───────┘
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ a   ┆ 4   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ b   ┆ 11  │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ c   ┆ 6   │
+        └─────┴─────┘
 
         We can also loop over the grouped `DataFrame`
 
@@ -2901,7 +2890,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             by = [by]
         return GroupBy(
             self._df,
-            by,  # type: ignore
+            by,  # type: ignore[arg-type]
             dataframe_class=self.__class__,
             maintain_order=maintain_order,
         )
@@ -2993,19 +2982,19 @@ class DataFrame(metaclass=DataFrameMetaClass):
         >>> out
         shape: (6, 4)
         ┌─────────────────────┬───────┬───────┬───────┐
-        │ dt                  ┆ a_sum ┆ a_max ┆ a_min │
+        │ dt                  ┆ sum_a ┆ min_a ┆ max_a │
         │ ---                 ┆ ---   ┆ ---   ┆ ---   │
-        │ datetime[ms]        ┆ i64   ┆ i64   ┆ i64   │
+        │ datetime[μs]        ┆ i64   ┆ i64   ┆ i64   │
         ╞═════════════════════╪═══════╪═══════╪═══════╡
         │ 2020-01-01 13:45:48 ┆ 3     ┆ 3     ┆ 3     │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 2020-01-01 16:42:13 ┆ 10    ┆ 7     ┆ 3     │
+        │ 2020-01-01 16:42:13 ┆ 10    ┆ 3     ┆ 7     │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 2020-01-01 16:45:09 ┆ 15    ┆ 7     ┆ 3     │
+        │ 2020-01-01 16:45:09 ┆ 15    ┆ 3     ┆ 7     │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 2020-01-02 18:12:48 ┆ 24    ┆ 9     ┆ 3     │
+        │ 2020-01-02 18:12:48 ┆ 24    ┆ 3     ┆ 9     │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 2020-01-03 19:45:32 ┆ 11    ┆ 9     ┆ 2     │
+        │ 2020-01-03 19:45:32 ┆ 11    ┆ 2     ┆ 9     │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ 2020-01-08 23:16:43 ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴───────┴───────┴───────┘
@@ -3131,12 +3120,14 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ...         ]
         ...     )
         ... )
-        shape: (3, 3)
+        shape: (4, 3)
         ┌─────────────────────┬─────────────────────┬─────────────────────┐
         │ time                ┆ time_min            ┆ time_max            │
         │ ---                 ┆ ---                 ┆ ---                 │
         │ datetime[ns]        ┆ datetime[ns]        ┆ datetime[ns]        │
         ╞═════════════════════╪═════════════════════╪═════════════════════╡
+        │ 2021-12-16 00:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2021-12-16 00:00:00 ┆ 2021-12-16 00:30:00 ┆ 2021-12-16 01:00:00 │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2021-12-16 01:00:00 ┆ 2021-12-16 01:30:00 ┆ 2021-12-16 02:00:00 │
@@ -3151,12 +3142,14 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ...         [pl.col("time").count().alias("time_count")]
         ...     )
         ... )
-        shape: (3, 4)
+        shape: (4, 4)
         ┌─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
         │ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
         │ ---                 ┆ ---                 ┆ ---                 ┆ ---        │
         │ datetime[ns]        ┆ datetime[ns]        ┆ datetime[ns]        ┆ u32        │
         ╞═════════════════════╪═════════════════════╪═════════════════════╪════════════╡
+        │ 2021-12-15 23:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 00:00:00 ┆ 1          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ 2          │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ 2          │
@@ -3196,12 +3189,14 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ...         [pl.col("time").count().alias("time_count")]
         ...     )
         ... )
-        shape: (4, 2)
+        shape: (5, 2)
         ┌─────────────────────┬────────────┐
         │ time                ┆ time_count │
         │ ---                 ┆ ---        │
         │ datetime[ns]        ┆ u32        │
         ╞═════════════════════╪════════════╡
+        │ 2021-12-16 00:00:00 ┆ 1          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2021-12-16 00:00:00 ┆ 3          │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2021-12-16 01:00:00 ┆ 3          │
@@ -3253,12 +3248,14 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ...         include_boundaries=True,
         ...     ).agg([pl.col("time").count().alias("time_count")])
         ... )
-        shape: (6, 5)
+        shape: (7, 5)
         ┌────────┬─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
         │ groups ┆ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
         │ ---    ┆ ---                 ┆ ---                 ┆ ---                 ┆ ---        │
         │ str    ┆ datetime[ns]        ┆ datetime[ns]        ┆ datetime[ns]        ┆ u32        │
         ╞════════╪═════════════════════╪═════════════════════╪═════════════════════╪════════════╡
+        │ a      ┆ 2021-12-15 23:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 00:00:00 ┆ 1          │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ a      ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ 3          │
         ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ a      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ 1          │
@@ -3271,6 +3268,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ b      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 1          │
         └────────┴─────────────────────┴─────────────────────┴─────────────────────┴────────────┘
+
 
         Dynamic groupby on an index column
 
@@ -4194,7 +4192,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def __copy__(self: DF) -> DF:
         return self.clone()
 
-    def __deepcopy__(self: DF, memodict={}) -> DF:  # type: ignore
+    def __deepcopy__(self: DF, memodict: dict = {}) -> DF:
         return self.clone()
 
     def get_columns(self) -> list[pli.Series]:
@@ -4906,7 +4904,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         return (
             self.lazy()
-            .select(exprs)  # type: ignore
+            .select(exprs)  # type: ignore[arg-type]
             .collect(no_optimization=True, string_cache=False)
         )
 
@@ -4955,7 +4953,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴──────┴──────┴───────┘
-        ...
+
         >>> # Support for kwarg expressions is considered EXPERIMENTAL.
         >>> # Currently requires opt-in via `pl.Config` boolean flag:
         >>>
@@ -6167,7 +6165,7 @@ class GroupBy(Generic[DF]):
 
         # should be only one match
         try:
-            groups_idx = groups[mask][0]  # type: ignore
+            groups_idx = groups[mask][0]  # type: ignore[index]
         except IndexError:
             raise ValueError(f"no group: {group_value} found")
 
@@ -6365,8 +6363,6 @@ class GroupBy(Generic[DF]):
                     .agg(column_to_agg)  # type: ignore[arg-type]
                     .collect(no_optimization=True, string_cache=False)
                 )
-
-                pass
             else:
                 raise ValueError(
                     f"argument: {column_to_agg} not understood, have you passed a list of expressions?"

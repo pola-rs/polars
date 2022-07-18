@@ -16,13 +16,13 @@ from typing import Any, Callable, Generic, Sequence, TypeVar, overload
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
-    from typing_extensions import Literal  # pragma: no cover
+    from typing_extensions import Literal
 
 try:
     from polars.polars import PyExpr, PyLazyFrame, PyLazyGroupBy
 
     _DOCUMENTING = False
-except ImportError:  # pragma: no cover
+except ImportError:
     _DOCUMENTING = True
 
 
@@ -42,7 +42,7 @@ try:
     import pyarrow as pa
 
     _PYARROW_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _PYARROW_AVAILABLE = False
 
 # Used to type any type or subclass of LazyFrame.
@@ -107,7 +107,7 @@ class LazyFrame(Generic[DF]):
         This property is dynamically overwritten when DataFrame is sub-classed. See
         `polars.internals.frame.DataFrameMetaClass.__init__` for implementation details.
         """
-        return pli.DataFrame  # type: ignore
+        return pli.DataFrame  # type: ignore[return-value]
 
     @classmethod
     def scan_csv(
@@ -180,6 +180,7 @@ class LazyFrame(Generic[DF]):
         row_count_name: str | None = None,
         row_count_offset: int = 0,
         storage_options: dict | None = None,
+        low_memory: bool = False,
     ) -> LDF:
         """
         See Also
@@ -194,7 +195,7 @@ class LazyFrame(Generic[DF]):
                 scan = scan.head(n_rows)
             if row_count_name is not None:
                 scan = scan.with_row_count(row_count_name, row_count_offset)
-            return scan  # type: ignore
+            return scan  # type: ignore[return-value]
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_parquet(
@@ -204,6 +205,7 @@ class LazyFrame(Generic[DF]):
             parallel,
             rechunk,
             _prepare_row_count_args(row_count_name, row_count_offset),
+            low_memory,
         )
         return self
 
@@ -233,7 +235,7 @@ class LazyFrame(Generic[DF]):
                 scan = scan.head(n_rows)
             if row_count_name is not None:
                 scan = scan.with_row_count(row_count_name, row_count_offset)
-            return scan  # type: ignore
+            return scan  # type: ignore[return-value]
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_ipc(
@@ -807,7 +809,7 @@ class LazyFrame(Generic[DF]):
     def __copy__(self: LDF) -> LDF:
         return self.clone()
 
-    def __deepcopy__(self: LDF, memodict={}) -> LDF:  # type: ignore
+    def __deepcopy__(self: LDF, memodict: dict = {}) -> LDF:
         return self.clone()
 
     def filter(self: LDF, predicate: pli.Expr | str) -> LDF:
@@ -1482,7 +1484,7 @@ class LazyFrame(Generic[DF]):
     def with_columns(
         self: LDF,
         exprs: pli.Expr | pli.Series | Sequence[pli.Expr | pli.Series] | None = None,
-        **named_exprs: pli.Expr | pli.Series,
+        **named_exprs: pli.Expr | pli.Series | str,
     ) -> LDF:
         """
         Add or overwrite multiple columns in a DataFrame.
@@ -1524,7 +1526,7 @@ class LazyFrame(Generic[DF]):
         ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴──────┴──────┴───────┘
-        ...
+
         >>> # Support for kwarg expressions is considered EXPERIMENTAL.
         >>> # Currently requires opt-in via `pl.Config` boolean flag:
         >>>
@@ -1532,21 +1534,22 @@ class LazyFrame(Generic[DF]):
         >>> ldf.with_columns(
         ...     d=pl.col("a") * pl.col("b"),
         ...     e=pl.col("c").is_not(),
+        ...     f="foo",
         ... ).collect()
-        shape: (4, 5)
-        ┌─────┬──────┬───────┬──────┬───────┐
-        │ a   ┆ b    ┆ c     ┆ d    ┆ e     │
-        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---   │
-        │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ bool  │
-        ╞═════╪══════╪═══════╪══════╪═══════╡
-        │ 1   ┆ 0.5  ┆ true  ┆ 0.5  ┆ false │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 2   ┆ 4.0  ┆ true  ┆ 8.0  ┆ false │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 3   ┆ 10.0 ┆ false ┆ 30.0 ┆ true  │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
-        └─────┴──────┴───────┴──────┴───────┘
+        shape: (4, 6)
+        ┌─────┬──────┬───────┬──────┬───────┬─────┐
+        │ a   ┆ b    ┆ c     ┆ d    ┆ e     ┆ f   │
+        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---   ┆ --- │
+        │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ bool  ┆ str │
+        ╞═════╪══════╪═══════╪══════╪═══════╪═════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ 0.5  ┆ false ┆ foo │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 4.0  ┆ true  ┆ 8.0  ┆ false ┆ foo │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 10.0 ┆ false ┆ 30.0 ┆ true  ┆ foo │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false ┆ foo │
+        └─────┴──────┴───────┴──────┴───────┴─────┘
         """
         if named_exprs and not Config.with_columns_kwargs:
             raise RuntimeError(
@@ -1804,8 +1807,10 @@ class LazyFrame(Generic[DF]):
         """
         Limit the LazyFrame to the first `n` rows.
 
-        Note if you don't want the rows to be scanned, use the :func:`fetch` operation
-        instead.
+        .. note::
+            Consider using the :func:`fetch` operation when you only want to test your query.
+            The :func:`fetch` operation will load the first `n` rows at the scan level, whereas
+            the :func:`head`/:func:`limit` are applied at the end.
 
         Parameters
         ----------
@@ -1818,9 +1823,10 @@ class LazyFrame(Generic[DF]):
         """
         Gets the first `n` rows of the DataFrame.
 
-        You probably don't want to use this!
-        Consider using the :func:`fetch` operation instead. The :func:`fetch` operation will truly
-        load the first `n` rows lazily.
+        .. note::
+            Consider using the :func:`fetch` operation when you only want to test your query.
+            The :func:`fetch` operation will load the first `n` rows at the scan level, whereas
+            the :func:`head`/:func:`limit` are applied at the end.
 
         This operation instead loads all the rows and only applies the ``head`` at the end.
 

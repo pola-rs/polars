@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import warnings
 from datetime import date, datetime, time, timedelta
 from itertools import zip_longest
@@ -29,29 +30,34 @@ from polars.datatypes_constructor import (
 )
 from polars.utils import threadpool_size
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:
     import pandas as pd
 
 try:
     from polars.polars import PyDataFrame, PySeries
 
     _DOCUMENTING = False
-except ImportError:  # pragma: no cover
+except ImportError:
     _DOCUMENTING = True
 
 try:
     import numpy as np
 
     _NUMPY_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _NUMPY_AVAILABLE = False
 
 try:
     import pyarrow as pa
 
     _PYARROW_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _PYARROW_AVAILABLE = False
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 
 ################################
@@ -293,7 +299,7 @@ def _pandas_series_to_arrow(
     """
     dtype = values.dtype
     if dtype == "object" and len(values) > 0:
-        first_non_none = _get_first_non_none(values.values)  # type: ignore
+        first_non_none = _get_first_non_none(values.values)  # type: ignore[arg-type]
 
         if isinstance(first_non_none, str):
             return pa.array(values, pa.large_utf8(), from_pandas=nan_to_none)
@@ -449,7 +455,7 @@ def dict_to_pydf(
 def sequence_to_pydf(
     data: Sequence[Any],
     columns: ColumnsType | None = None,
-    orient: str | None = None,
+    orient: Literal["col", "row"] | None = None,
 ) -> PyDataFrame:
     """
     Construct a PyDataFrame from a sequence.
@@ -489,12 +495,16 @@ def sequence_to_pydf(
             if columns:
                 pydf = _post_apply_columns(pydf, columns)
             return pydf
-        else:
+        elif orient == "col" or orient is None:
             columns, dtypes = _unpack_columns(columns, n_expected=len(data))
             data_series = [
                 pli.Series(columns[i], data[i], dtypes.get(columns[i])).inner()
                 for i in range(len(data))
             ]
+        else:
+            raise ValueError(
+                f"orient must be one of {{'col', 'row', None}}, got {orient} instead."
+            )
 
     else:
         columns, dtypes = _unpack_columns(columns, n_expected=1)
@@ -507,7 +517,7 @@ def sequence_to_pydf(
 def numpy_to_pydf(
     data: np.ndarray,
     columns: ColumnsType | None = None,
-    orient: str | None = None,
+    orient: Literal["col", "row"] | None = None,
 ) -> PyDataFrame:
     """
     Construct a PyDataFrame from a numpy ndarray.
@@ -551,11 +561,15 @@ def numpy_to_pydf(
                 pli.Series(columns[i], data[:, i], dtypes.get(columns[i])).inner()
                 for i in range(n_columns)
             ]
-        else:
+        elif orient == "col":
             data_series = [
                 pli.Series(columns[i], data[i], dtypes.get(columns[i])).inner()
                 for i in range(n_columns)
             ]
+        else:
+            raise ValueError(
+                f"orient must be one of {{'col', 'row', None}}, got {orient} instead."
+            )
     else:
         raise ValueError("A numpy array should not have more than two dimensions.")
 

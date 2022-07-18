@@ -194,7 +194,7 @@ describe("groupby ops", () => {
 
     const df = pl
       .DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]})
-      .withColumn(pl.col("dt").str.strptime(pl.Datetime));
+      .withColumn(pl.col("dt").str.strptime(pl.Datetime("ms")));
 
     const a = pl.col("a");
     const out = df.groupByRolling({indexColumn:"dt", period:"2d"}).agg(

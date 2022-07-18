@@ -20,7 +20,7 @@ try:
     from polars.polars import py_hor_concat_df as _hor_concat_df
 
     _DOCUMENTING = False
-except ImportError:  # pragma: no cover
+except ImportError:
     _DOCUMENTING = True
 
 
@@ -140,7 +140,7 @@ def concat(
     elif isinstance(first, pli.Expr):
         out = first
         for e in items[1:]:
-            out = out.append(e)  # type: ignore
+            out = out.append(e)  # type: ignore[arg-type]
     else:
         raise ValueError(f"did not expect type: {type(first)} in 'pl.concat'.")
 
@@ -151,7 +151,7 @@ def concat(
 
 def _ensure_datetime(value: date | datetime) -> tuple[datetime, bool]:
     is_date_type = False
-    if isinstance(value, date) and not isinstance(value, datetime):
+    if not isinstance(value, datetime):
         value = datetime(value.year, value.month, value.day)
         is_date_type = True
     return value, is_date_type

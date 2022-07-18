@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import warnings
 from typing import Any, Mapping, Sequence, overload
 
@@ -9,22 +10,27 @@ try:
     import numpy as np
 
     _NUMPY_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _NUMPY_AVAILABLE = False
 
 try:
     import pyarrow as pa
 
     _PYARROW_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _PYARROW_AVAILABLE = False
 
 try:
     import pandas as pd
 
     _PANDAS_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _PANDAS_AVAILABLE = False
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal  # pragma: no cover
 
 
 def from_dict(
@@ -64,7 +70,7 @@ def from_dict(
     └─────┴─────┘
 
     """
-    return DataFrame._from_dict(data=data, columns=columns)  # type: ignore
+    return DataFrame._from_dict(data=data, columns=columns)  # type: ignore[arg-type]
 
 
 def from_dicts(
@@ -110,7 +116,7 @@ def from_dicts(
 def from_records(
     data: Sequence[Sequence[Any]],
     columns: Sequence[str] | None = None,
-    orient: str | None = None,
+    orient: Literal["col", "row"] | None = None,
 ) -> DataFrame:
     """
     Construct a DataFrame from a numpy ndarray or sequence of sequences.
@@ -166,7 +172,7 @@ def from_records(
 def from_numpy(
     data: np.ndarray,
     columns: Sequence[str] | None = None,
-    orient: str | None = None,
+    orient: Literal["col", "row"] | None = None,
 ) -> DataFrame:
     """
     Construct a DataFrame from a numpy ndarray.

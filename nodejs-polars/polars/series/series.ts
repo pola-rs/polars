@@ -1056,8 +1056,8 @@ export function _Series(_s: any): Series {
     [Symbol.toStringTag]() {
       return "Series";
     },
-    get dtype() {
-      return _s.dtype as any;
+    get dtype(): DataType {
+      return DataType.deserialize(_s.dtype);
     },
     get name() {
       return _s.name;
@@ -1109,7 +1109,14 @@ export function _Series(_s: any): Series {
       ));
     },
     argTrue() {
-      return _Series(_s.argTrue());
+      return _Series(this
+        .toFrame()
+        ._df
+        .lazy()
+        .select([pli.argWhere(pli.col(this.name))])
+        .collectSync()
+        .column(this.name)
+      );
     },
     argUnique() {
       return _Series(_s.argUnique());
@@ -1281,12 +1288,12 @@ export function _Series(_s: any): Series {
     isBoolean() {
       const dtype = this.dtype;
 
-      return dtype === pli.DataType.Bool;
+      return dtype.equals(DataType.Bool);
     },
     isDateTime() {
       const dtype = this.dtype;
 
-      return [pli.DataType.Date, pli.DataType.Datetime].includes(dtype);
+      return [DataType.Date.variant, "Datetime"].includes(dtype.variant);
     },
     isDuplicated() {
       return wrap("isDuplicated");
@@ -1294,7 +1301,7 @@ export function _Series(_s: any): Series {
     isFinite() {
       const dtype = this.dtype;
 
-      if (![pli.DataType.Float32, pli.DataType.Float64].includes(dtype)) {
+      if (![DataType.Float32.variant, DataType.Float64.variant].includes(dtype.variant)) {
         throw new InvalidOperationError("isFinite", dtype);
       } else {
         return wrap("isFinite");
@@ -1306,7 +1313,7 @@ export function _Series(_s: any): Series {
     isFloat() {
       const dtype = this.dtype;
 
-      return [pli.DataType.Float32, pli.DataType.Float64].includes(dtype);
+      return [DataType.Float32.variant, DataType.Float64.variant].includes(dtype.variant);
     },
     isIn(other) {
       return Series.isSeries(other) ?
@@ -1316,7 +1323,7 @@ export function _Series(_s: any): Series {
     isInfinite() {
       const dtype = this.dtype;
 
-      if (![pli.DataType.Float32, pli.DataType.Float64].includes(dtype)) {
+      if (![DataType.Float32.variant, DataType.Float64.variant].includes(dtype.variant)) {
         throw new InvalidOperationError("isFinite", dtype);
       } else {
         return wrap("isInfinite");
@@ -1338,25 +1345,25 @@ export function _Series(_s: any): Series {
       const dtype = this.dtype;
 
       const numericTypes = [
-        pli.DataType.Int8,
-        pli.DataType.Int16,
-        pli.DataType.Int32,
-        pli.DataType.Int64,
-        pli.DataType.UInt8,
-        pli.DataType.UInt16,
-        pli.DataType.UInt32,
-        pli.DataType.UInt64,
-        pli.DataType.Float32,
-        pli.DataType.Float64
+        DataType.Int8.variant,
+        DataType.Int16.variant,
+        DataType.Int32.variant,
+        DataType.Int64.variant,
+        DataType.UInt8.variant,
+        DataType.UInt16.variant,
+        DataType.UInt32.variant,
+        DataType.UInt64.variant,
+        DataType.Float32.variant,
+        DataType.Float64.variant
       ];
 
-      return numericTypes.includes(dtype);
+      return numericTypes.includes(dtype.variant);
     },
     isUnique() {
       return wrap("isUnique");
     },
     isUtf8() {
-      return this.dtype === pli.DataType.Utf8;
+      return this.dtype.equals(DataType.Utf8);
     },
     kurtosis(fisher: any = true, bias = true) {
       if (typeof fisher === "boolean") {
@@ -1444,7 +1451,7 @@ export function _Series(_s: any): Series {
     },
     reinterpret(signed = true) {
       const dtype = this.dtype;
-      if ([pli.DataType.UInt64, pli.DataType.Int64].includes(dtype)) {
+      if ([DataType.UInt64.variant, DataType.Int64.variant].includes(dtype.variant)) {
         return wrap("reinterpret", signed);
       } else {
         throw new InvalidOperationError("reinterpret", dtype);

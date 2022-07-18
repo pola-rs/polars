@@ -41,7 +41,7 @@ def modules_in_path(p: Path) -> Generator:
 
 if __name__ == "__main__":
     # set to True to just run the code, and do not check any output. Will still report errors if the code is invalid
-    IGNORE_RESULT_ALL = True
+    IGNORE_RESULT_ALL = False
 
     # Below the implementation if the IGNORE_RESULT directive
     # You can ignore the result of a doctest by adding "doctest: +IGNORE_RESULT" into the code block
@@ -59,7 +59,7 @@ if __name__ == "__main__":
             else:
                 return OutputChecker.check_output(self, want, got, optionflags)
 
-    doctest.OutputChecker = CustomOutputChecker  # type: ignore
+    doctest.OutputChecker = CustomOutputChecker  # type: ignore[misc]
 
     # We want to be relaxed about whitespace, but strict on True vs 1
     doctest.NORMALIZE_WHITESPACE = True

@@ -15,20 +15,20 @@ try:
     from polars.polars import pool_size as _pool_size
 
     _DOCUMENTING = False
-except ImportError:  # pragma: no cover
+except ImportError:
     _DOCUMENTING = True
 
 try:
     import numpy as np
 
     _NUMPY_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _NUMPY_AVAILABLE = False
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
 else:
-    from typing_extensions import TypeGuard  # pragma: no cover
+    from typing_extensions import TypeGuard
 
 
 def _process_null_values(
@@ -91,7 +91,7 @@ def _datetime_to_pl_timestamp(dt: datetime, tu: str | None) -> int:
         # python has us precision
         return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e6)
     else:
-        raise ValueError("expected on of {'ns', 'us', 'ms'}")
+        raise ValueError("expected one of {'ns', 'us', 'ms'}")
 
 
 def _timedelta_to_pl_timedelta(td: timedelta, tu: str | None = None) -> int:
@@ -148,13 +148,13 @@ def handle_projection_columns(
     projection: list[int] | None = None
     if columns:
         if is_int_sequence(columns):
-            projection = columns  # type: ignore
+            projection = columns  # type: ignore[assignment]
             columns = None
         elif not is_str_sequence(columns):
             raise ValueError(
                 "columns arg should contain a list of all integers or all strings values."
             )
-    return projection, columns  # type: ignore
+    return projection, columns  # type: ignore[return-value]
 
 
 def _to_python_time(value: int) -> time:
@@ -185,7 +185,6 @@ def _prepare_row_count_args(
     row_count_name: str | None = None,
     row_count_offset: int = 0,
 ) -> tuple[str, int] | None:
-
     if row_count_name is not None:
         return (row_count_name, row_count_offset)
     else:

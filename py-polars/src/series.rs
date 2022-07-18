@@ -1117,10 +1117,9 @@ impl PySeries {
 
     pub fn str_contains(&self, pat: &str, literal: Option<bool>) -> PyResult<Self> {
         let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
-        let s = if literal.unwrap_or(false) {
-            ca.contains_literal(pat)
-        } else {
-            ca.contains(pat)
+        let s = match literal {
+            Some(true) => ca.contains_literal(pat),
+            _ => ca.contains(pat),
         }
         .map_err(PyPolarsErr::from)?
         .into_series();
@@ -1145,21 +1144,25 @@ impl PySeries {
         Ok(s.into())
     }
 
-    pub fn str_replace(&self, pat: &str, val: &str) -> PyResult<Self> {
+    pub fn str_replace(&self, pat: &str, val: &str, literal: Option<bool>) -> PyResult<Self> {
         let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
-        let s = ca
-            .replace(pat, val)
-            .map_err(PyPolarsErr::from)?
-            .into_series();
+        let s = match literal {
+            Some(true) => ca.replace_literal(pat, val),
+            _ => ca.replace(pat, val),
+        }
+        .map_err(PyPolarsErr::from)?
+        .into_series();
         Ok(s.into())
     }
 
-    pub fn str_replace_all(&self, pat: &str, val: &str) -> PyResult<Self> {
+    pub fn str_replace_all(&self, pat: &str, val: &str, literal: Option<bool>) -> PyResult<Self> {
         let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
-        let s = ca
-            .replace_all(pat, val)
-            .map_err(PyPolarsErr::from)?
-            .into_series();
+        let s = match literal {
+            Some(true) => ca.replace_literal_all(pat, val),
+            _ => ca.replace_all(pat, val),
+        }
+        .map_err(PyPolarsErr::from)?
+        .into_series();
         Ok(s.into())
     }
 

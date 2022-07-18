@@ -1,7 +1,8 @@
 import pl from "@polars";
+import path from "path";
 describe("serde", () => {
   test("lazyframe:json", () => {
-    const df = pl.scanCSV("../examples/datasets/foods1.csv");
+    const df = pl.scanCSV(path.resolve("../examples/datasets/foods1.csv"));
     const buf = df.serialize("json");
     const deserde = pl.LazyDataFrame.deserialize(buf, "json");
     const expected = df.collectSync();

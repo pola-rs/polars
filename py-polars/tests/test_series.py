@@ -98,9 +98,9 @@ def test_bitwise_ops() -> None:
     # rand/rxor/ror we trigger by casting the left hand to a list here in the test
     # Note that the type annotations only allow Series to be passed in, but there is
     # specific code to deal with non-Series inputs.
-    assert (True & a).series_equal(pl.Series([True, False, True]))  # type: ignore
-    assert (True | a).series_equal(pl.Series([True, True, True]))  # type: ignore
-    assert (True ^ a).series_equal(pl.Series([False, True, False]))  # type: ignore
+    assert (True & a).series_equal(pl.Series([True, False, True]))  # type: ignore[operator]
+    assert (True | a).series_equal(pl.Series([True, True, True]))  # type: ignore[operator]
+    assert (True ^ a).series_equal(pl.Series([False, True, False]))  # type: ignore[operator]
 
 
 def test_bitwise_floats_invert() -> None:

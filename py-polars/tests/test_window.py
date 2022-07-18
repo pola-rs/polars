@@ -98,13 +98,13 @@ def test_window_function_cache() -> None:
 
 def test_arange_no_rows() -> None:
     df = pl.DataFrame(dict(x=[5, 5, 4, 4, 2, 2]))
-    out = df.with_column(pl.arange(0, pl.count()).over("x"))  # type: ignore
+    out = df.with_column(pl.arange(0, pl.count()).over("x"))  # type: ignore[union-attr]
     assert out.frame_equal(
         pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "literal": [0, 1, 0, 1, 0, 1]})
     )
 
     df = pl.DataFrame(dict(x=[]))
-    out = df.with_column(pl.arange(0, pl.count()).over("x"))  # type: ignore
+    out = df.with_column(pl.arange(0, pl.count()).over("x"))  # type: ignore[union-attr]
     assert out.frame_equal(pl.DataFrame({"x": [], "literal": []}))
 
 

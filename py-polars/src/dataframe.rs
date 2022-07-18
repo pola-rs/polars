@@ -210,6 +210,7 @@ impl PyDataFrame {
         n_rows: Option<usize>,
         parallel: Wrap<ParallelStrategy>,
         row_count: Option<(String, IdxSize)>,
+        low_memory: bool,
     ) -> PyResult<Self> {
         use EitherRustPythonFile::*;
 
@@ -223,6 +224,7 @@ impl PyDataFrame {
                     .read_parallel(parallel.0)
                     .with_n_rows(n_rows)
                     .with_row_count(row_count)
+                    .set_low_memory(low_memory)
                     .finish()
             }
             Rust(f) => ParquetReader::new(f.into_inner())

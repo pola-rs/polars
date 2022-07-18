@@ -48,20 +48,20 @@ try:
     from polars.polars import spearman_rank_corr as pyspearman_rank_corr
 
     _DOCUMENTING = False
-except ImportError:  # pragma: no cover
+except ImportError:
     _DOCUMENTING = True
 
 try:
     import numpy as np
 
     _NUMPY_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _NUMPY_AVAILABLE = False
 
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
-    from typing_extensions import Literal  # pragma: no cover
+    from typing_extensions import Literal
 
 
 def col(
@@ -157,7 +157,7 @@ def col(
 
     """
     if isinstance(name, pli.Series):
-        name = name.to_list()  # type: ignore
+        name = name.to_list()  # type: ignore[assignment]
 
     # note: we need the typing.cast call here twice to make mypy happy under Python 3.7
     # On Python 3.10, it is not needed. We use cast as it works across versions, ignoring
@@ -685,7 +685,7 @@ def lit(
     # numpy literals like np.float32(0)
     # have an item
     if hasattr(value, "item"):
-        value = value.item()  # type: ignore
+        value = value.item()  # type: ignore[union-attr]
     return pli.wrap_expr(pylit(value))
 
 
@@ -1697,7 +1697,7 @@ def repeat(
         if name is None:
             name = ""
         dtype = py_type_to_dtype(type(value))
-        s = pli.Series._repeat(name, value, n, dtype)  # type: ignore
+        s = pli.Series._repeat(name, value, n, dtype)  # type: ignore[arg-type]
         return s
     else:
         if isinstance(n, int):

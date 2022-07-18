@@ -9,16 +9,16 @@ try:
     import pyarrow as pa
 
     _PYARROW_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _PYARROW_AVAILABLE = False
 
-from _ctypes import _SimpleCData  # type: ignore
+from _ctypes import _SimpleCData  # type: ignore[import]
 
 try:
     from polars.polars import dtype_str_repr
 
     _DOCUMENTING = False
-except ImportError:  # pragma: no cover
+except ImportError:
     _DOCUMENTING = True
 
 
@@ -27,7 +27,7 @@ class DataType:
     Base class for all Polars data types.
     """
 
-    def __new__(cls, *args, **kwargs) -> PolarsDataType:  # type: ignore
+    def __new__(cls, *args: Any, **kwargs: Any) -> PolarsDataType:  # type: ignore[misc]
         # this formulation allows for equivalent use of "pl.Type" and "pl.Type()", while
         # still respecting types that take initialisation params (eg: Duration/Datetime)
         if args or kwargs:
@@ -115,7 +115,7 @@ class List(DataType):
         """
         self.inner = py_type_to_dtype(inner)
 
-    def __eq__(self, other: type[DataType]) -> bool:  # type: ignore
+    def __eq__(self, other: type[DataType]) -> bool:  # type: ignore[override]
         # The comparison allows comparing objects to classes
         # and specific inner types to none specific.
         # if one of the arguments is not specific about its inner type
@@ -161,7 +161,7 @@ class Datetime(DataType):
         self.tu = time_unit
         self.tz = time_zone
 
-    def __eq__(self, other: type[DataType]) -> bool:  # type: ignore
+    def __eq__(self, other: type[DataType]) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
         if type(other) is type and issubclass(other, Datetime):
             return True
@@ -188,7 +188,7 @@ class Duration(DataType):
         """
         self.tu = time_unit
 
-    def __eq__(self, other: type[DataType]) -> bool:  # type: ignore
+    def __eq__(self, other: type[DataType]) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
         if type(other) is type and issubclass(other, Duration):
             return True
@@ -228,7 +228,7 @@ class Field:
         self.name = name
         self.dtype = py_type_to_dtype(dtype)
 
-    def __eq__(self, other: Field) -> bool:  # type: ignore
+    def __eq__(self, other: Field) -> bool:  # type: ignore[override]
         return (self.name == other.name) & (self.dtype == other.dtype)
 
     def __repr__(self) -> str:
@@ -251,7 +251,7 @@ class Struct(DataType):
         """
         self.fields = fields
 
-    def __eq__(self, other: type[DataType]) -> bool:  # type: ignore
+    def __eq__(self, other: type[DataType]) -> bool:  # type: ignore[override]
         # The comparison allows comparing objects to classes
         # and specific inner types to none specific.
         # if one of the arguments is not specific about its inner type

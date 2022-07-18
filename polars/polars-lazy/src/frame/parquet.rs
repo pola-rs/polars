@@ -10,6 +10,7 @@ pub struct ScanArgsParquet {
     pub parallel: ParallelStrategy,
     pub rechunk: bool,
     pub row_count: Option<RowCount>,
+    pub low_memory: bool,
 }
 
 impl Default for ScanArgsParquet {
@@ -20,6 +21,7 @@ impl Default for ScanArgsParquet {
             parallel: Default::default(),
             rechunk: true,
             row_count: None,
+            low_memory: false,
         }
     }
 }
@@ -32,11 +34,13 @@ impl LazyFrame {
         parallel: ParallelStrategy,
         row_count: Option<RowCount>,
         rechunk: bool,
+        low_memory: bool,
     ) -> Result<Self> {
-        let mut lf: LazyFrame =
-            LogicalPlanBuilder::scan_parquet(path, n_rows, cache, parallel, row_count, rechunk)?
-                .build()
-                .into();
+        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(
+            path, n_rows, cache, parallel, row_count, rechunk, low_memory,
+        )?
+        .build()
+        .into();
         lf.opt_state.file_caching = true;
         Ok(lf)
     }
@@ -55,6 +59,7 @@ impl LazyFrame {
 
     /// Create a LazyFrame directly from a parquet scan.
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
+    #[deprecated(note = "please use `concat_lf` instead")]
     pub fn scan_parquet_files(paths: Vec<String>, args: ScanArgsParquet) -> Result<Self> {
         let lfs = paths
             .iter()
@@ -66,6 +71,7 @@ impl LazyFrame {
                     args.parallel,
                     None,
                     args.rechunk,
+                    args.low_memory,
                 )
             })
             .collect::<Result<Vec<_>>>()?;
@@ -90,6 +96,7 @@ impl LazyFrame {
                         ParallelStrategy::None,
                         None,
                         args.rechunk,
+                        args.low_memory,
                     )
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -103,6 +110,7 @@ impl LazyFrame {
                 args.parallel,
                 args.row_count,
                 args.rechunk,
+                args.low_memory,
             )
         }
     }

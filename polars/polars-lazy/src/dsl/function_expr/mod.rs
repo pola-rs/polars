@@ -1,8 +1,11 @@
 #[cfg(feature = "arg_where")]
 mod arg_where;
+mod fill_null;
 #[cfg(feature = "is_in")]
 mod is_in;
 mod pow;
+#[cfg(feature = "row_hash")]
+mod row_hash;
 #[cfg(feature = "strings")]
 mod strings;
 #[cfg(any(feature = "temporal", feature = "date_offset"))]
@@ -39,6 +42,9 @@ pub enum FunctionExpr {
     DateOffset(Duration),
     #[cfg(feature = "trigonometry")]
     Trigonometry(TrigonometricFunction),
+    FillNull {
+        super_type: DataType,
+    },
 }
 
 #[cfg(feature = "trigonometry")]
@@ -99,6 +105,7 @@ impl FunctionExpr {
             DateOffset(_) => same_type(),
             #[cfg(feature = "trigonometry")]
             Trigonometry(_) => float_dtype(),
+            FillNull { super_type, .. } => with_dtype(super_type.clone()),
         }
     }
 }
@@ -109,6 +116,20 @@ macro_rules! wrap {
     };
 }
 
+// Fn(&[Series], args)
+// all expression arguments are in the slice.
+// the first element is the root expression.
+macro_rules! map_as_slice {
+    ($func:path, $($args:expr),*) => {{
+        let f = move |s: &mut [Series]| {
+            $func(s, $($args),*)
+        };
+
+        SpecialEq::new(Arc::new(f))
+    }};
+}
+
+// Fn(&Series, args)
 macro_rules! map_with_args {
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
@@ -120,6 +141,7 @@ macro_rules! map_with_args {
     }};
 }
 
+// FnOnce(Series, args)
 macro_rules! map_owned_with_args {
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
@@ -147,12 +169,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             }
             #[cfg(feature = "row_hash")]
             Hash(k0, k1, k2, k3) => {
-                let f = move |s: &mut [Series]| {
-                    let s = &s[0];
-                    Ok(s.hash(ahash::RandomState::with_seeds(k0, k1, k2, k3))
-                        .into_series())
-                };
-                wrap!(f)
+                map_with_args!(row_hash::row_hash, k0, k1, k2, k3)
             }
             #[cfg(feature = "is_in")]
             IsIn => {
@@ -181,6 +198,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "trigonometry")]
             Trigonometry(trig_function) => {
                 map_with_args!(trigonometry::apply_trigonometric_function, trig_function)
+            }
+            FillNull { super_type } => {
+                map_as_slice!(fill_null::fill_null, &super_type)
             }
         }
     }

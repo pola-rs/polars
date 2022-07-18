@@ -4,10 +4,12 @@ pub(crate) mod rank;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::datatypes::PlHashSet;
+use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 use crate::frame::groupby::GroupsProxy;
 #[cfg(feature = "mode")]
 use crate::frame::groupby::IntoGroupsProxy;
 use crate::prelude::*;
+use crate::series::IsSorted;
 use std::hash::Hash;
 
 fn finish_is_unique_helper(
@@ -171,12 +173,20 @@ macro_rules! arg_unique_ca {
 impl<T> ChunkUnique<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: Hash + Eq,
+    T::Native: Hash + Eq + Ord,
     ChunkedArray<T>: ChunkOps + IntoSeries,
 {
     fn unique(&self) -> Result<Self> {
-        let set = fill_set(self.into_iter());
-        Ok(Self::from_iter_options(self.name(), set.iter().copied()))
+        match self.is_sorted2() {
+            IsSorted::Ascending | IsSorted::Descending => {
+                let mask = self.not_equal(&self.shift(1));
+                self.filter(&mask)
+            }
+            IsSorted::Not => {
+                let sorted = self.sort(false);
+                sorted.unique()
+            }
+        }
     }
 
     fn arg_unique(&self) -> Result<IdxCa> {
@@ -207,11 +217,30 @@ where
 
 impl ChunkUnique<Utf8Type> for Utf8Chunked {
     fn unique(&self) -> Result<Self> {
-        let set = fill_set(self.into_iter());
-        Ok(Utf8Chunked::from_iter_options(
-            self.name(),
-            set.iter().copied(),
-        ))
+        match self.null_count() {
+            0 => {
+                let mut set =
+                    PlHashSet::with_capacity(std::cmp::min(HASHMAP_INIT_SIZE, self.len()));
+                for arr in self.downcast_iter() {
+                    set.extend(arr.values_iter())
+                }
+                Ok(Utf8Chunked::from_iter_values(
+                    self.name(),
+                    set.iter().copied(),
+                ))
+            }
+            _ => {
+                let mut set =
+                    PlHashSet::with_capacity(std::cmp::min(HASHMAP_INIT_SIZE, self.len()));
+                for arr in self.downcast_iter() {
+                    set.extend(arr.iter())
+                }
+                Ok(Utf8Chunked::from_iter_options(
+                    self.name(),
+                    set.iter().copied(),
+                ))
+            }
+        }
     }
 
     fn arg_unique(&self) -> Result<IdxCa> {
@@ -269,11 +298,8 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
 impl ChunkUnique<Float32Type> for Float32Chunked {
     fn unique(&self) -> Result<ChunkedArray<Float32Type>> {
         let ca = self.bit_repr_small();
-        let set = fill_set(ca.into_iter());
-        Ok(set
-            .into_iter()
-            .map(|opt_v| opt_v.map(f32::from_bits))
-            .collect())
+        let ca = ca.unique()?;
+        Ok(ca.reinterpret_float())
     }
 
     fn arg_unique(&self) -> Result<IdxCa> {
@@ -291,11 +317,8 @@ impl ChunkUnique<Float32Type> for Float32Chunked {
 impl ChunkUnique<Float64Type> for Float64Chunked {
     fn unique(&self) -> Result<ChunkedArray<Float64Type>> {
         let ca = self.bit_repr_large();
-        let set = fill_set(ca.into_iter());
-        Ok(set
-            .into_iter()
-            .map(|opt_v| opt_v.map(f64::from_bits))
-            .collect())
+        let ca = ca.unique()?;
+        Ok(ca.reinterpret_float())
     }
 
     fn arg_unique(&self) -> Result<IdxCa> {

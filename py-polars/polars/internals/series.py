@@ -55,34 +55,34 @@ try:
     from polars.polars import PyDataFrame, PySeries
 
     _DOCUMENTING = False
-except ImportError:  # pragma: no cover
+except ImportError:
     _DOCUMENTING = True
 
 try:
     import numpy as np
 
     _NUMPY_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _NUMPY_AVAILABLE = False
 
 try:
     import pyarrow as pa
 
     _PYARROW_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _PYARROW_AVAILABLE = False
 
 try:
     import pandas as pd
 
     _PANDAS_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _PANDAS_AVAILABLE = False
 
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
-    from typing_extensions import Literal  # pragma: no cover
+    from typing_extensions import Literal
 
 
 def get_ffi_func(
@@ -2332,8 +2332,8 @@ class Series:
         """
         Convert this Series to a pandas Series
         """
-        if not _PYARROW_AVAILABLE:
-            raise ImportError(  # pragma: no cover
+        if not _PYARROW_AVAILABLE:  # pragma: no cover
+            raise ImportError(
                 "'pyarrow' is required for converting a 'polars' Series to a 'pandas' Series."
             )
         return self.to_arrow().to_pandas()
@@ -2591,7 +2591,7 @@ class Series:
         """
         if not _NUMPY_AVAILABLE:
             raise ImportError("'numpy' is required for this functionality.")
-        return np.sign(self)  # type: ignore
+        return np.sign(self)  # type: ignore[return-value]
 
     def sin(self) -> Series:
         """
@@ -4588,9 +4588,9 @@ class StringNameSpace:
             .to_series()
         )
 
-    def replace(self, pattern: str, value: str) -> Series:
+    def replace(self, pattern: str, value: str, literal: bool = False) -> Series:
         """
-        Replace first regex match with a string value.
+        Replace first matching regex/literal substring with a new string value.
 
         Parameters
         ----------
@@ -4598,10 +4598,12 @@ class StringNameSpace:
             A valid regex pattern.
         value
             Substring to replace.
+        literal
+             Treat pattern as a literal string.
 
         See Also
         --------
-        replace_all : Replace all regex matches with a string value.
+        replace_all : Replace all matching regex/literal substrings.
 
         Examples
         --------
@@ -4615,11 +4617,11 @@ class StringNameSpace:
         ]
 
         """
-        return wrap_s(self._s.str_replace(pattern, value))
+        return wrap_s(self._s.str_replace(pattern, value, literal))
 
-    def replace_all(self, pattern: str, value: str) -> Series:
+    def replace_all(self, pattern: str, value: str, literal: bool = False) -> Series:
         """
-        Replace all regex matches with a string value.
+        Replace all matching regex/literal substrings with a new string value.
 
         Parameters
         ----------
@@ -4627,10 +4629,12 @@ class StringNameSpace:
             A valid regex pattern.
         value
             Substring to replace.
+        literal
+             Treat pattern as a literal string.
 
         See Also
         --------
-        replace : Replace first regex match with a string value.
+        replace : Replace first matching regex/literal substring.
 
         Examples
         --------
@@ -4643,7 +4647,7 @@ class StringNameSpace:
             "123-123"
         ]
         """
-        return wrap_s(self._s.str_replace_all(pattern, value))
+        return wrap_s(self._s.str_replace_all(pattern, value, literal))
 
     def strip(self) -> Series:
         """
@@ -5419,13 +5423,13 @@ class DateTimeNameSpace:
         Return minimum as python DateTime
         """
         # we can ignore types because we are certain we get a logical type
-        return wrap_s(self._s).min()  # type: ignore
+        return wrap_s(self._s).min()  # type: ignore[return-value]
 
     def max(self) -> date | datetime | timedelta:
         """
         Return maximum as python DateTime
         """
-        return wrap_s(self._s).max()  # type: ignore
+        return wrap_s(self._s).max()  # type: ignore[return-value]
 
     def median(self) -> date | datetime | timedelta:
         """

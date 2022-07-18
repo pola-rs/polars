@@ -1397,28 +1397,28 @@ pub fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> crate::lazy::dsl::JsExpr {
 }
 
 #[napi]
-fn arange(low: Wrap<Expr>, high: Wrap<Expr>, step: Option<i64>) -> JsExpr {
+pub fn arange(low: Wrap<Expr>, high: Wrap<Expr>, step: Option<i64>) -> JsExpr {
     let step = step.unwrap_or(1) as usize;
     polars::lazy::dsl::arange(low.0, high.0, step).into()
 }
 
 #[napi]
-fn pearson_corr(a: Wrap<Expr>, b: Wrap<Expr>) -> JsExpr {
+pub fn pearson_corr(a: Wrap<Expr>, b: Wrap<Expr>) -> JsExpr {
     polars::lazy::dsl::pearson_corr(a.0, b.0).into()
 }
 
 #[napi]
-fn spearman_rank_corr(a: Wrap<Expr>, b: Wrap<Expr>) -> JsExpr {
+pub fn spearman_rank_corr(a: Wrap<Expr>, b: Wrap<Expr>) -> JsExpr {
     polars::lazy::dsl::spearman_rank_corr(a.0, b.0).into()
 }
 
 #[napi]
-fn cov(a: Wrap<Expr>, b: Wrap<Expr>) -> JsExpr {
+pub fn cov(a: Wrap<Expr>, b: Wrap<Expr>) -> JsExpr {
     polars::lazy::dsl::cov(a.0, b.0).into()
 }
 
 #[napi]
-fn argsort_by(by: Vec<&JsExpr>, reverse: Vec<bool>) -> JsExpr {
+pub fn argsort_by(by: Vec<&JsExpr>, reverse: Vec<bool>) -> JsExpr {
     let by = by.to_exprs();
 
     polars::lazy::dsl::argsort_by(by, &reverse).into()
@@ -1459,31 +1459,31 @@ pub fn range(low: i64, high: i64, dtype: Wrap<DataType>) -> JsExpr {
 }
 
 #[napi]
-fn concat_lst(s: Vec<&JsExpr>) -> JsExpr {
+pub fn concat_lst(s: Vec<&JsExpr>) -> JsExpr {
     let s = s.to_exprs();
     dsl::concat_lst(s).into()
 }
 
 #[napi]
-fn concat_str(s: Vec<&JsExpr>, sep: String) -> JsExpr {
+pub fn concat_str(s: Vec<&JsExpr>, sep: String) -> JsExpr {
     let s = s.to_exprs();
     dsl::concat_str(s, &sep).into()
 }
 
 #[napi]
-fn min_exprs(exprs: Vec<&JsExpr>) -> JsExpr {
+pub fn min_exprs(exprs: Vec<&JsExpr>) -> JsExpr {
     let exprs = exprs.to_exprs();
     polars::lazy::dsl::min_exprs(exprs).into()
 }
 
 #[napi]
-fn max_exprs(exprs: Vec<&JsExpr>) -> JsExpr {
+pub fn max_exprs(exprs: Vec<&JsExpr>) -> JsExpr {
     let exprs = exprs.to_exprs();
     polars::lazy::dsl::max_exprs(exprs).into()
 }
 
 #[napi]
-fn as_struct(exprs: Vec<&JsExpr>) -> JsExpr {
+pub fn as_struct(exprs: Vec<&JsExpr>) -> JsExpr {
     let exprs = exprs.to_exprs();
     polars::lazy::dsl::as_struct(&exprs).into()
 }

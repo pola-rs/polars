@@ -36,15 +36,26 @@ strict_concatenate = true
 # TODO: Uncomment flags below and fix mypy errors
 # disallow_any_generics = true
 disallow_untyped_calls = true
-# warn_redundant_casts = true
+warn_redundant_casts = true
 # warn_return_any = true
 # no_implicit_reexport = true
 # strict_equality = true
 # TODO: When all flags are enabled, replace by strict = true
+enable_error_code = [
+  "redundant-expr",
+  "truthy-bool",
+  "ignore-without-code",
+]
 
 [[tool.mypy.overrides]]
 module = ["pyarrow.*", "polars.polars", "matplotlib.*", "fsspec.*", "connectorx", "IPython.*"]
 ignore_missing_imports = true
 
 [tool.coverage.report]
-exclude_lines = ["pragma: no cover", "@overload"]
+exclude_lines = [
+  "pragma: no cover",
+  "@overload",
+  "except ImportError",
+  "if TYPE_CHECKING:",
+  "from typing_extensions import ",
+]

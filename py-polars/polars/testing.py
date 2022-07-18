@@ -137,8 +137,8 @@ def assert_frame_equal(
     # this does not assume a particular order
     for c in left.columns:
         _assert_series_inner(
-            left[c],  # type: ignore
-            right[c],  # type: ignore
+            left[c],  # type: ignore[arg-type, index]
+            right[c],  # type: ignore[arg-type, index]
             check_dtype,
             check_exact,
             nans_compare_equal,
@@ -188,7 +188,10 @@ def assert_series_equal(
     """
     obj = "Series"
 
-    if not (isinstance(left, Series) and isinstance(right, Series)):
+    if not (
+        isinstance(left, Series)  # type: ignore[redundant-expr]
+        and isinstance(right, Series)
+    ):
         raise_assert_detail(obj, "Type mismatch", type(left), type(right))
 
     if left.shape != right.shape:
@@ -380,10 +383,10 @@ if HYPOTHESIS_INSTALLED:
         Examples
         --------
         >>> from hypothesis.strategies import sampled_from
-        >>> from polars.testing import column
-        >>>
-        >>> column(name="unique_small_ints", dtype=pl.UInt8, unique=True)
-        >>> column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
+        >>> pl.testing.column(name="unique_small_ints", dtype=pl.UInt8, unique=True)
+        column(name='unique_small_ints', dtype=<class 'polars.datatypes.UInt8'>, strategy=None, null_probability=None, unique=True)
+        >>> pl.testing.column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
+        column(name='ccy', dtype=<class 'polars.datatypes.Utf8'>, strategy=sampled_from(['GBP', 'EUR', 'JPY']), null_probability=None, unique=False)
         """
 
         name: str

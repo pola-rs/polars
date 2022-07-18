@@ -200,7 +200,7 @@ describe("series", () => {
       ${[1n, 2n, 3n]}           | ${pl.UInt64}   | ${"bigint"}
       ${[true, false]}          | ${pl.Bool}     | ${"boolean"}
       ${[]}                     | ${pl.Float64}  | ${"empty"}
-      ${[new Date(Date.now())]} | ${pl.Datetime} | ${"Date"}
+      ${[new Date(Date.now())]} | ${pl.Datetime("ms")} | ${"Date"}
     `("defaults to $dtype for \"$type\"", ({ values, dtype}) => {
       const name = chance.string();
       const s = pl.Series(name, values);

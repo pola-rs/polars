@@ -26,14 +26,14 @@ try:
     from polars.polars import PyExpr
 
     _DOCUMENTING = False
-except ImportError:  # pragma: no cover
+except ImportError:
     _DOCUMENTING = True
 
 try:
     import numpy as np
 
     _NUMPY_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _NUMPY_AVAILABLE = False
 
 
@@ -80,8 +80,8 @@ class Expr:
 
     def __bool__(self) -> Expr:
         raise ValueError(
-            "Since Expr are lazy, the truthiness of an Expr is ambiguous. \
-            Hint: use '&' or '|' to chain Expr together, not and/or."
+            "Since Expr are lazy, the truthiness of an Expr is ambiguous. "
+            "Hint: use '&' or '|' to chain Expr together, not and/or."
         )
 
     def __invert__(self) -> Expr:
@@ -203,8 +203,8 @@ class Expr:
 
         args = [inp for inp in inputs if not isinstance(inp, Expr)]
 
-        def function(s: pli.Series) -> pli.Series:
-            return ufunc(s, *args, **kwargs)  # pragma: no cover
+        def function(s: pli.Series) -> pli.Series:  # pragma: no cover
+            return ufunc(s, *args, **kwargs)
 
         if "dtype" in kwargs:
             dtype = kwargs["dtype"]
@@ -519,17 +519,17 @@ class Expr:
         ... )
         >>> df.groupby("a").agg(pl.col("b").list()).sort(by="a")
         shape: (3, 2)
-        ┌─────┬────────────┐
-        │ a   ┆ b_agg_list │
-        │ --- ┆ ---        │
-        │ i64 ┆ list[str]  │
-        ╞═════╪════════════╡
-        │ 1   ┆ ["a"]      │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2   ┆ ["b"]      │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 3   ┆ [null]     │
-        └─────┴────────────┘
+        ┌─────┬───────────┐
+        │ a   ┆ b         │
+        │ --- ┆ ---       │
+        │ i64 ┆ list[str] │
+        ╞═════╪═══════════╡
+        │ 1   ┆ ["a"]     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ ["b"]     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ [null]    │
+        └─────┴───────────┘
 
         Keep the original column name:
 
@@ -1107,7 +1107,7 @@ class Expr:
         ╞═════╡
         │ 4.0 │
         ├╌╌╌╌╌┤
-        │ 5.0 │
+        │ 4.0 │
         ├╌╌╌╌╌┤
         │ NaN │
         └─────┘
@@ -1139,7 +1139,7 @@ class Expr:
         ├╌╌╌╌╌╌┤
         │ 4.0  │
         ├╌╌╌╌╌╌┤
-        │ 5.0  │
+        │ 4.0  │
         └──────┘
         """
         return wrap_expr(self._pyexpr.drop_nans())
@@ -1173,13 +1173,13 @@ class Expr:
         │ --- ┆ ---       │
         │ i64 ┆ i64       │
         ╞═════╪═══════════╡
-        │ 8   ┆ 38        │
+        │ 1   ┆ 10        │
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 17  ┆ 30        │
+        │ 3   ┆ 9         │
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 27  ┆ 21        │
+        │ 6   ┆ 7         │
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 38  ┆ 11        │
+        │ 10  ┆ 4         │
         └─────┴───────────┘
         """
         return wrap_expr(self._pyexpr.cumsum(reverse))
@@ -1208,19 +1208,19 @@ class Expr:
         ...     ]
         ... )
         shape: (4, 2)
-        ┌──────┬───────────┐
-        │ a    ┆ a_reverse │
-        │ ---  ┆ ---       │
-        │ i64  ┆ i64       │
-        ╞══════╪═══════════╡
-        │ 8    ┆ 7920      │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 72   ┆ 990       │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 720  ┆ 110       │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 7920 ┆ 11        │
-        └──────┴───────────┘
+        ┌─────┬───────────┐
+        │ a   ┆ a_reverse │
+        │ --- ┆ ---       │
+        │ i64 ┆ i64       │
+        ╞═════╪═══════════╡
+        │ 1   ┆ 24        │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ 24        │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 6   ┆ 12        │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 24  ┆ 4         │
+        └─────┴───────────┘
         """
         return wrap_expr(self._pyexpr.cumprod(reverse))
 
@@ -1248,13 +1248,13 @@ class Expr:
         │ --- ┆ ---       │
         │ i64 ┆ i64       │
         ╞═════╪═══════════╡
-        │ 8   ┆ 8         │
+        │ 1   ┆ 1         │
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 8   ┆ 9         │
+        │ 1   ┆ 2         │
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 8   ┆ 10        │
+        │ 1   ┆ 3         │
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 8   ┆ 11        │
+        │ 1   ┆ 4         │
         └─────┴───────────┘
         """
         return wrap_expr(self._pyexpr.cummin(reverse))
@@ -1283,13 +1283,13 @@ class Expr:
         │ --- ┆ ---       │
         │ i64 ┆ i64       │
         ╞═════╪═══════════╡
-        │ 8   ┆ 11        │
+        │ 1   ┆ 4         │
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 8   ┆ 11        │
+        │ 2   ┆ 4         │
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 8   ┆ 11        │
+        │ 3   ┆ 4         │
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 8   ┆ 11        │
+        │ 4   ┆ 4         │
         └─────┴───────────┘
 
         """
@@ -1314,7 +1314,7 @@ class Expr:
         ...         pl.col("a").cumcount(reverse=True).alias("a_reverse"),
         ...     ]
         ... )
-        >>> shape: (4, 2)
+        shape: (4, 2)
         ┌─────┬───────────┐
         │ a   ┆ a_reverse │
         │ --- ┆ ---       │
@@ -1459,7 +1459,7 @@ class Expr:
         ...         "b": [1, 1, 2, 2],
         ...     }
         ... )
-        >>> df.select(pl.all().mode())
+        >>> df.select(pl.all().mode())  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -1565,28 +1565,28 @@ class Expr:
         │ ---   │
         │ i64   │
         ╞═══════╡
-        │ 99    │
-        ├╌╌╌╌╌╌╌┤
-        │ 98    │
-        ├╌╌╌╌╌╌╌┤
-        │ 4     │
-        ├╌╌╌╌╌╌╌┤
-        │ 3     │
+        │ 1     │
         ├╌╌╌╌╌╌╌┤
         │ 2     │
         ├╌╌╌╌╌╌╌┤
-        │ 1     │
+        │ 3     │
+        ├╌╌╌╌╌╌╌┤
+        │ 4     │
+        ├╌╌╌╌╌╌╌┤
+        │ 98    │
+        ├╌╌╌╌╌╌╌┤
+        │ 99    │
         └───────┘
-        >>> df.groupby("group").agg(pl.col("value").sort())
+        >>> df.groupby("group").agg(pl.col("value").sort())  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌───────┬────────────┐
         │ group ┆ value      │
         │ ---   ┆ ---        │
         │ str   ┆ list[i64]  │
         ╞═══════╪════════════╡
-        │ one   ┆ [1, 2, 98] │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ two   ┆ [3, 4, 99] │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ one   ┆ [1, 2, 98] │
         └───────┴────────────┘
         """
         return wrap_expr(self._pyexpr.sort_with(reverse, nulls_last))
@@ -2095,9 +2095,9 @@ class Expr:
         ┌─────┐
         │ a   │
         │ --- │
-        │ f64 │
+        │ i64 │
         ╞═════╡
-        │ 1.0 │
+        │ 1   │
         └─────┘
         """
         return wrap_expr(self._pyexpr.max())
@@ -2139,7 +2139,7 @@ class Expr:
         ┌─────┐
         │ a   │
         │ --- │
-        │ f64 │
+        │ i64 │
         ╞═════╡
         │  0  │
         └─────┘
@@ -2217,7 +2217,7 @@ class Expr:
         ┌─────┐
         │ a   │
         │ --- │
-        │ i64 │
+        │ u32 │
         ╞═════╡
         │ 2   │
         └─────┘
@@ -2291,7 +2291,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> df.select(pl.col("a").unique())
+        >>> df.select(pl.col("a").unique())  # doctest: +IGNORE_RESULT
         shape: (2, 1)
         ┌─────┐
         │ a   │
@@ -2583,7 +2583,7 @@ class Expr:
         │ --- │
         │ f64 │
         ╞═════╡
-        │ 1.2 │
+        │ 1.5 │
         └─────┘
 
         """
@@ -4220,7 +4220,7 @@ class Expr:
         """
         if not _NUMPY_AVAILABLE:
             raise ImportError("'numpy' is required for this functionality.")
-        return np.sign(self)  # type: ignore
+        return np.sign(self)  # type: ignore[call-overload]
 
     def sin(self) -> Expr:
         """
@@ -5173,7 +5173,7 @@ class ExprListNameSpace:
         if not isinstance(other, list):
             other_list = [other]
         else:
-            other_list = copy.copy(other)  # type: ignore
+            other_list = copy.copy(other)  # type: ignore[arg-type]
 
         other_list.insert(0, wrap_expr(self._pyexpr))
         return pli.concat_list(other_list)
@@ -5618,20 +5618,16 @@ class ExprStringNameSpace:
         └────────────┘
 
         """
-        if not issubclass(datatype, DataType):
-            raise ValueError(
-                f"expected: {DataType} got: {datatype}"
-            )  # pragma: no cover
+        if not issubclass(datatype, DataType):  # pragma: no cover
+            raise ValueError(f"expected: {DataType} got: {datatype}")
         if datatype == Date:
             return wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact))
         elif datatype == Datetime:
             return wrap_expr(self._pyexpr.str_parse_datetime(fmt, strict, exact))
         elif datatype == Time:
             return wrap_expr(self._pyexpr.str_parse_time(fmt, strict, exact))
-        else:
-            raise ValueError(
-                "dtype should be of type {Date, Datetime, Time}"
-            )  # pragma: no cover
+        else:  # pragma: no cover
+            raise ValueError("dtype should be of type {Date, Datetime, Time}")
 
     def lengths(self) -> Expr:
         """
@@ -6323,9 +6319,9 @@ class ExprStringNameSpace:
             return wrap_expr(self._pyexpr.str_split_exact_inclusive(by, n))
         return wrap_expr(self._pyexpr.str_split_exact(by, n))
 
-    def replace(self, pattern: str, value: str) -> Expr:
+    def replace(self, pattern: str, value: str, literal: bool = False) -> Expr:
         """
-        Replace first regex match with a string value.
+        Replace first matching regex/literal substring with a new string value.
 
         Parameters
         ----------
@@ -6333,10 +6329,12 @@ class ExprStringNameSpace:
             Regex pattern.
         value
             Replacement string.
+        literal
+             Treat pattern as a literal string.
 
         See Also
         --------
-        replace_all : Replace substring on all regex pattern matches.
+        replace_all : Replace all matching regex/literal substrings.
 
         Examples
         --------
@@ -6356,11 +6354,11 @@ class ExprStringNameSpace:
         └─────┴────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_replace(pattern, value))
+        return wrap_expr(self._pyexpr.str_replace(pattern, value, literal))
 
-    def replace_all(self, pattern: str, value: str) -> Expr:
+    def replace_all(self, pattern: str, value: str, literal: bool = False) -> Expr:
         """
-        Replace substring on all regex pattern matches.
+        Replace all matching regex/literal substrings with a new string value.
 
         Parameters
         ----------
@@ -6368,10 +6366,12 @@ class ExprStringNameSpace:
             Regex pattern.
         value
             Replacement string.
+        literal
+             Treat pattern as a literal string.
 
         See Also
         --------
-        replace : Replace first regex match with a string value.
+        replace : Replace first matching regex/literal substring.
 
         Examples
         --------
@@ -6388,7 +6388,7 @@ class ExprStringNameSpace:
         │ 2   ┆ 123-123 │
         └─────┴─────────┘
         """
-        return wrap_expr(self._pyexpr.str_replace_all(pattern, value))
+        return wrap_expr(self._pyexpr.str_replace_all(pattern, value, literal))
 
     def slice(self, start: int, length: int | None = None) -> Expr:
         """
