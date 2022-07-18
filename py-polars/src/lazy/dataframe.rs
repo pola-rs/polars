@@ -460,7 +460,7 @@ impl PyLazyFrame {
         let strategy = match strategy {
             "forward" => AsofStrategy::Forward,
             "backward" => AsofStrategy::Backward,
-            _ => panic!("expected on of {{'forward', 'backward'}}"),
+            _ => panic!("expected one of {{'forward', 'backward'}}"),
         };
 
         let ldf = self.ldf.clone();

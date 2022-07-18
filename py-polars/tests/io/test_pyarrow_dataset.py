@@ -8,7 +8,6 @@ import polars as pl
 
 
 def test_dataset(io_test_dir: str) -> None:
-
     # windows path does not seem to work
     if os.name != "nt":
         file = os.path.join(io_test_dir, "small.ipc")
