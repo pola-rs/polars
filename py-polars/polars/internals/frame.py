@@ -1538,6 +1538,34 @@ class DataFrame(metaclass=DataFrameMetaClass):
         else:
             return out
 
+    def _comp(self, other: Any, op: str) -> DataFrame:
+        if isinstance(other, DataFrame):
+            if self.columns != other.columns:
+                raise ValueError("DataFrame columns do not match")
+            data_series = [self[c]._comp(other[c], op) for c in self.columns]
+        else:
+            data_series = [self[c]._comp(other, op) for c in self.columns]
+
+        return DataFrame(data_series, columns=self.columns)
+
+    def __eq__(self, other: Any) -> DataFrame:  # type: ignore[override]
+        return self._comp(other, "eq")
+
+    def __ne__(self, other: Any) -> DataFrame:  # type: ignore[override]
+        return self._comp(other, "neq")
+
+    def __gt__(self, other: Any) -> DataFrame:
+        return self._comp(other, "gt")
+
+    def __lt__(self, other: Any) -> DataFrame:
+        return self._comp(other, "lt")
+
+    def __ge__(self, other: Any) -> DataFrame:
+        return self._comp(other, "gt_eq")
+
+    def __le__(self, other: Any) -> DataFrame:
+        return self._comp(other, "lt_eq")
+
     def __getstate__(self) -> list[pli.Series]:
         return self.get_columns()
 
