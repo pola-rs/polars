@@ -229,6 +229,13 @@ def test_init_ndarray() -> None:
     with pytest.raises(ValueError):
         _ = pl.DataFrame(np.random.randn(2, 2, 2))
 
+    # Wrong orient value
+    with pytest.raises(ValueError):
+        df = pl.DataFrame(
+            np.array([[1, 2, 3], [4, 5, 6]]),
+            orient="wrong",  # type: ignore[arg-type]
+        )
+
     # numpy not available
     with patch("polars.internals.frame._NUMPY_AVAILABLE", False):
         with pytest.raises(ValueError):
@@ -343,6 +350,10 @@ def test_init_seq_of_seq() -> None:
     )
     assert df.schema == {"a": pl.Float32, "b": pl.Float32}
     assert df.rows() == [(1.0, 2.0), (3.0, 4.0)]
+
+    # Wrong orient value
+    with pytest.raises(ValueError):
+        df = pl.DataFrame(((1, 2), (3, 4)), orient="wrong")  # type: ignore[arg-type]
 
 
 def test_init_1d_sequence() -> None:

@@ -57,7 +57,7 @@ except ImportError:
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
-    from typing_extensions import Literal  # pragma: no cover
+    from typing_extensions import Literal
 
 
 ################################
@@ -495,12 +495,16 @@ def sequence_to_pydf(
             if columns:
                 pydf = _post_apply_columns(pydf, columns)
             return pydf
-        else:
+        elif orient == "col" or orient is None:
             columns, dtypes = _unpack_columns(columns, n_expected=len(data))
             data_series = [
                 pli.Series(columns[i], data[i], dtypes.get(columns[i])).inner()
                 for i in range(len(data))
             ]
+        else:
+            raise ValueError(
+                f"orient must be one of {{'col', 'row', None}}, got {orient} instead."
+            )
 
     else:
         columns, dtypes = _unpack_columns(columns, n_expected=1)
@@ -557,11 +561,15 @@ def numpy_to_pydf(
                 pli.Series(columns[i], data[:, i], dtypes.get(columns[i])).inner()
                 for i in range(n_columns)
             ]
-        else:
+        elif orient == "col":
             data_series = [
                 pli.Series(columns[i], data[i], dtypes.get(columns[i])).inner()
                 for i in range(n_columns)
             ]
+        else:
+            raise ValueError(
+                f"orient must be one of {{'col', 'row', None}}, got {orient} instead."
+            )
     else:
         raise ValueError("A numpy array should not have more than two dimensions.")
 
