@@ -121,7 +121,7 @@ impl Reinterpret for Int64Chunked {
 }
 
 impl UInt64Chunked {
-    pub(crate) fn reinterpret_float(&self) -> Series {
+    pub(crate) fn reinterpret_float(&self) -> Float64Chunked {
         let chunks = self
             .downcast_iter()
             .map(|array| {
@@ -145,11 +145,11 @@ impl UInt64Chunked {
                 )) as ArrayRef
             })
             .collect::<Vec<_>>();
-        Float64Chunked::from_chunks(self.name(), chunks).into()
+        Float64Chunked::from_chunks(self.name(), chunks)
     }
 }
 impl UInt32Chunked {
-    pub(crate) fn reinterpret_float(&self) -> Series {
+    pub(crate) fn reinterpret_float(&self) -> Float32Chunked {
         let chunks = self
             .downcast_iter()
             .map(|array| {
@@ -173,7 +173,7 @@ impl UInt32Chunked {
                 )) as ArrayRef
             })
             .collect::<Vec<_>>();
-        Float32Chunked::from_chunks(self.name(), chunks).into()
+        Float32Chunked::from_chunks(self.name(), chunks)
     }
 }
 
@@ -187,7 +187,7 @@ impl Float32Chunked {
         let s = self.bit_repr_small().into_series();
         let out = f(&s);
         let out = out.u32().unwrap();
-        out.reinterpret_float()
+        out.reinterpret_float().into()
     }
 }
 impl Float64Chunked {
@@ -198,6 +198,6 @@ impl Float64Chunked {
         let s = self.bit_repr_large().into_series();
         let out = f(&s);
         let out = out.u64().unwrap();
-        out.reinterpret_float()
+        out.reinterpret_float().into()
     }
 }
