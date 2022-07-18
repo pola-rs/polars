@@ -149,10 +149,9 @@ def read_csv(
         Stop reading from CSV file after reading ``n_rows``.
         During multi-threaded parsing, an upper bound of ``n_rows``
         rows cannot be guaranteed.
-    encoding
-        Allowed encodings: ``utf8`` or ``utf8-lossy``.
+    encoding : {'utf8', 'utf8-lossy'}
         Lossy means that invalid utf8 values are replaced with ``�``
-        characters.
+        characters. Defaults to "utf8".
     low_memory
         Reduce memory usage at expense of performance.
     rechunk
@@ -458,10 +457,9 @@ def scan_csv(
         If set to ``None``, a full table scan will be done (slow).
     n_rows
         Stop reading from CSV file after reading ``n_rows``.
-    encoding
-        Allowed encodings: ``utf8`` or ``utf8-lossy``.
+    encoding : {'utf8', 'utf8-lossy'}
         Lossy means that invalid utf8 values are replaced with ``�``
-        characters.
+        characters. Defaults to "utf8".
     low_memory
         Reduce memory usage in expense of performance.
     rechunk
@@ -636,8 +634,7 @@ def scan_parquet(
         Stop reading from parquet file after reading ``n_rows``.
     cache
         Cache the result after reading.
-    parallel
-        Any of { 'auto', 'columns', 'row_groups', 'none' }
+    parallel : {'auto', 'columns', 'row_groups', 'none'}
         This determines the direction of parallelism. 'auto' will try to determine the optimal direction.
     rechunk
         In case of reading multiple files via a glob pattern rechunk the final DataFrame into contiguous memory chunks.
@@ -815,8 +812,7 @@ def read_parquet(
         Only used when ``use_pyarrow=True``.
     storage_options
         Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
-    parallel
-        Any of { 'auto', 'columns', 'row_groups', 'none' }
+    parallel : {'auto', 'columns', 'row_groups', 'none'}
         This determines the direction of parallelism. 'auto' will try to determine the optimal direction.
     row_count_name
         If not None, this will insert a row count column with give name into the DataFrame.

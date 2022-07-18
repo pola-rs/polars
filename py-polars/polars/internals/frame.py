@@ -651,8 +651,12 @@ class DataFrame(metaclass=DataFrameMetaClass):
         row_count_offset: int = 0,
         low_memory: bool = False,
     ) -> DF:
-        """
-        See Also: `pl.read_csv`
+        """Read into a DataFrame from a parquet file.
+
+        See Also
+        --------
+        read_parquet
+
         """
         if isinstance(file, (str, Path)):
             file = format_path(file)
@@ -1273,11 +1277,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Parameters
         ----------
-        include_header:
+        include_header
             If set, the column names will be added as first column.
-        header_name:
-            If `include_header` is set, this determines the name of the column that will be inserted
-        column_names:
+        header_name
+            If `include_header` is set, this determines the name of the column that will be inserted.
+        column_names
             Optional generator/iterator that yields column names. Will be used to replace the columns in the DataFrame.
 
         Notes
@@ -1303,7 +1307,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ b      ┆ 1        ┆ 2        ┆ 3        │
         └────────┴──────────┴──────────┴──────────┘
 
-        # replace the auto generated column names with a list
+        Replace the auto-generated column names with a list
 
         >>> df.transpose(include_header=False, column_names=["a", "b", "c"])
         shape: (2, 3)
@@ -1333,7 +1337,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ b   ┆ 1   ┆ 2   ┆ 3   │
         └─────┴─────┴─────┴─────┘
 
-        Replace the auto generated column with column names from a generator function
+        Replace the auto-generated column with column names from a generator function
 
         >>> def name_generator():
         ...     base_name = "my_column_"
@@ -1385,7 +1389,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         **kwargs: Any,
     ) -> None:
         """
-        Write the DataFrame disk in parquet format.
+        Write the DataFrame to disk in parquet format.
 
         Parameters
         ----------
@@ -1393,38 +1397,34 @@ class DataFrame(metaclass=DataFrameMetaClass):
             File path to which the file should be written.
         compression
             Compression method. Choose one of:
-                - "uncompressed" (not supported by pyarrow)
-                - "snappy"
-                - "gzip"
-                - "lzo"
-                - "brotli"
-                - "lz4"
-                - "zstd"
+
+            - "uncompressed" (not supported by pyarrow)
+            - "snappy"
+            - "gzip"
+            - "lzo"
+            - "brotli"
+            - "lz4"
+            - "zstd"
 
             The default compression "lz4" (actually lz4raw) has very good performance, but may not yet been supported
             by older readers. If you want more compatability guarantees, consider using "snappy".
         compression_level
-            Supported by {'gzip', 'brotli', 'zstd'}
-                - "gzip"
-                    * min-level: 0
-                    * max-level: 10
-                - "brotli"
-                    * min-level: 0
-                    * max-level: 11
-                - "zstd"
-                    * min-level: 1
-                    * max-level: 22
+            The level of compression to use. Higher compression means smaller files on disk.
+
+            - "gzip" : min-level: 0, max-level: 10.
+            - "brotli" : min-level: 0, max-level: 11.
+            - "zstd" : min-level: 1, max-level: 22.
         statistics
             Write statistics to the parquet headers. This requires extra compute.
         row_group_size
-            Size of the row groups. If none the chunks of the `DataFrame` are used.
+            Size of the row groups. If None (default), the chunks of the `DataFrame` are used.
             Writing in smaller chunks may reduce memory pressure and improve writing speeds.
             This argument has no effect if 'pyarrow' is used.
         use_pyarrow
             Use C++ parquet implementation vs rust parquet implementation.
             At the moment C++ supports more features.
         kwargs
-            Arguments are passed to pyarrow.parquet.write_table.
+            Arguments are passed to ``pyarrow.parquet.write_table``.
         """
         if compression is None:
             compression = "uncompressed"
