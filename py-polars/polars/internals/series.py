@@ -2286,7 +2286,7 @@ class Series:
             kwargs will be sent to pyarrow.Array.to_numpy
         """
 
-        def convert_to_date(arr):  # type: ignore
+        def convert_to_date(arr):  # type: ignore[no-untyped-def]
             if self.dtype == Date:
                 tp = "datetime64[D]"
             elif self.dtype == Duration:
@@ -2591,7 +2591,7 @@ class Series:
         """
         if not _NUMPY_AVAILABLE:
             raise ImportError("'numpy' is required for this functionality.")
-        return np.sign(self)  # type: ignore
+        return np.sign(self)  # type: ignore[return-value]
 
     def sin(self) -> Series:
         """
@@ -5423,13 +5423,13 @@ class DateTimeNameSpace:
         Return minimum as python DateTime
         """
         # we can ignore types because we are certain we get a logical type
-        return wrap_s(self._s).min()  # type: ignore
+        return wrap_s(self._s).min()  # type: ignore[return-value]
 
     def max(self) -> date | datetime | timedelta:
         """
         Return maximum as python DateTime
         """
-        return wrap_s(self._s).max()  # type: ignore
+        return wrap_s(self._s).max()  # type: ignore[return-value]
 
     def median(self) -> date | datetime | timedelta:
         """

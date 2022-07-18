@@ -71,11 +71,11 @@ def test_dtype() -> None:
             "dt": [[date(2022, 12, 31)]],
             "dtm": [[datetime(2022, 12, 31, 1, 2, 3)]],
         },
-        columns=[  # type: ignore
-            ["i", pl.List(pl.Int8)],
-            ["tm", pl.List(pl.Time)],
-            ["dt", pl.List(pl.Date)],
-            ["dtm", pl.List(pl.Datetime)],
+        columns=[
+            ("i", pl.List(pl.Int8)),
+            ("tm", pl.List(pl.Time)),
+            ("dt", pl.List(pl.Date)),
+            ("dtm", pl.List(pl.Datetime)),
         ],
     )
     assert df.schema == {
@@ -233,7 +233,7 @@ def test_cast_inner() -> None:
 
     # this creates an inner null type
     df = pl.from_pandas(pd.DataFrame(data=[[[]], [[]]], columns=["A"]))
-    assert df["A"].cast(pl.List(int)).dtype.inner == pl.Int64  # type: ignore
+    assert df["A"].cast(pl.List(int)).dtype.inner == pl.Int64  # type: ignore[arg-type, attr-defined]
 
 
 def test_list_eval_dtype_inference() -> None:

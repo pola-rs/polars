@@ -59,7 +59,7 @@ if __name__ == "__main__":
             else:
                 return OutputChecker.check_output(self, want, got, optionflags)
 
-    doctest.OutputChecker = CustomOutputChecker  # type: ignore
+    doctest.OutputChecker = CustomOutputChecker  # type: ignore[misc]
 
     # We want to be relaxed about whitespace, but strict on True vs 1
     doctest.NORMALIZE_WHITESPACE = True

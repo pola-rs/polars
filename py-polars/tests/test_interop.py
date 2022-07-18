@@ -125,7 +125,7 @@ def test_from_pandas_nan_to_none() -> None:
     with pytest.raises(ArrowInvalid, match="Could not convert"):
         pl.from_pandas(df, nan_to_none=False)
 
-    df = pd.Series([2, np.nan, None], name="pd")  # type: ignore
+    df = pd.Series([2, np.nan, None], name="pd")  # type: ignore[assignment]
     out_true = pl.from_pandas(df)
     out_false = pl.from_pandas(df, nan_to_none=False)
     df.loc[2] = pd.NA
@@ -270,7 +270,7 @@ def test_from_pandas_dataframe() -> None:
 
     # if not a pandas dataframe, raise a ValueError
     with pytest.raises(ValueError):
-        _ = pl.from_pandas([1, 2])  # type: ignore
+        _ = pl.from_pandas([1, 2])  # type: ignore[call-overload]
 
 
 def test_from_pandas_series() -> None:
@@ -357,19 +357,19 @@ def test_from_empty_pandas_strings() -> None:
 
 def test_from_empty_arrow() -> None:
     df = pl.from_arrow(pa.table(pd.DataFrame({"a": [], "b": []})))
-    assert df.columns == ["a", "b"]  # type: ignore
-    assert df.dtypes == [pl.Float64, pl.Float64]  # type: ignore
+    assert df.columns == ["a", "b"]  # type: ignore[union-attr]
+    assert df.dtypes == [pl.Float64, pl.Float64]  # type: ignore[union-attr]
 
     # 2705
     df1 = pd.DataFrame(columns=["b"], dtype=float)
     tbl = pa.Table.from_pandas(df1)
     out = pl.from_arrow(tbl)
-    assert out.columns == ["b", "__index_level_0__"]  # type: ignore
-    assert out.dtypes == [pl.Float64, pl.Utf8]  # type: ignore
+    assert out.columns == ["b", "__index_level_0__"]  # type: ignore[union-attr]
+    assert out.dtypes == [pl.Float64, pl.Utf8]  # type: ignore[union-attr]
     tbl = pa.Table.from_pandas(df1, preserve_index=False)
     out = pl.from_arrow(tbl)
-    assert out.columns == ["b"]  # type: ignore
-    assert out.dtypes == [pl.Float64]  # type: ignore
+    assert out.columns == ["b"]  # type: ignore[union-attr]
+    assert out.dtypes == [pl.Float64]  # type: ignore[union-attr]
 
 
 def test_from_null_column() -> None:

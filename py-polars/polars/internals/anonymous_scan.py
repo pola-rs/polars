@@ -47,7 +47,7 @@ def _scan_ds_impl(
     """
     if not _PYARROW_AVAILABLE:  # pragma: no cover
         raise ImportError("'pyarrow' is required for scanning from pyarrow datasets.")
-    return pl.from_arrow(ds.to_table(columns=with_columns))  # type: ignore
+    return pl.from_arrow(ds.to_table(columns=with_columns))  # type: ignore[return-value]
 
 
 def _scan_ds(ds: pa.dataset.dataset) -> pli.LazyFrame:

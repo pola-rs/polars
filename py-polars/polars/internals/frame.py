@@ -166,7 +166,7 @@ class DataFrameMetaClass(type):
             # LazyFrame subclass by setting `cls._lazyframe_class`. We must therefore
             # dynamically create a subclass of LazyFrame with `_dataframe_class` set
             # to `cls` in order to preserve types after `.lazy().collect()` roundtrips.
-            cls._lazyframe_class = type(  # type: ignore
+            cls._lazyframe_class = type(  # type: ignore[assignment]
                 f"Lazy{name}",
                 (LazyFrame,),
                 {"_dataframe_class": cls},
@@ -289,14 +289,14 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     def __init__(
         self,
-        data: None
-        | (
+        data: (
             dict[str, Sequence[Any]]
             | Sequence[Any]
             | np.ndarray
             | pa.Table
             | pd.DataFrame
             | pli.Series
+            | None
         ) = None,
         columns: ColumnsType | None = None,
         orient: Literal["col", "row"] | None = None,
@@ -1519,10 +1519,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         else:
             return out
 
-    def __getstate__(self):  # type: ignore
+    def __getstate__(self) -> list[pli.Series]:
         return self.get_columns()
 
-    def __setstate__(self, state):  # type: ignore
+    def __setstate__(self, state) -> None:  # type: ignore[no-untyped-def]
         self._df = DataFrame(state)._df
 
     def __mul__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
@@ -1750,7 +1750,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         # df[:]
         if isinstance(item, slice):
-            return PolarsSlice(self).apply(item)  # type: ignore
+            return PolarsSlice(self).apply(item)  # type: ignore[return-value]
 
         # select rows by numpy mask or index
         # df[[1, 2, 3]]
@@ -1827,7 +1827,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             if isinstance(col_selection, str):
                 s = self.__getitem__(col_selection)
             elif isinstance(col_selection, int):
-                s = self[:, col_selection]  # type: ignore
+                s = self[:, col_selection]  # type: ignore[assignment]
             else:
                 raise ValueError(f"column selection not understood: {col_selection}")
 
@@ -2890,7 +2890,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             by = [by]
         return GroupBy(
             self._df,
-            by,  # type: ignore
+            by,  # type: ignore[arg-type]
             dataframe_class=self.__class__,
             maintain_order=maintain_order,
         )
@@ -4192,7 +4192,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def __copy__(self: DF) -> DF:
         return self.clone()
 
-    def __deepcopy__(self: DF, memodict={}) -> DF:  # type: ignore
+    def __deepcopy__(self: DF, memodict: dict = {}) -> DF:
         return self.clone()
 
     def get_columns(self) -> list[pli.Series]:
@@ -4904,7 +4904,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         return (
             self.lazy()
-            .select(exprs)  # type: ignore
+            .select(exprs)  # type: ignore[arg-type]
             .collect(no_optimization=True, string_cache=False)
         )
 
@@ -6165,7 +6165,7 @@ class GroupBy(Generic[DF]):
 
         # should be only one match
         try:
-            groups_idx = groups[mask][0]  # type: ignore
+            groups_idx = groups[mask][0]  # type: ignore[index]
         except IndexError:
             raise ValueError(f"no group: {group_value} found")
 

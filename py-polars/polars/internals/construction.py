@@ -299,7 +299,7 @@ def _pandas_series_to_arrow(
     """
     dtype = values.dtype
     if dtype == "object" and len(values) > 0:
-        first_non_none = _get_first_non_none(values.values)  # type: ignore
+        first_non_none = _get_first_non_none(values.values)  # type: ignore[arg-type]
 
         if isinstance(first_non_none, str):
             return pa.array(values, pa.large_utf8(), from_pandas=nan_to_none)

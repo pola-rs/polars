@@ -70,7 +70,7 @@ def from_dict(
     └─────┴─────┘
 
     """
-    return DataFrame._from_dict(data=data, columns=columns)  # type: ignore
+    return DataFrame._from_dict(data=data, columns=columns)  # type: ignore[arg-type]
 
 
 def from_dicts(

@@ -18,7 +18,7 @@ def compressions() -> list[str]:
 def test_from_to_buffer(df: pl.DataFrame, compressions: list[str]) -> None:
     for compression in compressions:
         buf = io.BytesIO()
-        df.write_ipc(buf, compression=compression)  # type: ignore
+        df.write_ipc(buf, compression=compression)  # type: ignore[arg-type]
         buf.seek(0)
         read_df = pl.read_ipc(buf)
         assert df.frame_equal(read_df)
@@ -33,8 +33,8 @@ def test_from_to_file(
     if os.name != "nt":
         for compression in compressions:
             for f in (str(f_ipc), Path(f_ipc)):
-                df.write_ipc(f, compression=compression)  # type: ignore
-                df_read = pl.read_ipc(f)  # type: ignore
+                df.write_ipc(f, compression=compression)  # type: ignore[arg-type]
+                df_read = pl.read_ipc(f)  # type: ignore[arg-type]
                 assert df.frame_equal(df_read)
 
 
@@ -67,7 +67,7 @@ def test_compressed_simple() -> None:
 
     for compression in compressions:
         f = io.BytesIO()
-        df.write_ipc(f, compression)  # type: ignore
+        df.write_ipc(f, compression)  # type: ignore[arg-type]
         f.seek(0)
 
         df_read = pl.read_ipc(f, use_pyarrow=False)
@@ -79,7 +79,7 @@ def test_ipc_schema(compressions: list[str]) -> None:
 
     for compression in compressions:
         f = io.BytesIO()
-        df.write_ipc(f, compression=compression)  # type: ignore
+        df.write_ipc(f, compression=compression)  # type: ignore[arg-type]
         f.seek(0)
 
         assert pl.read_ipc_schema(f) == {"a": pl.Int64, "b": pl.Utf8, "c": pl.Boolean}
@@ -95,8 +95,8 @@ def test_ipc_schema_from_file(
     if os.name != "nt":
         for compression in compressions:
             for f in (str(f_ipc), Path(f_ipc)):
-                df.write_ipc(f, compression=compression)  # type: ignore
-                assert pl.read_ipc_schema(f) == {  # type: ignore
+                df.write_ipc(f, compression=compression)  # type: ignore[arg-type]
+                assert pl.read_ipc_schema(f) == {  # type: ignore[arg-type]
                     "bools": pl.Boolean,
                     "bools_nulls": pl.Boolean,
                     "int": pl.Int64,

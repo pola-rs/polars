@@ -53,10 +53,10 @@ def test_flatten_explode() -> None:
     df = pl.Series("a", ["Hello", "World"])
     expected = pl.Series("a", ["H", "e", "l", "l", "o", "W", "o", "r", "l", "d"])
 
-    result: pl.Series = df.to_frame().select(pl.col("a").flatten())[:, 0]  # type: ignore
+    result: pl.Series = df.to_frame().select(pl.col("a").flatten())[:, 0]  # type: ignore[assignment]
     assert_series_equal(result, expected)
 
-    result: pl.Series = df.to_frame().select(pl.col("a").explode())[:, 0]  # type: ignore
+    result: pl.Series = df.to_frame().select(pl.col("a").explode())[:, 0]  # type: ignore[no-redef]
     assert_series_equal(result, expected)
 
 

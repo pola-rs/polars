@@ -107,7 +107,7 @@ class LazyFrame(Generic[DF]):
         This property is dynamically overwritten when DataFrame is sub-classed. See
         `polars.internals.frame.DataFrameMetaClass.__init__` for implementation details.
         """
-        return pli.DataFrame  # type: ignore
+        return pli.DataFrame  # type: ignore[return-value]
 
     @classmethod
     def scan_csv(
@@ -195,7 +195,7 @@ class LazyFrame(Generic[DF]):
                 scan = scan.head(n_rows)
             if row_count_name is not None:
                 scan = scan.with_row_count(row_count_name, row_count_offset)
-            return scan  # type: ignore
+            return scan  # type: ignore[return-value]
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_parquet(
@@ -235,7 +235,7 @@ class LazyFrame(Generic[DF]):
                 scan = scan.head(n_rows)
             if row_count_name is not None:
                 scan = scan.with_row_count(row_count_name, row_count_offset)
-            return scan  # type: ignore
+            return scan  # type: ignore[return-value]
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_ipc(
@@ -809,7 +809,7 @@ class LazyFrame(Generic[DF]):
     def __copy__(self: LDF) -> LDF:
         return self.clone()
 
-    def __deepcopy__(self: LDF, memodict={}) -> LDF:  # type: ignore
+    def __deepcopy__(self: LDF, memodict: dict = {}) -> LDF:
         return self.clone()
 
     def filter(self: LDF, predicate: pli.Expr | str) -> LDF:

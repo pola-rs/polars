@@ -4220,7 +4220,7 @@ class Expr:
         """
         if not _NUMPY_AVAILABLE:
             raise ImportError("'numpy' is required for this functionality.")
-        return np.sign(self)  # type: ignore
+        return np.sign(self)  # type: ignore[call-overload]
 
     def sin(self) -> Expr:
         """
@@ -5173,7 +5173,7 @@ class ExprListNameSpace:
         if not isinstance(other, list):
             other_list = [other]
         else:
-            other_list = copy.copy(other)  # type: ignore
+            other_list = copy.copy(other)  # type: ignore[arg-type]
 
         other_list.insert(0, wrap_expr(self._pyexpr))
         return pli.concat_list(other_list)
