@@ -692,6 +692,18 @@ class LazyFrame(Generic[DF]):
         )
         return self._dataframe_class._from_pydf(ldf.fetch(n_rows))
 
+    def lazy(self: LDF) -> LDF:
+        """
+        Returns lazy representation, i.e. itself.
+
+        Useful for writing code that expects either a :class:`DataFrame` or :class:`LazyFrame`.
+
+        Returns
+        -------
+        LazyFrame
+        """
+        return self
+
     @property
     def columns(self) -> list[str]:
         """

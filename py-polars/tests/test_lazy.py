@@ -1352,3 +1352,13 @@ def test_explode_inner_lists_3985() -> None:
         .agg(pl.col("categories"))
         .with_column(pl.col("categories").arr.eval(pl.element().explode()))
     ).collect().to_dict(False) == {"id": [1], "categories": [["a", "b", "a", "c"]]}
+
+
+def test_lazy_method() -> None:
+    """
+    We want to support `.lazy()` on a Lazy DataFrame as to allow more generic user code.
+    """
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3, 3], "b": [1, 2, 3, 4, 5, 6]})
+    lazy_df = df.lazy()
+
+    assert lazy_df.lazy() == lazy_df
