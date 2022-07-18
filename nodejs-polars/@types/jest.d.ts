@@ -6,7 +6,7 @@ declare global {
     interface Matchers<R> {
       toSeriesEqual(b: Series<any>): R;
       toSeriesStrictEqual(b: Series<any>): R;
-      toFrameEqual(b: DataFrame): R;
+      toFrameEqual(b: DataFrame, nullEqual?: boolean): R;
       /**
        * Compares two DataFrames, including the dtypes
        *

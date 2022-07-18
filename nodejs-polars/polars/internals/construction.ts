@@ -3,6 +3,8 @@ import { DataType, polarsTypeToConstructor } from "../datatypes";
 import { isTypedArray } from "util/types";
 import {Series} from "../series/series";
 import {_DataFrame} from "../dataframe";
+import {TimeUnit} from "../datatypes/datatype";
+import {Field} from "../datatypes/field";
 
 
 export const jsTypeToPolarsType = (value: unknown): DataType => {
@@ -40,11 +42,17 @@ export const jsTypeToPolarsType = (value: unknown): DataType => {
   }
 
   if (value instanceof Date) {
-    return DataType.Datetime;
+
+    return DataType.Datetime(TimeUnit.Milliseconds);
   }
   if(typeof value === "object" && (value as any).constructor === Object) {
+    const flds = Object.entries(value as any).map(([name, value]) => {
+      let dtype = jsTypeToPolarsType(value);
 
-    return DataType.Struct;
+      return Field.from(name, dtype);
+    });
+
+    return DataType.Struct(flds);
   }
 
   switch (typeof value) {
@@ -131,34 +139,35 @@ export function arrayToJsSeries(name: string = "", values: any[] = [], dtype?: a
   if(Array.isArray(firstValue) || isTypedArray(firstValue)) {
     const listDtype = jsTypeToPolarsType(firstValue);
 
-    const constructor = polarsTypeToConstructor(DataType.List);
+    const constructor = polarsTypeToConstructor(DataType.List(listDtype));
 
     return constructor(name, values, strict, listDtype);
   }
 
   dtype = dtype ?? jsTypeToPolarsType(firstValue);
   let series: any;
-  if(dtype === DataType.Struct) {
+  if(dtype?.variant === "Struct") {
     const df = pli.fromRows(values, null, 1);
 
     return df.toStruct(name);
   }
   if(firstValue instanceof Date) {
+
     series = pli.JsSeries.newOptDate(name, values, strict);
   } else {
     const constructor = polarsTypeToConstructor(dtype);
     series = constructor(name, values, strict);
   }
   if ([
-    DataType.Datetime,
-    DataType.Date,
-    DataType.Categorical,
-    DataType.Int8,
-    DataType.Int16,
-    DataType.UInt8,
-    DataType.UInt16,
-    DataType.Float32,
-  ].includes(dtype)) {
+    "Datetime",
+    "Date",
+    "Categorical",
+    "Int8",
+    "Int16",
+    "UInt8",
+    "UInt16",
+    "Float32",
+  ].includes(dtype.variant)) {
     series = series.cast(dtype, strict);
   }
 

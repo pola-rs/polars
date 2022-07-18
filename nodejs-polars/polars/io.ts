@@ -83,7 +83,7 @@ export function readRecords(records: Record<string, any>[], options?: {schema: R
 export function readRecords(records: Record<string, any>[], options?: {inferSchemaLength?: number}): DataFrame;
 export function readRecords(records: Record<string, any>[], options): DataFrame {
 
-  if(options?.schema) {
+  if (options?.schema) {
     return _DataFrame(pli.fromRows(records, options.schema));
   } else {
     return _DataFrame(pli.fromRows(records, undefined, options?.inferSchemaLength));
@@ -279,35 +279,58 @@ export function readJSON(pathOrBody, options = readJsonDefaultOptions) {
    * ╰─────┴─────┴─────╯
    * ```
    */
-export function scanJson(path: string, options?: Partial<{ inferSchemaLength: number, batchSize: number}>): LazyDataFrame
+export function scanJson(path: string, options?: Partial<{inferSchemaLength: number, batchSize: number}>): LazyDataFrame
 export function scanJson(path, options?) {
   options = {...readJsonDefaultOptions, ...options};
 
   return _LazyDataFrame(pli.scanJson(path, options));
 }
+
+
+interface ReadParquetOptions {
+  columns?: string[] | number[],
+  numRows?: number,
+  parallel?: "auto" | "columns" | "row_groups" | "none",
+  rowCount?: RowCount
+}
+
+
 /**
    * Read into a DataFrame from a parquet file.
    * @param pathOrBuffer
    * Path to a file, list of files, or a file like object. If the path is a directory, that directory will be used
    * as partition aware scan.
-   * @param options.columns Columns to select. Accepts a list of column names.
-   * @param options.projection -Indices of columns to select. Note that column indices start at zero.
-   * @param options.numRows  Stop reading from parquet file after reading ``n_rows``.
-   * @param options.parallel Read the parquet file in parallel. The single threaded reader consumes less memory.
+   * @param options.columns Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
+   * @param options.numRows  Stop reading from parquet file after reading ``numRows``.
+   * @param options.parallel
+   *    Any of  'auto' | 'columns' |  'row_groups' | 'none'
+        This determines the direction of parallelism. 'auto' will try to determine the optimal direction.
+        Defaults to 'auto'
    * @param options.rowCount Add row count as column
    */
-export function readParquet(pathOrBody: string | Buffer, options?: any): DataFrame
-export function readParquet(pathOrBody, options = {}) {
+export function readParquet(pathOrBody: string | Buffer, options?: ReadParquetOptions): DataFrame {
+  const pliOptions: any = {};
+
+  if (typeof options?.columns?.[0] === "number") {
+    pliOptions.projection = options?.columns;
+  } else {
+    pliOptions.columns = options?.columns;
+  }
+
+  pliOptions.nRows = options?.numRows;
+  pliOptions.rowCount = options?.rowCount;
+  const parallel = options?.parallel ?? "auto";
+
   if (Buffer.isBuffer(pathOrBody)) {
-    return _DataFrame(pli.readParquet(pathOrBody, options));
+    return _DataFrame(pli.readParquet(pathOrBody, pliOptions, parallel));
   }
 
   if (typeof pathOrBody === "string") {
     const inline = !isPath(pathOrBody, [".parquet"]);
     if (inline) {
-      return _DataFrame(pli.readParquet(Buffer.from(pathOrBody), options));
+      return _DataFrame(pli.readParquet(Buffer.from(pathOrBody), pliOptions, parallel));
     } else {
-      return _DataFrame(pli.readParquet(pathOrBody, options));
+      return _DataFrame(pli.readParquet(pathOrBody, pliOptions, parallel));
     }
   } else {
     throw new Error("must supply either a path or body");
@@ -341,20 +364,40 @@ export function readAvro(pathOrBody, options = {}) {
   }
 }
 
+
+interface RowCount {
+  name: string;
+  offset: string;
+}
+
+interface ScanParquetOptions {
+  columns?: string[] | number[],
+  numRows?: number,
+  parallel?: "auto" | "columns" | "row_groups" | "none",
+  rowCount?: RowCount,
+  cache?: boolean,
+  rechunk?: boolean
+}
+
 /**
    * __Lazily read from a parquet file or multiple files via glob patterns.__
    * ___
    * This allows the query optimizer to push down predicates and projections to the scan level,
    * thereby potentially reducing memory overhead.
    * @param path Path to a file or or glob pattern
-   * @param options.nRows Stop reading from parquet file after reading ``n_rows``.
+   * @param options.numRows Stop reading from parquet file after reading ``numRows``.
    * @param options.cache Cache the result after reading.
    * @param options.parallel Read the parquet file in parallel. The single threaded reader consumes less memory.
    * @param options.rechunk In case of reading multiple files via a glob pattern rechunk the final DataFrame into contiguous memory chunks.
    */
-export function scanParquet(path: string, options?: any): LazyDataFrame
-export function scanParquet(path, options = {}) {
-  return _LazyDataFrame(pli.scanParquet(path, options));
+export function scanParquet(path: string, options: ScanParquetOptions = {}) {
+  const pliOptions: any = {};
+
+  pliOptions.nRows = options?.numRows;
+  pliOptions.rowCount = options?.rowCount;
+  const parallel = options?.parallel ?? "auto";
+
+  return _LazyDataFrame(pli.scanParquet(path, pliOptions, parallel));
 }
 
 /**
@@ -528,7 +571,7 @@ export function readCSVStream(stream, options?) {
    * ```
    */
 export function readJSONStream(stream: Readable, options?: any): Promise<DataFrame>
-export function readJSONStream(stream, options=readJsonDefaultOptions) {
+export function readJSONStream(stream, options = readJsonDefaultOptions) {
   options = {...readJsonDefaultOptions, ...options};
 
   return new Promise((resolve, reject) => {

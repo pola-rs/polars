@@ -3,7 +3,7 @@ import pl from "@polars/index";
 expect.extend({
   toSeriesStrictEqual(actual, expected){
     const seriesEq = actual.seriesEqual(expected);
-    const typesEq = actual.dtype === expected.dtype;
+    const typesEq = actual.dtype.equals(expected.dtype);
     if(seriesEq && typesEq) {
       return {
         message: () => "series matches",
@@ -40,8 +40,8 @@ Received:
       };
     }
   },
-  toFrameEqual(actual, expected) {
-    const pass = actual.frameEqual(expected);
+  toFrameEqual(actual, expected, nullEqual?) {
+    const pass = actual.frameEqual(expected, nullEqual);
     if(pass) {
       return {
         message: () => "dataframes match",
@@ -121,7 +121,7 @@ export const df = () => {
   return df.withColumns(
 
     pl.col("date").cast(pl.Date),
-    pl.col("datetime").cast(pl.Datetime),
+    pl.col("datetime").cast(pl.Datetime("ms")),
     pl.col("strings").cast(pl.Categorical)
       .alias("cat")
   );

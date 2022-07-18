@@ -247,9 +247,9 @@ export const ExprStringFunctions = (_expr: any): ExprString => {
       return wrap("strStrip");
     },
     strptime(dtype, fmt?) {
-      if (dtype === DataType.Date) {
+      if (dtype.equals(DataType.Date)) {
         return wrap("strParseDate", fmt, false, false);
-      } else if (dtype === DataType.Datetime) {
+      } else if (dtype.equals(DataType.Datetime("ms"))) {
         return wrap("strParseDatetime", fmt, false, false);
       } else {
         throw new Error(`only "DataType.Date" and "DataType.Datetime" are supported`);

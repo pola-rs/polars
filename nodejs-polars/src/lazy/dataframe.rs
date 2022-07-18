@@ -68,18 +68,10 @@ impl JsLazyFrame {
 
     #[napi(factory)]
     pub fn deserialize(buf: Buffer, format: String) -> napi::Result<JsLazyFrame> {
-        // Safety
-        // we skipped the serializing/deserializing of the static in lifetime in `DataType`
-        // so we actually don't have a lifetime at all when serializing.
-
-        // &[u8] still has a lifetime. But its ok, because we drop it immediately
-        // in this scope
-        let bytes: &[u8] = &buf;
-        let bytes = unsafe { std::mem::transmute::<&'_ [u8], &'static [u8]>(bytes) };
         let lp: LogicalPlan = match format.as_ref() {
-            "bincode" => bincode::deserialize(bytes)
+            "bincode" => bincode::deserialize(&buf)
                 .map_err(|err| napi::Error::from_reason(format!("{:?}", err)))?,
-            "json" => serde_json::from_slice(bytes)
+            "json" => serde_json::from_slice(&buf)
                 .map_err(|err| napi::Error::from_reason(format!("{:?}", err)))?,
             _ => {
                 return Err(napi::Error::from_reason(
@@ -150,9 +142,15 @@ impl JsLazyFrame {
         .into()
     }
     #[napi]
-    pub fn sort_by_exprs(&self, by_column: Vec<&JsExpr>, reverse: Vec<bool>) -> JsLazyFrame {
+    pub fn sort_by_exprs(
+        &self,
+        by_column: Vec<&JsExpr>,
+        reverse: Vec<bool>,
+        nulls_last: bool,
+    ) -> JsLazyFrame {
         let ldf = self.ldf.clone();
-        ldf.sort_by_exprs(by_column.to_exprs(), reverse).into()
+        ldf.sort_by_exprs(by_column.to_exprs(), reverse, nulls_last)
+            .into()
     }
     #[napi]
     pub fn cache(&self) -> JsLazyFrame {
@@ -612,24 +610,29 @@ pub fn scan_csv(path: String, options: ScanCsvOptions) -> napi::Result<JsLazyFra
 pub struct ScanParquetOptions {
     pub n_rows: Option<i64>,
     pub cache: Option<bool>,
-    pub parallel: Option<bool>,
     pub rechunk: Option<bool>,
     pub row_count: Option<JsRowCount>,
+    pub low_memory: Option<bool>,
 }
 
 #[napi]
-pub fn scan_parquet(path: String, options: ScanParquetOptions) -> napi::Result<JsLazyFrame> {
+pub fn scan_parquet(
+    path: String,
+    options: ScanParquetOptions,
+    parallel: Wrap<ParallelStrategy>,
+) -> napi::Result<JsLazyFrame> {
     let n_rows = options.n_rows.map(|i| i as usize);
     let cache = options.cache.unwrap_or(true);
-    let parallel = options.parallel.unwrap_or(true);
     let rechunk = options.rechunk.unwrap_or(false);
+    let low_memory = options.low_memory.unwrap_or(false);
     let row_count: Option<RowCount> = options.row_count.map(|rc| rc.into());
     let args = ScanArgsParquet {
         n_rows,
         cache,
-        parallel,
+        parallel: parallel.0,
         rechunk,
         row_count,
+        low_memory,
     };
     let lf = LazyFrame::scan_parquet(path, args).map_err(JsPolarsErr::from)?;
     Ok(lf.into())
@@ -673,7 +676,6 @@ impl AnonymousScan for JsonScan {
             .with_chunk_size(self.batch_size)
             .with_n_rows(scan_opts.n_rows)
             .finish()
-
     }
 
     fn schema(&self, infer_schema_length: Option<usize>) -> polars::prelude::Result<Schema> {
