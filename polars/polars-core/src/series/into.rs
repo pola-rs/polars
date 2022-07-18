@@ -25,6 +25,29 @@ impl Series {
     /// 1 on 1 mapping for logical/ categoricals, etc.
     pub fn to_arrow(&self, chunk_idx: usize) -> ArrayRef {
         match self.dtype() {
+            // special list branch to
+            // make sure that we recursively apply all logical types.
+            DataType::List(inner) => {
+                let ca = self.list().unwrap();
+                let arr = ca.chunks[chunk_idx].clone();
+                let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
+
+                let s = unsafe {
+                    Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], inner)
+                };
+                let new_values = s.to_arrow(0);
+
+                let data_type = ListArray::<i64>::default_datatype(inner.to_arrow());
+                let arr = unsafe {
+                    ListArray::<i64>::new_unchecked(
+                        data_type,
+                        arr.offsets().clone(),
+                        new_values,
+                        arr.validity().cloned(),
+                    )
+                };
+                Box::new(arr)
+            }
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
                 let ca = self.categorical().unwrap();

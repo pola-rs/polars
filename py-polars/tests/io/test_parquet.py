@@ -190,3 +190,16 @@ def test_lazy_self_join_file_cache_prop_3979(io_test_dir: str) -> None:
 
     assert a.join(b, how="cross").collect().shape == (3, 17)
     assert b.join(a, how="cross").collect().shape == (3, 17)
+
+
+def recursive_logical_type() -> None:
+    df = pl.DataFrame({"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]})
+    df = df.with_column(pl.col("str").cast(pl.Categorical))
+
+    df_groups = df.groupby("group").agg([pl.col("str").list().alias("cat_list")])
+    f = io.BytesIO()
+    df_groups.write_parquet(f, use_pyarrow=True)
+    f.seek(0)
+    read = pl.read_parquet(f, use_pyarrow=True)
+    assert read.dtypes == [pl.Int64, pl.List(pl.Categorical)]
+    assert read.shape == (2, 2)
