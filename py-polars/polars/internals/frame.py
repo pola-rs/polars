@@ -1539,8 +1539,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             return out
 
     def _comp(
-        self, other: Any, op: Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
-    ) -> DataFrame:
+        self: DF, other: Any, op: Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
+    ) -> DF:
         if isinstance(other, DataFrame):
             if self.columns != other.columns:
                 raise ValueError("DataFrame columns do not match")
@@ -1548,24 +1548,24 @@ class DataFrame(metaclass=DataFrameMetaClass):
         else:
             data_series = [self[c]._comp(other, op) for c in self.columns]
 
-        return DataFrame(data_series, columns=self.columns)
+        return self._from_pydf(sequence_to_pydf(data_series))
 
-    def __eq__(self, other: Any) -> DataFrame:  # type: ignore[override]
+    def __eq__(self: DF, other: Any) -> DF:  # type: ignore[override]
         return self._comp(other, "eq")
 
-    def __ne__(self, other: Any) -> DataFrame:  # type: ignore[override]
+    def __ne__(self: DF, other: Any) -> DF:  # type: ignore[override]
         return self._comp(other, "neq")
 
-    def __gt__(self, other: Any) -> DataFrame:
+    def __gt__(self: DF, other: Any) -> DF:
         return self._comp(other, "gt")
 
-    def __lt__(self, other: Any) -> DataFrame:
+    def __lt__(self: DF, other: Any) -> DF:
         return self._comp(other, "lt")
 
-    def __ge__(self, other: Any) -> DataFrame:
+    def __ge__(self: DF, other: Any) -> DF:
         return self._comp(other, "gt_eq")
 
-    def __le__(self, other: Any) -> DataFrame:
+    def __le__(self: DF, other: Any) -> DF:
         return self._comp(other, "lt_eq")
 
     def __getstate__(self) -> list[pli.Series]:
