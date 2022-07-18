@@ -1484,7 +1484,7 @@ class LazyFrame(Generic[DF]):
     def with_columns(
         self: LDF,
         exprs: pli.Expr | pli.Series | Sequence[pli.Expr | pli.Series] | None = None,
-        **named_exprs: pli.Expr | pli.Series,
+        **named_exprs: pli.Expr | pli.Series | str,
     ) -> LDF:
         """
         Add or overwrite multiple columns in a DataFrame.
@@ -1534,21 +1534,22 @@ class LazyFrame(Generic[DF]):
         >>> ldf.with_columns(
         ...     d=pl.col("a") * pl.col("b"),
         ...     e=pl.col("c").is_not(),
+        ...     f="foo",
         ... ).collect()
-        shape: (4, 5)
-        ┌─────┬──────┬───────┬──────┬───────┐
-        │ a   ┆ b    ┆ c     ┆ d    ┆ e     │
-        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---   │
-        │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ bool  │
-        ╞═════╪══════╪═══════╪══════╪═══════╡
-        │ 1   ┆ 0.5  ┆ true  ┆ 0.5  ┆ false │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 2   ┆ 4.0  ┆ true  ┆ 8.0  ┆ false │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 3   ┆ 10.0 ┆ false ┆ 30.0 ┆ true  │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
-        └─────┴──────┴───────┴──────┴───────┘
+        shape: (4, 6)
+        ┌─────┬──────┬───────┬──────┬───────┬─────┐
+        │ a   ┆ b    ┆ c     ┆ d    ┆ e     ┆ f   │
+        │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---   ┆ --- │
+        │ i64 ┆ f64  ┆ bool  ┆ f64  ┆ bool  ┆ str │
+        ╞═════╪══════╪═══════╪══════╪═══════╪═════╡
+        │ 1   ┆ 0.5  ┆ true  ┆ 0.5  ┆ false ┆ foo │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 4.0  ┆ true  ┆ 8.0  ┆ false ┆ foo │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 10.0 ┆ false ┆ 30.0 ┆ true  ┆ foo │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false ┆ foo │
+        └─────┴──────┴───────┴──────┴───────┴─────┘
         """
         if named_exprs and not Config.with_columns_kwargs:
             raise RuntimeError(

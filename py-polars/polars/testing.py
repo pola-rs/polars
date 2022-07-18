@@ -188,7 +188,10 @@ def assert_series_equal(
     """
     obj = "Series"
 
-    if not (isinstance(left, Series) and isinstance(right, Series)):
+    if not (
+        isinstance(left, Series)  # type: ignore[redundant-expr]
+        and isinstance(right, Series)
+    ):
         raise_assert_detail(obj, "Type mismatch", type(left), type(right))
 
     if left.shape != right.shape:
