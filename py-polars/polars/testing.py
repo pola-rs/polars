@@ -380,10 +380,10 @@ if HYPOTHESIS_INSTALLED:
         Examples
         --------
         >>> from hypothesis.strategies import sampled_from
-        >>> from polars.testing import column
-        >>>
-        >>> column(name="unique_small_ints", dtype=pl.UInt8, unique=True)
-        >>> column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
+        >>> pl.testing.column(name="unique_small_ints", dtype=pl.UInt8, unique=True)
+        column(name='unique_small_ints', dtype=<class 'polars.datatypes.UInt8'>, strategy=None, null_probability=None, unique=True)
+        >>> pl.testing.column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
+        column(name='ccy', dtype=<class 'polars.datatypes.Utf8'>, strategy=sampled_from(['GBP', 'EUR', 'JPY']), null_probability=None, unique=False)
         """
 
         name: str

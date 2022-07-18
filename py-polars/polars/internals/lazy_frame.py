@@ -1526,7 +1526,7 @@ class LazyFrame(Generic[DF]):
         ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ 4   ┆ 13.0 ┆ true  ┆ 16.0 ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴──────┴──────┴───────┘
-        ...
+
         >>> # Support for kwarg expressions is considered EXPERIMENTAL.
         >>> # Currently requires opt-in via `pl.Config` boolean flag:
         >>>
