@@ -20,7 +20,7 @@ def test_fill_null() -> None:
     s = pl.Series("A", [dt, None])
 
     for fill_val in (dt, pl.lit(dt)):
-        out = s.fill_null(fill_val)  # type: ignore
+        out = s.fill_null(fill_val)  # type: ignore[arg-type]
 
         assert out.null_count() == 0
         assert out.dt[0] == dt
@@ -32,7 +32,7 @@ def test_fill_null() -> None:
     s = pl.Series("a", [dt1, dt2, dt3, None])
     dt_2 = date(2001, 1, 4)
     for fill_val in (dt_2, pl.lit(dt_2)):
-        out = s.fill_null(fill_val)  # type: ignore
+        out = s.fill_null(fill_val)  # type: ignore[arg-type]
 
         assert out.null_count() == 0
         assert out.dt[0] == dt1
@@ -104,20 +104,20 @@ def test_timestamp() -> None:
 
 
 def test_from_pydatetime() -> None:
-    dates = [
+    datetimes = [
         datetime(2021, 1, 1),
         datetime(2021, 1, 2),
         datetime(2021, 1, 3),
         datetime(2021, 1, 4, 12, 12),
         None,
     ]
-    s = pl.Series("name", dates)
+    s = pl.Series("name", datetimes)
     assert s.dtype == pl.Datetime
     assert s.name == "name"
     assert s.null_count() == 1
-    assert s.dt[0] == dates[0]
+    assert s.dt[0] == datetimes[0]
 
-    dates = [date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3), None]  # type: ignore
+    dates = [date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3), None]
     s = pl.Series("name", dates)
     assert s.dtype == pl.Date
     assert s.name == "name"
@@ -155,13 +155,13 @@ def test_datetime_consistency() -> None:
 def test_timezone() -> None:
     ts = pa.timestamp("s")
     data = pa.array([1000, 2000], type=ts)
-    s: pl.Series = pl.from_arrow(data)  # type: ignore
+    s: pl.Series = pl.from_arrow(data)  # type: ignore[assignment]
 
     # with timezone; we do expect a warning here
     tz_ts = pa.timestamp("s", tz="America/New_York")
     tz_data = pa.array([1000, 2000], type=tz_ts)
     # with pytest.warns(Warning):
-    tz_s: pl.Series = pl.from_arrow(tz_data)  # type: ignore
+    tz_s: pl.Series = pl.from_arrow(tz_data)  # type: ignore[assignment]
 
     # timezones have no effect, i.e. `s` equals `tz_s`
     assert not s.series_equal(tz_s)
@@ -291,8 +291,8 @@ def test_date_comp() -> None:
     assert (a < one).to_list() == [False, False]
     assert (a <= one).to_list() == [True, False]
 
-    one = date(2001, 1, 1)  # type: ignore
-    two = date(2001, 1, 2)  # type: ignore
+    one = date(2001, 1, 1)  # type: ignore[assignment]
+    two = date(2001, 1, 2)  # type: ignore[assignment]
     a = pl.Series("a", [one, two])
     assert (a == one).to_list() == [True, False]
     assert (a != one).to_list() == [False, True]
@@ -302,14 +302,14 @@ def test_date_comp() -> None:
     assert (a <= one).to_list() == [True, False]
 
     # also test if the conversion stays correct with wide date ranges
-    one = date(201, 1, 1)  # type: ignore
-    two = date(201, 1, 2)  # type: ignore
+    one = date(201, 1, 1)  # type: ignore[assignment]
+    two = date(201, 1, 2)  # type: ignore[assignment]
     a = pl.Series("a", [one, two])
     assert (a == one).to_list() == [True, False]
     assert (a == two).to_list() == [False, True]
 
-    one = date(5001, 1, 1)  # type: ignore
-    two = date(5001, 1, 2)  # type: ignore
+    one = date(5001, 1, 1)  # type: ignore[assignment]
+    two = date(5001, 1, 2)  # type: ignore[assignment]
     a = pl.Series("a", [one, two])
     assert (a == one).to_list() == [True, False]
     assert (a == two).to_list() == [False, True]
@@ -531,7 +531,7 @@ def test_microseconds_accuracy() -> None:
         ),
     )
 
-    assert pl.from_arrow(a)["timestamp"].to_list() == timestamps  # type: ignore
+    assert pl.from_arrow(a)["timestamp"].to_list() == timestamps  # type: ignore[index]
 
 
 def test_cast_time_units() -> None:

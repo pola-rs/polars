@@ -44,7 +44,6 @@ warn_redundant_casts = true
 enable_error_code = [
   "redundant-expr",
   "truthy-bool",
-  # TODO: Uncomment error below and fix mypy errors
   # "ignore-without-code",
 ]
 

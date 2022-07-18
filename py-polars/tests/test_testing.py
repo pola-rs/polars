@@ -52,7 +52,7 @@ def test_compare_series_type_mismatch() -> None:
     srs1 = pl.Series([1, 2, 3])
     srs2 = pl.DataFrame({"col1": [2, 3, 4]})
     with pytest.raises(AssertionError, match="Series are different\n\nType mismatch"):
-        assert_series_equal(srs1, srs2)  # type: ignore
+        assert_series_equal(srs1, srs2)  # type: ignore[arg-type]
 
     srs3 = pl.Series([1.0, 2.0, 3.0])
     with pytest.raises(AssertionError, match="Series are different\n\nDtype mismatch"):
@@ -110,7 +110,7 @@ def test_assert_frame_equal_types() -> None:
     df1 = pl.DataFrame({"a": [1, 2]})
     srs1 = pl.Series(values=[1, 2], name="a")
     with pytest.raises(AssertionError):
-        assert_frame_equal(df1, srs1)  # type: ignore
+        assert_frame_equal(df1, srs1)  # type: ignore[arg-type]
 
 
 def test_assert_frame_equal_length_mismatch() -> None:

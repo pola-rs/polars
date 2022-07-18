@@ -12,7 +12,7 @@ try:
 except ImportError:
     _PYARROW_AVAILABLE = False
 
-from _ctypes import _SimpleCData  # type: ignore
+from _ctypes import _SimpleCData  # type: ignore[import]
 
 try:
     from polars.polars import dtype_str_repr

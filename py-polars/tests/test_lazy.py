@@ -643,7 +643,7 @@ def test_take(fruits_cars: pl.DataFrame) -> None:
 
     for index in [[0, 1], pl.Series([0, 1]), np.array([0, 1])]:
         out = df.sort("fruits").select(
-            [col("B").reverse().take(index).list().over("fruits"), "fruits"]  # type: ignore
+            [col("B").reverse().take(index).list().over("fruits"), "fruits"]  # type: ignore[arg-type]
         )
 
         assert out[0, "B"] == [2, 3]
@@ -872,7 +872,7 @@ def test_arithmetic() -> None:
 
 def test_ufunc() -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    out = df.select(np.log(col("a")))  # type: ignore
+    out = df.select(np.log(col("a")))  # type: ignore[call-overload]
     assert out["a"][1] == 0.6931471805599453
 
 
@@ -1108,25 +1108,25 @@ def test_quantile(fruits_cars: pl.DataFrame) -> None:
 
 
 def test_is_between(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.select(pl.col("A").is_between(2, 4))["is_between"].series_equal(  # type: ignore
+    assert fruits_cars.select(pl.col("A").is_between(2, 4))["is_between"].series_equal(  # type: ignore[arg-type]
         pl.Series("is_between", [False, False, True, False, False])
     )
-    assert fruits_cars.select(pl.col("A").is_between(2, 4, False))["is_between"].series_equal(  # type: ignore
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, False))["is_between"].series_equal(  # type: ignore[arg-type]
         pl.Series("is_between", [False, False, True, False, False])
     )
-    assert fruits_cars.select(pl.col("A").is_between(2, 4, [False, False]))["is_between"].series_equal(  # type: ignore
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, [False, False]))["is_between"].series_equal(  # type: ignore[arg-type]
         pl.Series("is_between", [False, False, True, False, False])
     )
-    assert fruits_cars.select(pl.col("A").is_between(2, 4, True))["is_between"].series_equal(  # type: ignore
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, True))["is_between"].series_equal(  # type: ignore[arg-type]
         pl.Series("is_between", [False, True, True, True, False])
     )
-    assert fruits_cars.select(pl.col("A").is_between(2, 4, [True, True]))["is_between"].series_equal(  # type: ignore
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, [True, True]))["is_between"].series_equal(  # type: ignore[arg-type]
         pl.Series("is_between", [False, True, True, True, False])
     )
-    assert fruits_cars.select(pl.col("A").is_between(2, 4, [False, True]))["is_between"].series_equal(  # type: ignore
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, [False, True]))["is_between"].series_equal(  # type: ignore[arg-type]
         pl.Series("is_between", [False, False, True, True, False])
     )
-    assert fruits_cars.select(pl.col("A").is_between(2, 4, [True, False]))["is_between"].series_equal(  # type: ignore
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, [True, False]))["is_between"].series_equal(  # type: ignore[arg-type]
         pl.Series("is_between", [False, True, True, False, False])
     )
 
