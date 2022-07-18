@@ -1538,7 +1538,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         else:
             return out
 
-    def _comp(self, other: Any, op: str) -> DataFrame:
+    def _comp(
+        self, other: Any, op: Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
+    ) -> DataFrame:
         if isinstance(other, DataFrame):
             if self.columns != other.columns:
                 raise ValueError("DataFrame columns do not match")
