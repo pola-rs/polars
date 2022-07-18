@@ -1097,12 +1097,17 @@ def test_hashing_on_python_objects() -> None:
 
     class Foo:
 <<<<<<< HEAD
+<<<<<<< HEAD
         def __init__(self):  # type: ignore[no-untyped-def]
+=======
+        def __init__(self) -> None:
+>>>>>>> 1f8e12717 (Fix merge)
             pass
 
         def __hash__(self):  # type: ignore[no-untyped-def]
             return 0
 
+<<<<<<< HEAD
         def __eq__(self, other):  # type: ignore[no-untyped-def]
 =======
         def __init__(self) -> None:
@@ -1113,6 +1118,9 @@ def test_hashing_on_python_objects() -> None:
 
         def __eq__(self, other: Any) -> bool:
 >>>>>>> eac2e46db (Disallow untyped calls in mypy check)
+=======
+        def __eq__(self, other: Any) -> bool:
+>>>>>>> 1f8e12717 (Fix merge)
             return True
 
     df = df.with_column(pl.col("a").apply(lambda x: Foo()).alias("foo"))
@@ -1315,6 +1323,7 @@ def test_transpose() -> None:
 def test_extension() -> None:
     class Foo:
 <<<<<<< HEAD
+<<<<<<< HEAD
         def __init__(self, value):  # type: ignore[no-untyped-def]
             self.value = value
 
@@ -1325,6 +1334,12 @@ def test_extension() -> None:
 
         def __repr__(self) -> str:
 >>>>>>> eac2e46db (Disallow untyped calls in mypy check)
+=======
+        def __init__(self, value: int):
+            self.value = value
+
+        def __repr__(self) -> str:
+>>>>>>> 1f8e12717 (Fix merge)
             return f"foo({self.value})"
 
     foos = [Foo(1), Foo(2), Foo(3)]
