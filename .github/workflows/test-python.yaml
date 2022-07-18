@@ -36,12 +36,12 @@ jobs:
         run: |
           cd py-polars && flake8 && cd ..
       - name: Run type checking
-        - if matrix.python_version == '3.7'
-            run: |
-              cd py-polars && mypy --allow-untyped-calls && cd ..
+        - if matrix.python-version == '3.7'
+          run: |
+            cd py-polars && mypy --allow-untyped-calls && cd ..
         - else
-            run: |
-              cd py-polars && mypy && cd ..
+          run: |
+            cd py-polars && mypy && cd ..
       - name: Run tests
         run: |
           export RUSTFLAGS="-C debuginfo=0"
