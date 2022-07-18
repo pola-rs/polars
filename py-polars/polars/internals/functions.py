@@ -140,7 +140,7 @@ def concat(
     elif isinstance(first, pli.Expr):
         out = first
         for e in items[1:]:
-            out = out.append(e)  # type: ignore
+            out = out.append(e)  # type: ignore[arg-type]
     else:
         raise ValueError(f"did not expect type: {type(first)} in 'pl.concat'.")
 

@@ -137,8 +137,8 @@ def assert_frame_equal(
     # this does not assume a particular order
     for c in left.columns:
         _assert_series_inner(
-            left[c],  # type: ignore
-            right[c],  # type: ignore
+            left[c],  # type: ignore[arg-type, index]
+            right[c],  # type: ignore[arg-type, index]
             check_dtype,
             check_exact,
             nans_compare_equal,

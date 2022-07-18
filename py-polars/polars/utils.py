@@ -148,13 +148,13 @@ def handle_projection_columns(
     projection: list[int] | None = None
     if columns:
         if is_int_sequence(columns):
-            projection = columns  # type: ignore
+            projection = columns  # type: ignore[assignment]
             columns = None
         elif not is_str_sequence(columns):
             raise ValueError(
                 "columns arg should contain a list of all integers or all strings values."
             )
-    return projection, columns  # type: ignore
+    return projection, columns  # type: ignore[return-value]
 
 
 def _to_python_time(value: int) -> time:
