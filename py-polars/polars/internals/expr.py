@@ -3966,30 +3966,32 @@ class Expr:
 
         Parameters
         ----------
-        method
-            {'average', 'min', 'max', 'dense', 'ordinal', 'random'}, optional
+        method : {'average', 'min', 'max', 'dense', 'ordinal', 'random'}, optional
             The method used to assign ranks to tied elements.
             The following methods are available (default is 'average'):
-            - 'average': The average of the ranks that would have been assigned to
-            all the tied values is assigned to each value.
-            - 'min': The minimum of the ranks that would have been assigned to all
-            the tied values is assigned to each value.  (This is also
-            referred to as "competition" ranking.)
-            - 'max': The maximum of the ranks that would have been assigned to all
-            the tied values is assigned to each value.
-            - 'dense': Like 'min', but the rank of the next highest element is
-            assigned the rank immediately after those assigned to the tied
-            elements.
-            - 'ordinal': All values are given a distinct rank, corresponding to
-            the order that the values occur in `a`.
-            - 'random': Like 'ordinal', but the rank for ties is not dependent
-            on the order that the values occur in `a`.
+
+            - 'average' : The average of the ranks that would have been assigned to
+              all the tied values is assigned to each value.
+            - 'min' : The minimum of the ranks that would have been assigned to all
+              the tied values is assigned to each value. (This is also referred to
+              as "competition" ranking.)
+            - 'max' : The maximum of the ranks that would have been assigned to all
+              the tied values is assigned to each value.
+            - 'dense' : Like 'min', but the rank of the next highest element is
+              assigned the rank immediately after those assigned to the tied
+              elements.
+            - 'ordinal' : All values are given a distinct rank, corresponding to
+              the order that the values occur in the Series.
+            - 'random' : Like 'ordinal', but the rank for ties is not dependent
+              on the order that the values occur in the Series.
         reverse
             Reverse the operation.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [0, 1, 2, 2, 4]})
+        The 'average' method:
+
+        >>> df = pl.DataFrame({"a": [3, 6, 1, 1, 6]})
         >>> df.select(pl.col("a").rank())
         shape: (5, 1)
         ┌─────┐
@@ -3997,15 +3999,36 @@ class Expr:
         │ --- │
         │ f32 │
         ╞═════╡
-        │ 1.0 │
+        │ 3.0 │
         ├╌╌╌╌╌┤
-        │ 2.0 │
+        │ 4.5 │
         ├╌╌╌╌╌┤
-        │ 3.5 │
+        │ 1.5 │
         ├╌╌╌╌╌┤
-        │ 3.5 │
+        │ 1.5 │
         ├╌╌╌╌╌┤
-        │ 5.0 │
+        │ 4.5 │
+        └─────┘
+
+        The 'ordinal' method:
+
+        >>> df = pl.DataFrame({"a": [3, 6, 1, 1, 6]})
+        >>> df.select(pl.col("a").rank("ordinal"))
+        shape: (5, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 3   │
+        ├╌╌╌╌╌┤
+        │ 4   │
+        ├╌╌╌╌╌┤
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        ├╌╌╌╌╌┤
+        │ 5   │
         └─────┘
 
         """
