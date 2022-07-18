@@ -6363,8 +6363,6 @@ class GroupBy(Generic[DF]):
                     .agg(column_to_agg)  # type: ignore[arg-type]
                     .collect(no_optimization=True, string_cache=False)
                 )
-
-                pass
             else:
                 raise ValueError(
                     f"argument: {column_to_agg} not understood, have you passed a list of expressions?"
