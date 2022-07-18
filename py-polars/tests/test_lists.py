@@ -61,7 +61,7 @@ def test_dtype() -> None:
     a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9]])
     assert a.dtype == pl.List
     assert a.inner_dtype == pl.Int64
-    assert getattr(a.dtype, "inner") == pl.Int64
+    assert a.dtype.inner == pl.Int64  # type: ignore[attr-defined]
 
     # explicit
     df = pl.DataFrame(
@@ -84,7 +84,7 @@ def test_dtype() -> None:
         "dt": pl.List(pl.Date),
         "dtm": pl.List(pl.Datetime),
     }
-    assert getattr(df.schema["i"], "inner") == pl.Int8
+    assert df.schema["i"].inner == pl.Int8  # type: ignore[attr-defined]
     assert df.rows() == [
         (
             [1, 2, 3],

@@ -4053,8 +4053,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         if isinstance(name, list):
             df = self.clone()
 
-            for name in name:
-                df._df.drop_in_place(name)
+            for n in name:
+                df._df.drop_in_place(n)
             return df
 
         return self._from_pydf(self._df.drop(name))
@@ -4192,7 +4192,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def __copy__(self: DF) -> DF:
         return self.clone()
 
-    def __deepcopy__(self: DF, memodict: dict = {}) -> DF:
+    def __deepcopy__(self: DF, memo: None = None) -> DF:
         return self.clone()
 
     def get_columns(self) -> list[pli.Series]:

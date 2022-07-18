@@ -64,7 +64,7 @@ def test_init_only_columns() -> None:
         assert df.shape == (0, 4)
         assert df.frame_equal(truth, null_equal=True)
         assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8, pl.List]
-        assert getattr(df.schema["d"], "inner") == pl.UInt8
+        assert df.schema["d"].inner == pl.UInt8  # type: ignore[attr-defined]
 
         dfe = df.cleared()
         assert (df.schema == dfe.schema) and (dfe.shape == df.shape)

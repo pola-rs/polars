@@ -2433,7 +2433,7 @@ class Series:
     def __copy__(self) -> Series:
         return self.clone()
 
-    def __deepcopy__(self, memodict: Any = {}) -> Series:
+    def __deepcopy__(self, memo: None = None) -> Series:
         return self.clone()
 
     def fill_nan(self, fill_value: str | int | float | bool | pli.Expr) -> Series:

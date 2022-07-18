@@ -70,7 +70,7 @@ def test_windows_not_cached() -> None:
         )
     )
     # this might fail if they are cached
-    for i in range(1000):
+    for _ in range(1000):
         ldf.collect()
 
 
