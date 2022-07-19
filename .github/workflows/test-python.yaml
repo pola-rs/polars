@@ -35,13 +35,14 @@ jobs:
       - name: Run linting
         run: |
           cd py-polars && flake8 && cd ..
-      - name: Run type checking
-        - if matrix.python-version == '3.7'
-          run: |
-            cd py-polars && mypy --allow-untyped-calls && cd ..
-        - else
-          run: |
-            cd py-polars && mypy && cd ..
+      - name: Run type checking Python 3.7
+        if matrix.python-version == '3.7'
+        run: |
+          cd py-polars && mypy --allow-untyped-calls && cd ..
+      - name: Run type checking Python 3.8+
+        if matrix.python-version != '3.7'
+        run: |
+          cd py-polars && mypy && cd ..
       - name: Run tests
         run: |
           export RUSTFLAGS="-C debuginfo=0"
