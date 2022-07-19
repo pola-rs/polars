@@ -1,4 +1,6 @@
+use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::PlHashMap;
+use ahash::RandomState;
 use once_cell::sync::Lazy;
 use smartstring::{LazyCompact, SmartString};
 use std::borrow::Borrow;
@@ -46,7 +48,10 @@ pub(crate) struct SCacheInner {
 impl Default for SCacheInner {
     fn default() -> Self {
         Self {
-            map: Default::default(),
+            map: PlHashMap::with_capacity_and_hasher(
+                HASHMAP_INIT_SIZE,
+                StringCache::get_hash_builder(),
+            ),
             uuid: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -62,6 +67,13 @@ impl Default for SCacheInner {
 pub(crate) struct StringCache(pub(crate) Mutex<SCacheInner>);
 
 impl StringCache {
+    /// The global `StringCache` will always use a predictable seed. This allows local builders to mimic
+    /// the hashes in case of contention.
+    pub(crate) fn get_hash_builder() -> RandomState {
+        RandomState::with_seed(0)
+    }
+
+    /// Lock the string cache
     pub(crate) fn lock_map(&self) -> MutexGuard<SCacheInner> {
         self.0.lock().unwrap()
     }

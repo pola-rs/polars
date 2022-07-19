@@ -74,7 +74,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.12.0"
-source = "git+https://github.com/ritchie46/arrow2?branch=improve_filter#da64106279a494f717c5019a815487cba9bfab52"
+source = "git+https://github.com/ritchie46/arrow2?branch=default_utf8#cf2381554d6539b36e7bf8a663ea1c19348deeb4"
 dependencies = [
  "ahash",
  "arrow-format",
