@@ -20,6 +20,7 @@ pub struct LazyCsvReader<'a> {
     low_memory: bool,
     comment_char: Option<u8>,
     quote_char: Option<u8>,
+    eol_char: u8,
     null_values: Option<NullValues>,
     infer_schema_length: Option<usize>,
     rechunk: bool,
@@ -45,6 +46,7 @@ impl<'a> LazyCsvReader<'a> {
             low_memory: false,
             comment_char: None,
             quote_char: Some(b'"'),
+            eol_char: b'\n',
             null_values: None,
             infer_schema_length: Some(100),
             rechunk: true,
@@ -143,6 +145,13 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
+    /// Set the `char` used as end of line. The default is `b'\n'`.
+    #[must_use]
+    pub fn with_end_of_line_char(mut self, eol_char: u8) -> Self {
+        self.eol_char = eol_char;
+        self
+    }
+
     /// Set values that will be interpreted as missing/ null.
     #[must_use]
     pub fn with_null_values(mut self, null_values: Option<NullValues>) -> Self {
@@ -206,6 +215,7 @@ impl<'a> LazyCsvReader<'a> {
             &mut skip_rows,
             self.comment_char,
             self.quote_char,
+            self.eol_char,
             None,
             self.parse_dates,
         )?;
@@ -235,6 +245,7 @@ impl<'a> LazyCsvReader<'a> {
             self.low_memory,
             self.comment_char,
             self.quote_char,
+            self.eol_char,
             self.null_values,
             self.infer_schema_length,
             self.rechunk,

@@ -49,6 +49,7 @@ impl CsvExec {
             .with_encoding(CsvEncoding::LossyUtf8)
             .with_comment_char(self.options.comment_char)
             .with_quote_char(self.options.quote_char)
+            .with_end_of_line_char(self.options.eol_char)
             .with_encoding(self.options.encoding)
             .with_rechunk(self.options.rechunk)
             .with_row_count(std::mem::take(&mut self.options.row_count))

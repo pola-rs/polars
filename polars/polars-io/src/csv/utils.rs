@@ -22,6 +22,7 @@ pub(crate) fn get_file_chunks(
     expected_fields: usize,
     delimiter: u8,
     quote_char: Option<u8>,
+    eol_char: u8,
 ) -> Vec<(usize, usize)> {
     let mut last_pos = 0;
     let total_len = bytes.len();
@@ -39,6 +40,7 @@ pub(crate) fn get_file_chunks(
             expected_fields,
             delimiter,
             quote_char,
+            eol_char,
         ) {
             Some(pos) => search_pos + pos,
             None => {
@@ -169,6 +171,7 @@ pub fn infer_file_schema(
     skip_rows: &mut usize,
     comment_char: Option<u8>,
     quote_char: Option<u8>,
+    eol_char: u8,
     null_values: Option<&NullValues>,
     parse_dates: bool,
 ) -> Result<(Schema, usize)> {
@@ -176,13 +179,13 @@ pub fn infer_file_schema(
     // It may later.
     let encoding = CsvEncoding::LossyUtf8;
 
-    let bytes = skip_line_ending(skip_bom(reader_bytes));
+    let bytes = skip_line_ending(skip_bom(reader_bytes), eol_char);
     if bytes.is_empty() {
         return Err(PolarsError::NoData("empty csv".into()));
     }
-    let mut lines = SplitLines::new(bytes, b'\n').skip(*skip_rows);
+    let mut lines = SplitLines::new(bytes, eol_char).skip(*skip_rows);
     // it can be that we have a single line without eol char
-    let has_eol = bytes.contains(&b'\n');
+    let has_eol = bytes.contains(&eol_char);
 
     // get or create header names
     // when has_header is false, creates default column names with column_ prefix
@@ -218,7 +221,7 @@ pub fn infer_file_schema(
             }
         }
 
-        let byterecord = SplitFields::new(header_line, delimiter, quote_char);
+        let byterecord = SplitFields::new(header_line, delimiter, quote_char, eol_char);
         if has_header {
             let headers = byterecord
                 .map(|(slice, needs_escaping)| {
@@ -255,7 +258,7 @@ pub fn infer_file_schema(
         // this is likely to be cheap as there are no rows.
         let mut buf = Vec::with_capacity(bytes.len() + 2);
         buf.extend_from_slice(bytes);
-        buf.push(b'\n');
+        buf.push(eol_char);
 
         return infer_file_schema(
             &ReaderBytes::Owned(buf),
@@ -266,6 +269,7 @@ pub fn infer_file_schema(
             skip_rows,
             comment_char,
             quote_char,
+            eol_char,
             null_values,
             parse_dates,
         );
@@ -274,7 +278,7 @@ pub fn infer_file_schema(
     };
     if !has_header {
         // re-init lines so that the header is included in type inference.
-        lines = SplitLines::new(bytes, b'\n').skip(*skip_rows);
+        lines = SplitLines::new(bytes, eol_char).skip(*skip_rows);
     }
 
     let header_length = headers.len();
@@ -308,7 +312,7 @@ pub fn infer_file_schema(
             }
         }
 
-        let mut record = SplitFields::new(line, delimiter, quote_char);
+        let mut record = SplitFields::new(line, delimiter, quote_char, eol_char);
 
         for i in 0..header_length {
             if let Some((slice, needs_escaping)) = record.next() {
@@ -405,10 +409,10 @@ pub fn infer_file_schema(
     // if there is a single line after the header without an eol
     // we copy the bytes add an eol and rerun this function
     // so that the inference is consistent with and without eol char
-    if rows_count == 0 && reader_bytes[reader_bytes.len() - 1] != b'\n' {
+    if rows_count == 0 && reader_bytes[reader_bytes.len() - 1] != eol_char {
         let mut rb = Vec::with_capacity(reader_bytes.len() + 1);
         rb.extend_from_slice(reader_bytes);
-        rb.push(b'\n');
+        rb.push(eol_char);
         return infer_file_schema(
             &ReaderBytes::Owned(rb),
             delimiter,
@@ -418,6 +422,7 @@ pub fn infer_file_schema(
             skip_rows,
             comment_char,
             quote_char,
+            eol_char,
             null_values,
             parse_dates,
         );
@@ -447,6 +452,7 @@ fn decompress_impl<R: Read>(
     n_rows: Option<usize>,
     delimiter: u8,
     quote_char: Option<u8>,
+    eol_char: u8,
 ) -> Option<Vec<u8>> {
     let chunk_size = 4096;
     Some(match n_rows {
@@ -467,14 +473,14 @@ fn decompress_impl<R: Read>(
                 if read == 0 {
                     break;
                 }
-                if next_line_position_naive(&out).is_some() {
+                if next_line_position_naive(&out, eol_char).is_some() {
                     // an extra shot
                     let read = decoder.take(chunk_size).read_to_end(&mut out).ok()?;
                     if read == 0 {
                         break;
                     }
                     // now that we have enough, we compute the number of fields (also takes embedding into account)
-                    expected_fields = SplitFields::new(&out, delimiter, quote_char)
+                    expected_fields = SplitFields::new(&out, delimiter, quote_char, eol_char)
                         .into_iter()
                         .count();
                     break;
@@ -491,6 +497,7 @@ fn decompress_impl<R: Read>(
                     expected_fields,
                     delimiter,
                     quote_char,
+                    eol_char,
                 ) {
                     Some(pos) => {
                         line_count += 1;
@@ -518,13 +525,14 @@ pub(crate) fn decompress(
     n_rows: Option<usize>,
     delimiter: u8,
     quote_char: Option<u8>,
+    eol_char: u8,
 ) -> Option<Vec<u8>> {
     if bytes.starts_with(&GZIP) {
         let mut decoder = flate2::read::MultiGzDecoder::new(bytes);
-        decompress_impl(&mut decoder, bytes, n_rows, delimiter, quote_char)
+        decompress_impl(&mut decoder, bytes, n_rows, delimiter, quote_char, eol_char)
     } else if bytes.starts_with(&ZLIB0) || bytes.starts_with(&ZLIB1) || bytes.starts_with(&ZLIB2) {
         let mut decoder = flate2::read::ZlibDecoder::new(bytes);
-        decompress_impl(&mut decoder, bytes, n_rows, delimiter, quote_char)
+        decompress_impl(&mut decoder, bytes, n_rows, delimiter, quote_char, eol_char)
     } else {
         None
     }
@@ -589,7 +597,7 @@ mod test {
         let s = std::fs::read_to_string(path).unwrap();
         let bytes = s.as_bytes();
         // can be within -1 / +1 bounds.
-        assert!((get_file_chunks(bytes, 10, 4, b',', None).len() as i32 - 10).abs() <= 1);
-        assert!((get_file_chunks(bytes, 8, 4, b',', None).len() as i32 - 8).abs() <= 1);
+        assert!((get_file_chunks(bytes, 10, 4, b',', None, b'\n').len() as i32 - 10).abs() <= 1);
+        assert!((get_file_chunks(bytes, 8, 4, b',', None, b'\n').len() as i32 - 8).abs() <= 1);
     }
 }

@@ -149,11 +149,13 @@ impl PyLazyFrame {
         encoding: &str,
         row_count: Option<(String, IdxSize)>,
         parse_dates: bool,
+        eol_char: &str,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
         let delimiter = sep.as_bytes()[0];
+        let eol_char = eol_char.as_bytes()[0];
 
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
 
@@ -185,6 +187,7 @@ impl PyLazyFrame {
             .low_memory(low_memory)
             .with_comment_char(comment_char)
             .with_quote_char(quote_char)
+            .with_end_of_line_char(eol_char)
             .with_rechunk(rechunk)
             .with_skip_rows_after_header(skip_rows_after_header)
             .with_encoding(encoding)

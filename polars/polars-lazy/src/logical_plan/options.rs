@@ -13,6 +13,7 @@ pub struct CsvParserOptions {
     pub(crate) delimiter: u8,
     pub(crate) comment_char: Option<u8>,
     pub(crate) quote_char: Option<u8>,
+    pub(crate) eol_char: u8,
     pub(crate) has_header: bool,
     pub(crate) skip_rows: usize,
     pub(crate) n_rows: Option<usize>,

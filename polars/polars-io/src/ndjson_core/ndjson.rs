@@ -173,7 +173,7 @@ impl<'a> CoreJsonReader<'a> {
         let mut bytes = bytes;
         let mut total_rows = 128;
 
-        if let Some((mean, std)) = get_line_stats(bytes, self.sample_size) {
+        if let Some((mean, std)) = get_line_stats(bytes, self.sample_size, b'\n') {
             let line_length_upper_bound = mean + 1.1 * std;
 
             total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
@@ -183,7 +183,7 @@ impl<'a> CoreJsonReader<'a> {
                 let n_bytes = (line_length_upper_bound * (n_rows as f32)) as usize;
 
                 if n_bytes < bytes.len() {
-                    if let Some(pos) = next_line_position_naive(&bytes[n_bytes..]) {
+                    if let Some(pos) = next_line_position_naive(&bytes[n_bytes..], b'\n') {
                         bytes = &bytes[..n_bytes + pos]
                     }
                 }
@@ -204,8 +204,14 @@ impl<'a> CoreJsonReader<'a> {
         };
 
         let expected_fields = &self.schema.len();
-        let file_chunks =
-            get_file_chunks(bytes, n_threads, *expected_fields, SEP, Some(QUOTE_CHAR));
+        let file_chunks = get_file_chunks(
+            bytes,
+            n_threads,
+            *expected_fields,
+            SEP,
+            Some(QUOTE_CHAR),
+            b'\n',
+        );
 
         let dfs = POOL.install(|| {
             file_chunks

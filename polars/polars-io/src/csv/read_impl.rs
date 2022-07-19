@@ -78,6 +78,7 @@ pub(crate) struct CoreReader<'a> {
     low_memory: bool,
     comment_char: Option<u8>,
     quote_char: Option<u8>,
+    eol_char: u8,
     null_values: Option<NullValuesCompiled>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&'a [ScanAggregation]>,
@@ -165,6 +166,7 @@ impl<'a> CoreReader<'a> {
         low_memory: bool,
         comment_char: Option<u8>,
         quote_char: Option<u8>,
+        eol_char: u8,
         null_values: Option<NullValues>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&'a [ScanAggregation]>,
@@ -192,7 +194,9 @@ impl<'a> CoreReader<'a> {
                     // We keep track of the inferred schema bool
                     // In case the file is compressed this schema inference is wrong and has to be done
                     // again after decompression.
-                    if let Some(b) = decompress(&reader_bytes, n_rows, delimiter, quote_char) {
+                    if let Some(b) =
+                        decompress(&reader_bytes, n_rows, delimiter, quote_char, eol_char)
+                    {
                         reader_bytes = ReaderBytes::Owned(b);
                     }
 
@@ -205,6 +209,7 @@ impl<'a> CoreReader<'a> {
                         &mut skip_rows,
                         comment_char,
                         quote_char,
+                        eol_char,
                         null_values.as_ref(),
                         parse_dates,
                     )?;
@@ -221,6 +226,7 @@ impl<'a> CoreReader<'a> {
                         &mut skip_rows,
                         comment_char,
                         quote_char,
+                        eol_char,
                         null_values.as_ref(),
                         parse_dates,
                     )?;
@@ -272,6 +278,7 @@ impl<'a> CoreReader<'a> {
             low_memory,
             comment_char,
             quote_char,
+            eol_char,
             null_values,
             predicate,
             aggregate,
@@ -280,7 +287,11 @@ impl<'a> CoreReader<'a> {
         })
     }
 
-    fn find_starting_point<'b>(&self, mut bytes: &'b [u8]) -> Result<(&'b [u8], usize)> {
+    fn find_starting_point<'b>(
+        &self,
+        mut bytes: &'b [u8],
+        eol_char: u8,
+    ) -> Result<(&'b [u8], usize)> {
         let starting_point_offset = bytes.as_ptr() as usize;
 
         // Skip all leading white space and the occasional utf8-bom
@@ -288,20 +299,18 @@ impl<'a> CoreReader<'a> {
         // \n\n can be a empty string row of a single column
         // in other cases we skip it.
         if self.schema.len() > 1 {
-            bytes = skip_line_ending(bytes)
+            bytes = skip_line_ending(bytes, eol_char)
         }
 
         // If there is a header we skip it.
         if self.has_header {
-            bytes = skip_header(bytes).0;
+            bytes = skip_header(bytes, eol_char).0;
         }
 
         if self.skip_rows > 0 {
             for _ in 0..self.skip_rows {
                 // This does not check embedding of new line chars in string quotes.
-                // TODO create a state machine/ or use that of csv crate to skip lines with proper
-                // escaping
-                let pos = next_line_position_naive(bytes)
+                let pos = next_line_position_naive(bytes, eol_char)
                     .ok_or_else(|| PolarsError::NoData("not enough lines to skip".into()))?;
                 bytes = &bytes[pos..];
             }
@@ -321,13 +330,13 @@ impl<'a> CoreReader<'a> {
         let logging = std::env::var("POLARS_VERBOSE").is_ok();
 
         // Make the variable mutable so that we can reassign the sliced file to this variable.
-        let (mut bytes, starting_point_offset) = self.find_starting_point(bytes)?;
+        let (mut bytes, starting_point_offset) = self.find_starting_point(bytes, self.eol_char)?;
 
         // initial row guess. We use the line statistic to guess the number of rows to allocate
         let mut total_rows = 128;
 
         // if None, there are less then 128 rows in the file and the statistics don't matter that much
-        if let Some((mean, std)) = get_line_stats(bytes, self.sample_size) {
+        if let Some((mean, std)) = get_line_stats(bytes, self.sample_size, self.eol_char) {
             if logging {
                 eprintln!("avg line length: {}\nstd. dev. line length: {}", mean, std);
             }
@@ -350,6 +359,7 @@ impl<'a> CoreReader<'a> {
                         self.schema.len(),
                         self.delimiter,
                         self.quote_char,
+                        self.eol_char,
                     ) {
                         bytes = &bytes[..n_bytes + pos]
                     }
@@ -411,6 +421,7 @@ impl<'a> CoreReader<'a> {
             self.schema.len(),
             self.delimiter,
             self.quote_char,
+            self.eol_char,
         );
 
         // If the number of threads given by the user is lower than our global thread pool we create
@@ -498,6 +509,7 @@ impl<'a> CoreReader<'a> {
                                 delimiter,
                                 self.comment_char,
                                 self.quote_char,
+                                self.eol_char,
                                 self.null_values.as_ref(),
                                 projection,
                                 &mut buffers,
@@ -616,6 +628,7 @@ impl<'a> CoreReader<'a> {
                                 delimiter,
                                 self.comment_char,
                                 self.quote_char,
+                                self.eol_char,
                                 self.null_values.as_ref(),
                                 projection,
                                 &mut buffers,

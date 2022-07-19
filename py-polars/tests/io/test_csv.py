@@ -571,3 +571,13 @@ def test_csv_multiple_null_values() -> None:
     )
 
     assert df2.frame_equal(expected)
+
+
+def test_different_eol_char() -> None:
+    csv = "a,1,10;b,2,20;c,3,30"
+    expected = pl.DataFrame(
+        {"column_1": ["a", "b", "c"], "column_2": [1, 2, 3], "column_3": [10, 20, 30]}
+    )
+    assert pl.read_csv(csv.encode(), eol_char=";", has_header=False).frame_equal(
+        expected
+    )

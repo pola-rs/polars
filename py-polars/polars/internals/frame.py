@@ -543,6 +543,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         row_count_name: str | None = None,
         row_count_offset: int = 0,
         sample_size: int = 1024,
+        eol_char: str = "\n",
     ) -> DF:
         """
         see pl.read_csv
@@ -600,6 +601,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 skip_rows_after_header=skip_rows_after_header,
                 row_count_name=row_count_name,
                 row_count_offset=row_count_offset,
+                eol_char=eol_char,
             )
             if columns is None:
                 return self._from_pydf(scan.collect()._df)
@@ -637,6 +639,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             skip_rows_after_header,
             _prepare_row_count_args(row_count_name, row_count_offset),
             sample_size=sample_size,
+            eol_char=eol_char,
         )
         return self
 

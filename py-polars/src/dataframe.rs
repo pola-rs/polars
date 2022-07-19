@@ -131,9 +131,11 @@ impl PyDataFrame {
         skip_rows_after_header: usize,
         row_count: Option<(String, IdxSize)>,
         sample_size: usize,
+        eol_char: &str,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
+        let eol_char = eol_char.as_bytes()[0];
 
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
 
@@ -193,6 +195,7 @@ impl PyDataFrame {
             .with_null_values(null_values)
             .with_parse_dates(parse_dates)
             .with_quote_char(quote_char)
+            .with_end_of_line_char(eol_char)
             .with_skip_rows_after_header(skip_rows_after_header)
             .with_row_count(row_count)
             .sample_size(sample_size)

@@ -132,6 +132,7 @@ class LazyFrame(Generic[DF]):
         row_count_name: str | None = None,
         row_count_offset: int = 0,
         parse_dates: bool = False,
+        eol_char: str = "\n",
     ) -> LDF:
         """
         See Also
@@ -166,6 +167,7 @@ class LazyFrame(Generic[DF]):
             encoding,
             _prepare_row_count_args(row_count_name, row_count_offset),
             parse_dates,
+            eol_char=eol_char,
         )
         return self
 
