@@ -1079,26 +1079,12 @@ def read_excel(
     if not read_csv_options:
         read_csv_options = {}
 
-    # Override xlsx2csv eprint function so in case an error occurs
-    # it raises an exception instead of writing to stderr.
-    def _eprint(*args: Any, **kwargs: Any) -> None:
-        raise xlsx2csv.XlsxException(format(*args))
-
-    xlsx2csv.eprint = _eprint
-
-    # Create Xlsx2csv instance.
-    xlsx2csv_instance = xlsx2csv.Xlsx2csv(file, **xlsx2csv_options)
-
-    if sheet_name:
-        sheet_id = xlsx2csv_instance.getSheetIdByName(sheet_name)
-
-        if not sheet_id:
-            raise xlsx2csv.XlsxException(f"Sheet '{sheet_name}' not found.")
-
     csv_buffer = StringIO()
 
     # Convert sheet from XSLX document to CSV.
-    xlsx2csv_instance.convert(outfile=csv_buffer, sheetid=sheet_id)
+    xlsx2csv.Xlsx2csv(file, **xlsx2csv_options).convert(
+        outfile=csv_buffer, sheetid=sheet_id, sheetname=sheet_name
+    )
 
     # Rewind buffer to start.
     csv_buffer.seek(0)
