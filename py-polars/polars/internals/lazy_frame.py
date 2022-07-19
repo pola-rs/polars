@@ -821,7 +821,7 @@ class LazyFrame(Generic[DF]):
     def __copy__(self: LDF) -> LDF:
         return self.clone()
 
-    def __deepcopy__(self: LDF, memodict: dict = {}) -> LDF:
+    def __deepcopy__(self: LDF, memo: None = None) -> LDF:
         return self.clone()
 
     def filter(self: LDF, predicate: pli.Expr | str) -> LDF:

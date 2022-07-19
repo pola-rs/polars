@@ -1054,11 +1054,11 @@ def test_comparisons_bool_series_to_int() -> None:
     with pytest.raises(
         TypeError, match=r"'<' not supported between instances of 'Series' and 'int'"
     ):
-        srs_bool < 2
+        srs_bool < 2  # noqa: B015
     with pytest.raises(
         TypeError, match=r"'>' not supported between instances of 'Series' and 'int'"
     ):
-        srs_bool > 2
+        srs_bool > 2  # noqa: B015
 
 
 def test_trigonometry_functions() -> None:

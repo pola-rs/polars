@@ -116,14 +116,11 @@ def test_no_panic_on_nan_3067() -> None:
         }
     )
 
-    df.select([pl.col("total").shift().over("group")])["total"].to_list() == [
-        None,
-        1.0,
-        2.0,
-        None,
-        4.0,
-        5.0,
-    ]
+    expected = [None, 1.0, 2.0, None, 4.0, 5.0]
+    assert (
+        df.select([pl.col("total").shift().over("group")])["total"].to_list()
+        == expected
+    )
 
 
 def test_quantile_as_window() -> None:
