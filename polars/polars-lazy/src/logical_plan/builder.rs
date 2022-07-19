@@ -152,6 +152,7 @@ impl LogicalPlanBuilder {
         low_memory: bool,
         comment_char: Option<u8>,
         quote_char: Option<u8>,
+        eol_char: u8,
         null_values: Option<NullValues>,
         infer_schema_length: Option<usize>,
         rechunk: bool,
@@ -184,6 +185,7 @@ impl LogicalPlanBuilder {
                 &mut skip_rows,
                 comment_char,
                 quote_char,
+                eol_char,
                 null_values.as_ref(),
                 parse_dates,
             )
@@ -205,6 +207,7 @@ impl LogicalPlanBuilder {
                 cache,
                 comment_char,
                 quote_char,
+                eol_char,
                 null_values,
                 rechunk,
                 encoding,

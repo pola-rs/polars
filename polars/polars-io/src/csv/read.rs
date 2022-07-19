@@ -119,6 +119,7 @@ where
     chunk_size: usize,
     low_memory: bool,
     comment_char: Option<u8>,
+    eol_char: u8,
     null_values: Option<NullValues>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&'a [ScanAggregation]>,
@@ -205,6 +206,11 @@ where
     /// Set the comment character. Lines starting with this character will be ignored.
     pub fn with_comment_char(mut self, comment_char: Option<u8>) -> Self {
         self.comment_char = comment_char;
+        self
+    }
+
+    pub fn with_end_of_line_char(mut self, eol_char: u8) -> Self {
+        self.eol_char = eol_char;
         self
     }
 
@@ -344,6 +350,7 @@ where
             chunk_size: 1 << 18,
             low_memory: false,
             comment_char: None,
+            eol_char: b'\n',
             null_values: None,
             predicate: None,
             aggregate: None,
@@ -424,6 +431,7 @@ where
                 self.low_memory,
                 self.comment_char,
                 self.quote_char,
+                self.eol_char,
                 self.null_values,
                 self.predicate,
                 self.aggregate,
@@ -455,6 +463,7 @@ where
                 self.low_memory,
                 self.comment_char,
                 self.quote_char,
+                self.eol_char,
                 self.null_values,
                 self.predicate,
                 self.aggregate,

@@ -83,6 +83,7 @@ def read_csv(
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     sample_size: int = 1024,
+    eol_char: str = "\n",
     **kwargs: Any,
 ) -> DataFrame:
     """
@@ -177,6 +178,8 @@ def read_csv(
         Offset to start the row_count column (only used if the name is set).
     sample_size:
         Set the sample size. This is used to sample statistics to estimate the allocation needed.
+    eol_char:
+        Single byte end of line character
 
     Returns
     -------
@@ -377,6 +380,7 @@ def read_csv(
             row_count_name=row_count_name,
             row_count_offset=row_count_offset,
             sample_size=sample_size,
+            eol_char=eol_char,
         )
 
     if new_columns:
@@ -405,6 +409,7 @@ def scan_csv(
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     parse_dates: bool = False,
+    eol_char: str = "\n",
     **kwargs: Any,
 ) -> LazyFrame:
     """
@@ -476,6 +481,8 @@ def scan_csv(
     parse_dates
         Try to automatically parse dates. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
+    eol_char:
+        Single byte end of line character
 
     Returns
     -------
@@ -557,6 +564,7 @@ def scan_csv(
         row_count_name=row_count_name,
         row_count_offset=row_count_offset,
         parse_dates=parse_dates,
+        eol_char=eol_char,
     )
 
 
