@@ -16,15 +16,19 @@ pub enum RevMappingBuilder {
 }
 
 impl RevMappingBuilder {
-    fn insert(&mut self, idx: u32, value: &str) {
+    fn insert(&mut self, value: &str) {
         use RevMappingBuilder::*;
         match self {
             Local(builder) => builder.push(Some(value)),
-            Global(map, builder, _) => {
-                if !map.contains_key(&idx) {
-                    builder.push(Some(value));
-                    let new_idx = builder.len() as u32 - 1;
-                    map.insert(idx, new_idx);
+            Global(_, _, _) => {
+                #[cfg(debug_assertions)]
+                {
+                    unreachable!()
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    use std::hint::unreachable_unchecked;
+                    unsafe { unreachable_unchecked() }
                 }
             }
         };
@@ -189,7 +193,7 @@ impl CategoricalChunkedBuilder {
         } else {
             vec![]
         };
-        // It is important that we use the same hash builder as the global `StrinCache` does.
+        // It is important that we use the same hash builder as the global `StringCache` does.
         let mut mapping =
             PlHashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, StringCache::get_hash_builder());
         let hb = mapping.hasher().clone();
@@ -209,7 +213,7 @@ impl CategoricalChunkedBuilder {
                                 hashes.push(h)
                             }
                             entry.insert_with_hasher(h, key, idx, |s| s.hash);
-                            self.reverse_mapping.insert(idx, s);
+                            self.reverse_mapping.insert(s);
                         }
                     };
                     self.cat_builder.push(Some(idx));
