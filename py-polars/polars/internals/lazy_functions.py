@@ -254,9 +254,10 @@ def count(column: str | pli.Series | None = None) -> pli.Expr | int:
     ----------
     column
         If dtype is:
-            pl.Series -> count the values in the series
-            str -> count the values in this column
-            None -> count the number of values in this context
+
+        * ``pl.Series`` : count the values in the series.
+        * ``str`` : count the values in this column.
+        * ``None`` : count the number of values in this context.
     """
     if column is None:
         return pli.wrap_expr(_count())
