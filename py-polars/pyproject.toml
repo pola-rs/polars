@@ -59,3 +59,14 @@ exclude_lines = [
   "if TYPE_CHECKING:",
   "from typing_extensions import ",
 ]
+
+[tool.pylint]
+max-line-length = 200  # disable, leave to black
+disable = [
+  "missing-docstring",
+  "fixme",
+  "invalid-name",
+  "import-outside-toplevel",
+  "redefined-builtin",
+  "too-few-public-methods",
+]

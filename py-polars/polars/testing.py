@@ -275,11 +275,11 @@ def _getattr_multi(obj: object, op: str) -> Any:
     get the attribute "str", and then the attribute "lengths"
     """
     op_list = op.split(".")
-    return reduce(lambda o, m: getattr(o, m), op_list, obj)
+    return reduce(getattr, op_list, obj)
 
 
 def verify_series_and_expr_api(
-    input: Series, expected: Series | None, op: str, *args: Any, **kwargs: Any
+    result: Series, expected: Series | None, op: str, *args: Any, **kwargs: Any
 ) -> None:
     """
     Small helper function to test element-wise functions for both the series and expressions api.
@@ -291,8 +291,8 @@ def verify_series_and_expr_api(
     >>> verify_series_and_expr_api(s, expected, "sort")
     """
     expr = _getattr_multi(col("*"), op)(*args, **kwargs)
-    result_expr: Series = input.to_frame().select(expr)[:, 0]  # type: ignore[assignment]
-    result_series = _getattr_multi(input, op)(*args, **kwargs)
+    result_expr: Series = result.to_frame().select(expr)[:, 0]  # type: ignore[assignment]
+    result_series = _getattr_multi(result, op)(*args, **kwargs)
     if expected is None:
         assert_series_equal(result_series, result_expr)
     else:
@@ -305,7 +305,7 @@ def is_categorical_dtype(data_type: Any) -> bool:
     Check if the input is a polars Categorical dtype.
     """
     return (
-        type(data_type) is type
+        isinstance(data_type, type)
         and issubclass(data_type, Categorical)
         or isinstance(data_type, Categorical)
     )
@@ -409,23 +409,23 @@ if HYPOTHESIS_INSTALLED:
                     raise InvalidArgument(
                         f"No strategy (currently) available for {self.dtype} type"
                     )
+
+                # given a custom strategy, but no explicit dtype. infer one
+                # from the first non-None value that the strategy produces.
+                with warnings.catch_warnings():
+                    # note: usually you should not call "example()" outside of an interactive shell, hence
+                    # the warning. however, here it is reasonable to do so, so we catch and ignore it
+                    warnings.simplefilter("ignore", NonInteractiveExampleWarning)
+                    sample_value_iter = (self.strategy.example() for _ in range(100))  # type: ignore[union-attr]
+                    sample_value_type = type(
+                        next(e for e in sample_value_iter if e is not None)
+                    )
+                if sample_value_type is not None:
+                    self.dtype = py_type_to_dtype(sample_value_type)
                 else:
-                    # given a custom strategy, but no explicit dtype. infer one
-                    # from the first non-None value that the strategy produces.
-                    with warnings.catch_warnings():
-                        # note: usually you should not call "example()" outside of an interactive shell, hence
-                        # the warning. however, here it is reasonable to do so, so we catch and ignore it
-                        warnings.simplefilter("ignore", NonInteractiveExampleWarning)
-                        sample_value_iter = (self.strategy.example() for _ in range(100))  # type: ignore[union-attr]
-                        sample_value_type = type(
-                            next(e for e in sample_value_iter if e is not None)
-                        )
-                    if sample_value_type is not None:
-                        self.dtype = py_type_to_dtype(sample_value_type)
-                    else:
-                        raise InvalidArgument(
-                            f"Unable to determine dtype for strategy {self.dtype} type"
-                        )
+                    raise InvalidArgument(
+                        f"Unable to determine dtype for strategy {self.dtype} type"
+                    )
 
     def columns(
         cols: int | Sequence[str] | None = None,

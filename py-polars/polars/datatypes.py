@@ -126,13 +126,13 @@ class List(DataType):
         # List[i64] == List[f32] == False
 
         # allow comparing object instances to class
-        if type(other) is type and issubclass(other, List):
+        if isinstance(other, type) and issubclass(other, List):  # type: ignore[redundant-expr]
             return True
         if isinstance(other, List):
             if self.inner is None or other.inner is None:
                 return True
-            else:
-                return self.inner == other.inner
+
+            return self.inner == other.inner
         else:
             return False
 
@@ -421,26 +421,26 @@ def dtype_to_ctype(dtype: PolarsDataType) -> type[_SimpleCData]:
     try:
         return _DTYPE_TO_CTYPE[dtype]
     except KeyError:  # pragma: no cover
-        raise NotImplementedError
+        raise NotImplementedError from None
 
 
 def dtype_to_ffiname(dtype: PolarsDataType) -> str:
     try:
         return _DTYPE_TO_FFINAME[dtype]
     except KeyError:  # pragma: no cover
-        raise NotImplementedError
+        raise NotImplementedError from None
 
 
 def dtype_to_py_type(dtype: PolarsDataType) -> type:
     try:
         return _DTYPE_TO_PY_TYPE[dtype]
     except KeyError:  # pragma: no cover
-        raise NotImplementedError
+        raise NotImplementedError from None
 
 
 def is_polars_dtype(data_type: Any) -> bool:
     return (
-        type(data_type) is type
+        isinstance(data_type, type)
         and issubclass(data_type, DataType)
         or isinstance(data_type, DataType)
     )
@@ -453,7 +453,7 @@ def py_type_to_dtype(data_type: Any) -> type[DataType]:
     try:
         return _PY_TYPE_TO_DTYPE[data_type]
     except KeyError:  # pragma: no cover
-        raise NotImplementedError
+        raise NotImplementedError from None
 
 
 def py_type_to_arrow_type(dtype: type[Any]) -> pa.lib.DataType:
@@ -463,7 +463,7 @@ def py_type_to_arrow_type(dtype: type[Any]) -> pa.lib.DataType:
     try:
         return _PY_TYPE_TO_ARROW_TYPE[dtype]
     except KeyError:  # pragma: no cover
-        raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.")
+        raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.") from None
 
 
 def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
@@ -473,7 +473,7 @@ def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
     try:
         return _DTYPE_TO_ARROW_TYPE[dtype]
     except KeyError:  # pragma: no cover
-        raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.")
+        raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.") from None
 
 
 def supported_numpy_char_code(dtype: str) -> bool:
@@ -484,7 +484,7 @@ def numpy_char_code_to_dtype(dtype: str) -> type[DataType]:
     try:
         return _NUMPY_CHAR_CODE_TO_DTYPE[dtype]
     except KeyError:  # pragma: no cover
-        raise NotImplementedError
+        raise NotImplementedError from None
 
 
 def maybe_cast(
@@ -495,7 +495,7 @@ def maybe_cast(
 
     if isinstance(el, datetime):
         return _datetime_to_pl_timestamp(el, time_unit)
-    elif isinstance(el, timedelta):
+    if isinstance(el, timedelta):
         return _timedelta_to_pl_timedelta(el, time_unit)
     py_type = dtype_to_py_type(dtype)
     if not isinstance(el, py_type):

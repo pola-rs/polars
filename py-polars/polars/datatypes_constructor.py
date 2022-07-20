@@ -73,7 +73,7 @@ def polars_type_to_constructor(
     try:
         return _POLARS_TYPE_TO_CONSTRUCTOR[dtype]
     except KeyError:  # pragma: no cover
-        raise ValueError(f"Cannot construct PySeries for type {dtype}.")
+        raise ValueError(f"Cannot construct PySeries for type {dtype}.") from None
 
 
 if _NUMPY_AVAILABLE and not _DOCUMENTING:
@@ -101,8 +101,8 @@ def numpy_type_to_constructor(dtype: type[np.dtype]) -> Callable[..., PySeries]:
         return _NUMPY_TYPE_TO_CONSTRUCTOR[dtype]
     except KeyError:
         return PySeries.new_object
-    except NameError:  # pragma: no cover
-        raise ImportError("'numpy' is required for this functionality.")
+    except NameError as err:  # pragma: no cover
+        raise ImportError("'numpy' is required for this functionality.") from err
 
 
 if not _DOCUMENTING:

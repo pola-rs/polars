@@ -165,8 +165,8 @@ def from_records(
             DeprecationWarning,
         )
         return DataFrame._from_numpy(data, columns=columns, orient=orient)
-    else:
-        return DataFrame._from_records(data, columns=columns, orient=orient)
+
+    return DataFrame._from_records(data, columns=columns, orient=orient)
 
 
 def from_numpy(
@@ -281,10 +281,10 @@ def from_arrow(
         raise ImportError("'pyarrow' is required when using from_arrow().")
     if isinstance(a, pa.Table):
         return DataFrame._from_arrow(a, rechunk=rechunk)
-    elif isinstance(a, (pa.Array, pa.ChunkedArray)):
+    if isinstance(a, (pa.Array, pa.ChunkedArray)):
         return Series._from_arrow("", a, rechunk)
-    else:
-        raise ValueError(f"Expected Arrow Table or Array, got {type(a)}.")
+
+    raise ValueError(f"Expected Arrow Table or Array, got {type(a)}.")
 
 
 @overload
@@ -369,7 +369,7 @@ def from_pandas(
 
     if isinstance(df, (pd.Series, pd.DatetimeIndex)):
         return Series._from_pandas("", df, nan_to_none=nan_to_none)
-    elif isinstance(df, pd.DataFrame):
+    if isinstance(df, pd.DataFrame):
         return DataFrame._from_pandas(df, rechunk=rechunk, nan_to_none=nan_to_none)
-    else:
-        raise ValueError(f"Expected pandas DataFrame or Series, got {type(df)}.")
+
+    raise ValueError(f"Expected pandas DataFrame or Series, got {type(df)}.")

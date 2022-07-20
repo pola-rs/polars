@@ -36,19 +36,19 @@ def _process_null_values(
 ) -> None | str | list[str] | list[tuple[str, str]]:
     if isinstance(null_values, dict):
         return list(null_values.items())
-    else:
-        return null_values
+
+    return null_values
 
 
 # https://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy
-def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
+def _ptr_to_numpy(ptr: int, length: int, ptr_type: Any) -> np.ndarray:
     """
 
     Parameters
     ----------
     ptr
         C/Rust ptr casted to usize.
-    len
+    length
         Length of the array values.
     ptr_type
         Example:
@@ -62,7 +62,7 @@ def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
     if not _NUMPY_AVAILABLE:
         raise ImportError("'numpy' is required for this functionality.")
     ptr_ctype = ctypes.cast(ptr, ctypes.POINTER(ptr_type))
-    return np.ctypeslib.as_array(ptr_ctype, (len,))
+    return np.ctypeslib.as_array(ptr_ctype, (length,))
 
 
 def _timedelta_to_pl_duration(td: timedelta) -> str:
@@ -77,37 +77,32 @@ def timedelta_in_nanoseconds_window(td: timedelta) -> bool:
     return in_nanoseconds_window(datetime(1970, 1, 1) + td)
 
 
+def _seconds_scalar(tu: str) -> float:
+    scalar = dict(ns=1e9, us=1e6, ms=1e3)
+    try:
+        return scalar[tu]
+    except KeyError:
+        raise ValueError("expected one of {'ns', 'us', 'ms'}") from None
+
+
 def _datetime_to_pl_timestamp(dt: datetime, tu: str | None) -> int:
     """
     Converts a python datetime to a timestamp in nanoseconds
     """
-    if tu == "ns":
-        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e9)
-    elif tu == "us":
-        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e6)
-    elif tu == "ms":
-        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e3)
     if tu is None:
         # python has us precision
-        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e6)
-    else:
-        raise ValueError("expected one of {'ns', 'us', 'ms'}")
+        tu = "us"
+
+    s = _seconds_scalar(tu)
+    return int(dt.replace(tzinfo=timezone.utc).timestamp() * s)
 
 
 def _timedelta_to_pl_timedelta(td: timedelta, tu: str | None = None) -> int:
-    if tu == "ns":
-        return int(td.total_seconds() * 1e9)
-    elif tu == "us":
-        return int(td.total_seconds() * 1e6)
-    elif tu == "ms":
-        return int(td.total_seconds() * 1e3)
     if tu is None:
-        if timedelta_in_nanoseconds_window(td):
-            return int(td.total_seconds() * 1e9)
-        else:
-            return int(td.total_seconds() * 1e3)
-    else:
-        raise ValueError("expected one of {'ns', 'us, 'ms'}")
+        tu = "ns" if timedelta_in_nanoseconds_window(td) else "ms"
+
+    s = _seconds_scalar(tu)
+    return int(td.total_seconds() * s)
 
 
 def _date_to_pl_date(d: date) -> int:
@@ -170,15 +165,17 @@ def _to_python_time(value: int) -> time:
     return time(hour=hours, minute=minutes, second=seconds, microsecond=microsecond)
 
 
-def _to_python_timedelta(value: int | float, tu: str | None = "ns") -> timedelta:
+def _to_python_timedelta(value: int | float, tu: str = "ns") -> timedelta:
     if tu == "ns":
         return timedelta(microseconds=value // 1e3)
-    elif tu == "us":
+    if tu == "us":
         return timedelta(microseconds=value)
-    elif tu == "ms":
+    if tu == "ms":
         return timedelta(milliseconds=value)
-    else:
-        raise ValueError(f"time unit: {tu} not expected")
+
+    raise ValueError(
+        f"time unit: {tu} not expected, expected one of {'ns', 'us', 'ms'}"
+    )
 
 
 def _prepare_row_count_args(
@@ -187,8 +184,7 @@ def _prepare_row_count_args(
 ) -> tuple[str, int] | None:
     if row_count_name is not None:
         return (row_count_name, row_count_offset)
-    else:
-        return None
+    return None
 
 
 EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
@@ -205,7 +201,8 @@ def _to_python_datetime(
         # important to create from utc. Not doing this leads
         # to inconsistencies dependent on the timezone you are in.
         return datetime.utcfromtimestamp(value * 3600 * 24).date()
-    elif dtype == Datetime:
+
+    if dtype == Datetime:
         if tu == "ns":
             # nanoseconds to seconds
             dt = EPOCH + timedelta(microseconds=value / 1000)
@@ -219,8 +216,8 @@ def _to_python_datetime(
         if tz is not None and len(tz) > 0:
             import pytz
 
-            timezone = pytz.timezone(tz)
-            return timezone.localize(dt)
+            return pytz.timezone(tz).localize(dt)
+
         return dt
 
     else:

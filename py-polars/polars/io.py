@@ -4,8 +4,6 @@ from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Mapping, TextIO, cast
 
-from polars.utils import format_path, handle_projection_columns
-
 try:
     import pyarrow as pa
 
@@ -22,6 +20,7 @@ from polars.convert import from_arrow
 from polars.datatypes import DataType, Utf8
 from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
+from polars.utils import format_path, handle_projection_columns
 
 try:
     import connectorx as cx
@@ -967,10 +966,10 @@ def read_sql(
             protocol=protocol,
         )
         return cast(DataFrame, from_arrow(tbl))
-    else:
-        raise ImportError(
-            "connectorx is not installed. Please run `pip install connectorx>=0.2.2`."
-        )
+
+    raise ImportError(
+        "connectorx is not installed. Please run `pip install connectorx>=0.2.2`."
+    )
 
 
 def read_excel(
@@ -1060,7 +1059,7 @@ def read_excel(
     except ImportError:
         raise ImportError(
             "xlsx2csv is not installed. Please run `pip install xlsx2csv`."
-        )
+        ) from None
 
     if isinstance(file, (str, Path)):
         file = format_path(file)

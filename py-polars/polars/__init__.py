@@ -1,3 +1,4 @@
+import os
 import warnings
 
 try:
@@ -10,7 +11,7 @@ except ImportError:
     # this is only useful for documentation
     warnings.warn("polars binary missing!")
 
-import polars.testing as testing
+from polars import testing
 from polars.cfg import Config, toggle_string_cache  # We do not export in __all__
 from polars.convert import (
     from_arrow,
@@ -238,6 +239,5 @@ __all__ = [
 
 __version__ = version()
 
-import os
 
 os.environ["POLARS_ALLOW_EXTENSION"] = "true"

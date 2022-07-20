@@ -20,6 +20,7 @@ isort~=5.10.1
 mypy==0.961
 ghp-import==2.1.0
 flake8==4.0.1
+pylint==2.14.5
 sphinx==4.2.0
 pydata-sphinx-theme==0.6.3
 sphinx-panels==0.6.0
