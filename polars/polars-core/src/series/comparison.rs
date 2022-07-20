@@ -46,12 +46,6 @@ macro_rules! impl_compare {
                 .unwrap()
                 .$method(rhs.duration().unwrap().deref()),
             DataType::List(_) => lhs.list().unwrap().$method(rhs.list().unwrap()),
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => lhs
-                .categorical()
-                .unwrap()
-                .logical()
-                .$method(rhs.categorical().unwrap().logical()),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(_) => lhs
                 .struct_()
@@ -157,6 +151,17 @@ impl ChunkCompare<&Series> for Series {
                     false,
                 );
             }
+            #[cfg(feature = "dtype-categorical")]
+            (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
+                if rev_map_l.same_src(rev_map_r) {
+                    self.categorical()
+                        .unwrap()
+                        .logical()
+                        .eq_missing(rhs.categorical().unwrap().logical())
+                } else {
+                    return Err(PolarsError::ComputeError("Cannot compare categoricals originating from different sources. Consider setting a global string cache.".into()));
+                }
+            }
             _ => {
                 impl_compare!(self, rhs, eq_missing)
             }
@@ -191,6 +196,17 @@ impl ChunkCompare<&Series> for Series {
                     false,
                 );
             }
+            #[cfg(feature = "dtype-categorical")]
+            (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
+                if rev_map_l.same_src(rev_map_r) {
+                    self.categorical()
+                        .unwrap()
+                        .logical()
+                        .equal(rhs.categorical().unwrap().logical())
+                } else {
+                    return Err(PolarsError::ComputeError("Cannot compare categoricals originating from different sources. Consider setting a global string cache.".into()));
+                }
+            }
             _ => {
                 impl_compare!(self, rhs, equal)
             }
@@ -224,6 +240,17 @@ impl ChunkCompare<&Series> for Series {
                     |s, idx| s.not_equal(idx),
                     true,
                 );
+            }
+            #[cfg(feature = "dtype-categorical")]
+            (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
+                if rev_map_l.same_src(rev_map_r) {
+                    self.categorical()
+                        .unwrap()
+                        .logical()
+                        .not_equal(rhs.categorical().unwrap().logical())
+                } else {
+                    return Err(PolarsError::ComputeError("Cannot compare categoricals originating from different sources. Consider setting a global string cache.".into()));
+                }
             }
             _ => {
                 impl_compare!(self, rhs, not_equal)

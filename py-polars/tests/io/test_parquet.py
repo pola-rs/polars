@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal_local_categoricals
 
 
 @pytest.fixture
@@ -35,14 +36,14 @@ def test_to_from_buffer(df: pl.DataFrame, compressions: list[str]) -> None:
             df.write_parquet(buf, compression=compression)
             buf.seek(0)
             read_df = pl.read_parquet(buf)
-            assert df.frame_equal(read_df, null_equal=True)
+            assert_frame_equal_local_categoricals(df, read_df)
 
     for use_pyarrow in [True, False]:
         buf = io.BytesIO()
         df.write_parquet(buf, use_pyarrow=use_pyarrow)
         buf.seek(0)
         read_df = pl.read_parquet(buf, use_pyarrow=use_pyarrow)
-        assert df.frame_equal(read_df, null_equal=True)
+        assert_frame_equal_local_categoricals(df, read_df)
 
 
 def test_to_from_file(
@@ -62,7 +63,7 @@ def test_to_from_file(
         else:
             df.write_parquet(f, compression=compression)
             read_df = pl.read_parquet(f)
-            assert df.frame_equal(read_df)
+            assert_frame_equal_local_categoricals(df, read_df)
 
 
 def test_select_columns() -> None:

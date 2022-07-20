@@ -10,7 +10,7 @@ use std::hash::{Hash, Hasher};
 pub enum RevMappingBuilder {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
     /// Utf8Array: caches the string values
-    Global(PlHashMap<u32, u32>, MutableUtf8Array<i64>, u128),
+    GlobalFinished(PlHashMap<u32, u32>, Utf8Array<i64>, u128),
     /// Utf8Array: caches the string values
     Local(MutableUtf8Array<i64>),
 }
@@ -20,7 +20,7 @@ impl RevMappingBuilder {
         use RevMappingBuilder::*;
         match self {
             Local(builder) => builder.push(Some(value)),
-            Global(_, _, _) => {
+            GlobalFinished(_, _, _) => {
                 #[cfg(debug_assertions)]
                 {
                     unreachable!()
@@ -38,10 +38,7 @@ impl RevMappingBuilder {
         use RevMappingBuilder::*;
         match self {
             Local(b) => RevMapping::Local(b.into()),
-            Global(mut map, b, uuid) => {
-                map.shrink_to_fit();
-                RevMapping::Global(map, b.into(), uuid)
-            }
+            GlobalFinished(map, b, uuid) => RevMapping::Global(map, b, uuid),
         }
     }
 }
@@ -165,12 +162,7 @@ pub struct CategoricalChunkedBuilder {
 impl CategoricalChunkedBuilder {
     pub fn new(name: &str, capacity: usize) -> Self {
         let builder = MutableUtf8Array::<i64>::with_capacity(capacity / 10);
-        let reverse_mapping = if use_string_cache() {
-            let uuid = crate::STRING_CACHE.lock_map().uuid;
-            RevMappingBuilder::Global(PlHashMap::default(), builder, uuid)
-        } else {
-            RevMappingBuilder::Local(builder)
-        };
+        let reverse_mapping = RevMappingBuilder::Local(builder);
 
         Self {
             cat_builder: UInt32Vec::with_capacity(capacity),
@@ -234,31 +226,22 @@ impl CategoricalChunkedBuilder {
     where
         I: IntoIterator<Item = Option<&'a str>>,
     {
-        let mut global_to_local;
+        // first build the values: `Utf8Array`
+        // we can use a local hashmap for that
+        // `hashes.len()` is equal to to the number of unique values.
+        let hashes = self.build_local_map(i, true);
+
         // locally we don't need a hashmap because we all categories are 1 integer apart
         // so the index is local, and the values is global
         let mut local_to_global: Vec<u32>;
         let id;
 
-        // make sure that we use the local rev_map builder
-        if let RevMappingBuilder::Global(map, values, id_val) = &mut self.reverse_mapping {
-            global_to_local = std::mem::take(map);
-            id = *id_val;
-            self.reverse_mapping = RevMappingBuilder::Local(std::mem::take(values));
-        } else {
-            unreachable!();
-        }
-
-        // first build the values: `Utf8Array`
-        // we can use a local hashmap for that
-        let hashes = self.build_local_map(i, true);
-
         // now we have to lock the global string cache.
         // we will create a mapping from our local categoricals to global categoricals
         // and a mapping from global categoricals to our local categoricals
-
         let values: Utf8Array<_> =
             if let RevMappingBuilder::Local(values) = &mut self.reverse_mapping {
+                debug_assert_eq!(hashes.len(), values.len());
                 // resize local now that we know the size of the mapping.
                 local_to_global = Vec::with_capacity(values.len());
                 std::mem::take(values).into()
@@ -269,6 +252,7 @@ impl CategoricalChunkedBuilder {
         // in a separate scope so that we drop the global cache as soon as we are finished
         {
             let cache = &mut crate::STRING_CACHE.lock_map();
+            id = cache.uuid;
             let global_mapping = &mut cache.map;
 
             for (s, h) in values.values_iter().zip(hashes.into_iter()) {
@@ -295,6 +279,9 @@ impl CategoricalChunkedBuilder {
                 panic!("not more than {} categories supported", u32::MAX)
             };
         }
+        // we now know the exact size
+        // no reallocs
+        let mut global_to_local = PlHashMap::with_capacity(local_to_global.len());
 
         let fill_global_to_local = || {
             let mut local_idx = 0;
@@ -307,18 +294,20 @@ impl CategoricalChunkedBuilder {
         };
 
         let update_cats = || {
-            self.cat_builder.apply_values(|cats| {
-                for cat in cats {
-                    debug_assert!((*cat as usize) < local_to_global.len());
-                    *cat = *unsafe { local_to_global.get_unchecked(*cat as usize) };
-                }
-            });
+            if !local_to_global.is_empty() {
+                // when all categorical are null, `local_to_global` is empty and all cats physical values are 0.
+                self.cat_builder.apply_values(|cats| {
+                    for cat in cats {
+                        debug_assert!((*cat as usize) < local_to_global.len());
+                        *cat = *unsafe { local_to_global.get_unchecked(*cat as usize) };
+                    }
+                })
+            };
         };
 
         POOL.join(fill_global_to_local, update_cats);
 
-        self.reverse_mapping =
-            RevMappingBuilder::Global(global_to_local, values.into_mut().right().unwrap(), id)
+        self.reverse_mapping = RevMappingBuilder::GlobalFinished(global_to_local, values, id)
     }
 
     /// Appends all the values in a single lock of the global string cache.

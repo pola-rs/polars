@@ -32,6 +32,7 @@ except ImportError:
     HYPOTHESIS_INSTALLED = False
 
 
+import polars.internals as pli
 from polars.datatypes import (
     Boolean,
     Categorical,
@@ -55,7 +56,6 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.internals import DataFrame, LazyFrame, Series, col, lit
 
 if HYPOTHESIS_INSTALLED:
     # TODO: increase the number of iterations during CI checkins?
@@ -73,8 +73,8 @@ MAX_COLS = 8
 
 
 def assert_frame_equal(
-    left: DataFrame | LazyFrame,
-    right: DataFrame | LazyFrame,
+    left: pli.DataFrame | pli.LazyFrame,
+    right: pli.DataFrame | pli.LazyFrame,
     check_dtype: bool = True,
     check_exact: bool = False,
     check_column_names: bool = True,
@@ -111,13 +111,13 @@ def assert_frame_equal(
     >>> pl.testing.assert_frame_equal(df1, df2)  # doctest: +SKIP
     """
 
-    if isinstance(left, LazyFrame) and isinstance(right, LazyFrame):
+    if isinstance(left, pli.LazyFrame) and isinstance(right, pli.LazyFrame):
         left, right = left.collect(), right.collect()
-        obj = "LazyFrame"
+        obj = "pli.LazyFrame"
     else:
-        obj = "DataFrame"
+        obj = "pli.DataFrame"
 
-    if not (isinstance(left, DataFrame) and isinstance(right, DataFrame)):
+    if not (isinstance(left, pli.DataFrame) and isinstance(right, pli.DataFrame)):
         raise_assert_detail(obj, "Type mismatch", type(left), type(right))
     elif left.shape[0] != right.shape[0]:
         raise_assert_detail(obj, "Length mismatch", left.shape, right.shape)
@@ -149,8 +149,8 @@ def assert_frame_equal(
 
 
 def assert_series_equal(
-    left: Series,
-    right: Series,
+    left: pli.Series,
+    right: pli.Series,
     check_dtype: bool = True,
     check_names: bool = True,
     check_exact: bool = False,
@@ -189,8 +189,8 @@ def assert_series_equal(
     obj = "Series"
 
     if not (
-        isinstance(left, Series)  # type: ignore[redundant-expr]
-        and isinstance(right, Series)
+        isinstance(left, pli.Series)  # type: ignore[redundant-expr]
+        and isinstance(right, pli.Series)
     ):
         raise_assert_detail(obj, "Type mismatch", type(left), type(right))
 
@@ -207,8 +207,8 @@ def assert_series_equal(
 
 
 def _assert_series_inner(
-    left: Series,
-    right: Series,
+    left: pli.Series,
+    right: pli.Series,
     check_dtype: bool,
     check_exact: bool,
     nans_compare_equal: bool,
@@ -233,7 +233,9 @@ def _assert_series_inner(
     unequal = left != right
     if unequal.any() and nans_compare_equal and left.dtype in (Float32, Float64):
         # handle NaN values (which compare unequal to themselves)
-        unequal = unequal & ~((left.is_nan() & right.is_nan()).fill_null(lit(False)))
+        unequal = unequal & ~(
+            (left.is_nan() & right.is_nan()).fill_null(pli.lit(False))
+        )
 
     # assert exact, or with tolerance
     if unequal.any():
@@ -279,7 +281,7 @@ def _getattr_multi(obj: object, op: str) -> Any:
 
 
 def verify_series_and_expr_api(
-    input: Series, expected: Series | None, op: str, *args: Any, **kwargs: Any
+    input: pli.Series, expected: pli.Series | None, op: str, *args: Any, **kwargs: Any
 ) -> None:
     """
     Small helper function to test element-wise functions for both the series and expressions api.
@@ -290,8 +292,8 @@ def verify_series_and_expr_api(
     >>> expected = pl.Series([1, 2, 3])
     >>> verify_series_and_expr_api(s, expected, "sort")
     """
-    expr = _getattr_multi(col("*"), op)(*args, **kwargs)
-    result_expr: Series = input.to_frame().select(expr)[:, 0]  # type: ignore[assignment]
+    expr = _getattr_multi(pli.col("*"), op)(*args, **kwargs)
+    result_expr: pli.Series = input.to_frame().select(expr)[:, 0]  # type: ignore[assignment]
     result_series = _getattr_multi(input, op)(*args, **kwargs)
     if expected is None:
         assert_series_equal(result_series, result_expr)
@@ -522,7 +524,7 @@ if HYPOTHESIS_INSTALLED:
         unique: bool = False,
         allowed_dtypes: Sequence[PolarsDataType] | None = None,
         excluded_dtypes: Sequence[PolarsDataType] | None = None,
-    ) -> SearchStrategy[Series]:
+    ) -> SearchStrategy[pli.Series]:
         """
         Strategy for producing a polars Series.
 
@@ -593,7 +595,7 @@ if HYPOTHESIS_INSTALLED:
         null_probability = float(null_probability or 0.0)
 
         @composite
-        def draw_series(draw: Callable) -> Series:
+        def draw_series(draw: Callable) -> pli.Series:
             # create/assign series dtype and retrieve matching strategy
             series_dtype = (
                 draw(sampled_from(selectable_dtypes)) if dtype is None else dtype
@@ -636,7 +638,7 @@ if HYPOTHESIS_INSTALLED:
                         series_values[idx] = None
 
             # init series with strategy-generated data
-            s = Series(
+            s = pli.Series(
                 name=series_name,
                 dtype=series_dtype,
                 values=series_values,
@@ -661,7 +663,7 @@ if HYPOTHESIS_INSTALLED:
         null_probability: float | dict[str, float] = 0.0,
         allowed_dtypes: Sequence[PolarsDataType] | None = None,
         excluded_dtypes: Sequence[PolarsDataType] | None = None,
-    ) -> SearchStrategy[DataFrame | LazyFrame]:
+    ) -> SearchStrategy[pli.DataFrame | pli.LazyFrame]:
         """
         Provides a strategy for producing a DataFrame or LazyFrame.
 
@@ -754,7 +756,7 @@ if HYPOTHESIS_INSTALLED:
         ]
 
         @composite
-        def draw_frames(draw: Callable) -> DataFrame | LazyFrame:
+        def draw_frames(draw: Callable) -> pli.DataFrame | pli.LazyFrame:
             # if not given, create 'n' cols with random dtypes
             if cols is None:
                 n = between(
@@ -792,7 +794,7 @@ if HYPOTHESIS_INSTALLED:
             frame_columns = [
                 c.name if (c.dtype is None) else (c.name, c.dtype) for c in coldefs
             ]
-            df = DataFrame(
+            df = pli.DataFrame(
                 data={
                     c.name: draw(
                         series(
@@ -812,3 +814,13 @@ if HYPOTHESIS_INSTALLED:
             return df.lazy() if lazy else df
 
         return draw_frames()
+
+
+def assert_frame_equal_local_categoricals(
+    df_a: pli.DataFrame, df_b: pli.DataFrame
+) -> None:
+    assert df_a.schema == df_b.schema
+    cat_to_str = pli.col(Categorical).cast(str)
+    assert df_a.with_column(cat_to_str).frame_equal(df_b.with_column(cat_to_str))
+    cat_to_phys = pli.col(Categorical).to_physical()
+    assert df_a.with_column(cat_to_phys).frame_equal(df_b.with_column(cat_to_phys))
