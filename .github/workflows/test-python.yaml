@@ -35,7 +35,8 @@ jobs:
       - name: Run linting
         run: |
           cd py-polars && flake8 && cd ..
-      - name: Run type checking Python
+      - name: Run type checking
+        run: |
           cd py-polars && mypy && cd ..
       - name: Run tests
         run: |
@@ -80,7 +81,7 @@ jobs:
         run: |
           cd py-polars && flake8 && cd ..
       # this step is different, note the flag
-      - name: Run type checking Python
+      - name: Run type checking
         run: |
           cd py-polars && mypy --allow-untyped-calls && cd ..
       - name: Run tests
