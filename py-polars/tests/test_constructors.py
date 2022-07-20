@@ -400,3 +400,21 @@ def test_from_dicts_list_without_dtype() -> None:
     assert pl.from_dicts(
         [{"id": 1, "hint": ["some_text_here"]}, {"id": 2, "hint": [None]}]
     ).to_dict(False) == {"id": [1, 2], "hint": [["some_text_here"], [None]]}
+
+
+def test_from_dicts_list_struct_without_inner_dtype() -> None:
+    assert pl.DataFrame(
+        {
+            "users": [
+                [{"category": "A"}, {"category": "B"}],
+                [{"category": None}, {"category": None}],
+            ],
+            "days_of_week": [1, 2],
+        }
+    ).to_dict(False) == {
+        "users": [
+            [{"category": "A"}, {"category": "B"}],
+            [{"category": None}, {"category": None}],
+        ],
+        "days_of_week": [1, 2],
+    }

@@ -737,6 +737,8 @@ impl PartialEq for DataType {
                 (Duration(tu_l), Duration(tu_r)) => tu_l == tu_r,
                 #[cfg(feature = "object")]
                 (Object(lhs), Object(rhs)) => lhs == rhs,
+                #[cfg(feature = "dtype-struct")]
+                (Struct(lhs), Struct(rhs)) => lhs == rhs,
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
             }
         }

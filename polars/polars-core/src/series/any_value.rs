@@ -30,9 +30,7 @@ fn any_values_to_list(avs: &[AnyValue], inner_type: &DataType) -> ListChunked {
     if inner_type == &DataType::Null {
         avs.iter()
             .map(|av| match av {
-                AnyValue::List(b) => {
-                        Some(b.clone())
-                },
+                AnyValue::List(b) => Some(b.clone()),
                 _ => None,
             })
             .collect_trusted()
@@ -47,7 +45,7 @@ fn any_values_to_list(avs: &[AnyValue], inner_type: &DataType) -> ListChunked {
                     } else {
                         Some(Series::full_null("", b.len(), inner_type))
                     }
-                },
+                }
                 _ => None,
             })
             .collect_trusted()
@@ -62,7 +60,11 @@ impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
 }
 
 impl Series {
-    pub fn from_any_values_and_dtype<'a>(name: &str, av: &[AnyValue<'a>], dtype: &DataType) -> Result<Series> {
+    pub fn from_any_values_and_dtype<'a>(
+        name: &str,
+        av: &[AnyValue<'a>],
+        dtype: &DataType,
+    ) -> Result<Series> {
         let mut s = match dtype {
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => any_values_to_primitive::<Int8Type>(av).into_series(),
@@ -76,15 +78,9 @@ impl Series {
             DataType::UInt16 => any_values_to_primitive::<UInt16Type>(av).into_series(),
             DataType::UInt32 => any_values_to_primitive::<UInt32Type>(av).into_series(),
             DataType::UInt64 => any_values_to_primitive::<UInt64Type>(av).into_series(),
-            DataType::Float32 => {
-                any_values_to_primitive::<Float32Type>(av).into_series()
-            }
-            DataType::Float64 => {
-                any_values_to_primitive::<Float64Type>(av).into_series()
-            }
-            DataType::Utf8 => {
-                any_values_to_utf8(av).into_series()
-            }
+            DataType::Float32 => any_values_to_primitive::<Float32Type>(av).into_series(),
+            DataType::Float64 => any_values_to_primitive::<Float64Type>(av).into_series(),
+            DataType::Utf8 => any_values_to_utf8(av).into_series(),
             DataType::Boolean => any_values_to_bool(av).into_series(),
             #[cfg(feature = "dtype-date")]
             DataType::Date => any_values_to_primitive::<Int32Type>(av)
@@ -112,8 +108,8 @@ impl Series {
 
                     for av in av.iter() {
                         match av {
-                            AnyValue::StructOwned(pl) => {
-                                for (l, r) in fields.iter().zip(pl.1.iter()) {
+                            AnyValue::StructOwned(payload) => {
+                                for (l, r) in fields.iter().zip(payload.1.iter()) {
                                     if l.name() != r.name() {
                                         return Err(PolarsError::ComputeError(
                                             "struct orders must remain the same".into(),
@@ -121,7 +117,7 @@ impl Series {
                                     }
                                 }
 
-                                let av_val = pl.0[i].clone();
+                                let av_val = payload.0[i].clone();
                                 field_avs.push(av_val)
                             }
                             _ => field_avs.push(AnyValue::Null),

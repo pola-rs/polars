@@ -210,6 +210,9 @@ impl OptimizationRule for TypeCoercionRule {
                     (DataType::Time, DataType::Utf8, op) if op.is_comparison() => {
                         print_date_str_comparison_warning()
                     }
+                    // structs can be arbitrarily nested, leave the complexity to the caller for now.
+                    #[cfg(feature = "dtype-struct")]
+                    (DataType::Struct(_), DataType::Struct(_), _op) => return None,
                     _ => {}
                 }
 

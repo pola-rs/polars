@@ -417,9 +417,7 @@ impl<'a> AnyValueBuffer<'a> {
             Utf8(b) => b.finish().into_series(),
             #[cfg(feature = "dtype-categorical")]
             Categorical(b) => b.finish().into_series(),
-            All(dtype, vals) => {
-                Series::from_any_values_and_dtype("", &vals, &dtype).unwrap()
-            },
+            All(dtype, vals) => Series::from_any_values_and_dtype("", &vals, &dtype).unwrap(),
         }
     }
 }
