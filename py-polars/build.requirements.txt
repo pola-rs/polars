@@ -10,7 +10,7 @@ pytz
 types-pytz
 
 # Tooling
-maturin==0.12.19
+maturin==0.13.0
 pytest==7.1.2
 pytest-cov[toml]==3.0.0
 hypothesis==6.49.1
