@@ -153,11 +153,11 @@ This can be done by going through the following steps in sequence:
   3. Choose any of:
       * Fastest binary, very long compile times:
         ```bash
-        $ cd py-polars && maturin develop --rustc-extra-args="-C target-cpu=native" --release
+        $ cd py-polars && maturin develop --release -- -C target-cpu=native
         ```
       * Fast binary, Shorter compile times:
         ```bash
-        $ cd py-polars && maturin develop --rustc-extra-args="-C codegen-units=16 -C lto=thin -C target-cpu=native" --release
+        $ cd py-polars && maturin develop --release -- -C codegen-units=16 -C lto=thin -C target-cpu=native
         ```
 
 Note that the Rust crate implementing the Python bindings is called `py-polars` to distinguish from the wrapped
