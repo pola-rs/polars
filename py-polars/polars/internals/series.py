@@ -910,9 +910,14 @@ class Series:
         """
         return pli.wrap_df(self._s.to_dummies())
 
-    def value_counts(self) -> pli.DataFrame:
+    def value_counts(self, sort: bool = False) -> pli.DataFrame:
         """
         Count the unique values in a Series.
+
+        Parameters
+        ----------
+        sort:
+            Ensure the output is sorted from most values to least.
 
         Examples
         --------
@@ -932,7 +937,7 @@ class Series:
         └─────┴────────┘
 
         """
-        return pli.wrap_df(self._s.value_counts())
+        return pli.wrap_df(self._s.value_counts(sort))
 
     def unique_counts(self) -> Series:
         """

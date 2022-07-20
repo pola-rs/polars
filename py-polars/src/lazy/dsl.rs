@@ -195,8 +195,11 @@ impl PyExpr {
     pub fn count(&self) -> PyExpr {
         self.clone().inner.count().into()
     }
-    pub fn value_counts(&self, multithreaded: bool) -> PyExpr {
-        self.inner.clone().value_counts(multithreaded).into()
+    pub fn value_counts(&self, multithreaded: bool, sorted: bool) -> PyExpr {
+        self.inner
+            .clone()
+            .value_counts(multithreaded, sorted)
+            .into()
     }
     pub fn unique_counts(&self) -> PyExpr {
         self.inner.clone().unique_counts().into()

@@ -559,8 +559,11 @@ impl PySeries {
         Ok(unique.into())
     }
 
-    pub fn value_counts(&self) -> PyResult<PyDataFrame> {
-        let df = self.series.value_counts(true).map_err(PyPolarsErr::from)?;
+    pub fn value_counts(&self, sorted: bool) -> PyResult<PyDataFrame> {
+        let df = self
+            .series
+            .value_counts(true, sorted)
+            .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 

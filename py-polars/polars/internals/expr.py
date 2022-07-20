@@ -4738,7 +4738,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.extend_constant(value, n))
 
-    def value_counts(self, multithreaded: bool = False) -> Expr:
+    def value_counts(self, multithreaded: bool = False, sort: bool = False) -> Expr:
         """
         Count all unique values and create a struct mapping value to count
 
@@ -4746,6 +4746,8 @@ class Expr:
         ----------
         multithreaded:
             Better to turn this off in the aggregation context, as it can lead to contention.
+        sort:
+            Ensure the output is sorted from most values to least.
 
         Returns
         -------
@@ -4760,7 +4762,7 @@ class Expr:
         ... )
         >>> df.select(
         ...     [
-        ...         pl.col("id").value_counts(),
+        ...         pl.col("id").value_counts(sort=True),
         ...     ]
         ... )
         shape: (3, 1)
@@ -4777,7 +4779,7 @@ class Expr:
         └───────────┘
 
         """
-        return wrap_expr(self._pyexpr.value_counts(multithreaded))
+        return wrap_expr(self._pyexpr.value_counts(multithreaded, sort))
 
     def unique_counts(self) -> Expr:
         """

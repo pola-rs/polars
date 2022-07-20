@@ -2110,10 +2110,10 @@ impl Expr {
     #[cfg_attr(docsrs, doc(cfg(feature = "dtype-struct")))]
     /// Count all unique values and create a struct mapping value to count
     /// Note that it is better to turn multithreaded off in the aggregation context
-    pub fn value_counts(self, multithreaded: bool) -> Self {
+    pub fn value_counts(self, multithreaded: bool, sorted: bool) -> Self {
         self.apply(
             move |s| {
-                s.value_counts(multithreaded)
+                s.value_counts(multithreaded, sorted)
                     .map(|df| df.into_struct(s.name()).into_series())
             },
             GetOutput::map_field(|fld| {

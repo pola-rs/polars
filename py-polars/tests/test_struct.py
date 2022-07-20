@@ -116,14 +116,14 @@ def test_struct_function_expansion() -> None:
 def test_value_counts_expr() -> None:
     df = pl.DataFrame(
         {
-            "id": ["a", "b", "b", "c", "c", "c"],
+            "id": ["a", "b", "b", "c", "c", "c", "d", "d"],
         }
     )
 
     out = (
         df.select(
             [
-                pl.col("id").value_counts(),
+                pl.col("id").value_counts(sort=True),
             ]
         )
         .to_series()
@@ -132,6 +132,7 @@ def test_value_counts_expr() -> None:
     assert out == [
         {"id": "c", "counts": 3},
         {"id": "b", "counts": 2},
+        {"id": "d", "counts": 2},
         {"id": "a", "counts": 1},
     ]
 
