@@ -3,6 +3,8 @@ pub use arrow;
 pub use chrono;
 
 #[cfg(feature = "private")]
+pub use ahash;
+#[cfg(feature = "private")]
 pub use num;
 #[cfg(feature = "private")]
 pub use once_cell;
@@ -11,3 +13,5 @@ pub use rayon;
 #[cfg(feature = "private")]
 #[cfg(any(feature = "strings", feature = "temporal"))]
 pub use regex;
+
+pub use crate::vector_hasher::_boost_hash_combine;

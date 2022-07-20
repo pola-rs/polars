@@ -378,3 +378,11 @@ def test_list_concat_supertype() -> None:
     assert df.with_column(pl.concat_list(pl.col(["a", "b"])).alias("concat_list"))[
         "concat_list"
     ].to_list() == [[1, 10000], [2, 20000]]
+
+
+def test_list_hash() -> None:
+    out = pl.DataFrame({"a": [[1, 2, 3], [3, 4], [1, 2, 3]]}).with_column(
+        pl.col("a").hash().alias("b")
+    )
+    assert out.dtypes == [pl.List(pl.Int64), pl.UInt64]
+    assert out[0, "b"] == out[2, "b"]

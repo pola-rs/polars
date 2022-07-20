@@ -94,7 +94,7 @@ where
                     .zip(&mut hashes[offset..])
                     .for_each(|(v, h)| {
                         let l = T::Native::get_hash(v, &random_state);
-                        *h = boost_hash_combine(l, *h)
+                        *h = _boost_hash_combine(l, *h)
                     }),
                 _ => {
                     let validity = arr.validity().unwrap();
@@ -104,7 +104,7 @@ where
                         .zip(&mut hashes[offset..])
                         .zip(arr.values().as_slice())
                         .for_each(|((valid, h), l)| {
-                            *h = boost_hash_combine(
+                            *h = _boost_hash_combine(
                                 [null_h, T::Native::get_hash(l, &random_state)][valid as usize],
                                 *h,
                             )
@@ -137,7 +137,7 @@ impl VecHash for Utf8Chunked {
                     Some(v) => str::get_hash(v, &random_state),
                     None => null_h,
                 };
-                boost_hash_combine(l, *h)
+                _boost_hash_combine(l, *h)
             },
             hashes,
         )
@@ -162,7 +162,7 @@ impl VecHash for BooleanChunked {
             |opt_v, h| {
                 let mut hasher = random_state.build_hasher();
                 opt_v.hash(&mut hasher);
-                boost_hash_combine(hasher.finish(), *h)
+                _boost_hash_combine(hasher.finish(), *h)
             },
             hashes,
         )
@@ -216,7 +216,7 @@ where
             |opt_v, h| {
                 let mut hasher = random_state.build_hasher();
                 opt_v.hash(&mut hasher);
-                boost_hash_combine(hasher.finish(), *h)
+                _boost_hash_combine(hasher.finish(), *h)
             },
             hashes,
         )
@@ -493,7 +493,7 @@ where
 
 // hash combine from c++' boost lib
 #[inline]
-pub(crate) fn boost_hash_combine(l: u64, r: u64) -> u64 {
+pub fn _boost_hash_combine(l: u64, r: u64) -> u64 {
     l ^ r.wrapping_add(0x9e3779b9u64.wrapping_add(l << 6).wrapping_add(r >> 2))
 }
 

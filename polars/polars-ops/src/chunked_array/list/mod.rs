@@ -1,5 +1,7 @@
 use polars_core::prelude::*;
 
+#[cfg(feature = "hash")]
+pub(crate) mod hash;
 #[cfg(feature = "list")]
 #[cfg_attr(docsrs, doc(cfg(feature = "list")))]
 mod namespace;
