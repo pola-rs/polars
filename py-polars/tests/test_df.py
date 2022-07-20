@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 import typing
 from builtins import range
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from io import BytesIO
 from typing import Any, Iterator
 
