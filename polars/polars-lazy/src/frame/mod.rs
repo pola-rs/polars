@@ -573,18 +573,14 @@ impl LazyFrame {
         if projection_pushdown {
             let projection_pushdown_opt = ProjectionPushDown {};
             let alp = lp_arena.take(lp_top);
-            let alp = projection_pushdown_opt
-                .optimize(alp, lp_arena, expr_arena)
-                .expect("projection pushdown failed");
+            let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
             lp_arena.replace(lp_top, alp);
         }
 
         if predicate_pushdown {
             let predicate_pushdown_opt = PredicatePushDown::default();
             let alp = lp_arena.take(lp_top);
-            let alp = predicate_pushdown_opt
-                .optimize(alp, lp_arena, expr_arena)
-                .expect("predicate pushdown failed");
+            let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
             lp_arena.replace(lp_top, alp);
         }
 
@@ -625,9 +621,7 @@ impl LazyFrame {
         if slice_pushdown {
             let slice_pushdown_opt = SlicePushDown {};
             let alp = lp_arena.take(lp_top);
-            let alp = slice_pushdown_opt
-                .optimize(alp, lp_arena, expr_arena)
-                .expect("slice pushdown failed");
+            let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
 
             lp_arena.replace(lp_top, alp);
 

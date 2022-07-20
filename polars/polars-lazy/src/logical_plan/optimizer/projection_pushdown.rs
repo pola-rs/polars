@@ -98,12 +98,16 @@ fn update_scan_schema(
     // sorting parsers: csv,
     // non-sorting: parquet, ipc
     sort_projections: bool,
-) -> Schema {
+) -> Result<Schema> {
     let mut new_schema = Schema::with_capacity(acc_projections.len());
     let mut new_cols = Vec::with_capacity(acc_projections.len());
     for node in acc_projections.iter() {
         for name in aexpr_to_root_names(*node, expr_arena) {
-            let item = schema.get_full(&*name).unwrap();
+            let item = schema.get_full(&*name).ok_or_else(|| {
+                PolarsError::ComputeError(
+                    format!("column {} not available in schema {:?}", name, schema).into(),
+                )
+            })?;
             new_cols.push(item);
         }
     }
@@ -114,7 +118,7 @@ fn update_scan_schema(
     for item in new_cols {
         new_schema.with_column(item.1.clone(), item.2.clone())
     }
-    new_schema
+    Ok(new_schema)
 }
 
 pub(crate) struct ProjectionPushDown {}
@@ -356,7 +360,7 @@ impl ProjectionPushDown {
                             expr_arena,
                             &*schema,
                             true,
-                        )))
+                        )?))
                     };
                     options.output_schema = output_schema.clone();
 
@@ -394,7 +398,7 @@ impl ProjectionPushDown {
                         expr_arena,
                         &*schema,
                         false,
-                    ));
+                    )?);
                     projection = Some(acc_projections);
                 }
                 let lp = DataFrameScan {
@@ -423,7 +427,7 @@ impl ProjectionPushDown {
                         expr_arena,
                         &*schema,
                         false,
-                    )))
+                    )?))
                 };
                 options.with_columns = with_columns;
 
@@ -456,7 +460,7 @@ impl ProjectionPushDown {
                         expr_arena,
                         &*schema,
                         false,
-                    )))
+                    )?))
                 };
                 options.with_columns = with_columns;
 
@@ -482,7 +486,7 @@ impl ProjectionPushDown {
                         expr_arena,
                         &*options.schema,
                         true,
-                    )))
+                    )?))
                 };
                 Ok(PythonScan { options })
             }
@@ -505,7 +509,7 @@ impl ProjectionPushDown {
                         expr_arena,
                         &*schema,
                         true,
-                    )))
+                    )?))
                 };
 
                 let lp = CsvScan {
