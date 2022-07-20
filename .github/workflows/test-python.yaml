@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [ "3.7", "3.10" ]
+        python-version: [ "3.10" ]
     steps:
       - uses: actions/checkout@v3
       - name: Install latest Rust nightly
@@ -35,14 +35,54 @@ jobs:
       - name: Run linting
         run: |
           cd py-polars && flake8 && cd ..
-      - name: Run type checking Python 3.7
-        if matrix.python-version == '3.7'
+      - name: Run type checking Python
+          cd py-polars && mypy && cd ..
+      - name: Run tests
+        run: |
+          export RUSTFLAGS="-C debuginfo=0"
+          cd py-polars && rustup override set nightly-2022-06-22 && make venv && make test-with-cov
+          cargo clippy
+      - name: Check doc examples
+        run: |
+          cd py-polars && make doctest
+      # test if we can import polars without any requirements
+      - name: Import polars
+        run: |
+          pip uninstall pandas -y
+          python -c "import polars"
+
+  test-python-37:
+    name: Build and test Python 3.7
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [ "3.7" ]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install latest Rust nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2022-06-22
+          override: true
+          components: rustfmt, clippy
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r py-polars/build.requirements.txt
+      - name: Run formatting checks
+        run: |
+          cd py-polars && black --check . && blackdoc --check . && isort --check . && rustup override set nightly-2022-06-22 && cargo fmt --all -- --check && cd ..
+      - name: Run linting
+        run: |
+          cd py-polars && flake8 && cd ..
+      # this step is different, note the flag
+      - name: Run type checking Python
         run: |
           cd py-polars && mypy --allow-untyped-calls && cd ..
-      - name: Run type checking Python 3.8+
-        if matrix.python-version != '3.7'
-        run: |
-          cd py-polars && mypy && cd ..
       - name: Run tests
         run: |
           export RUSTFLAGS="-C debuginfo=0"
