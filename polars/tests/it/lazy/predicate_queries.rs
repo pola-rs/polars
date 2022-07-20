@@ -149,19 +149,23 @@ fn test_is_in_categorical_3420() -> Result<()> {
 
     let _guard = SINGLE_LOCK.lock();
 
-    let out: Result<_> = with_string_cache(|| {
+    let _: Result<_> = with_string_cache(|| {
         let s = Series::new("x", ["a", "b", "c"]).strict_cast(&DataType::Categorical(None))?;
-        df.lazy()
+        let out = df
+            .lazy()
             .with_column(col("a").strict_cast(DataType::Categorical(None)))
             .filter(col("a").is_in(lit(s).alias("x")))
-            .collect()
+            .collect()?;
+
+        let mut expected = df![
+            "a" => ["a", "b", "c"],
+            "b" => [1, 2, 3]
+        ]?;
+        expected.try_apply("a", |s| s.cast(&DataType::Categorical(None)))?;
+        assert!(out.frame_equal(&expected));
+
+        Ok(())
     });
-    let mut expected = df![
-        "a" => ["a", "b", "c"],
-        "b" => [1, 2, 3]
-    ]?;
-    expected.try_apply("a", |s| s.cast(&DataType::Categorical(None)))?;
-    assert!(out?.frame_equal(&expected));
     Ok(())
 }
 

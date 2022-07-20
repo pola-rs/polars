@@ -4,6 +4,7 @@ import io
 import os
 
 import polars as pl
+from polars.testing import assert_frame_equal_local_categoricals
 
 
 def test_to_from_buffer(df: pl.DataFrame) -> None:
@@ -14,7 +15,7 @@ def test_to_from_buffer(df: pl.DataFrame) -> None:
         read_df = read_df.with_columns(
             [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
         )
-        assert df.frame_equal(read_df)
+        assert_frame_equal_local_categoricals(df, read_df)
 
 
 def test_to_from_file(io_test_dir: str, df: pl.DataFrame) -> None:

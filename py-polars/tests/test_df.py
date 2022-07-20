@@ -911,24 +911,24 @@ def test_extend() -> None:
             ]
         )
 
-    df1.extend(df2)
-    expected = pl.DataFrame(
-        {
-            "foo": [1, 2, 3, 4],
-            "bar": [True, False, True, None],
-            "ham": ["a", "b", "c", "d"],
-            "cat": ["A", "B", "C", "B"],
-            "dates": [
-                datetime(2021, 1, 1),
-                datetime(2021, 2, 1),
-                datetime(2022, 9, 1),
-                datetime(2021, 2, 1),
-            ],
-        }
-    ).with_column(
-        pl.col("cat").cast(pl.Categorical),
-    )
-    assert df1.frame_equal(expected)
+        df1.extend(df2)
+        expected = pl.DataFrame(
+            {
+                "foo": [1, 2, 3, 4],
+                "bar": [True, False, True, None],
+                "ham": ["a", "b", "c", "d"],
+                "cat": ["A", "B", "C", "B"],
+                "dates": [
+                    datetime(2021, 1, 1),
+                    datetime(2021, 2, 1),
+                    datetime(2022, 9, 1),
+                    datetime(2021, 2, 1),
+                ],
+            }
+        ).with_column(
+            pl.col("cat").cast(pl.Categorical),
+        )
+        assert df1.frame_equal(expected)
 
 
 def test_drop() -> None:
@@ -1298,16 +1298,16 @@ def test_string_cache_eager_lazy() -> None:
             {"seq_name": ["reg4", "reg2", "reg1"], "score": [3.0, 1.0, 2.0]}
         ).select([pl.col("seq_name").cast(pl.Categorical), pl.col("score")])
 
-    expected = pl.DataFrame(
-        {
-            "region_ids": ["reg1", "reg2", "reg3", "reg4", "reg5"],
-            "score": [2.0, 1.0, None, 3.0, None],
-        }
-    ).with_column(pl.col("region_ids").cast(pl.Categorical))
+        expected = pl.DataFrame(
+            {
+                "region_ids": ["reg1", "reg2", "reg3", "reg4", "reg5"],
+                "score": [2.0, 1.0, None, 3.0, None],
+            }
+        ).with_column(pl.col("region_ids").cast(pl.Categorical))
 
-    assert df1.join(
-        df2, left_on="region_ids", right_on="seq_name", how="left"
-    ).frame_equal(expected, null_equal=True)
+        assert df1.join(
+            df2, left_on="region_ids", right_on="seq_name", how="left"
+        ).frame_equal(expected, null_equal=True)
 
 
 def test_assign() -> None:

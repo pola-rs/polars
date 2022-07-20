@@ -1384,10 +1384,11 @@ def test_reshape() -> None:
 
 
 def test_init_categorical() -> None:
-    for values in [[None], ["foo", "bar"], [None, "foo", "bar"]]:
-        expected = pl.Series("a", values, dtype=pl.Utf8).cast(pl.Categorical)
-        a = pl.Series("a", values, dtype=pl.Categorical)
-        assert_series_equal(a, expected)
+    with pl.StringCache():
+        for values in [[None], ["foo", "bar"], [None, "foo", "bar"]]:
+            expected = pl.Series("a", values, dtype=pl.Utf8).cast(pl.Categorical)
+            a = pl.Series("a", values, dtype=pl.Categorical)
+            assert_series_equal(a, expected)
 
 
 def test_nested_list_types_preserved() -> None:
