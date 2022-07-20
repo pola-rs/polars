@@ -3,6 +3,7 @@ extern crate core;
 #[macro_use]
 pub mod utils;
 pub mod chunked_array;
+pub(crate) mod config;
 pub mod datatypes;
 #[cfg(feature = "docs")]
 pub mod doc;

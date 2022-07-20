@@ -1,3 +1,4 @@
+use crate::config::{FMT_MAX_COLS, FMT_MAX_ROWS, FMT_STR_LEN};
 use crate::prelude::*;
 
 #[cfg(feature = "timezones")]
@@ -35,7 +36,7 @@ macro_rules! format_array {
         )?;
         let truncate = matches!($a.dtype(), DataType::Utf8);
         let truncate_len = if truncate {
-            std::env::var("POLARS_FMT_STR_LEN")
+            std::env::var(FMT_STR_LEN)
                 .as_deref()
                 .unwrap_or("")
                 .parse()
@@ -277,11 +278,10 @@ impl Debug for DataFrame {
     }
 }
 #[cfg(feature = "fmt")]
-fn make_str_val(v: &str) -> String {
-    let string_limit = 32;
+fn make_str_val(v: &str, truncate: usize) -> String {
     let v_trunc = &v[..v
         .char_indices()
-        .take(string_limit)
+        .take(truncate)
         .last()
         .map(|(i, c)| i + c.len_utf8())
         .unwrap_or(0)];
@@ -293,17 +293,22 @@ fn make_str_val(v: &str) -> String {
 }
 
 #[cfg(feature = "fmt")]
-fn prepare_row(row: Vec<Cow<'_, str>>, n_first: usize, n_last: usize) -> Vec<String> {
+fn prepare_row(
+    row: Vec<Cow<'_, str>>,
+    n_first: usize,
+    n_last: usize,
+    str_truncate: usize,
+) -> Vec<String> {
     let reduce_columns = n_first + n_last < row.len();
     let mut row_str = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
     for v in row[0..n_first].iter() {
-        row_str.push(make_str_val(v));
+        row_str.push(make_str_val(v, str_truncate));
     }
     if reduce_columns {
         row_str.push("...".to_string());
     }
     for v in row[row.len() - n_last..].iter() {
-        row_str.push(make_str_val(v));
+        row_str.push(make_str_val(v, str_truncate));
     }
     row_str
 }
@@ -318,14 +323,20 @@ impl Display for DataFrame {
                 "The columns lengths in the DataFrame are not equal."
             );
 
-            let max_n_cols = std::env::var("POLARS_FMT_MAX_COLS")
+            let str_truncate = std::env::var(FMT_STR_LEN)
+                .as_deref()
+                .unwrap_or("")
+                .parse()
+                .unwrap_or(32);
+
+            let max_n_cols = std::env::var(FMT_MAX_COLS)
                 .as_deref()
                 .unwrap_or("")
                 .parse()
                 .unwrap_or(8);
 
             let max_n_rows = {
-                let max_n_rows = std::env::var("POLARS_FMT_MAX_ROWS")
+                let max_n_rows = std::env::var(FMT_MAX_ROWS)
                     .as_deref()
                     .unwrap_or("")
                     .parse()
@@ -346,7 +357,7 @@ impl Display for DataFrame {
             let mut names = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
 
             let field_to_str = |f: &Field| {
-                let name = make_str_val(f.name());
+                let name = make_str_val(f.name(), str_truncate);
                 let lower_bounds = std::cmp::max(5, std::cmp::min(12, name.len()));
                 let s = format!("{}\n---\n{}", name, f.data_type());
                 (s, lower_bounds)
@@ -385,13 +396,13 @@ impl Display for DataFrame {
             if self.height() > max_n_rows {
                 for i in 0..(max_n_rows / 2) {
                     let row = self.columns.iter().map(|s| s.str_value(i)).collect();
-                    rows.push(prepare_row(row, n_first, n_last));
+                    rows.push(prepare_row(row, n_first, n_last, str_truncate));
                 }
                 let dots = rows[0].iter().map(|_| "...".to_string()).collect();
                 rows.push(dots);
                 for i in (self.height() - (max_n_rows + 1) / 2)..self.height() {
                     let row = self.columns.iter().map(|s| s.str_value(i)).collect();
-                    rows.push(prepare_row(row, n_first, n_last));
+                    rows.push(prepare_row(row, n_first, n_last, str_truncate));
                 }
                 for row in rows {
                     table.add_row(row);
@@ -400,7 +411,7 @@ impl Display for DataFrame {
                 for i in 0..self.height() {
                     if self.width() > 0 {
                         let row = self.columns.iter().map(|s| s.str_value(i)).collect();
-                        table.add_row(prepare_row(row, n_first, n_last));
+                        table.add_row(prepare_row(row, n_first, n_last, str_truncate));
                     } else {
                         break;
                     }
