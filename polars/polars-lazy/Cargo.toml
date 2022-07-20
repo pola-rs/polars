@@ -68,7 +68,7 @@ cumulative_eval = []
 chunked_ids = []
 list_to_struct = ["polars-ops/list_to_struct"]
 python = ["pyo3"]
-row_hash = ["polars-core/row_hash"]
+row_hash = ["polars-core/row_hash", "polars-ops/hash"]
 string_justify = ["polars-ops/string_justify"]
 arg_where = []
 

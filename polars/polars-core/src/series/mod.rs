@@ -489,13 +489,6 @@ impl Series {
         (self * other).sum::<f64>()
     }
 
-    #[cfg(feature = "row_hash")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "row_hash")))]
-    /// Get a hash of this Series
-    pub fn hash(&self, build_hasher: ahash::RandomState) -> UInt64Chunked {
-        UInt64Chunked::from_vec(self.name(), self.0.vec_hash(build_hasher))
-    }
-
     /// Get the sum of the Series as a new Series of length 1.
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is

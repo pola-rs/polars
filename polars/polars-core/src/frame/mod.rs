@@ -32,7 +32,7 @@ mod upstream_traits;
 
 #[cfg(feature = "sort_multiple")]
 use crate::prelude::sort::prepare_argsort;
-use crate::vector_hasher::boost_hash_combine;
+use crate::vector_hasher::_boost_hash_combine;
 #[cfg(feature = "row_hash")]
 use crate::vector_hasher::df_rows_to_hashes_threaded;
 use crate::POOL;
@@ -435,8 +435,8 @@ impl DataFrame {
                         rval.hash(&mut h);
                         let rh2 = h.finish();
                         (
-                            boost_hash_combine(lhash, rhash),
-                            boost_hash_combine(lh2, rh2),
+                            _boost_hash_combine(lhash, rhash),
+                            _boost_hash_combine(lh2, rh2),
                             n,
                         )
                     },
