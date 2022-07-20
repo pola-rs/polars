@@ -349,7 +349,7 @@ pub(crate) enum AnyValueBuffer<'a> {
     Utf8(Utf8ChunkedBuilder),
     #[cfg(feature = "dtype-categorical")]
     Categorical(CategoricalChunkedBuilder),
-    All(Vec<AnyValue<'a>>),
+    All(DataType, Vec<AnyValue<'a>>),
 }
 
 impl<'a> AnyValueBuffer<'a> {
@@ -385,7 +385,7 @@ impl<'a> AnyValueBuffer<'a> {
             (Utf8(builder), AnyValue::Utf8(v)) => builder.append_value(v),
             (Utf8(builder), AnyValue::Null) => builder.append_null(),
             // Struct and List can be recursive so use anyvalues for that
-            (All(vals), v) => vals.push(v),
+            (All(_, vals), v) => vals.push(v),
             _ => return None,
         };
         Some(())
@@ -417,7 +417,7 @@ impl<'a> AnyValueBuffer<'a> {
             Utf8(b) => b.finish().into_series(),
             #[cfg(feature = "dtype-categorical")]
             Categorical(b) => b.finish().into_series(),
-            All(vals) => Series::new("", vals),
+            All(dtype, vals) => Series::from_any_values_and_dtype("", &vals, &dtype).unwrap(),
         }
     }
 }
@@ -447,7 +447,7 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
             #[cfg(feature = "dtype-categorical")]
             Categorical(_) => AnyValueBuffer::Categorical(CategoricalChunkedBuilder::new("", len)),
             // Struct and List can be recursive so use anyvalues for that
-            _ => AnyValueBuffer::All(Vec::with_capacity(len)),
+            dt => AnyValueBuffer::All(dt.clone(), Vec::with_capacity(len)),
         }
     }
 }

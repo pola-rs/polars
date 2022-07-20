@@ -325,8 +325,14 @@ pub(crate) fn coerce_lhs_rhs<'a>(
     if let Ok(result) = coerce_time_units(lhs, rhs) {
         return Ok(result);
     }
+    let dtype = match (lhs.dtype(), rhs.dtype()) {
+        #[cfg(feature = "dtype-struct")]
+        (DataType::Struct(_), DataType::Struct(_)) => {
+            return Ok((Cow::Borrowed(lhs), Cow::Borrowed(rhs)))
+        }
+        _ => get_supertype(lhs.dtype(), rhs.dtype())?,
+    };
 
-    let dtype = get_supertype(lhs.dtype(), rhs.dtype())?;
     let left = if lhs.dtype() == &dtype {
         Cow::Borrowed(lhs)
     } else {
