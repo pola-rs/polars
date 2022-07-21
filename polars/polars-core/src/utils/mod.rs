@@ -790,7 +790,10 @@ where
     I: IntoIterator<Item = DataFrame>,
 {
     let mut iter = dfs.into_iter();
+    let additional = iter.size_hint().0;
     let mut acc_df = iter.next().unwrap();
+    acc_df.reserve_chunks(additional);
+
     for df in iter {
         acc_df.vstack_mut_unchecked(&df);
     }
@@ -803,7 +806,9 @@ where
     I: IntoIterator<Item = DataFrame>,
 {
     let mut iter = dfs.into_iter();
+    let additional = iter.size_hint().0;
     let mut acc_df = iter.next().unwrap();
+    acc_df.reserve_chunks(additional);
     for df in iter {
         acc_df.vstack_mut(&df)?;
     }
@@ -816,7 +821,9 @@ where
     I: IntoIterator<Item = &'a DataFrame>,
 {
     let mut iter = dfs.into_iter();
+    let additional = iter.size_hint().0;
     let mut acc_df = iter.next().unwrap().clone();
+    acc_df.reserve_chunks(additional);
     for df in iter {
         acc_df.vstack_mut(df)?;
     }
@@ -829,7 +836,9 @@ where
     I: IntoIterator<Item = &'a DataFrame>,
 {
     let mut iter = dfs.into_iter();
+    let additional = iter.size_hint().0;
     let mut acc_df = iter.next().unwrap().clone();
+    acc_df.reserve_chunks(additional);
     for df in iter {
         acc_df.vstack_mut_unchecked(df);
     }

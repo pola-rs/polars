@@ -166,6 +166,17 @@ impl Series {
         Arc::get_mut(&mut self.0).expect("implementation error")
     }
 
+    /// # Safety
+    /// The caller must ensure the length and the data types of `ArrayRef` does not change.
+    pub(crate) unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        #[allow(unused_mut)]
+        let mut ca = self._get_inner_mut();
+        let chunks = ca.chunks() as *const Vec<ArrayRef> as *mut Vec<ArrayRef>;
+        // Safety
+        // ca is the owner of `chunks` and this we do not break aliasing rules
+        &mut *chunks
+    }
+
     pub fn set_sorted(&mut self, sorted: IsSorted) {
         let inner = self._get_inner_mut();
         inner._set_sorted(sorted)
