@@ -103,7 +103,7 @@ macro_rules! split_array {
 #[cfg(feature = "private")]
 pub fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> Result<Vec<ChunkedArray<T>>>
 where
-    ChunkedArray<T>: ChunkOps,
+    T: PolarsDataType,
 {
     split_array!(ca, n, i64)
 }
@@ -790,7 +790,10 @@ where
     I: IntoIterator<Item = DataFrame>,
 {
     let mut iter = dfs.into_iter();
+    let additional = iter.size_hint().0;
     let mut acc_df = iter.next().unwrap();
+    acc_df.reserve_chunks(additional);
+
     for df in iter {
         acc_df.vstack_mut_unchecked(&df);
     }
@@ -803,7 +806,9 @@ where
     I: IntoIterator<Item = DataFrame>,
 {
     let mut iter = dfs.into_iter();
+    let additional = iter.size_hint().0;
     let mut acc_df = iter.next().unwrap();
+    acc_df.reserve_chunks(additional);
     for df in iter {
         acc_df.vstack_mut(&df)?;
     }
@@ -816,7 +821,9 @@ where
     I: IntoIterator<Item = &'a DataFrame>,
 {
     let mut iter = dfs.into_iter();
+    let additional = iter.size_hint().0;
     let mut acc_df = iter.next().unwrap().clone();
+    acc_df.reserve_chunks(additional);
     for df in iter {
         acc_df.vstack_mut(df)?;
     }
@@ -829,7 +836,9 @@ where
     I: IntoIterator<Item = &'a DataFrame>,
 {
     let mut iter = dfs.into_iter();
+    let additional = iter.size_hint().0;
     let mut acc_df = iter.next().unwrap().clone();
+    acc_df.reserve_chunks(additional);
     for df in iter {
         acc_df.vstack_mut_unchecked(df);
     }
@@ -880,8 +889,6 @@ pub(crate) fn align_chunks_binary<'a, T, B>(
     right: &'a ChunkedArray<B>,
 ) -> (Cow<'a, ChunkedArray<T>>, Cow<'a, ChunkedArray<B>>)
 where
-    ChunkedArray<B>: ChunkOps,
-    ChunkedArray<T>: ChunkOps,
     B: PolarsDataType,
     T: PolarsDataType,
 {
@@ -921,8 +928,6 @@ pub(crate) fn align_chunks_binary_owned<T, B>(
     right: ChunkedArray<B>,
 ) -> (ChunkedArray<T>, ChunkedArray<B>)
 where
-    ChunkedArray<B>: ChunkOps,
-    ChunkedArray<T>: ChunkOps,
     B: PolarsDataType,
     T: PolarsDataType,
 {
@@ -945,9 +950,6 @@ pub(crate) fn align_chunks_ternary<'a, A, B, C>(
     Cow<'a, ChunkedArray<C>>,
 )
 where
-    ChunkedArray<A>: ChunkOps,
-    ChunkedArray<B>: ChunkOps,
-    ChunkedArray<C>: ChunkOps,
     A: PolarsDataType,
     B: PolarsDataType,
     C: PolarsDataType,

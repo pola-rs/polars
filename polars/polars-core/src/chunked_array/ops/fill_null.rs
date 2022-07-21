@@ -359,7 +359,7 @@ impl ChunkFillNullValue<&Series> for ListChunked {
     }
 }
 #[cfg(feature = "object")]
-impl<T> ChunkFillNull for ObjectChunked<T> {
+impl<T: PolarsObject> ChunkFillNull for ObjectChunked<T> {
     fn fill_null(&self, _strategy: FillNullStrategy) -> Result<Self> {
         Err(PolarsError::InvalidOperation(
             "fill_null not supported for Object type".into(),
@@ -368,7 +368,7 @@ impl<T> ChunkFillNull for ObjectChunked<T> {
 }
 
 #[cfg(feature = "object")]
-impl<T> ChunkFillNullValue<ObjectType<T>> for ObjectChunked<T> {
+impl<T: PolarsObject> ChunkFillNullValue<ObjectType<T>> for ObjectChunked<T> {
     fn fill_null_with_values(&self, _value: ObjectType<T>) -> Result<Self> {
         Err(PolarsError::InvalidOperation(
             "fill_null_with_value not supported for Object type".into(),

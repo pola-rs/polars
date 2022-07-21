@@ -366,6 +366,7 @@ fn concat_series(series: &PyAny) -> PyResult<PySeries> {
     Ok(s.into())
 }
 
+#[cfg(feature = "ipc")]
 #[pyfunction]
 fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     use polars_core::export::arrow::io::ipc::read::read_file_metadata;
@@ -384,6 +385,7 @@ fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     Ok(dict.to_object(py))
 }
 
+#[cfg(feature = "parquet")]
 #[pyfunction]
 fn parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     use polars_core::export::arrow::io::parquet::read::{infer_schema, read_metadata};
@@ -519,7 +521,9 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(concat_df)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_lf)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_series)).unwrap();
+    #[cfg(feature = "ipc")]
     m.add_wrapped(wrap_pyfunction!(ipc_schema)).unwrap();
+    #[cfg(feature = "parquet")]
     m.add_wrapped(wrap_pyfunction!(parquet_schema)).unwrap();
     m.add_wrapped(wrap_pyfunction!(collect_all)).unwrap();
     m.add_wrapped(wrap_pyfunction!(spearman_rank_corr)).unwrap();

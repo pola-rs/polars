@@ -792,6 +792,7 @@ impl PyDataFrame {
             "outer" => JoinType::Outer,
             "semi" => JoinType::Semi,
             "anti" => JoinType::Anti,
+            #[cfg(feature = "asof_join")]
             "asof" => JoinType::AsOf(AsOfOptions {
                 strategy: AsofStrategy::Backward,
                 left_by: None,
@@ -799,6 +800,7 @@ impl PyDataFrame {
                 tolerance: None,
                 tolerance_str: None,
             }),
+            #[cfg(feature = "cross_join")]
             "cross" => JoinType::Cross,
             _ => panic!("not supported"),
         };

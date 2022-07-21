@@ -4,9 +4,7 @@ use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::file::get_file_like;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
-use crate::prelude::{
-    IdxSize, LogicalPlan, NullValues, ParallelStrategy, ScanArgsIpc, ScanArgsParquet,
-};
+use crate::prelude::*;
 use polars::io::RowCount;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
@@ -14,9 +12,7 @@ use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Sch
 use polars::time::*;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::UniqueKeepStrategy;
-use polars_core::prelude::{
-    AnyValue, AsOfOptions, AsofStrategy, DataType, QuantileInterpolOptions, SortOptions,
-};
+use polars_core::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
@@ -97,6 +93,7 @@ impl From<LazyFrame> for PyLazyFrame {
 #[pymethods]
 #[allow(clippy::should_implement_trait)]
 impl PyLazyFrame {
+    #[cfg(all(feature = "json", feature = "serde_json"))]
     pub fn to_json(&self, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
         serde_json::to_writer(file, &self.ldf.logical_plan)
@@ -221,8 +218,8 @@ impl PyLazyFrame {
         Ok(r.finish().map_err(PyPolarsErr::from)?.into())
     }
 
-    #[staticmethod]
     #[cfg(feature = "parquet")]
+    #[staticmethod]
     pub fn new_from_parquet(
         path: String,
         n_rows: Option<usize>,
@@ -245,6 +242,7 @@ impl PyLazyFrame {
         Ok(lf.into())
     }
 
+    #[cfg(feature = "ipc")]
     #[staticmethod]
     pub fn new_from_ipc(
         path: String,
@@ -446,6 +444,7 @@ impl PyLazyFrame {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "asof_join")]
     pub fn join_asof(
         &self,
         other: PyLazyFrame,
@@ -507,6 +506,7 @@ impl PyLazyFrame {
             "outer" => JoinType::Outer,
             "semi" => JoinType::Semi,
             "anti" => JoinType::Anti,
+            #[cfg(feature = "asof_join")]
             "asof" => JoinType::AsOf(AsOfOptions {
                 strategy: AsofStrategy::Backward,
                 left_by: if asof_by_left.is_empty() {

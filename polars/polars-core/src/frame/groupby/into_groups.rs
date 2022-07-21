@@ -14,7 +14,7 @@ pub trait IntoGroupsProxy {
     }
 }
 
-fn group_multithreaded<T>(ca: &ChunkedArray<T>) -> bool {
+fn group_multithreaded<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
     // TODO! change to something sensible
     ca.len() > 1000
 }

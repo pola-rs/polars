@@ -136,17 +136,19 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 /// When multiplying two `ChunkArray'`s with different chunk sizes they cannot utilize [SIMD](https://en.wikipedia.org/wiki/SIMD) for instance.
 ///
 /// If you want to have predictable performance
-/// (no unexpected re-allocation of memory), it is advised to call the [rechunk](chunked_array/chunkops/trait.ChunkOps.html) after
+/// (no unexpected re-allocation of memory), it is advised to call the [ChunkedArray::rechunk] after
 /// multiple append operations.
 ///
 /// See also [`ChunkedArray::extend`] for appends within a chunk.
-pub struct ChunkedArray<T> {
+pub struct ChunkedArray<T: PolarsDataType> {
     pub(crate) field: Arc<Field>,
     pub(crate) chunks: Vec<ArrayRef>,
     phantom: PhantomData<T>,
+    /// TODO! remove this. Should be in the DataType
     /// maps categorical u32 indexes to String values
     pub(crate) categorical_map: Option<Arc<RevMapping>>,
     pub(crate) bit_settings: Settings,
+    length: IdxSize,
 }
 
 bitflags! {
@@ -157,7 +159,7 @@ bitflags! {
     const FAST_EXPLODE_LIST = 0x03;
 }}
 
-impl<T> ChunkedArray<T> {
+impl<T: PolarsDataType> ChunkedArray<T> {
     pub(crate) fn is_sorted(&self) -> bool {
         self.bit_settings.contains(Settings::SORTED_ASC)
     }
@@ -324,7 +326,9 @@ impl<T> ChunkedArray<T> {
     /// ```
     pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
         if self.field.data_type() == other.data_type() {
+            let length = other.len() as IdxSize;
             self.chunks.push(other);
+            self.length += length;
             Ok(())
         } else {
             Err(PolarsError::SchemaMisMatch(
@@ -346,7 +350,9 @@ impl<T> ChunkedArray<T> {
             phantom: PhantomData,
             categorical_map: self.categorical_map.clone(),
             bit_settings: self.bit_settings,
+            length: 0,
         };
+        out.compute_len();
         if !keep_sorted {
             out.set_sorted2(IsSorted::Not);
         }
@@ -415,7 +421,6 @@ impl<T> ChunkedArray<T> {
 impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
-    ChunkedArray<T>: ChunkOps,
 {
     /// Should be used to match the chunk_id of another ChunkedArray.
     /// # Panics
@@ -469,13 +474,16 @@ where
             T::get_dtype()
         };
         let field = Arc::new(Field::new(name, datatype));
-        ChunkedArray {
+        let mut out = ChunkedArray {
             field,
             chunks,
             phantom: PhantomData,
             categorical_map: None,
             bit_settings: Default::default(),
-        }
+            length: 0,
+        };
+        out.compute_len();
+        out
     }
 }
 
@@ -485,13 +493,16 @@ impl Int32Chunked {
         let arr = arrow::array::new_null_array(ArrowDataType::Null, len);
         let field = Arc::new(Field::new(name, DataType::Null));
         let chunks = vec![arr as ArrayRef];
-        ChunkedArray {
+        let mut out = ChunkedArray {
             field,
             chunks,
             phantom: PhantomData,
             categorical_map: None,
             bit_settings: Default::default(),
-        }
+            length: 0,
+        };
+        out.compute_len();
+        out
     }
 }
 
@@ -512,13 +523,15 @@ where
         buffer: Option<Bitmap>,
     ) -> Self {
         let arr = to_array::<T>(values, buffer);
-        ChunkedArray {
+        let mut out = ChunkedArray {
             field: Arc::new(Field::new(name, T::get_dtype())),
             chunks: vec![arr],
             phantom: PhantomData,
             categorical_map: None,
             ..Default::default()
-        }
+        };
+        out.compute_len();
+        out
     }
 }
 
@@ -548,7 +561,7 @@ impl AsSinglePtr for BooleanChunked {}
 impl AsSinglePtr for ListChunked {}
 impl AsSinglePtr for Utf8Chunked {}
 #[cfg(feature = "object")]
-impl<T> AsSinglePtr for ObjectChunked<T> {}
+impl<T: PolarsObject> AsSinglePtr for ObjectChunked<T> {}
 
 impl<T> ChunkedArray<T>
 where
@@ -592,7 +605,7 @@ where
     }
 }
 
-impl<T> Clone for ChunkedArray<T> {
+impl<T: PolarsDataType> Clone for ChunkedArray<T> {
     fn clone(&self) -> Self {
         ChunkedArray {
             field: self.field.clone(),
@@ -600,11 +613,12 @@ impl<T> Clone for ChunkedArray<T> {
             phantom: PhantomData,
             categorical_map: self.categorical_map.clone(),
             bit_settings: self.bit_settings,
+            length: self.length,
         }
     }
 }
 
-impl<T> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
+impl<T: PolarsDataType> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
     fn as_ref(&self) -> &ChunkedArray<T> {
         self
     }
@@ -754,7 +768,6 @@ pub(crate) mod test {
 
     fn assert_slice_equal<T>(ca: &ChunkedArray<T>, eq: &[T::Native])
     where
-        ChunkedArray<T>: ChunkOps,
         T: PolarsNumericType,
     {
         assert_eq!(

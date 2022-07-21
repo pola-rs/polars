@@ -38,19 +38,24 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                         std::mem::swap(&mut *self.series_container, &mut s);
                         // return a reference to the container
                         // this lifetime is now bound to 'a
-                        return UnstableSeries::new(&*(&*self.series_container as *const Series));
+                        return UnstableSeries::new(
+                            &mut *(&mut *self.series_container as *mut Series),
+                        );
                     }
                 }
 
                 // update the inner state
                 unsafe { *self.inner.as_mut() = array_ref };
 
+                // make sure that the length is correct
+                self.series_container._get_inner_mut().compute_len();
+
                 // Safety
                 // we cannot control the lifetime of an iterators `next` method.
                 // but as long as self is alive the reference to the series container is valid
-                let refer = &*self.series_container;
+                let refer = &mut *self.series_container;
                 unsafe {
-                    let s = std::mem::transmute::<&Series, &'a Series>(refer);
+                    let s = std::mem::transmute::<&mut Series, &'a mut Series>(refer);
                     UnstableSeries::new_with_chunk(s, self.inner.as_ref())
                 }
             })

@@ -147,7 +147,7 @@ where
 
 fn slice_from_offsets<T>(ca: &ChunkedArray<T>, first: IdxSize, len: IdxSize) -> ChunkedArray<T>
 where
-    ChunkedArray<T>: ChunkOps,
+    T: PolarsDataType,
 {
     ca.slice(first as i64, len as usize)
 }
@@ -1093,4 +1093,4 @@ where
     }
 }
 
-impl<T> ChunkedArray<T> where ChunkedArray<T>: ChunkTake + IntoSeries {}
+impl<T: PolarsDataType> ChunkedArray<T> where ChunkedArray<T>: ChunkTake + IntoSeries {}

@@ -4,7 +4,6 @@ use crate::utils::{CustomIterTools, NoNull};
 impl<T> ChunkReverse<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    ChunkedArray<T>: ChunkOps,
 {
     fn reverse(&self) -> ChunkedArray<T> {
         if let Ok(slice) = self.cont_slice() {

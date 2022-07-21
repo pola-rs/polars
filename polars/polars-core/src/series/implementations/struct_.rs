@@ -12,6 +12,11 @@ impl IntoSeries for StructChunked {
 impl PrivateSeriesNumeric for SeriesWrap<StructChunked> {}
 
 impl private::PrivateSeries for SeriesWrap<StructChunked> {
+    fn compute_len(&mut self) {
+        for s in self.0.fields_mut() {
+            s._get_inner_mut().compute_len();
+        }
+    }
     fn _field(&self) -> Cow<Field> {
         Cow::Borrowed(self.0.ref_field())
     }
