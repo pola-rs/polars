@@ -32,7 +32,6 @@ impl<'a> AggregationContext<'a> {
 }
 
 struct LitIter<'a> {
-    array: ArrayRef,
     len: usize,
     offset: usize,
     // UnstableSeries referenced that series
@@ -46,7 +45,6 @@ impl<'a> LitIter<'a> {
         let mut series_container = Box::pin(Series::try_from(("", array.clone())).unwrap());
         let ref_s = &mut *series_container as *mut Series;
         Self {
-            array,
             offset: 0,
             len,
             series_container,
@@ -104,6 +102,8 @@ impl<'a> Iterator for FlatIter<'a> {
             let arr = unsafe { self.array.slice_unchecked(self.offset, 1) };
             self.offset += 1;
             self.item.swap(arr);
+            // ensure lengths are correct.
+            self.series_container._get_inner_mut().compute_len();
             Some(Some(self.item))
         }
     }

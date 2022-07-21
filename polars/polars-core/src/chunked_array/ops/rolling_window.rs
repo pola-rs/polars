@@ -86,7 +86,7 @@ mod inner_mod {
 
             let len = self.len();
             let arr = ca.downcast_iter().next().unwrap();
-            let series_container =
+            let mut series_container =
                 ChunkedArray::<T>::from_slice("", &[T::Native::zero()]).into_series();
             let array_ptr = series_container.array_ref(0);
             let ptr = array_ptr.as_ref() as *const dyn Array as *mut dyn Array
@@ -104,7 +104,9 @@ mod inner_mod {
                     if size < options.min_periods {
                         builder.append_null();
                     } else {
-                        let arr_window = arr.slice(start, size);
+                        // safety:
+                        // we are in bounds
+                        let arr_window = unsafe { arr.slice_unchecked(start, size) };
 
                         // Safety.
                         // ptr is not dropped as we are in scope
@@ -113,6 +115,8 @@ mod inner_mod {
                         unsafe {
                             *ptr = arr_window;
                         }
+                        // ensure the length is correct
+                        series_container._get_inner_mut().compute_len();
 
                         let s = if size == options.window_size {
                             f(&series_container.multiply(&weights_series).unwrap())
@@ -147,7 +151,9 @@ mod inner_mod {
                     if size < options.min_periods {
                         builder.append_null();
                     } else {
-                        let arr_window = arr.slice(start, size);
+                        // safety:
+                        // we are in bounds
+                        let arr_window = unsafe { arr.slice_unchecked(start, size) };
 
                         // Safety.
                         // ptr is not dropped as we are in scope
@@ -156,6 +162,8 @@ mod inner_mod {
                         unsafe {
                             *ptr = arr_window;
                         }
+                        // ensure the length is correct
+                        series_container._get_inner_mut().compute_len();
 
                         let s = f(&series_container);
                         let out = self.unpack_series_matching_type(&s)?;

@@ -37,7 +37,7 @@ impl<'a> UnstableSeries<'a> {
         let inner_chunk = series.array_ref(0);
         UnstableSeries {
             lifetime: PhantomData,
-            container: container,
+            container,
             inner: NonNull::new(inner_chunk as *const ArrayRef as *mut ArrayRef).unwrap(),
         }
     }

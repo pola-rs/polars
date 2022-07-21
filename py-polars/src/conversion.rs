@@ -853,6 +853,7 @@ pub(crate) fn parse_strategy(strat: &str, limit: FillNullLimit) -> PyResult<Fill
         Ok(strat)
     }
 }
+#[cfg(feature = "parquet")]
 impl FromPyObject<'_> for Wrap<ParallelStrategy> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let unit = match ob.str()?.to_str()? {

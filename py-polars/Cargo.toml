@@ -41,8 +41,25 @@ parquet = ["polars/parquet"]
 ipc = ["polars/ipc"]
 is_in = ["polars/is_in"]
 json = ["polars/serde", "serde_json"]
+trigonemetry = ["polars/trigonometry"]
+asof_join = ["polars/asof_join"]
+cross_join = ["polars/cross_join"]
+pct_change = ["polars/pct_change"]
+repeat_by = ["polars/repeat_by"]
 
-default = ["json", "parquet", "ipc", "avro", "is_in", "json", "polars/repeat_by"]
+default = [
+  "json",
+  "parquet",
+  "ipc",
+  "avro",
+  "is_in",
+  "json",
+  "repeat_by",
+  "trigonemetry",
+  "asof_join",
+  "cross_join",
+  "pct_change",
+]
 
 [dependencies.polars]
 path = "../polars"
@@ -64,8 +81,6 @@ features = [
   "private",
   "round_series",
   "is_first",
-  "asof_join",
-  "cross_join",
   "dot_product",
   "concat_str",
   "row_hash",
@@ -81,7 +96,6 @@ features = [
   "list",
   "rank",
   "diff",
-  "pct_change",
   "moment",
   "arange",
   "true_div",
@@ -109,7 +123,6 @@ features = [
   "arg_where",
   "timezones",
   "date_offset",
-  "trigonometry",
 ]
 
 # [patch.crates-io]

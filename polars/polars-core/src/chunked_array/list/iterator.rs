@@ -38,7 +38,9 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                         std::mem::swap(&mut *self.series_container, &mut s);
                         // return a reference to the container
                         // this lifetime is now bound to 'a
-                        return UnstableSeries::new(&*(&*self.series_container as *const Series));
+                        return UnstableSeries::new(
+                            &mut *(&mut *self.series_container as *mut Series),
+                        );
                     }
                 }
 

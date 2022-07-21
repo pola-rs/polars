@@ -149,6 +149,7 @@ impl BooleanChunked {
                 self.chunks.push(Box::new(arr) as ArrayRef)
             }
         }
+        self.compute_len();
     }
 }
 
@@ -196,6 +197,7 @@ mod test {
         let to_append = Utf8Chunked::new("a", &["a", "b", "e"]);
 
         ca.extend(&to_append);
+        assert_eq!(ca.len(), 6);
         let vals = ca.into_no_null_iter().collect::<Vec<_>>();
         assert_eq!(vals, ["a", "b", "c", "a", "b", "e"])
     }
@@ -206,6 +208,7 @@ mod test {
         let to_append = BooleanChunked::new("a", &[false, false]);
 
         ca.extend(&to_append);
+        assert_eq!(ca.len(), 4);
         let vals = ca.into_no_null_iter().collect::<Vec<_>>();
         assert_eq!(vals, [true, false, false, false]);
     }

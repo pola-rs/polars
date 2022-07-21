@@ -366,50 +366,62 @@ impl PyExpr {
         self.clone().inner.abs().into()
     }
 
+    #[cfg(feature = "trigonemetry")]
     pub fn sin(&self) -> PyExpr {
         self.clone().inner.sin().into()
     }
 
+    #[cfg(feature = "trigonemetry")]
     pub fn cos(&self) -> PyExpr {
         self.clone().inner.cos().into()
     }
 
+    #[cfg(feature = "trigonemetry")]
     pub fn tan(&self) -> PyExpr {
         self.clone().inner.tan().into()
     }
 
+    #[cfg(feature = "trigonemetry")]
     pub fn arcsin(&self) -> PyExpr {
         self.clone().inner.arcsin().into()
     }
 
+    #[cfg(feature = "trigonemetry")]
     pub fn arccos(&self) -> PyExpr {
         self.clone().inner.arccos().into()
     }
 
+    #[cfg(feature = "trigonemetry")]
     pub fn arctan(&self) -> PyExpr {
         self.clone().inner.arctan().into()
     }
 
+    #[cfg(feature = "trigonemetry")]
     pub fn sinh(&self) -> PyExpr {
         self.clone().inner.sinh().into()
     }
 
+    #[cfg(feature = "trigonemetry")]
     pub fn cosh(&self) -> PyExpr {
         self.clone().inner.cosh().into()
     }
 
+    #[cfg(feature = "trigonemetry")]
     pub fn tanh(&self) -> PyExpr {
         self.clone().inner.tanh().into()
     }
 
+    #[cfg(feature = "trigonemetry")]
     pub fn arcsinh(&self) -> PyExpr {
         self.clone().inner.arcsinh().into()
     }
 
+    #[cfg(feature = "trigonemetry")]
     pub fn arccosh(&self) -> PyExpr {
         self.clone().inner.arccosh().into()
     }
 
+    #[cfg(feature = "trigonemetry")]
     pub fn arctanh(&self) -> PyExpr {
         self.clone().inner.arctanh().into()
     }
@@ -442,6 +454,7 @@ impl PyExpr {
         self.clone().inner.is_in(expr.inner).into()
     }
 
+    #[cfg(feature = "repeat_by")]
     pub fn repeat_by(&self, by: PyExpr) -> PyExpr {
         self.clone().inner.repeat_by(by.inner).into()
     }
@@ -1374,6 +1387,7 @@ impl PyExpr {
         self.inner.clone().diff(n, null_behavior).into()
     }
 
+    #[cfg(feature = "pct_change")]
     fn pct_change(&self, n: usize) -> Self {
         self.inner.clone().pct_change(n).into()
     }

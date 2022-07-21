@@ -1,8 +1,10 @@
 use crate::error::PyPolarsErr;
 use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
-use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::utils::arrow::ffi;
+use polars_core::utils::{
+    accumulate_dataframes_vertical, accumulate_dataframes_vertical_unchecked,
+};
 use polars_core::POOL;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
@@ -96,9 +98,11 @@ pub fn to_rust_df(rb: &[&PyAny]) -> PyResult<DataFrame> {
                     .collect::<PyResult<Vec<_>>>()
             }?;
 
-            Ok(DataFrame::new(columns).map_err(PyPolarsErr::from)?)
+            // no need to check as a record batch has the same guarantees
+            Ok(DataFrame::new_no_checks(columns))
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    Ok(accumulate_dataframes_vertical(dfs).map_err(PyPolarsErr::from)?)
+    let out = Ok(accumulate_dataframes_vertical_unchecked(dfs));
+    out
 }
