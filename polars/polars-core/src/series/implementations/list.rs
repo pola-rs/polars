@@ -13,6 +13,9 @@ use std::any::Any;
 use std::borrow::Cow;
 
 impl private::PrivateSeries for SeriesWrap<ListChunked> {
+    fn compute_len(&mut self) {
+        self.0.compute_len()
+    }
     fn _field(&self) -> Cow<Field> {
         Cow::Borrowed(self.0.ref_field())
     }

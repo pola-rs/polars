@@ -174,7 +174,7 @@ impl<T> ChunkUnique<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Ord,
-    ChunkedArray<T>: ChunkOps + IntoSeries,
+    ChunkedArray<T>: IntoSeries,
 {
     fn unique(&self) -> Result<Self> {
         match self.is_sorted2() {

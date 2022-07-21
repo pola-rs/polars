@@ -75,6 +75,10 @@ pub(crate) mod private {
             unimplemented!()
         }
 
+        fn compute_len(&mut self) {
+            unimplemented!()
+        }
+
         fn explode_by_offsets(&self, _offsets: &[i64]) -> Series {
             invalid_operation_panic!(self)
         }

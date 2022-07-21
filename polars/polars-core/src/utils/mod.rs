@@ -880,8 +880,6 @@ pub(crate) fn align_chunks_binary<'a, T, B>(
     right: &'a ChunkedArray<B>,
 ) -> (Cow<'a, ChunkedArray<T>>, Cow<'a, ChunkedArray<B>>)
 where
-    ChunkedArray<B>: ChunkOps,
-    ChunkedArray<T>: ChunkOps,
     B: PolarsDataType,
     T: PolarsDataType,
 {
@@ -921,8 +919,6 @@ pub(crate) fn align_chunks_binary_owned<T, B>(
     right: ChunkedArray<B>,
 ) -> (ChunkedArray<T>, ChunkedArray<B>)
 where
-    ChunkedArray<B>: ChunkOps,
-    ChunkedArray<T>: ChunkOps,
     B: PolarsDataType,
     T: PolarsDataType,
 {
@@ -945,9 +941,6 @@ pub(crate) fn align_chunks_ternary<'a, A, B, C>(
     Cow<'a, ChunkedArray<C>>,
 )
 where
-    ChunkedArray<A>: ChunkOps,
-    ChunkedArray<B>: ChunkOps,
-    ChunkedArray<C>: ChunkOps,
     A: PolarsDataType,
     B: PolarsDataType,
     C: PolarsDataType,

@@ -21,6 +21,9 @@ use std::borrow::Cow;
 use std::ops::{BitAnd, BitOr, BitXor};
 
 impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
+    fn compute_len(&mut self) {
+        self.0.compute_len()
+    }
     fn _field(&self) -> Cow<Field> {
         Cow::Borrowed(self.0.ref_field())
     }

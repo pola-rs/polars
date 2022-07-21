@@ -45,6 +45,9 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                 // update the inner state
                 unsafe { *self.inner.as_mut() = array_ref };
 
+                // make sure that the length is correct
+                self.series_container._get_inner_mut().compute_len();
+
                 // Safety
                 // we cannot control the lifetime of an iterators `next` method.
                 // but as long as self is alive the reference to the series container is valid

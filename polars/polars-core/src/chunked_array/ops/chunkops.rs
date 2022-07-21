@@ -1,6 +1,6 @@
+use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
-use crate::prelude::*;
 use crate::utils::slice_offsets;
 #[cfg(feature = "object")]
 use arrow::array::Array;
@@ -51,135 +51,132 @@ fn slice(
     (new_chunks, new_len)
 }
 
-impl<T> ChunkOps for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-}
+impl<T: PolarsDataType> ChunkedArray<T> {
+    /// Get the length of the ChunkedArray
+    pub fn len(&self) -> usize {
+        self.length as usize
+    }
 
-impl ChunkOps for BooleanChunked {
-    // fn rechunk(&self) -> Self {
-    //     if self.chunks().len() == 1 {
-    //         self.clone()
-    //     } else {
-    //         let chunks = vec![concatenate::concatenate(
-    //             self.chunks
-    //                 .iter()
-    //                 .map(|a| &**a)
-    //                 .collect::<Vec<_>>()
-    //                 .as_slice(),
-    //         )
-    //         .unwrap()];
-    //         ChunkedArray::from_chunks(self.name(), chunks)
-    //     }
-    // }
-    // #[inline]
-    // fn slice(&self, offset: i64, length: usize) -> Self {
-    //     let (chunks, len) = slice(&self.chunks, offset, length, self.len());
-    //     let mut out = self.copy_with_chunks(chunks, true);
-    //     out.length = len as IdxSize;
-    //     out
-    // }
-}
+    /// Check if ChunkedArray is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 
-impl ChunkOps for Utf8Chunked {
-    // fn rechunk(&self) -> Self {
-    //     if self.chunks().len() == 1 {
-    //         self.clone()
-    //     } else {
-    //         let chunks = vec![concatenate::concatenate(
-    //             self.chunks
-    //                 .iter()
-    //                 .map(|a| &**a)
-    //                 .collect::<Vec<_>>()
-    //                 .as_slice(),
-    //         )
-    //         .unwrap()];
-    //         self.copy_with_chunks(chunks, true)
-    //     }
-    // }
-    // #[inline]
-    // fn slice(&self, offset: i64, length: usize) -> Self {
-    //     let (chunks, len) = slice(&self.chunks, offset, length, self.len());
-    //     let mut out = self.copy_with_chunks(chunks, true);
-    //     out.length = len as IdxSize;
-    //     out
-    // }
-}
+    /// Compute the length
+    pub(crate) fn compute_len(&mut self) {
+        fn inner(chunks: &[ArrayRef]) -> usize {
+            match chunks.len() {
+                // fast path
+                1 => chunks[0].len(),
+                _ => chunks.iter().fold(0, |acc, arr| acc + arr.len()),
+            }
+        }
+        self.length = inner(&self.chunks) as IdxSize
+    }
 
-impl ChunkOps for ListChunked {
-    // fn rechunk(&self) -> Self {
-    //     if self.chunks.len() == 1 {
-    //         self.clone()
-    //     } else {
-    //         let chunks = vec![concatenate::concatenate(
-    //             self.chunks
-    //                 .iter()
-    //                 .map(|a| &**a)
-    //                 .collect::<Vec<_>>()
-    //                 .as_slice(),
-    //         )
-    //         .unwrap()];
-    //         let mut ca = ListChunked::from_chunks(self.name(), chunks);
-    //         if self.can_fast_explode() {
-    //             ca.set_fast_explode()
-    //         }
-    //         ca
-    //     }
-    // }
-    // #[inline]
-    // fn slice(&self, offset: i64, length: usize) -> Self {
-    //     let (chunks, len) = slice(&self.chunks, offset, length, self.len());
-    //     let mut out = self.copy_with_chunks(chunks, true);
-    //     out.length = len as IdxSize;
-    //     out
-    // }
+    pub fn rechunk(&self) -> Self {
+        match self.dtype() {
+            #[cfg(feature = "object")]
+            DataType::Object(_) => {
+                panic!("implementation error")
+            }
+            _ => {
+                fn inner_rechunk(chunks: &[ArrayRef]) -> Vec<ArrayRef> {
+                    vec![concatenate::concatenate(
+                        chunks.iter().map(|a| &**a).collect::<Vec<_>>().as_slice(),
+                    )
+                    .unwrap()]
+                }
+
+                if self.chunks().len() == 1 {
+                    self.clone()
+                } else {
+                    let chunks = inner_rechunk(&self.chunks);
+                    ChunkedArray::from_chunks(self.name(), chunks)
+                }
+            }
+        }
+    }
+
+    /// Slice the array. The chunks are reallocated the underlying data slices are zero copy.
+    ///
+    /// When offset is negative it will be counted from the end of the array.
+    /// This method will never error,
+    /// and will slice the best match when offset, or length is out of bounds
+    #[inline]
+    pub fn slice(&self, offset: i64, length: usize) -> Self {
+        let (chunks, len) = slice(&self.chunks, offset, length, self.len());
+        let mut out = self.copy_with_chunks(chunks, true);
+        out.length = len as IdxSize;
+        out
+    }
+
+    /// Take a view of top n elements
+    #[must_use]
+    pub fn limit(&self, num_elements: usize) -> Self
+    where
+        Self: Sized,
+    {
+        self.slice(0, num_elements)
+    }
+
+    /// Get the head of the ChunkedArray
+    #[must_use]
+    pub fn head(&self, length: Option<usize>) -> Self
+    where
+        Self: Sized,
+    {
+        match length {
+            Some(len) => self.slice(0, std::cmp::min(len, self.len())),
+            None => self.slice(0, std::cmp::min(10, self.len())),
+        }
+    }
+
+    /// Get the tail of the ChunkedArray
+    #[must_use]
+    pub fn tail(&self, length: Option<usize>) -> Self
+    where
+        Self: Sized,
+    {
+        let len = match length {
+            Some(len) => std::cmp::min(len, self.len()),
+            None => std::cmp::min(10, self.len()),
+        };
+        self.slice(-(len as i64), len)
+    }
 }
 
 #[cfg(feature = "object")]
-impl<T> ChunkOps for ObjectChunked<T>
-where
-    T: PolarsObject,
-{
-    // fn rechunk(&self) -> Self
-    // where
-    //     Self: std::marker::Sized,
-    // {
-    //     if self.chunks.len() == 1 {
-    //         self.clone()
-    //     } else {
-    //         let mut builder = ObjectChunkedBuilder::new(self.name(), self.len());
-    //         let chunks = self.downcast_iter();
-    //
-    //         // todo! use iterators once implemented
-    //         // no_null path
-    //         if !self.has_validity() {
-    //             for arr in chunks {
-    //                 for idx in 0..arr.len() {
-    //                     builder.append_value(arr.value(idx).clone())
-    //                 }
-    //             }
-    //         } else {
-    //             for arr in chunks {
-    //                 for idx in 0..arr.len() {
-    //                     if arr.is_valid(idx) {
-    //                         builder.append_value(arr.value(idx).clone())
-    //                     } else {
-    //                         builder.append_null()
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //         builder.finish()
-    //     }
-    // }
-    // #[inline]
-    // fn slice(&self, offset: i64, length: usize) -> Self {
-    //     let (chunks, len) = slice(&self.chunks, offset, length, self.len());
-    //     let mut out = self.copy_with_chunks(chunks, true);
-    //     out.length = len as IdxSize;
-    //     out
-    // }
+impl<T: PolarsObject> ObjectChunked<T> {
+    pub(crate) fn rechunk_object(&self) -> Self {
+        if self.chunks.len() == 1 {
+            self.clone()
+        } else {
+            let mut builder = ObjectChunkedBuilder::new(self.name(), self.len());
+            let chunks = self.downcast_iter();
+
+            // todo! use iterators once implemented
+            // no_null path
+            if !self.has_validity() {
+                for arr in chunks {
+                    for idx in 0..arr.len() {
+                        builder.append_value(arr.value(idx).clone())
+                    }
+                }
+            } else {
+                for arr in chunks {
+                    for idx in 0..arr.len() {
+                        if arr.is_valid(idx) {
+                            builder.append_value(arr.value(idx).clone())
+                        } else {
+                            builder.append_null()
+                        }
+                    }
+                }
+            }
+            builder.finish()
+        }
+    }
 }
 
 #[cfg(test)]

@@ -123,15 +123,8 @@ where
         let mut builder = MutableUtf8Array::<i64>::with_capacities(v.len(), values_size);
         builder.extend_trusted_len_values(v.iter().map(|s| s.as_ref()));
 
-        let field = Arc::new(Field::new(name, DataType::Utf8));
-
-        ChunkedArray {
-            field,
-            chunks: vec![builder.as_box()],
-            phantom: PhantomData,
-            categorical_map: None,
-            ..Default::default()
-        }
+        let chunks = vec![builder.as_box()];
+        ChunkedArray::from_chunks(name, chunks)
     }
 
     fn from_slice_options(name: &str, opt_v: &[Option<S>]) -> Self {
@@ -142,15 +135,8 @@ where
         let mut builder = MutableUtf8Array::<i64>::with_capacities(opt_v.len(), values_size);
         builder.extend_trusted_len(opt_v.iter().map(|s| s.as_ref()));
 
-        let field = Arc::new(Field::new(name, DataType::Utf8));
-
-        ChunkedArray {
-            field,
-            chunks: vec![builder.as_box()],
-            phantom: PhantomData,
-            categorical_map: None,
-            ..Default::default()
-        }
+        let chunks = vec![builder.as_box()];
+        ChunkedArray::from_chunks(name, chunks)
     }
 
     fn from_iter_options(name: &str, it: impl Iterator<Item = Option<S>>) -> Self {

@@ -79,6 +79,10 @@ where
 macro_rules! impl_dyn_series {
     ($ca: ident) => {
         impl private::PrivateSeries for SeriesWrap<$ca> {
+            fn compute_len(&mut self) {
+                self.0.compute_len()
+            }
+
             fn _field(&self) -> Cow<Field> {
                 Cow::Borrowed(self.0.ref_field())
             }

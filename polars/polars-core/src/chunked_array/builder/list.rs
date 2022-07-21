@@ -46,6 +46,7 @@ where
 macro_rules! finish_list_builder {
     ($self:ident) => {{
         let arr = $self.builder.as_box();
+
         let mut ca = ListChunked {
             field: Arc::new($self.field.clone()),
             chunks: vec![arr],
@@ -53,6 +54,7 @@ macro_rules! finish_list_builder {
             categorical_map: None,
             ..Default::default()
         };
+        ca.compute_len();
         if $self.fast_explode {
             ca.set_fast_explode()
         }

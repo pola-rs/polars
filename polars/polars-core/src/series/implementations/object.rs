@@ -151,7 +151,8 @@ where
     }
 
     fn rechunk(&self) -> Series {
-        self.0.rechunk().into_series()
+        // do not call normal rechunk
+        self.rechunk_object().into_series()
     }
 
     fn take_every(&self, n: usize) -> Series {

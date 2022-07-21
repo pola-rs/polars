@@ -25,12 +25,15 @@ where
     }
 
     fn finish(mut self) -> ChunkedArray<T> {
+        let arr = self.array_builder.as_box();
+        let length = arr.len() as IdxSize;
         ChunkedArray {
             field: Arc::new(self.field),
-            chunks: vec![self.array_builder.as_box()],
+            chunks: vec![arr],
             phantom: PhantomData,
             categorical_map: None,
-            ..Default::default()
+            bit_settings: Default::default(),
+            length,
         }
     }
 

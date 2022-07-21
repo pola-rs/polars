@@ -19,6 +19,7 @@ where
     /// See also [`extend`](Self::extend) for appends to the underlying memory
     pub fn append(&mut self, other: &Self) {
         let len = self.len();
+        self.length += other.length;
         new_chunks(&mut self.chunks, &other.chunks, len);
         self.set_sorted2(IsSorted::Not);
     }
@@ -28,6 +29,7 @@ where
 impl BooleanChunked {
     pub fn append(&mut self, other: &Self) {
         let len = self.len();
+        self.length += other.length;
         new_chunks(&mut self.chunks, &other.chunks, len);
         self.set_sorted2(IsSorted::Not);
     }
@@ -36,6 +38,7 @@ impl BooleanChunked {
 impl Utf8Chunked {
     pub fn append(&mut self, other: &Self) {
         let len = self.len();
+        self.length += other.length;
         new_chunks(&mut self.chunks, &other.chunks, len);
         self.set_sorted2(IsSorted::Not);
     }
@@ -45,6 +48,7 @@ impl Utf8Chunked {
 impl ListChunked {
     pub fn append(&mut self, other: &Self) {
         let len = self.len();
+        self.length += other.length;
         new_chunks(&mut self.chunks, &other.chunks, len);
     }
 }
@@ -53,6 +57,7 @@ impl ListChunked {
 impl<T: PolarsObject> ObjectChunked<T> {
     pub fn append(&mut self, other: &Self) {
         let len = self.len();
+        self.length += other.length;
         new_chunks(&mut self.chunks, &other.chunks, len);
     }
 }

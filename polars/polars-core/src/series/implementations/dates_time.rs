@@ -33,6 +33,9 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for SeriesWrap<$ca> {
+            fn compute_len(&mut self) {
+                self.0.compute_len()
+            }
             fn _field(&self) -> Cow<Field> {
                 Cow::Owned(self.0.field())
             }

@@ -136,7 +136,7 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 /// When multiplying two `ChunkArray'`s with different chunk sizes they cannot utilize [SIMD](https://en.wikipedia.org/wiki/SIMD) for instance.
 ///
 /// If you want to have predictable performance
-/// (no unexpected re-allocation of memory), it is advised to call the [rechunk](chunked_array/chunkops/trait.ChunkOps.html) after
+/// (no unexpected re-allocation of memory), it is advised to call the [ChunkedArray::rechunk] after
 /// multiple append operations.
 ///
 /// See also [`ChunkedArray::extend`] for appends within a chunk.
@@ -148,7 +148,7 @@ pub struct ChunkedArray<T: PolarsDataType> {
     /// maps categorical u32 indexes to String values
     pub(crate) categorical_map: Option<Arc<RevMapping>>,
     pub(crate) bit_settings: Settings,
-    length: IdxSize
+    length: IdxSize,
 }
 
 bitflags! {
@@ -326,7 +326,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// ```
     pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
         if self.field.data_type() == other.data_type() {
+            let length = other.len() as IdxSize;
             self.chunks.push(other);
+            self.length += length;
             Ok(())
         } else {
             Err(PolarsError::SchemaMisMatch(
@@ -348,7 +350,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             phantom: PhantomData,
             categorical_map: self.categorical_map.clone(),
             bit_settings: self.bit_settings,
-            length: 0
+            length: 0,
         };
         out.compute_len();
         if !keep_sorted {
@@ -419,7 +421,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
-    ChunkedArray<T>: ChunkOps,
 {
     /// Should be used to match the chunk_id of another ChunkedArray.
     /// # Panics
@@ -479,7 +480,7 @@ where
             phantom: PhantomData,
             categorical_map: None,
             bit_settings: Default::default(),
-            length: 0
+            length: 0,
         };
         out.compute_len();
         out
@@ -498,7 +499,7 @@ impl Int32Chunked {
             phantom: PhantomData,
             categorical_map: None,
             bit_settings: Default::default(),
-            length: 0
+            length: 0,
         };
         out.compute_len();
         out
@@ -612,7 +613,7 @@ impl<T: PolarsDataType> Clone for ChunkedArray<T> {
             phantom: PhantomData,
             categorical_map: self.categorical_map.clone(),
             bit_settings: self.bit_settings,
-            length: self.length
+            length: self.length,
         }
     }
 }
@@ -767,7 +768,6 @@ pub(crate) mod test {
 
     fn assert_slice_equal<T>(ca: &ChunkedArray<T>, eq: &[T::Native])
     where
-        ChunkedArray<T>: ChunkOps,
         T: PolarsNumericType,
     {
         assert_eq!(

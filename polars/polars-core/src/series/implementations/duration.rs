@@ -27,6 +27,9 @@ impl private::PrivateSeriesNumeric for SeriesWrap<DurationChunked> {
 }
 
 impl private::PrivateSeries for SeriesWrap<DurationChunked> {
+    fn compute_len(&mut self) {
+        self.0.compute_len()
+    }
     fn _field(&self) -> Cow<Field> {
         Cow::Owned(self.0.field())
     }

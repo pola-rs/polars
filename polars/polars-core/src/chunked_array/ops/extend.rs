@@ -74,6 +74,7 @@ where
                 self.chunks.push(Box::new(arr) as ArrayRef)
             }
         }
+        self.compute_len();
     }
 }
 
@@ -110,6 +111,7 @@ impl Utf8Chunked {
                 self.chunks.push(Box::new(arr) as ArrayRef)
             }
         }
+        self.compute_len();
     }
 }
 
