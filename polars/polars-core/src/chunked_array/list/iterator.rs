@@ -51,9 +51,9 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                 // Safety
                 // we cannot control the lifetime of an iterators `next` method.
                 // but as long as self is alive the reference to the series container is valid
-                let refer = &*self.series_container;
+                let refer = &mut *self.series_container;
                 unsafe {
-                    let s = std::mem::transmute::<&Series, &'a Series>(refer);
+                    let s = std::mem::transmute::<&mut Series, &'a mut Series>(refer);
                     UnstableSeries::new_with_chunk(s, self.inner.as_ref())
                 }
             })

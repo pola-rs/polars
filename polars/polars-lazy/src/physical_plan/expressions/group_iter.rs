@@ -9,8 +9,7 @@ impl<'a> AggregationContext<'a> {
         match self.agg_state() {
             AggState::Literal(_) => {
                 let s = self.series();
-                let s = UnstableSeries::new(s);
-                Box::new(LitIter::new(s, self.groups.len()))
+                Box::new(LitIter::new(s.array_ref(0).clone(), self.groups.len()))
             }
             AggState::AggregatedFlat(_) => {
                 let s = self.series();
@@ -33,17 +32,26 @@ impl<'a> AggregationContext<'a> {
 }
 
 struct LitIter<'a> {
+    array: ArrayRef,
     len: usize,
     offset: usize,
+    // UnstableSeries referenced that series
+    #[allow(dead_code)]
+    series_container: Pin<Box<Series>>,
     item: UnstableSeries<'a>,
 }
 
 impl<'a> LitIter<'a> {
-    fn new(s: UnstableSeries<'a>, len: usize) -> Self {
+    fn new(array: ArrayRef, len: usize) -> Self {
+        let mut series_container = Box::pin(Series::try_from(("", array.clone())).unwrap());
+        let ref_s = &mut *series_container as *mut Series;
         Self {
-            len,
+            array,
             offset: 0,
-            item: s,
+            len,
+            series_container,
+            // Safety: we pinned the series so the location is still valid
+            item: UnstableSeries::new(unsafe { &mut *ref_s }),
         }
     }
 }
@@ -73,15 +81,15 @@ struct FlatIter<'a> {
 
 impl<'a> FlatIter<'a> {
     fn new(array: ArrayRef, len: usize) -> Self {
-        let series_container = Box::pin(Series::try_from(("", array.clone())).unwrap());
-        let ref_s = &*series_container as *const Series;
+        let mut series_container = Box::pin(Series::try_from(("", array.clone())).unwrap());
+        let ref_s = &mut *series_container as *mut Series;
         Self {
             array,
             offset: 0,
             len,
             series_container,
             // Safety: we pinned the series so the location is still valid
-            item: UnstableSeries::new(unsafe { &*ref_s }),
+            item: UnstableSeries::new(unsafe { &mut *ref_s }),
         }
     }
 }

@@ -202,8 +202,8 @@ impl PhysicalExpr for BinaryExpr {
                 // this prevents a series Arc alloc and a vec alloc per iteration
                 let dummy = Series::try_from(("dummy", vec![arr_l.clone()])).unwrap();
                 // keep logical type info
-                let dummy = dummy.cast(l.dtype()).unwrap();
-                let mut us = UnstableSeries::new(&dummy);
+                let mut dummy = dummy.cast(l.dtype()).unwrap();
+                let mut us = UnstableSeries::new(&mut dummy);
 
                 // this is now a list
                 let r = ac_r.aggregated_arity_operation();
@@ -222,6 +222,8 @@ impl PhysicalExpr for BinaryExpr {
                                 // we are in bounds
                                 let arr = unsafe { arr_l.slice_unchecked(idx, 1) };
                                 us.swap(arr);
+                                // ensure the length is correct
+                                us.as_mut()._get_inner_mut().compute_len();
 
                                 let l = us.as_ref();
 
@@ -257,8 +259,8 @@ impl PhysicalExpr for BinaryExpr {
                 // this prevents a series Arc alloc and a vec alloc per iteration
                 let dummy = Series::try_from(("dummy", vec![arr_r.clone()])).unwrap();
                 // keep logical type info
-                let dummy = dummy.cast(r.dtype()).unwrap();
-                let mut us = UnstableSeries::new(&dummy);
+                let mut dummy = dummy.cast(r.dtype()).unwrap();
+                let mut us = UnstableSeries::new(&mut dummy);
 
                 let mut ca: ListChunked = l
                     .amortized_iter()
@@ -272,6 +274,8 @@ impl PhysicalExpr for BinaryExpr {
                                 // we are in bounds
                                 let arr = unsafe { arr_r.slice_unchecked(idx, 1) };
                                 us.swap(arr);
+                                // ensure the length is correct
+                                us.as_mut()._get_inner_mut().compute_len();
                                 let r = us.as_ref();
 
                                 apply_operator(l, r, self.op)

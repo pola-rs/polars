@@ -139,8 +139,9 @@ impl PhysicalExpr for TernaryExpr {
             "cannot combine this ternary expression, the groups do not match"
         );
 
+        dbg!(&ac_mask);
         use AggState::*;
-        match (ac_truthy.agg_state(), ac_falsy.agg_state()) {
+        match dbg!((ac_truthy.agg_state(), ac_falsy.agg_state())) {
             // all branches are aggregated-flat or literal
             // mask -> aggregated-flat
             // truthy -> aggregated-flat | literal
