@@ -16,7 +16,7 @@ use std::sync::Arc;
 pub use {boolean::*, list::*, primitive::*, utf8::*};
 
 // N: the value type; T: the sentinel type
-pub trait ChunkedBuilder<N, T> {
+pub trait ChunkedBuilder<N, T: PolarsDataType> {
     fn append_value(&mut self, val: N);
     fn append_null(&mut self);
     fn append_option(&mut self, opt_val: Option<N>) {

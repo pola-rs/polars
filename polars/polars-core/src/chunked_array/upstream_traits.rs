@@ -17,7 +17,7 @@ use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-impl<T> Default for ChunkedArray<T> {
+impl<T: PolarsDataType> Default for ChunkedArray<T> {
     fn default() -> Self {
         ChunkedArray {
             field: Arc::new(Field::new("default", DataType::Null)),
@@ -25,6 +25,7 @@ impl<T> Default for ChunkedArray<T> {
             phantom: PhantomData,
             categorical_map: None,
             bit_settings: Default::default(),
+            length: 0
         }
     }
 }
@@ -301,13 +302,16 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
             offset: 0,
             len,
         });
-        ChunkedArray {
+        let mut out = ChunkedArray {
             field: Arc::new(Field::new("", DataType::Object(T::type_name()))),
             chunks: vec![arr],
             phantom: PhantomData,
             categorical_map: None,
             bit_settings: Default::default(),
-        }
+            length: 0
+        };
+        out.compute_len();
+        out
     }
 }
 

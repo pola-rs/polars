@@ -50,13 +50,13 @@ use std::ops::{BitAnd, BitOr, BitXor};
 // Utility wrapper struct
 pub(crate) struct SeriesWrap<T>(pub T);
 
-impl<T> From<ChunkedArray<T>> for SeriesWrap<ChunkedArray<T>> {
+impl<T: PolarsDataType> From<ChunkedArray<T>> for SeriesWrap<ChunkedArray<T>> {
     fn from(ca: ChunkedArray<T>) -> Self {
         SeriesWrap(ca)
     }
 }
 
-impl<T> Deref for SeriesWrap<ChunkedArray<T>> {
+impl<T: PolarsDataType> Deref for SeriesWrap<ChunkedArray<T>> {
     type Target = ChunkedArray<T>;
 
     fn deref(&self) -> &Self::Target {
@@ -379,7 +379,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn rechunk(&self) -> Series {
-                ChunkOps::rechunk(&self.0).into_series()
+                self.0.rechunk().into_series()
             }
 
             fn expand_at_index(&self, index: usize, length: usize) -> Series {

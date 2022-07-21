@@ -99,7 +99,7 @@ impl ChunkShift<ListType> for ListChunked {
 }
 
 #[cfg(feature = "object")]
-impl<T> ChunkShiftFill<ObjectType<T>, Option<ObjectType<T>>> for ObjectChunked<T> {
+impl<T: PolarsObject> ChunkShiftFill<ObjectType<T>, Option<ObjectType<T>>> for ObjectChunked<T> {
     fn shift_and_fill(
         &self,
         _periods: i64,
@@ -109,7 +109,7 @@ impl<T> ChunkShiftFill<ObjectType<T>, Option<ObjectType<T>>> for ObjectChunked<T
     }
 }
 #[cfg(feature = "object")]
-impl<T> ChunkShift<ObjectType<T>> for ObjectChunked<T> {
+impl<T: PolarsObject> ChunkShift<ObjectType<T>> for ObjectChunked<T> {
     fn shift(&self, periods: i64) -> Self {
         self.shift_and_fill(periods, None)
     }

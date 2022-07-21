@@ -12,12 +12,13 @@ fn slice(
     offset: i64,
     slice_length: usize,
     own_length: usize,
-) -> Vec<ArrayRef> {
+) -> (Vec<ArrayRef>, usize) {
     let mut new_chunks = Vec::with_capacity(1);
     let (raw_offset, slice_len) = slice_offsets(offset, slice_length, own_length);
 
     let mut remaining_length = slice_len;
     let mut remaining_offset = raw_offset;
+    let mut new_len = 0;
 
     for chunk in chunks {
         let chunk_len = chunk.len();
@@ -30,6 +31,7 @@ fn slice(
         } else {
             remaining_length
         };
+        new_len += take_len;
 
         debug_assert!(remaining_offset + take_len <= chunk.len());
         unsafe {
@@ -46,102 +48,92 @@ fn slice(
     if new_chunks.is_empty() {
         new_chunks.push(chunks[0].slice(0, 0));
     }
-    new_chunks
+    (new_chunks, new_len)
 }
 
 impl<T> ChunkOps for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn rechunk(&self) -> Self {
-        if self.chunks().len() == 1 {
-            self.clone()
-        } else {
-            let chunks = vec![concatenate::concatenate(
-                self.chunks
-                    .iter()
-                    .map(|a| &**a)
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            )
-            .unwrap()];
-            ChunkedArray::from_chunks(self.name(), chunks)
-        }
-    }
-    #[inline]
-    fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()), true)
-    }
 }
 
 impl ChunkOps for BooleanChunked {
-    fn rechunk(&self) -> Self {
-        if self.chunks().len() == 1 {
-            self.clone()
-        } else {
-            let chunks = vec![concatenate::concatenate(
-                self.chunks
-                    .iter()
-                    .map(|a| &**a)
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            )
-            .unwrap()];
-            ChunkedArray::from_chunks(self.name(), chunks)
-        }
-    }
-    #[inline]
-    fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()), true)
-    }
+    // fn rechunk(&self) -> Self {
+    //     if self.chunks().len() == 1 {
+    //         self.clone()
+    //     } else {
+    //         let chunks = vec![concatenate::concatenate(
+    //             self.chunks
+    //                 .iter()
+    //                 .map(|a| &**a)
+    //                 .collect::<Vec<_>>()
+    //                 .as_slice(),
+    //         )
+    //         .unwrap()];
+    //         ChunkedArray::from_chunks(self.name(), chunks)
+    //     }
+    // }
+    // #[inline]
+    // fn slice(&self, offset: i64, length: usize) -> Self {
+    //     let (chunks, len) = slice(&self.chunks, offset, length, self.len());
+    //     let mut out = self.copy_with_chunks(chunks, true);
+    //     out.length = len as IdxSize;
+    //     out
+    // }
 }
 
 impl ChunkOps for Utf8Chunked {
-    fn rechunk(&self) -> Self {
-        if self.chunks().len() == 1 {
-            self.clone()
-        } else {
-            let chunks = vec![concatenate::concatenate(
-                self.chunks
-                    .iter()
-                    .map(|a| &**a)
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            )
-            .unwrap()];
-            self.copy_with_chunks(chunks, true)
-        }
-    }
-    #[inline]
-    fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()), true)
-    }
+    // fn rechunk(&self) -> Self {
+    //     if self.chunks().len() == 1 {
+    //         self.clone()
+    //     } else {
+    //         let chunks = vec![concatenate::concatenate(
+    //             self.chunks
+    //                 .iter()
+    //                 .map(|a| &**a)
+    //                 .collect::<Vec<_>>()
+    //                 .as_slice(),
+    //         )
+    //         .unwrap()];
+    //         self.copy_with_chunks(chunks, true)
+    //     }
+    // }
+    // #[inline]
+    // fn slice(&self, offset: i64, length: usize) -> Self {
+    //     let (chunks, len) = slice(&self.chunks, offset, length, self.len());
+    //     let mut out = self.copy_with_chunks(chunks, true);
+    //     out.length = len as IdxSize;
+    //     out
+    // }
 }
 
 impl ChunkOps for ListChunked {
-    fn rechunk(&self) -> Self {
-        if self.chunks.len() == 1 {
-            self.clone()
-        } else {
-            let chunks = vec![concatenate::concatenate(
-                self.chunks
-                    .iter()
-                    .map(|a| &**a)
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            )
-            .unwrap()];
-            let mut ca = ListChunked::from_chunks(self.name(), chunks);
-            if self.can_fast_explode() {
-                ca.set_fast_explode()
-            }
-            ca
-        }
-    }
-    #[inline]
-    fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()), true)
-    }
+    // fn rechunk(&self) -> Self {
+    //     if self.chunks.len() == 1 {
+    //         self.clone()
+    //     } else {
+    //         let chunks = vec![concatenate::concatenate(
+    //             self.chunks
+    //                 .iter()
+    //                 .map(|a| &**a)
+    //                 .collect::<Vec<_>>()
+    //                 .as_slice(),
+    //         )
+    //         .unwrap()];
+    //         let mut ca = ListChunked::from_chunks(self.name(), chunks);
+    //         if self.can_fast_explode() {
+    //             ca.set_fast_explode()
+    //         }
+    //         ca
+    //     }
+    // }
+    // #[inline]
+    // fn slice(&self, offset: i64, length: usize) -> Self {
+    //     let (chunks, len) = slice(&self.chunks, offset, length, self.len());
+    //     let mut out = self.copy_with_chunks(chunks, true);
+    //     out.length = len as IdxSize;
+    //     out
+    // }
 }
 
 #[cfg(feature = "object")]
@@ -149,42 +141,45 @@ impl<T> ChunkOps for ObjectChunked<T>
 where
     T: PolarsObject,
 {
-    fn rechunk(&self) -> Self
-    where
-        Self: std::marker::Sized,
-    {
-        if self.chunks.len() == 1 {
-            self.clone()
-        } else {
-            let mut builder = ObjectChunkedBuilder::new(self.name(), self.len());
-            let chunks = self.downcast_iter();
-
-            // todo! use iterators once implemented
-            // no_null path
-            if !self.has_validity() {
-                for arr in chunks {
-                    for idx in 0..arr.len() {
-                        builder.append_value(arr.value(idx).clone())
-                    }
-                }
-            } else {
-                for arr in chunks {
-                    for idx in 0..arr.len() {
-                        if arr.is_valid(idx) {
-                            builder.append_value(arr.value(idx).clone())
-                        } else {
-                            builder.append_null()
-                        }
-                    }
-                }
-            }
-            builder.finish()
-        }
-    }
-    #[inline]
-    fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()), true)
-    }
+    // fn rechunk(&self) -> Self
+    // where
+    //     Self: std::marker::Sized,
+    // {
+    //     if self.chunks.len() == 1 {
+    //         self.clone()
+    //     } else {
+    //         let mut builder = ObjectChunkedBuilder::new(self.name(), self.len());
+    //         let chunks = self.downcast_iter();
+    //
+    //         // todo! use iterators once implemented
+    //         // no_null path
+    //         if !self.has_validity() {
+    //             for arr in chunks {
+    //                 for idx in 0..arr.len() {
+    //                     builder.append_value(arr.value(idx).clone())
+    //                 }
+    //             }
+    //         } else {
+    //             for arr in chunks {
+    //                 for idx in 0..arr.len() {
+    //                     if arr.is_valid(idx) {
+    //                         builder.append_value(arr.value(idx).clone())
+    //                     } else {
+    //                         builder.append_null()
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //         builder.finish()
+    //     }
+    // }
+    // #[inline]
+    // fn slice(&self, offset: i64, length: usize) -> Self {
+    //     let (chunks, len) = slice(&self.chunks, offset, length, self.len());
+    //     let mut out = self.copy_with_chunks(chunks, true);
+    //     out.length = len as IdxSize;
+    //     out
+    // }
 }
 
 #[cfg(test)]

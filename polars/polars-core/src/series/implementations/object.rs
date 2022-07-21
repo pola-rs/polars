@@ -10,7 +10,7 @@ use ahash::RandomState;
 use std::any::Any;
 use std::borrow::Cow;
 
-impl<T> PrivateSeriesNumeric for SeriesWrap<ObjectChunked<T>> {}
+impl<T: PolarsObject> PrivateSeriesNumeric for SeriesWrap<ObjectChunked<T>> {}
 
 impl<T> PrivateSeries for SeriesWrap<ObjectChunked<T>>
 where
@@ -151,7 +151,7 @@ where
     }
 
     fn rechunk(&self) -> Series {
-        ChunkOps::rechunk(&self.0).into_series()
+        self.0.rechunk().into_series()
     }
 
     fn take_every(&self, n: usize) -> Series {

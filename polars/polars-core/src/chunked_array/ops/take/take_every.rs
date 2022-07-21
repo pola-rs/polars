@@ -54,7 +54,7 @@ impl ChunkTakeEvery<ListType> for ListChunked {
 }
 
 #[cfg(feature = "object")]
-impl<T> ChunkTakeEvery<ObjectType<T>> for ObjectChunked<T> {
+impl<T: PolarsObject> ChunkTakeEvery<ObjectType<T>> for ObjectChunked<T> {
     fn take_every(&self, _n: usize) -> ObjectChunked<T> {
         todo!()
     }

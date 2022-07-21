@@ -112,6 +112,7 @@ impl Series {
 
 impl<T> ChunkedArray<T>
 where
+    T: PolarsDataType,
     ChunkedArray<T>: ChunkTake,
 {
     /// Sample n datapoints from this ChunkedArray.

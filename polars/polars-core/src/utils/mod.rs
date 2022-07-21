@@ -103,7 +103,7 @@ macro_rules! split_array {
 #[cfg(feature = "private")]
 pub fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> Result<Vec<ChunkedArray<T>>>
 where
-    ChunkedArray<T>: ChunkOps,
+    T: PolarsDataType,
 {
     split_array!(ca, n, i64)
 }

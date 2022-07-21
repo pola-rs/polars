@@ -94,7 +94,7 @@ macro_rules! is_unique_duplicated {
 }
 
 #[cfg(feature = "object")]
-impl<T> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
+impl<T: PolarsObject> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
     fn unique(&self) -> Result<ChunkedArray<ObjectType<T>>> {
         Err(PolarsError::InvalidOperation(
             "unique not supported for object".into(),
@@ -131,7 +131,7 @@ where
 
 #[cfg(feature = "mode")]
 #[allow(clippy::needless_collect)]
-fn mode<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
+fn mode<T: PolarsDataType>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
 where
     ChunkedArray<T>: IntoGroupsProxy + ChunkTake,
 {

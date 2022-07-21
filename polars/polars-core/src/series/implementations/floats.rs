@@ -293,7 +293,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn rechunk(&self) -> Series {
-                ChunkOps::rechunk(&self.0).into_series()
+                self.0.rechunk().into_series()
             }
 
             fn expand_at_index(&self, index: usize, length: usize) -> Series {

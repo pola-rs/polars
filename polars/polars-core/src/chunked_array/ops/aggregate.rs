@@ -380,7 +380,7 @@ impl ChunkQuantile<f64> for Float64Chunked {
 impl ChunkQuantile<String> for Utf8Chunked {}
 impl ChunkQuantile<Series> for ListChunked {}
 #[cfg(feature = "object")]
-impl<T> ChunkQuantile<Series> for ObjectChunked<T> {}
+impl<T: PolarsObject> ChunkQuantile<Series> for ObjectChunked<T> {}
 impl ChunkQuantile<bool> for BooleanChunked {}
 
 impl<T> ChunkVar<f64> for ChunkedArray<T>
@@ -448,7 +448,7 @@ impl ChunkVar<f64> for Float64Chunked {
 impl ChunkVar<String> for Utf8Chunked {}
 impl ChunkVar<Series> for ListChunked {}
 #[cfg(feature = "object")]
-impl<T> ChunkVar<Series> for ObjectChunked<T> {}
+impl<T: PolarsObject> ChunkVar<Series> for ObjectChunked<T> {}
 impl ChunkVar<bool> for BooleanChunked {}
 
 /// Booleans are casted to 1 or 0.
@@ -599,7 +599,7 @@ impl VarAggSeries for ListChunked {
     }
 }
 #[cfg(feature = "object")]
-impl<T> VarAggSeries for ObjectChunked<T> {
+impl<T: PolarsObject> VarAggSeries for ObjectChunked<T> {
     fn var_as_series(&self) -> Series {
         unimplemented!()
     }
@@ -703,7 +703,7 @@ impl QuantileAggSeries for ListChunked {
     }
 }
 #[cfg(feature = "object")]
-impl<T> QuantileAggSeries for ObjectChunked<T> {
+impl<T: PolarsObject> QuantileAggSeries for ObjectChunked<T> {
     fn quantile_as_series(
         &self,
         _quantile: f64,
@@ -792,7 +792,7 @@ impl ChunkAggSeries for ListChunked {
 }
 
 #[cfg(feature = "object")]
-impl<T> ChunkAggSeries for ObjectChunked<T> {}
+impl<T: PolarsObject> ChunkAggSeries for ObjectChunked<T> {}
 
 impl<T> ArgAgg for ChunkedArray<T>
 where
@@ -817,7 +817,7 @@ impl ArgAgg for Utf8Chunked {}
 impl ArgAgg for ListChunked {}
 
 #[cfg(feature = "object")]
-impl<T> ArgAgg for ObjectChunked<T> {}
+impl<T: PolarsObject> ArgAgg for ObjectChunked<T> {}
 
 #[cfg(test)]
 mod test {
