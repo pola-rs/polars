@@ -250,11 +250,13 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSiz
     let mut idx = Vec::with_capacity(capacity);
 
     // `value_count` counts the taken values from the list values
-    // and aret the same unit as `offsets`
-    let mut value_count = 0;
+    // and are the same unit as `offsets`
+    // we also add the start offset as a list can be sliced
+    let mut value_count = offsets[0];
     // `empty_count` counts the duplicates taken because of empty list
-    let mut empty_count = 0;
+    let mut empty_count = 0usize;
     let mut last_idx = 0;
+
     for offset in &offsets[1..] {
         // this get all the elements up till offsets
         while value_count < *offset {
@@ -280,7 +282,7 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSiz
     }
 
     // take the remaining values
-    for _ in 0..(capacity - value_count as usize - empty_count as usize) {
+    for _ in 0..(capacity - (value_count - offsets[0]) as usize - empty_count) {
         idx.push(last_idx);
     }
     idx
@@ -308,13 +310,14 @@ impl ChunkExplode for ListChunked {
             ));
         }
 
+        // ensure that the value array is sliced
+        // as a list only slices its offsets on a slice operation
         if !offsets.is_empty() {
-            let offset = offsets[0];
+            let start = offsets[0] as usize;
+            let len = offsets[offsets.len() - 1] as usize - start;
             // safety:
             // we are in bounds
-            values = unsafe {
-                values.slice_unchecked(offset as usize, offsets[offsets.len() - 1] as usize)
-            };
+            values = unsafe { values.slice_unchecked(start, len) };
         }
 
         let mut s = if ca.can_fast_explode() {
