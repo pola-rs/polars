@@ -153,10 +153,14 @@ class NotebookFormatter(HTMLFormatter):
             ("tbody tr th", "vertical-align", "top"),
             ("thead th", "text-align", "right"),
             ("td", "white-space", "pre"),
-            ("td", "line-height", "95%"),
             ("td", "padding-top", "0"),
             ("td", "padding-bottom", "0"),
         ]
+        # vs code cannot deal with that css line
+        # see #4102
+        if not in_vscode_notebook():
+            element_props.append(("td", "line-height", "95%"))
+
         template_mid = "\n\n".join(map(lambda t: template_select % t, element_props))
         template = dedent("\n".join((template_first, template_mid, template_last)))
         self.write(template)
@@ -169,3 +173,15 @@ class NotebookFormatter(HTMLFormatter):
             self.write_style()
             super().render()
         return self.elements
+
+
+def in_vscode_notebook() -> bool:
+    try:
+        # autoimported by notebooks
+        get_ipython()  # type: ignore[name-defined]
+        os.environ["VSCODE_CWD"]
+    except NameError:
+        return False  # not in notebook
+    except KeyError:
+        return False  # not in VSCode
+    return True
