@@ -613,8 +613,8 @@ def test_fill_nan() -> None:
         .collect()["a"]
         .series_equal(pl.Series("a", [1.0, 2.0, 3.0]))
     )
-    assert df.select(pl.col("a").fill_nan(2))["literal"].series_equal(
-        pl.Series("literal", [1.0, 2.0, 3.0])
+    assert df.select(pl.col("a").fill_nan(2))["a"].series_equal(
+        pl.Series("a", [1.0, 2.0, 3.0])
     )
 
 

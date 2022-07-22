@@ -306,12 +306,12 @@ impl Expr {
             |s| match s.dtype() {
                 DataType::Float32 => {
                     let ca = s.f32()?;
-                    let mask = ca.is_not_nan().fill_null(FillNullStrategy::One)?;
+                    let mask = ca.is_not_nan();
                     ca.filter(&mask).map(|ca| ca.into_series())
                 }
                 DataType::Float64 => {
                     let ca = s.f64()?;
-                    let mask = ca.is_not_nan().fill_null(FillNullStrategy::One)?;
+                    let mask = ca.is_not_nan();
                     ca.filter(&mask).map(|ca| ca.into_series())
                 }
                 _ => Ok(s),
@@ -1137,9 +1137,11 @@ impl Expr {
 
     /// Replace the floating point `NaN` values by a value.
     pub fn fill_nan<E: Into<Expr>>(self, fill_value: E) -> Self {
-        when(self.clone().is_nan())
-            .then(fill_value.into())
-            .otherwise(self)
+        // we take the not branch so that self is truthy value of `when -> then -> otherwise`
+        // and that ensure we keep the name of `self`
+        when(self.clone().is_not_nan())
+            .then(self)
+            .otherwise(fill_value.into())
     }
     /// Count the values of the Series
     /// or
