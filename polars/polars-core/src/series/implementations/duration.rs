@@ -496,10 +496,9 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     fn _sum_as_series(&self) -> Series {
-        Int32Chunked::full_null(self.name(), 1)
-            .cast(self.dtype())
-            .unwrap()
+        self.0.sum_as_series().into_duration(self.0.time_unit())
     }
+
     fn max_as_series(&self) -> Series {
         self.0.max_as_series().into_duration(self.0.time_unit())
     }
