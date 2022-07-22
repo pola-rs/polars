@@ -585,12 +585,12 @@ class Expr:
         >>> df.select(
         ...     [
         ...         pl.all(),
-        ...         pl.all().reverse().suffix("_reverse"),
+        ...         pl.all().reverse().prefix("reverse_"),
         ...     ]
         ... )
         shape: (5, 8)
         ┌─────┬────────┬─────┬────────┬───────────┬────────────────┬───────────┬──────────────┐
-        │ A   ┆ fruits ┆ B   ┆ cars   ┆ A_reverse ┆ fruits_reverse ┆ B_reverse ┆ cars_reverse │
+        │ A   ┆ fruits ┆ B   ┆ cars   ┆ reverse_A ┆ reverse_fruits ┆ reverse_B ┆ reverse_cars │
         │ --- ┆ ---    ┆ --- ┆ ---    ┆ ---       ┆ ---            ┆ ---       ┆ ---          │
         │ i64 ┆ str    ┆ i64 ┆ str    ┆ i64       ┆ str            ┆ i64       ┆ str          │
         ╞═════╪════════╪═════╪════════╪═══════════╪════════════════╪═══════════╪══════════════╡
@@ -642,12 +642,12 @@ class Expr:
         >>> df.select(
         ...     [
         ...         pl.all(),
-        ...         pl.all().reverse().prefix("reverse_"),
+        ...         pl.all().reverse().suffix("_reverse"),
         ...     ]
         ... )
         shape: (5, 8)
         ┌─────┬────────┬─────┬────────┬───────────┬────────────────┬───────────┬──────────────┐
-        │ A   ┆ fruits ┆ B   ┆ cars   ┆ reverse_A ┆ reverse_fruits ┆ reverse_B ┆ reverse_cars │
+        │ A   ┆ fruits ┆ B   ┆ cars   ┆ A_reverse ┆ fruits_reverse ┆ B_reverse ┆ cars_reverse │
         │ --- ┆ ---    ┆ --- ┆ ---    ┆ ---       ┆ ---            ┆ ---       ┆ ---          │
         │ i64 ┆ str    ┆ i64 ┆ str    ┆ i64       ┆ str            ┆ i64       ┆ str          │
         ╞═════╪════════╪═════╪════════╪═══════════╪════════════════╪═══════════╪══════════════╡
