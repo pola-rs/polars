@@ -210,3 +210,78 @@ def test_join_on_expressions() -> None:
     assert df_a.join(df_b, left_on=(pl.col("a") ** 2).cast(int), right_on=pl.col("b"))[
         "a"
     ].to_list() == [1, 4, 9, 9]
+
+
+def test_join() -> None:
+    df_left = pl.DataFrame(
+        {
+            "a": ["a", "b", "a", "z"],
+            "b": [1, 2, 3, 4],
+            "c": [6, 5, 4, 3],
+        }
+    )
+    df_right = pl.DataFrame(
+        {
+            "a": ["b", "c", "b", "a"],
+            "k": [0, 3, 9, 6],
+            "c": [1, 0, 2, 1],
+        }
+    )
+
+    joined = df_left.join(df_right, left_on="a", right_on="a").sort("a")
+    assert joined["b"].series_equal(pl.Series("b", [1, 3, 2, 2]))
+    joined = df_left.join(df_right, left_on="a", right_on="a", how="left").sort("a")
+    assert joined["c_right"].is_null().sum() == 1
+    assert joined["b"].series_equal(pl.Series("b", [1, 3, 2, 2, 4]))
+    joined = df_left.join(df_right, left_on="a", right_on="a", how="outer").sort("a")
+    assert joined["c_right"].null_count() == 1
+    assert joined["c"].null_count() == 1
+    assert joined["b"].null_count() == 1
+    assert joined["k"].null_count() == 1
+    assert joined["a"].null_count() == 0
+
+    # we need to pass in a column to join on, either by supplying `on`, or both `left_on` and `right_on`
+    with pytest.raises(ValueError):
+        df_left.join(df_right)
+    with pytest.raises(ValueError):
+        df_left.join(df_right, right_on="a")
+    with pytest.raises(ValueError):
+        df_left.join(df_right, left_on="a")
+
+    df_a = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
+    df_b = pl.DataFrame(
+        {"foo": [1, 1, 1], "bar": ["a", "c", "c"], "ham": ["let", "var", "const"]}
+    )
+
+    # just check if join on multiple columns runs
+    df_a.join(df_b, left_on=["a", "b"], right_on=["foo", "bar"])
+
+    eager_join = df_a.join(df_b, left_on="a", right_on="foo")
+
+    lazy_join = df_a.lazy().join(df_b.lazy(), left_on="a", right_on="foo").collect()
+    assert lazy_join.shape == eager_join.shape
+
+
+def test_joins_dispatch() -> None:
+    # this just flexes the dispatch a bit
+
+    # don't change the data of this dataframe, this triggered:
+    # https://github.com/pola-rs/polars/issues/1688
+    dfa = pl.DataFrame(
+        {
+            "a": ["a", "b", "c", "a"],
+            "b": [1, 2, 3, 1],
+            "date": ["2021-01-01", "2021-01-02", "2021-01-03", "2021-01-01"],
+            "datetime": [13241324, 12341256, 12341234, 13241324],
+        }
+    ).with_columns(
+        [pl.col("date").str.strptime(pl.Date), pl.col("datetime").cast(pl.Datetime)]
+    )
+
+    for how in ["left", "inner", "outer"]:
+        dfa.join(dfa, on=["a", "b", "date", "datetime"], how=how)
+        dfa.join(dfa, on=["date", "datetime"], how=how)
+        dfa.join(dfa, on=["date", "datetime", "a"], how=how)
+        dfa.join(dfa, on=["date", "a"], how=how)
+        dfa.join(dfa, on=["a", "datetime"], how=how)
+        dfa.join(dfa, on=["date"], how=how)

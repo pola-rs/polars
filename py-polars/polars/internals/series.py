@@ -490,7 +490,7 @@ class Series:
     def __setitem__(
         self, key: int | Series | np.ndarray | list | tuple, value: Any
     ) -> None:
-        if isinstance(value, Sequence):
+        if isinstance(value, Sequence) and not isinstance(value, str):
             raise ValueError("cannot set with list/tuple as value; use a scalar value")
         if isinstance(key, Series):
             if key.dtype == Boolean:
@@ -2343,7 +2343,7 @@ class Series:
             )
         return self.to_arrow().to_pandas()
 
-    def set(self, filter: Series, value: int | float) -> Series:
+    def set(self, filter: Series, value: int | float | str) -> Series:
         """
         Set masked values.
 
