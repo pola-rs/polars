@@ -3,6 +3,7 @@ use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::list_construction::py_seq_to_list;
+use crate::set::set_at_idx;
 use crate::utils::reinterpret;
 use crate::{
     apply_method_all_arrow_series2, arrow_interop,
@@ -1461,6 +1462,18 @@ impl PySeries {
         dt.set_time_zone(tz);
         Ok(dt.into_series().into())
     }
+
+    pub fn set_at_idx(&mut self, idx: PySeries, values: PySeries) -> PyResult<()> {
+        //TODO remove set_at_idx macros
+        let s = std::mem::take(&mut self.series);
+        match set_at_idx(s, &idx.series, &values.series) {
+            Ok(out) => {
+                self.series = out;
+                Ok(())
+            }
+            Err(e) => Err(PyErr::from(PyPolarsErr::from(e))),
+        }
+    }
 }
 
 macro_rules! impl_ufuncs {
@@ -1573,16 +1586,6 @@ macro_rules! impl_set_at_idx {
 }
 
 impl_set_at_idx!(set_at_idx_str, &str, utf8, Utf8);
-impl_set_at_idx!(set_at_idx_f64, f64, f64, Float64);
-impl_set_at_idx!(set_at_idx_f32, f32, f32, Float32);
-impl_set_at_idx!(set_at_idx_u8, u8, u8, UInt8);
-impl_set_at_idx!(set_at_idx_u16, u16, u16, UInt16);
-impl_set_at_idx!(set_at_idx_u32, u32, u32, UInt32);
-impl_set_at_idx!(set_at_idx_u64, u64, u64, UInt64);
-impl_set_at_idx!(set_at_idx_i8, i8, i8, Int8);
-impl_set_at_idx!(set_at_idx_i16, i16, i16, Int16);
-impl_set_at_idx!(set_at_idx_i32, i32, i32, Int32);
-impl_set_at_idx!(set_at_idx_i64, i64, i64, Int64);
 impl_set_at_idx!(set_at_idx_bool, bool, bool, Boolean);
 
 macro_rules! impl_get {

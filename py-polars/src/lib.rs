@@ -31,6 +31,7 @@ pub mod npy;
 pub mod prelude;
 pub(crate) mod py_modules;
 pub mod series;
+mod set;
 pub mod utils;
 
 use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};

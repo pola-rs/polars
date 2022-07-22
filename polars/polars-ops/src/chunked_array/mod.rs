@@ -1,4 +1,5 @@
 mod list;
+mod set;
 mod strings;
 #[cfg(feature = "to_dummies")]
 mod to_dummies;
@@ -12,4 +13,5 @@ use polars_core::prelude::*;
 pub use to_dummies::*;
 
 pub use list::*;
+pub use set::ChunkedSet;
 pub use strings::*;

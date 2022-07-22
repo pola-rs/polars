@@ -491,7 +491,12 @@ class Series:
         self, key: int | Series | np.ndarray | list | tuple, value: Any
     ) -> None:
         if isinstance(value, Sequence) and not isinstance(value, str):
-            raise ValueError("cannot set with list/tuple as value; use a scalar value")
+            if self.is_numeric() or self.is_datelike():
+                self.set_at_idx(key, value)  # type: ignore[arg-type]
+                return None
+            raise ValueError(
+                f"cannot set Series of dtype: {self.dtype} with list/tuple as value; use a scalar value"
+            )
         if isinstance(key, Series):
             if key.dtype == Boolean:
                 self._s = self.set(key, value)._s
@@ -2347,6 +2352,10 @@ class Series:
         """
         Set masked values.
 
+        .. note::
+            Using this is an anti-pattern.
+            Always prefer: `pl.when(predicate).then(value).otherwise(self)`
+
         Parameters
         ----------
         filter
@@ -2362,10 +2371,24 @@ class Series:
     def set_at_idx(
         self,
         idx: Series | np.ndarray | list[int] | tuple[int],
-        value: int | float | str | bool,
+        value: int
+        | float
+        | str
+        | bool
+        | Sequence[int]
+        | Sequence[float]
+        | Sequence[date]
+        | Sequence[datetime]
+        | date
+        | datetime
+        | Series,
     ) -> Series:
         """
         Set values at the index locations.
+
+        .. note::
+            Using this is an anti-pattern.
+            Always prefer: `pl.when(predicate).then(value).otherwise(self)`
 
         Parameters
         ----------
@@ -2376,8 +2399,21 @@ class Series:
 
         Returns
         -------
-        New allocated Series
+        the series mutated
         """
+
+        if self.is_numeric() or self.is_datelike():
+            idx = Series("", idx)
+            if isinstance(value, (int, float, bool)):
+                value = Series("", [value])
+
+                # if we need to set more than a single value, we extend it
+                if len(idx) > 0:
+                    value = value.extend_constant(value[0], len(idx) - 1)
+            elif not isinstance(value, Series):
+                value = Series("", value)
+            self._s.set_at_idx(idx._s, value._s)
+            return self
 
         # the set_at_idx function expects a np.array of dtype u32
         f = get_ffi_func("set_at_idx_<>", self.dtype, self._s)
@@ -2402,7 +2438,8 @@ class Series:
                 raise ImportError("'numpy' is required for this functionality.")
             idx_array = np.array(idx, dtype=np.uint32)
 
-        return wrap_s(f(idx_array, value))
+        self._s = f(idx_array, value)
+        return self
 
     def cleared(self) -> "Series":
         """

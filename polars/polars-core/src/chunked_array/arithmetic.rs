@@ -108,9 +108,12 @@ where
     let ca = match (lhs.len(), rhs.len()) {
         (a, b) if a == b => {
             let (mut lhs, mut rhs) = align_chunks_binary_owned(lhs, rhs);
-            lhs.downcast_iter_mut()
-                .zip(rhs.downcast_iter_mut())
-                .for_each(|(lhs, rhs)| kernel(lhs, rhs));
+            // safety, we do no t change the lengths
+            unsafe {
+                lhs.downcast_iter_mut()
+                    .zip(rhs.downcast_iter_mut())
+                    .for_each(|(lhs, rhs)| kernel(lhs, rhs));
+            }
             lhs
         }
         // broadcast right path

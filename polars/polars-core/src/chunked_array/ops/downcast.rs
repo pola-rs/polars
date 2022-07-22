@@ -52,14 +52,16 @@ where
         })
     }
 
-    pub(crate) fn downcast_iter_mut(
+    /// # Safety
+    /// The caller must ensure the length remains correct.
+    pub unsafe fn downcast_iter_mut(
         &mut self,
     ) -> impl Iterator<Item = &mut PrimitiveArray<T::Native>> + DoubleEndedIterator {
         self.chunks.iter_mut().map(|arr| {
             // Safety:
             // This should be the array type in PolarsNumericType
             let arr = &mut **arr;
-            unsafe { &mut *(arr as *mut dyn Array as *mut PrimitiveArray<T::Native>) }
+            &mut *(arr as *mut dyn Array as *mut PrimitiveArray<T::Native>)
         })
     }
 
