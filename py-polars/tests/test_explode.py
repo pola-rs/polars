@@ -43,3 +43,11 @@ def test_explode_empty_list_4003() -> None:
         "id": [1, 2, 3],
         "nested": [None, 1, 2],
     }
+
+
+def test_explode_empty_list_4107() -> None:
+    df = pl.DataFrame({"b": [[1], [2], []] * 2}).with_row_count()
+
+    pl.testing.assert_frame_equal(
+        df.explode(["b"]), df.explode(["b"]).drop("row_nr").with_row_count()
+    )

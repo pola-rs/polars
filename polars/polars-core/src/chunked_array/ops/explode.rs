@@ -249,33 +249,38 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSiz
     }
     let mut idx = Vec::with_capacity(capacity);
 
-    let mut count = 0;
+    // `value_count` counts the taken values from the list values
+    // and aret the same unit as `offsets`
+    let mut value_count = 0;
+    // `empty_count` counts the duplicates taken because of empty list
+    let mut empty_count = 0;
     let mut last_idx = 0;
-    let mut previous_empty = false;
     for offset in &offsets[1..] {
-        while count < *offset {
-            count += 1;
+        // this get all the elements up till offsets
+        while value_count < *offset {
+            value_count += 1;
             idx.push(last_idx)
         }
+
+        // then we compute the previous offsets
         // Safety:
         // we started iterating from 1, so there is always a previous offset
         // we take the pointer to the previous element and deref that to get
         // the previous offset
         let previous_offset = unsafe { *(offset as *const i64).offset(-1) };
 
-        if !previous_empty && (previous_offset != *offset) {
-            last_idx += 1;
-        } else {
-            count += 1;
+        // if the previous offset is equal to the current offset we have an empty
+        // list and we duplicate previous index
+        if previous_offset == *offset {
+            empty_count += 1;
             idx.push(last_idx);
-            last_idx += 1;
         }
-        previous_empty = previous_offset == *offset;
-    }
-    // undo latest increment
-    last_idx -= 1;
 
-    for _ in 0..(capacity - count as usize) {
+        last_idx += 1;
+    }
+
+    // take the remaining values
+    for _ in 0..(capacity - value_count as usize - empty_count as usize) {
         idx.push(last_idx);
     }
     idx
@@ -563,5 +568,12 @@ mod test {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn test_row_offsets() {
+        let offsets = &[0, 1, 2, 2, 3, 4, 4];
+        let out = offsets_to_indexes(offsets, 6);
+        assert_eq!(out, &[0, 1, 2, 3, 4, 5]);
     }
 }
