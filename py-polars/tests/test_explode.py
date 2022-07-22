@@ -51,3 +51,31 @@ def test_explode_empty_list_4107() -> None:
     pl.testing.assert_frame_equal(
         df.explode(["b"]), df.explode(["b"]).drop("row_nr").with_row_count()
     )
+
+
+def explode_correct_for_slice() -> None:
+    df = pl.DataFrame({"b": [[1, 1], [2, 2], [3, 3], [4, 4]]})
+    assert df.slice(2, 2).explode(["b"])["b"].to_list() == [3, 3, 4, 4]
+
+    df = (
+        (
+            pl.DataFrame({"group": pl.arange(0, 5, eager=True)}).join(
+                pl.DataFrame(
+                    {
+                        "b": [[1, 2, 3], [2, 3], [4], [1, 2, 3], [0]],
+                    }
+                ),
+                how="cross",
+            )
+        )
+        .sort("group")
+        .with_row_count()
+    )
+    expected = pl.DataFrame(
+        {
+            "row_nr": [0, 0, 0, 1, 1, 2, 3, 3, 3, 4, 5, 5, 5, 6, 6, 7, 8, 8, 8, 9],
+            "group": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            "b": [1, 2, 3, 2, 3, 4, 1, 2, 3, 0, 1, 2, 3, 2, 3, 4, 1, 2, 3, 0],
+        }
+    )
+    assert df.slice(0, 10).explode(["b"]).frame_equal(expected)

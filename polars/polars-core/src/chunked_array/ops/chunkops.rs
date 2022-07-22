@@ -88,7 +88,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                     .unwrap()]
                 }
 
-                if self.chunks().len() == 1 {
+                if self.chunks.len() == 1 {
                     self.clone()
                 } else {
                     let chunks = inner_rechunk(&self.chunks);
