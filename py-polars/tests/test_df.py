@@ -193,10 +193,18 @@ def test_replace_at_idx() -> None:
 
 
 def test_indexing_set() -> None:
+    # This is deprecated behaviour
     df = pl.DataFrame({"bool": [True, True], "str": ["N/A", "N/A"], "nr": [1, 2]})
-    df[0, "bool"] = False
-    df[0, "nr"] = 100
-    df[0, "str"] = "foo"
+
+    with pytest.deprecated_call():
+        df[0, "bool"] = False
+
+    with pytest.deprecated_call():
+        df[0, "nr"] = 100
+
+    with pytest.deprecated_call():
+        df[0, "str"] = "foo"
+
     assert df.to_dict(False) == {
         "bool": [False, True],
         "str": ["foo", "N/A"],
