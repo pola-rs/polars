@@ -524,11 +524,17 @@ impl PyDataFrame {
     }
 
     pub fn to_numpy(&self, py: Python) -> Option<PyObject> {
-        let mut st = DataType::Int8;
+        let mut st = None;
         for s in self.df.iter() {
             let dt_i = s.dtype();
-            st = get_supertype(&st, dt_i).ok()?;
+            match st {
+                None => st = Some(dt_i.clone()),
+                Some(ref mut st) => {
+                    *st = get_supertype(&st, dt_i).ok()?;
+                }
+            }
         }
+        let st = st?;
 
         match st {
             DataType::UInt32 => self

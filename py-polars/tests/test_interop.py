@@ -423,3 +423,9 @@ def test_from_pyarrow_chunked_array() -> None:
     column = pa.chunked_array([[1], [2]])
     series = pl.Series("column", column)
     assert series.to_list() == [1, 2]
+
+
+def test_numpy_preserve_uint64_4112() -> None:
+    assert pl.DataFrame({"a": [1, 2, 3]}).with_column(
+        pl.col("a").hash()
+    ).to_numpy().dtype == np.dtype("uint64")
