@@ -1223,3 +1223,20 @@ def test_time_microseconds_3843() -> None:
 def test_year_empty_df() -> None:
     df = pl.DataFrame(pl.Series(name="date", dtype=pl.Date))
     assert df.select(pl.col("date").dt.year()).dtypes == [pl.Int32]
+
+
+def test_sum_duration() -> None:
+    assert pl.DataFrame(
+        [
+            {"name": "Jen", "duration": timedelta(seconds=60)},
+            {"name": "Mike", "duration": timedelta(seconds=30)},
+            {"name": "Jen", "duration": timedelta(seconds=60)},
+        ]
+    ).select(
+        [pl.col("duration").sum(), pl.col("duration").dt.seconds().alias("sec").sum()]
+    ).to_dict(
+        False
+    ) == {
+        "duration": [timedelta(seconds=150)],
+        "sec": [150],
+    }
