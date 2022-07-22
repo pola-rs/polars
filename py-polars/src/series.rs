@@ -1464,7 +1464,8 @@ impl PySeries {
     }
 
     pub fn set_at_idx(&mut self, idx: PySeries, values: PySeries) -> PyResult<()> {
-        //TODO remove set_at_idx macros
+        // we take the value because we want a ref count
+        // of 1 so that we can have mutable access
         let s = std::mem::take(&mut self.series);
         match set_at_idx(s, &idx.series, &values.series) {
             Ok(out) => {

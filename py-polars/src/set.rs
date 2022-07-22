@@ -1,7 +1,7 @@
 use polars::export::arrow::array::Array;
 use polars::prelude::*;
 
-pub(crate) fn set_at_idx(s: Series, idx: &Series, values: &Series) -> Result<Series> {
+pub(crate) fn set_at_idx(mut s: Series, idx: &Series, values: &Series) -> Result<Series> {
     let logical_dtype = s.dtype().clone();
     let idx = idx.cast(&IDX_DTYPE)?;
     let idx = idx.rechunk();
@@ -17,8 +17,11 @@ pub(crate) fn set_at_idx(s: Series, idx: &Series, values: &Series) -> Result<Ser
     let idx = idx.values().as_slice();
 
     let values = values.to_physical_repr().cast(&s.dtype().to_physical())?;
+    use std::sync::Arc;
 
-    let mut s = s.to_physical_repr().into_owned();
+    // do not shadow, otherwise s is not dropped immediately
+    // and we want to have mutable access
+    s = s.to_physical_repr().into_owned();
     let mutable_s = s._get_inner_mut();
 
     let s = match logical_dtype.to_physical() {
