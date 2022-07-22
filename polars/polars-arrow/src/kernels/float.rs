@@ -21,12 +21,12 @@ pub fn is_not_nan<T>(arr: &PrimitiveArray<T>) -> ArrayRef
 where
     T: NativeType + Float,
 {
-    let values = Bitmap::from_trusted_len_iter(arr.values().iter().map(|v| !v.is_nan()));
+    let mut values = Bitmap::from_trusted_len_iter(arr.values().iter().map(|v| !v.is_nan()));
+    if let Some(validity) = arr.validity() {
+        values = &values | &!validity
+    }
 
-    Box::new(BooleanArray::from_data_default(
-        values,
-        arr.validity().cloned(),
-    ))
+    Box::new(BooleanArray::from_data_default(values, None))
 }
 
 pub fn is_finite<T>(arr: &PrimitiveArray<T>) -> ArrayRef
