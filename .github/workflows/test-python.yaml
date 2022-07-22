@@ -5,6 +5,7 @@ on:
     paths:
       - 'py-polars/**'
       - 'polars/**'
+      - '.github/workflows/test-python.yaml'
 jobs:
   test-python:
     name: Build and test Python
