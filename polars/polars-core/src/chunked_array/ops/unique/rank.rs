@@ -52,7 +52,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
 
     // Currently, nulls tie with the minimum or maximum bound for a type, depending on reverse.
     // TODO: Need to expose nulls_last in argsort to prevent this.
-    if s.has_validity() {
+    if s.null_count() > 0 {
         // Fill using MaxBound/MinBound to keep nulls first.
         let null_strategy = if reverse {
             FillNullStrategy::MaxBound

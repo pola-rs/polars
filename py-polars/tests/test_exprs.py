@@ -294,3 +294,22 @@ def test_arr_contains() -> None:
     ).collect().to_dict(False) == {
         "str_list": [["cat", "mouse", "dog"], ["dog", "mouse", "cat"]]
     }
+
+
+def test_rank_so_4109() -> None:
+    df = pl.from_dict(
+        {
+            "id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4],
+            "rank": [None, 3, 2, 4, 1, 4, 3, 2, 1, None, 3, 4, 4, 1, None, 3],
+        }
+    ).sort(by=["id", "rank"])
+
+    assert df.groupby("id").agg(pl.col("rank").rank()).to_dict(False) == {
+        "id": [1, 2, 3, 4],
+        "rank": [
+            [1.0, 2.0, 3.0, 4.0],
+            [1.0, 2.0, 3.0, 4.0],
+            [1.0, 2.0, 3.0, 4.0],
+            [1.0, 2.0, 3.0, 4.0],
+        ],
+    }
