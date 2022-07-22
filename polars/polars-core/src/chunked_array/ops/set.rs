@@ -132,22 +132,6 @@ where
             Ok(ca)
         }
     }
-
-    fn set_with<F>(&'a self, mask: &BooleanChunked, f: F) -> Result<Self>
-    where
-        F: Fn(Option<T::Native>) -> Option<T::Native>,
-    {
-        check_bounds!(self, mask);
-        let ca = mask
-            .into_iter()
-            .zip(self.into_iter())
-            .map(|(mask_val, opt_val)| match mask_val {
-                Some(true) => f(opt_val),
-                _ => opt_val,
-            })
-            .collect_trusted();
-        Ok(ca)
-    }
 }
 
 impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
@@ -201,22 +185,6 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
             .zip(self.into_iter())
             .map(|(mask_val, opt_val)| match mask_val {
                 Some(true) => value,
-                _ => opt_val,
-            })
-            .collect_trusted();
-        Ok(ca)
-    }
-
-    fn set_with<F>(&'a self, mask: &BooleanChunked, f: F) -> Result<Self>
-    where
-        F: Fn(Option<bool>) -> Option<bool>,
-    {
-        check_bounds!(self, mask);
-        let ca = mask
-            .into_iter()
-            .zip(self.into_iter())
-            .map(|(mask_val, opt_val)| match mask_val {
-                Some(true) => f(opt_val),
                 _ => opt_val,
             })
             .collect_trusted();
@@ -289,22 +257,6 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
             })
             .collect_trusted();
         Ok(ca)
-    }
-
-    fn set_with<F>(&'a self, mask: &BooleanChunked, f: F) -> Result<Self>
-    where
-        Self: Sized,
-        F: Fn(Option<&'a str>) -> Option<String>,
-    {
-        check_bounds!(self, mask);
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
-        self.into_iter()
-            .zip(mask)
-            .for_each(|(opt_val, opt_mask)| match opt_mask {
-                Some(true) => builder.append_option(f(opt_val)),
-                _ => builder.append_option(opt_val),
-            });
-        Ok(builder.finish())
     }
 }
 

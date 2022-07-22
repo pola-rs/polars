@@ -416,10 +416,19 @@ def test_set() -> None:
 
 
 def test_set_value_as_list_fail() -> None:
-    """ " it is not allowed to use a list to set values"""
+    # only allowed for numerical physical types
     s = pl.Series("a", [1, 2, 3])
+    s[[0, 2]] = [4, 5]
+    assert s.to_list() == [4, 2, 5]
+
+    # for other types it is not allowed
+    s = pl.Series("a", ["a", "b", "c"])
     with pytest.raises(ValueError):
-        s[[0, 1]] = [4, 5]
+        s[[0, 1]] = ["d", "e"]
+
+    s = pl.Series("a", [True, False, False])
+    with pytest.raises(ValueError):
+        s[[0, 1]] = [True, False]
 
 
 @pytest.mark.parametrize("key", [True, False, 1.0])

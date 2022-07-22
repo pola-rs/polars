@@ -274,24 +274,6 @@ pub trait ChunkSet<'a, A, B> {
     fn set(&'a self, mask: &BooleanChunked, opt_value: Option<A>) -> Result<Self>
     where
         Self: Sized;
-
-    /// Set the values where the mask evaluates to `true` by applying a closure to these values.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use polars_core::prelude::*;
-    /// let ca = UInt32Chunked::new("a", &[1, 2, 3]);
-    /// let mask = BooleanChunked::new("mask", &[false, true, false]);
-    /// let new = ca.set_with(&mask, |opt_v| opt_v.map(
-    ///     |v| v * 2
-    /// )).unwrap();
-    /// assert_eq!(Vec::from(&new), &[Some(1), Some(4), Some(3)]);
-    /// ```
-    fn set_with<F>(&'a self, mask: &BooleanChunked, f: F) -> Result<Self>
-    where
-        Self: Sized,
-        F: Fn(Option<A>) -> Option<B>;
 }
 
 /// Cast `ChunkedArray<T>` to `ChunkedArray<N>`

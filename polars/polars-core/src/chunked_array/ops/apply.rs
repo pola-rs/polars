@@ -111,8 +111,11 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
     where
         F: Fn(T::Native) -> T::Native + Copy,
     {
-        self.downcast_iter_mut()
-            .for_each(|arr| arrow::compute::arity_assign::unary(arr, f));
+        // safety, we do no t change the lengths
+        unsafe {
+            self.downcast_iter_mut()
+                .for_each(|arr| arrow::compute::arity_assign::unary(arr, f))
+        };
     }
 }
 
