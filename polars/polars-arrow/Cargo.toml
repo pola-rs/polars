@@ -11,7 +11,7 @@ description = "Arrow interfaces for Polars DataFrame library"
 [dependencies]
 # arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "98e49133b2e56e51e30335830485b3cf768eb5a2", features = ["compute_concatenate"], default-features = false }
 # arrow = { package = "arrow2", path = "../../../arrow2", features = ["compute_concatenate"], default-features = false }
-arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "apply_validity", features = ["compute_concatenate"], default-features = false }
+arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "polars", features = ["compute_concatenate"], default-features = false }
 # arrow = { package = "arrow2", version = "0.12", default-features = false, features = ["compute_concatenate"] }
 hashbrown = "0.12"
 num = "^0.4"

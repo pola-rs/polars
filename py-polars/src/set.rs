@@ -17,7 +17,6 @@ pub(crate) fn set_at_idx(mut s: Series, idx: &Series, values: &Series) -> Result
     let idx = idx.values().as_slice();
 
     let values = values.to_physical_repr().cast(&s.dtype().to_physical())?;
-    use std::sync::Arc;
 
     // do not shadow, otherwise s is not dropped immediately
     // and we want to have mutable access
