@@ -79,3 +79,23 @@ def explode_correct_for_slice() -> None:
         }
     )
     assert df.slice(0, 10).explode(["b"]).frame_equal(expected)
+
+
+def test_sliced_null_explode() -> None:
+    s = pl.Series("", [[1], [2], [3], [4], [], [6]])
+    assert s.slice(2, 4).explode().to_list() == [3, 4, None, 6]
+    assert s.slice(2, 2).explode().to_list() == [3, 4]
+    assert pl.Series("", [[1], [2], None, [4], [], [6]]).slice(
+        2, 4
+    ).explode().to_list() == [None, 4, None, 6]
+
+    s = pl.Series("", [["a"], ["b"], ["c"], ["d"], [], ["e"]])
+    assert s.slice(2, 4).explode().to_list() == ["c", "d", None, "e"]
+    assert s.slice(2, 2).explode().to_list() == ["c", "d"]
+    assert pl.Series("", [["a"], ["b"], None, ["d"], [], ["e"]]).slice(
+        2, 4
+    ).explode().to_list() == [None, "d", None, "e"]
+
+    s = pl.Series("", [[False], [False], [True], [False], [], [True]])
+    assert s.slice(2, 2).explode().to_list() == [True, False]
+    assert s.slice(2, 4).explode().to_list() == [True, False, None, True]

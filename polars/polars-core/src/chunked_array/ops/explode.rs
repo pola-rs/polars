@@ -17,10 +17,11 @@ unsafe fn unset_nulls(
     validity_values: &Bitmap,
     nulls: &mut Vec<usize>,
     empty_row_idx: &[usize],
+    base_offset: usize,
 ) {
     for i in start..last {
         if !validity_values.get_bit_unchecked(i) {
-            nulls.push(i + empty_row_idx.len());
+            nulls.push(i + empty_row_idx.len() - base_offset);
         }
     }
 }
@@ -32,14 +33,18 @@ where
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         debug_assert_eq!(self.chunks.len(), 1);
         let arr = self.downcast_iter().next().unwrap();
-        let values = arr.values();
 
-        let mut new_values = Vec::with_capacity(((values.len() as f32) * 1.5) as usize);
+        // make sure that we don't look beyond the sliced array
+        let values = &arr.values().as_slice()[..offsets[offsets.len() - 1] as usize];
+
         let mut empty_row_idx = vec![];
         let mut nulls = vec![];
 
         let mut start = offsets[0] as usize;
+        let base_offset = start;
         let mut last = start;
+
+        let mut new_values = Vec::with_capacity(offsets[offsets.len() - 1] as usize - start + 1);
 
         // we check all the offsets and in the case a consecutive offset is the same,
         // e.g. 0, 1, 4, 4, 6
@@ -60,15 +65,29 @@ where
                 let o = o as usize;
                 if o == last {
                     if start != last {
+                        #[cfg(debug_assertions)]
                         new_values.extend_from_slice(&values[start..last]);
+
+                        #[cfg(not(debug_assertions))]
+                        unsafe {
+                            new_values.extend_from_slice(values.get_unchecked(start..last))
+                        };
+
                         // Safety:
                         // we are in bounds
                         unsafe {
-                            unset_nulls(start, last, validity_values, &mut nulls, &empty_row_idx)
+                            unset_nulls(
+                                start,
+                                last,
+                                validity_values,
+                                &mut nulls,
+                                &empty_row_idx,
+                                base_offset,
+                            )
                         }
                     }
 
-                    empty_row_idx.push(o + empty_row_idx.len());
+                    empty_row_idx.push(o + empty_row_idx.len() - base_offset);
                     new_values.push(T::Native::default());
                     start = o;
                 }
@@ -78,16 +97,31 @@ where
             // final null check
             // Safety:
             // we are in bounds
-            unsafe { unset_nulls(start, last, validity_values, &mut nulls, &empty_row_idx) }
+            unsafe {
+                unset_nulls(
+                    start,
+                    last,
+                    validity_values,
+                    &mut nulls,
+                    &empty_row_idx,
+                    base_offset,
+                )
+            }
         } else {
             for &o in &offsets[1..] {
                 let o = o as usize;
                 if o == last {
                     if start != last {
-                        new_values.extend_from_slice(&values[start..last])
+                        #[cfg(debug_assertions)]
+                        new_values.extend_from_slice(&values[start..last]);
+
+                        #[cfg(not(debug_assertions))]
+                        unsafe {
+                            new_values.extend_from_slice(values.get_unchecked(start..last))
+                        };
                     }
 
-                    empty_row_idx.push(o + empty_row_idx.len());
+                    empty_row_idx.push(o + empty_row_idx.len() - base_offset);
                     new_values.push(T::Native::default());
                     start = o;
                 }
@@ -95,6 +129,7 @@ where
             }
         }
 
+        // add remaining values
         new_values.extend_from_slice(&values[start..]);
 
         let mut validity = MutableBitmap::with_capacity(new_values.len());
@@ -310,17 +345,19 @@ impl ChunkExplode for ListChunked {
             ));
         }
 
-        // ensure that the value array is sliced
-        // as a list only slices its offsets on a slice operation
-        if !offsets.is_empty() {
-            let start = offsets[0] as usize;
-            let len = offsets[offsets.len() - 1] as usize - start;
-            // safety:
-            // we are in bounds
-            values = unsafe { values.slice_unchecked(start, len) };
-        }
-
         let mut s = if ca.can_fast_explode() {
+            // ensure that the value array is sliced
+            // as a list only slices its offsets on a slice operation
+
+            // we only do this in fast-explode as for the other
+            // branch the offsets must coincide with the values.
+            if !offsets.is_empty() {
+                let start = offsets[0] as usize;
+                let len = offsets[offsets.len() - 1] as usize - start;
+                // safety:
+                // we are in bounds
+                values = unsafe { values.slice_unchecked(start, len) };
+            }
             Series::try_from((self.name(), values)).unwrap()
         } else {
             // during tests
@@ -335,7 +372,7 @@ impl ChunkExplode for ListChunked {
                     }
                     last = o;
                 }
-                if !has_empty {
+                if !has_empty && offsets[0] == 0 {
                     panic!("could have fast exploded")
                 }
             }
