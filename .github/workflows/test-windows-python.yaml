@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'py-polars/**'
+      - '.github/workflows/test-windows-python.yaml'
 jobs:
   test-python:
     name: Build and test Python

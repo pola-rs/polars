@@ -8,6 +8,7 @@ on:
     paths:
       - 'polars/**'
       - 'py-polars/**'
+      - '.github/workflows/coverage.yaml'
 
 jobs:
   coverage:

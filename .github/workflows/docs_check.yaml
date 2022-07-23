@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
     - 'py-polars/**'
+    - '.github/workflows/docs_check.yaml'
 jobs:
   test:
     name: Docs check

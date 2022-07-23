@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'nodejs-polars/**'
+      - '.github/workflows/test-js.yaml'
 jobs: 
   test-js: 
     runs-on: ubuntu-latest

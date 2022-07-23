@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'polars/**'
+      - '.github/workflows/benchmark.yaml'
 jobs:
   test:
     runs-on: ubuntu-latest
