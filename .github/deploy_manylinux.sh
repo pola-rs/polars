@@ -25,5 +25,7 @@ maturin publish \
   --skip-existing \
   --username ritchie46
 
+# https://github.com/actions/checkout/issues/760
+git config --global --add safe.directory /github/workspace
 # Clean up after bigidx changes
 git checkout .
