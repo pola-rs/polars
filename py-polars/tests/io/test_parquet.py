@@ -204,3 +204,19 @@ def recursive_logical_type() -> None:
     read = pl.read_parquet(f, use_pyarrow=True)
     assert read.dtypes == [pl.Int64, pl.List(pl.Categorical)]
     assert read.shape == (2, 2)
+
+
+def test_nested_dictionary() -> None:
+    with pl.StringCache():
+        df = (
+            pl.DataFrame({"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]})
+            .with_column(pl.col("str").cast(pl.Categorical))
+            .groupby("group")
+            .agg([pl.col("str").list().alias("cat_list")])
+        )
+        f = io.BytesIO()
+        df.write_parquet(f)
+        f.seek(0)
+
+        read_df = pl.read_parquet(f)
+        assert df.frame_equal(read_df)

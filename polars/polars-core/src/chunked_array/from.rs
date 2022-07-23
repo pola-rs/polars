@@ -1,65 +1,63 @@
 use super::*;
 
-fn from_chunks_default<T: PolarsDataType>(name: &str, chunks: Vec<ArrayRef>) -> ChunkedArray<T> {
-    let field = Arc::new(Field::new(name, datatype));
-    let mut out = ChunkedArray {
-        field,
-        chunks,
-        phantom: PhantomData,
-        categorical_map: None,
-        bit_settings: Default::default(),
-        length: 0,
+#[allow(clippy::ptr_arg)]
+fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataType {
+    // ensure we don't get List<null>
+    let dtype = if let Some(arr) = chunks.get(0) {
+        arr.data_type().into()
+    } else {
+        dtype
     };
-    out.compute_len();
-    out
 
+    match dtype {
+        #[cfg(feature = "dtype-categorical")]
+        // arrow dictionaries are not nested as dictionaries, but only by their keys, so we must
+        // change the list-value array to the keys and store the dicitonary values in the datatype.
+        // if a global string cache is set, we also must modify the keys.
+        DataType::List(inner) if *inner == DataType::Categorical(None) => {
+            use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
+            let array = concatenate_owned_unchecked(chunks).unwrap();
+            let list_arr = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
+            let values_arr = list_arr.values();
+            let cat = unsafe {
+                Series::try_from_arrow_unchecked(
+                    "",
+                    vec![values_arr.clone()],
+                    values_arr.data_type(),
+                )
+                .unwrap()
+            };
+
+            // we nest only the physical representation
+            // the mapping is still in our rev-map
+            let arrow_dtype = ListArray::<i64>::default_datatype(ArrowDataType::UInt32);
+            let new_array = unsafe {
+                ListArray::new_unchecked(
+                    arrow_dtype,
+                    list_arr.offsets().clone(),
+                    cat.array_ref(0).clone(),
+                    list_arr.validity().cloned(),
+                )
+            };
+            chunks.clear();
+            chunks.push(Box::new(new_array));
+            DataType::List(Box::new(cat.dtype().clone()))
+        }
+        _ => dtype,
+    }
 }
 
 impl<T> ChunkedArray<T>
-    where
-        T: PolarsDataType,
+where
+    T: PolarsDataType,
 {
     /// Create a new ChunkedArray from existing chunks.
     pub fn from_chunks(name: &str, mut chunks: Vec<ArrayRef>) -> Self {
-        // TODO! make this function accept a dtype and make it unsafe
-        // prevent List<Null> if the inner list type is known.
-        let datatype = if matches!(T::get_dtype(), DataType::List(_)) {
-            let dtype = if let Some(arr) = chunks.get(0) {
-                arr.data_type().into()
-            } else {
-                T::get_dtype()
-            };
-
-            match dtype {
-                #[cfg(feature = "dtype-categorical")]
-                DataType::List(inner) if *inner == DataType::Categorical(None) => {
-                    let array = concatenate_owned_unchecked(&chunks).unwrap();
-                    let list_arr = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
-                    let values_arr = list_arr.values();
-                    let cat = Series::try_from(("", values_arr.clone())).unwrap();
-
-                    // we nest only the physical representation
-                    // the mapping is still in our rev-map
-                    let arrow_dtype =
-                        ListArray::<i64>::default_datatype(ArrowDataType::UInt32);
-                    let new_array = unsafe {
-                        ListArray::new_unchecked(
-                            arrow_dtype,
-                            list_arr.offsets().clone(),
-                            cat.array_ref(0).clone(),
-                            list_arr.validity().cloned(),
-                        )
-                    };
-                    chunks.clear();
-                    chunks.push(Box::new(new_array));
-                    DataType::List(Box::new(cat.dtype().clone()))
-                }
-                _ => dtype,
-            }
-        } else {
-            T::get_dtype()
+        let dtype = match T::get_dtype() {
+            dtype @ DataType::List(_) => from_chunks_list_dtype(&mut chunks, dtype),
+            dt => dt,
         };
-        let field = Arc::new(Field::new(name, datatype));
+        let field = Arc::new(Field::new(name, dtype));
         let mut out = ChunkedArray {
             field,
             chunks,
@@ -93,8 +91,8 @@ impl Int32Chunked {
 }
 
 impl<T> ChunkedArray<T>
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     /// Create a new ChunkedArray by taking ownership of the Vec. This operation is zero copy.
     pub fn from_vec(name: &str, v: Vec<T::Native>) -> Self {
@@ -120,4 +118,3 @@ impl<T> ChunkedArray<T>
         out
     }
 }
-

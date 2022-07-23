@@ -20,6 +20,7 @@ mod ndarray;
 mod bitwise;
 #[cfg(feature = "object")]
 mod drop;
+mod from;
 pub(crate) mod list;
 pub(crate) mod logical;
 #[cfg(feature = "object")]
@@ -38,7 +39,6 @@ pub mod strings;
 pub mod temporal;
 mod trusted_len;
 pub mod upstream_traits;
-mod from;
 
 use polars_arrow::prelude::*;
 
@@ -47,7 +47,6 @@ use crate::chunked_array::categorical::RevMapping;
 use crate::series::IsSorted;
 use crate::utils::CustomIterTools;
 use bitflags::bitflags;
-use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 use std::mem;
 
 #[cfg(not(feature = "dtype-categorical"))]
