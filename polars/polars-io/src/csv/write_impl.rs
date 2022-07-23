@@ -1,6 +1,6 @@
 use arrow::temporal_conversions;
 use lexical_core::{FormattedSize, ToLexical};
-use memchr::memchr;
+use memchr::{memchr, memchr2};
 use polars_core::{prelude::*, series::SeriesIter, POOL};
 use polars_utils::contention_pool::LowContentionPool;
 use rayon::prelude::*;
@@ -23,7 +23,7 @@ fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> s
             };
             return write!(f, "\"{}\"", replaced);
         }
-        let surround_with_quotes = memchr(options.delimiter, v.as_bytes()).is_some();
+        let surround_with_quotes = memchr2(options.delimiter, b'\n', v.as_bytes()).is_some();
 
         if surround_with_quotes {
             write!(f, "\"{}\"", v)

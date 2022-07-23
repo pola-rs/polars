@@ -582,3 +582,12 @@ def test_different_eol_char() -> None:
     assert pl.read_csv(csv.encode(), eol_char=";", has_header=False).frame_equal(
         expected
     )
+
+
+def test_csv_write_escape_newlines() -> None:
+    df = pl.DataFrame(dict(escape=["n\nn"]))
+    f = io.BytesIO()
+    df.write_csv(f)
+    f.seek(0)
+    read_df = pl.read_csv(f)
+    assert df.frame_equal(read_df)
