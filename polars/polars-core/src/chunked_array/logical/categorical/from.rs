@@ -91,13 +91,8 @@ impl CategoricalChunked {
         values: &Utf8Array<i64>,
     ) -> Self {
         if use_string_cache() {
-            // todo!
-            // we probably can make this faster as we have more information.
             let mut builder = CategoricalChunkedBuilder::new(name, keys.len());
-            let iter = keys
-                .into_iter()
-                .map(|opt_key| opt_key.map(|k| values.value_unchecked(*k as usize)));
-            builder.drain_iter(iter);
+            builder.global_map_from_local(keys, values.clone());
             builder.finish()
         } else {
             CategoricalChunked::from_chunks_original(

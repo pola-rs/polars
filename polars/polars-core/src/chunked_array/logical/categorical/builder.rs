@@ -222,6 +222,77 @@ impl CategoricalChunkedBuilder {
         hashes
     }
 
+    /// Build a global string cached `CategoricalChunked` from a local `Dictionary`.
+    pub(super) fn global_map_from_local(&mut self, keys: &UInt32Array, values: Utf8Array<i64>) {
+        // locally we don't need a hashmap because we all categories are 1 integer apart
+        // so the index is local, and the values is global
+        let mut local_to_global: Vec<u32> = Vec::with_capacity(values.len());
+        let id;
+
+        // now we have to lock the global string cache.
+        // we will create a mapping from our local categoricals to global categoricals
+        // and a mapping from global categoricals to our local categoricals
+
+        // in a separate scope so that we drop the global cache as soon as we are finished
+        {
+            let cache = &mut crate::STRING_CACHE.lock_map();
+            id = cache.uuid;
+            let global_mapping = &mut cache.map;
+            let hb = global_mapping.hasher().clone();
+
+            for s in values.values_iter() {
+                let h = str::get_hash(s, &hb);
+                let mut global_idx = global_mapping.len() as u32;
+                // Note that we don't create the StrHashGlobal to search the key in the hashmap
+                // as StrHashGlobal may allocate a string
+                let entry = global_mapping
+                    .raw_entry_mut()
+                    .from_hash(h, |val| (val.hash == h) && val.str == s);
+
+                match entry {
+                    RawEntryMut::Occupied(entry) => global_idx = *entry.get(),
+                    RawEntryMut::Vacant(entry) => {
+                        // only just now we allocate the string
+                        let key = StrHashGlobal::new(s.into(), h);
+                        entry.insert_with_hasher(h, key, global_idx, |s| s.hash);
+                    }
+                }
+                // safety:
+                // we allocated enough
+                unsafe { local_to_global.push_unchecked(global_idx) }
+            }
+            if global_mapping.len() > u32::MAX as usize {
+                panic!("not more than {} categories supported", u32::MAX)
+            };
+        }
+        // we now know the exact size
+        // no reallocs
+        let mut global_to_local = PlHashMap::with_capacity(local_to_global.len());
+
+        let compute_cats = || {
+            if local_to_global.is_empty() {
+                Default::default()
+            } else {
+                keys.into_iter()
+                    .map(|opt_k| {
+                        opt_k.map(|cat| {
+                            debug_assert!((*cat as usize) < local_to_global.len());
+                            *unsafe { local_to_global.get_unchecked(*cat as usize) }
+                        })
+                    })
+                    .collect::<UInt32Vec>()
+            }
+        };
+
+        let (_, cats) = POOL.join(
+            || fill_global_to_local(&local_to_global, &mut global_to_local),
+            compute_cats,
+        );
+        self.cat_builder = cats;
+
+        self.reverse_mapping = RevMappingBuilder::GlobalFinished(global_to_local, values, id)
+    }
+
     fn build_global_map_contention<'a, I>(&mut self, i: I)
     where
         I: IntoIterator<Item = Option<&'a str>>,
@@ -283,16 +354,6 @@ impl CategoricalChunkedBuilder {
         // no reallocs
         let mut global_to_local = PlHashMap::with_capacity(local_to_global.len());
 
-        let fill_global_to_local = || {
-            let mut local_idx = 0;
-            #[allow(clippy::explicit_counter_loop)]
-            for global_idx in &local_to_global {
-                // we know the keys are unique so this is much faster
-                global_to_local.insert_unique_unchecked(*global_idx, local_idx);
-                local_idx += 1;
-            }
-        };
-
         let update_cats = || {
             if !local_to_global.is_empty() {
                 // when all categorical are null, `local_to_global` is empty and all cats physical values are 0.
@@ -305,7 +366,10 @@ impl CategoricalChunkedBuilder {
             };
         };
 
-        POOL.join(fill_global_to_local, update_cats);
+        POOL.join(
+            || fill_global_to_local(&local_to_global, &mut global_to_local),
+            update_cats,
+        );
 
         self.reverse_mapping = RevMappingBuilder::GlobalFinished(global_to_local, values, id)
     }
@@ -328,6 +392,16 @@ impl CategoricalChunkedBuilder {
             vec![self.cat_builder.as_box()],
             self.reverse_mapping.finish(),
         )
+    }
+}
+
+fn fill_global_to_local(local_to_global: &[u32], global_to_local: &mut PlHashMap<u32, u32>) {
+    let mut local_idx = 0;
+    #[allow(clippy::explicit_counter_loop)]
+    for global_idx in local_to_global {
+        // we know the keys are unique so this is much faster
+        global_to_local.insert_unique_unchecked(*global_idx, local_idx);
+        local_idx += 1;
     }
 }
 
