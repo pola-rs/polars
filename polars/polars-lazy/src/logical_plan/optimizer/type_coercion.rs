@@ -95,8 +95,12 @@ fn get_input(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> [Option<Node>; 2]
     inputs
 }
 
-fn get_schema(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> Option<&SchemaRef> {
-    get_input(lp_arena, lp_node)[0].map(|input| lp_arena.get(input).schema(lp_arena))
+fn get_schema(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> &SchemaRef {
+    match get_input(lp_arena, lp_node) {
+        [Some(input), _] => lp_arena.get(input).schema(lp_arena),
+        // files don't have an input, so we must take their schema
+        [None, _] => lp_arena.get(lp_node).scan_schema(),
+    }
 }
 
 fn get_aexpr_and_type<'a>(
@@ -132,7 +136,7 @@ impl OptimizationRule for TypeCoercionRule {
                 falsy: falsy_node,
                 predicate,
             } => {
-                let input_schema = get_schema(lp_arena, lp_node)?;
+                let input_schema = get_schema(lp_arena, lp_node);
                 let (truthy, type_true) =
                     get_aexpr_and_type(expr_arena, truthy_node, input_schema)?;
                 let (falsy, type_false) = get_aexpr_and_type(expr_arena, falsy_node, input_schema)?;
@@ -179,7 +183,7 @@ impl OptimizationRule for TypeCoercionRule {
                 op,
                 right: node_right,
             } => {
-                let input_schema = get_schema(lp_arena, lp_node)?;
+                let input_schema = get_schema(lp_arena, lp_node);
                 let (left, type_left) = get_aexpr_and_type(expr_arena, node_left, input_schema)?;
                 let (right, type_right) = get_aexpr_and_type(expr_arena, node_right, input_schema)?;
 
@@ -348,15 +352,15 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
-                let input_schema = get_schema(lp_arena, lp_node)?;
+                let input_schema = get_schema(lp_arena, lp_node);
                 let other_node = input[1];
                 let (_, type_left) = get_aexpr_and_type(expr_arena, input[0], input_schema)?;
                 let (_, type_other) = get_aexpr_and_type(expr_arena, other_node, input_schema)?;
 
                 match (&type_left, type_other) {
-                    (DataType::Categorical(Some(rev_map)), DataType::Utf8)
-                        if rev_map.is_global() =>
-                    {
+                    // cast both local and global string cache
+                    // note that there might not yet be a rev
+                    (DataType::Categorical(_), DataType::Utf8) => {
                         let mut input = input.clone();
 
                         let casted_expr = AExpr::Cast {
@@ -386,7 +390,7 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
-                let input_schema = get_schema(lp_arena, lp_node)?;
+                let input_schema = get_schema(lp_arena, lp_node);
                 let other_node = input[1];
                 let (left, type_left) = get_aexpr_and_type(expr_arena, input[0], input_schema)?;
                 let (fill_value, type_fill_value) =
