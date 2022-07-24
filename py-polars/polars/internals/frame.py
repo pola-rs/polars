@@ -1443,8 +1443,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:  # pragma: no cover
                 raise ImportError(
-                    "'pyarrow' is required when using 'write_parquet(...,"
-                    " use_pyarrow=True)'."
+                    "'pyarrow' is required when using"
+                    " 'write_parquet(..., use_pyarrow=True)'."
                 )
 
             tbl = self.to_arrow()
