@@ -23,3 +23,19 @@ def test_row_count(foods_ipc: str) -> None:
     )
 
     assert df["foo"].to_list() == [10, 16, 21, 23, 24, 30, 35]
+
+
+def test_is_in_type_coercion(foods_ipc: str) -> None:
+    out = (
+        pl.scan_ipc(foods_ipc)
+        .filter(pl.col("category").is_in(["vegetables"]))
+        .collect()
+    )
+    assert out.shape == (7, 4)
+    out = (
+        pl.scan_ipc(foods_ipc)
+        .select(pl.col("category").alias("cat"))
+        .filter(pl.col("cat").is_in(["vegetables"]))
+        .collect()
+    )
+    assert out.shape == (7, 1)

@@ -152,6 +152,25 @@ impl Default for ALogicalPlan {
 }
 
 impl ALogicalPlan {
+    /// Get the schema of the logical plan node but don't take projections into account at the scan
+    /// level. This ensures we can apply the predicate
+    pub(crate) fn scan_schema(&self) -> &SchemaRef {
+        use ALogicalPlan::*;
+        match self {
+            #[cfg(feature = "python")]
+            PythonScan { options } => &options.schema,
+            #[cfg(feature = "csv-file")]
+            CsvScan { schema, .. } => schema,
+            #[cfg(feature = "parquet")]
+            ParquetScan { schema, .. } => schema,
+            #[cfg(feature = "ipc")]
+            IpcScan { schema, .. } => schema,
+            AnonymousScan { schema, .. } => schema,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Get the schema of the logical plan node.
     pub(crate) fn schema<'a>(&'a self, arena: &'a Arena<ALogicalPlan>) -> &'a SchemaRef {
         use ALogicalPlan::*;
         match self {
@@ -493,7 +512,16 @@ impl ALogicalPlan {
             }
             #[cfg(feature = "python")]
             PythonScan { .. } => {}
-            AnonymousScan { .. } => {}
+            AnonymousScan {
+                predicate,
+                aggregate,
+                ..
+            } => {
+                container.extend_from_slice(aggregate);
+                if let Some(node) = predicate {
+                    container.push(*node)
+                }
+            }
         }
     }
 
