@@ -21,6 +21,7 @@ from .lazy_functions import (
     col,
     concat_list,
     element,
+    format,
     lit,
     select,
 )

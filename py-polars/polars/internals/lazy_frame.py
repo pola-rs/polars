@@ -29,7 +29,7 @@ except ImportError:
 from polars import internals as pli
 from polars.cfg import Config
 from polars.datatypes import DataType, py_type_to_dtype
-from polars.internals.functions import LazyPolarsSlice
+from polars.internals.slice import LazyPolarsSlice
 from polars.utils import (
     _in_notebook,
     _prepare_row_count_args,
