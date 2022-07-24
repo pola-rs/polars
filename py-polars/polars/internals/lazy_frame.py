@@ -489,17 +489,17 @@ class LazyFrame(Generic[DF]):
                     ["dot", "-Nshape=box", "-Tsvg"], input=f"{dot}".encode()
                 )
                 return display(SVG(svg))
-            except Exception:
+            except Exception as exc:
                 raise ImportError(
                     "Graphviz dot binary should be on your PATH and matplotlib should be installed to show graph."
-                )
+                ) from exc
         try:
             import matplotlib.image as mpimg
             import matplotlib.pyplot as plt
         except ImportError:
             raise ImportError(
                 "Graphviz dot binary should be on your PATH and matplotlib should be installed to show graph."
-            )
+            ) from None
         dot = self._ldf.to_dot(optimized)
         if raw_output:
             return dot

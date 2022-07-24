@@ -1064,7 +1064,7 @@ def read_excel(
     except ImportError:
         raise ImportError(
             "xlsx2csv is not installed. Please run `pip install xlsx2csv`."
-        )
+        ) from None
 
     if isinstance(file, (str, Path)):
         file = format_path(file)

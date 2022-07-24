@@ -421,21 +421,27 @@ def dtype_to_ctype(dtype: PolarsDataType) -> type[_SimpleCData]:
     try:
         return _DTYPE_TO_CTYPE[dtype]
     except KeyError:  # pragma: no cover
-        raise NotImplementedError
+        raise NotImplementedError(
+            f"Conversion of polars data type {dtype} to C-type not implemented."
+        ) from None
 
 
 def dtype_to_ffiname(dtype: PolarsDataType) -> str:
     try:
         return _DTYPE_TO_FFINAME[dtype]
     except KeyError:  # pragma: no cover
-        raise NotImplementedError
+        raise NotImplementedError(
+            f"Conversion of polars data type {dtype} to FFI not implemented."
+        ) from None
 
 
 def dtype_to_py_type(dtype: PolarsDataType) -> type:
     try:
         return _DTYPE_TO_PY_TYPE[dtype]
     except KeyError:  # pragma: no cover
-        raise NotImplementedError
+        raise NotImplementedError(
+            f"Conversion of polars data type {dtype} to Python type not implemented."
+        ) from None
 
 
 def is_polars_dtype(data_type: Any) -> bool:
@@ -453,7 +459,9 @@ def py_type_to_dtype(data_type: Any) -> type[DataType]:
     try:
         return _PY_TYPE_TO_DTYPE[data_type]
     except KeyError:  # pragma: no cover
-        raise NotImplementedError
+        raise NotImplementedError(
+            f"Conversion of Python data type {data_type} to Polars data type not implemented."
+        ) from None
 
 
 def py_type_to_arrow_type(dtype: type[Any]) -> pa.lib.DataType:
@@ -463,7 +471,9 @@ def py_type_to_arrow_type(dtype: type[Any]) -> pa.lib.DataType:
     try:
         return _PY_TYPE_TO_ARROW_TYPE[dtype]
     except KeyError:  # pragma: no cover
-        raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.")
+        raise ValueError(
+            f"Cannot parse Python data type {dtype} into Arrow data type."
+        ) from None
 
 
 def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
@@ -473,7 +483,9 @@ def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
     try:
         return _DTYPE_TO_ARROW_TYPE[dtype]
     except KeyError:  # pragma: no cover
-        raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.")
+        raise ValueError(
+            f"Cannot parse data type {dtype} into Arrow data type."
+        ) from None
 
 
 def supported_numpy_char_code(dtype: str) -> bool:
@@ -484,7 +496,9 @@ def numpy_char_code_to_dtype(dtype: str) -> type[DataType]:
     try:
         return _NUMPY_CHAR_CODE_TO_DTYPE[dtype]
     except KeyError:  # pragma: no cover
-        raise NotImplementedError
+        raise NotImplementedError(
+            f"Cannot parse numpy data type {dtype} into Polars data type."
+        ) from None
 
 
 def maybe_cast(
