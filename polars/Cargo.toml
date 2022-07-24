@@ -119,6 +119,7 @@ string_justify = ["polars-lazy/string_justify", "polars-ops/string_justify"]
 arg_where = ["polars-lazy/arg_where"]
 date_offset = ["polars-lazy/date_offset"]
 trigonometry = ["polars-lazy/trigonometry"]
+sign = ["polars-lazy/sign"]
 
 test = [
   "lazy",

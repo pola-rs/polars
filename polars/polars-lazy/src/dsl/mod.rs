@@ -1381,6 +1381,21 @@ impl Expr {
         }
     }
 
+    /// Compute the sign of the given expression
+    #[cfg(feature = "sign")]
+    pub fn sign(self) -> Self {
+        Expr::Function {
+            input: vec![self],
+            function: FunctionExpr::Sign,
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: false,
+                auto_explode: false,
+                fmt_str: "sign",
+            },
+        }
+    }
+
     /// Filter a single column
     /// Should be used in aggregation context. If you want to filter on a DataFrame level, use
     /// [LazyFrame::filter](LazyFrame::filter)

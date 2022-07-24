@@ -234,6 +234,7 @@
 //!     - `argwhere` Get indices where condition holds.
 //!     - `date_offset` Add an offset to dates that take months and leap years into account.
 //!     - `trigonometry` Trigonometric functions.
+//!     - `sign` Compute the element-wise sign of a Series.
 //! * `DataFrame` pretty printing
 //!     - `fmt` - Activate DataFrame formatting
 //!
