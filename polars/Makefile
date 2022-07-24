@@ -47,7 +47,7 @@ miri:
 	# not tested on all features because miri does not support SIMD
 	# some tests are also filtered, because miri cannot deal with the rayon threadpool
 	# we ignore leaks because the thread pool of rayon is never killed.
-	MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-ignore-leaks" \
+	MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows" \
 	POLARS_ALLOW_EXTENSION=1 \
 	cargo miri test \
 	    --no-default-features \
