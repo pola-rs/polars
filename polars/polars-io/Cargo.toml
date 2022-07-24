@@ -37,8 +37,8 @@ private = ["polars-time/private"]
 [dependencies]
 ahash = "0.7"
 anyhow = "1.0"
-# arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "98e49133b2e56e51e30335830485b3cf768eb5a2", default-features = false }
-arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "polars", default-features = false }
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "c720eb26d426f7c3e1d1ea9e5650efcb83019732", default-features = false }
+# arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "polars", default-features = false }
 # arrow = { package = "arrow2", version = "0.12", default-features = false }
 # arrow = { package = "arrow2", path = "../../../arrow2", default-features = false }
 csv-core = { version = "0.1.10", optional = true }

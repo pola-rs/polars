@@ -173,11 +173,11 @@ thiserror = "^1.0"
 
 [dependencies.arrow]
 package = "arrow2"
-# git = "https://github.com/jorgecarleitao/arrow2"
-git = "https://github.com/ritchie46/arrow2"
-# rev = "98e49133b2e56e51e30335830485b3cf768eb5a2"
+git = "https://github.com/jorgecarleitao/arrow2"
+# git = "https://github.com/ritchie46/arrow2"
+rev = "c720eb26d426f7c3e1d1ea9e5650efcb83019732"
 # path = "../../../arrow2"
-branch = "polars"
+# branch = "polars"
 # version = "0.12"
 default-features = false
 features = [

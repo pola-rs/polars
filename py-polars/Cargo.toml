@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.13.56"
+version = "0.13.57"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
 edition = "2021"
@@ -46,8 +46,9 @@ asof_join = ["polars/asof_join"]
 cross_join = ["polars/cross_join"]
 pct_change = ["polars/pct_change"]
 repeat_by = ["polars/repeat_by"]
+simd = ["polars/simd"]
 
-default = [
+all = [
   "json",
   "parquet",
   "ipc",
@@ -61,13 +62,21 @@ default = [
   "pct_change",
 ]
 
+# we cannot conditionaly activate simd
+# https://github.com/rust-lang/cargo/issues/1197
+# so we have an indirection and compile
+# with --no-default-features --features=all for targets without simd
+default = [
+  "all",
+  "simd",
+]
+
 [dependencies.polars]
 path = "../polars"
 default-features = false
 features = [
   "dynamic_groupby",
   "zip_with",
-  "simd",
   "lazy",
   "strings",
   "temporal",
