@@ -1702,8 +1702,14 @@ def test_str_split() -> None:
 
 
 def test_sign() -> None:
-    a = pl.Series("a", [10, -20, None])
-    expected = pl.Series("a", [1, -1, None])
+    # Integers
+    a = pl.Series("a", [-9, -0, 0, 4, None])
+    expected = pl.Series("a", [-1, 0, 0, 1, None])
+    verify_series_and_expr_api(a, expected, "sign")
+
+    # Floats
+    a = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, None])
+    expected = pl.Series("a", [-1, 0, 0, 1, None])
     verify_series_and_expr_api(a, expected, "sign")
 
 

@@ -426,6 +426,11 @@ impl PyExpr {
         self.clone().inner.arctanh().into()
     }
 
+    #[cfg(feature = "sign")]
+    pub fn sign(&self) -> PyExpr {
+        self.clone().inner.sign().into()
+    }
+
     pub fn is_duplicated(&self) -> PyExpr {
         self.clone().inner.is_duplicated().into()
     }
