@@ -1102,7 +1102,7 @@ def test_hashing_on_python_objects() -> None:
         def __hash__(self) -> int:
             return 0
 
-        def __eq__(self, other) -> bool:
+        def __eq__(self, other: Any) -> bool:
             return True
 
     df = df.with_column(pl.col("a").apply(lambda x: Foo()).alias("foo"))
