@@ -85,3 +85,25 @@ def test_all_any_horizontally() -> None:
             pl.all([pl.col("var2"), pl.col("var3")]),
         ]
     ).frame_equal(expected)
+
+
+def test_cut() -> None:
+    a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
+    out = pl.cut(a, bins=[-1, 1])
+
+    assert out.shape == (12, 3)
+    assert out.filter(pl.col("break_point") < 1e9).to_dict(False) == {
+        "a": [-3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0],
+        "break_point": [-1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0],
+        "category": [
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-1.0, 1.0]",
+            "(-1.0, 1.0]",
+            "(-1.0, 1.0]",
+            "(-1.0, 1.0]",
+        ],
+    }

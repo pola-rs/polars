@@ -58,7 +58,7 @@ from polars.exceptions import (
 )
 from polars.internals.expr import Expr
 from polars.internals.frame import DataFrame, wrap_df  # TODO: remove need for wrap_df
-from polars.internals.functions import concat, date_range, get_dummies
+from polars.internals.functions import concat, cut, date_range, get_dummies
 from polars.internals.io import read_ipc_schema, read_parquet_schema
 from polars.internals.lazy_frame import LazyFrame
 from polars.internals.lazy_functions import _date as date
