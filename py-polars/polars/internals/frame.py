@@ -1587,8 +1587,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 DeprecationWarning,
             )
             return pli.wrap_s(self._df.column(item))
-        except Exception:
-            raise AttributeError(item)
+        except Exception as exc:
+            raise AttributeError(item) from exc
 
     def __contains__(self, key: str) -> bool:
         return key in self.columns
@@ -6179,7 +6179,7 @@ class GroupBy(Generic[DF]):
         try:
             groups_idx = groups[mask][0]  # type: ignore[index]
         except IndexError:
-            raise ValueError(f"no group: {group_value} found")
+            raise ValueError(f"no group: {group_value} found") from None
 
         df = self._dataframe_class._from_pydf(self._df)
         return df[groups_idx]
