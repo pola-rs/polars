@@ -188,6 +188,9 @@ def test_categorical_error_on_local_cmp() -> None:
     )
     with pytest.raises(
         pl.ComputeError,
-        match="Cannot compare categoricals originating from different sources. Consider setting a global string cache.",
+        match=(
+            "Cannot compare categoricals originating from different sources. Consider"
+            " setting a global string cache."
+        ),
     ):
         df_cat.filter(pl.col("a_cat") == pl.col("b_cat"))

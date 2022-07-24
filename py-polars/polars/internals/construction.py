@@ -188,7 +188,8 @@ def sequence_to_pyseries(
         if dtype_ in py_temporal_types:
             if not _PYARROW_AVAILABLE:  # pragma: no cover
                 raise ImportError(
-                    "'pyarrow' is required for converting a Sequence of date or datetime values to a PySeries."
+                    "'pyarrow' is required for converting a Sequence of date or"
+                    " datetime values to a PySeries."
                 )
             # let arrow infer dtype if not timedelta
             # arrow uses microsecond durations by default, not supported yet.
@@ -670,7 +671,8 @@ def pandas_to_pydf(
     """
     if not _PYARROW_AVAILABLE:  # pragma: no cover
         raise ImportError(
-            "'pyarrow' is required when constructing a PyDataFrame from a pandas DataFrame."
+            "'pyarrow' is required when constructing a PyDataFrame from a pandas"
+            " DataFrame."
         )
     length = data.shape[0]
     arrow_dict = {

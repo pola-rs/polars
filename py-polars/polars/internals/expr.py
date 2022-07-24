@@ -7036,7 +7036,8 @@ def expr_to_lit_or_expr(
         return pli.lit(pli.Series("", [expr]))
     else:
         raise ValueError(
-            f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with pl.lit or pl.col"
+            f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with"
+            " pl.lit or pl.col"
         )
 
 

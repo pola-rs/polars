@@ -205,5 +205,5 @@ class LazyPolarsSlice:
 
         raise ValueError(
             f"The given slice {s} is not supported by lazy computation; consider a "
-            f"more efficient approach, or construct explicitly with other methods"
+            "more efficient approach, or construct explicitly with other methods"
         )

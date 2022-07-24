@@ -359,7 +359,8 @@ class Series:
             f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
             raise ValueError(
-                f"cannot do arithmetic with series of dtype: {self.dtype} and argument of type: {type(other)}"
+                f"cannot do arithmetic with series of dtype: {self.dtype} and argument"
+                f" of type: {type(other)}"
             )
         return wrap_s(f(other))
 
@@ -495,7 +496,8 @@ class Series:
                 self.set_at_idx(key, value)  # type: ignore[arg-type]
                 return None
             raise ValueError(
-                f"cannot set Series of dtype: {self.dtype} with list/tuple as value; use a scalar value"
+                f"cannot set Series of dtype: {self.dtype} with list/tuple as value;"
+                " use a scalar value"
             )
         if isinstance(key, Series):
             if key.dtype == Boolean:
@@ -2260,7 +2262,8 @@ class Series:
             return wrap_s(series)
         else:
             raise NotImplementedError(
-                f"Only `__call__` is implemented for numpy ufuncs on a Series, got `{method}`."
+                "Only `__call__` is implemented for numpy ufuncs on a Series, got"
+                f" `{method}`."
             )
 
     def to_numpy(
@@ -2344,7 +2347,8 @@ class Series:
         """
         if not _PYARROW_AVAILABLE:  # pragma: no cover
             raise ImportError(
-                "'pyarrow' is required for converting a 'polars' Series to a 'pandas' Series."
+                "'pyarrow' is required for converting a 'polars' Series to a 'pandas'"
+                " Series."
             )
         return self.to_arrow().to_pandas()
 
@@ -2419,7 +2423,8 @@ class Series:
         f = get_ffi_func("set_at_idx_<>", self.dtype, self._s)
         if f is None:
             raise ValueError(
-                f"could not find the FFI function needed to set at idx for series {self._s}"
+                "could not find the FFI function needed to set at idx for series"
+                f" {self._s}"
             )
         if isinstance(idx, Series):
             # make sure the dtype matches
