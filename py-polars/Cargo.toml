@@ -41,7 +41,7 @@ parquet = ["polars/parquet"]
 ipc = ["polars/ipc"]
 is_in = ["polars/is_in"]
 json = ["polars/serde", "serde_json"]
-trigonemetry = ["polars/trigonometry"]
+trigonometry = ["polars/trigonometry"]
 asof_join = ["polars/asof_join"]
 cross_join = ["polars/cross_join"]
 pct_change = ["polars/pct_change"]
@@ -56,7 +56,7 @@ all = [
   "is_in",
   "json",
   "repeat_by",
-  "trigonemetry",
+  "trigonometry",
   "asof_join",
   "cross_join",
   "pct_change",
