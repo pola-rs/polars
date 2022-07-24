@@ -1541,9 +1541,12 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def _comp(
         self: DF, other: Any, op: Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
     ) -> DF:
+        """Compare a DataFrame with another object."""
         if isinstance(other, DataFrame):
             if self.columns != other.columns:
                 raise ValueError("DataFrame columns do not match")
+            if self.shape != other.shape:
+                raise ValueError("DataFrame dimensions do not match")
             data_series = [self[c]._comp(other[c], op) for c in self.columns]
         else:
             data_series = [self[c]._comp(other, op) for c in self.columns]
