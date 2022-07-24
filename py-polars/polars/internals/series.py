@@ -2296,7 +2296,7 @@ class Series:
             kwargs will be sent to pyarrow.Array.to_numpy
         """
 
-        def convert_to_date(arr):  # type: ignore[no-untyped-def]
+        def convert_to_date(arr: np.ndarray) -> np.ndarray:
             if self.dtype == Date:
                 tp = "datetime64[D]"
             elif self.dtype == Duration:
