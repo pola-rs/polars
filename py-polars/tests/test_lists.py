@@ -122,9 +122,11 @@ def test_categorical() -> None:
 
 
 def test_list_concat_rolling_window() -> None:
-    # inspired by: https://stackoverflow.com/questions/70377100/use-the-rolling-function-of-polars-to-get-a-list-of-all-values-in-the-rolling-wi
-    # this tests if it works without specifically creating list dtype upfront.
-    # note that the given answer is preferred over this snippet as that reuses the list array when shifting
+    # inspired by:
+    # https://stackoverflow.com/questions/70377100/use-the-rolling-function-of-polars-to-get-a-list-of-all-values-in-the-rolling-wi
+    # this tests if it works without specifically creating list dtype upfront. note that
+    # the given answer is preferred over this snippet as that reuses the list array when
+    # shifting
     df = pl.DataFrame(
         {
             "A": [1.0, 2.0, 9.0, 2.0, 13.0],
@@ -233,7 +235,10 @@ def test_cast_inner() -> None:
 
     # this creates an inner null type
     df = pl.from_pandas(pd.DataFrame(data=[[[]], [[]]], columns=["A"]))
-    assert df["A"].cast(pl.List(int)).dtype.inner == pl.Int64  # type: ignore[arg-type, attr-defined]
+    assert (
+        df["A"].cast(pl.List(int)).dtype.inner  # type: ignore[arg-type, attr-defined]
+        == pl.Int64
+    )
 
 
 def test_list_eval_dtype_inference() -> None:

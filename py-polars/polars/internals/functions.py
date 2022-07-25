@@ -83,7 +83,8 @@ def concat(
     how: str = "vertical",
 ) -> pli.DataFrame | pli.Series | pli.LazyFrame | pli.Expr:
     """
-    Aggregate all the Dataframes/Series in a List of DataFrames/Series to a single DataFrame/Series.
+    Aggregate all the Dataframes/Series in a List of DataFrames/Series to a single
+    DataFrame/Series.
 
     Parameters
     ----------
@@ -97,8 +98,10 @@ def concat(
         One of {"vertical", "diagonal", "horizontal"}.
 
         - Vertical: Applies multiple `vstack` operations.
-        - Diagonal: Finds a union between the column schemas and fills missing column values with null.
-        - Horizontal: Stacks Series horizontally and fills with nulls if the lengths don't match.
+        - Diagonal: Finds a union between the column schemas and fills missing column
+            values with null.
+        - Horizontal: Stacks Series horizontally and fills with nulls if the lengths
+            don't match.
 
     Examples
     --------
@@ -179,9 +182,9 @@ def date_range(
     high
         Upper bound of the date range.
     interval
-        Interval periods. It can be a python timedelta object, like ``timedelta(days=10)``,
-        or a polars duration string, such as ``3d12h4m25s`` representing 3 days, 12 hours,
-        4 minutes, and 25 seconds.
+        Interval periods. It can be a python timedelta object, like
+        ``timedelta(days=10)``, or a polars duration string, such as ``3d12h4m25s``
+        representing 3 days, 12 hours, 4 minutes, and 25 seconds.
     closed : {None, 'left', 'right', 'both', 'none'}
         Make the interval closed to the 'left', 'right', 'none' or 'both' sides.
     name
@@ -275,7 +278,8 @@ def cut(
     Bin values into discrete values
 
     .. warning::
-        This function is experimental and might change without it being considered a breaking change.
+        This function is experimental and might change without it being considered a
+        breaking change.
 
     Parameters
     ----------
@@ -284,7 +288,8 @@ def cut(
     bins
         Bins to create.
     labels
-        Labels to assign to the bins. If given the length of labels must be len(bins) + 1.
+        Labels to assign to the bins. If given the length of labels must be
+        len(bins) + 1.
     break_point_label
         Name given to the breakpoint column.
     category_label

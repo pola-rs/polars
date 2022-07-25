@@ -460,7 +460,8 @@ def py_type_to_dtype(data_type: Any) -> type[DataType]:
         return _PY_TYPE_TO_DTYPE[data_type]
     except KeyError:  # pragma: no cover
         raise NotImplementedError(
-            f"Conversion of Python data type {data_type} to Polars data type not implemented."
+            f"Conversion of Python data type {data_type} to Polars data type not"
+            " implemented."
         ) from None
 
 

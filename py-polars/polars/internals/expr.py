@@ -233,7 +233,8 @@ class Expr:
         Examples
         --------
         Replicating the pandas
-        `pd.factorize <https://pandas.pydata.org/docs/reference/api/pandas.factorize.html>`_
+        `pd.factorize
+        <https://pandas.pydata.org/docs/reference/api/pandas.factorize.html>`_
         function.
 
         >>> pl.DataFrame({"vals": ["a", "x", None, "a"]}).with_columns(
@@ -398,7 +399,8 @@ class Expr:
         """
         Exclude certain columns from a wildcard/regex selection.
 
-        You may also use regexes in the exclude list. They must start with `^` and end with `$`.
+        You may also use regexes in the exclude list. They must start with `^` and end
+        with `$`.
 
         Parameters
         ----------
@@ -605,7 +607,7 @@ class Expr:
         │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
         └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
 
-        """
+        """  # noqa: E501
         return wrap_expr(self._pyexpr.prefix(prefix))
 
     def suffix(self, suffix: str) -> Expr:
@@ -662,7 +664,7 @@ class Expr:
         │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
         └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
 
-        """
+        """  # noqa: E501
         return wrap_expr(self._pyexpr.suffix(suffix))
 
     def map_alias(self, f: Callable[[str], str]) -> Expr:
@@ -743,7 +745,8 @@ class Expr:
 
     def is_null(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression contains null values.
+        Create a boolean expression returning `True` where the expression contains null
+        values.
 
         Examples
         --------
@@ -776,7 +779,8 @@ class Expr:
 
     def is_not_null(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression does not contain null values.
+        Create a boolean expression returning `True` where the expression does not
+        contain null values.
 
         Examples
         --------
@@ -809,7 +813,8 @@ class Expr:
 
     def is_finite(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression values are finite.
+        Create a boolean expression returning `True` where the expression values are
+        finite.
 
         Returns
         -------
@@ -840,7 +845,8 @@ class Expr:
 
     def is_infinite(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression values are infinite.
+        Create a boolean expression returning `True` where the expression values are
+        infinite.
 
         Returns
         -------
@@ -871,7 +877,8 @@ class Expr:
 
     def is_nan(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression values are NaN (Not A Number).
+        Create a boolean expression returning `True` where the expression values are NaN
+        (Not A Number).
 
         Examples
         --------
@@ -904,7 +911,8 @@ class Expr:
 
     def is_not_nan(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression values are not NaN (Not A Number).
+        Create a boolean expression returning `True` where the expression values are not
+        NaN (Not A Number).
 
         Examples
         --------
@@ -1051,7 +1059,8 @@ class Expr:
 
     def append(self, other: Expr, upcast: bool = True) -> Expr:
         """
-        Append expressions. This is done by adding the chunks of `other` to this `Series`.
+        Append expressions. This is done by adding the chunks of `other` to this
+        `Series`.
 
         Parameters
         ----------
@@ -1333,7 +1342,8 @@ class Expr:
 
     def floor(self) -> Expr:
         """
-        Floor underlying floating point array to the lowest integers smaller or equal to the float value.
+        Floor underlying floating point array to the lowest integers smaller or equal to
+        the float value.
 
         Only works on floating point Series
 
@@ -1360,7 +1370,8 @@ class Expr:
 
     def ceil(self) -> Expr:
         """
-        Ceil underlying floating point array to the highest integers smaller or equal to the float value.
+        Ceil underlying floating point array to the highest integers smaller or equal to
+        the float value.
 
         Only works on floating point Series
 
@@ -1791,8 +1802,8 @@ class Expr:
 
     def shift(self, periods: int = 1) -> Expr:
         """
-        Shift the values by a given period and fill the parts that will be empty due to this operation
-        with nulls.
+        Shift the values by a given period and fill the parts that will be empty due to
+        this operation with nulls.
 
         Parameters
         ----------
@@ -1825,8 +1836,8 @@ class Expr:
         self, periods: int, fill_value: int | float | bool | str | Expr
     ) -> Expr:
         """
-        Shift the values by a given period and fill the parts that will be empty due to this operation
-        with the result of the ``fill_value`` expression.
+        Shift the values by a given period and fill the parts that will be empty due to
+        this operation with the result of the ``fill_value`` expression.
 
         Parameters
         ----------
@@ -2041,7 +2052,7 @@ class Expr:
         │ 5   ┆ banana ┆ 1   ┆ beetle ┆ 1         ┆ banana         ┆ 5         ┆ beetle       │
         └─────┴────────┴─────┴────────┴───────────┴────────────────┴───────────┴──────────────┘
 
-        """
+        """  # noqa: E501
         return wrap_expr(self._pyexpr.reverse())
 
     def std(self) -> Expr:
@@ -2386,8 +2397,10 @@ class Expr:
     def over(self, expr: str | Expr | List[Expr | str]) -> Expr:
         """
         Apply window function over a subgroup.
+
         This is similar to a groupby + aggregation + self join.
-        Or similar to `window functions in Postgres <https://www.postgresql.org/docs/current/tutorial-window.html>`_.
+        Or similar to `window functions in Postgres
+        <https://www.postgresql.org/docs/current/tutorial-window.html>`_.
 
         Parameters
         ----------
@@ -2535,7 +2548,8 @@ class Expr:
             quantile between 0.0 and 1.0
 
         interpolation
-            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            interpolation type, options:
+            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
 
         Examples
         --------
@@ -2592,7 +2606,8 @@ class Expr:
     def filter(self, predicate: Expr) -> Expr:
         """
         Filter a single column.
-        Mostly useful in in aggregation context. If you want to filter on a DataFrame level, use `LazyFrame.filter`.
+        Mostly useful in in aggregation context. If you want to filter on a DataFrame
+        level, use `LazyFrame.filter`.
 
         Parameters
         ----------
@@ -2622,11 +2637,12 @@ class Expr:
         Apply a custom python function to a Series or sequence of Series.
 
         The output of this custom function must be a Series.
-        If you want to apply a custom function elementwise over single values, see :func:`apply`.
-        A use case for ``map`` is when you want to transform an expression
-        with a third-party library.
+        If you want to apply a custom function elementwise over single values, see
+        :func:`apply`. A use case for ``map`` is when you want to transform an
+        expression with a third-party library.
 
-        Read more in `the book <https://pola-rs.github.io/polars-book/user-guide/dsl/custom_functions.html>`_.
+        Read more in `the book
+        <https://pola-rs.github.io/polars-book/user-guide/dsl/custom_functions.html>`_.
 
         Parameters
         ----------
@@ -2674,13 +2690,14 @@ class Expr:
             Expects `f` to be of type Callable[[Series], Series].
             Applies a python function over each group.
 
-        Implementing logic using the ``.apply`` method is generally slower and more memory intensive
-        than implementing the same logic using the expression API because:
+        Implementing logic using the ``.apply`` method is generally slower and more
+        memory intensive than implementing the same logic using the expression API
+        because:
 
-        - with .apply the logic is implemented in Python but with an expression the logic is implemented in Rust
+        - with .apply the logic is implemented in Python but with an expression the
+          logic is implemented in Rust
         - with ``.apply`` the DataFrame is materialized in memory
         - expressions can be parallelised
-
         - expressions can be optimised
 
         If possible, use the expression API for best performance.
@@ -2775,7 +2792,8 @@ class Expr:
         """
         Alias for :func:`explode`.
 
-        Explode a list or utf8 Series. This means that every item is expanded to a new row.
+        Explode a list or utf8 Series. This means that every item is expanded to a new
+        row.
 
         Returns
         -------
@@ -2933,7 +2951,8 @@ class Expr:
 
     def is_in(self, other: Expr | List[Any] | str) -> Expr:
         """
-        Check if elements of this Series are in the right Series, or List values of the right Series.
+        Check if elements of this Series are in the right Series, or List values of the
+        right Series.
 
         Parameters
         ----------
@@ -2972,14 +2991,15 @@ class Expr:
 
     def repeat_by(self, by: Expr | str) -> Expr:
         """
-        Repeat the elements in this Series `n` times by dictated by the number given by `by`.
-        The elements are expanded into a `List`
+        Repeat the elements in this Series `n` times by dictated by the number given by
+        `by`. The elements are expanded into a `List`
 
         Parameters
         ----------
         by
             Numeric column that determines how often the values will be repeated.
-            The column will be coerced to UInt32. Give this dtype to make the coercion a no-op.
+            The column will be coerced to UInt32. Give this dtype to make the coercion a
+            no-op.
 
         Returns
         -------
@@ -3013,8 +3033,8 @@ class Expr:
 
     def is_between(
         self,
-        start: Expr | datetime,
-        end: Expr | datetime,
+        start: Expr | datetime | int,
+        end: Expr | datetime | int,
         include_bounds: bool | Sequence[bool] = False,
     ) -> Expr:
         """
@@ -3207,15 +3227,15 @@ class Expr:
     ) -> Expr:
         """
         apply a rolling min (moving min) over the values in this array.
-        A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
-        values will be aggregated to their sum.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
         Parameters
         ----------
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic temporal size
-            indicated by the following string language:
+            The length of the window. Can be a fixed integer size, or a dynamic temporal
+            size indicated by the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -3229,31 +3249,33 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must also be set.
+            If the dynamic string language is used, the `by` and `closed` arguments must
+            also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
-            set the column that will be used to determine the windows. This column must of dtype
-            `{Date, Datetime}`
+            set the column that will be used to determine the windows. This column must
+            be of dtype `{Date, Datetime}`
         closed
             Defines if the temporal window interval is closed or not.
             Any of {"left", "right", "both" "none"}
 
 
         .. warning::
-            The dynamic windows functionality is still experimental and may change without
-            it considered being a breaking change
+            The dynamic windows functionality is still experimental and may change
+            without it considered being a breaking change
 
         .. note::
-            If you want to compute multiple aggregation statistics over the same dynamic window, consider using
-            `groupby_rolling` this method can cache the window size computation.
+            If you want to compute multiple aggregation statistics over the same dynamic
+            window, consider using `groupby_rolling` this method can cache the window
+            size computation.
 
         Examples
         --------
@@ -3304,15 +3326,15 @@ class Expr:
     ) -> Expr:
         """
         Apply a rolling max (moving max) over the values in this array.
-        A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
-        values will be aggregated to their sum.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
         Parameters
         ----------
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic temporal size
-            indicated by the following string language:
+            The length of the window. Can be a fixed integer size, or a dynamic temporal
+            size indicated by the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -3326,30 +3348,32 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must also be set.
+            If the dynamic string language is used, the `by` and `closed` arguments must
+            also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
-            set the column that will be used to determine the windows. This column must of dtype
-            `{Date, Datetime}`
+            set the column that will be used to determine the windows. This column must
+            be of dtype `{Date, Datetime}`
         closed
             Defines if the temporal window interval is closed or not.
             Any of {"left", "right", "both" "none"}
 
         .. warning::
-            The dynamic windows functionality is still experimental and may change without
-            it considered being a breaking change
+            The dynamic windows functionality is still experimental and may change
+            without it considered being a breaking change
 
         .. note::
-            If you want to compute multiple aggregation statistics over the same dynamic window, consider using
-            `groupby_rolling` this method can cache the window size computation.
+            If you want to compute multiple aggregation statistics over the same dynamic
+            window, consider using `groupby_rolling` this method can cache the window
+            size computation.
 
         Examples
         --------
@@ -3401,15 +3425,15 @@ class Expr:
     ) -> Expr:
         """
         Apply a rolling mean (moving mean) over the values in this array.
-        A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
-        values will be aggregated to their sum.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
         Parameters
         ----------
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic temporal size
-            indicated by the following string language:
+            The length of the window. Can be a fixed integer size, or a dynamic temporal
+            size indicated by the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -3423,30 +3447,32 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must also be set.
+            If the dynamic string language is used, the `by` and `closed` arguments must
+            also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
-            set the column that will be used to determine the windows. This column must of dtype
-            `{Date, Datetime}`
+            set the column that will be used to determine the windows. This column must
+            be of dtype `{Date, Datetime}`
         closed
             Defines if the temporal window interval is closed or not.
             Any of {"left", "right", "both" "none"}
 
         .. warning::
-            The dynamic windows functionality is still experimental and may change without
-            it considered being a breaking change
+            The dynamic windows functionality is still experimental and may change
+            without it considered being a breaking change
 
         .. note::
-            If you want to compute multiple aggregation statistics over the same dynamic window, consider using
-            `groupby_rolling` this method can cache the window size computation.
+            If you want to compute multiple aggregation statistics over the same dynamic
+            window, consider using `groupby_rolling` this method can cache the window
+            size computation.
 
         Examples
         --------
@@ -3496,15 +3522,15 @@ class Expr:
     ) -> Expr:
         """
         Apply a rolling sum (moving sum) over the values in this array.
-        A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
-        values will be aggregated to their sum.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
         Parameters
         ----------
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic temporal size
-            indicated by the following string language:
+            The length of the window. Can be a fixed integer size, or a dynamic temporal
+            size indicated by the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -3518,30 +3544,32 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must also be set.
+            If the dynamic string language is used, the `by` and `closed` arguments must
+            also be set.
         weights
             An optional slice with the same length of the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
-            set the column that will be used to determine the windows. This column must of dtype
-            `{Date, Datetime}`
+            set the column that will be used to determine the windows. This column must
+            of dtype `{Date, Datetime}`
         closed
             Defines if the temporal window interval is closed or not.
             Any of {"left", "right", "both" "none"}
 
         .. warning::
-            The dynamic windows functionality is still experimental and may change without
-            it considered being a breaking change
+            The dynamic windows functionality is still experimental and may change
+            without it considered being a breaking change
 
         .. note::
-            If you want to compute multiple aggregation statistics over the same dynamic window, consider using
-            `groupby_rolling` this method can cache the window size computation.
+            If you want to compute multiple aggregation statistics over the same dynamic
+            window, consider using `groupby_rolling` this method can cache the window
+            size computation.
 
         Examples
         --------
@@ -3594,15 +3622,15 @@ class Expr:
         """
         Compute a rolling std dev
 
-        A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
-        values will be aggregated to their sum.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
         Parameters
         ----------
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic temporal size
-            indicated by the following string language:
+            The length of the window. Can be a fixed integer size, or a dynamic temporal
+            size indicated by the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -3616,30 +3644,32 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must also be set.
+            If the dynamic string language is used, the `by` and `closed` arguments must
+            also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
-            set the column that will be used to determine the windows. This column must of dtype
-            `{Date, Datetime}`
+            set the column that will be used to determine the windows. This column must
+            be of dtype `{Date, Datetime}`
         closed
             Defines if the temporal window interval is closed or not.
             Any of {"left", "right", "both" "none"}
 
         .. warning::
-            The dynamic windows functionality is still experimental and may change without
-            it considered being a breaking change
+            The dynamic windows functionality is still experimental and may change
+            without it considered being a breaking change
 
         .. note::
-            If you want to compute multiple aggregation statistics over the same dynamic window, consider using
-            `groupby_rolling` this method can cache the window size computation.
+            If you want to compute multiple aggregation statistics over the same dynamic
+            window, consider using `groupby_rolling` this method can cache the window
+            size computation.
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -3663,15 +3693,15 @@ class Expr:
         """
         Compute a rolling variance.
 
-        A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
-        values will be aggregated to their sum.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
         Parameters
         ----------
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic temporal size
-            indicated by the following string language:
+            The length of the window. Can be a fixed integer size, or a dynamic temporal
+            size indicated by the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -3685,30 +3715,32 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must also be set.
+            If the dynamic string language is used, the `by` and `closed` arguments must
+            also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
-            set the column that will be used to determine the windows. This column must of dtype
-            `{Date, Datetime}`
+            set the column that will be used to determine the windows. This column must
+            be of dtype `{Date, Datetime}`
         closed
             Defines if the temporal window interval is closed or not.
             Any of {"left", "right", "both" "none"}
 
         .. warning::
-            The dynamic windows functionality is still experimental and may change without
-            it considered being a breaking change
+            The dynamic windows functionality is still experimental and may change
+            without it considered being a breaking change
 
         .. note::
-            If you want to compute multiple aggregation statistics over the same dynamic window, consider using
-            `groupby_rolling` this method can cache the window size computation.
+            If you want to compute multiple aggregation statistics over the same dynamic
+            window, consider using `groupby_rolling` this method can cache the window
+            size computation.
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -3735,8 +3767,8 @@ class Expr:
         Parameters
         ----------
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic temporal size
-            indicated by the following string language:
+            The length of the window. Can be a fixed integer size, or a dynamic temporal
+            size indicated by the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -3750,30 +3782,32 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must also be set.
+            If the dynamic string language is used, the `by` and `closed` arguments must
+            also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
-            set the column that will be used to determine the windows. This column must of dtype
-            `{Date, Datetime}`
+            set the column that will be used to determine the windows. This column must
+            be of dtype `{Date, Datetime}`
         closed
             Defines if the temporal window interval is closed or not.
             Any of {"left", "right", "both" "none"}
 
         .. warning::
-            The dynamic windows functionality is still experimental and may change without
-            it considered being a breaking change
+            The dynamic windows functionality is still experimental and may change
+            without it considered being a breaking change
 
         .. note::
-            If you want to compute multiple aggregation statistics over the same dynamic window, consider using
-            `groupby_rolling` this method can cache the window size computation.
+            If you want to compute multiple aggregation statistics over the same dynamic
+            window, consider using `groupby_rolling` this method can cache the window
+            size computation.
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -3804,10 +3838,11 @@ class Expr:
         quantile
             quantile to compute
         interpolation
-            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            interpolation type, options:
+            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic temporal size
-            indicated by the following string language:
+            The length of the window. Can be a fixed integer size, or a dynamic temporal
+            size indicated by the following string language:
 
             - 1ns   (1 nanosecond)
             - 1us   (1 microsecond)
@@ -3821,30 +3856,32 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            If the dynamic string language is used, the `by` and `closed` arguments must also be set.
+            If the dynamic string language is used, the `by` and `closed` arguments must
+            also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
-            set the column that will be used to determine the windows. This column must of dtype
-            `{Date, Datetime}`
+            set the column that will be used to determine the windows. This column must
+            be of dtype `{Date, Datetime}`
         closed
             Defines if the temporal window interval is closed or not.
             Any of {"left", "right", "both" "none"}
 
         .. warning::
-            The dynamic windows functionality is still experimental and may change without
-            it considered being a breaking change
+            The dynamic windows functionality is still experimental and may change
+            without it considered being a breaking change
 
         .. note::
-            If you want to compute multiple aggregation statistics over the same dynamic window, consider using
-            `groupby_rolling` this method can cache the window size computation.
+            If you want to compute multiple aggregation statistics over the same dynamic
+            window, consider using `groupby_rolling` this method can cache the window
+            size computation.
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -3892,8 +3929,8 @@ class Expr:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
 
@@ -4142,7 +4179,8 @@ class Expr:
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
 
-        .. math:: G_1=\frac{k_3}{k_2^{3/2}}= \frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}
+        .. math::
+            G_1 = \frac{k_3}{k_2^{3/2}} = \frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}
 
         """
         return wrap_expr(self._pyexpr.skew(bias))
@@ -4169,12 +4207,13 @@ class Expr:
 
     def clip(self, min_val: int | float, max_val: int | float) -> Expr:
         """
-        Clip (limit) the values in an array to any value that fits in 64 floating point range.
+        Clip (limit) the values in an array to any value that fits in 64 floating point
+        range.
 
         Only works for the following dtypes: {Int32, Int64, Float32, Float64, UInt32}.
 
-        If you want to clip other dtypes, consider writing a "when, then, otherwise" expression.
-        See :func:`when` for more information.
+        If you want to clip other dtypes, consider writing a "when, then, otherwise"
+        expression. See :func:`when` for more information.
 
         Parameters
         ----------
@@ -4207,13 +4246,15 @@ class Expr:
 
     def lower_bound(self) -> Expr:
         """
-        Returns a unit Series with the lowest value possible for the dtype of this expression.
+        Returns a unit Series with the lowest value possible for the dtype of this
+        expression.
         """
         return wrap_expr(self._pyexpr.lower_bound())
 
     def upper_bound(self) -> Expr:
         """
-        Returns a unit Series with the highest value possible for the dtype of this expression.
+        Returns a unit Series with the highest value possible for the dtype of this
+        expression.
         """
         return wrap_expr(self._pyexpr.upper_bound())
 
@@ -4623,20 +4664,26 @@ class Expr:
         Parameters
         ----------
         com
-            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+            Specify decay in terms of center of mass,
+            :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
         span
-            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+            Specify decay in terms of span,
+            :math:`alpha = 2/(span + 1) \;for\; span >= 1`
         half_life
-            Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+            Specify decay in terms of half-life,
+            :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
         alpha
             Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
         adjust
-            Divide by decaying adjustment factor in beginning periods to account for imbalance in relative weightings
+            Divide by decaying adjustment factor in beginning periods to account for
+            imbalance in relative weightings
 
-                - When adjust = True the EW function is calculated using weights :math:`w_i = (1 - alpha)^i`
+                - When adjust = True the EW function is calculated using weights
+                    :math:`w_i = (1 - alpha)^i`
                 - When adjust = False the EW function is calculated recursively.
         min_periods
-            Minimum number of observations in window required to have a value (otherwise result is Null).
+            Minimum number of observations in window required to have a value
+            (otherwise result is Null).
 
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
@@ -4657,20 +4704,26 @@ class Expr:
         Parameters
         ----------
         com
-            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+            Specify decay in terms of center of mass,
+            :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
         span
-            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+            Specify decay in terms of span,
+            :math:`alpha = 2/(span + 1) \;for\; span >= 1`
         half_life
-            Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+            Specify decay in terms of half-life,
+            :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
         alpha
             Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
         adjust
-            Divide by decaying adjustment factor in beginning periods to account for imbalance in relative weightings
+            Divide by decaying adjustment factor in beginning periods to account for
+            imbalance in relative weightings
 
-                - When adjust = True the EW function is calculated using weights :math:`w_i = (1 - alpha)^i`
+                - When adjust = True the EW function is calculated using weights
+                    :math:`w_i = (1 - alpha)^i`
                 - When adjust = False the EW function is calculated recursively.
         min_periods
-            Minimum number of observations in window required to have a value (otherwise result is Null).
+            Minimum number of observations in window required to have a value
+            (otherwise result is Null).
 
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
@@ -4691,20 +4744,26 @@ class Expr:
         Parameters
         ----------
         com
-            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+            Specify decay in terms of center of mass,
+            :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
         span
-            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+            Specify decay in terms of span,
+            :math:`alpha = 2/(span + 1) \;for\; span >= 1`
         half_life
-            Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+            Specify decay in terms of half-life,
+            :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
         alpha
             Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
         adjust
-            Divide by decaying adjustment factor in beginning periods to account for imbalance in relative weightings
+            Divide by decaying adjustment factor in beginning periods to account for
+            imbalance in relative weightings
 
-                - When adjust = True the EW function is calculated using weights :math:`w_i = (1 - alpha)^i`
+                - When adjust = True the EW function is calculated using weights
+                    :math:`w_i = (1 - alpha)^i`
                 - When adjust = False the EW function is calculated recursively.
         min_periods
-            Minimum number of observations in window required to have a value (otherwise result is Null).
+            Minimum number of observations in window required to have a value
+            (otherwise result is Null).
 
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
@@ -4717,7 +4776,8 @@ class Expr:
         Parameters
         ----------
         value
-            The value to extend the Series with. This value may be None to fill with nulls.
+            The value to extend the Series with. This value may be None to fill with
+            nulls.
         n
             The number of values to extend.
 
@@ -4745,7 +4805,8 @@ class Expr:
         Parameters
         ----------
         multithreaded:
-            Better to turn this off in the aggregation context, as it can lead to contention.
+            Better to turn this off in the aggregation context, as it can lead to
+            contention.
         sort:
             Ensure the output is sorted from most values to least.
 
@@ -4849,21 +4910,23 @@ class Expr:
         Run an expression over a sliding window that increases `1` slot every iteration.
 
         .. warning::
-            This can be really slow as it can have `O(n^2)` complexity. Don't use this for operations
-            that visit all elements.
+            This can be really slow as it can have `O(n^2)` complexity. Don't use this
+            for operations that visit all elements.
 
         .. warning::
-            This API is experimental and may change without it being considered a breaking change.
+            This API is experimental and may change without it being considered a
+            breaking change.
 
         Parameters
         ----------
         expr
             Expression to evaluate
         min_periods
-            Number of valid values there should be in the window before the expression is evaluated.
-            valid values =  `length - null_count`
+            Number of valid values there should be in the window before the expression
+            is evaluated. valid values = `length - null_count`
         parallel
-            Run in parallel. Don't do this in a groupby or another operation that already has much parallelization.
+            Run in parallel. Don't do this in a groupby or another operation that
+            already has much parallelization.
 
         Examples
         --------
@@ -4913,8 +4976,8 @@ class Expr:
         """
         return self.map(lambda s: s.set_sorted(reverse))
 
-    # Below are the namespaces defined. Keep these at the end of the definition of Expr, as to not confuse mypy with
-    # the type annotation `str` with the namespace "str"
+    # Below are the namespaces defined. Keep these at the end of the definition of Expr,
+    # as to not confuse mypy with the type annotation `str` with the namespace "str"
 
     @property
     def dt(self) -> ExprDateTimeNameSpace:
@@ -5396,8 +5459,8 @@ class ExprListNameSpace:
 
     def shift(self, periods: int = 1) -> Expr:
         """
-        Shift the values by a given period and fill the parts that will be empty due to this operation
-        with nulls.
+        Shift the values by a given period and fill the parts that will be empty due to
+        this operation with nulls.
 
         Parameters
         ----------
@@ -5541,12 +5604,14 @@ class ExprListNameSpace:
         Parameters
         ----------
         expr
-            Expression to run. Note that you can select an element with `pl.first()`, or `pl.col()`
+            Expression to run. Note that you can select an element with `pl.first()`, or
+            `pl.col()`
         parallel
             Run all expression parallel. Don't activate this blindly.
             Parallelism is worth it if there is enough work to do per thread.
 
-            This likely should not be use in the groupby context, because we already parallel execution per group
+            This likely should not be use in the groupby context, because we already
+            parallel execution per group
 
         Examples
         --------
@@ -5594,8 +5659,8 @@ class ExprStringNameSpace:
         datatype
             Date | Datetime | Time.
         fmt
-            Format to use, refer to the
-            `chrono strftime documentation <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            Format to use, refer to the `chrono strftime documentation
+            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
         strict
             Raise an error if any conversion fails.
@@ -5739,10 +5804,12 @@ class ExprStringNameSpace:
 
     def zfill(self, alignment: int) -> Expr:
         """
-        Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
-        A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
-        rather than before.
-        The original string is returned if width is less than or equal to ``len(s)``.
+        Return a copy of the string left filled with ASCII '0' digits to make a string
+        of length width.
+
+        A leading sign prefix ('+'/'-') is handled by inserting the padding after the
+        sign character rather than before. The original string is returned if width is
+        less than or equal to ``len(s)``.
 
         Parameters
         ----------
@@ -5790,7 +5857,8 @@ class ExprStringNameSpace:
         Return the string left justified in a string of length ``width``.
 
         Padding is done using the specified ``fillchar``.
-        The original string is returned if ``width`` is less than or equal to ``len(s)``.
+        The original string is returned if ``width`` is less than or equal to
+        ``len(s)``.
 
         Parameters
         ----------
@@ -5826,7 +5894,8 @@ class ExprStringNameSpace:
         Return the string right justified in a string of length ``width``.
 
         Padding is done using the specified ``fillchar``.
-        The original string is returned if ``width`` is less than or equal to ``len(s)``.
+        The original string is returned if ``width`` is less than or equal to
+        ``len(s)``.
 
         Parameters
         ----------
@@ -6010,7 +6079,8 @@ class ExprStringNameSpace:
 
         Returns
         -------
-        Utf8 array. Contain null if original value is null or the json_path return nothing.
+        Utf8 array. Contain null if original value is null or the json_path return
+        nothing.
 
         Examples
         --------
@@ -6164,7 +6234,8 @@ class ExprStringNameSpace:
 
     def extract_all(self, pattern: str) -> Expr:
         r"""
-        Extract each successive non-overlapping regex match in an individual string as an array
+        Extract each successive non-overlapping regex match in an individual string as
+        an array.
 
         Parameters
         ----------
@@ -6173,7 +6244,8 @@ class ExprStringNameSpace:
 
         Returns
         -------
-        List[Utf8] array. Contain null if original value is null or regex capture nothing.
+        List[Utf8] array. Contain null if original value is null or regex capture
+        nothing.
 
         Examples
         --------
@@ -6425,8 +6497,8 @@ class ExprStringNameSpace:
             Starting index of the slice (zero-indexed). Negative indexing
             may be used.
         length
-            Optional length of the slice. If None (default), the slice is taken to the end
-            of the string.
+            Optional length of the slice. If None (default), the slice is taken to the
+            end of the string.
 
         Returns
         -------
@@ -6601,7 +6673,8 @@ class ExprDateTimeNameSpace:
         """
         Format Date/datetime with a formatting rule.
 
-        See `chrono strftime/strptime <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_.
+        See `chrono strftime/strptime
+        <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_.
 
         """
         return wrap_expr(self._pyexpr.strftime(fmt))
@@ -6796,8 +6869,10 @@ class ExprDateTimeNameSpace:
 
     def epoch_milliseconds(self) -> Expr:
         """
-        Get the number of milliseconds since the unix EPOCH
-        If the date is before the unix EPOCH, the number of milliseconds will be negative.
+        Get the number of milliseconds since the unix EPOCH.
+
+        If the date is before the unix EPOCH, the number of milliseconds will be
+        negative.
 
         .. deprecated:: 0.13.9
             Use :func:`epoch` instead.
@@ -6835,8 +6910,8 @@ class ExprDateTimeNameSpace:
 
     def with_time_unit(self, tu: str) -> Expr:
         """
-        Set time unit a Series of dtype Datetime or Duration. This does not modify underlying data,
-        and should be used to fix an incorrect time unit.
+        Set time unit a Series of dtype Datetime or Duration. This does not modify
+        underlying data, and should be used to fix an incorrect time unit.
 
         Parameters
         ----------
@@ -7057,7 +7132,8 @@ class ExprCatNameSpace:
         ----------
         ordering
             One of:
-                - 'physical' -> use the physical representation of the categories to determine the order (default)
+                - 'physical' -> use the physical representation of the categories to
+                    determine the order (default)
                 - 'lexical' -. use the string values to determine the ordering
 
         Examples

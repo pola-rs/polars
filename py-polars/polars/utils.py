@@ -119,8 +119,8 @@ def is_str_sequence(
     val: Sequence[object], allow_str: bool = False
 ) -> TypeGuard[Sequence[str]]:
     """
-    Checks that `val` is a sequence of strings. Note that a single string is a sequence of strings
-    by definition, use `allow_str=False` to return False on a single string
+    Checks that `val` is a sequence of strings. Note that a single string is a sequence
+    of strings by definition, use `allow_str=False` to return False on a single string
     """
     if (not allow_str) and isinstance(val, str):
         return False

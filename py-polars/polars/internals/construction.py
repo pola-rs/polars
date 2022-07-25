@@ -129,7 +129,8 @@ def _get_first_non_none(values: Sequence[Any | None]) -> Any:
 
 def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> PySeries:
     """
-    Last resort conversion. AnyValues are most flexible and if they fail we go for object types
+    Last resort conversion. AnyValues are most flexible and if they fail we go for
+    object types
     """
 
     try:
@@ -293,7 +294,8 @@ def _pandas_series_to_arrow(
     nan_to_none
         Interpret `NaN` as missing values
     min_len
-        in case of null values, this length will be used to create a dummy f64 array (with all values set to null)
+        in case of null values, this length will be used to create a dummy f64 array
+        (with all values set to null)
 
     Returns
     -------
@@ -379,7 +381,8 @@ def _unpack_columns(
     n_expected: int | None = None,
 ) -> tuple[list[str], dict[str, PolarsDataType]]:
     """
-    Unpack column names and create dtype lookup for any (name,dtype) pairs or schema dict input.
+    Unpack column names and create dtype lookup for any (name,dtype) pairs or schema
+    dict input.
     """
     if isinstance(columns, dict):
         columns = list(columns.items())
@@ -599,8 +602,8 @@ def arrow_to_pydf(
             ) from e
 
     data_dict = {}
-    # dictionaries cannot be build in different batches (categorical does not allow that)
-    # so we rechunk them and create them separate.
+    # dictionaries cannot be built in different batches (categorical does not allow
+    # that) so we rechunk them and create them separately.
     dictionary_cols = {}
     names = []
     for i, column in enumerate(data):

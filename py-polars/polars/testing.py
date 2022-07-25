@@ -94,7 +94,8 @@ def assert_frame_equal(
     check_dtype
         if True, data types need to match exactly.
     check_exact
-        if False, test if values are within tolerance of each other (see `rtol` & `atol`).
+        if False, test if values are within tolerance of each other
+        (see `rtol` & `atol`).
     check_column_names
         if True, dataframes must have the same column names in the same order.
     rtol
@@ -172,7 +173,8 @@ def assert_series_equal(
     check_names
         if True, names need to match.
     check_exact
-        if False, test if values are within tolerance of each other (see `rtol` & `atol`).
+        if False, test if values are within tolerance of each other
+        (see `rtol` & `atol`).
     rtol
         relative tolerance for inexact checking. Fraction of values in `right`.
     atol
@@ -284,7 +286,8 @@ def verify_series_and_expr_api(
     input: pli.Series, expected: pli.Series | None, op: str, *args: Any, **kwargs: Any
 ) -> None:
     """
-    Small helper function to test element-wise functions for both the series and expressions api.
+    Small helper function to test element-wise functions for both the series and
+    expressions api.
 
     Examples
     --------
@@ -293,7 +296,9 @@ def verify_series_and_expr_api(
     >>> verify_series_and_expr_api(s, expected, "sort")
     """
     expr = _getattr_multi(pli.col("*"), op)(*args, **kwargs)
-    result_expr: pli.Series = input.to_frame().select(expr)[:, 0]  # type: ignore[assignment]
+    result_expr: pli.Series = input.to_frame().select(expr)[  # type: ignore[assignment]
+        :, 0
+    ]
     result_series = _getattr_multi(input, op)(*args, **kwargs)
     if expected is None:
         assert_series_equal(result_series, result_expr)
@@ -331,10 +336,12 @@ if HYPOTHESIS_INSTALLED:
         UInt16: integers(min_value=0, max_value=(2**16) - 1),
         UInt32: integers(min_value=0, max_value=(2**32) - 1),
         UInt64: integers(min_value=0, max_value=(2**64) - 1),
-        # TODO: when generating text for categorical, ensure there are repeats - don't want all to be unique.
+        # TODO: when generating text for categorical, ensure there are repeats -
+        # don't want all to be unique.
         Categorical: text(),
         Utf8: text(),
-        # TODO: generate arrow temporal types with different resolution (32/64) to validate compatibility.
+        # TODO: generate arrow temporal types with different resolution (32/64) to
+        # validate compatibility.
         Time: times(),
         Date: dates(),
         Duration: timedeltas(),
@@ -389,7 +396,7 @@ if HYPOTHESIS_INSTALLED:
         column(name='unique_small_ints', dtype=<class 'polars.datatypes.UInt8'>, strategy=None, null_probability=None, unique=True)
         >>> pl.testing.column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
         column(name='ccy', dtype=<class 'polars.datatypes.Utf8'>, strategy=sampled_from(['GBP', 'EUR', 'JPY']), null_probability=None, unique=False)
-        """
+        """  # noqa: E501
 
         name: str
         dtype: PolarsDataType | None = None
@@ -416,10 +423,14 @@ if HYPOTHESIS_INSTALLED:
                     # given a custom strategy, but no explicit dtype. infer one
                     # from the first non-None value that the strategy produces.
                     with warnings.catch_warnings():
-                        # note: usually you should not call "example()" outside of an interactive shell, hence
-                        # the warning. however, here it is reasonable to do so, so we catch and ignore it
+                        # note: usually you should not call "example()" outside of an
+                        # interactive shell, hence the warning. however, here it is
+                        # reasonable to do so, so we catch and ignore it
                         warnings.simplefilter("ignore", NonInteractiveExampleWarning)
-                        sample_value_iter = (self.strategy.example() for _ in range(100))  # type: ignore[union-attr]
+                        sample_value_iter = (
+                            self.strategy.example()  # type: ignore[union-attr]
+                            for _ in range(100)
+                        )
                         sample_value_type = type(
                             next(e for e in sample_value_iter if e is not None)
                         )
@@ -439,8 +450,9 @@ if HYPOTHESIS_INSTALLED:
         unique: bool = False,
     ) -> list[column]:
         """
-        Generate a fixed sequence of `column` objects suitable for passing to the @dataframes
-        strategy, or using standalone (note that this function is not itself a strategy).
+        Generate a fixed sequence of `column` objects suitable for passing to the
+        @dataframes strategy, or using standalone (note that this function is not itself
+        a strategy).
 
         Notes
         -----
@@ -451,17 +463,20 @@ if HYPOTHESIS_INSTALLED:
         Parameters
         ----------
         cols : {int, [str]}, optional
-            integer number of cols to create, or explicit list of column names. if omitted
-            a random number of columns (between mincol and max_cols) are created.
+            integer number of cols to create, or explicit list of column names. if
+            omitted a random number of columns (between mincol and max_cols) are
+            created.
         dtype : dtype, optional
             a single dtype for all cols, or list of dtypes (the same length as `cols`).
             if omitted, each generated column is assigned a random dtype.
         min_cols : int, optional
             if not passing an exact size, can set a minimum here (defaults to 0).
         max_cols : int, optional
-            if not passing an exact size, can set a maximum value here (defaults to MAX_COLS).
+            if not passing an exact size, can set a maximum value here (defaults to
+            MAX_COLS).
         unique : bool, optional
-            indicate if the values generated for these columns should be unique (per-column).
+            indicate if the values generated for these columns should be unique
+            (per-column).
 
         Examples
         --------
@@ -532,22 +547,26 @@ if HYPOTHESIS_INSTALLED:
         Parameters
         ----------
         name : {str, strategy}, optional
-            literal string or a strategy for strings (or None), passed to the Series constructor name-param.
+            literal string or a strategy for strings (or None), passed to the Series
+            constructor name-param.
         dtype : dtype, optional
             a valid polars DataType for the resulting series.
         size : int, optional
-            if set, will create a Series of exactly this size (and ignore min/max len params).
+            if set, will create a Series of exactly this size (and ignore min/max len
+            params).
         min_size : int, optional
             if not passing an exact size, can set a minimum here (defaults to 0).
             no-op if `size` is set.
         max_size : int, optional
-            if not passing an exact size, can set a maximum value here (defaults to MAX_DATA_SIZE).
+            if not passing an exact size, can set a maximum value here (defaults to
+            MAX_DATA_SIZE).
             no-op if `size` is set.
         strategy : strategy, optional
             supports overriding the default strategy for the given dtype.
         null_probability : float, optional
-            percentage chance (expressed between 0.0 => 1.0) that a generated value is None. this
-            is applied independently of any None values generated by the underlying strategy.
+            percentage chance (expressed between 0.0 => 1.0) that a generated value is
+            None. this is applied independently of any None values generated by the
+            underlying strategy.
         unique : bool, optional
             indicate whether Series values should all be distinct.
         allowed_dtypes : {list,set}, optional
@@ -557,10 +576,11 @@ if HYPOTHESIS_INSTALLED:
 
         Notes
         -----
-        In actual usage this is deployed as a unit test decorator, providing a strategy that
-        generates multiple Series with the given dtype/size characteristics for the unit test.
-        While developing a strategy/test, it can also be useful to call `.example()` directly
-        on a given strategy to see concrete instances of the generated data.
+        In actual usage this is deployed as a unit test decorator, providing a strategy
+        that generates multiple Series with the given dtype/size characteristics for the
+        unit test. While developing a strategy/test, it can also be useful to call
+        `.example()` directly on a given strategy to see concrete instances of the
+        generated data.
 
         Examples
         --------
@@ -679,21 +699,27 @@ if HYPOTHESIS_INSTALLED:
         min_cols : int, optional
             if not passing an exact size, can set a minimum here (defaults to 0).
         max_cols : int, optional
-            if not passing an exact size, can set a maximum value here (defaults to MAX_COLS).
+            if not passing an exact size, can set a maximum value here (defaults to
+            MAX_COLS).
         size : int, optional
-            if set, will create a DataFrame of exactly this size (and ignore min/max len params).
+            if set, will create a DataFrame of exactly this size (and ignore min/max len
+            params).
         min_size : int, optional
-            if not passing an exact size, set the minimum number of rows in the DataFrame.
+            if not passing an exact size, set the minimum number of rows in the
+            DataFrame.
         max_size : int, optional
-            if not passing an exact size, set the maximum number of rows in the DataFrame.
+            if not passing an exact size, set the maximum number of rows in the
+            DataFrame.
         include_cols : [column], optional
-            a list of `column` objects to include in the generated DataFrame. note that explicitly
-            provided columns are appended onto the list of existing columns (if any present).
+            a list of `column` objects to include in the generated DataFrame. note that
+            explicitly provided columns are appended onto the list of existing columns
+            (if any present).
         null_probability : {float, dict[str,float]}, optional
-            percentage chance (expressed between 0.0 => 1.0) that a generated value is None. this is
-            applied independently of any None values generated by the underlying strategy, and can
-            be applied either on a per-column basis (if given as a {col:pct} dict), or globally. if
-            null_probability is defined on a column, it takes precedence over the global value.
+            percentage chance (expressed between 0.0 => 1.0) that a generated value is
+            None. this is applied independently of any None values generated by the
+            underlying strategy, and can be applied either on a per-column basis (if
+            given as a {col:pct} dict), or globally. if null_probability is defined on a
+            column, it takes precedence over the global value.
         allowed_dtypes : {list,set}, optional
             when automatically generating data, allow only these dtypes.
         excluded_dtypes : {list,set}, optional
@@ -701,15 +727,17 @@ if HYPOTHESIS_INSTALLED:
 
         Notes
         -----
-        In actual usage this is deployed as a unit test decorator, providing a strategy that
-        generates DataFrames or LazyFrames with the given schema/size characteristics for the
-        unit test. While developing a strategy/test, it can also be useful to call `.example()`
-        directly on a given strategy to see concrete instances of the generated data.
+        In actual usage this is deployed as a unit test decorator, providing a strategy
+        that generates DataFrames or LazyFrames with the given schema/size
+        characteristics for the unit test. While developing a strategy/test, it can also
+        be useful to call `.example()` directly on a given strategy to see concrete
+        instances of the generated data.
 
         Examples
         --------
-        Use `column` or `columns` to specify the schema of the types of DataFrame to generate.
-        Note: in actual use the strategy is applied as a test decorator, not used standalone.
+        Use `column` or `columns` to specify the schema of the types of DataFrame to
+        generate. Note: in actual use the strategy is applied as a test decorator, not
+        used standalone.
 
         >>> from polars.testing import column, columns, dataframes
         >>> from hypothesis import given
@@ -747,7 +775,7 @@ if HYPOTHESIS_INSTALLED:
         ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 575050513 ┆ NaN        │
         └───────────┴────────────┘
-        """
+        """  # noqa: 501
         if isinstance(cols, int):
             cols = columns(cols)
 
