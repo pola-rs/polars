@@ -1,7 +1,6 @@
 [flake8]
 # Satisfy black: https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html#flake8
-# TODO: Handle long lines adequately
-max-line-length = 160
+max-line-length = 88
 extend-ignore = E203
 per-file-ignores =
     __init__.py:F401
