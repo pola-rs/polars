@@ -332,15 +332,17 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     def estimated_size(self) -> int:
         """
-        Returns an estimation of the total (heap) allocated size of the `DataFrame` in bytes.
+        Returns an estimation of the total (heap) allocated size of the `DataFrame` in
+        bytes.
 
-        This estimation is the sum of the size of its buffers, validity, including nested arrays.
-        Multiple arrays may share buffers and bitmaps. Therefore, the size of 2 arrays is not the
-        sum of the sizes computed from this function. In particular, [`StructArray`]'s size is an upper bound.
+        This estimation is the sum of the size of its buffers, validity, including
+        nested arrays. Multiple arrays may share buffers and bitmaps. Therefore, the
+        size of 2 arrays is not the sum of the sizes computed from this function. In
+        particular, [`StructArray`]'s size is an upper bound.
 
-        When an array is sliced, its allocated size remains constant because the buffer unchanged.
-        However, this function will yield a smaller number. This is because this function returns
-        the visible size of the buffer, not its total capacity.
+        When an array is sliced, its allocated size remains constant because the buffer
+        unchanged. However, this function will yield a smaller number. This is because
+        this function returns the visible size of the buffer, not its total capacity.
 
         FFI buffers are included in this estimation.
         """
@@ -742,14 +744,16 @@ class DataFrame(metaclass=DataFrameMetaClass):
         rechunk: bool = True,
     ) -> DF:
         """
-        Read into a DataFrame from Arrow IPC stream format. This is also called the Feather (v2) format.
+        Read into a DataFrame from Arrow IPC stream format. This is also called the
+        Feather (v2) format.
 
         Parameters
         ----------
         file
             Path to a file or a file-like object.
         columns
-            Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
+            Columns to select. Accepts a list of column indices (starting at zero) or a
+            list of column names.
         n_rows
             Stop reading from IPC file after reading ``n_rows``.
         rechunk
@@ -1289,9 +1293,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
         include_header
             If set, the column names will be added as first column.
         header_name
-            If `include_header` is set, this determines the name of the column that will be inserted.
+            If `include_header` is set, this determines the name of the column that will
+            be inserted.
         column_names
-            Optional generator/iterator that yields column names. Will be used to replace the columns in the DataFrame.
+            Optional generator/iterator that yields column names. Will be used to
+            replace the columns in the DataFrame.
 
         Notes
         -----
@@ -1415,10 +1421,12 @@ class DataFrame(metaclass=DataFrameMetaClass):
             - "lz4"
             - "zstd"
 
-            The default compression "lz4" (actually lz4raw) has very good performance, but may not yet been supported
-            by older readers. If you want more compatability guarantees, consider using "snappy".
+            The default compression "lz4" (actually lz4raw) has very good performance,
+            but may not yet been supported by older readers. If you want more
+            compatability guarantees, consider using "snappy".
         compression_level
-            The level of compression to use. Higher compression means smaller files on disk.
+            The level of compression to use. Higher compression means smaller files on
+            disk.
 
             - "gzip" : min-level: 0, max-level: 10.
             - "brotli" : min-level: 0, max-level: 11.
@@ -1426,9 +1434,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         statistics
             Write statistics to the parquet headers. This requires extra compute.
         row_group_size
-            Size of the row groups. If None (default), the chunks of the `DataFrame` are used.
-            Writing in smaller chunks may reduce memory pressure and improve writing speeds.
-            This argument has no effect if 'pyarrow' is used.
+            Size of the row groups. If None (default), the chunks of the `DataFrame` are
+            used. Writing in smaller chunks may reduce memory pressure and improve
+            writing speeds. This argument has no effect if 'pyarrow' is used.
         use_pyarrow
             Use C++ parquet implementation vs rust parquet implementation.
             At the moment C++ supports more features.
@@ -1507,7 +1515,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Notes
         -----
-        If you're attempting to convert Utf8 to an array you'll need to install `pyarrow`.
+        If you're attempting to convert Utf8 to an array you'll need to install
+        `pyarrow`.
 
         Examples
         --------
@@ -1629,8 +1638,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         else:
             return self.shape[dim] + idx
 
-    # __getitem__() mostly returns a dataframe. The major exception is when a string is passed in. Note that there are
-    # more subtle cases possible where a non-string value leads to a Series.
+    # __getitem__() mostly returns a dataframe. The major exception is when a string is
+    # passed in. Note that there are more subtle cases possible where a non-string value
+    # leads to a Series.
     @overload
     def __getitem__(self, item: str) -> pli.Series:
         ...
@@ -1864,7 +1874,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         Used by jupyter notebooks to get a html table.
 
-        Output rows and columns can be modified by setting the following ENVIRONMENT variables:
+        Output rows and columns can be modified by setting the following ENVIRONMENT
+        variables:
 
         * POLARS_FMT_MAX_COLS: set the number of columns
         * POLARS_FMT_MAX_ROWS: set the number of rows
@@ -2202,7 +2213,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         See Also
         --------
         schema : Returns a {colname:dtype} mapping.
-        """
+        """  # noqa: E501
         return self._df.dtypes()
 
     @property
@@ -2222,12 +2233,15 @@ class DataFrame(metaclass=DataFrameMetaClass):
         >>> df.schema
         {'foo': <class 'polars.datatypes.Int64'>, 'bar': <class 'polars.datatypes.Float64'>, 'ham': <class 'polars.datatypes.Utf8'>}
 
-        """
+        """  # noqa: E501
         return dict(zip(self.columns, self.dtypes))
 
     def describe(self: DF) -> DF:
         """
-        Summary statistics for a DataFrame. Only summarizes numeric datatypes at the moment and returns nulls for non numeric datatypes.
+        Summary statistics for a DataFrame.
+
+        Only summarizes numeric datatypes at the moment and returns nulls for
+        non-numeric datatypes.
 
         Examples
         --------
@@ -2691,8 +2705,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         This method only drops nulls row-wise if any single value of the row is null.
 
-        Below are some example snippets that show how you could drop null values based on other
-        conditions
+        Below are some example snippets that show how you could drop null values based
+        on other conditions
 
         >>> df = pl.DataFrame(
         ...     {
@@ -2849,8 +2863,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         by
             Column(s) to group by.
         maintain_order
-            Make sure that the order of the groups remain consistent. This is more expensive than a default groupby.
-            Note that this only works in expression aggregations.
+            Make sure that the order of the groups remain consistent. This is more
+            expensive than a default groupby. Note that this only works in expression
+            aggregations.
 
         Examples
         --------
@@ -2922,10 +2937,12 @@ class DataFrame(metaclass=DataFrameMetaClass):
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> RollingGroupBy[DF]:
         """
-        Create rolling groups based on a time column (or index value of type Int32, Int64).
+        Create rolling groups based on a time column (or index value of type Int32,
+        Int64).
 
-        Different from a rolling groupby the windows are now determined by the individual values and are not of constant
-        intervals. For constant intervals use *groupby_dynamic*
+        Different from a rolling groupby the windows are now determined by the
+        individual values and are not of constant intervals. For constant intervals use
+        *groupby_dynamic*
 
         .. seealso::
 
@@ -2960,10 +2977,12 @@ class DataFrame(metaclass=DataFrameMetaClass):
         index_column
             Column used to group based on the time window.
             Often to type Date/Datetime
-            This column must be sorted in ascending order. If not the output will not make sense.
+            This column must be sorted in ascending order. If not the output will not
+            make sense.
 
-            In case of a rolling groupby on indices, dtype needs to be one of {Int32, Int64}. Note that
-            Int32 gets temporarily cast to Int64, so if performance matters use an Int64 column.
+            In case of a rolling groupby on indices, dtype needs to be one of
+            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
+            performance matters use an Int64 column.
         period
             length of the window
         offset
@@ -3033,9 +3052,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> DynamicGroupBy:
         """
-        Groups based on a time value (or index value of type Int32, Int64). Time windows are calculated and rows are assigned to windows.
-        Different from a normal groupby is that a row can be member of multiple groups. The time/index window could
-        be seen as a rolling window, with a window size determined by dates/times/values instead of slots in the DataFrame.
+        Groups based on a time value (or index value of type Int32, Int64). Time windows
+        are calculated and rows are assigned to windows. Different from a normal groupby
+        is that a row can be member of multiple groups. The time/index window could be
+        seen as a rolling window, with a window size determined by dates/times/values
+        instead of slots in the DataFrame.
 
         A window is defined by:
 
@@ -3071,21 +3092,25 @@ class DataFrame(metaclass=DataFrameMetaClass):
         index_column
             Column used to group based on the time window.
             Often to type Date/Datetime
-            This column must be sorted in ascending order. If not the output will not make sense.
+            This column must be sorted in ascending order. If not the output will not
+            make sense.
 
-            In case of a dynamic groupby on indices, dtype needs to be one of {Int32, Int64}. Note that
-            Int32 gets temporarily cast to Int64, so if performance matters use an Int64 column.
+            In case of a dynamic groupby on indices, dtype needs to be one of
+            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
+            performance matters use an Int64 column.
         every
             interval of the window
         period
             length of the window, if None it is equal to 'every'
         offset
-            offset of the window if None and period is None it will be equal to negative `every`
+            offset of the window if None and period is None it will be equal to negative
+            `every`
         truncate
             truncate the time value to the window lower bound
         include_boundaries
-            add the lower and upper bound of the window to the "_lower_bound" and "_upper_bound" columns.
-            this will impact performance because it's harder to parallelize
+            Add the lower and upper bound of the window to the "_lower_bound" and
+            "_upper_bound" columns. This will impact performance because it's harder to
+            parallelize
         closed
             Defines if the window interval is closed or not.
             Any of {"left", "right", "both" "none"}
@@ -3175,7 +3200,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 2          │
         └─────────────────────┴─────────────────────┴─────────────────────┴────────────┘
 
-        When closed="left", should not include right end of interval [lower_bound, upper_bound)
+        When closed="left", should not include right end of interval
+        [lower_bound, upper_bound)
 
         >>> (
         ...     df.groupby_dynamic("time", every="1h", closed="left").agg(
@@ -3317,7 +3343,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
         └─────────────────┴─────────────────┴─────┴─────────────────┘
 
-        """
+        """  # noqa: E501
 
         return DynamicGroupBy(
             self,
@@ -3470,7 +3496,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         right_on
             Join column of the right DataFrame.
         on
-            Join column of both DataFrames. If set, `left_on` and `right_on` should be None.
+            Join column of both DataFrames. If set, `left_on` and `right_on` should be
+            None.
         by
             join on these columns before doing asof join
         by_left
@@ -3482,9 +3509,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         suffix
             Suffix to append to columns with a duplicate name.
         tolerance
-            Numeric tolerance. By setting this the join will only be done if the near keys are within this distance.
-            If an asof join is done on columns of dtype "Date", "Datetime", "Duration" or "Time" you
-            use the following string language:
+            Numeric tolerance. By setting this the join will only be done if the near
+            keys are within this distance. If an asof join is done on columns of dtype
+            "Date", "Datetime", "Duration" or "Time" you use the following string
+            language:
 
                 - 1ns   (1 nanosecond)
                 - 1us   (1 microsecond)
@@ -3502,9 +3530,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
         allow_parallel
-            Allow the physical plan to optionally evaluate the computation of both DataFrames up to the join in parallel.
+            Allow the physical plan to optionally evaluate the computation of both
+            DataFrames up to the join in parallel.
         force_parallel
-            Force the physical plan to evaluate the computation of both DataFrames up to the join in parallel.
+            Force the physical plan to evaluate the computation of both DataFrames up to
+            the join in parallel.
 
         Examples
         --------
@@ -3661,7 +3691,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         └──────┴──────┴─────┴───────┘
 
         **Asof join**
-        This is similar to a left-join except that we match on near keys rather than equal keys.
+        This is similar to a left-join except that we match on near keys rather than
+        equal keys.
         The direction is backward
         The keys must be sorted to perform an asof join
 
@@ -3733,16 +3764,18 @@ class DataFrame(metaclass=DataFrameMetaClass):
         inference_size: int = 256,
     ) -> DF:
         """
-        Apply a custom function over the rows of the DataFrame. The rows are passed as tuple.
+        Apply a custom function over the rows of the DataFrame. The rows are passed as
+        tuple.
 
-        Implementing logic using this .apply method is generally slower and more memory intensive
-        than implementing the same logic using the expression API because:
-        - with .apply the logic is implemented in Python but with an expression the logic is implemented in Rust
+        Implementing logic using this .apply method is generally slower and more memory
+        intensive than implementing the same logic using the expression API because:
+        - with .apply the logic is implemented in Python but with an expression the
+            logic is implemented in Rust
         - with .apply the DataFrame is materialized in memory
         - expressions can be parallelised
         - expressions can be optimised
 
-        If possible use the expression API for best performance.
+        If possible, use the expression API for best performance.
 
         Parameters
         ----------
@@ -3991,18 +4024,20 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         Extend the memory backed by this `DataFrame` with the values from `other`.
 
-        Different from `vstack` which adds the chunks from `other` to the chunks of this `DataFrame`
-        `extent` appends the data from `other` to the underlying memory locations and thus may cause a reallocation.
+        Different from `vstack` which adds the chunks from `other` to the chunks of this
+        `DataFrame` `extent` appends the data from `other` to the underlying memory
+        locations and thus may cause a reallocation.
 
-        If this does not cause a reallocation, the resulting data structure will not have any extra chunks
-        and thus will yield faster queries.
+        If this does not cause a reallocation, the resulting data structure will not
+        have any extra chunks and thus will yield faster queries.
 
-        Prefer `extend` over `vstack` when you want to do a query after a single append. For instance during
-        online operations where you add `n` rows and rerun a query.
+        Prefer `extend` over `vstack` when you want to do a query after a single append.
+        For instance during online operations where you add `n` rows and rerun a query.
 
-        Prefer `vstack` over `extend` when you want to append many times before doing a query. For instance
-        when you read in multiple files and when to store them in a single `DataFrame`.
-        In the latter case, finish the sequence of `vstack` operations with a `rechunk`.
+        Prefer `vstack` over `extend` when you want to append many times before doing a
+        query. For instance when you read in multiple files and when to store them in a
+        single `DataFrame`. In the latter case, finish the sequence of `vstack`
+        operations with a `rechunk`.
 
         Parameters
         ----------
@@ -4145,7 +4180,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     def cleared(self: DF) -> DF:
         """
-        Create an empty copy of the current DataFrame, with identical schema but no data.
+        Create an empty copy of the current DataFrame, with identical schema but no
+        data.
 
         See Also
         --------
@@ -4485,7 +4521,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Parameters
         ----------
         values
-            Column values to aggregate. Can be multiple columns if the *columns* arguments contains multiple columns as well
+            Column values to aggregate. Can be multiple columns if the *columns*
+            arguments contains multiple columns as well
         index
             One or multiple keys to group by
         columns
@@ -4552,11 +4589,13 @@ class DataFrame(metaclass=DataFrameMetaClass):
         value_name: str | None = None,
     ) -> DF:
         """
-        Unpivot a DataFrame from wide to long format, optionally leaving identifiers set.
+        Unpivot a DataFrame from wide to long format, optionally leaving identifiers
+        set.
 
-        This function is useful to massage a DataFrame into a format where one or more columns are identifier variables
-        (id_vars), while all other columns, considered measured variables (value_vars), are “unpivoted” to the row axis,
-        leaving just two non-identifier columns, ‘variable’ and ‘value’.
+        This function is useful to massage a DataFrame into a format where one or more
+        columns are identifier variables (id_vars), while all other columns, considered
+        measured variables (value_vars), are "unpivoted" to the row axis, leaving just
+        two non-identifier columns, 'variable' and 'value'.
 
         Parameters
         ----------
@@ -4657,10 +4696,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
         groups
             Groups to partition by.
         maintain_order
-            Keep predictable output order. This is slower as it requires an extra sort operation.
+            Keep predictable output order. This is slower as it requires an extra sort
+            operation.
         as_dict
-            If True, return the partitions in a dictionary keyed by the distinct group values instead
-            of a list.
+            If True, return the partitions in a dictionary keyed by the distinct group
+            values instead of a list.
 
         Examples
         --------
@@ -4726,8 +4766,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     def shift(self: DF, periods: int) -> DF:
         """
-        Shift the values by a given period and fill the parts that will be empty due to this operation
-        with `Nones`.
+        Shift the values by a given period and fill the parts that will be empty due to
+        this operation with `Nones`.
 
         Parameters
         ----------
@@ -4775,8 +4815,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     def shift_and_fill(self: DF, periods: int, fill_value: int | str | float) -> DF:
         """
-        Shift the values by a given period and fill the parts that will be empty due to this operation
-        with the result of the `fill_value` expression.
+        Shift the values by a given period and fill the parts that will be empty due to
+        this operation with the result of the `fill_value` expression.
 
         Parameters
         ----------
@@ -4869,15 +4909,22 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         Start a lazy query from this point. This returns a `LazyFrame` object.
 
-        Operations on a `LazyFrame` are not executed until this is requested by either calling:
+        Operations on a `LazyFrame` are not executed until this is requested by either
+        calling:
 
-        * :meth:`.fetch() <polars.LazyFrame.fetch>` (run on a small number of rows)
-        * :meth:`.collect() <polars.LazyFrame.collect>` (run on all data)
-        * :meth:`.describe_plan() <polars.LazyFrame.describe_plan>` (print unoptimized query plan)
-        * :meth:`.describe_optimized_plan() <polars.LazyFrame.describe_optimized_plan>` (print optimized query plan)
-        * :meth:`.show_graph() <polars.LazyFrame.show_graph>` (show (un)optimized query plan as graphviz graph)
+        * :meth:`.fetch() <polars.LazyFrame.fetch>`
+            (run on a small number of rows)
+        * :meth:`.collect() <polars.LazyFrame.collect>`
+            (run on all data)
+        * :meth:`.describe_plan() <polars.LazyFrame.describe_plan>`
+            (print unoptimized query plan)
+        * :meth:`.describe_optimized_plan() <polars.LazyFrame.describe_optimized_plan>`
+            (print optimized query plan)
+        * :meth:`.show_graph() <polars.LazyFrame.show_graph>`
+            (show (un)optimized query plan as graphviz graph)
 
-        Lazy operations are advised because they allow for query optimization and more parallelization.
+        Lazy operations are advised because they allow for query optimization and more
+        parallelization.
 
         Returns
         -------
@@ -5363,7 +5410,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             quantile between 0.0 and 1.0
 
         interpolation
-            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            interpolation type, options:
+            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
 
         Examples
         --------
@@ -5440,12 +5488,14 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Warnings
         --------
-        Note that this fails if there is a column of type `List` in the DataFrame or subset.
+        Note that this fails if there is a column of type `List` in the DataFrame or
+        subset.
 
         Parameters
         ----------
         maintain_order
-            Keep the same order as the original DataFrame. This requires more work to compute.
+            Keep the same order as the original DataFrame. This requires more work to
+            compute.
         subset
             Subset to use to compare rows
         keep
@@ -5491,7 +5541,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         Rechunk the data in this DataFrame to a contiguous allocation.
 
-        This will make sure all subsequent operations have optimal and predictable performance.
+        This will make sure all subsequent operations have optimal and predictable
+        performance.
         """
         return self._from_pydf(self._df.rechunk())
 
@@ -5588,7 +5639,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         determine aggregations on a row level, and can be applied to any DataType that
         can be supercasted (casted to a similar parent type).
 
-        An example of the supercast rules when applying an arithmetic operation on two DataTypes are for instance:
+        An example of the supercast rules when applying an arithmetic operation on two
+        DataTypes are for instance:
 
         Int8 + Utf8 = Utf8
         Float32 + Int64 = Float32
@@ -5729,7 +5781,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     def shrink_to_fit(self: DF, in_place: bool = False) -> DF | None:
         """
-        Shrink memory usage of this DataFrame to fit the exact capacity needed to hold the data.
+        Shrink memory usage of this DataFrame to fit the exact capacity needed to hold
+        the data.
         """
         if in_place:
             self._df.shrink_to_fit()
@@ -5942,8 +5995,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
 class RollingGroupBy(Generic[DF]):
     """
-    A rolling grouper. This has an `.agg` method which will allow you to run all polars expressions
-    in a groupby context.
+    A rolling grouper. This has an `.agg` method which will allow you to run all polars
+    expressions in a groupby context.
     """
 
     def __init__(
@@ -5983,8 +6036,8 @@ class RollingGroupBy(Generic[DF]):
 
 class DynamicGroupBy(Generic[DF]):
     """
-    A dynamic grouper. This has an `.agg` method which will allow you to run all polars expressions
-    in a groupby context.
+    A dynamic grouper. This has an `.agg` method which will allow you to run all polars
+    expressions in a groupby context.
     """
 
     def __init__(
@@ -6243,9 +6296,10 @@ class GroupBy(Generic[DF]):
         """
         Apply a function over the groups as a sub-DataFrame.
 
-        Implementing logic using this .apply method is generally slower and more memory intensive
-        than implementing the same logic using the expression API because:
-        - with .apply the logic is implemented in Python but with an expression the logic is implemented in Rust
+        Implementing logic using this .apply method is generally slower and more memory
+        intensive than implementing the same logic using the expression API because:
+        - with .apply the logic is implemented in Python but with an expression the
+            logic is implemented in Rust
         - with .apply the DataFrame is materialized in memory
         - expressions can be parallelised
         - expressions can be optimised
@@ -6327,8 +6381,8 @@ class GroupBy(Generic[DF]):
         ),
     ) -> DF:
         """
-        Use multiple aggregations on columns. This can be combined with complete lazy API
-        and is considered idiomatic polars.
+        Use multiple aggregations on columns. This can be combined with complete lazy
+        API and is considered idiomatic polars.
 
         Parameters
         ----------
@@ -6545,11 +6599,12 @@ class GroupBy(Generic[DF]):
         self, pivot_column: str | list[str], values_column: str | list[str]
     ) -> PivotOps[DF]:
         """
-        Do a pivot operation based on the group key, a pivot column and an aggregation function on the values column.
+        Do a pivot operation based on the group key, a pivot column and an aggregation
+        function on the values column.
 
         .. note::
-            Polars'/arrow memory is not ideal for transposing operations like pivots. If you have a relatively large
-            table, consider using a groupby over a pivot.
+            Polars'/arrow memory is not ideal for transposing operations like pivots.
+            If you have a relatively large table, consider using a groupby over a pivot.
 
         Parameters
         ----------
@@ -6851,7 +6906,8 @@ class GroupBy(Generic[DF]):
             quantile between 0.0 and 1.0
 
         interpolation
-            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            interpolation type, options:
+            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
 
         Examples
         --------
@@ -7128,7 +7184,8 @@ class GBSelection(Generic[DF]):
             quantile between 0.0 and 1.0
 
         interpolation
-            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            interpolation type, options:
+            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
 
         """
         return self._dataframe_class._from_pydf(

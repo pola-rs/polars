@@ -145,7 +145,8 @@ class Series:
     strict
         Throw error on numeric overflow
     nan_to_null
-        In case a numpy arrow is used to create this Series, indicate how to deal with np.nan
+        In case a numpy arrow is used to create this Series, indicate how to deal with
+        np.nan
 
     Examples
     --------
@@ -523,15 +524,17 @@ class Series:
 
     def estimated_size(self) -> int:
         """
-        Returns an estimation of the total (heap) allocated size of the `Series` in bytes.
+        Returns an estimation of the total (heap) allocated size of the `Series` in
+        bytes.
 
-        This estimation is the sum of the size of its buffers, validity, including nested arrays.
-        Multiple arrays may share buffers and bitmaps. Therefore, the size of 2 arrays is not the
-        sum of the sizes computed from this function. In particular, [`StructArray`]'s size is an upper bound.
+        This estimation is the sum of the size of its buffers, validity, including
+        nested arrays. Multiple arrays may share buffers and bitmaps. Therefore, the
+        size of 2 arrays is not the sum of the sizes computed from this function. In
+        particular, [`StructArray`]'s size is an upper bound.
 
-        When an array is sliced, its allocated size remains constant because the buffer unchanged.
-        However, this function will yield a smaller number. This is because this function returns
-        the visible size of the buffer, not its total capacity.
+        When an array is sliced, its allocated size remains constant because the buffer
+        unchanged. However, this function will yield a smaller number. This is because
+        this function returns the visible size of the buffer, not its total capacity.
 
         FFI buffers are included in this estimation.
         """
@@ -657,7 +660,8 @@ class Series:
 
     def describe(self) -> pli.DataFrame:
         """
-        Quick summary statistics of a series. Series with mixed datatypes will return summary statistics for the datatype of the first value.
+        Quick summary statistics of a series. Series with mixed datatypes will return
+        summary statistics for the datatype of the first value.
 
         Returns
         -------
@@ -882,7 +886,8 @@ class Series:
             quantile between 0.0 and 1.0
 
         interpolation
-            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            interpolation type, options:
+            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
 
         Examples
         --------
@@ -997,21 +1002,23 @@ class Series:
         Run an expression over a sliding window that increases `1` slot every iteration.
 
         .. warning::
-            This can be really slow as it can have `O(n^2)` complexity. Don't use this for operations
-            that visit all elements.
+            This can be really slow as it can have `O(n^2)` complexity. Don't use this
+            for operations that visit all elements.
 
         .. warning::
-            This API is experimental and may change without it being considered a breaking change.
+            This API is experimental and may change without it being considered a
+            breaking change.
 
         Parameters
         ----------
         expr
             Expression to evaluate
         min_periods
-            Number of valid values there should be in the window before the expression is evaluated.
-            valid values =  `length - null_count`
+            Number of valid values there should be in the window before the expression
+            is evaluated. valid values = `length - null_count`
         parallel
-            Run in parallel. Don't do this in a groupby or another operation that already has much parallelization.
+            Run in parallel. Don't do this in a groupby or another operation that
+            already has much parallelization.
 
         Examples
         --------
@@ -1274,23 +1281,28 @@ class Series:
         other
             Series to append.
         append_chunks
-            If set to `True` the append operation will add the chunks from `other` to self. This is super cheap.
+            If set to `True` the append operation will add the chunks from `other` to
+            self. This is super cheap.
 
-            if set to `False` the append operation will do the same as `DataFrame.extend` which:
-            extends the memory backed by this `Series` with the values from `other`.
+            If set to `False` the append operation will do the same as
+            `DataFrame.extend` which extends the memory backed by this `Series` with
+            the values from `other`.
 
-            Different from `append chunks`, `extent` appends the data from `other` to the underlying memory locations and
-            thus may cause a reallocation (which are expensive).
+            Different from `append chunks`, `extent` appends the data from `other` to
+            the underlying memory locations and thus may cause a reallocation (which are
+            expensive).
 
-            If this does not cause a reallocation, the resulting data structure will not have any extra chunks
-            and thus will yield faster queries.
+            If this does not cause a reallocation, the resulting data structure will not
+            have any extra chunks and thus will yield faster queries.
 
-            Prefer `extend` over `append_chunks` when you want to do a query after a single append. For instance during
-            online operations where you add `n` rows and rerun a query.
+            Prefer `extend` over `append_chunks` when you want to do a query after a
+            single append. For instance during online operations where you add `n` rows
+            and rerun a query.
 
-            Prefer `append_chunks` over `extend` when you want to append many times before doing a query. For instance
-            when you read in multiple files and when to store them in a single `Series`.
-            In the latter case, finish the sequence of `append_chunks` operations with a `rechunk`.
+            Prefer `append_chunks` over `extend` when you want to append many times
+            before doing a query. For instance when you read in multiple files and when
+            to store them in a single `Series`. In the latter case, finish the sequence
+            of `append_chunks` operations with a `rechunk`.
 
 
         Examples
@@ -1569,8 +1581,9 @@ class Series:
 
     def has_validity(self) -> bool:
         """
-        Returns True if the Series has a validity bitmask. If there is none, it means that there are no null values.
-        Use this to swiftly assert a Series does not have null values.
+        Returns True if the Series has a validity bitmask. If there is none, it means
+        that there are no null values. Use this to swiftly assert a Series does not have
+        null values.
         """
         return self._s.has_validity()
 
@@ -1735,7 +1748,8 @@ class Series:
 
     def is_in(self, other: Series | list) -> Series:
         """
-        Check if elements of this Series are in the right Series, or List values of the right Series.
+        Check if elements of this Series are in the right Series, or List values of the
+        right Series.
 
         Returns
         -------
@@ -1894,7 +1908,8 @@ class Series:
         null_equal
             Consider null values as equal.
         strict
-            Don't allow different numerical dtypes, e.g. comparing `pl.UInt32` with a `pl.Int64` will return `False`.
+            Don't allow different numerical dtypes, e.g. comparing `pl.UInt32` with a
+            `pl.Int64` will return `False`.
 
         Examples
         --------
@@ -1987,7 +2002,8 @@ class Series:
         Examples
         --------
         Replicating the pandas
-        `pd.Series.factorize <https://pandas.pydata.org/docs/reference/api/pandas.Series.factorize.html>`_
+        `pd.Series.factorize
+        <https://pandas.pydata.org/docs/reference/api/pandas.Series.factorize.html>`_
         method.
 
         >>> s = pl.Series("values", ["a", None, "x", "a"])
@@ -2153,8 +2169,9 @@ class Series:
 
     def view(self, ignore_nulls: bool = False) -> np.ndarray:
         """
-        Get a view into this Series data with a numpy array. This operation doesn't clone data, but does not include
-        missing values. Don't use this unless you know what you are doing.
+        Get a view into this Series data with a numpy array. This operation doesn't
+        clone data, but does not include missing values. Don't use this unless you know
+        what you are doing.
 
         .. warning::
 
@@ -2276,7 +2293,8 @@ class Series:
 
         Notes
         -----
-        If you are attempting to convert Utf8 to an array you'll need to install `pyarrow`.
+        If you are attempting to convert Utf8 to an array you'll need to install
+        `pyarrow`.
 
         Examples
         --------
@@ -2448,7 +2466,8 @@ class Series:
 
     def cleared(self) -> "Series":
         """
-        Create an empty copy of the current Series, with identical name/dtype but no data.
+        Create an empty copy of the current Series, with identical name/dtype but no
+        data.
 
         See Also
         --------
@@ -2546,7 +2565,8 @@ class Series:
 
     def floor(self) -> Series:
         """
-        Floor underlying floating point array to the lowest integers smaller or equal to the float value.
+        Floor underlying floating point array to the lowest integers smaller or equal to
+        the float value.
 
         Only works on floating point Series
         """
@@ -2554,7 +2574,8 @@ class Series:
 
     def ceil(self) -> Series:
         """
-        Ceil underlying floating point array to the highest integers smaller or equal to the float value.
+        Ceil underlying floating point array to the highest integers smaller or equal to
+        the float value.
 
         Only works on floating point Series
         """
@@ -2884,7 +2905,8 @@ class Series:
         """
         Apply a function over elements in this Series and return a new Series.
 
-        If the function returns another datatype, the return_dtype arg should be set, otherwise the method will fail.
+        If the function returns another datatype, the return_dtype arg should be set,
+        otherwise the method will fail.
 
         Examples
         --------
@@ -2903,7 +2925,8 @@ class Series:
         func
             function or lambda.
         return_dtype
-            Output datatype. If none is given, the same datatype as this Series will be used.
+            Output datatype. If none is given, the same datatype as this Series will be
+            used.
 
         Returns
         -------
@@ -2917,8 +2940,8 @@ class Series:
 
     def shift(self, periods: int = 1) -> Series:
         """
-        Shift the values by a given period and fill the parts that will be empty due to this operation
-        with `Nones`.
+        Shift the values by a given period and fill the parts that will be empty due to
+        this operation with `Nones`.
 
         Examples
         --------
@@ -2949,8 +2972,8 @@ class Series:
 
     def shift_and_fill(self, periods: int, fill_value: int | pli.Expr) -> Series:
         """
-        Shift the values by a given period and fill the parts that will be empty due to this operation
-        with the result of the `fill_value` expression.
+        Shift the values by a given period and fill the parts that will be empty due to
+        this operation with the result of the `fill_value` expression.
 
         Parameters
         ----------
@@ -2965,7 +2988,8 @@ class Series:
 
     def zip_with(self, mask: Series, other: Series) -> Series:
         """
-        Where mask evaluates true, take values from self. Where mask evaluates false, take values from other.
+        Where mask evaluates true, take values from self. Where mask evaluates false,
+        take values from other.
 
         Parameters
         ----------
@@ -3016,9 +3040,9 @@ class Series:
     ) -> Series:
         """
         apply a rolling min (moving min) over the values in this array.
-        A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
-        values will be aggregated to their sum.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
         Parameters
         ----------
@@ -3028,8 +3052,8 @@ class Series:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
 
@@ -3067,9 +3091,10 @@ class Series:
     ) -> Series:
         """
         Apply a rolling max (moving max) over the values in this array.
-        A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
-        values will be aggregated to their sum.
+
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
         Parameters
         ----------
@@ -3079,8 +3104,8 @@ class Series:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
 
@@ -3118,9 +3143,9 @@ class Series:
     ) -> Series:
         """
         Apply a rolling mean (moving mean) over the values in this array.
-        A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
-        values will be aggregated to their sum.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
         Parameters
         ----------
@@ -3130,8 +3155,8 @@ class Series:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
 
@@ -3169,9 +3194,9 @@ class Series:
     ) -> Series:
         """
         Apply a rolling sum (moving sum) over the values in this array.
-        A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
-        values will be aggregated to their sum.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
         Parameters
         ----------
@@ -3181,8 +3206,8 @@ class Series:
             An optional slice with the same length of the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
 
@@ -3221,9 +3246,9 @@ class Series:
         """
         Compute a rolling std dev
 
-        A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
-        values will be aggregated to their sum.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
         Parameters
         ----------
@@ -3233,8 +3258,8 @@ class Series:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
 
@@ -3259,9 +3284,9 @@ class Series:
         """
         Compute a rolling variance.
 
-        A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
-        values will be aggregated to their sum.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weight` vector. The resulting values will be aggregated to their sum.
 
         Parameters
         ----------
@@ -3271,8 +3296,8 @@ class Series:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
 
@@ -3315,8 +3340,8 @@ class Series:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
 
@@ -3361,8 +3386,8 @@ class Series:
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
 
@@ -3397,15 +3422,16 @@ class Series:
         quantile
             quantile to compute
         interpolation
-            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            interpolation type, options:
+            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
         window_size
             The length of the window.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
 
@@ -3554,7 +3580,8 @@ class Series:
 
     def shrink_to_fit(self, in_place: bool = False) -> Series | None:
         """
-        Shrink memory usage of this Series to fit the exact capacity needed to hold the data.
+        Shrink memory usage of this Series to fit the exact capacity needed to hold the
+        data.
         """
         if in_place:
             self._s.shrink_to_fit()
@@ -3800,7 +3827,8 @@ class Series:
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
 
-        .. math::  G_1=\frac{k_3}{k_2^{3/2}}=\frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}
+        .. math::
+            G_1 = \frac{k_3}{k_2^{3/2}} = \frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}
 
         """
         return self._s.skew(bias)
@@ -3827,12 +3855,13 @@ class Series:
 
     def clip(self, min_val: int | float, max_val: int | float) -> Series:
         """
-        Clip (limit) the values in an array to any value that fits in 64 floating point range.
+        Clip (limit) the values in an array to any value that fits in 64 floating point
+        range.
 
         Only works for the following dtypes: {Int32, Int64, Float32, Float64, UInt32}.
 
-        If you want to clip other dtypes, consider writing a "when, then, otherwise" expression.
-        See :func:`when` for more information.
+        If you want to clip other dtypes, consider writing a "when, then, otherwise"
+        expression. See :func:`when` for more information.
 
         Parameters
         ----------
@@ -3903,20 +3932,27 @@ class Series:
         Parameters
         ----------
         com
-            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+            Specify decay in terms of center of mass,
+            :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
         span
-            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+            Specify decay in terms of span,
+            :math:`alpha = 2/(span + 1) \;for\; span >= 1`
         half_life
-            Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+            Specify decay in terms of half-life,
+            :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
         alpha
-            Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
+            Specify smoothing factor alpha directly,
+            :math:`0 < alpha < 1`.
         adjust
-            Divide by decaying adjustment factor in beginning periods to account for imbalance in relative weightings
+            Divide by decaying adjustment factor in beginning periods to account for
+            imbalance in relative weightings
 
-                - When adjust = True the EW function is calculated using weights :math:`w_i = (1 - alpha)^i`
+                - When adjust = True the EW function is calculated using weights
+                    :math:`w_i = (1 - alpha)^i`
                 - When adjust = False the EW function is calculated recursively.
         min_periods
-            Minimum number of observations in window required to have a value (otherwise result is Null).
+            Minimum number of observations in window required to have a value
+            (otherwise result is Null).
 
         """
         return (
@@ -3944,20 +3980,27 @@ class Series:
         Parameters
         ----------
         com
-            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+            Specify decay in terms of center of mass,
+            :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
         span
-            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+            Specify decay in terms of span,
+            :math:`alpha = 2/(span + 1) \;for\; span >= 1`
         half_life
-            Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+            Specify decay in terms of half-life,
+            :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
         alpha
-            Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
+            Specify smoothing factor alpha directly,
+            :math:`0 < alpha < 1`.
         adjust
-            Divide by decaying adjustment factor in beginning periods to account for imbalance in relative weightings
+            Divide by decaying adjustment factor in beginning periods to account for
+            imbalance in relative weightings
 
-                - When adjust = True the EW function is calculated using weights :math:`w_i = (1 - alpha)^i`
+                - When adjust = True the EW function is calculated using weights
+                    :math:`w_i = (1 - alpha)^i`
                 - When adjust = False the EW function is calculated recursively.
         min_periods
-            Minimum number of observations in window required to have a value (otherwise result is Null).
+            Minimum number of observations in window required to have a value
+            (otherwise result is Null).
 
         """
         return (
@@ -3985,20 +4028,26 @@ class Series:
         Parameters
         ----------
         com
-            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+            Specify decay in terms of center of mass,
+            :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
         span
-            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+            Specify decay in terms of span,
+            :math:`alpha = 2/(span + 1) \;for\; span >= 1`
         half_life
-            Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+            Specify decay in terms of half-life,
+            :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
         alpha
             Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
         adjust
-            Divide by decaying adjustment factor in beginning periods to account for imbalance in relative weightings
+            Divide by decaying adjustment factor in beginning periods to account for
+            imbalance in relative weightings
 
-                - When adjust = True the EW function is calculated using weights :math:`w_i = (1 - alpha)^i`
+                - When adjust = True the EW function is calculated using weights
+                    :math:`w_i = (1 - alpha)^i`
                 - When adjust = False the EW function is calculated recursively.
         min_periods
-            Minimum number of observations in window required to have a value (otherwise result is Null).
+            Minimum number of observations in window required to have a value
+            (otherwise result is Null).
 
         """
         return (
@@ -4018,7 +4067,8 @@ class Series:
         Parameters
         ----------
         value
-            The value to extend the Series with. This value may be None to fill with nulls.
+            The value to extend the Series with. This value may be None to fill with
+            nulls.
         n
             The number of values to extend.
 
@@ -4062,8 +4112,9 @@ class Series:
         """
         return self._s.time_unit()
 
-    # Below are the namespaces defined. Do not move these up in the definition of Series, as it confuses mypy between the
-    # type annotation `str` and the namespace "str
+    # Below are the namespaces defined. Do not move these up in the definition of
+    # Series, as it confuses mypy between the type annotation `str` and the
+    # namespace `str`
 
     @property
     def dt(self) -> DateTimeNameSpace:
@@ -4165,7 +4216,8 @@ class StringNameSpace:
             Date, Datetime or Time.
         fmt
             Format to use, refer to the
-            `chrono strftime documentation <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            `chrono strftime documentation
+            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
         strict
             Raise an error if any conversion fails.
@@ -4449,7 +4501,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Utf8 array. Contain null if original value is null or the json_path return nothing.
+        Utf8 array. Contain null if original value is null or the json_path return
+        nothing.
 
         Examples
         --------
@@ -4517,7 +4570,8 @@ class StringNameSpace:
 
     def extract_all(self, pattern: str) -> Series:
         r"""
-        Extract each successive non-overlapping regex match in an individual string as an array
+        Extract each successive non-overlapping regex match in an individual string as
+        an array
 
         Parameters
         ----------
@@ -4526,7 +4580,8 @@ class StringNameSpace:
 
         Returns
         -------
-        List[Utf8] array. Contain null if original value is null or regex capture nothing.
+        List[Utf8] array. Contain null if original value is null or regex capture
+        nothing.
 
         Examples
         --------
@@ -4629,7 +4684,8 @@ class StringNameSpace:
         │ {"d","4"}   │
         └─────────────┘
 
-        Split column in ``n`` fields, give them a proper name in the struct and add them as columns.
+        Split column in ``n`` fields, give them a proper name in the struct and add them
+        as columns.
 
         >>> df.select(
         ...     [
@@ -4750,9 +4806,9 @@ class StringNameSpace:
 
     def zfill(self, alignment: int) -> Series:
         """
-        Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
-        A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
-        rather than before.
+        Return a copy of the string left filled with ASCII '0' digits to make a string
+        of length width. A leading sign prefix ('+'/'-') is handled by inserting the
+        padding after the sign character rather than before.
         The original string is returned if width is less than or equal to ``len(s)``.
 
         Parameters
@@ -4767,8 +4823,8 @@ class StringNameSpace:
         """
         Return the string left justified in a string of length ``width``.
 
-        Padding is done using the specified ``fillchar``.
-        The original string is returned if ``width`` is less than or equal to ``len(s)``.
+        Padding is done using the specified ``fillchar``. The original string is
+        returned if ``width`` is less than or equal to``len(s)``.
 
         Parameters
         ----------
@@ -4800,8 +4856,8 @@ class StringNameSpace:
         """
         Return the string right justified in a string of length ``width``.
 
-        Padding is done using the specified ``fillchar``.
-        The original string is returned if ``width`` is less than or equal to ``len(s)``.
+        Padding is done using the specified ``fillchar``. The original string is
+        returned if ``width`` is less than or equal to ``len(s)``.
 
         Parameters
         ----------
@@ -4851,8 +4907,8 @@ class StringNameSpace:
             Starting index of the slice (zero-indexed). Negative indexing
             may be used.
         length
-            Optional length of the slice. If None (default), the slice is taken to the end
-            of the string.
+            Optional length of the slice. If None (default), the slice is taken to the
+            end of the string.
 
         Returns
         -------
@@ -5087,8 +5143,8 @@ class ListNameSpace:
 
     def shift(self, periods: int = 1) -> Series:
         """
-        Shift the values by a given period and fill the parts that will be empty due to this operation
-        with nulls.
+        Shift the values by a given period and fill the parts that will be empty due to
+        this operation with nulls.
 
         Parameters
         ----------
@@ -5189,12 +5245,14 @@ class ListNameSpace:
         Parameters
         ----------
         expr
-            Expression to run. Note that you can select an element with `pl.first()`, or `pl.col()`
+            Expression to run. Note that you can select an element with `pl.first()`, or
+            `pl.col()`
         parallel
             Run all expression parallel. Don't activate this blindly.
             Parallelism is worth it if there is enough work to do per thread.
 
-            This likely should not be use in the groupby context, because we already parallel execution per group
+            This likely should not be use in the groupby context, because we already
+            parallel execution per group
 
         Examples
         --------
@@ -5234,7 +5292,8 @@ class DateTimeNameSpace:
     ) -> Series:
         """
         .. warning::
-            This API is experimental and may change without it being considered a breaking change.
+            This API is experimental and may change without it being considered a
+            breaking change.
 
         Divide the date/ datetime range into buckets.
 
@@ -5344,7 +5403,10 @@ class DateTimeNameSpace:
 
     def strftime(self, fmt: str) -> Series:
         """
-        Format Date/datetime with a formatting rule: See `chrono strftime/strptime <https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html>`_.
+        Format Date/datetime with a formatting rule:
+
+        See `chrono strftime/strptime
+        <https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html>`_.
 
         Returns
         -------
@@ -5586,8 +5648,10 @@ class DateTimeNameSpace:
 
     def epoch_milliseconds(self) -> Series:
         """
-        Get the number of milliseconds since the unix EPOCH
-        If the date is before the unix EPOCH, the number of milliseconds will be negative.
+        Get the number of milliseconds since the unix EPOCH.
+
+        If the date is before the unix EPOCH, the number of milliseconds will be
+        negative.
 
         .. deprecated:: 0.13.9
             Use :func:`epoch` instead.
@@ -5614,8 +5678,8 @@ class DateTimeNameSpace:
 
     def with_time_unit(self, tu: str) -> Series:
         """
-        Set time unit a Series of dtype Datetime or Duration. This does not modify underlying data,
-        and should be used to fix an incorrect time unit.
+        Set time unit a Series of dtype Datetime or Duration. This does not modify
+        underlying data, and should be used to fix an incorrect time unit.
 
         Parameters
         ----------
@@ -5783,7 +5847,8 @@ class CatNameSpace:
         ----------
         ordering
             One of:
-                - 'physical' -> use the physical representation of the categories to determine the order (default)
+                - 'physical' -> use the physical representation of the categories to
+                    determine the order (default)
                 - 'lexical' -. use the string values to determine the ordering
 
         Examples

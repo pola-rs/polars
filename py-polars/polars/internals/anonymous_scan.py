@@ -16,8 +16,8 @@ except ImportError:
 
 def _deser_and_exec(buf: bytes, with_columns: list[str] | None) -> pli.DataFrame:
     """
-    Called from polars-lazy. Polars-lazy provides the bytes of the pickled function and the
-    projected columns.
+    Called from polars-lazy. Polars-lazy provides the bytes of the pickled function and
+    the projected columns.
 
     Parameters
     ----------
@@ -47,13 +47,15 @@ def _scan_ds_impl(
     """
     if not _PYARROW_AVAILABLE:  # pragma: no cover
         raise ImportError("'pyarrow' is required for scanning from pyarrow datasets.")
-    return pl.from_arrow(ds.to_table(columns=with_columns))  # type: ignore[return-value]
+    return pl.from_arrow(  # type: ignore[return-value]
+        ds.to_table(columns=with_columns)
+    )
 
 
 def _scan_ds(ds: pa.dataset.dataset) -> pli.LazyFrame:
     """
-    This pickles the partially applied function `_scan_ds_impl`. That bytes are then send to in the polars
-    logical plan. It can be deserialized once executed and ran.
+    Pickle the partially applied function `_scan_ds_impl`. The bytes are then sent to
+    the polars logical plan. It can be deserialized once executed and ran.
 
     Parameters
     ----------

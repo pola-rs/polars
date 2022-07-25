@@ -160,8 +160,8 @@ def col(
         name = name.to_list()  # type: ignore[assignment]
 
     # note: we need the typing.cast call here twice to make mypy happy under Python 3.7
-    # On Python 3.10, it is not needed. We use cast as it works across versions, ignoring
-    # the typing error would lead to unneeded ignores under Python 3.10.
+    # On Python 3.10, it is not needed. We use cast as it works across versions,
+    # ignoring the typing error would lead to unneeded ignores under Python 3.10.
     if isclass(name) and issubclass(cast(type, name), DataType):
         name = [cast(type, name)]
 
@@ -331,8 +331,8 @@ def max(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     Parameters
     ----------
     column
-        Column(s) to be used in aggregation. Will lead to different behavior based on the input.
-        input:
+        Column(s) to be used in aggregation. Will lead to different behavior based on
+        the input:
         - Union[str, Series] -> aggregate the maximum value of that column.
         - List[Expr] -> aggregate the maximum value horizontally.
     """
@@ -360,8 +360,8 @@ def min(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     Get the minimum value.
 
     column
-        Column(s) to be used in aggregation. Will lead to different behavior based on the input.
-        input:
+        Column(s) to be used in aggregation. Will lead to different behavior based on
+        the input:
         - Union[str, Series] -> aggregate the sum value of that column.
         - List[Expr] -> aggregate the sum value horizontally.
     """
@@ -389,8 +389,8 @@ def sum(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     Get the sum value.
 
     column
-        Column(s) to be used in aggregation. Will lead to different behavior based on the input.
-        input:
+        Column(s) to be used in aggregation. Will lead to different behavior based on
+        the input:
         - Union[str, Series] -> aggregate the sum value of that column.
         - List[Expr] -> aggregate the sum value horizontally.
     """
@@ -759,7 +759,8 @@ def map(
     return_dtype: type[DataType] | None = None,
 ) -> pli.Expr:
     """
-    Map a custom function over multiple columns/expressions and produce a single Series result.
+    Map a custom function over multiple columns/expressions and produce a single Series
+    result.
 
     Parameters
     ----------
@@ -852,9 +853,8 @@ def fold(
     Parameters
     ----------
     acc
-     Accumulator Expression. This is the value that will be initialized when the fold starts.
-     For a sum this could for instance be lit(0).
-
+        Accumulator Expression. This is the value that will be initialized when the fold
+        starts. For a sum this could for instance be lit(0).
     f
         Function to apply over the accumulator and the value.
         Fn(acc, value) -> new_value
@@ -1114,8 +1114,8 @@ def argsort_by(
     Find the indexes that would sort the columns.
 
     Argsort by multiple columns. The first column will be used for the ordering.
-    If there are duplicates in the first column, the second column will be used to determine the ordering
-    and so on.
+    If there are duplicates in the first column, the second column will be used to
+    determine the ordering and so on.
 
     Parameters
     ----------
@@ -1183,7 +1183,7 @@ def duration(
     │ 00:00:00   ┆ 00:00:00   ┆                     ┆ 00:00:00.002 ┆                     │
     └────────────┴────────────┴─────────────────────┴──────────────┴─────────────────────┘
 
-    """
+    """  # noqa: E501
     if hours is not None:
         hours = pli.expr_to_lit_or_expr(hours, str_to_lit=False)._pyexpr
     if minutes is not None:
@@ -1454,8 +1454,8 @@ def collect_all(
     slice_pushdown: bool = False,
 ) -> list[pli.DataFrame]:
     """
-    Collect multiple LazyFrames at the same time. This runs all the computation graphs in parallel on
-    Polars threadpool.
+    Collect multiple LazyFrames at the same time. This runs all the computation graphs
+    in parallel on Polars threadpool.
 
     Parameters
     ----------
@@ -1472,8 +1472,8 @@ def collect_all(
         This is needed if you want to join on categorical columns.
 
         Caution!
-            If you already have set a global string cache, set this to `False` as this will reset the
-            global cache when the query is finished.
+            If you already have set a global string cache, set this to `False` as this
+            will reset the global cache when the query is finished.
     no_optimization
         Turn off optimizations.
     slice_pushdown

@@ -135,7 +135,8 @@ def when(expr: pli.Expr | bool) -> When:
 
     Examples
     --------
-    Below we add a column with the value 1, where column "foo" > 2 and the value -1 where it isn't.
+    Below we add a column with the value 1, where column "foo" > 2 and the value -1
+    where it isn't.
 
     >>> df = pl.DataFrame({"foo": [1, 3, 4], "bar": [3, 4, 0]})
     >>> df.with_column(pl.when(pl.col("foo") > 2).then(pl.lit(1)).otherwise(pl.lit(-1)))

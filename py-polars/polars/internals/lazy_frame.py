@@ -1,5 +1,6 @@
 """
-This module contains all expressions and classes needed for lazy computation/ query execution.
+This module contains all expressions and classes needed for lazy computation/query
+execution.
 """
 from __future__ import annotations
 
@@ -95,14 +96,15 @@ class LazyFrame(Generic[DF]):
     @property
     def _dataframe_class(self) -> type[DF]:
         """
-        Return the associated DataFrame which is the equivalent of this LazyFrame object.
+        Return the associated DataFrame which is the equivalent of this LazyFrame
+        object.
 
-        This class is used when a LazyFrame object is casted to a non-lazy representation
-        by the invocation of `.collect()`, `.fetch()`, and so on. By default we specify
-        the regular `polars.internals.frame.DataFrame` class here, but any subclass of
-        DataFrame that wishes to preserve its type when converted to LazyFrame and back
-        (with `.lazy().collect()` for instance) must overwrite this class variable
-        before setting DataFrame._lazyframe_class.
+        This class is used when a LazyFrame object is casted to a non-lazy
+        representation by the invocation of `.collect()`, `.fetch()`, and so on. By
+        default we specify the regular `polars.internals.frame.DataFrame` class here,
+        but any subclass of DataFrame that wishes to preserve its type when converted to
+        LazyFrame and back (with `.lazy().collect()` for instance) must overwrite this
+        class variable before setting DataFrame._lazyframe_class.
 
         This property is dynamically overwritten when DataFrame is sub-classed. See
         `polars.internals.frame.DataFrameMetaClass.__init__` for implementation details.
@@ -419,14 +421,18 @@ class LazyFrame(Generic[DF]):
         except Exception:
             insert = self.describe_plan().replace("\n", "<p></p>")
 
-            return f"""<i>naive plan: (run <b>LazyFrame.describe_optimized_plan()</b> to see the optimized plan)</i>
+            return f"""\
+<i>naive plan: (run <b>LazyFrame.describe_optimized_plan()</b> to see the optimized plan)</i>
     <p></p>
-    <div>{insert}</div>"""
+    <div>{insert}</div>\
+"""  # noqa: E501
 
     def __str__(self) -> str:
-        return f"""naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
+        return f"""\
+naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
-{self.describe_plan()}"""
+{self.describe_plan()}\
+"""
 
     def describe_plan(self) -> str:
         """
@@ -529,7 +535,8 @@ class LazyFrame(Generic[DF]):
 
     def inspect(self: LDF, fmt: str = "{}") -> LDF:
         """
-        Prints the value that this node in the computation graph evaluates to and passes on the value.
+        Prints the value that this node in the computation graph evaluates to and passes
+        on the value.
 
         >>> df = pl.DataFrame({"foo": [1, 1, -2, 3]}).lazy()
         >>> (
@@ -594,8 +601,8 @@ class LazyFrame(Generic[DF]):
         """
         Collect into a DataFrame.
 
-        Note: use :func:`fetch` if you want to run your query on the first `n` rows only.
-        This can be a huge time saver in debugging queries.
+        Note: use :func:`fetch` if you want to run your query on the first `n` rows
+        only. This can be a huge time saver in debugging queries.
 
         Parameters
         ----------
@@ -614,8 +621,8 @@ class LazyFrame(Generic[DF]):
             This is needed if you want to join on categorical columns.
 
             Caution!
-                If you already have set a global string cache, set this to `False` as this will reset the
-                global cache when the query is finished.
+                If you already have set a global string cache, set this to `False` as
+                this will reset the global cache when the query is finished.
         no_optimization
             Turn off (certain) optimizations.
         slice_pushdown
@@ -651,13 +658,13 @@ class LazyFrame(Generic[DF]):
         slice_pushdown: bool = True,
     ) -> DF:
         """
-        Fetch is like a :func:`collect` operation, but it overwrites the number of rows read
-        by every scan operation. This is a utility that helps debug a query on a smaller number
-        of rows.
+        Fetch is like a :func:`collect` operation, but it overwrites the number of rows
+        read by every scan operation. This is a utility that helps debug a query on a
+        smaller number of rows.
 
-        Note that the fetch does not guarantee the final number of rows in the DataFrame.
-        Filter, join operations and a lower number of rows available in the scanned file influence
-        the final number of rows.
+        Note that the fetch does not guarantee the final number of rows in the
+        DataFrame. Filter, join operations and a lower number of rows available in the
+        scanned file influence the final number of rows.
 
         Parameters
         ----------
@@ -704,7 +711,8 @@ class LazyFrame(Generic[DF]):
         """
         Returns lazy representation, i.e. itself.
 
-        Useful for writing code that expects either a :class:`DataFrame` or :class:`LazyFrame`.
+        Useful for writing code that expects either a :class:`DataFrame` or
+        :class:`LazyFrame`.
 
         Returns
         -------
@@ -757,7 +765,7 @@ class LazyFrame(Generic[DF]):
         See Also
         --------
         schema : Returns a {colname:dtype} mapping.
-        """
+        """  # noqa: E501
         return self._ldf.dtypes()
 
     @property
@@ -777,7 +785,7 @@ class LazyFrame(Generic[DF]):
         >>> lf.schema
         {'foo': <class 'polars.datatypes.Int64'>, 'bar': <class 'polars.datatypes.Float64'>, 'ham': <class 'polars.datatypes.Utf8'>}
 
-        """
+        """  # noqa: E501
         return self._ldf.schema()
 
     def cache(self: LDF) -> LDF:
@@ -788,7 +796,8 @@ class LazyFrame(Generic[DF]):
 
     def cleared(self: LDF) -> LDF:
         """
-        Create an empty copy of the current LazyFrame, with identical schema but no data.
+        Create an empty copy of the current LazyFrame, with identical schema but no
+        data.
 
         See Also
         --------
@@ -934,7 +943,8 @@ class LazyFrame(Generic[DF]):
         by
             Column(s) to group by.
         maintain_order
-            Make sure that the order of the groups remain consistent. This is more expensive than a default groupby.
+            Make sure that the order of the groups remain consistent. This is more
+            expensive than a default groupby.
 
         Examples
         --------
@@ -978,10 +988,12 @@ class LazyFrame(Generic[DF]):
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> LazyGroupBy[LDF]:
         """
-        Create rolling groups based on a time column (or index value of type Int32, Int64).
+        Create rolling groups based on a time column (or index value of type Int32,
+        Int64).
 
-        Different from a rolling groupby the windows are now determined by the individual values and are not of constant
-        intervals. For constant intervals use *groupby_dynamic*
+        Different from a rolling groupby the windows are now determined by the
+        individual values and are not of constant intervals. For constant intervals use
+        *groupby_dynamic*
 
         .. seealso::
 
@@ -1016,10 +1028,12 @@ class LazyFrame(Generic[DF]):
         index_column
             Column used to group based on the time window.
             Often to type Date/Datetime
-            This column must be sorted in ascending order. If not the output will not make sense.
+            This column must be sorted in ascending order. If not the output will not
+            make sense.
 
-            In case of a rolling groupby on indices, dtype needs to be one of {Int32, Int64}. Note that
-            Int32 gets temporarily cast to Int64, so if performance matters use an Int64 column.
+            In case of a rolling groupby on indices, dtype needs to be one of
+            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
+            performance matters use an Int64 column.
         period
             length of the window
         offset
@@ -1074,7 +1088,6 @@ class LazyFrame(Generic[DF]):
         └─────────────────────┴───────┴───────┴───────┘
 
         """
-
         if offset is None:
             offset = f"-{period}"
         by = _prepare_groupby_inputs(by)
@@ -1094,9 +1107,11 @@ class LazyFrame(Generic[DF]):
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> LazyGroupBy[LDF]:
         """
-        Groups based on a time value (or index value of type Int32, Int64). Time windows are calculated and rows are assigned to windows.
-        Different from a normal groupby is that a row can be member of multiple groups. The time/index window could
-        be seen as a rolling window, with a window size determined by dates/times/values instead of slots in the DataFrame.
+        Groups based on a time value (or index value of type Int32, Int64). Time windows
+        are calculated and rows are assigned to windows. Different from a normal groupby
+        is that a row can be member of multiple groups. The time/index window could be
+        seen as a rolling window, with a window size determined by dates/times/values
+        instead of slots in the DataFrame.
 
         .. seealso::
 
@@ -1136,21 +1151,25 @@ class LazyFrame(Generic[DF]):
         index_column
             Column used to group based on the time window.
             Often to type Date/Datetime
-            This column must be sorted in ascending order. If not the output will not make sense.
+            This column must be sorted in ascending order. If not the output will not
+            make sense.
 
-            In case of a dynamic groupby on indices, dtype needs to be one of {Int32, Int64}. Note that
-            Int32 gets temporarily cast to Int64, so if performance matters use an Int64 column.
+            In case of a dynamic groupby on indices, dtype needs to be one of
+            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
+            performance matters use an Int64 column.
         every
             interval of the window
         period
             length of the window, if None it is equal to 'every'
         offset
-            offset of the window if None and period is None it will be equal to negative `every`
+            offset of the window if None and period is None it will be equal to negative
+            `every`
         truncate
             truncate the time value to the window lower bound
         include_boundaries
-            add the lower and upper bound of the window to the "_lower_bound" and "_upper_bound" columns
-            this will impact performance because it's harder to parallelize
+            Add the lower and upper bound of the window to the "_lower_bound" and
+            "_upper_bound" columns. This will impact performance because it's harder to
+            parallelize
         closed
             Defines if the window interval is closed or not.
             Any of {"left", "right", "both" "none"}
@@ -1220,7 +1239,8 @@ class LazyFrame(Generic[DF]):
         right_on
             Join column of the right DataFrame.
         on
-            Join column of both DataFrames. If set, `left_on` and `right_on` should be None.
+            Join column of both DataFrames. If set, `left_on` and `right_on` should be
+            None.
         by
             join on these columns before doing asof join
         by_left
@@ -1232,9 +1252,10 @@ class LazyFrame(Generic[DF]):
         suffix
             Suffix to append to columns with a duplicate name.
         tolerance
-            Numeric tolerance. By setting this the join will only be done if the near keys are within this distance.
-            If an asof join is done on columns of dtype "Date", "Datetime", "Duration" or "Time" you
-            use the following string language:
+            Numeric tolerance. By setting this the join will only be done if the near
+            keys are within this distance. If an asof join is done on columns of dtype
+            "Date", "Datetime", "Duration" or "Time" you use the following string
+            language:
 
                 - 1ns   (1 nanosecond)
                 - 1us   (1 microsecond)
@@ -1252,9 +1273,11 @@ class LazyFrame(Generic[DF]):
                 "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
         allow_parallel
-            Allow the physical plan to optionally evaluate the computation of both DataFrames up to the join in parallel.
+            Allow the physical plan to optionally evaluate the computation of both
+            DataFrames up to the join in parallel.
         force_parallel
-            Force the physical plan to evaluate the computation of both DataFrames up to the join in parallel.
+            Force the physical plan to evaluate the computation of both DataFrames up to
+            the join in parallel.
         """
         if not isinstance(other, LazyFrame):
             raise ValueError(f"Expected a `LazyFrame` as join table, got {type(other)}")
@@ -1335,7 +1358,8 @@ class LazyFrame(Generic[DF]):
         right_on
             Join column of the right DataFrame.
         on
-            Join column of both DataFrames. If set, `left_on` and `right_on` should be None.
+            Join column of both DataFrames. If set, `left_on` and `right_on` should be
+            None.
         how
             one of:
                 "inner"
@@ -1348,9 +1372,11 @@ class LazyFrame(Generic[DF]):
         suffix
             Suffix to append to columns with a duplicate name.
         allow_parallel
-            Allow the physical plan to optionally evaluate the computation of both DataFrames up to the join in parallel.
+            Allow the physical plan to optionally evaluate the computation of both
+            DataFrames up to the join in parallel.
         force_parallel
-            Force the physical plan to evaluate the computation of both DataFrames up to the join in parallel.
+            Force the physical plan to evaluate the computation of both DataFrames up to
+            the join in parallel.
         asof_by
             join on these columns before doing asof join
         asof_by_left
@@ -1359,8 +1385,8 @@ class LazyFrame(Generic[DF]):
             join on these columns before doing asof join
 
         # Asof joins
-        This is similar to a left-join except that we match on nearest key rather than equal keys.
-        The keys must be sorted to perform an asof join
+        This is similar to a left-join except that we match on nearest key rather than
+        equal keys. The keys must be sorted to perform an asof join
 
         Examples
         --------
@@ -1683,8 +1709,8 @@ class LazyFrame(Generic[DF]):
 
     def shift(self: LDF, periods: int) -> LDF:
         """
-        Shift the values by a given period and fill the parts that will be empty due to this operation
-        with `Nones`.
+        Shift the values by a given period and fill the parts that will be empty due to
+        this operation with `Nones`.
 
         Parameters
         ----------
@@ -1735,8 +1761,8 @@ class LazyFrame(Generic[DF]):
         fill_value: pli.Expr | int | str | float,
     ) -> LDF:
         """
-        Shift the values by a given period and fill the parts that will be empty due to this operation
-        with the result of the `fill_value` expression.
+        Shift the values by a given period and fill the parts that will be empty due to
+        this operation with the result of the `fill_value` expression.
 
         Parameters
         ----------
@@ -1830,9 +1856,9 @@ class LazyFrame(Generic[DF]):
         Limit the LazyFrame to the first `n` rows.
 
         .. note::
-            Consider using the :func:`fetch` operation when you only want to test your query.
-            The :func:`fetch` operation will load the first `n` rows at the scan level, whereas
-            the :func:`head`/:func:`limit` are applied at the end.
+            Consider using the :func:`fetch` operation when you only want to test your
+            query. The :func:`fetch` operation will load the first `n` rows at the scan
+            level, whereas the :func:`head`/:func:`limit` are applied at the end.
 
         Parameters
         ----------
@@ -1846,11 +1872,12 @@ class LazyFrame(Generic[DF]):
         Gets the first `n` rows of the DataFrame.
 
         .. note::
-            Consider using the :func:`fetch` operation when you only want to test your query.
-            The :func:`fetch` operation will load the first `n` rows at the scan level, whereas
-            the :func:`head`/:func:`limit` are applied at the end.
+            Consider using the :func:`fetch` operation when you only want to test your
+            query. The :func:`fetch` operation will load the first `n` rows at the scan
+            level, whereas the :func:`head`/:func:`limit` are applied at the end.
 
-        This operation instead loads all the rows and only applies the ``head`` at the end.
+        This operation instead loads all the rows and only applies the ``head`` at the
+        end.
 
         Parameters
         ----------
@@ -2105,12 +2132,14 @@ class LazyFrame(Generic[DF]):
     ) -> LDF:
         """
         Drop duplicate rows from this DataFrame.
-        Note that this fails if there is a column of type `List` in the DataFrame or subset.
+        Note that this fails if there is a column of type `List` in the DataFrame or
+        subset.
 
         Parameters
         ----------
         maintain_order
-            Keep the same order as the original DataFrame. This requires more work to compute.
+            Keep the same order as the original DataFrame. This requires more work to
+            compute.
         subset
             Subset to use to compare rows
         keep
@@ -2156,8 +2185,8 @@ class LazyFrame(Generic[DF]):
 
         This method only drops nulls row-wise if any single value of the row is null.
 
-        Below are some example snippets that show how you could drop null values based on other
-        conditions
+        Below are some example snippets that show how you could drop null values based
+        on other conditions:
 
         >>> df = pl.DataFrame(
         ...     {
@@ -2217,11 +2246,13 @@ class LazyFrame(Generic[DF]):
         value_name: str | None = None,
     ) -> LDF:
         """
-        Unpivot a DataFrame from wide to long format, optionally leaving identifiers set.
+        Unpivot a DataFrame from wide to long format, optionally leaving identifiers
+        set.
 
-        This function is useful to massage a DataFrame into a format where one or more columns are identifier variables
-        (id_vars), while all other columns, considered measured variables (value_vars), are “unpivoted” to the row axis,
-        leaving just two non-identifier columns, ‘variable’ and ‘value’.
+        This function is useful to massage a DataFrame into a format where one or more
+        columns are identifier variables (id_vars), while all other columns, considered
+        measured variables (value_vars), are "unpivoted" to the row axis, leaving just
+        two non-identifier columns, 'variable' and 'value'.
 
         Parameters
         ----------
@@ -2285,7 +2316,8 @@ class LazyFrame(Generic[DF]):
         no_optimizations: bool = False,
     ) -> LDF:
         """
-        Apply a custom function. It is important that the function returns a Polars DataFrame.
+        Apply a custom function. It is important that the function returns a Polars
+        DataFrame.
 
         Parameters
         ----------
@@ -2548,9 +2580,10 @@ class LazyGroupBy(Generic[LDF]):
     def apply(self, f: Callable[[pli.DataFrame], pli.DataFrame]) -> LDF:
         """
         Apply a function over the groups as a new `DataFrame`.
-        Implementing logic using this .apply method is generally slower and more memory intensive
-        than implementing the same logic using the expression API because:
-        - with .apply the logic is implemented in Python but with an expression the logic is implemented in Rust
+        Implementing logic using this .apply method is generally slower and more memory
+        intensive than implementing the same logic using the expression API because:
+        - with .apply the logic is implemented in Python but with an expression the
+            logic is implemented in Rust
         - with .apply the DataFrame is materialized in memory
         - expressions can be parallelised
         - expressions can be optimised
