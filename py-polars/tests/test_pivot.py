@@ -67,3 +67,14 @@ def test_pivot_categorical_3968() -> None:
         "bar": ["A", "B", "C", "A", "B", "C"],
         "baz": ["1", "2", "3", "4", "5", "6"],
     }
+
+
+def test_pivot_categorical_index() -> None:
+    df = pl.DataFrame(
+        {"A": ["Fire", "Water", "Water", "Fire"], "B": ["Car", "Car", "Car", "Ship"]},
+        columns=[("A", pl.Categorical), ("B", pl.Categorical)],
+    )
+
+    assert df.pivot(values="B", index=["A"], columns="B", aggregate_fn="count").to_dict(
+        False
+    ) == {"A": ["Fire", "Water"], "Car": [1, 2], "Ship": [1, None]}

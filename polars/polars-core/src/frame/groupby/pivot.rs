@@ -141,12 +141,29 @@ impl DataFrame {
 
             let row_index = match count {
                 0 => {
-                    let s = Series::new(
+                    let mut s = Series::new(
                         &index[0],
                         row_to_idx.into_iter().map(|(k, _)| k).collect::<Vec<_>>(),
                     );
                     // restore logical type
-                    let s = s.cast(index_s.dtype()).unwrap();
+                    match index_s.dtype() {
+                        #[cfg(feature = "dtype-categorical")]
+                        DataType::Categorical(Some(rev_map)) => {
+                            let cats = s.u32().unwrap().clone();
+                            // safety:
+                            // the rev-map comes from these categoricals
+                            s = unsafe {
+                                CategoricalChunked::from_cats_and_rev_map_unchecked(
+                                    cats,
+                                    rev_map.clone(),
+                                )
+                                .into_series()
+                            };
+                        }
+                        _ => {
+                            s = s.cast(index_s.dtype()).unwrap();
+                        }
+                    }
                     Some(vec![s])
                 }
                 _ => None,
