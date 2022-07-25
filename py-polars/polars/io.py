@@ -1,3 +1,4 @@
+"""Functions for reading and writing data."""
 from __future__ import annotations
 
 from io import BytesIO, IOBase, StringIO
@@ -49,7 +50,7 @@ def _check_arg_is_1byte(
             )
 
 
-def update_columns(df: DataFrame, new_columns: list[str]) -> DataFrame:
+def _update_columns(df: DataFrame, new_columns: list[str]) -> DataFrame:
     if df.width > len(new_columns):
         cols = df.columns
         for i, name in enumerate(new_columns):
@@ -192,7 +193,6 @@ def read_csv(
     scan_csv : Lazily read from a CSV file or multiple files via glob patterns.
 
     """
-
     # Map legacy arguments to current ones and remove them from kwargs.
     has_header = kwargs.pop("has_headers", has_header)
     dtypes = kwargs.pop("dtype", dtypes)
@@ -273,7 +273,7 @@ def read_csv(
 
         df = cast(DataFrame, from_arrow(tbl, rechunk))
         if new_columns:
-            return update_columns(df, new_columns)
+            return _update_columns(df, new_columns)
         return df
 
     if projection and dtypes and isinstance(dtypes, list):
@@ -395,7 +395,7 @@ def read_csv(
         )
 
     if new_columns:
-        return update_columns(df, new_columns)
+        return _update_columns(df, new_columns)
     return df
 
 
@@ -541,7 +541,6 @@ def scan_csv(
     └─────────┴──────────┘
 
     """
-
     # Map legacy arguments to current ones and remove them from kwargs.
     has_header = kwargs.pop("has_headers", has_header)
     dtypes = kwargs.pop("dtype", dtypes)
@@ -614,8 +613,8 @@ def scan_ipc(
         Extra options that make sense for ``fsspec.open()`` or a
         particular storage connection.
         e.g. host, port, username, password, etc.
-    """
 
+    """
     # Map legacy arguments to current ones and remove them from kwargs.
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
@@ -673,8 +672,8 @@ def scan_parquet(
         e.g. host, port, username, password, etc.
     low_memory: bool
         Reduce memory pressure at the expense of performance.
-    """
 
+    """
     # Map legacy arguments to current ones and remove them from kwargs.
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
@@ -716,6 +715,7 @@ def read_avro(
     Returns
     -------
     DataFrame
+
     """
     if isinstance(file, (str, Path)):
         file = format_path(file)
@@ -770,8 +770,8 @@ def read_ipc(
     Returns
     -------
     DataFrame
-    """
 
+    """
     # Map legacy arguments to current ones and remove them from kwargs.
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
@@ -862,8 +862,8 @@ def read_parquet(
     Returns
     -------
     DataFrame
-    """  # noqa: E501
 
+    """  # noqa: E501
     # Map legacy arguments to current ones and remove them from kwargs.
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
@@ -913,6 +913,7 @@ def read_json(source: str | IOBase, json_lines: bool = False) -> DataFrame:
         Path to a file or a file-like object.
     json_lines
         Toggle between "JSON" and "NDJSON" format
+
     """
     return DataFrame._read_json(source, json_lines)
 
@@ -1017,9 +1018,10 @@ def read_excel(
     read_csv_options: dict | None = None,
 ) -> DataFrame:
     """
-    Read Excel (XLSX) sheet into a DataFrame by converting an Excel sheet with
-    ``xlsx2csv.Xlsx2csv().convert()`` to CSV and parsing the CSV output with
-    :func:`read_csv`.
+    Read Excel (XLSX) sheet into a DataFrame.
+
+    Converts an Excel sheet with ``xlsx2csv.Xlsx2csv().convert()`` to CSV and parses the
+    CSV output with :func:`read_csv`.
 
     Parameters
     ----------
@@ -1088,8 +1090,8 @@ def read_excel(
 
     >>> excel_file = "test.xlsx"
     >>> pl.from_pandas(pd.read_excel(excel_file))  # doctest: +SKIP
-    """
 
+    """
     try:
         import xlsx2csv  # type: ignore[import]
     except ImportError:
@@ -1155,5 +1157,4 @@ def scan_ds(ds: pa.dataset.dataset) -> LazyFrame:
     └───────┴────────┴────────────┘
 
     """
-
     return _scan_ds(ds)
