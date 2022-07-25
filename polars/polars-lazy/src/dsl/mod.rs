@@ -1246,7 +1246,7 @@ impl Expr {
         }
     }
 
-    /// Compute the arcsine of the given expression
+    /// Compute the inverse sine of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn arcsin(self) -> Self {
         Expr::Function {
@@ -1261,7 +1261,7 @@ impl Expr {
         }
     }
 
-    /// Compute the arccosine of the given expression
+    /// Compute the inverse cosine of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn arccos(self) -> Self {
         Expr::Function {
@@ -1276,7 +1276,7 @@ impl Expr {
         }
     }
 
-    /// Compute the arctangent of the given expression
+    /// Compute the inverse tangent of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn arctan(self) -> Self {
         Expr::Function {
@@ -1336,7 +1336,7 @@ impl Expr {
         }
     }
 
-    /// Compute the hyperbolic sine of the given expression
+    /// Compute the inverse hyperbolic sine of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn arcsinh(self) -> Self {
         Expr::Function {
@@ -1351,7 +1351,7 @@ impl Expr {
         }
     }
 
-    /// Compute the hyperbolic cosine of the given expression
+    /// Compute the inverse hyperbolic cosine of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn arccosh(self) -> Self {
         Expr::Function {
@@ -1366,7 +1366,7 @@ impl Expr {
         }
     }
 
-    /// Compute the hyperbolic tangent of the given expression
+    /// Compute the inverse hyperbolic tangent of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn arctanh(self) -> Self {
         Expr::Function {
