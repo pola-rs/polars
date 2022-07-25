@@ -122,7 +122,53 @@ where
 impl IsIn for Utf8Chunked {
     fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
         match other.dtype() {
-            DataType::List(dt) if self.dtype() == &**dt => {
+            #[cfg(feature = "dtype-categorical")]
+            DataType::List(dt) if matches!(&**dt, DataType::Categorical(_)) => {
+                if let DataType::Categorical(Some(rev_map)) = &**dt {
+                    let opt_val = self.get(0);
+
+                    let other = other.list()?;
+                    match opt_val {
+                        None => {
+                            let mut ca: BooleanChunked = other
+                                .amortized_iter()
+                                .map(|opt_s| {
+                                    opt_s.map(|s| s.as_ref().null_count() > 0) == Some(true)
+                                })
+                                .collect_trusted();
+                            ca.rename(self.name());
+                            Ok(ca)
+                        }
+                        Some(value) => {
+                            match rev_map.find(value) {
+                                // all false
+                                None => Ok(BooleanChunked::full(self.name(), false, other.len())),
+                                Some(idx) => {
+                                    let mut ca: BooleanChunked = other
+                                        .amortized_iter()
+                                        .map(|opt_s| {
+                                            opt_s.map(|s| {
+                                                let s = s.as_ref().to_physical_repr();
+                                                let ca = s.as_ref().u32().unwrap();
+                                                if ca.null_count() == 0 {
+                                                    ca.into_no_null_iter().any(|a| a == idx)
+                                                } else {
+                                                    ca.into_iter().any(|a| a == Some(idx))
+                                                }
+                                            }) == Some(true)
+                                        })
+                                        .collect_trusted();
+                                    ca.rename(self.name());
+                                    Ok(ca)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    unreachable!()
+                }
+            }
+            DataType::List(dt) if DataType::Utf8 == **dt => {
                 let mut ca: BooleanChunked = if self.len() == 1 && other.len() != 1 {
                     let value = self.get(0);
                     other
