@@ -24,7 +24,8 @@ def test_read_sql() -> None:
                     value FLOAT,
                     date  DATE
                 );
-                INSERT INTO test_data(name,value,date) VALUES ('misc',100.0,'2020-01-01'), ('other',-99.5,'2021-12-31');
+                INSERT INTO test_data(name,value,date)
+                VALUES ('misc',100.0,'2020-01-01'), ('other',-99.5,'2021-12-31');
                 """
             )
             conn.close()
