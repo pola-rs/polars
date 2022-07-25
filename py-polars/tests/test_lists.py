@@ -386,3 +386,14 @@ def test_list_hash() -> None:
     )
     assert out.dtypes == [pl.List(pl.Int64), pl.UInt64]
     assert out[0, "b"] == out[2, "b"]
+
+
+def test_arr_contains_categorical() -> None:
+    df = pl.DataFrame(
+        {"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]}
+    ).lazy()
+    df = df.with_column(pl.col("str").cast(pl.Categorical))
+    df_groups = df.groupby("group").agg([pl.col("str").list().alias("str_list")])
+    assert df_groups.filter(pl.col("str_list").arr.contains("C")).collect().to_dict(
+        False
+    ) == {"group": [2], "str_list": [["A", "C"]]}

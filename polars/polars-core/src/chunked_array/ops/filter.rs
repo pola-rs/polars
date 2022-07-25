@@ -115,6 +115,7 @@ impl ChunkFilter<ListType> for ListChunked {
         // inner type may be categorical or logical type so we clone the state.
         let mut ca = self.clone();
         ca.chunks = chunks;
+        ca.compute_len();
         Ok(ca)
     }
 }
