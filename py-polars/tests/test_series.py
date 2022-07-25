@@ -1712,6 +1712,11 @@ def test_sign() -> None:
     expected = pl.Series("a", [-1, 0, 0, 1, None])
     verify_series_and_expr_api(a, expected, "sign")
 
+    # Dates
+    a = pl.Series("a", [date(1950, 2, 1), date(1970, 1, 1), date(2022, 12, 12), None])
+    expected = pl.Series("a", [-1, 0, 1, None])
+    verify_series_and_expr_api(a, expected, "sign")
+
 
 def test_exp() -> None:
     a = pl.Series("a", [0.1, 0.01, None])
