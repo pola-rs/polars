@@ -526,7 +526,10 @@ def test_read_missing_file() -> None:
 
 
 def test_set() -> None:
-    """Setting a dataframe using indices is deprecated. We keep these tests because we only generate a warning"""
+    """
+    Setting a dataframe using indices is deprecated. We keep these tests because we
+    only generate a warning
+    """
     with pytest.deprecated_call():
         np.random.seed(1)
         df = pl.DataFrame(
@@ -845,8 +848,9 @@ def test_describe() -> None:
 
 
 def test_string_cache_eager_lazy() -> None:
-    # tests if the global string cache is really global and not interfered by the lazy execution.
-    # first the global settings was thread-local and this breaks with the parallel execution of lazy
+    # tests if the global string cache is really global and not interfered by the lazy
+    # execution. first the global settings was thread-local and this breaks with the
+    # parallel execution of lazy
     with pl.StringCache():
         df1 = pl.DataFrame(
             {"region_ids": ["reg1", "reg2", "reg3", "reg4", "reg5"]}
@@ -1591,7 +1595,8 @@ def test_get_item() -> None:
     # numpy array; assumed to be row indices if integers, or columns if strings
     df[np.array([1])].frame_equal(pl.DataFrame({"a": [2.0], "b": [4]}))
     df[np.array(["a"])].frame_equal(pl.DataFrame({"a": [1.0, 2.0]}))
-    # note that we cannot use floats (even if they could be casted to integer without loss)
+    # note that we cannot use floats (even if they could be casted to integer without
+    # loss)
     with pytest.raises(NotImplementedError):
         _ = df[np.array([1.0])]
     # using boolean masks with numpy is deprecated

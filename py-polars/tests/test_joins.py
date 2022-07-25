@@ -240,7 +240,8 @@ def test_join() -> None:
     assert joined["k"].null_count() == 1
     assert joined["a"].null_count() == 0
 
-    # we need to pass in a column to join on, either by supplying `on`, or both `left_on` and `right_on`
+    # we need to pass in a column to join on, either by supplying `on`, or both
+    # `left_on` and `right_on`
     with pytest.raises(ValueError):
         df_left.join(df_right)
     with pytest.raises(ValueError):

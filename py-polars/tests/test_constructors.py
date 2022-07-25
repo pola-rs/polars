@@ -77,7 +77,8 @@ def test_init_dict() -> None:
     assert df.columns == ["c", "d"]
 
     df = pl.DataFrame(
-        {"a": [1, 2, 3], "b": [4, 5, 6]}, columns=["c", ("d", pl.Int8)]  # type: ignore[arg-type]
+        {"a": [1, 2, 3], "b": [4, 5, 6]},
+        columns=["c", ("d", pl.Int8)],  # type: ignore[arg-type]
     )  # partial type info (allowed, but mypy doesn't like it ;p)
     assert df.schema == {"c": pl.Int64, "d": pl.Int8}
 
