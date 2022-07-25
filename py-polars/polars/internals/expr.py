@@ -3034,8 +3034,8 @@ class Expr:
 
     def is_between(
         self,
-        start: Expr | datetime,
-        end: Expr | datetime,
+        start: Expr | datetime | int,
+        end: Expr | datetime | int,
         include_bounds: bool | Sequence[bool] = False,
     ) -> Expr:
         """
