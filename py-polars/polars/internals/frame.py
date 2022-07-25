@@ -3769,8 +3769,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Implementing logic using this .apply method is generally slower and more memory
         intensive than implementing the same logic using the expression API because:
+
         - with .apply the logic is implemented in Python but with an expression the
-            logic is implemented in Rust
+          logic is implemented in Rust
         - with .apply the DataFrame is materialized in memory
         - expressions can be parallelised
         - expressions can be optimised
@@ -6298,8 +6299,9 @@ class GroupBy(Generic[DF]):
 
         Implementing logic using this .apply method is generally slower and more memory
         intensive than implementing the same logic using the expression API because:
+
         - with .apply the logic is implemented in Python but with an expression the
-            logic is implemented in Rust
+          logic is implemented in Rust
         - with .apply the DataFrame is materialized in memory
         - expressions can be parallelised
         - expressions can be optimised

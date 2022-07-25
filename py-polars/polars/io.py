@@ -857,13 +857,12 @@ def read_parquet(
         Reduce memory pressure at the expense of performance.
     **kwargs
         kwargs for `pyarrow.parquet.read_table
-        <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html>
-        `_.
+        <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html>`_.
 
     Returns
     -------
     DataFrame
-    """
+    """  # noqa: E501
 
     # Map legacy arguments to current ones and remove them from kwargs.
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)

@@ -2695,10 +2695,9 @@ class Expr:
         because:
 
         - with .apply the logic is implemented in Python but with an expression the
-            logic is implemented in Rust
+          logic is implemented in Rust
         - with ``.apply`` the DataFrame is materialized in memory
         - expressions can be parallelised
-
         - expressions can be optimised
 
         If possible, use the expression API for best performance.
