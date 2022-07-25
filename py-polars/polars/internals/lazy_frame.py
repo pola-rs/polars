@@ -360,7 +360,8 @@ class LazyFrame(Generic[DF]):
     def __getitem__(self: LDF, item: int | range | slice) -> LazyFrame:
         if not isinstance(item, slice):
             raise TypeError(
-                "'LazyFrame' object is not subscriptable (aside from slicing). Use 'select()' or 'filter()' instead."
+                "'LazyFrame' object is not subscriptable (aside from slicing). Use"
+                " 'select()' or 'filter()' instead."
             )
         return LazyPolarsSlice(self).apply(item)
 
@@ -411,7 +412,10 @@ class LazyFrame(Generic[DF]):
             svg = subprocess.check_output(
                 ["dot", "-Nshape=box", "-Tsvg"], input=f"{dot}".encode()
             )
-            return f"<h4>NAIVE QUERY PLAN</h4><p>run <b>LazyFrame.show_graph()</b> to see the optimized version</p>{svg.decode()}"
+            return (
+                "<h4>NAIVE QUERY PLAN</h4><p>run <b>LazyFrame.show_graph()</b> to see"
+                f" the optimized version</p>{svg.decode()}"
+            )
         except Exception:
             insert = self.describe_plan().replace("\n", "<p></p>")
 
@@ -491,14 +495,16 @@ class LazyFrame(Generic[DF]):
                 return display(SVG(svg))
             except Exception as exc:
                 raise ImportError(
-                    "Graphviz dot binary should be on your PATH and matplotlib should be installed to show graph."
+                    "Graphviz dot binary should be on your PATH and matplotlib should"
+                    " be installed to show graph."
                 ) from exc
         try:
             import matplotlib.image as mpimg
             import matplotlib.pyplot as plt
         except ImportError:
             raise ImportError(
-                "Graphviz dot binary should be on your PATH and matplotlib should be installed to show graph."
+                "Graphviz dot binary should be on your PATH and matplotlib should be"
+                " installed to show graph."
             ) from None
         dot = self._ldf.to_dot(optimized)
         if raw_output:
@@ -1404,7 +1410,8 @@ class LazyFrame(Generic[DF]):
 
         if how == "asof":
             warnings.warn(
-                "using asof join via LazyFrame.join is deprecated, please use LazyFrame.join_asof",
+                "using asof join via LazyFrame.join is deprecated, please use"
+                " LazyFrame.join_asof",
                 DeprecationWarning,
             )
         if how == "cross":
@@ -1567,7 +1574,8 @@ class LazyFrame(Generic[DF]):
         """
         if named_exprs and not Config.with_columns_kwargs:
             raise RuntimeError(
-                "**kwargs support is experimental; requires opt-in via `pl.Config.set_with_columns_kwargs(True)`"
+                "**kwargs support is experimental; requires opt-in via"
+                " `pl.Config.set_with_columns_kwargs(True)`"
             )
         elif exprs is None and not named_exprs:
             raise ValueError("Expected at least one of 'exprs' or **named_exprs")

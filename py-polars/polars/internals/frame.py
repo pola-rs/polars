@@ -322,7 +322,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         elif _PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
             if not _PYARROW_AVAILABLE:  # pragma: no cover
                 raise ImportError(
-                    "'pyarrow' is required for converting a pandas DataFrame to a polars DataFrame."
+                    "'pyarrow' is required for converting a pandas DataFrame to a"
+                    " polars DataFrame."
                 )
             self._df = pandas_to_pydf(data, columns=columns)
 
@@ -580,7 +581,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 dtypes_dict = {name: dt for (name, dt) in dtype_list}
             if dtype_slice is not None:
                 raise ValueError(
-                    "cannot use glob patterns and unnamed dtypes as `dtypes` argument; Use dtypes: Mapping[str, Type[DataType]"
+                    "cannot use glob patterns and unnamed dtypes as `dtypes` argument;"
+                    " Use dtypes: Mapping[str, Type[DataType]"
                 )
             from polars import scan_csv
 
@@ -609,7 +611,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 return self._from_pydf(scan.select(columns).collect()._df)
             else:
                 raise ValueError(
-                    "cannot use glob patterns and integer based projection as `columns` argument; Use columns: List[str]"
+                    "cannot use glob patterns and integer based projection as `columns`"
+                    " argument; Use columns: List[str]"
                 )
 
         projection, columns = handle_projection_columns(columns)
@@ -683,7 +686,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 return cls._from_pydf(scan.select(columns).collect()._df)
             else:
                 raise ValueError(
-                    "cannot use glob patterns and integer based projection as `columns` argument; Use columns: List[str]"
+                    "cannot use glob patterns and integer based projection as `columns`"
+                    " argument; Use columns: List[str]"
                 )
 
         projection, columns = handle_projection_columns(columns)
@@ -775,7 +779,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 return scan.select(columns).collect()
             else:
                 raise ValueError(
-                    "cannot use glob patterns and integer based projection as `columns` argument; Use columns: List[str]"
+                    "cannot use glob patterns and integer based projection as `columns`"
+                    " argument; Use columns: List[str]"
                 )
 
         projection, columns = handle_projection_columns(columns)
@@ -819,7 +824,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         if not _PYARROW_AVAILABLE:  # pragma: no cover
             raise ImportError(
-                "'pyarrow' is required for converting a polars DataFrame to an Arrow Table."
+                "'pyarrow' is required for converting a polars DataFrame to an Arrow"
+                " Table."
             )
         record_batches = self._df.to_arrow()
         return pa.Table.from_batches(record_batches)
@@ -1437,7 +1443,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:  # pragma: no cover
                 raise ImportError(
-                    "'pyarrow' is required when using 'write_parquet(..., use_pyarrow=True)'."
+                    "'pyarrow' is required when using"
+                    " 'write_parquet(..., use_pyarrow=True)'."
                 )
 
             tbl = self.to_arrow()
@@ -1765,7 +1772,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 return self._from_pydf(self._df.select(item))
             if item.dtype == bool:
                 warnings.warn(
-                    "index notation '[]' is deprecated for boolean masks. Consider using 'filter'.",
+                    "index notation '[]' is deprecated for boolean masks. Consider"
+                    " using 'filter'.",
                     DeprecationWarning,
                 )
                 return self._from_pydf(self._df.filter(pli.Series("", item).inner()))
@@ -1798,7 +1806,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self, key: str | list | tuple[Any, str | int], value: Any
     ) -> None:  # pragma: no cover
         warnings.warn(
-            "setting a DataFrame by indexing is deprecated; Consider using DataFrame.with_column",
+            "setting a DataFrame by indexing is deprecated; Consider using"
+            " DataFrame.with_column",
             DeprecationWarning,
         )
         # df["foo"] = series
@@ -1817,7 +1826,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 raise ValueError("can only set multiple columns with 2D matrix")
             if value.shape[1] != len(key):
                 raise ValueError(
-                    "matrix columns should be equal to list use to determine column names"
+                    "matrix columns should be equal to list use to determine column"
+                    " names"
                 )
             for (i, name) in enumerate(key):
                 self[name] = value[:, i]
@@ -3660,7 +3670,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         if how == "asof":  # pragma: no cover
             warnings.warn(
-                "using asof join via DataFrame.join is deprecated, please use DataFrame.join_asof",
+                "using asof join via DataFrame.join is deprecated, please use"
+                " DataFrame.join_asof",
                 DeprecationWarning,
             )
         if how == "cross":
@@ -3842,7 +3853,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         if isinstance(column, list):
             raise ValueError(
-                "`with_column` expects a single expression, not a list. Consider using `with_columns`"
+                "`with_column` expects a single expression, not a list. Consider using"
+                " `with_columns`"
             )
         if isinstance(column, pli.Expr):
             return self.with_columns([column])
@@ -6102,7 +6114,8 @@ class GroupBy(Generic[DF]):
             One or multiple columns.
         """
         warnings.warn(
-            "accessing GroupBy by index is deprecated, consider using the `.agg` method",
+            "accessing GroupBy by index is deprecated, consider using the `.agg`"
+            " method",
             DeprecationWarning,
         )
         if isinstance(columns, str):
@@ -6218,7 +6231,8 @@ class GroupBy(Generic[DF]):
 
         """
         warnings.warn(
-            "accessing GroupBy by index is deprecated, consider using the `.agg` method",
+            "accessing GroupBy by index is deprecated, consider using the `.agg`"
+            " method",
             DeprecationWarning,
         )
         return self._dataframe_class._from_pydf(
@@ -6377,11 +6391,13 @@ class GroupBy(Generic[DF]):
                 )
             else:
                 raise ValueError(
-                    f"argument: {column_to_agg} not understood, have you passed a list of expressions?"
+                    f"argument: {column_to_agg} not understood, have you passed a list"
+                    " of expressions?"
                 )
         else:
             raise ValueError(
-                f"argument: {column_to_agg} not understood, have you passed a list of expressions?"
+                f"argument: {column_to_agg} not understood, have you passed a list of"
+                " expressions?"
             )
 
         return self._dataframe_class._from_pydf(

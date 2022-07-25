@@ -1753,7 +1753,8 @@ def arg_where(
     if eager:
         if not isinstance(condition, pli.Series):
             raise ValueError(
-                f"expected 'Series' in 'arg_where' if 'eager=True', got {type(condition)}"
+                "expected 'Series' in 'arg_where' if 'eager=True', got"
+                f" {type(condition)}"
             )
         return (
             condition.to_frame().select(arg_where(pli.col(condition.name))).to_series()
