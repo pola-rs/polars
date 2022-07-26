@@ -48,13 +48,12 @@ def test_comparisons() -> None:
     # Constants
     assert_frame_equal(df == 2, pl.DataFrame({"a": [False, True], "b": [False, False]}))
     assert_frame_equal(df != 2, pl.DataFrame({"a": [True, False], "b": [True, True]}))
-    assert_frame_equal(df > "2", pl.DataFrame({"a": [False, False], "b": [True, True]}))
     assert_frame_equal(df < 3.0, pl.DataFrame({"a": [True, True], "b": [False, False]}))
     assert_frame_equal(df >= 2, pl.DataFrame({"a": [False, True], "b": [True, True]}))
     assert_frame_equal(df <= 2, pl.DataFrame({"a": [True, True], "b": [False, False]}))
 
-    with pytest.raises(ValueError):
-        df > "foo"  # noqa: B015
+    with pytest.raises(pl.ComputeError):
+        df > "2"  # noqa: B015
 
     # Series
     s = pl.Series([3, 1])
