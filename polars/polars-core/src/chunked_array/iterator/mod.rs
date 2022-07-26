@@ -189,9 +189,9 @@ impl<'a> ExactSizeIterator for Utf8IterNoNull<'a> {}
 impl Utf8Chunked {
     #[allow(clippy::wrong_self_convention)]
     #[doc(hidden)]
-    pub fn into_no_null_iter<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = &'a str>
+    pub fn into_no_null_iter(
+        &self,
+    ) -> impl Iterator<Item = &str>
            + '_
            + Send
            + Sync

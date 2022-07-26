@@ -90,7 +90,8 @@ where
             }
         };
 
-        let encodings = (&schema.fields)
+        let encodings = schema
+            .fields
             .iter()
             .map(|f| transverse(&f.data_type, encoding_map))
             .collect::<Vec<_>>();

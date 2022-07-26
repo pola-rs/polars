@@ -346,7 +346,7 @@ impl LazyFrame {
         }
 
         // schema after renaming
-        let mut new_schema = (&*self.schema()).clone();
+        let mut new_schema = (*self.schema()).clone();
 
         for (old, new) in existing.iter().zip(new.iter()) {
             new_schema.rename(old, new.to_string()).unwrap();

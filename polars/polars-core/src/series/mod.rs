@@ -915,13 +915,13 @@ impl Deref for Series {
     type Target = dyn SeriesTrait;
 
     fn deref(&self) -> &Self::Target {
-        &*self.0
+        self.0.as_ref()
     }
 }
 
 impl<'a> AsRef<(dyn SeriesTrait + 'a)> for Series {
     fn as_ref(&self) -> &(dyn SeriesTrait + 'a) {
-        &*self.0
+        self.0.as_ref()
     }
 }
 

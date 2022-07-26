@@ -16,12 +16,9 @@ fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
 where
     F: Fn(&str, &str) -> chrono::ParseResult<K>,
 {
-    for fmt in ["%T", "%T%.3f", "%T%.6f", "%T%.9f"] {
-        if convert(val, fmt).is_ok() {
-            return Some(fmt);
-        }
-    }
-    None
+    ["%T", "%T%.3f", "%T%.6f", "%T%.9f"]
+        .into_iter()
+        .find(|&fmt| convert(val, fmt).is_ok())
 }
 
 fn datetime_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
@@ -29,7 +26,7 @@ fn datetime_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
 where
     F: Fn(&str, &str) -> chrono::ParseResult<K>,
 {
-    for fmt in [
+    [
         // 21/12/31 12:54:98
         "%y/%m/%d %H:%M:%S",
         // 2021-12-31 24:58:01
@@ -55,12 +52,9 @@ where
         "%Y-%m-%dT%H:%M:%S.%6f",
         // nanoseconds
         "%Y-%m-%dT%H:%M:%S.%9f",
-    ] {
-        if convert(val, fmt).is_ok() {
-            return Some(fmt);
-        }
-    }
-    None
+    ]
+    .into_iter()
+    .find(|&fmt| convert(val, fmt).is_ok())
 }
 
 fn date_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
@@ -68,17 +62,14 @@ fn date_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
 where
     F: Fn(&str, &str) -> chrono::ParseResult<K>,
 {
-    for fmt in [
+    [
         // 2021-12-31
         "%Y-%m-%d", // 31-12-2021
         "%d-%m-%Y", // 2021319 (2021-03-19)
         "%Y%m%d",
-    ] {
-        if convert(val, fmt).is_ok() {
-            return Some(fmt);
-        }
-    }
-    None
+    ]
+    .into_iter()
+    .find(|&fmt| convert(val, fmt).is_ok())
 }
 
 struct ParseErrorByteCopy(ParseErrorKind);

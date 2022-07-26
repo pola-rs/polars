@@ -21,7 +21,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Outpu
         let mut sum_of_squares = None;
         let mut idx = start;
         self.null_count = 0;
-        for value in (&self.slice[start..end]).iter() {
+        for value in &self.slice[start..end] {
             let valid = self.validity.get_bit_unchecked(idx);
             if valid {
                 match sum_of_squares {

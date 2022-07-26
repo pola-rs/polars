@@ -19,7 +19,7 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-06-22
+          toolchain: nightly-2022-07-24
           override: true
           components: rustfmt, clippy
       - name: Setup universal2 targets for Rust
@@ -35,7 +35,7 @@ jobs:
           rm py-polars/README.md
           cp README.md py-polars/README.md
           cd py-polars
-          rustup override set nightly-2022-06-22
+          rustup override set nightly-2022-07-24
       - name: maturin publish
         uses: messense/maturin-action@v1
         env:
