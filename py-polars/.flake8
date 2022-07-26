@@ -5,8 +5,10 @@ extend-ignore =
     # Satisfy black: https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html#flake8
     E203,
     # pydocstyle: http://www.pydocstyle.org/en/stable/error_codes.html
-    # numpy convention with D413 (Missing blank line after last section)
-    D107, D203, D212, D402, D415, D416
+    # numpy convention with a few additional lints
+    D107, D203, D212, D402, D415, D416,
+    # TODO: Remove errors below to further improve docstring linting
+    D1, D400, D205,
 
 per-file-ignores =
     __init__.py:F401

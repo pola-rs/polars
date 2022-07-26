@@ -21,6 +21,7 @@ mypy==0.961
 ghp-import==2.1.0
 flake8==4.0.1
 flake8-bugbear==22.7.1
+flake8-docstrings==1.6.0
 sphinx==4.2.0
 pydata-sphinx-theme==0.6.3
 sphinx-panels==0.6.0
