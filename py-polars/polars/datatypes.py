@@ -34,9 +34,7 @@ def get_idx_type() -> Type[DataType]:
 
 
 class DataType:
-    """
-    Base class for all Polars data types.
-    """
+    """Base class for all Polars data types."""
 
     def __new__(cls, *args: Any, **kwargs: Any) -> PolarsDataType:  # type: ignore[misc]
         # this formulation allows for equivalent use of "pl.Type" and "pl.Type()", while
@@ -63,66 +61,67 @@ ColumnsType = Union[
 
 
 class Int8(DataType):
-    """8-bit signed integer type"""
+    """8-bit signed integer type."""
 
 
 class Int16(DataType):
-    """16-bit signed integer type"""
+    """16-bit signed integer type."""
 
 
 class Int32(DataType):
-    """32-bit signed integer type"""
+    """32-bit signed integer type."""
 
 
 class Int64(DataType):
-    """64-bit signed integer type"""
+    """64-bit signed integer type."""
 
 
 class UInt8(DataType):
-    """8-bit unsigned integer type"""
+    """8-bit unsigned integer type."""
 
 
 class UInt16(DataType):
-    """16-bit unsigned integer type"""
+    """16-bit unsigned integer type."""
 
 
 class UInt32(DataType):
-    """32-bit unsigned integer type"""
+    """32-bit unsigned integer type."""
 
 
 class UInt64(DataType):
-    """64-bit unsigned integer type"""
+    """64-bit unsigned integer type."""
 
 
 class Float32(DataType):
-    """32-bit floating point type"""
+    """32-bit floating point type."""
 
 
 class Float64(DataType):
-    """64-bit floating point type"""
+    """64-bit floating point type."""
 
 
 class Boolean(DataType):
-    """Boolean type"""
+    """Boolean type."""
 
 
 class Utf8(DataType):
-    """UTF-8 encoded string type"""
+    """UTF-8 encoded string type."""
 
 
 class Null(DataType):
-    """Type representing Null / None values"""
+    """Type representing Null / None values."""
 
 
 class List(DataType):
     def __init__(self, inner: type[DataType]):
         """
-        Nested list/array type
+        Nested list/array type.
 
         Parameters
         ----------
         inner
             The `DataType` of values within the list
+
         """
         self.inner = py_type_to_dtype(inner)
 
@@ -152,15 +151,15 @@ class List(DataType):
 
 
 class Date(DataType):
-    """Calendar date type"""
+    """Calendar date type."""
 
 
 class Datetime(DataType):
-    """Calendar date and time type"""
+    """Calendar date and time type."""
 
     def __init__(self, time_unit: str = "us", time_zone: str | None = None):
         """
-        Calendar date and time type
+        Calendar date and time type.
 
         Parameters
         ----------
@@ -168,6 +167,7 @@ class Datetime(DataType):
             Any of {'ns', 'us', 'ms'}
         time_zone
             Timezone string as defined in pytz
+
         """
         self.tu = time_unit
         self.tz = time_zone
@@ -186,16 +186,17 @@ class Datetime(DataType):
 
 
 class Duration(DataType):
-    """Time duration/delta type"""
+    """Time duration/delta type."""
 
     def __init__(self, time_unit: str = "us"):
         """
-        Time duration/delta type
+        Time duration/delta type.
 
         Parameters
         ----------
         time_unit
             Any of {'ns', 'us', 'ms'}
+
         """
         self.tu = time_unit
 
@@ -213,21 +214,21 @@ class Duration(DataType):
 
 
 class Time(DataType):
-    """Time of day type"""
+    """Time of day type."""
 
 
 class Object(DataType):
-    """Type for wrapping arbitrary Python objects"""
+    """Type for wrapping arbitrary Python objects."""
 
 
 class Categorical(DataType):
-    """A categorical encoding of a set of strings"""
+    """A categorical encoding of a set of strings."""
 
 
 class Field:
     def __init__(self, name: str, dtype: type[DataType]):
         """
-        Definition of a single field within a `Struct` DataType
+        Definition of a single field within a `Struct` DataType.
 
         Parameters
         ----------
@@ -235,6 +236,7 @@ class Field:
             The name of the field within its parent `Struct`
         dtype
             The `DataType` of the field's values
+
         """
         self.name = name
         self.dtype = py_type_to_dtype(dtype)
@@ -253,12 +255,13 @@ class Field:
 class Struct(DataType):
     def __init__(self, fields: Sequence[Field]):
         """
-        Struct composite type
+        Struct composite type.
 
         Parameters
         ----------
         fields
             The sequence of fields that make up the struct
+
         """
         self.fields = fields
 
@@ -477,9 +480,7 @@ def py_type_to_dtype(data_type: Any) -> type[DataType]:
 
 
 def py_type_to_arrow_type(dtype: type[Any]) -> pa.lib.DataType:
-    """
-    Convert a Python dtype to an Arrow dtype.
-    """
+    """Convert a Python dtype to an Arrow dtype."""
     try:
         return _PY_TYPE_TO_ARROW_TYPE[dtype]
     except KeyError:  # pragma: no cover
@@ -489,9 +490,7 @@ def py_type_to_arrow_type(dtype: type[Any]) -> pa.lib.DataType:
 
 
 def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
-    """
-    Convert a Polars dtype to an Arrow dtype.
-    """
+    """Convert a Polars dtype to an Arrow dtype."""
     try:
         return _DTYPE_TO_ARROW_TYPE[dtype]
     except KeyError:  # pragma: no cover

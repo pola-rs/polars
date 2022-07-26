@@ -67,9 +67,7 @@ if not _DOCUMENTING:
 def polars_type_to_constructor(
     dtype: PolarsDataType,
 ) -> Callable[[str, Sequence[Any], bool], PySeries]:
-    """
-    Get the right PySeries constructor for the given Polars dtype.
-    """
+    """Get the right PySeries constructor for the given Polars dtype."""
     try:
         return _POLARS_TYPE_TO_CONSTRUCTOR[dtype]
     except KeyError:  # pragma: no cover
@@ -94,9 +92,7 @@ if _NUMPY_AVAILABLE and not _DOCUMENTING:
 
 
 def numpy_type_to_constructor(dtype: type[np.dtype]) -> Callable[..., PySeries]:
-    """
-    Get the right PySeries constructor for the given Polars dtype.
-    """
+    """Get the right PySeries constructor for the given Polars dtype."""
     try:
         return _NUMPY_TYPE_TO_CONSTRUCTOR[dtype]
     except KeyError:
@@ -117,9 +113,7 @@ if not _DOCUMENTING:
 
 
 def py_type_to_constructor(dtype: type[Any]) -> Callable[..., PySeries]:
-    """
-    Get the right PySeries constructor for the given Python dtype.
-    """
+    """Get the right PySeries constructor for the given Python dtype."""
     try:
         return _PY_TYPE_TO_CONSTRUCTOR[dtype]
     except KeyError:
