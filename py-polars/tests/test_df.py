@@ -1982,3 +1982,14 @@ def test_with_columns() -> None:
     # at least one of exprs/**named_exprs required
     with pytest.raises(ValueError):
         _ = df.with_columns()
+
+
+def test_len_compute(df: pl.DataFrame) -> None:
+    df = df.with_column(pl.struct(["list_bool", "cat"]).alias("struct"))
+    filtered = df.filter(pl.col("bools"))
+    for col in filtered.columns:
+        assert len(filtered[col]) == 1
+
+    taken = df[[1, 2], :]
+    for col in taken.columns:
+        assert len(taken[col]) == 2
