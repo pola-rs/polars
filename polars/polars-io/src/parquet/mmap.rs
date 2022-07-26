@@ -52,5 +52,5 @@ pub(super) fn to_deserializer<'a>(
         })
         .unzip();
 
-    column_iter_to_arrays(columns, types, field, Some(chunk_size))
+    column_iter_to_arrays(columns, types, field, Some(chunk_size), num_rows)
 }
