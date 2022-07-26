@@ -18,7 +18,7 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-06-22
+          toolchain: nightly-2022-07-24
           override: true
           components: rustfmt, clippy
       - name: Set up Python
@@ -31,7 +31,7 @@ jobs:
           pip install -r py-polars/build.requirements.txt
       - name: Run formatting checks
         run: |
-          cd py-polars && black --check . && blackdoc --check . && isort --check . && rustup override set nightly-2022-06-22 && cargo fmt --all -- --check && cd ..
+          cd py-polars && black --check . && blackdoc --check . && isort --check . && rustup override set nightly-2022-07-24 && cargo fmt --all -- --check && cd ..
       - name: Run linting
         run: |
           cd py-polars && flake8 && cd ..
@@ -41,7 +41,7 @@ jobs:
       - name: Run tests
         run: |
           export RUSTFLAGS="-C debuginfo=0"
-          cd py-polars && rustup override set nightly-2022-06-22 && make venv && make test-with-cov
+          cd py-polars && rustup override set nightly-2022-07-24 && make venv && make test-with-cov
           cargo clippy
       - name: Check doc examples
         run: |
@@ -63,7 +63,7 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-06-22
+          toolchain: nightly-2022-07-24
           override: true
           components: rustfmt, clippy
       - name: Set up Python
@@ -76,7 +76,7 @@ jobs:
           pip install -r py-polars/build.requirements.txt
       - name: Run formatting checks
         run: |
-          cd py-polars && black --check . && blackdoc --check . && isort --check . && rustup override set nightly-2022-06-22 && cargo fmt --all -- --check && cd ..
+          cd py-polars && black --check . && blackdoc --check . && isort --check . && rustup override set nightly-2022-07-24 && cargo fmt --all -- --check && cd ..
       - name: Run linting
         run: |
           cd py-polars && flake8 && cd ..
@@ -87,7 +87,7 @@ jobs:
       - name: Run tests
         run: |
           export RUSTFLAGS="-C debuginfo=0"
-          cd py-polars && rustup override set nightly-2022-06-22 && make venv && make test-with-cov
+          cd py-polars && rustup override set nightly-2022-07-24 && make venv && make test-with-cov
           cargo clippy
       - name: Check doc examples
         run: |
