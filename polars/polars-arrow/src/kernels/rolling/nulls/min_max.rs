@@ -136,7 +136,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinMaxWindow<'a, T> {
     unsafe fn compute_min_and_update_null_count(&mut self, start: usize, end: usize) -> Option<T> {
         let mut min = None;
         let mut idx = start;
-        for value in (&self.slice[start..end]).iter() {
+        for value in &self.slice[start..end] {
             let valid = self.validity.get_bit_unchecked(idx);
             if valid {
                 match min {

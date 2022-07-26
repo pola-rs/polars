@@ -502,7 +502,7 @@ where
                 }
                 _ => Cow::Owned(Schema::default()),
             };
-            df = parse_dates(df, &*fixed_schema)
+            df = parse_dates(df, &fixed_schema)
         }
 
         cast_columns(&mut df, &to_cast_local, true)?;
