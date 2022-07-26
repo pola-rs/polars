@@ -12,10 +12,13 @@ pub(super) fn sign(s: &Series) -> Result<Series> {
             let ca = s.f64().unwrap();
             sign_float(ca)
         }
-        _ => {
+        dt if dt.is_numeric() => {
             let s = s.cast(&Float64)?;
             sign(&s)
         }
+        dt => Err(PolarsError::ComputeError(
+            format!("cannot use 'sign' on Series of dtype: {:?}", dt).into(),
+        )),
     }
 }
 

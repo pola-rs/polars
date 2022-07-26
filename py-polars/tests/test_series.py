@@ -1712,10 +1712,10 @@ def test_sign() -> None:
     expected = pl.Series("a", [-1, 0, 0, 1, None])
     verify_series_and_expr_api(a, expected, "sign")
 
-    # Dates
+    # Invalid input
     a = pl.Series("a", [date(1950, 2, 1), date(1970, 1, 1), date(2022, 12, 12), None])
-    expected = pl.Series("a", [-1, 0, 1, None])
-    verify_series_and_expr_api(a, expected, "sign")
+    with pytest.raises(pl.ComputeError):
+        a.sign()
 
 
 def test_exp() -> None:
