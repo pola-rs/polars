@@ -17,6 +17,23 @@ pub enum PivotAgg {
     Last,
 }
 
+fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
+    // restore logical type
+    match logical_type {
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(Some(rev_map)) => {
+            let cats = s.u32().unwrap().clone();
+            // safety:
+            // the rev-map comes from these categoricals
+            unsafe {
+                CategoricalChunked::from_cats_and_rev_map_unchecked(cats, rev_map.clone())
+                    .into_series()
+            }
+        }
+        _ => s.cast(logical_type).unwrap(),
+    }
+}
+
 impl DataFrame {
     /// Do a pivot operation based on the group key, a pivot column and an aggregation function on the values column.
     ///
@@ -141,29 +158,11 @@ impl DataFrame {
 
             let row_index = match count {
                 0 => {
-                    let mut s = Series::new(
+                    let s = Series::new(
                         &index[0],
                         row_to_idx.into_iter().map(|(k, _)| k).collect::<Vec<_>>(),
                     );
-                    // restore logical type
-                    match index_s.dtype() {
-                        #[cfg(feature = "dtype-categorical")]
-                        DataType::Categorical(Some(rev_map)) => {
-                            let cats = s.u32().unwrap().clone();
-                            // safety:
-                            // the rev-map comes from these categoricals
-                            s = unsafe {
-                                CategoricalChunked::from_cats_and_rev_map_unchecked(
-                                    cats,
-                                    rev_map.clone(),
-                                )
-                                .into_series()
-                            };
-                        }
-                        _ => {
-                            s = s.cast(index_s.dtype()).unwrap();
-                        }
-                    }
+                    let s = restore_logical_type(&s, index_s.dtype());
                     Some(vec![s])
                 }
                 _ => None,
@@ -218,8 +217,7 @@ impl DataFrame {
                                     })
                                     .collect::<Vec<_>>(),
                             );
-                            // restore logical type
-                            s.cast(index_s[i].dtype()).unwrap()
+                            restore_logical_type(&s, index_s[i].dtype())
                         })
                         .collect::<Vec<_>>(),
                 ),
