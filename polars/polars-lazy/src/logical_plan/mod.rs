@@ -2,6 +2,7 @@ use parking_lot::Mutex;
 #[cfg(any(feature = "ipc", feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
 use std::{cell::Cell, fmt::Debug, sync::Arc};
+use std::borrow::Cow;
 
 use polars_core::prelude::*;
 
@@ -176,7 +177,7 @@ pub enum LogicalPlan {
         input: Box<LogicalPlan>,
         function: Arc<dyn DataFrameUdf>,
         options: LogicalPlanUdfOptions,
-        schema: Option<SchemaRef>,
+        schema: Option<Arc<dyn UdfSchema>>,
     },
     Union {
         inputs: Vec<LogicalPlan>,
@@ -214,35 +215,38 @@ impl LogicalPlan {
 }
 
 impl LogicalPlan {
-    pub(crate) fn schema(&self) -> &SchemaRef {
+    pub(crate) fn schema<'a>(&'a self) -> Cow<'a, SchemaRef> {
         use LogicalPlan::*;
         match self {
             #[cfg(feature = "python")]
-            PythonScan { options } => &options.schema,
+            PythonScan { options } => Cow::Borrowed(&options.schema),
             Union { inputs, .. } => inputs[0].schema(),
             Cache { input } => input.schema(),
             Sort { input, .. } => input.schema(),
-            Explode { schema, .. } => schema,
+            Explode { schema, .. } => Cow::Borrowed(schema),
             #[cfg(feature = "parquet")]
-            ParquetScan { schema, .. } => schema,
+            ParquetScan { schema, .. } => Cow::Borrowed(schema),
             #[cfg(feature = "ipc")]
-            IpcScan { schema, .. } => schema,
-            DataFrameScan { schema, .. } => schema,
-            AnonymousScan { schema, .. } => schema,
+            IpcScan { schema, .. } => Cow::Borrowed(schema),
+            DataFrameScan { schema, .. } => Cow::Borrowed(schema),
+            AnonymousScan { schema, .. } => Cow::Borrowed(schema),
             Selection { input, .. } => input.schema(),
             #[cfg(feature = "csv-file")]
-            CsvScan { schema, .. } => schema,
-            Projection { schema, .. } => schema,
-            LocalProjection { schema, .. } => schema,
-            Aggregate { schema, .. } => schema,
-            Join { schema, .. } => schema,
-            HStack { schema, .. } => schema,
+            CsvScan { schema, .. } => Cow::Borrowed(schema),
+            Projection { schema, .. } => Cow::Borrowed(schema),
+            LocalProjection { schema, .. } => Cow::Borrowed(schema),
+            Aggregate { schema, .. } => Cow::Borrowed(schema),
+            Join { schema, .. } => Cow::Borrowed(schema),
+            HStack { schema, .. } => Cow::Borrowed(schema),
             Distinct { input, .. } => input.schema(),
             Slice { input, .. } => input.schema(),
-            Melt { schema, .. } => schema,
-            Udf { input, schema, .. } => match schema {
-                Some(schema) => schema,
-                None => input.schema(),
+            Melt { schema, .. } => Cow::Borrowed(schema),
+            Udf { input, schema, .. } => {
+                let input_schema = input.schema();
+                match schema {
+                    Some(schema) => Cow::Owned(schema.get_schema(&input_schema).unwrap()),
+                    None => input_schema,
+                }
             },
             Error { input, .. } => input.schema(),
         }

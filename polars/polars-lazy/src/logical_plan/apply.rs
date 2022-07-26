@@ -16,6 +16,26 @@ where
 
 impl Debug for dyn DataFrameUdf {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "udf")
+        write!(f, "dyn DataFrameUdf")
+    }
+}
+
+
+pub trait UdfSchema: Send + Sync {
+    fn get_schema(&self, input_schema: &Schema) -> Result<SchemaRef>;
+}
+
+impl<F> UdfSchema for F
+    where
+        F: Fn(&Schema) -> Result<SchemaRef> + Send + Sync,
+{
+    fn get_schema(&self, input_schema: &Schema) -> Result<SchemaRef> {
+        self(input_schema)
+    }
+}
+
+impl Debug for dyn UdfSchema {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "dyn UdfSchema")
     }
 }

@@ -151,7 +151,7 @@ impl LazyFrame {
     /// Get a hold on the schema of the current LazyFrame computation.
     pub fn schema(&self) -> SchemaRef {
         let logical_plan = self.clone().get_plan_builder().build();
-        logical_plan.schema().clone()
+        logical_plan.schema().into_owned()
     }
 
     pub(crate) fn get_plan_builder(self) -> LogicalPlanBuilder {
@@ -556,7 +556,7 @@ impl LazyFrame {
 
         // during debug we check if the optimizations have not modified the final schema
         #[cfg(debug_assertions)]
-        let prev_schema = logical_plan.schema().clone();
+        let prev_schema = logical_plan.schema().into_owned();
 
         let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena)?;
 

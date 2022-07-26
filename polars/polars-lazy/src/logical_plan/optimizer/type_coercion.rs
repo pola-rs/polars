@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use crate::dsl::function_expr::FunctionExpr;
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
@@ -95,11 +96,11 @@ fn get_input(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> [Option<Node>; 2]
     inputs
 }
 
-fn get_schema(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> &SchemaRef {
+fn get_schema<'a>(lp_arena: &'a Arena<ALogicalPlan>, lp_node: Node) -> Cow<'a, SchemaRef> {
     match get_input(lp_arena, lp_node) {
         [Some(input), _] => lp_arena.get(input).schema(lp_arena),
         // files don't have an input, so we must take their schema
-        [None, _] => lp_arena.get(lp_node).scan_schema(),
+        [None, _] => Cow::Borrowed(lp_arena.get(lp_node).scan_schema()),
     }
 }
 
@@ -138,8 +139,8 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let (truthy, type_true) =
-                    get_aexpr_and_type(expr_arena, truthy_node, input_schema)?;
-                let (falsy, type_false) = get_aexpr_and_type(expr_arena, falsy_node, input_schema)?;
+                    get_aexpr_and_type(expr_arena, truthy_node, &input_schema)?;
+                let (falsy, type_false) = get_aexpr_and_type(expr_arena, falsy_node, &input_schema)?;
 
                 if type_true == type_false {
                     None
@@ -184,8 +185,8 @@ impl OptimizationRule for TypeCoercionRule {
                 right: node_right,
             } => {
                 let input_schema = get_schema(lp_arena, lp_node);
-                let (left, type_left) = get_aexpr_and_type(expr_arena, node_left, input_schema)?;
-                let (right, type_right) = get_aexpr_and_type(expr_arena, node_right, input_schema)?;
+                let (left, type_left) = get_aexpr_and_type(expr_arena, node_left, &input_schema)?;
+                let (right, type_right) = get_aexpr_and_type(expr_arena, node_right, &input_schema)?;
 
                 // don't coerce string with number comparisons. They must error
                 match (&type_left, &type_right, op) {
@@ -354,8 +355,8 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let other_node = input[1];
-                let (_, type_left) = get_aexpr_and_type(expr_arena, input[0], input_schema)?;
-                let (_, type_other) = get_aexpr_and_type(expr_arena, other_node, input_schema)?;
+                let (_, type_left) = get_aexpr_and_type(expr_arena, input[0], &input_schema)?;
+                let (_, type_other) = get_aexpr_and_type(expr_arena, other_node, &input_schema)?;
 
                 match (&type_left, type_other) {
                     // cast both local and global string cache
@@ -392,9 +393,9 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let other_node = input[1];
-                let (left, type_left) = get_aexpr_and_type(expr_arena, input[0], input_schema)?;
+                let (left, type_left) = get_aexpr_and_type(expr_arena, input[0], &input_schema)?;
                 let (fill_value, type_fill_value) =
-                    get_aexpr_and_type(expr_arena, other_node, input_schema)?;
+                    get_aexpr_and_type(expr_arena, other_node, &input_schema)?;
                 let super_type = get_supertype(&type_left, &type_fill_value).ok()?;
                 let super_type =
                     modify_supertype(super_type, left, fill_value, &type_left, &type_fill_value);

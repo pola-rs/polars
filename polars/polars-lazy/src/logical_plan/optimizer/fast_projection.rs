@@ -40,7 +40,9 @@ fn impl_fast_projection(
         let lp = ALogicalPlan::Udf {
             input,
             function: Arc::new(function),
-            schema,
+            schema: schema.map(|s| {
+                Arc::new(move |_: &Schema| Ok(s.clone())) as Arc<dyn UdfSchema>
+            }),
             options,
         };
 
