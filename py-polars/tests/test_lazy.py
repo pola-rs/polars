@@ -1382,9 +1382,8 @@ def test_explode_inner_lists_3985() -> None:
 
 
 def test_lazy_method() -> None:
-    """
-    We want to support `.lazy()` on a Lazy DataFrame as to allow more generic user code.
-    """
+    # We want to support `.lazy()` on a Lazy DataFrame as to allow more generic user
+    # code.
     df = pl.DataFrame({"a": [1, 1, 2, 2, 3, 3], "b": [1, 2, 3, 4, 5, 6]})
     lazy_df = df.lazy()
 

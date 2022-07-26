@@ -1,6 +1,4 @@
-"""
-Module containing logic related to eager DataFrames
-"""
+"""Module containing logic related to eager DataFrames."""
 from __future__ import annotations
 
 import os
@@ -365,9 +363,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     @classmethod
     def _from_pydf(cls: type[DF], py_df: PyDataFrame) -> DF:
-        """
-        Construct Polars DataFrame from FFI PyDataFrame object.
-        """
+        """Construct Polars DataFrame from FFI PyDataFrame object."""
         df = cls.__new__(cls)
         df._df = py_df
         return df
@@ -568,9 +564,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         sample_size: int = 1024,
         eol_char: str = "\n",
     ) -> DF:
-        """
-        See pl.read_csv.
-        """
+        """See pl.read_csv."""
         self = cls.__new__(cls)
 
         path: str | None
@@ -1697,9 +1691,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         return self.__str__()
 
     def __getattr__(self, item: Any) -> PySeries:
-        """
-        Access columns as attribute.
-        """
+        """Access columns as attribute."""
         # it is important that we return an AttributeError here
         # this is used by ipython to check some private
         # `_ipython_canary_method_should_not_exist_`
@@ -1849,9 +1841,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             | tuple
         ),
     ) -> DF | pli.Series:
-        """
-        Get item. Does quite a lot. Read the comments.
-        """
+        """Get item. Does quite a lot. Read the comments."""
         if isinstance(item, pli.Expr):  # pragma: no cover
             warnings.warn(
                 "'using expressions in []' is deprecated. please use 'select'",
@@ -6788,9 +6778,7 @@ class GroupBy(Generic[DF]):
         )
 
     def _select_all(self) -> GBSelection[DF]:
-        """
-        Select all columns for aggregation.
-        """
+        """Select all columns for aggregation."""
         return GBSelection(
             self._df,
             self.by,
@@ -7190,9 +7178,7 @@ class GroupBy(Generic[DF]):
 
 
 class PivotOps(Generic[DF]):
-    """
-    Utility class returned in a pivot operation.
-    """
+    """Utility class returned in a pivot operation."""
 
     def __init__(
         self,
@@ -7209,74 +7195,56 @@ class PivotOps(Generic[DF]):
         self._dataframe_class = dataframe_class
 
     def first(self) -> DF:
-        """
-        Get the first value per group.
-        """
+        """Get the first value per group."""
         return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "first")
         )
 
     def sum(self) -> DF:
-        """
-        Get the sum per group.
-        """
+        """Get the sum per group."""
         return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "sum")
         )
 
     def min(self) -> DF:
-        """
-        Get the minimal value per group.
-        """
+        """Get the minimal value per group."""
         return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "min")
         )
 
     def max(self) -> DF:
-        """
-        Get the maximal value per group.
-        """
+        """Get the maximal value per group."""
         return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "max")
         )
 
     def mean(self) -> DF:
-        """
-        Get the mean value per group.
-        """
+        """Get the mean value per group."""
         return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "mean")
         )
 
     def count(self) -> DF:
-        """
-        Count the values per group.
-        """
+        """Count the values per group."""
         return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "count")
         )
 
     def median(self) -> DF:
-        """
-        Get the median value per group.
-        """
+        """Get the median value per group."""
         return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "median")
         )
 
     def last(self) -> DF:
-        """
-        Get the last value per group.
-        """
+        """Get the last value per group."""
         return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "last")
         )
 
 
 class GBSelection(Generic[DF]):
-    """
-    Utility class returned in a groupby operation.
-    """
+    """Utility class returned in a groupby operation."""
 
     def __init__(
         self,
@@ -7291,41 +7259,31 @@ class GBSelection(Generic[DF]):
         self._dataframe_class = dataframe_class
 
     def first(self) -> DF:
-        """
-        Aggregate the first values in the group.
-        """
+        """Aggregate the first values in the group."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "first")
         )
 
     def last(self) -> DF:
-        """
-        Aggregate the last values in the group.
-        """
+        """Aggregate the last values in the group."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "last")
         )
 
     def sum(self) -> DF:
-        """
-        Reduce the groups to the sum.
-        """
+        """Reduce the groups to the sum."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "sum")
         )
 
     def min(self) -> DF:
-        """
-        Reduce the groups to the minimal value.
-        """
+        """Reduce the groups to the minimal value."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "min")
         )
 
     def max(self) -> DF:
-        """
-        Reduce the groups to the maximal value.
-        """
+        """Reduce the groups to the maximal value."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "max")
         )
@@ -7362,17 +7320,13 @@ class GBSelection(Generic[DF]):
         )
 
     def mean(self) -> DF:
-        """
-        Reduce the groups to the mean values.
-        """
+        """Reduce the groups to the mean values."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "mean")
         )
 
     def n_unique(self) -> DF:
-        """
-        Count the unique values per group.
-        """
+        """Count the unique values per group."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "n_unique")
         )
@@ -7396,17 +7350,13 @@ class GBSelection(Generic[DF]):
         )
 
     def median(self) -> DF:
-        """
-        Return the median per group.
-        """
+        """Return the median per group."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "median")
         )
 
     def agg_list(self) -> DF:
-        """
-        Aggregate the groups into Series.
-        """
+        """Aggregate the groups into Series."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "agg_list")
         )
@@ -7416,9 +7366,7 @@ class GBSelection(Generic[DF]):
         func: Callable[[Any], Any],
         return_dtype: type[DataType] | None = None,
     ) -> DF:
-        """
-        Apply a function over the groups.
-        """
+        """Apply a function over the groups."""
         df = self.agg_list()
         if self.selection is None:
             raise TypeError(

@@ -289,9 +289,7 @@ def std(column: pli.Series) -> float | None:
 
 
 def std(column: str | pli.Series) -> pli.Expr | float | None:
-    """
-    Get the standard deviation.
-    """
+    """Get the standard deviation."""
     if isinstance(column, pli.Series):
         return column.std()
     return col(column).std()
@@ -308,9 +306,7 @@ def var(column: pli.Series) -> float | None:
 
 
 def var(column: str | pli.Series) -> pli.Expr | float | None:
-    """
-    Get the variance.
-    """
+    """Get the variance."""
     if isinstance(column, pli.Series):
         return column.var()
     return col(column).var()
@@ -421,9 +417,7 @@ def mean(column: pli.Series) -> float:
 
 
 def mean(column: str | pli.Series) -> pli.Expr | float:
-    """
-    Get the mean value.
-    """
+    """Get the mean value."""
     if isinstance(column, pli.Series):
         return column.mean()
     return col(column).mean()
@@ -440,9 +434,7 @@ def avg(column: pli.Series) -> float:
 
 
 def avg(column: str | pli.Series) -> pli.Expr | float:
-    """
-    Alias for mean.
-    """
+    """Alias for mean."""
     return mean(column)
 
 
@@ -457,9 +449,7 @@ def median(column: pli.Series) -> float | int:
 
 
 def median(column: str | pli.Series) -> pli.Expr | float | int:
-    """
-    Get the median value.
-    """
+    """Get the median value."""
     if isinstance(column, pli.Series):
         return column.median()
     return col(column).median()
@@ -882,9 +872,7 @@ def fold(
 
 
 def any(name: str | list[pli.Expr]) -> pli.Expr:
-    """
-    Evaluate columnwise or elementwise with a bitwise OR operation.
-    """
+    """Evaluate columnwise or elementwise with a bitwise OR operation."""
     if isinstance(name, list):
         return fold(lit(False), lambda a, b: a.cast(bool) | b.cast(bool), name).alias(
             "any"
@@ -1034,16 +1022,12 @@ def all(name: str | list[pli.Expr] | None = None) -> pli.Expr:
 
 
 def groups(column: str) -> pli.Expr:
-    """
-    Syntactic sugar for `pl.col("foo").agg_groups()`.
-    """
+    """Syntactic sugar for `pl.col("foo").agg_groups()`."""
     return col(column).agg_groups()
 
 
 def quantile(column: str, quantile: float, interpolation: str = "nearest") -> pli.Expr:
-    """
-    Syntactic sugar for `pl.col("foo").quantile(..)`.
-    """
+    """Syntactic sugar for `pl.col("foo").quantile(..)`."""
     return col(column).quantile(quantile, interpolation)
 
 
