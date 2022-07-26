@@ -71,6 +71,10 @@ def test_comparisons() -> None:
     with pytest.raises(ValueError):
         df == pl.DataFrame({"b": [3, 4], "a": [1, 2]})  # noqa: B015
 
+    # DataFrame shape mismatch
+    with pytest.raises(ValueError):
+        df == pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})  # noqa: B015
+
     # Type mismatch
     with pytest.raises(pl.ComputeError):
         df == pl.DataFrame({"a": [1, 2], "b": ["x", "y"]})  # noqa: B015
