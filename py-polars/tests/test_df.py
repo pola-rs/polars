@@ -1572,37 +1572,58 @@ def test_getattr() -> None:
 
 def test_get_item() -> None:
     """test all the methods to use [] on a dataframe"""
-    df = pl.DataFrame({"a": [1.0, 2.0], "b": [3, 4]})
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0], "b": [3, 4, 5, 6]})
 
     # expression
-    assert df.select(pl.col("a")).frame_equal(pl.DataFrame({"a": [1.0, 2.0]}))
+    assert df.select(pl.col("a")).frame_equal(pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0]}))
 
     # tuple. The first element refers to the rows, the second element to columns
     assert df[:, :].frame_equal(df)
 
     # str, always refers to a column name
-    assert df["a"].series_equal(pl.Series("a", [1.0, 2.0]))
+    assert df["a"].series_equal(pl.Series("a", [1.0, 2.0, 3.0, 4.0]))
 
     # int, always refers to a row index (zero-based): index=1 => second row
     assert df[1].frame_equal(pl.DataFrame({"a": [2.0], "b": [4]}))
 
     # range, refers to rows
-    assert df[range(1)].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
+    assert df[range(1, 3)].frame_equal(pl.DataFrame({"a": [2.0, 3.0], "b": [4, 5]}))
 
     # slice. Below an example of taking every second row
-    assert df[::2].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
+    assert df[1::2].frame_equal(pl.DataFrame({"a": [2.0, 4.0], "b": [4, 6]}))
 
-    # numpy array; assumed to be row indices if integers, or columns if strings
-    df[np.array([1])].frame_equal(pl.DataFrame({"a": [2.0], "b": [4]}))
-    df[np.array(["a"])].frame_equal(pl.DataFrame({"a": [1.0, 2.0]}))
+    # numpy array: assumed to be row indices if integers, or columns if strings
+
+    # numpy array: positive idxs.
+    for np_dtype in (
+        np.int8,
+        np.int16,
+        np.int32,
+        np.int64,
+        np.uint8,
+        np.uint16,
+        np.uint32,
+        np.uint64,
+    ):
+        assert df[np.array([1, 0, 3, 2, 3, 0], dtype=np_dtype)].frame_equal(
+            pl.DataFrame({"a": [2.0, 1.0, 4.0, 3.0, 4.0, 1.0], "b": [4, 3, 6, 5, 6, 3]})
+        )
+
+    # numpy array: positive and negative idxs.
+    for np_dtype in (np.int8, np.int16, np.int32, np.int64):
+        assert df[np.array([-1, 0, -3, -2, 3, -4], dtype=np_dtype)].frame_equal(
+            pl.DataFrame({"a": [4.0, 1.0, 2.0, 3.0, 4.0, 1.0], "b": [6, 3, 4, 5, 6, 3]})
+        )
+
     # note that we cannot use floats (even if they could be casted to integer without
     # loss)
     with pytest.raises(NotImplementedError):
         _ = df[np.array([1.0])]
+
     # using boolean masks with numpy is deprecated
     with pytest.deprecated_call():
-        assert df[np.array([True, False])].frame_equal(
-            pl.DataFrame({"a": [1.0], "b": [3]})
+        assert df[np.array([True, False, False, True])].frame_equal(
+            pl.DataFrame({"a": [1.0, 4.0], "b": [3, 6]})
         )
 
     # sequences (lists or tuples; tuple only if length != 2)
@@ -1611,14 +1632,41 @@ def test_get_item() -> None:
     # if integers, assumed to be row indices
     assert df[["a", "b"]].frame_equal(df)
     assert df.select([pl.col("a"), pl.col("b")]).frame_equal(df)
-    df[[1]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
-    df[[False, True]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
+    assert df[[1, -4, -1, 2, 1]].frame_equal(
+        pl.DataFrame({"a": [2.0, 1.0, 4.0, 3.0, 2.0], "b": [4, 3, 6, 5, 4]})
+    )
+    assert df[[False, True, True, False]].frame_equal(
+        pl.DataFrame({"a": [2.0, 3.0], "b": [4, 5]})
+    )
 
-    # pl.Series: like sequences, but only for rows
-    df[[1]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
-    df[[False, True]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
-    with pytest.raises(NotImplementedError):
-        _ = df[pl.Series("", ["hello Im a string"])]
+    # pl.Series: strings for column selections.
+    assert df[pl.Series("", ["a", "b"])].frame_equal(df)
+
+    # pl.Series: positive idxs for row selection.
+    for pl_dtype in (
+        pl.Int8,
+        pl.Int16,
+        pl.Int32,
+        pl.Int64,
+        pl.UInt8,
+        pl.UInt16,
+        pl.UInt32,
+        pl.UInt64,
+    ):
+        assert df[pl.Series("", [1, 0, 3, 2, 3, 0], dtype=pl_dtype)].frame_equal(
+            pl.DataFrame({"a": [2.0, 1.0, 4.0, 3.0, 4.0, 1.0], "b": [4, 3, 6, 5, 6, 3]})
+        )
+
+    # pl.Series: positive and negative idxs for row selection.
+    for pl_dtype in (pl.Int8, pl.Int16, pl.Int32, pl.Int64):
+        assert df[pl.Series("", [-1, 0, -3, -2, 3, -4], dtype=pl_dtype)].frame_equal(
+            pl.DataFrame({"a": [4.0, 1.0, 2.0, 3.0, 4.0, 1.0], "b": [6, 3, 4, 5, 6, 3]})
+        )
+
+    # pl.Series: boolean masks for row selection.
+    assert df[pl.Series("", [False, True, True, False])].frame_equal(
+        pl.DataFrame({"a": [2.0, 3.0], "b": [4, 5]})
+    )
 
 
 @pytest.mark.parametrize("as_series,inner_dtype", [(True, pl.Series), (False, list)])

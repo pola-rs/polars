@@ -117,6 +117,21 @@ def _date_to_pl_date(d: date) -> int:
     return int(dt.timestamp()) // (3600 * 24)
 
 
+def _is_iterable_of(val: Iterable, itertype: type, eltype: type) -> bool:
+    """Check whether the given iterable is of a certain type."""
+    return isinstance(val, itertype) and all(isinstance(x, eltype) for x in val)
+
+
+def is_bool_sequence(val: Sequence[object]) -> TypeGuard[Sequence[bool]]:
+    """Check whether the given sequence is a sequence of booleans."""
+    return _is_iterable_of(val, Sequence, bool)
+
+
+def is_int_sequence(val: Sequence[object]) -> TypeGuard[Sequence[int]]:
+    """Check whether the given sequence is a sequence of integers."""
+    return _is_iterable_of(val, Sequence, int)
+
+
 def is_str_sequence(
     val: Sequence[object], allow_str: bool = False
 ) -> TypeGuard[Sequence[str]]:
@@ -129,16 +144,6 @@ def is_str_sequence(
     if (not allow_str) and isinstance(val, str):
         return False
     return _is_iterable_of(val, Sequence, str)
-
-
-def is_int_sequence(val: Sequence[object]) -> TypeGuard[Sequence[int]]:
-    """Check whether the given sequence is a sequence of integers."""
-    return _is_iterable_of(val, Sequence, int)
-
-
-def _is_iterable_of(val: Iterable, itertype: type, eltype: type) -> bool:
-    """Check whether the given iterable is of a certain type."""
-    return isinstance(val, itertype) and all(isinstance(x, eltype) for x in val)
 
 
 def range_to_slice(rng: range) -> slice:

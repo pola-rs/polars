@@ -454,10 +454,28 @@ def test_ufunc() -> None:
 
 def test_get() -> None:
     a = pl.Series("a", [1, 2, 3])
+    pos_idxs = pl.Series("idxs", [2, 0, 1, 0], dtype=pl.Int8)
+    neg_and_pos_idxs = pl.Series(
+        "neg_and_pos_idxs", [-2, 1, 0, -1, 2, -3], dtype=pl.Int8
+    )
     assert a[0] == 1
     assert a[:2] == [1, 2]
     assert a[range(1)] == [1, 2]
     assert a[range(0, 2, 2)] == [1, 3]
+    for dtype in (
+        pl.UInt8,
+        pl.UInt16,
+        pl.UInt32,
+        pl.UInt64,
+        pl.Int8,
+        pl.Int16,
+        pl.Int32,
+        pl.Int64,
+    ):
+        assert a[pos_idxs.cast(dtype)] == [3, 1, 2, 1]
+        assert a[pos_idxs.cast(dtype).to_numpy()] == [3, 1, 2, 1]
+    for dtype in (pl.Int8, pl.Int16, pl.Int32, pl.Int64):
+        assert a[neg_and_pos_idxs.cast(dtype).to_numpy()] == [2, 2, 1, 3, 3, 1]
 
 
 def test_set() -> None:

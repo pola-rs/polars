@@ -24,7 +24,21 @@ from typing import (
 
 from polars import internals as pli
 from polars._html import NotebookFormatter
-from polars.datatypes import Boolean, DataType, UInt32, Utf8, py_type_to_dtype
+from polars.datatypes import (
+    Boolean,
+    DataType,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    Utf8,
+    get_idx_type,
+    py_type_to_dtype,
+)
 from polars.internals.construction import (
     ColumnsType,
     arrow_to_pydf,
@@ -41,6 +55,7 @@ from polars.utils import (
     deprecated_alias,
     format_path,
     handle_projection_columns,
+    is_bool_sequence,
     is_int_sequence,
     is_str_sequence,
     range_to_slice,
@@ -1638,6 +1653,78 @@ class DataFrame(metaclass=DataFrameMetaClass):
         else:
             return self.shape[dim] + idx
 
+    def _pos_idxs(self, idxs: np.ndarray | pli.Series, dim: int) -> pli.Series:
+        # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
+        idx_type = get_idx_type()
+
+        if isinstance(idxs, pli.Series):
+            if idxs.dtype == idx_type:
+                return idxs
+            if idxs.dtype in {
+                UInt8,
+                UInt16,
+                UInt64 if idx_type == UInt32 else UInt32,
+                Int8,
+                Int16,
+                Int32,
+                Int64,
+            }:
+                if idx_type == UInt32:
+                    if idxs.dtype in {Int64, UInt64}:
+                        if idxs.max() >= 2**32:  # type: ignore[operator]
+                            raise ValueError(
+                                "Index positions should be smaller than 2^32."
+                            )
+                    if idxs.dtype == Int64:
+                        if idxs.min() < -(2**32):  # type: ignore[operator]
+                            raise ValueError(
+                                "Index positions should be bigger than -2^32 + 1."
+                            )
+                if idxs.dtype in {Int8, Int16, Int32, Int64}:
+                    if idxs.min() < 0:  # type: ignore[operator]
+                        if idx_type == UInt32:
+                            if idxs.dtype in {Int8, Int16}:
+                                idxs = idxs.cast(Int32)
+                        else:
+                            if idxs.dtype in {Int8, Int16, Int32}:
+                                idxs = idxs.cast(Int64)
+
+                        idxs = pli.select(
+                            pli.when(pli.lit(idxs) < 0)
+                            .then(self.shape[dim] + pli.lit(idxs))
+                            .otherwise(pli.lit(idxs))
+                        ).to_series()
+
+                return idxs.cast(idx_type)
+
+        if _NUMPY_AVAILABLE and isinstance(idxs, np.ndarray):
+            if idxs.ndim != 1:
+                raise ValueError("Only 1D numpy array is supported as index.")
+            if idxs.dtype.kind in ("i", "u"):
+                # Numpy array with signed or unsigned integers.
+
+                if idx_type == UInt32:
+                    if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2**32:
+                        raise ValueError("Index positions should be smaller than 2^32.")
+                    if idxs.dtype == np.int64 and idxs.min() < -(2**32):
+                        raise ValueError(
+                            "Index positions should be bigger than -2^32 + 1."
+                        )
+                if idxs.dtype.kind == "i" and idxs.min() < 0:
+                    if idx_type == UInt32:
+                        if idxs.dtype in (np.int8, np.int16):
+                            idxs = idxs.astype(np.int32)
+                    else:
+                        if idxs.dtype in (np.int8, np.int16, np.int32):
+                            idxs = idxs.astype(np.int64)
+
+                    # Update negative indexes to absolute indexes.
+                    idxs = np.where(idxs < 0, self.shape[dim] + idxs, idxs)
+
+                return pli.Series("", idxs, dtype=idx_type)
+
+        raise NotImplementedError("Unsupported idxs datatype.")
+
     # __getitem__() mostly returns a dataframe. The major exception is when a string is
     # passed in. Note that there are more subtle cases possible where a non-string value
     # leads to a Series.
@@ -1773,11 +1860,16 @@ class DataFrame(metaclass=DataFrameMetaClass):
             return PolarsSlice(self).apply(item)  # type: ignore[return-value]
 
         # select rows by numpy mask or index
-        # df[[1, 2, 3]]
-        # df[[true, false, true]]
+        # df[np.array([1, 2, 3])]
+        # df[np.array([True, False, True])]
         if _NUMPY_AVAILABLE and isinstance(item, np.ndarray):
-            if item.dtype == int:
-                return self._from_pydf(self._df.take(item))
+            if item.ndim != 1:
+                raise ValueError("Only a 1D-Numpy array is supported as index.")
+            if item.dtype.kind in ("i", "u"):
+                # Numpy array with signed or unsigned integers.
+                return self._from_pydf(
+                    self._df.take_with_series(self._pos_idxs(item, dim=0).inner())
+                )
             if isinstance(item[0], str):
                 return self._from_pydf(self._df.select(item))
             if item.dtype == bool:
@@ -1795,19 +1887,23 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 return self._from_pydf(self._df.select(item))
             elif isinstance(item[0], pli.Expr):
                 return self.select(item)
-            elif type(item[0]) == bool:
+            elif is_bool_sequence(item):
                 item = pli.Series("", item)  # fall through to next if isinstance
             elif is_int_sequence(item):
-                return self._from_pydf(
-                    self._df.take([self._pos_idx(i, dim=0) for i in item])
-                )
+                item = pli.Series("", item)  # fall through to next if isinstance
 
         if isinstance(item, pli.Series):
             dtype = item.dtype
+            if dtype == Utf8:
+                return self._from_pydf(self._df.select(item))
             if dtype == Boolean:
                 return self._from_pydf(self._df.filter(item.inner()))
             if dtype == UInt32:
                 return self._from_pydf(self._df.take_with_series(item.inner()))
+            if dtype in {UInt8, UInt16, UInt64, Int8, Int16, Int32, Int64}:
+                return self._from_pydf(
+                    self._df.take_with_series(self._pos_idxs(item, dim=0).inner())
+                )
 
         # if no data has been returned, the operation is not supported
         raise NotImplementedError
@@ -1832,7 +1928,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             if not _NUMPY_AVAILABLE:
                 raise ImportError("'numpy' is required for this functionality.")
             value = np.array(value)
-            if len(value.shape) != 2:
+            if value.ndim != 2:
                 raise ValueError("can only set multiple columns with 2D matrix")
             if value.shape[1] != len(key):
                 raise ValueError(
