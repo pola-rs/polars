@@ -1248,8 +1248,7 @@ def test_self_join() -> None:
 
 
 def test_preservation_of_subclasses() -> None:
-    """Tests for LazyFrame inheritance."""
-
+    """Test for LazyFrame inheritance."""
     # We should be able to inherit from polars.LazyFrame
     class SubClassedLazyFrame(pl.LazyFrame):
         pass

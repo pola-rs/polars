@@ -68,7 +68,7 @@ def col(
     name: (str | list[str] | Sequence[PolarsDataType] | pli.Series | PolarsDataType),
 ) -> pli.Expr:
     """
-    A column in a DataFrame.
+    Return an expression representing a column in a DataFrame.
 
     Can be used to select:
 
@@ -617,7 +617,7 @@ def lit(
     dtype: type[DataType] | None = None,
 ) -> pli.Expr:
     """
-    A literal value.
+    Return an expression representing a literal value.
 
     Parameters
     ----------
