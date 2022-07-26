@@ -28,10 +28,12 @@ where
     T::Native: num::Float,
     ChunkedArray<T>: IntoSeries,
 {
-    ca.apply(sign_single_float).into_series().cast(&Int64)
+    ca.apply(signum_improved).into_series().cast(&Int64)
 }
 
-fn sign_single_float<F: num::Float>(v: F) -> F {
+// Wrapper for the signum function that handles +/-0.0 inputs differently
+// See discussion here: https://github.com/rust-lang/rust/issues/57543
+fn signum_improved<F: num::Float>(v: F) -> F {
     if v.is_zero() {
         v
     } else {
