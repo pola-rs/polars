@@ -96,7 +96,6 @@ fn test_q2() -> Result<()> {
         Field::new("s_comment", DataType::Utf8),
     ]);
     assert_eq!(&out.schema(), &schema);
-    dbg!(out);
 
     Ok(())
 }

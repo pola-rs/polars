@@ -161,7 +161,7 @@ impl DefaultPlanner {
                 schema: _schema,
                 ..
             } => {
-                let input_schema = lp_arena.get(input).schema(lp_arena).clone();
+                let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
                 let has_windows = expr.iter().any(|node| has_window_aexpr(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
@@ -182,7 +182,7 @@ impl DefaultPlanner {
                     schema: _schema,
                 ..
             } => {
-                let input_schema = lp_arena.get(input).schema(lp_arena).clone();
+                let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
 
                 let has_windows = expr.iter().any(|node| has_window_aexpr(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
@@ -288,7 +288,7 @@ impl DefaultPlanner {
                 maintain_order,
                 options,
             } => {
-                let input_schema = lp_arena.get(input).schema(lp_arena).clone();
+                let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
 
                 let phys_keys =
@@ -497,7 +497,7 @@ impl DefaultPlanner {
                 )))
             }
             HStack { input, exprs, .. } => {
-                let input_schema = lp_arena.get(input).schema(lp_arena).clone();
+                let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
                 let has_windows = exprs.iter().any(|node| has_window_aexpr(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =

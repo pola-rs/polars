@@ -207,7 +207,7 @@ impl ProjectionPushDown {
         let alp = lp_arena.take(input);
         let down_schema = alp.schema(lp_arena);
         let (acc_projections, local_projections, names) =
-            split_acc_projections(acc_projections, down_schema, expr_arena);
+            split_acc_projections(acc_projections, &down_schema, expr_arena);
 
         let lp = self.push_down(
             alp,
@@ -298,7 +298,7 @@ impl ProjectionPushDown {
                         // node and should be skipped
                         if expr_arena
                             .get(node)
-                            .to_field(schema, Context::Default, expr_arena)
+                            .to_field(&schema, Context::Default, expr_arena)
                             .is_ok()
                         {
                             local_projection.push(node);
@@ -332,7 +332,7 @@ impl ProjectionPushDown {
                 // projection from a wildcard may be dropped if the schema changes due to the optimization
                 let proj = expr
                     .into_iter()
-                    .filter(|e| check_input_node(*e, schema, expr_arena))
+                    .filter(|e| check_input_node(*e, &schema, expr_arena))
                     .collect();
                 Ok(ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
                     .project_local(proj)
@@ -627,7 +627,7 @@ impl ProjectionPushDown {
             Melt { input, args, .. } => {
                 let (mut acc_projections, mut local_projections, names) = split_acc_projections(
                     acc_projections,
-                    lp_arena.get(input).schema(lp_arena),
+                    lp_arena.get(input).schema(lp_arena).as_ref(),
                     expr_arena,
                 );
 
@@ -694,7 +694,7 @@ impl ProjectionPushDown {
                     let (mut acc_projections, _local_projections, mut names) =
                         split_acc_projections(
                             acc_projections,
-                            lp_arena.get(input).schema(lp_arena),
+                            lp_arena.get(input).schema(lp_arena).as_ref(),
                             expr_arena,
                         );
 
@@ -808,8 +808,8 @@ impl ProjectionPushDown {
                         // stays as is, the column of the right will have the "_right" suffix.
                         // Thus joining two tables with both a foo column leads to ["foo", "foo_right"]
                         if !self.join_push_down(
-                            schema_left,
-                            schema_right,
+                            &schema_left,
+                            &schema_right,
                             proj,
                             &mut pushdown_left,
                             &mut pushdown_right,
@@ -923,7 +923,7 @@ impl ProjectionPushDown {
 
                 let (acc_projections, _, names) = split_acc_projections(
                     acc_projections,
-                    lp_arena.get(input).schema(lp_arena),
+                    &lp_arena.get(input).schema(lp_arena),
                     expr_arena,
                 );
 

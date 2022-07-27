@@ -1390,3 +1390,11 @@ def test_lazy_method() -> None:
     lazy_df = df.lazy()
 
     assert lazy_df.lazy() == lazy_df
+
+
+def test_update_schema_after_projection_pd_t4157() -> None:
+    assert pl.DataFrame({"c0": [], "c1": [], "c2": []}).lazy().rename(
+        {
+            "c2": "c2_",
+        }
+    ).drop("c2_").select(pl.col("c0")).collect().columns == ["c0"]

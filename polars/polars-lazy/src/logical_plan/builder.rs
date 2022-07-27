@@ -230,13 +230,13 @@ impl LogicalPlanBuilder {
 
     pub fn project(self, exprs: Vec<Expr>) -> Self {
         let (exprs, schema) =
-            try_delayed!(prepare_projection(exprs, self.0.schema()), &self.0, into);
+            try_delayed!(prepare_projection(exprs, &self.0.schema()), &self.0, into);
 
         if exprs.is_empty() {
             self.map(
                 |_| Ok(DataFrame::new_no_checks(vec![])),
                 AllowedOptimizations::default(),
-                Some(Arc::new(Schema::default())),
+                Some(Arc::new(|_: &Schema| Ok(Arc::new(Schema::default())))),
                 "EMPTY PROJECTION",
             )
         } else {
@@ -251,7 +251,7 @@ impl LogicalPlanBuilder {
 
     pub fn project_local(self, exprs: Vec<Expr>) -> Self {
         let (exprs, schema) =
-            try_delayed!(prepare_projection(exprs, self.0.schema()), &self.0, into);
+            try_delayed!(prepare_projection(exprs, &self.0.schema()), &self.0, into);
         LogicalPlan::LocalProjection {
             expr: exprs,
             input: Box::new(self.0),
@@ -293,10 +293,10 @@ impl LogicalPlanBuilder {
         // current schema
         let schema = self.0.schema();
         let mut new_schema = (**schema).clone();
-        let (exprs, _) = try_delayed!(prepare_projection(exprs, schema), &self.0, into);
+        let (exprs, _) = try_delayed!(prepare_projection(exprs, &schema), &self.0, into);
 
         for e in &exprs {
-            let field = e.to_field(schema, Context::Default).unwrap();
+            let field = e.to_field(&schema, Context::Default).unwrap();
             new_schema.with_column(field.name().to_string(), field.data_type().clone());
         }
 
@@ -315,7 +315,7 @@ impl LogicalPlanBuilder {
             Expr::Wildcard | Expr::RenameAlias { .. } | Expr::Columns(_) => true,
             _ => false,
         }) {
-            let rewritten = rewrite_projections(vec![predicate], self.0.schema(), &[]);
+            let rewritten = rewrite_projections(vec![predicate], &self.0.schema(), &[]);
             combine_predicates_expr(rewritten.into_iter())
         } else {
             predicate
@@ -337,6 +337,7 @@ impl LogicalPlanBuilder {
         rolling_options: Option<RollingGroupOptions>,
     ) -> Self {
         let current_schema = self.0.schema();
+        let current_schema = current_schema.as_ref();
         let aggs = rewrite_projections(aggs.as_ref().to_vec(), current_schema, keys.as_ref());
 
         let mut schema = try_delayed!(
@@ -402,7 +403,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn sort(self, by_column: Vec<Expr>, reverse: Vec<bool>, null_last: bool) -> Self {
-        let by_column = rewrite_projections(by_column, self.0.schema(), &[]);
+        let by_column = rewrite_projections(by_column, &self.0.schema(), &[]);
         LogicalPlan::Sort {
             input: Box::new(self.0),
             by_column,
@@ -416,7 +417,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn explode(self, columns: Vec<Expr>) -> Self {
-        let columns = rewrite_projections(columns, self.0.schema(), &[]);
+        let columns = rewrite_projections(columns, &self.0.schema(), &[]);
 
         let mut schema = (**self.0.schema()).clone();
 
@@ -445,7 +446,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn melt(self, args: Arc<MeltArgs>) -> Self {
-        let schema = det_melt_schema(&args, self.0.schema());
+        let schema = det_melt_schema(&args, &self.0.schema());
         LogicalPlan::Melt {
             input: Box::new(self.0),
             args,
@@ -523,7 +524,7 @@ impl LogicalPlanBuilder {
         self,
         function: F,
         optimizations: AllowedOptimizations,
-        schema: Option<SchemaRef>,
+        schema: Option<Arc<dyn UdfSchema>>,
         name: &'static str,
     ) -> Self
     where

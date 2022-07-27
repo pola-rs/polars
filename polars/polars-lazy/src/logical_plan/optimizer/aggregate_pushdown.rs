@@ -100,7 +100,7 @@ impl OptimizationRule for AggregatePushdown {
                         .map(|n| {
                             expr_arena
                                 .get(*n)
-                                .to_field(input_schema, Context::Default, expr_arena)
+                                .to_field(&input_schema, Context::Default, expr_arena)
                                 .unwrap()
                         })
                         .collect();

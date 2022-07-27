@@ -88,7 +88,7 @@ impl PredicatePushDown {
                         optimizer::init_hashmap(Some(acc_predicates.len()));
                     for (name, &predicate) in acc_predicates.iter() {
                         // we can pushdown the predicate
-                        if check_input_node(predicate, input_schema, expr_arena) {
+                        if check_input_node(predicate, &input_schema, expr_arena) {
                             insert_and_combine_predicate(
                                 &mut pushdown_predicates,
                                 name.clone(),
@@ -235,10 +235,10 @@ impl PredicatePushDown {
                 // projection from a wildcard may be dropped if the schema changes due to the optimization
                 let expr: Vec<_> = expr
                     .into_iter()
-                    .filter(|e| check_input_node(*e, schema, expr_arena))
+                    .filter(|e| check_input_node(*e, &schema, expr_arena))
                     .collect();
 
-                let schema = aexprs_to_schema(&expr, schema, Context::Default, expr_arena);
+                let schema = aexprs_to_schema(&expr, &schema, Context::Default, expr_arena);
                 Ok(ALogicalPlan::LocalProjection {
                     expr,
                     input,
@@ -422,8 +422,8 @@ impl PredicatePushDown {
                     // be influenced by join
                     if !predicate_is_pushdown_boundary(predicate, expr_arena) {
                         // no else if. predicate can be in both tables.
-                        if check_input_node(predicate, schema_left, expr_arena) {
-                            let name = get_insertion_name(expr_arena, predicate, schema_left);
+                        if check_input_node(predicate, &schema_left, expr_arena) {
+                            let name = get_insertion_name(expr_arena, predicate, &schema_left);
                             insert_and_combine_predicate(
                                 &mut pushdown_left,
                                 name,
@@ -433,8 +433,8 @@ impl PredicatePushDown {
                             filter_left = true;
                         }
 
-                        if check_input_node(predicate, schema_right, expr_arena)  {
-                            let name = get_insertion_name(expr_arena, predicate, schema_right);
+                        if check_input_node(predicate, &schema_right, expr_arena)  {
+                            let name = get_insertion_name(expr_arena, predicate, &schema_right);
                             insert_and_combine_predicate(
                                 &mut pushdown_right,
                                 name,

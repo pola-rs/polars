@@ -222,7 +222,7 @@ where
 
         let projection_expr = expr_arena.get(*projection_node);
         let output_field = projection_expr
-            .to_field(input_schema, Context::Default, expr_arena)
+            .to_field(&input_schema, Context::Default, expr_arena)
             .unwrap();
         let projection_roots = aexpr_to_root_names(*projection_node, expr_arena);
 
@@ -274,7 +274,7 @@ where
                 //    this is the case for instance with a sum operation (filtering out rows influences the result)
 
                 // checks 1.
-                if check_input_node(*predicate, input_schema, expr_arena)
+                if check_input_node(*predicate, &input_schema, expr_arena)
                 // checks 2.
                 && !(output_field.name().as_str() == &**name && projection_maybe_boundary)
                 // checks 3.
