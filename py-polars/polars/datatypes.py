@@ -16,10 +16,21 @@ from _ctypes import _SimpleCData  # type: ignore[import]
 
 try:
     from polars.polars import dtype_str_repr
+    from polars.polars import get_idx_type as _get_idx_type
 
     _DOCUMENTING = False
 except ImportError:
     _DOCUMENTING = True
+
+
+def get_idx_type() -> Type[DataType]:
+    """
+    Get the datatype used for polars Indexing
+
+    This is UInt32 in regulars polars and UInt64 in polars_u64_idx
+
+    """
+    return _get_idx_type()
 
 
 class DataType:
