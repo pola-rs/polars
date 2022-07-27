@@ -1,8 +1,8 @@
 use parking_lot::Mutex;
+use std::borrow::Cow;
 #[cfg(any(feature = "ipc", feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
 use std::{cell::Cell, fmt::Debug, sync::Arc};
-use std::borrow::Cow;
 
 use polars_core::prelude::*;
 
@@ -215,7 +215,7 @@ impl LogicalPlan {
 }
 
 impl LogicalPlan {
-    pub(crate) fn schema<'a>(&'a self) -> Cow<'a, SchemaRef> {
+    pub(crate) fn schema(&self) -> Cow<'_, SchemaRef> {
         use LogicalPlan::*;
         match self {
             #[cfg(feature = "python")]
@@ -247,7 +247,7 @@ impl LogicalPlan {
                     Some(schema) => Cow::Owned(schema.get_schema(&input_schema).unwrap()),
                     None => input_schema,
                 }
-            },
+            }
             Error { input, .. } => input.schema(),
         }
     }

@@ -20,14 +20,13 @@ impl Debug for dyn DataFrameUdf {
     }
 }
 
-
 pub trait UdfSchema: Send + Sync {
     fn get_schema(&self, input_schema: &Schema) -> Result<SchemaRef>;
 }
 
 impl<F> UdfSchema for F
-    where
-        F: Fn(&Schema) -> Result<SchemaRef> + Send + Sync,
+where
+    F: Fn(&Schema) -> Result<SchemaRef> + Send + Sync,
 {
     fn get_schema(&self, input_schema: &Schema) -> Result<SchemaRef> {
         self(input_schema)

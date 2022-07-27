@@ -442,7 +442,7 @@ impl DefaultPlanner {
                         phys_aggs,
                         maintain_order,
                         options.slice,
-                        input_schema
+                        input_schema,
                     )))
                 } else {
                     Ok(Box::new(executors::GroupByExec::new(

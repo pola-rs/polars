@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 #[cfg(feature = "ipc")]
 use crate::logical_plan::IpcScanOptionsInner;
 #[cfg(feature = "parquet")]
@@ -9,6 +8,7 @@ use crate::utils::{aexprs_to_schema, PushNode};
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
+use std::borrow::Cow;
 #[cfg(any(feature = "ipc", feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -133,7 +133,7 @@ pub enum ALogicalPlan {
         input: Node,
         function: Arc<dyn DataFrameUdf>,
         options: LogicalPlanUdfOptions,
-        schema: Option<Arc<dyn UdfSchema>>
+        schema: Option<Arc<dyn UdfSchema>>,
     },
     Union {
         inputs: Vec<Node>,
@@ -219,8 +219,8 @@ impl ALogicalPlan {
                 return match schema {
                     Some(schema) => Cow::Owned(schema.get_schema(&input_schema).unwrap()),
                     None => input_schema,
-                }
-            },
+                };
+            }
         };
         Cow::Borrowed(schema)
     }
@@ -715,8 +715,14 @@ impl<'a> ALogicalPlanBuilder<'a> {
         // TODO! add this line if LogicalPlan is dropped in favor of ALogicalPlan
         // let aggs = rewrite_projections(aggs, current_schema);
 
-        let mut schema = aexprs_to_schema(&keys, &current_schema, Context::Default, self.expr_arena);
-        let other = aexprs_to_schema(&aggs, &current_schema, Context::Aggregation, self.expr_arena);
+        let mut schema =
+            aexprs_to_schema(&keys, &current_schema, Context::Default, self.expr_arena);
+        let other = aexprs_to_schema(
+            &aggs,
+            &current_schema,
+            Context::Aggregation,
+            self.expr_arena,
+        );
         schema.merge(other);
 
         let index_columns = &[

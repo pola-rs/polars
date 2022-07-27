@@ -236,7 +236,7 @@ impl LogicalPlanBuilder {
             self.map(
                 |_| Ok(DataFrame::new_no_checks(vec![])),
                 AllowedOptimizations::default(),
-                Some(Arc::new(Schema::default())),
+                Some(Arc::new(|_: &Schema| Ok(Arc::new(Schema::default())))),
                 "EMPTY PROJECTION",
             )
         } else {
@@ -524,7 +524,7 @@ impl LogicalPlanBuilder {
         self,
         function: F,
         optimizations: AllowedOptimizations,
-        schema: Option<SchemaRef>,
+        schema: Option<Arc<dyn UdfSchema>>,
         name: &'static str,
     ) -> Self
     where
@@ -540,9 +540,7 @@ impl LogicalPlanBuilder {
             input: Box::new(self.0),
             function: Arc::new(function),
             options,
-            schema: schema.map(|s| {
-                Arc::new(move |_: &Schema| Ok(s.clone())) as Arc<dyn UdfSchema>
-            })
+            schema,
         }
         .into()
     }

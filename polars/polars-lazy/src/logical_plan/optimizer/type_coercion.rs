@@ -1,7 +1,7 @@
-use std::borrow::Cow;
 use crate::dsl::function_expr::FunctionExpr;
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
+use std::borrow::Cow;
 
 use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::Context;
@@ -96,7 +96,7 @@ fn get_input(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> [Option<Node>; 2]
     inputs
 }
 
-fn get_schema<'a>(lp_arena: &'a Arena<ALogicalPlan>, lp_node: Node) -> Cow<'a, SchemaRef> {
+fn get_schema(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> Cow<'_, SchemaRef> {
     match get_input(lp_arena, lp_node) {
         [Some(input), _] => lp_arena.get(input).schema(lp_arena),
         // files don't have an input, so we must take their schema
@@ -140,7 +140,8 @@ impl OptimizationRule for TypeCoercionRule {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let (truthy, type_true) =
                     get_aexpr_and_type(expr_arena, truthy_node, &input_schema)?;
-                let (falsy, type_false) = get_aexpr_and_type(expr_arena, falsy_node, &input_schema)?;
+                let (falsy, type_false) =
+                    get_aexpr_and_type(expr_arena, falsy_node, &input_schema)?;
 
                 if type_true == type_false {
                     None
@@ -186,7 +187,8 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let (left, type_left) = get_aexpr_and_type(expr_arena, node_left, &input_schema)?;
-                let (right, type_right) = get_aexpr_and_type(expr_arena, node_right, &input_schema)?;
+                let (right, type_right) =
+                    get_aexpr_and_type(expr_arena, node_right, &input_schema)?;
 
                 // don't coerce string with number comparisons. They must error
                 match (&type_left, &type_right, op) {
