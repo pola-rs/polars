@@ -51,9 +51,7 @@ def wrap_expr(pyexpr: PyExpr) -> Expr:
 
 
 class Expr:
-    """
-    Expressions that can be used in various contexts.
-    """
+    """Expressions that can be used in various contexts."""
 
     def __init__(self) -> None:
         self._pyexpr: PyExpr  # pragma: no cover
@@ -189,9 +187,7 @@ class Expr:
     def __array_ufunc__(
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
     ) -> Expr:
-        """
-        Numpy universal functions.
-        """
+        """Numpy universal functions."""
         if not _NUMPY_AVAILABLE:
             raise ImportError("'numpy' is required for this functionality.")
         out_type = ufunc(np.array([1])).dtype
@@ -266,7 +262,7 @@ class Expr:
 
     def any(self) -> Expr:
         """
-        Check if any boolean value in a Boolean column is `True`
+        Check if any boolean value in a Boolean column is `True`.
 
         Returns
         -------
@@ -284,6 +280,7 @@ class Expr:
         ╞══════╪═══════╡
         │ true ┆ false │
         └──────┴───────┘
+
         """
         return wrap_expr(self._pyexpr.any())
 
@@ -312,25 +309,20 @@ class Expr:
         ╞══════╪═══════╪═══════╡
         │ true ┆ false ┆ false │
         └──────┴───────┴───────┘
+
         """
         return wrap_expr(self._pyexpr.all())
 
     def sqrt(self) -> Expr:
-        """
-        Compute the square root of the elements
-        """
+        """Compute the square root of the elements."""
         return self**0.5
 
     def log10(self) -> Expr:
-        """
-        Return the base 10 logarithm of the input array, element-wise.
-        """
+        """Compute the base 10 logarithm of the input array, element-wise."""
         return self.log(10.0)
 
     def exp(self) -> Expr:
-        """
-        Return the exponential element-wise
-        """
+        """Compute the exponential, element-wise."""
         return wrap_expr(self._pyexpr.exp())
 
     def alias(self, name: str) -> Expr:
@@ -550,7 +542,6 @@ class Expr:
         └─────┴───────────┘
 
         """
-
         return wrap_expr(self._pyexpr.keep_name())
 
     def prefix(self, prefix: str) -> Expr:
@@ -840,6 +831,7 @@ class Expr:
         ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ true ┆ false │
         └──────┴───────┘
+
         """
         return wrap_expr(self._pyexpr.is_finite())
 
@@ -872,6 +864,7 @@ class Expr:
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ false ┆ true  │
         └───────┴───────┘
+
         """
         return wrap_expr(self._pyexpr.is_infinite())
 
@@ -1089,9 +1082,7 @@ class Expr:
         return wrap_expr(self._pyexpr.append(other._pyexpr, upcast))
 
     def rechunk(self) -> Expr:
-        """
-        Create a single chunk of memory for this Series.
-        """
+        """Create a single chunk of memory for this Series."""
         return wrap_expr(self._pyexpr.rechunk())
 
     def drop_nulls(self) -> Expr:
@@ -1150,6 +1141,7 @@ class Expr:
         ├╌╌╌╌╌╌┤
         │ 4.0  │
         └──────┘
+
         """
         return wrap_expr(self._pyexpr.drop_nans())
 
@@ -1190,6 +1182,7 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 10  ┆ 4         │
         └─────┴───────────┘
+
         """
         return wrap_expr(self._pyexpr.cumsum(reverse))
 
@@ -1230,6 +1223,7 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 24  ┆ 4         │
         └─────┴───────────┘
+
         """
         return wrap_expr(self._pyexpr.cumprod(reverse))
 
@@ -1265,6 +1259,7 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 1   ┆ 4         │
         └─────┴───────────┘
+
         """
         return wrap_expr(self._pyexpr.cummin(reverse))
 
@@ -1337,6 +1332,7 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ 0         │
         └─────┴───────────┘
+
         """
         return wrap_expr(self._pyexpr.cumcount(reverse))
 
@@ -1365,6 +1361,7 @@ class Expr:
         ├╌╌╌╌╌┤
         │ 1.0 │
         └─────┘
+
         """
         return wrap_expr(self._pyexpr.floor())
 
@@ -1393,6 +1390,7 @@ class Expr:
         ├╌╌╌╌╌┤
         │ 2.0 │
         └─────┘
+
         """
         return wrap_expr(self._pyexpr.ceil())
 
@@ -1423,6 +1421,7 @@ class Expr:
         ├╌╌╌╌╌┤
         │ 1.2 │
         └─────┘
+
         """
         return wrap_expr(self._pyexpr.round(decimals))
 
@@ -1481,6 +1480,7 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 1   ┆ 2   │
         └─────┴─────┘
+
         """
         return wrap_expr(self._pyexpr.mode())
 
@@ -1599,6 +1599,7 @@ class Expr:
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ one   ┆ [1, 2, 98] │
         └───────┴────────────┘
+
         """
         return wrap_expr(self._pyexpr.sort_with(reverse, nulls_last))
 
@@ -1637,6 +1638,7 @@ class Expr:
         ├╌╌╌╌╌┤
         │ 2   │
         └─────┘
+
         """
         return wrap_expr(self._pyexpr.arg_sort(reverse))
 
@@ -1660,6 +1662,7 @@ class Expr:
         ╞═════╡
         │ 2   │
         └─────┘
+
         """
         return wrap_expr(self._pyexpr.arg_max())
 
@@ -1739,6 +1742,7 @@ class Expr:
         ├╌╌╌╌╌╌╌┤
         │ two   │
         └───────┘
+
         """
         if not isinstance(by, list):
             by = [by]
@@ -1864,6 +1868,7 @@ class Expr:
         ├╌╌╌╌╌┤
         │ 3   │
         └─────┘
+
         """
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
         return wrap_expr(self._pyexpr.shift_and_fill(periods, fill_value._pyexpr))
@@ -1954,6 +1959,7 @@ class Expr:
         ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ zero ┆ 6.0  │
         └──────┴──────┘
+
         """
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
         return wrap_expr(self._pyexpr.fill_nan(fill_value._pyexpr))
@@ -2012,6 +2018,7 @@ class Expr:
         ├╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ null ┆ 6   │
         └──────┴─────┘
+
         """
         return wrap_expr(self._pyexpr.backward_fill(limit))
 
@@ -2071,6 +2078,7 @@ class Expr:
         ╞═════╡
         │ 1.0 │
         └─────┘
+
         """
         return wrap_expr(self._pyexpr.std())
 
@@ -2110,6 +2118,7 @@ class Expr:
         ╞═════╡
         │ 1   │
         └─────┘
+
         """
         return wrap_expr(self._pyexpr.max())
 
@@ -2194,6 +2203,7 @@ class Expr:
         ╞═════╡
         │ 0.0 │
         └─────┘
+
         """
         return wrap_expr(self._pyexpr.median())
 
@@ -2213,6 +2223,7 @@ class Expr:
         ╞═════╡
         │ 6   │
         └─────┘
+
         """
         return wrap_expr(self._pyexpr.product())
 
@@ -2252,6 +2263,7 @@ class Expr:
         ╞═════╪═════╡
         │ 2   ┆ 0   │
         └─────┴─────┘
+
         """
         return wrap_expr(self._pyexpr.null_count())
 
@@ -2346,6 +2358,7 @@ class Expr:
         ╞═════╡
         │ 1   │
         └─────┘
+
         """
         return wrap_expr(self._pyexpr.first())
 
@@ -2450,7 +2463,6 @@ class Expr:
         └────────┘
 
         """
-
         pyexprs = selection_to_pyexpr_list(expr)
 
         return wrap_expr(self._pyexpr.over(pyexprs))
@@ -2475,6 +2487,7 @@ class Expr:
         ├╌╌╌╌╌╌╌┤
         │ true  │
         └───────┘
+
         """
         return wrap_expr(self._pyexpr.is_unique())
 
@@ -2534,6 +2547,7 @@ class Expr:
         ├╌╌╌╌╌╌╌┤
         │ false │
         └───────┘
+
         """
         return wrap_expr(self._pyexpr.is_duplicated())
 
@@ -2613,6 +2627,7 @@ class Expr:
         ----------
         predicate
             Boolean expression.
+
         """
         return wrap_expr(self._pyexpr.filter(predicate._pyexpr))
 
@@ -2624,6 +2639,7 @@ class Expr:
         ----------
         predicate
             Boolean expression.
+
         """
         return self.filter(predicate)
 
@@ -2650,6 +2666,8 @@ class Expr:
             Lambda/ function to apply.
         return_dtype
             Dtype of the output Series.
+        agg_list
+            Aggregate list
 
         Examples
         --------
@@ -2668,6 +2686,7 @@ class Expr:
         ╞══════╪════════╡
         │ 1    ┆ 0      │
         └──────┴────────┘
+
         """
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
@@ -2780,8 +2799,8 @@ class Expr:
         ...         pl.col("a").sum(),
         ...     )
         ... )  # doctest: +IGNORE_RESULT
-        """
 
+        """
         # input x: Series of type list containing the group values
         def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
             return x.apply(f, return_dtype=return_dtype)
@@ -2846,7 +2865,6 @@ class Expr:
         └───────┘
 
         """
-
         return wrap_expr(self._pyexpr.explode())
 
     def explode(self) -> Expr:
@@ -2910,17 +2928,13 @@ class Expr:
         return wrap_expr(self._pyexpr.take_every(n))
 
     def head(self, n: int | Expr | None = None) -> Expr:
-        """
-        Take the first n values.
-        """
+        """Take the first n values."""
         if isinstance(n, Expr):
             return self.slice(0, n)
         return wrap_expr(self._pyexpr.head(n))
 
     def tail(self, n: int | None = None) -> Expr:
-        """
-        Take the last n values.
-        """
+        """Take the last n values."""
         return wrap_expr(self._pyexpr.tail(n))
 
     def pow(self, exponent: int | float | pli.Series | Expr) -> Expr:
@@ -2945,6 +2959,7 @@ class Expr:
         ├╌╌╌╌╌╌┤
         │ 64.0 │
         └──────┘
+
         """
         exponent = expr_to_lit_or_expr(exponent)
         return wrap_expr(self._pyexpr.pow(exponent._pyexpr))
@@ -3171,12 +3186,13 @@ class Expr:
         ----------
         signed
             If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
+
         """
         return wrap_expr(self._pyexpr.reinterpret(signed))
 
     def inspect(self, fmt: str = "{}") -> Expr:
         """
-        Prints the value that this expression evaluates to and passes on the value.
+        Print the value that this expression evaluates to and pass on the value.
 
         Examples
         --------
@@ -3211,9 +3227,7 @@ class Expr:
         return self.map(inspect, return_dtype=None, agg_list=True)
 
     def interpolate(self) -> Expr:
-        """
-        Interpolate intermediate values. The interpolation method is linear.
-        """
+        """Linearly interpolate intermediate values."""
         return wrap_expr(self._pyexpr.interpolate())
 
     def rolling_min(
@@ -3226,7 +3240,8 @@ class Expr:
         closed: str = "left",
     ) -> Expr:
         """
-        apply a rolling min (moving min) over the values in this array.
+        Apply a rolling min (moving min) over the values in this array.
+
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
@@ -3305,6 +3320,7 @@ class Expr:
         ├╌╌╌╌╌╌┤
         │ 5.0  │
         └──────┘
+
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -3326,6 +3342,7 @@ class Expr:
     ) -> Expr:
         """
         Apply a rolling max (moving max) over the values in this array.
+
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
@@ -3425,6 +3442,7 @@ class Expr:
     ) -> Expr:
         """
         Apply a rolling mean (moving mean) over the values in this array.
+
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
@@ -3522,6 +3540,7 @@ class Expr:
     ) -> Expr:
         """
         Apply a rolling sum (moving sum) over the values in this array.
+
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
@@ -3620,7 +3639,7 @@ class Expr:
         closed: str = "left",
     ) -> Expr:
         """
-        Compute a rolling std dev
+        Compute a rolling standard deviation.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -3762,7 +3781,7 @@ class Expr:
         closed: str = "left",
     ) -> Expr:
         """
-        Compute a rolling median
+        Compute a rolling median.
 
         Parameters
         ----------
@@ -3831,7 +3850,7 @@ class Expr:
         closed: str = "left",
     ) -> Expr:
         """
-        Compute a rolling quantile
+        Compute a rolling quantile.
 
         Parameters
         ----------
@@ -3909,7 +3928,8 @@ class Expr:
         center: bool = False,
     ) -> Expr:
         """
-        Allows a custom rolling window function.
+        Apply a custom rolling window function.
+
         Prefer the specific rolling window functions over this one, as they are faster.
 
         Prefer:
@@ -3974,7 +3994,7 @@ class Expr:
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> Expr:
         """
-        Compute a rolling skew
+        Compute a rolling skew.
 
         Parameters
         ----------
@@ -3982,19 +4002,16 @@ class Expr:
             Size of the rolling window
         bias
             If False, then the calculations are corrected for statistical bias.
+
         """
         return wrap_expr(self._pyexpr.rolling_skew(window_size, bias))
 
     def abs(self) -> Expr:
-        """
-        Take absolute values
-        """
+        """Compute absolute values."""
         return wrap_expr(self._pyexpr.abs())
 
     def argsort(self, reverse: bool = False) -> Expr:
-        """
-        alias for `arg_sort`
-        """
+        """Alias for `arg_sort`."""
         return self.arg_sort(reverse)
 
     def rank(self, method: str = "average", reverse: bool = False) -> Expr:
@@ -4147,7 +4164,9 @@ class Expr:
         return wrap_expr(self._pyexpr.pct_change(n))
 
     def skew(self, bias: bool = True) -> Expr:
-        r"""Compute the sample skewness of a data set.
+        r"""
+        Compute the sample skewness of a data set.
+
         For normally distributed data, the skewness should be about zero. For
         unimodal continuous distributions, a skewness value greater than zero means
         that there is more weight in the right tail of the distribution. The
@@ -4186,7 +4205,9 @@ class Expr:
         return wrap_expr(self._pyexpr.skew(bias))
 
     def kurtosis(self, fisher: bool = True, bias: bool = True) -> Expr:
-        """Compute the kurtosis (Fisher or Pearson) of a dataset.
+        """
+        Compute the kurtosis (Fisher or Pearson) of a dataset.
+
         Kurtosis is the fourth central moment divided by the square of the
         variance. If Fisher's definition is used, then 3.0 is subtracted from
         the result to give 0.0 for a normal distribution.
@@ -4202,6 +4223,7 @@ class Expr:
             Pearson's definition is used (normal ==> 3.0).
         bias : bool, optional
             If False, then the calculations are corrected for statistical bias.
+
         """
         return wrap_expr(self._pyexpr.kurtosis(fisher, bias))
 
@@ -4246,21 +4268,27 @@ class Expr:
 
     def lower_bound(self) -> Expr:
         """
+        Calculate the lower bound.
+
         Returns a unit Series with the lowest value possible for the dtype of this
         expression.
+
         """
         return wrap_expr(self._pyexpr.lower_bound())
 
     def upper_bound(self) -> Expr:
         """
+        Calculate the upper bound.
+
         Returns a unit Series with the highest value possible for the dtype of this
         expression.
+
         """
         return wrap_expr(self._pyexpr.upper_bound())
 
     def sign(self) -> Expr:
         """
-        Returns an element-wise indication of the sign of a number.
+        Return an element-wise indication of the sign of a number.
 
         Examples
         --------
@@ -4619,6 +4647,7 @@ class Expr:
         seed
             Seed initialization. If None given, the `random` module is used to generate
             a random seed.
+
         """
         if seed is None:
             seed = random.randint(0, 10000)
@@ -4644,6 +4673,7 @@ class Expr:
             Seed initialization. If None given a random seed is used.
         shuffle
             Shuffle the order of sampled data points.
+
         """
         return wrap_expr(
             self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
@@ -4844,7 +4874,7 @@ class Expr:
 
     def unique_counts(self) -> Expr:
         """
-        Returns a count of the unique values in the order of appearance.
+        Return a count of the unique values in the order of appearance.
 
         This method differs from `value_counts` in that it does not return the
         values, only the counts and might be faster
@@ -4885,6 +4915,7 @@ class Expr:
         ----------
         base
             Given base, defaults to `e`
+
         """
         return wrap_expr(self._pyexpr.log(base))
 
@@ -4973,6 +5004,7 @@ class Expr:
         ----------
         reverse
             If the `Series` order is reversed, e.g. descending.
+
         """
         return self.map(lambda s: s.set_sorted(reverse))
 
@@ -4981,51 +5013,39 @@ class Expr:
 
     @property
     def dt(self) -> ExprDateTimeNameSpace:
-        """
-        Create an object namespace of all datetime related methods.
-        """
+        """Create an object namespace of all datetime related methods."""
         return ExprDateTimeNameSpace(self)
 
     @property
     def str(self) -> ExprStringNameSpace:
-        """
-        Create an object namespace of all string related methods.
-        """
+        """Create an object namespace of all string related methods."""
         return ExprStringNameSpace(self)
 
     @property
     def arr(self) -> ExprListNameSpace:
-        """
-        Create an object namespace of all list related methods.
-        """
+        """Create an object namespace of all list related methods."""
         return ExprListNameSpace(self)
 
     @property
     def cat(self) -> ExprCatNameSpace:
-        """
-        Create an object namespace of all categorical related methods.
-        """
+        """Create an object namespace of all categorical related methods."""
         return ExprCatNameSpace(self)
 
     @property
     def struct(self) -> ExprStructNameSpace:
-        """
-        Create an object namespace of all struct related methods.
-        """
+        """Create an object namespace of all struct related methods."""
         return ExprStructNameSpace(self)
 
 
 class ExprStructNameSpace:
-    """
-    Namespace for struct related expressions
-    """
+    """Namespace for struct related expressions."""
 
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
     def field(self, name: str) -> Expr:
         """
-        Retrieve one of the fields of this `Struct` as a new Series
+        Retrieve one of the fields of this `Struct` as a new Series.
 
         Parameters
         ----------
@@ -5109,9 +5129,7 @@ class ExprStructNameSpace:
 
 
 class ExprListNameSpace:
-    """
-    Namespace for list related expressions
-    """
+    """Namespace for list related expressions."""
 
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
@@ -5139,27 +5157,19 @@ class ExprListNameSpace:
         return wrap_expr(self._pyexpr.arr_lengths())
 
     def sum(self) -> Expr:
-        """
-        Sum all the arrays in the list
-        """
+        """Sum all the arrays in the list."""
         return wrap_expr(self._pyexpr.lst_sum())
 
     def max(self) -> Expr:
-        """
-        Compute the max value of the arrays in the list
-        """
+        """Compute the max value of the arrays in the list."""
         return wrap_expr(self._pyexpr.lst_max())
 
     def min(self) -> Expr:
-        """
-        Compute the min value of the arrays in the list
-        """
+        """Compute the min value of the arrays in the list."""
         return wrap_expr(self._pyexpr.lst_min())
 
     def mean(self) -> Expr:
-        """
-        Compute the mean value of the arrays in the list
-        """
+        """Compute the mean value of the arrays in the list."""
         return wrap_expr(self._pyexpr.lst_mean())
 
     def sort(self, reverse: bool = False) -> Expr:
@@ -5215,9 +5225,7 @@ class ExprListNameSpace:
         return wrap_expr(self._pyexpr.lst_reverse())
 
     def unique(self) -> Expr:
-        """
-        Get the unique/distinct values in the list
-        """
+        """Get the unique/distinct values in the list."""
         return wrap_expr(self._pyexpr.lst_unique())
 
     def concat(
@@ -5409,7 +5417,6 @@ class ExprListNameSpace:
         └───────┘
 
         """
-
         return wrap_expr(self._pyexpr.lst_join(separator))
 
     def arg_min(self) -> Expr:
@@ -5419,6 +5426,7 @@ class ExprListNameSpace:
         Returns
         -------
         Series of dtype UInt32/UInt64 (depending on compilation)
+
         """
         return wrap_expr(self._pyexpr.lst_arg_min())
 
@@ -5429,6 +5437,7 @@ class ExprListNameSpace:
         Returns
         -------
         Series of dtype UInt32/UInt64 (depending on compilation)
+
         """
         return wrap_expr(self._pyexpr.lst_arg_max())
 
@@ -5594,7 +5603,6 @@ class ExprListNameSpace:
         {'col_name_0': 1, 'col_name_1': 2, 'col_name_2': None}]
 
         """
-
         return wrap_expr(self._pyexpr.lst_to_struct(n_field_strategy, name_generator))
 
     def eval(self, expr: Expr, parallel: bool = False) -> Expr:
@@ -5637,9 +5645,7 @@ class ExprListNameSpace:
 
 
 class ExprStringNameSpace:
-    """
-    Namespace for string related expressions
-    """
+    """Namespace for string related expressions."""
 
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
@@ -5773,33 +5779,23 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_concat(delimiter))
 
     def to_uppercase(self) -> Expr:
-        """
-        Transform to uppercase variant.
-        """
+        """Transform to uppercase variant."""
         return wrap_expr(self._pyexpr.str_to_uppercase())
 
     def to_lowercase(self) -> Expr:
-        """
-        Transform to lowercase variant.
-        """
+        """Transform to lowercase variant."""
         return wrap_expr(self._pyexpr.str_to_lowercase())
 
     def strip(self) -> Expr:
-        """
-        Remove leading and trailing whitespace.
-        """
+        """Remove leading and trailing whitespace."""
         return wrap_expr(self._pyexpr.str_strip())
 
     def lstrip(self) -> Expr:
-        """
-        Remove leading whitespace.
-        """
+        """Remove leading whitespace."""
         return wrap_expr(self._pyexpr.str_lstrip())
 
     def rstrip(self) -> Expr:
-        """
-        Remove trailing whitespace.
-        """
+        """Remove trailing whitespace."""
         return wrap_expr(self._pyexpr.str_rstrip())
 
     def zfill(self, alignment: int) -> Expr:
@@ -5966,6 +5962,7 @@ class ExprStringNameSpace:
         --------
         starts_with : Check if string values start with a substring.
         ends_with : Check if string values end with a substring.
+
         """
         return wrap_expr(self._pyexpr.str_contains(pattern, literal))
 
@@ -6013,6 +6010,7 @@ class ExprStringNameSpace:
         --------
         contains : Check if string contains a substring that matches a regex.
         starts_with : Check if string values start with a substring.
+
         """
         return wrap_expr(self._pyexpr.str_ends_with(sub))
 
@@ -6060,6 +6058,7 @@ class ExprStringNameSpace:
         --------
         contains : Check if string contains a substring that matches a regex.
         ends_with : Check if string values end with a substring.
+
         """
         return wrap_expr(self._pyexpr.str_starts_with(sub))
 
@@ -6110,7 +6109,7 @@ class ExprStringNameSpace:
 
     def decode(self, encoding: str, strict: bool = False) -> Expr:
         """
-        Decodes a value using the provided encoding
+        Decode a value using the provided encoding.
 
         Parameters
         ----------
@@ -6137,6 +6136,7 @@ class ExprStringNameSpace:
         ├╌╌╌╌╌╌╌╌╌┤
         │ null    │
         └─────────┘
+
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.str_hex_decode(strict))
@@ -6147,7 +6147,7 @@ class ExprStringNameSpace:
 
     def encode(self, encoding: str) -> Expr:
         """
-        Encodes a value using the provided encoding
+        Encode a value using the provided encoding.
 
         Parameters
         ----------
@@ -6417,7 +6417,7 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_split_exact(by, n))
 
     def replace(self, pattern: str, value: str, literal: bool = False) -> Expr:
-        """
+        r"""
         Replace first matching regex/literal substring with a new string value.
 
         Parameters
@@ -6484,6 +6484,7 @@ class ExprStringNameSpace:
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
         │ 2   ┆ 123-123 │
         └─────┴─────────┘
+
         """
         return wrap_expr(self._pyexpr.str_replace_all(pattern, value, literal))
 
@@ -6550,9 +6551,7 @@ class ExprStringNameSpace:
 
 
 class ExprDateTimeNameSpace:
-    """
-    Namespace for datetime related expressions.
-    """
+    """Namespace for datetime related expressions."""
 
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
@@ -6682,6 +6681,7 @@ class ExprDateTimeNameSpace:
     def year(self) -> Expr:
         """
         Extract year from underlying Date representation.
+
         Can be performed on Date and Datetime.
 
         Returns the year number in the calendar date.
@@ -6689,12 +6689,14 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Year as Int32
+
         """
         return wrap_expr(self._pyexpr.year())
 
     def quarter(self) -> Expr:
         """
         Extract quarter from underlying Date representation.
+
         Can be performed on Date and Datetime.
 
         Returns the quarter ranging from 1 to 4.
@@ -6702,12 +6704,14 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Quarter as UInt32
+
         """
         return wrap_expr(self._pyexpr.quarter())
 
     def month(self) -> Expr:
         """
         Extract month from underlying Date representation.
+
         Can be performed on Date and Datetime.
 
         Returns the month number starting from 1.
@@ -6716,12 +6720,14 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Month as UInt32
+
         """
         return wrap_expr(self._pyexpr.month())
 
     def week(self) -> Expr:
         """
         Extract the week from the underlying Date representation.
+
         Can be performed on Date and Datetime
 
         Returns the ISO week number starting from 1.
@@ -6730,12 +6736,14 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Week number as UInt32
+
         """
         return wrap_expr(self._pyexpr.week())
 
     def weekday(self) -> Expr:
         """
         Extract the week day from the underlying Date representation.
+
         Can be performed on Date and Datetime.
 
         Returns the weekday number where monday = 0 and sunday = 6
@@ -6743,12 +6751,14 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Week day as UInt32
+
         """
         return wrap_expr(self._pyexpr.weekday())
 
     def day(self) -> Expr:
         """
         Extract day from underlying Date representation.
+
         Can be performed on Date and Datetime.
 
         Returns the day of month starting from 1.
@@ -6757,12 +6767,14 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Day as UInt32
+
         """
         return wrap_expr(self._pyexpr.day())
 
     def ordinal_day(self) -> Expr:
         """
         Extract ordinal day from underlying Date representation.
+
         Can be performed on Date and Datetime.
 
         Returns the day of year starting from 1.
@@ -6771,12 +6783,14 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Day as UInt32
+
         """
         return wrap_expr(self._pyexpr.ordinal_day())
 
     def hour(self) -> Expr:
         """
         Extract hour from underlying DateTime representation.
+
         Can be performed on Datetime.
 
         Returns the hour number from 0 to 23.
@@ -6784,12 +6798,14 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Hour as UInt32
+
         """
         return wrap_expr(self._pyexpr.hour())
 
     def minute(self) -> Expr:
         """
         Extract minutes from underlying DateTime representation.
+
         Can be performed on Datetime.
 
         Returns the minute number from 0 to 59.
@@ -6797,12 +6813,14 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Minute as UInt32
+
         """
         return wrap_expr(self._pyexpr.minute())
 
     def second(self) -> Expr:
         """
         Extract seconds from underlying DateTime representation.
+
         Can be performed on Datetime.
 
         Returns the second number from 0 to 59.
@@ -6810,12 +6828,14 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Second as UInt32
+
         """
         return wrap_expr(self._pyexpr.second())
 
     def nanosecond(self) -> Expr:
         """
         Extract seconds from underlying DateTime representation.
+
         Can be performed on Datetime.
 
         Returns the number of nanoseconds since the whole non-leap second.
@@ -6824,13 +6844,12 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Nanosecond as UInt32
+
         """
         return wrap_expr(self._pyexpr.nanosecond())
 
     def to_python_datetime(self) -> Expr:
-        """
-        Go from Date/Datetime to python DateTime objects
-        """
+        """Go from Date/Datetime to python DateTime objects."""
         return wrap_expr(self._pyexpr).map(
             lambda s: s.dt.to_python_datetime(), return_dtype=Object
         )
@@ -6843,6 +6862,7 @@ class ExprDateTimeNameSpace:
         ----------
         tu
             One of {'ns', 'us', 'ms', 's', 'd'}
+
         """
         if tu in DTYPE_TEMPORAL_UNITS:
             return self.timestamp(tu)
@@ -6864,6 +6884,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Days as Int32
+
         """
         return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
 
@@ -6880,6 +6901,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Milliseconds as Int64
+
         """
         return self.timestamp("ms")
 
@@ -6894,6 +6916,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Milliseconds as Int64
+
         """
         return wrap_expr(self._pyexpr.dt_epoch_seconds())
 
@@ -6905,18 +6928,22 @@ class ExprDateTimeNameSpace:
         ----------
         tu
             One of {'ns', 'us', 'ms'}
+
         """
         return wrap_expr(self._pyexpr.timestamp(tu))
 
     def with_time_unit(self, tu: str) -> Expr:
         """
-        Set time unit a Series of dtype Datetime or Duration. This does not modify
-        underlying data, and should be used to fix an incorrect time unit.
+        Set time unit a Series of dtype Datetime or Duration.
+
+        This does not modify underlying data, and should be used to fix an incorrect
+        time unit.
 
         Parameters
         ----------
         tu
             Time unit for the `Datetime` Series: one of {"ns", "us", "ms"}
+
         """
         return wrap_expr(self._pyexpr.dt_with_time_unit(tu))
 
@@ -6928,6 +6955,7 @@ class ExprDateTimeNameSpace:
         ----------
         tu
             Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
+
         """
         return wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
 
@@ -6939,13 +6967,13 @@ class ExprDateTimeNameSpace:
         .. deprecated::
             Use :func:`with_time_unit` instead.
 
-
         Parameters
         ----------
         tu
             Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
         dtype
             Output data type.
+
         """
         return self.with_time_unit(tu)
 
@@ -6987,6 +7015,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         A series of dtype Int64
+
         """
         return wrap_expr(self._pyexpr.duration_days())
 
@@ -6997,6 +7026,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         A series of dtype Int64
+
         """
         return wrap_expr(self._pyexpr.duration_hours())
 
@@ -7007,6 +7037,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         A series of dtype Int64
+
         """
         return wrap_expr(self._pyexpr.duration_minutes())
 
@@ -7017,6 +7048,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         A series of dtype Int64
+
         """
         return wrap_expr(self._pyexpr.duration_seconds())
 
@@ -7027,6 +7059,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         A series of dtype Int64
+
         """
         return wrap_expr(self._pyexpr.duration_milliseconds())
 
@@ -7037,6 +7070,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         A series of dtype Int64
+
         """
         return wrap_expr(self._pyexpr.duration_nanoseconds())
 
@@ -7067,6 +7101,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Date/Datetime expression
+
         """
         return wrap_expr(self._pyexpr.dt_offset_by(by))
 
@@ -7085,7 +7120,7 @@ def expr_to_lit_or_expr(
     str_to_lit: bool = True,
 ) -> Expr:
     """
-    Helper function that converts args to expressions.
+    Convert args to expressions.
 
     Parameters
     ----------
@@ -7097,6 +7132,7 @@ def expr_to_lit_or_expr(
 
     Returns
     -------
+    Expr
 
     """
     if isinstance(expr, str) and not str_to_lit:
@@ -7117,9 +7153,7 @@ def expr_to_lit_or_expr(
 
 
 class ExprCatNameSpace:
-    """
-    Namespace for categorical related expressions
-    """
+    """Namespace for categorical related expressions."""
 
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr

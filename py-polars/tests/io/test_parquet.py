@@ -90,9 +90,7 @@ def test_select_projection() -> None:
 
 
 def test_parquet_chunks() -> None:
-    """
-    This failed in https://github.com/pola-rs/polars/issues/545
-    """
+    # This failed in https://github.com/pola-rs/polars/issues/545
     cases = [
         1048576,
         1048577,
@@ -116,9 +114,7 @@ def test_parquet_chunks() -> None:
 
 
 def test_parquet_datetime() -> None:
-    """
-    This failed because parquet writers cast datetime to Date
-    """
+    # This failed because parquet writers cast datetime to Date
     f = io.BytesIO()
     data = {
         "datetime": [  # unix timestamp in ms

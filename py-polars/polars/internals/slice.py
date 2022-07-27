@@ -7,8 +7,10 @@ FrameOrSeries = Union["pli.DataFrame", "pli.Series"]
 
 class PolarsSlice:
     """
-    Apply python slice object to Polars DataFrame or Series,
-    with full support for negative indexing and/or stride.
+    Apply Python slice object to Polars DataFrame or Series.
+
+    Has full support for negative indexing and/or stride.
+
     """
 
     stop: int
@@ -23,38 +25,28 @@ class PolarsSlice:
 
     @staticmethod
     def _as_original(lazy: "pli.LazyFrame", original: FrameOrSeries) -> FrameOrSeries:
-        """
-        Return lazy variant back to its original type.
-        """
+        """Return lazy variant back to its original type."""
         frame = lazy.collect()
         return frame if isinstance(original, pli.DataFrame) else frame.to_series()
 
     @staticmethod
     def _lazify(obj: FrameOrSeries) -> "pli.LazyFrame":
-        """
-        Make lazy to ensure efficent/consistent handling.
-        """
+        """Make lazy to ensure efficent/consistent handling."""
         return obj.lazy() if isinstance(obj, pli.DataFrame) else obj.to_frame().lazy()
 
     def _slice_positive(self, obj: "pli.LazyFrame") -> "pli.LazyFrame":
-        """
-        Logic for slices with positive stride.
-        """
+        """Logic for slices with positive stride."""
         # note: at this point stride is guaranteed to be > 1
         return obj.slice(self.start, self.slice_length).take_every(self.stride)
 
     def _slice_negative(self, obj: "pli.LazyFrame") -> "pli.LazyFrame":
-        """
-        Logic for slices with negative stride.
-        """
+        """Logic for slices with negative stride."""
         stride = abs(self.stride)
         lazyslice = obj.slice(self.stop + 1, self.slice_length).reverse()
         return lazyslice.take_every(stride) if (stride > 1) else lazyslice
 
     def _slice_setup(self, s: slice) -> None:
-        """
-        Normalise slice bounds, identify unbounded and/or zero-length slices.
-        """
+        """Normalise slice bounds, identify unbounded and/or zero-length slices."""
         # can normalise slice indices as we know object size
         obj_len = len(self.obj)
         start, stop, stride = slice(s.start, s.stop, s.step).indices(obj_len)
@@ -83,9 +75,7 @@ class PolarsSlice:
         self.start, self.stop, self.stride = start, stop, stride
 
     def apply(self, s: slice) -> FrameOrSeries:
-        """
-        Apply a slice operation, taking advantage of any potential fast paths.
-        """
+        """Apply a slice operation, taking advantage of any potential fast paths."""
         # normalise slice
         self._slice_setup(s)
 
@@ -114,8 +104,11 @@ class PolarsSlice:
 
 class LazyPolarsSlice:
     """
-    Apply python slice object to Polars LazyFrame. Only slices with efficient
-    computation paths mapping directly to existing lazy methods are supported.
+    Apply python slice object to Polars LazyFrame.
+
+    Only slices with efficient computation paths mapping directly to existing lazy
+    methods are supported.
+
     """
 
     obj: "pli.LazyFrame"
@@ -125,9 +118,12 @@ class LazyPolarsSlice:
 
     def apply(self, s: slice) -> "pli.LazyFrame":
         """
-        Apply a slice operation. Note that LazyFrame is designed primarily for efficient
-        computation and does not know its own length so, unlike DataFrame, certain slice
-        patterns (such as those requiring negative stop/step) may not be supported.
+        Apply a slice operation.
+
+        Note that LazyFrame is designed primarily for efficient computation and does not
+        know its own length so, unlike DataFrame, certain slice patterns (such as those
+        requiring negative stop/step) may not be supported.
+
         """
         start = s.start or 0
         step = s.step or 1

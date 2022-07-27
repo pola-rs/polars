@@ -14,7 +14,8 @@ How to modify behaviour for doctests:
 3. if you would not like code to run: add `#doctest: +SKIP`. You may still add example
    output.
 
-Notes:
+Notes
+-----
 * Doctest does not have a built-in IGNORE_RESULT directive. We have a number of tests
   where we want to ensure that the code runs, but the output may be random by design, or
   not interesting for us to check. To allow for this behaviour, a custom output checker

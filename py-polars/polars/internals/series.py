@@ -110,6 +110,7 @@ def get_ffi_func(
     Returns
     -------
     ffi function, or None if not found
+
     """
     ffi_name = dtype_to_ffiname(dtype)
     fname = name.replace("<>", ffi_name)
@@ -250,9 +251,7 @@ class Series:
 
     @classmethod
     def _from_arrow(cls, name: str, values: pa.Array, rechunk: bool = True) -> Series:
-        """
-        Construct a Series from an Arrow Array.
-        """
+        """Construct a Series from an Arrow Array."""
         return cls._from_pyseries(arrow_to_pyseries(name, values, rechunk))
 
     @classmethod
@@ -262,9 +261,7 @@ class Series:
         values: pd.Series | pd.DatetimeIndex,
         nan_to_none: bool = True,
     ) -> Series:
-        """
-        Construct a Series from a pandas Series or DatetimeIndex.
-        """
+        """Construct a Series from a pandas Series or DatetimeIndex."""
         return cls._from_pyseries(
             pandas_to_pyseries(name, values, nan_to_none=nan_to_none)
         )
@@ -621,7 +618,7 @@ class Series:
 
     def estimated_size(self) -> int:
         """
-        Returns an estimation of the total (heap) allocated size of the `Series` in
+        Return an estimation of the total (heap) allocated size of the `Series` in
         bytes.
 
         This estimation is the sum of the size of its buffers, validity, including
@@ -634,6 +631,7 @@ class Series:
         this function returns the visible size of the buffer, not its total capacity.
 
         FFI buffers are included in this estimation.
+
         """
         return self._s.estimated_size()
 
@@ -661,6 +659,7 @@ class Series:
         Returns
         -------
         Boolean literal
+
         """
         return self.to_frame().select(pli.col(self.name).any()).to_series()[0]
 
@@ -671,35 +670,28 @@ class Series:
         Returns
         -------
         Boolean literal
+
         """
         return self.to_frame().select(pli.col(self.name).all()).to_series()[0]
 
     def log(self, base: float = math.e) -> Series:
-        """
-        Compute the logarithm to a given base
-        """
+        """Compute the logarithm to a given base."""
         return self.to_frame().select(pli.col(self.name).log(base)).to_series()
 
     def log10(self) -> Series:
-        """
-        Return the base 10 logarithm of the input array, element-wise.
-        """
+        """Compute the base 10 logarithm of the input array, element-wise."""
         return self.log(10.0)
 
     def exp(self) -> Series:
-        """
-        Return the exponential element-wise
-        """
+        """Compute the exponential, element-wise."""
         return self.to_frame().select(pli.col(self.name).exp()).to_series()
 
     def drop_nulls(self) -> Series:
-        """
-        Create a new Series that copies data from this Series without null values.
-        """
+        """Create a new Series that copies data from this Series without null values."""
         return wrap_s(self._s.drop_nulls())
 
     def drop_nans(self) -> Series:
-        """ """
+        """Drop NaN values."""
         return self.filter(self.is_not_nan())
 
     def to_frame(self) -> pli.DataFrame:
@@ -752,6 +744,7 @@ class Series:
         Returns
         -------
         DataType
+
         """
         return self._s.inner_dtype()
 
@@ -877,9 +870,7 @@ class Series:
         return self._s.mean()
 
     def product(self) -> int | float:
-        """
-        Reduce this Series to the product value.
-        """
+        """Reduce this Series to the product value."""
         return self.to_frame().select(pli.col(self.name).product()).to_series()[0]
 
     def min(self) -> int | float | date | datetime | timedelta:
@@ -1050,7 +1041,7 @@ class Series:
 
     def unique_counts(self) -> Series:
         """
-        Returns a count of the unique values in the order of appearance.
+        Return a count of the unique values in the order of appearance.
 
         Examples
         --------
@@ -1063,6 +1054,7 @@ class Series:
             2
             3
         ]
+
         """
         return pli.select(pli.lit(self).unique_counts()).to_series()
 
@@ -1138,14 +1130,12 @@ class Series:
 
     @property
     def name(self) -> str:
-        """
-        Get the name of this Series.
-        """
+        """Get the name of this Series."""
         return self._s.name()
 
     def alias(self, name: str) -> Series:
         """
-        Returns a copy of the Series with a new alias/name.
+        Return a copy of the Series with a new alias/name.
 
         Parameters
         ----------
@@ -1156,6 +1146,7 @@ class Series:
         --------
         >>> srs = pl.Series("x", [1, 2, 3])
         >>> new_aliased_srs = srs.alias("y")
+
         """
         s = self.clone()
         s._s.rename(name)
@@ -1204,15 +1195,11 @@ class Series:
             return self.alias(name)
 
     def chunk_lengths(self) -> list[int]:
-        """
-        Get the length of each individual chunk.
-        """
+        """Get the length of each individual chunk."""
         return self._s.chunk_lengths()
 
     def n_chunks(self) -> int:
-        """
-        Get the number of chunks that this Series contains.
-        """
+        """Get the number of chunks that this Series contains."""
         return self._s.n_chunks()
 
     def cumsum(self, reverse: bool = False) -> Series:
@@ -1602,21 +1589,15 @@ class Series:
         return wrap_s(self._s.argsort(reverse, nulls_last))
 
     def arg_unique(self) -> Series:
-        """
-        Get unique index as Series.
-        """
+        """Get unique index as Series."""
         return wrap_s(self._s.arg_unique())
 
     def arg_min(self) -> int | None:
-        """
-        Get the index of the minimal value.
-        """
+        """Get the index of the minimal value."""
         return self._s.arg_min()
 
     def arg_max(self) -> int | None:
-        """
-        Get the index of the maximal value.
-        """
+        """Get the index of the maximal value."""
         return self._s.arg_max()
 
     def unique(self, maintain_order: bool = False) -> Series:
@@ -1671,16 +1652,16 @@ class Series:
         return wrap_s(self._s.take(indices))
 
     def null_count(self) -> int:
-        """
-        Count the null values in this Series.
-        """
+        """Count the null values in this Series."""
         return self._s.null_count()
 
     def has_validity(self) -> bool:
         """
-        Returns True if the Series has a validity bitmask. If there is none, it means
-        that there are no null values. Use this to swiftly assert a Series does not have
-        null values.
+        Return True if the Series has a validity bitmask.
+
+        If there is none, it means that there are no null values.
+        Use this to swiftly assert a Series does not have null values.
+
         """
         return self._s.has_validity()
 
@@ -1904,6 +1885,7 @@ class Series:
         Returns
         -------
         UInt32 Series
+
         """
         return pli.arg_where(self, eager=True)
 
@@ -1938,6 +1920,7 @@ class Series:
         Returns
         -------
         Boolean Series
+
         """
         return wrap_s(self._s.is_first())
 
@@ -1989,6 +1972,7 @@ class Series:
         Returns
         -------
         Exploded Series of same dtype
+
         """
         return wrap_s(self._s.explode())
 
@@ -2035,9 +2019,7 @@ class Series:
 
     @property
     def shape(self) -> tuple[int]:
-        """
-        Shape of this Series.
-        """
+        """Shape of this Series."""
         return (self._s.len(),)
 
     def __len__(self) -> int:
@@ -2162,6 +2144,7 @@ class Series:
         ----------
         in_place
             In place or not.
+
         """
         opt_s = self._s.rechunk(in_place)
         if in_place:
@@ -2184,6 +2167,7 @@ class Series:
             2
             1
         ]
+
         """
         return wrap_s(self._s.reverse())
 
@@ -2253,7 +2237,7 @@ class Series:
 
     def is_utf8(self) -> bool:
         """
-        Checks if this Series datatype is a Utf8.
+        Check if this Series datatype is a Utf8.
 
         Examples
         --------
@@ -2305,9 +2289,7 @@ class Series:
         *inputs: Any,
         **kwargs: Any,
     ) -> Series:
-        """
-        Numpy universal functions.
-        """
+        """Numpy universal functions."""
         if not _NUMPY_AVAILABLE:
             raise ImportError("'numpy' is required for this functionality.")
 
@@ -2412,6 +2394,7 @@ class Series:
             of nulls, or for non-primitive types).
         kwargs
             kwargs will be sent to pyarrow.Array.to_numpy
+
         """
 
         def convert_to_date(arr: np.ndarray) -> np.ndarray:
@@ -2457,9 +2440,7 @@ class Series:
         return self._s.to_arrow()
 
     def to_pandas(self) -> pd.Series:
-        """
-        Convert this Series to a pandas Series
-        """
+        """Convert this Series to a pandas Series."""
         if not _PYARROW_AVAILABLE:  # pragma: no cover
             raise ImportError(
                 "'pyarrow' is required for converting a 'polars' Series to a 'pandas'"
@@ -2481,6 +2462,7 @@ class Series:
             Boolean mask.
         value
             Value to replace the the masked values with.
+
         """
         f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
         if f is None:
@@ -2519,8 +2501,8 @@ class Series:
         Returns
         -------
         the series mutated
-        """
 
+        """
         if self.is_numeric() or self.is_datelike():
             idx = Series("", idx)
             if isinstance(value, (int, float, bool)):
@@ -2590,6 +2572,7 @@ class Series:
         --------
         cleared : Create an empty copy of the current Series, with identical
             schema but no data.
+
         """
         return wrap_s(self._s.clone())
 
@@ -2600,9 +2583,7 @@ class Series:
         return self.clone()
 
     def fill_nan(self, fill_value: str | int | float | bool | pli.Expr) -> Series:
-        """
-        Fill floating point NaN value with a fill value
-        """
+        """Fill floating point NaN value with a fill value."""
         return (
             self.to_frame().select(pli.col(self.name).fill_nan(fill_value)).to_series()
         )
@@ -2666,6 +2647,7 @@ class Series:
         the float value.
 
         Only works on floating point Series
+
         """
         return wrap_s(self._s.floor())
 
@@ -2675,6 +2657,7 @@ class Series:
         the float value.
 
         Only works on floating point Series
+
         """
         return self.to_frame().select(pli.col(self.name).ceil()).to_series()
 
@@ -2698,6 +2681,7 @@ class Series:
         ----------
         decimals
             number of decimals to round by.
+
         """
         return wrap_s(self._s.round(decimals))
 
@@ -2716,6 +2700,7 @@ class Series:
         ----------
         other
             Series to compute dot product with
+
         """
         return self._s.dot(other._s)
 
@@ -2738,7 +2723,7 @@ class Series:
 
     def sign(self) -> Series:
         """
-        Returns an element-wise indication of the sign of a number.
+        Return an element-wise indication of the sign of a number.
 
         Examples
         --------
@@ -3028,6 +3013,7 @@ class Series:
         Returns
         -------
         Series
+
         """
         if return_dtype is None:
             pl_return_dtype = None
@@ -3064,6 +3050,7 @@ class Series:
         ----------
         periods
             Number of places to shift (may be negative).
+
         """
         return wrap_s(self._s.shift(periods))
 
@@ -3078,6 +3065,7 @@ class Series:
             Number of places to shift (may be negative).
         fill_value
             Fill None values with the result of this expression.
+
         """
         return self.to_frame().select(
             pli.col(self.name).shift_and_fill(periods, fill_value)
@@ -3136,7 +3124,8 @@ class Series:
         center: bool = False,
     ) -> Series:
         """
-        apply a rolling min (moving min) over the values in this array.
+        Apply a rolling min (moving min) over the values in this array.
+
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
@@ -3418,9 +3407,9 @@ class Series:
         center: bool = False,
     ) -> pli.Series:
         """
-        Allows a custom rolling window function.
-        Prefer the specific rolling window functions over this one, as they are faster.
-        Prefer:
+        Apply a custom rolling window function.
+
+        Prefer the specific rolling window functions over this one, as they are faster:
 
             * rolling_min
             * rolling_max
@@ -3556,6 +3545,7 @@ class Series:
             Size of the rolling window
         bias
             If False, then the calculations are corrected for statistical bias.
+
         """
         return self.to_frame().select(
             pli.col(self.name).rolling_skew(window_size, bias)
@@ -3742,6 +3732,7 @@ class Series:
         ----------
         signed
             If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
+
         """
         return wrap_s(self._s.reinterpret(signed))
 
@@ -3767,9 +3758,7 @@ class Series:
         return wrap_s(self._s.interpolate())
 
     def abs(self) -> Series:
-        """
-        Take absolute values
-        """
+        """Compute absolute values."""
         return wrap_s(self._s.abs())
 
     def rank(self, method: str = "average", reverse: bool = False) -> Series:
@@ -3842,6 +3831,7 @@ class Series:
             number of slots to shift
         null_behavior
             {'ignore', 'drop'}
+
         """
         return wrap_s(self._s.diff(n, null_behavior))
 
@@ -3888,11 +3878,14 @@ class Series:
             3.0
             3.0
         ]
+
         """
         return self.to_frame().select(pli.col(self.name).pct_change(n)).to_series()
 
     def skew(self, bias: bool = True) -> float | None:
-        r"""Compute the sample skewness of a data set.
+        r"""
+        Compute the sample skewness of a data set.
+
         For normally distributed data, the skewness should be about zero. For
         unimodal continuous distributions, a skewness value greater than zero means
         that there is more weight in the right tail of the distribution. The
@@ -3931,7 +3924,9 @@ class Series:
         return self._s.skew(bias)
 
     def kurtosis(self, fisher: bool = True, bias: bool = True) -> float | None:
-        """Compute the kurtosis (Fisher or Pearson) of a dataset.
+        """
+        Compute the kurtosis (Fisher or Pearson) of a dataset.
+
         Kurtosis is the fourth central moment divided by the square of the
         variance. If Fisher's definition is used, then 3.0 is subtracted from
         the result to give 0.0 for a normal distribution.
@@ -3947,6 +3942,7 @@ class Series:
             Pearson's definition is used (normal ==> 3.0).
         bias : bool, optional
             If False, then the calculations are corrected for statistical bias.
+
         """
         return self._s.kurtosis(fisher, bias)
 
@@ -4000,6 +3996,7 @@ class Series:
         Returns
         -------
         Series
+
         """
         return wrap_s(self._s.reshape(dims))
 
@@ -4011,6 +4008,7 @@ class Series:
         ----------
         seed
             Seed initialization
+
         """
         return wrap_s(self._s.shuffle(seed))
 
@@ -4199,14 +4197,13 @@ class Series:
         ----------
         reverse
             If the `Series` order is reversed, e.g. descending.
+
         """
         return wrap_s(self._s.set_sorted(reverse))
 
     @property
     def time_unit(self) -> str | None:
-        """
-        Get the time unit of underlying Datetime Series as {"ns", "us", "ms"}
-        """
+        """Get the time unit of underlying Datetime Series as {"ns", "us", "ms"}."""
         return self._s.time_unit()
 
     # Below are the namespaces defined. Do not move these up in the definition of
@@ -4215,37 +4212,27 @@ class Series:
 
     @property
     def dt(self) -> DateTimeNameSpace:
-        """
-        Create an object namespace of all datetime related methods.
-        """
+        """Create an object namespace of all datetime related methods."""
         return DateTimeNameSpace(self)
 
     @property
     def arr(self) -> ListNameSpace:
-        """
-        Create an object namespace of all list related methods.
-        """
+        """Create an object namespace of all list related methods."""
         return ListNameSpace(self)
 
     @property
     def str(self) -> StringNameSpace:
-        """
-        Create an object namespace of all string related methods.
-        """
+        """Create an object namespace of all string related methods."""
         return StringNameSpace(self)
 
     @property
     def cat(self) -> CatNameSpace:
-        """
-        Create an object namespace of all categorical related methods.
-        """
+        """Create an object namespace of all categorical related methods."""
         return CatNameSpace(self)
 
     @property
     def struct(self) -> StructNameSpace:
-        """
-        Create an object namespace of all struct related methods.
-        """
+        """Create an object namespace of all struct related methods."""
         return StructNameSpace(self)
 
 
@@ -4254,27 +4241,24 @@ class StructNameSpace:
         self.s = s
 
     def to_frame(self) -> pli.DataFrame:
-        """
-        Convert this Struct Series to a DataFrame
-        """
+        """Convert this Struct Series to a DataFrame."""
         return pli.wrap_df(self.s._s.struct_to_frame())
 
     def field(self, name: str) -> Series:
         """
-        Retrieve one of the fields of this `Struct` as a new Series
+        Retrieve one of the fields of this `Struct` as a new Series.
 
         Parameters
         ----------
         name
             Name of the field
+
         """
         return pli.select(pli.lit(self.s).struct.field(name)).to_series()
 
     @property
     def fields(self) -> list[str]:
-        """
-        Get the names of the fields
-        """
+        """Get the names of the fields."""
         return self.s._s.struct_fields()
 
     def rename_fields(self, names: list[str]) -> Series:
@@ -4285,14 +4269,13 @@ class StructNameSpace:
         ----------
         names
             New names in the order of the struct's fields
+
         """
         return pli.select(pli.lit(self.s).struct.rename_fields(names)).to_series()
 
 
 class StringNameSpace:
-    """
-    Series.str namespace.
-    """
+    """Series.str namespace."""
 
     def __init__(self, series: Series):
         self._s = series._s
@@ -4366,7 +4349,6 @@ class StringNameSpace:
         └────────────┘
 
         """
-
         s = wrap_s(self._s)
         return (
             s.to_frame()
@@ -4485,6 +4467,7 @@ class StringNameSpace:
         --------
         contains : Check if string contains a substring that matches a regex.
         starts_with : Check if string values start with a substring.
+
         """
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.ends_with(sub)).to_series()
@@ -4514,13 +4497,14 @@ class StringNameSpace:
         --------
         contains : Check if string contains a substring that matches a regex.
         ends_with : Check if string values end with a substring.
+
         """
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.starts_with(sub)).to_series()
 
     def decode(self, encoding: str, strict: bool = False) -> Series:
         """
-        Decodes a value using the provided encoding.
+        Decode a value using the provided encoding.
 
         Parameters
         ----------
@@ -4542,6 +4526,7 @@ class StringNameSpace:
             "bar"
             null
         ]
+
         """
         if encoding == "hex":
             return wrap_s(self._s.str_hex_decode(strict))
@@ -4552,7 +4537,7 @@ class StringNameSpace:
 
     def encode(self, encoding: str) -> Series:
         """
-        Encodes a value using the provided encoding
+        Encode a value using the provided encoding
 
         Parameters
         ----------
@@ -4574,6 +4559,7 @@ class StringNameSpace:
             "626172"
             null
         ]
+
         """
         if encoding == "hex":
             return wrap_s(self._s.str_hex_encode())
@@ -4820,7 +4806,7 @@ class StringNameSpace:
         )
 
     def replace(self, pattern: str, value: str, literal: bool = False) -> Series:
-        """
+        r"""
         Replace first matching regex/literal substring with a new string value.
 
         Parameters
@@ -4877,27 +4863,22 @@ class StringNameSpace:
             "-bc-bc"
             "123-123"
         ]
+
         """
         return wrap_s(self._s.str_replace_all(pattern, value, literal))
 
     def strip(self) -> Series:
-        """
-        Remove leading and trailing whitespace.
-        """
+        """Remove leading and trailing whitespace."""
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.strip()).to_series()
 
     def lstrip(self) -> Series:
-        """
-        Remove leading whitespace.
-        """
+        """Remove leading whitespace."""
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.lstrip()).to_series()
 
     def rstrip(self) -> Series:
-        """
-        Remove trailing whitespace.
-        """
+        """Remove trailing whitespace."""
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.rstrip()).to_series()
 
@@ -4912,6 +4893,7 @@ class StringNameSpace:
         ----------
         alignment
             Fill the value up to this length.
+
         """
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.zfill(alignment)).to_series()
@@ -4983,15 +4965,11 @@ class StringNameSpace:
         )
 
     def to_lowercase(self) -> Series:
-        """
-        Modify the strings to their lowercase equivalent.
-        """
+        """Modify the strings to their lowercase equivalent."""
         return wrap_s(self._s.str_to_lowercase())
 
     def to_uppercase(self) -> Series:
-        """
-        Modify the strings to their uppercase equivalent.
-        """
+        """Modify the strings to their uppercase equivalent."""
         return wrap_s(self._s.str_to_uppercase())
 
     def slice(self, start: int, length: int | None = None) -> Series:
@@ -5041,9 +5019,7 @@ class StringNameSpace:
 
 
 class ListNameSpace:
-    """
-    Series.arr namespace.
-    """
+    """Series.arr namespace."""
 
     def __init__(self, series: Series):
         self._s = series._s
@@ -5067,45 +5043,31 @@ class ListNameSpace:
         return wrap_s(self._s.arr_lengths())
 
     def sum(self) -> Series:
-        """
-        Sum all the arrays in the list
-        """
+        """Sum all the arrays in the list."""
         return pli.select(pli.lit(wrap_s(self._s)).arr.sum()).to_series()
 
     def max(self) -> Series:
-        """
-        Compute the max value of the arrays in the list
-        """
+        """Compute the max value of the arrays in the list."""
         return pli.select(pli.lit(wrap_s(self._s)).arr.max()).to_series()
 
     def min(self) -> Series:
-        """
-        Compute the min value of the arrays in the list
-        """
+        """Compute the min value of the arrays in the list."""
         return pli.select(pli.lit(wrap_s(self._s)).arr.min()).to_series()
 
     def mean(self) -> Series:
-        """
-        Compute the mean value of the arrays in the list
-        """
+        """Compute the mean value of the arrays in the list."""
         return pli.select(pli.lit(wrap_s(self._s)).arr.mean()).to_series()
 
     def sort(self, reverse: bool = False) -> Series:
-        """
-        Sort the arrays in the list
-        """
+        """Sort the arrays in the list."""
         return pli.select(pli.lit(wrap_s(self._s)).arr.sort(reverse)).to_series()
 
     def reverse(self) -> Series:
-        """
-        Reverse the arrays in the list
-        """
+        """Reverse the arrays in the list."""
         return pli.select(pli.lit(wrap_s(self._s)).arr.reverse()).to_series()
 
     def unique(self) -> Series:
-        """
-        Get the unique/distinct values in the list
-        """
+        """Get the unique/distinct values in the list."""
         return pli.select(pli.lit(wrap_s(self._s)).arr.unique()).to_series()
 
     def concat(self, other: list[Series] | Series | list[Any]) -> Series:
@@ -5116,6 +5078,7 @@ class ListNameSpace:
         ----------
         other
             Columns to concat into a List Series
+
         """
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).arr.concat(other)).to_series()
@@ -5131,6 +5094,7 @@ class ListNameSpace:
         ----------
         index
             Index to return per sublist
+
         """
         return pli.select(pli.lit(wrap_s(self._s)).arr.get(index)).to_series()
 
@@ -5163,15 +5127,11 @@ class ListNameSpace:
         return pli.select(pli.lit(wrap_s(self._s)).arr.join(separator)).to_series()
 
     def first(self) -> Series:
-        """
-        Get the first value of the sublists.
-        """
+        """Get the first value of the sublists."""
         return self.get(0)
 
     def last(self) -> Series:
-        """
-        Get the last value of the sublists.
-        """
+        """Get the last value of the sublists."""
         return self.get(-1)
 
     def contains(self, item: float | str | bool | int | date | datetime) -> Series:
@@ -5186,6 +5146,7 @@ class ListNameSpace:
         Returns
         -------
         Boolean mask
+
         """
         s = pli.Series("", [item])
         s_list = wrap_s(self._s)
@@ -5199,6 +5160,7 @@ class ListNameSpace:
         Returns
         -------
         Series of dtype UInt32/UInt64 (depending on compilation)
+
         """
         return pli.select(pli.lit(wrap_s(self._s)).arr.arg_min()).to_series()
 
@@ -5209,6 +5171,7 @@ class ListNameSpace:
         Returns
         -------
         Series of dtype UInt32/UInt64 (depending on compilation)
+
         """
         return pli.select(pli.lit(wrap_s(self._s)).arr.arg_max()).to_series()
 
@@ -5233,6 +5196,7 @@ class ListNameSpace:
             [null, 1, ... 1]
             [null, -8, -1]
         ]
+
         """
         return pli.select(
             pli.lit(wrap_s(self._s)).arr.diff(n, null_behavior)
@@ -5375,9 +5339,7 @@ class ListNameSpace:
 
 
 class DateTimeNameSpace:
-    """
-    Series.dt namespace.
-    """
+    """Series.dt namespace."""
 
     def __init__(self, series: Series):
         self._s = series._s
@@ -5508,6 +5470,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Utf8 Series
+
         """
         return wrap_s(self._s.strftime(fmt))
 
@@ -5521,6 +5484,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Year as Int32
+
         """
         return wrap_s(self._s.year())
 
@@ -5534,6 +5498,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Quarter as UInt32
+
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.quarter()).to_series()
 
@@ -5548,6 +5513,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Month as UInt32
+
         """
         return wrap_s(self._s.month())
 
@@ -5562,6 +5528,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Week number as UInt32
+
         """
         return wrap_s(self._s.week())
 
@@ -5575,6 +5542,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Week day as UInt32
+
         """
         return wrap_s(self._s.weekday())
 
@@ -5589,6 +5557,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Day as UInt32
+
         """
         return wrap_s(self._s.day())
 
@@ -5603,6 +5572,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Day as UInt32
+
         """
         return wrap_s(self._s.ordinal_day())
 
@@ -5616,6 +5586,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Hour as UInt32
+
         """
         return wrap_s(self._s.hour())
 
@@ -5629,6 +5600,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Minute as UInt32
+
         """
         return wrap_s(self._s.minute())
 
@@ -5642,6 +5614,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Second as UInt32
+
         """
         return wrap_s(self._s.second())
 
@@ -5656,6 +5629,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Nanosecond as UInt32
+
         """
         return wrap_s(self._s.nanosecond())
 
@@ -5667,6 +5641,7 @@ class DateTimeNameSpace:
         ----------
         tu
             One of {'ns', 'us', 'ms'}
+
         """
         return wrap_s(self._s.timestamp(tu))
 
@@ -5683,30 +5658,22 @@ class DateTimeNameSpace:
         )
 
     def min(self) -> date | datetime | timedelta:
-        """
-        Return minimum as python DateTime
-        """
+        """Return minimum as python DateTime."""
         # we can ignore types because we are certain we get a logical type
         return wrap_s(self._s).min()  # type: ignore[return-value]
 
     def max(self) -> date | datetime | timedelta:
-        """
-        Return maximum as python DateTime
-        """
+        """Return maximum as python DateTime."""
         return wrap_s(self._s).max()  # type: ignore[return-value]
 
     def median(self) -> date | datetime | timedelta:
-        """
-        Return median as python DateTime
-        """
+        """Return median as python DateTime."""
         s = wrap_s(self._s)
         out = int(s.median())
         return _to_python_datetime(out, s.dtype, s.time_unit)
 
     def mean(self) -> date | datetime:
-        """
-        Return mean as python DateTime
-        """
+        """Return mean as python DateTime."""
         s = wrap_s(self._s)
         out = int(s.mean())
         return _to_python_datetime(out, s.dtype, s.time_unit)
@@ -5719,6 +5686,7 @@ class DateTimeNameSpace:
         ----------
         tu
             One of {'ns', 'us', 'ms', 's', 'd'}
+
         """
         if tu in DTYPE_TEMPORAL_UNITS:
             return self.timestamp(tu)
@@ -5740,6 +5708,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Days as Int32
+
         """
         return wrap_s(self._s).cast(Date).cast(Int32)
 
@@ -5756,6 +5725,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Milliseconds as Int64
+
         """
         return self.timestamp("ms")
 
@@ -5770,6 +5740,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Milliseconds as Int64
+
         """
         return wrap_s(self._s.dt_epoch_seconds())
 
@@ -5782,6 +5753,7 @@ class DateTimeNameSpace:
         ----------
         tu
             Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
+
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.with_time_unit(tu)).to_series()
 
@@ -5793,6 +5765,7 @@ class DateTimeNameSpace:
         ----------
         tu
             Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
+
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.cast_time_unit(tu)).to_series()
 
@@ -5807,6 +5780,7 @@ class DateTimeNameSpace:
         ----------
         tu
             Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
+
         """
         return self.with_time_unit(tu)
 
@@ -5844,6 +5818,7 @@ class DateTimeNameSpace:
         Returns
         -------
         A series of dtype Int64
+
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.days()).to_series()
 
@@ -5854,6 +5829,7 @@ class DateTimeNameSpace:
         Returns
         -------
         A series of dtype Int64
+
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.hours()).to_series()
 
@@ -5864,6 +5840,7 @@ class DateTimeNameSpace:
         Returns
         -------
         A series of dtype Int64
+
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.minutes()).to_series()
 
@@ -5874,6 +5851,7 @@ class DateTimeNameSpace:
         Returns
         -------
         A series of dtype Int64
+
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.seconds()).to_series()
 
@@ -5884,6 +5862,7 @@ class DateTimeNameSpace:
         Returns
         -------
         A series of dtype Int64
+
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.milliseconds()).to_series()
 
@@ -5894,6 +5873,7 @@ class DateTimeNameSpace:
         Returns
         -------
         A series of dtype Int64
+
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.nanoseconds()).to_series()
 
@@ -5924,14 +5904,13 @@ class DateTimeNameSpace:
         Returns
         -------
         Date/Datetime expression
+
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.offset_by(by)).to_series()
 
 
 class CatNameSpace:
-    """
-    Namespace for categorical related series.
-    """
+    """Namespace for categorical related series."""
 
     def __init__(self, s: Series):
         self._s = s
@@ -5974,14 +5953,13 @@ class CatNameSpace:
         ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ z    ┆ 3    │
         └──────┴──────┘
+
         """
         return pli.select(pli.lit(self._s).cat.set_ordering(ordering)).to_series()
 
 
 class SeriesIter:
-    """
-    Utility class that allows slow iteration over a `Series`.
-    """
+    """Utility class that allows slow iteration over a `Series`."""
 
     def __init__(self, length: int, s: Series):
         self.len = length

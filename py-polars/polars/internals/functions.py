@@ -32,6 +32,7 @@ def get_dummies(df: pli.DataFrame) -> pli.DataFrame:
     ----------
     df
         DataFrame to convert.
+
     """
     return df.to_dummies()
 
@@ -83,8 +84,7 @@ def concat(
     how: str = "vertical",
 ) -> pli.DataFrame | pli.Series | pli.LazyFrame | pli.Expr:
     """
-    Aggregate all the Dataframes/Series in a List of DataFrames/Series to a single
-    DataFrame/Series.
+    Aggregate multiple Dataframes/Series to a single DataFrame/Series.
 
     Parameters
     ----------
@@ -275,7 +275,7 @@ def cut(
     category_label: str = "category",
 ) -> pli.DataFrame:
     """
-    Bin values into discrete values
+    Bin values into discrete values.
 
     .. warning::
         This function is experimental and might change without it being considered a

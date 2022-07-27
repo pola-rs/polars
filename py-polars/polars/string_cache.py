@@ -13,9 +13,12 @@ except ImportError:
 class StringCache:
     """
     Context manager that allows data sources to share the same categorical features.
+
     This will temporarily cache the string categories until the context manager is
     finished.
 
+    Examples
+    --------
     >>> with pl.StringCache():
     ...     df1 = pl.DataFrame(
     ...         [
@@ -53,6 +56,7 @@ class StringCache:
     ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
     │ red    ┆ 1     ┆ e    │
     └────────┴───────┴──────┘
+
     """
 
     def __init__(self) -> None:
@@ -73,7 +77,10 @@ class StringCache:
 
 def toggle_string_cache(toggle: bool) -> None:
     """
-    Turn on/off the global string cache. This ensures that casts to Categorical types
-    have the categories when string values are equal.
+    Turn on/off the global string cache.
+
+    This ensures that casts to Categorical types have the categories when string values
+    are equal.
+
     """
     pytoggle_string_cache(toggle)

@@ -1,6 +1,4 @@
-"""
-Module containing logic related to eager DataFrames
-"""
+"""Module containing logic related to eager DataFrames."""
 from __future__ import annotations
 
 import os
@@ -347,7 +345,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     def estimated_size(self) -> int:
         """
-        Returns an estimation of the total (heap) allocated size of the `DataFrame` in
+        Return an estimation of the total (heap) allocated size of the `DataFrame` in
         bytes.
 
         This estimation is the sum of the size of its buffers, validity, including
@@ -365,9 +363,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     @classmethod
     def _from_pydf(cls: type[DF], py_df: PyDataFrame) -> DF:
-        """
-        Construct Polars DataFrame from FFI PyDataFrame object.
-        """
+        """Construct Polars DataFrame from FFI PyDataFrame object."""
         df = cls.__new__(cls)
         df._df = py_df
         return df
@@ -402,6 +398,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Returns
         -------
         DataFrame
+
         """
         return cls._from_pydf(dict_to_pydf(data, columns=columns))
 
@@ -430,6 +427,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Returns
         -------
         DataFrame
+
         """
         return cls._from_pydf(sequence_to_pydf(data, columns=columns, orient=orient))
 
@@ -458,6 +456,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Returns
         -------
         DataFrame
+
         """
         return cls._from_pydf(numpy_to_pydf(data, columns=columns, orient=orient))
 
@@ -488,6 +487,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Returns
         -------
         DataFrame
+
         """
         return cls._from_pydf(arrow_to_pydf(data, columns=columns, rechunk=rechunk))
 
@@ -517,6 +517,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Returns
         -------
         DataFrame
+
         """
         # path for table without rows that keeps datatype
         if data.shape[0] == 0:
@@ -563,9 +564,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         sample_size: int = 1024,
         eol_char: str = "\n",
     ) -> DF:
-        """
-        see pl.read_csv
-        """
+        """See pl.read_csv."""
         self = cls.__new__(cls)
 
         path: str | None
@@ -674,7 +673,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         row_count_offset: int = 0,
         low_memory: bool = False,
     ) -> DF:
-        """Read into a DataFrame from a parquet file.
+        """
+        Read into a DataFrame from a parquet file.
 
         See Also
         --------
@@ -734,12 +734,15 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ----------
         file
             Path to a file or a file-like object.
+        columns
+            Columns.
         n_rows
             Stop reading from Apache Avro file after reading ``n_rows``.
 
         Returns
         -------
         DataFrame
+
         """
         if isinstance(file, (str, Path)):
             file = format_path(file)
@@ -771,14 +774,18 @@ class DataFrame(metaclass=DataFrameMetaClass):
             list of column names.
         n_rows
             Stop reading from IPC file after reading ``n_rows``.
+        row_count_name
+            Row count name.
+        row_count_offset
+            Row count offset.
         rechunk
             Make sure that all data is contiguous.
 
         Returns
         -------
         DataFrame
-        """
 
+        """
         if isinstance(file, (str, Path)):
             file = format_path(file)
 
@@ -1074,6 +1081,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             Write to Json Lines format
         to_string
             Ignore file argument and return a string.
+
         """
         if isinstance(file, (str, Path)):
             file = format_path(file)
@@ -1213,6 +1221,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 - "uncompressed"
                 - "snappy"
                 - "deflate"
+
         """
         if isinstance(file, (str, Path)):
             file = format_path(file)
@@ -1250,6 +1259,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 - "uncompressed"
                 - "lz4"
                 - "zstd"
+
         """
         if compression is None:
             compression = "uncompressed"
@@ -1285,7 +1295,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
         [{'foo': 1, 'bar': 4}, {'foo': 2, 'bar': 5}, {'foo': 3, 'bar': 6}]
 
         """
-
         pydf = self._df
         names = self.columns
 
@@ -1457,6 +1466,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             At the moment C++ supports more features.
         kwargs
             Arguments are passed to ``pyarrow.parquet.write_table``.
+
         """
         if compression is None:
             compression = "uncompressed"
@@ -1681,9 +1691,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         return self.__str__()
 
     def __getattr__(self, item: Any) -> PySeries:
-        """
-        Access columns as attribute.
-        """
+        """Access columns as attribute."""
         # it is important that we return an AttributeError here
         # this is used by ipython to check some private
         # `_ipython_canary_method_should_not_exist_`
@@ -1833,9 +1841,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             | tuple
         ),
     ) -> DF | pli.Series:
-        """
-        Does quite a lot. Read the comments.
-        """
+        """Get item. Does quite a lot. Read the comments."""
         if isinstance(item, pli.Expr):  # pragma: no cover
             warnings.warn(
                 "'using expressions in []' is deprecated. please use 'select'",
@@ -2048,13 +2054,14 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     def _repr_html_(self) -> str:
         """
-        Used by jupyter notebooks to get a html table.
+        Format output data in HTML for display in Jupyter Notebooks.
 
         Output rows and columns can be modified by setting the following ENVIRONMENT
         variables:
 
         * POLARS_FMT_MAX_COLS: set the number of columns
         * POLARS_FMT_MAX_ROWS: set the number of rows
+
         """
         max_cols = int(os.environ.get("POLARS_FMT_MAX_COLS", default=75))
         max_rows = int(os.environ.get("POLARS_FMT_MAX_ROWS", default=25))
@@ -2353,6 +2360,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         columns
             A list with new names for the `DataFrame`.
             The length of the list should be equal to the width of the `DataFrame`.
+
         """
         self._df.set_column_names(columns)
 
@@ -2389,6 +2397,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         See Also
         --------
         schema : Returns a {colname:dtype} mapping.
+
         """  # noqa: E501
         return self._df.dtypes()
 
@@ -3213,7 +3222,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
         └─────────────────────┴───────┴───────┴───────┘
 
         """
-
         return RollingGroupBy(self, index_column, period, offset, closed, by)
 
     def groupby_dynamic(
@@ -3228,11 +3236,12 @@ class DataFrame(metaclass=DataFrameMetaClass):
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> DynamicGroupBy:
         """
-        Groups based on a time value (or index value of type Int32, Int64). Time windows
-        are calculated and rows are assigned to windows. Different from a normal groupby
-        is that a row can be member of multiple groups. The time/index window could be
-        seen as a rolling window, with a window size determined by dates/times/values
-        instead of slots in the DataFrame.
+        Group based on a time value (or index value of type Int32, Int64).
+
+        Time windows are calculated and rows are assigned to windows. Different from a
+        normal groupby is that a row can be member of multiple groups. The time/index
+        window could be seen as a rolling window, with a window size determined by
+        dates/times/values instead of slots in the DataFrame.
 
         A window is defined by:
 
@@ -3520,7 +3529,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
         └─────────────────┴─────────────────┴─────┴─────────────────┘
 
         """  # noqa: E501
-
         return DynamicGroupBy(
             self,
             index_column,
@@ -3789,7 +3797,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         asof_by_right: str | list[str] | None = None,
     ) -> DF:
         """
-        SQL like joins.
+        Join in SQL-like fashion.
 
         Parameters
         ----------
@@ -3874,6 +3882,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         **Joining on columns with categorical data**
         See pl.StringCache().
+
         """
         if how == "asof":  # pragma: no cover
             warnings.warn(
@@ -4009,6 +4018,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         In this case it is better to use the following expression:
 
         >>> df.select(pl.col("foo") * 2 + pl.col("bar"))  # doctest: +IGNORE_RESULT
+
         """
         out, is_df = self._df.apply(f, return_dtype, inference_size)
         if is_df:
@@ -4723,6 +4733,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Returns
         -------
+        DataFrame
 
         Examples
         --------
@@ -5106,6 +5117,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Returns
         -------
         LazyFrame
+
         """
         return self._lazyframe_class._from_pyldf(self._df.lazy())
 
@@ -5224,6 +5236,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
         └─────┴──────┴───────┴──────┴───────┘
+
         """
         if exprs is not None and not isinstance(exprs, Sequence):
             exprs = [exprs]
@@ -5987,6 +6000,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 3   ┆ 7   │
         └─────┴─────┘
+
         """
         return self.select(pli.col("*").take_every(n))
 
@@ -6322,6 +6336,7 @@ class GroupBy(Generic[DF]):
             Make sure that the order of the groups remain consistent. This is more
             expensive than a default groupby. Note that this only works in expression
             aggregations.
+
         """
         self._df = df
         self._dataframe_class = dataframe_class
@@ -6342,6 +6357,7 @@ class GroupBy(Generic[DF]):
         ----------
         columns
             One or multiple columns.
+
         """
         warnings.warn(
             "accessing GroupBy by index is deprecated, consider using the `.agg`"
@@ -6594,7 +6610,6 @@ class GroupBy(Generic[DF]):
         └─────┴─────────┴──────────────┘
 
         """
-
         # a single list comprehension would be cleaner, but mypy complains on different
         # lines for py3.7 vs py3.10 about typing errors, so this is the same logic,
         # but broken down into two small functions
@@ -6763,9 +6778,7 @@ class GroupBy(Generic[DF]):
         )
 
     def _select_all(self) -> GBSelection[DF]:
-        """
-        Select all columns for aggregation.
-        """
+        """Select all columns for aggregation."""
         return GBSelection(
             self._df,
             self.by,
@@ -7165,9 +7178,7 @@ class GroupBy(Generic[DF]):
 
 
 class PivotOps(Generic[DF]):
-    """
-    Utility class returned in a pivot operation.
-    """
+    """Utility class returned in a pivot operation."""
 
     def __init__(
         self,
@@ -7184,74 +7195,56 @@ class PivotOps(Generic[DF]):
         self._dataframe_class = dataframe_class
 
     def first(self) -> DF:
-        """
-        Get the first value per group.
-        """
+        """Get the first value per group."""
         return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "first")
         )
 
     def sum(self) -> DF:
-        """
-        Get the sum per group.
-        """
+        """Get the sum per group."""
         return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "sum")
         )
 
     def min(self) -> DF:
-        """
-        Get the minimal value per group.
-        """
+        """Get the minimal value per group."""
         return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "min")
         )
 
     def max(self) -> DF:
-        """
-        Get the maximal value per group.
-        """
+        """Get the maximal value per group."""
         return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "max")
         )
 
     def mean(self) -> DF:
-        """
-        Get the mean value per group.
-        """
+        """Get the mean value per group."""
         return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "mean")
         )
 
     def count(self) -> DF:
-        """
-        Count the values per group.
-        """
+        """Count the values per group."""
         return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "count")
         )
 
     def median(self) -> DF:
-        """
-        Get the median value per group.
-        """
+        """Get the median value per group."""
         return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "median")
         )
 
     def last(self) -> DF:
-        """
-        Get the last value per group.
-        """
+        """Get the last value per group."""
         return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "last")
         )
 
 
 class GBSelection(Generic[DF]):
-    """
-    Utility class returned in a groupby operation.
-    """
+    """Utility class returned in a groupby operation."""
 
     def __init__(
         self,
@@ -7266,41 +7259,31 @@ class GBSelection(Generic[DF]):
         self._dataframe_class = dataframe_class
 
     def first(self) -> DF:
-        """
-        Aggregate the first values in the group.
-        """
+        """Aggregate the first values in the group."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "first")
         )
 
     def last(self) -> DF:
-        """
-        Aggregate the last values in the group.
-        """
+        """Aggregate the last values in the group."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "last")
         )
 
     def sum(self) -> DF:
-        """
-        Reduce the groups to the sum.
-        """
+        """Reduce the groups to the sum."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "sum")
         )
 
     def min(self) -> DF:
-        """
-        Reduce the groups to the minimal value.
-        """
+        """Reduce the groups to the minimal value."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "min")
         )
 
     def max(self) -> DF:
-        """
-        Reduce the groups to the maximal value.
-        """
+        """Reduce the groups to the maximal value."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "max")
         )
@@ -7337,17 +7320,13 @@ class GBSelection(Generic[DF]):
         )
 
     def mean(self) -> DF:
-        """
-        Reduce the groups to the mean values.
-        """
+        """Reduce the groups to the mean values."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "mean")
         )
 
     def n_unique(self) -> DF:
-        """
-        Count the unique values per group.
-        """
+        """Count the unique values per group."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "n_unique")
         )
@@ -7371,17 +7350,13 @@ class GBSelection(Generic[DF]):
         )
 
     def median(self) -> DF:
-        """
-        Return the median per group.
-        """
+        """Return the median per group."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "median")
         )
 
     def agg_list(self) -> DF:
-        """
-        Aggregate the groups into Series.
-        """
+        """Aggregate the groups into Series."""
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, self.selection, "agg_list")
         )
@@ -7391,9 +7366,7 @@ class GBSelection(Generic[DF]):
         func: Callable[[Any], Any],
         return_dtype: type[DataType] | None = None,
     ) -> DF:
-        """
-        Apply a function over the groups.
-        """
+        """Apply a function over the groups."""
         df = self.agg_list()
         if self.selection is None:
             raise TypeError(

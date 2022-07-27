@@ -16,6 +16,8 @@ except ImportError:
 
 def _deser_and_exec(buf: bytes, with_columns: list[str] | None) -> pli.DataFrame:
     """
+    Deserialize and execute the given function for the projected columns.
+
     Called from polars-lazy. Polars-lazy provides the bytes of the pickled function and
     the projected columns.
 
@@ -25,6 +27,7 @@ def _deser_and_exec(buf: bytes, with_columns: list[str] | None) -> pli.DataFrame
         Pickled function
     with_columns
         Columns that are projected
+
     """
     func = pickle.loads(buf)
     return func(with_columns)
@@ -34,15 +37,18 @@ def _scan_ds_impl(
     ds: pa.dataset.dataset, with_columns: list[str] | None
 ) -> pli.DataFrame:
     """
-    Takes the projected columns and materializes an arrow table.
+    Take the projected columns and materialize an arrow table.
 
     Parameters
     ----------
     ds
+        pyarrow dataset
     with_columns
+        Columns that are projected
 
     Returns
     -------
+    DataFrame
 
     """
     if not _PYARROW_AVAILABLE:  # pragma: no cover
@@ -54,13 +60,16 @@ def _scan_ds_impl(
 
 def _scan_ds(ds: pa.dataset.dataset) -> pli.LazyFrame:
     """
-    Pickle the partially applied function `_scan_ds_impl`. The bytes are then sent to
-    the polars logical plan. It can be deserialized once executed and ran.
+    Pickle the partially applied function `_scan_ds_impl`.
+
+    The bytes are then sent to the polars logical plan. It can be deserialized once
+    executed and ran.
 
     Parameters
     ----------
     ds
         pyarrow dataset
+
     """
     func = partial(_scan_ds_impl, ds)
     func_serialized = pickle.dumps(func)
@@ -69,12 +78,15 @@ def _scan_ds(ds: pa.dataset.dataset) -> pli.LazyFrame:
 
 def _scan_ipc_impl(uri: str, with_columns: list[str] | None) -> pli.DataFrame:
     """
-    Takes the projected columns and materializes an arrow table.
+    Take the projected columns and materialize an arrow table.
 
     Parameters
     ----------
     uri
+        Source URI
     with_columns
+        Columns that are projected
+
     """
     import polars as pl
 
@@ -97,12 +109,15 @@ def _scan_ipc_fsspec(
 
 def _scan_parquet_impl(uri: str, with_columns: list[str] | None) -> pli.DataFrame:
     """
-    Takes the projected columns and materializes an arrow table.
+    Take the projected columns and materialize an arrow table.
 
     Parameters
     ----------
     uri
+        Source URI
     with_columns
+        Columns that are projected
+
     """
     import polars as pl
 

@@ -55,6 +55,8 @@ def _prepare_file_arg(
     file: str | list[str] | TextIO | Path | BinaryIO | bytes, **kwargs: Any
 ) -> ContextManager[str | BinaryIO | list[str] | list[BinaryIO]]:
     """
+    Prepare file argument.
+
     Utility for read_[csv, parquet]. (not to be used by scan_[csv, parquet]).
     Returned value is always usable as a context.
 
@@ -64,8 +66,8 @@ def _prepare_file_arg(
 
     When fsspec is installed, remote file(s) is (are) opened with
     `fsspec.open(file, **kwargs)` or `fsspec.open_files(file, **kwargs)`.
-    """
 
+    """
     # Small helper to use a variable as context
     @contextmanager
     def managed_file(file: Any) -> Iterator[Any]:
@@ -109,6 +111,7 @@ def read_ipc_schema(file: str | BinaryIO | Path | bytes) -> dict[str, type[DataT
     Returns
     -------
     Dictionary mapping column names to datatypes
+
     """
     if isinstance(file, (str, Path)):
         file = format_path(file)
@@ -130,6 +133,7 @@ def read_parquet_schema(
     Returns
     -------
     Dictionary mapping column names to datatypes
+
     """
     if isinstance(file, (str, Path)):
         file = format_path(file)

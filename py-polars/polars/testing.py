@@ -110,8 +110,8 @@ def assert_frame_equal(
     >>> df1 = pl.DataFrame({"a": [1, 2, 3]})
     >>> df2 = pl.DataFrame({"a": [2, 3, 4]})
     >>> pl.testing.assert_frame_equal(df1, df2)  # doctest: +SKIP
-    """
 
+    """
     if isinstance(left, pli.LazyFrame) and isinstance(right, pli.LazyFrame):
         left, right = left.collect(), right.collect()
         obj = "pli.LazyFrame"
@@ -187,6 +187,7 @@ def assert_series_equal(
     >>> s1 = pl.Series([1, 2, 3])
     >>> s2 = pl.Series([2, 3, 4])
     >>> pl.testing.assert_series_equal(s1, s2)  # doctest: +SKIP
+
     """
     obj = "Series"
 
@@ -218,9 +219,7 @@ def _assert_series_inner(
     rtol: float,
     obj: str,
 ) -> None:
-    """
-    Compares Series dtype + values
-    """
+    """Compare Series dtype + values."""
     try:
         can_be_subtracted = hasattr(dtype_to_py_type(left.dtype), "__sub__")
     except NotImplementedError:
@@ -275,8 +274,11 @@ def raise_assert_detail(
 
 def _getattr_multi(obj: object, op: str) -> Any:
     """
-    Allows `op` to be multiple layers deep, i.e. op="str.lengths" will mean we first
-    get the attribute "str", and then the attribute "lengths"
+    Allow `op` to be multiple layers deep.
+
+    For example, op="str.lengths" will mean we first get the attribute "str", and then
+    the attribute "lengths".
+
     """
     op_list = op.split(".")
     return reduce(lambda o, m: getattr(o, m), op_list, obj)
@@ -286,14 +288,14 @@ def verify_series_and_expr_api(
     input: pli.Series, expected: pli.Series | None, op: str, *args: Any, **kwargs: Any
 ) -> None:
     """
-    Small helper function to test element-wise functions for both the series and
-    expressions api.
+    Test element-wise functions for both the series and expressions API.
 
     Examples
     --------
     >>> s = pl.Series([1, 3, 2])
     >>> expected = pl.Series([1, 2, 3])
     >>> verify_series_and_expr_api(s, expected, "sort")
+
     """
     expr = _getattr_multi(pli.col("*"), op)(*args, **kwargs)
     result_expr: pli.Series = input.to_frame().select(expr)[  # type: ignore[assignment]
@@ -308,9 +310,7 @@ def verify_series_and_expr_api(
 
 
 def is_categorical_dtype(data_type: Any) -> bool:
-    """
-    Check if the input is a polars Categorical dtype.
-    """
+    """Check if the input is a polars Categorical dtype."""
     return (
         type(data_type) is type
         and issubclass(data_type, Categorical)
@@ -363,16 +363,14 @@ if HYPOTHESIS_INSTALLED:
     strategy_dtypes = list(dtype_strategy_mapping)
 
     def between(draw: Callable, type_: type, min_: Any, max_: Any) -> Any:
-        """
-        Draw a value in a given range from a type-inferred strategy.
-        """
+        """Draw a value in a given range from a type-inferred strategy."""
         strategy_init = from_type(type_).function  # type: ignore[attr-defined]
         return draw(strategy_init(min_, max_))
 
     @dataclass
     class column:
         """
-        Define a column for use with `dataframes` strategy.
+        Define a column for use with the @dataframes strategy.
 
         Parameters
         ----------
@@ -396,6 +394,7 @@ if HYPOTHESIS_INSTALLED:
         column(name='unique_small_ints', dtype=<class 'polars.datatypes.UInt8'>, strategy=None, null_probability=None, unique=True)
         >>> pl.testing.column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
         column(name='ccy', dtype=<class 'polars.datatypes.Utf8'>, strategy=sampled_from(['GBP', 'EUR', 'JPY']), null_probability=None, unique=False)
+
         """  # noqa: E501
 
         name: str
@@ -450,6 +449,8 @@ if HYPOTHESIS_INSTALLED:
         unique: bool = False,
     ) -> list[column]:
         """
+        Define multiple columns for use with the @dataframes strategy.
+
         Generate a fixed sequence of `column` objects suitable for passing to the
         @dataframes strategy, or using standalone (note that this function is not itself
         a strategy).
@@ -495,6 +496,7 @@ if HYPOTHESIS_INSTALLED:
         >>> @given(dataframes(columns(["x", "y", "z"], unique=True)))
         ... def test_unique_xyz(df: pl.DataFrame) -> None:
         ...     assert_something(df)
+
         """
         # create/assign named columns
         if cols is None:
@@ -602,7 +604,7 @@ if HYPOTHESIS_INSTALLED:
             6414
             -63290
         ]
-        >>>
+
         """
         selectable_dtypes = [
             dtype

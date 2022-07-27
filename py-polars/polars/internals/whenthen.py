@@ -13,17 +13,13 @@ from polars import internals as pli
 
 
 class WhenThenThen:
-    """
-    Utility class. See the `when` function.
-    """
+    """Utility class. See the `when` function."""
 
     def __init__(self, pywhenthenthen: Any):
         self.pywhenthenthen = pywhenthenthen
 
     def when(self, predicate: pli.Expr | bool) -> WhenThenThen:
-        """
-        Start another "when, then, otherwise" layer.
-        """
+        """Start another "when, then, otherwise" layer."""
         predicate = pli.expr_to_lit_or_expr(predicate)
         return WhenThenThen(self.pywhenthenthen.when(predicate._pyexpr))
 
@@ -46,6 +42,7 @@ class WhenThenThen:
         --------
         when : Start another when, then, otherwise layer.
         otherwise : Values to return in case of the predicate being `False`.
+
         """
         expr_ = pli.expr_to_lit_or_expr(expr)
         return WhenThenThen(self.pywhenthenthen.then(expr_._pyexpr))
@@ -63,23 +60,20 @@ class WhenThenThen:
         --------
         when : Start another when, then, otherwise layer.
         then : Values to return in case of the predicate being `True`.
+
         """
         expr = pli.expr_to_lit_or_expr(expr)
         return pli.wrap_expr(self.pywhenthenthen.otherwise(expr._pyexpr))
 
 
 class WhenThen:
-    """
-    Utility class. See the `when` function.
-    """
+    """Utility class. See the `when` function."""
 
     def __init__(self, pywhenthen: Any):
         self._pywhenthen = pywhenthen
 
     def when(self, predicate: pli.Expr | bool) -> WhenThenThen:
-        """
-        Start another "when, then, otherwise" layer.
-        """
+        """Start another "when, then, otherwise" layer."""
         predicate = pli.expr_to_lit_or_expr(predicate)
         return WhenThenThen(self._pywhenthen.when(predicate._pyexpr))
 
@@ -91,15 +85,14 @@ class WhenThen:
         --------
         when : Start another when, then, otherwise layer.
         then : Values to return in case of the predicate being `True`.
+
         """
         expr = pli.expr_to_lit_or_expr(expr)
         return pli.wrap_expr(self._pywhenthen.otherwise(expr._pyexpr))
 
 
 class When:
-    """
-    Utility class. See the `when` function.
-    """
+    """Utility class. See the `when` function."""
 
     def __init__(self, pywhen: pywhen):
         self._pywhen = pywhen
@@ -123,6 +116,7 @@ class When:
         --------
         when : Start another when, then, otherwise layer.
         otherwise : Values to return in case of the predicate being `False`.
+
         """
         expr = pli.expr_to_lit_or_expr(expr)
         pywhenthen = self._pywhen.then(expr._pyexpr)
@@ -179,6 +173,7 @@ def when(expr: pli.Expr | bool) -> When:
     --------
     then : Values to return in case of the predicate being `True`.
     otherwise : Values to return in case of the predicate being `False`.
+
     """
     expr = pli.expr_to_lit_or_expr(expr)
     pw = pywhen(expr._pyexpr)

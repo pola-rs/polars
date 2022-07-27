@@ -1081,7 +1081,8 @@ def test_hash_rows() -> None:
 
 
 def test_reproducible_hash_with_seeds() -> None:
-    """Tests the reproducibility of DataFrame.hash_rows, Series.hash, and Expr.hash.
+    """
+    Test the reproducibility of DataFrame.hash_rows, Series.hash, and Expr.hash.
 
     cf. issue #3966, hashes must always be reproducible across sessions when using
     the same seeds.
@@ -1609,7 +1610,7 @@ def test_getattr() -> None:
 
 
 def test_get_item() -> None:
-    """test all the methods to use [] on a dataframe"""
+    """Test all the methods to use [] on a dataframe."""
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0], "b": [3, 4, 5, 6]})
 
     # expression
@@ -1788,8 +1789,7 @@ def test_join_suffixes() -> None:
 
 
 def test_preservation_of_subclasses() -> None:
-    """Tests for DataFrame inheritance."""
-
+    """Test for DataFrame inheritance."""
     # We should be able to inherit from polars.DataFrame
     class SubClassedDataFrame(pl.DataFrame):
         pass
