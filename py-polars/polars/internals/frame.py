@@ -1553,6 +1553,86 @@ class DataFrame(metaclass=DataFrameMetaClass):
         else:
             return out
 
+    def _comp(
+        self: DF, other: Any, op: Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
+    ) -> DF:
+        """Compare a DataFrame with another object."""
+        if isinstance(other, DataFrame):
+            return self._compare_to_other_df(other, op)
+        else:
+            return self._compare_to_non_df(other, op)
+
+    def _compare_to_other_df(
+        self: DF,
+        other: DataFrame,
+        op: Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"],
+    ) -> DF:
+        """Compare a DataFrame with another DataFrame."""
+        if self.columns != other.columns:
+            raise ValueError("DataFrame columns do not match")
+        if self.shape != other.shape:
+            raise ValueError("DataFrame dimensions do not match")
+
+        suffix = "__POLARS_CMP_OTHER"
+        other_renamed = other.select(pli.all().suffix(suffix))
+        combined = pli.concat([self, other_renamed], how="horizontal")
+
+        if op == "eq":
+            expr = [pli.col(n) == pli.col(f"{n}{suffix}") for n in self.columns]
+        elif op == "neq":
+            expr = [pli.col(n) != pli.col(f"{n}{suffix}") for n in self.columns]
+        elif op == "gt":
+            expr = [pli.col(n) > pli.col(f"{n}{suffix}") for n in self.columns]
+        elif op == "lt":
+            expr = [pli.col(n) < pli.col(f"{n}{suffix}") for n in self.columns]
+        elif op == "gt_eq":
+            expr = [pli.col(n) >= pli.col(f"{n}{suffix}") for n in self.columns]
+        elif op == "lt_eq":
+            expr = [pli.col(n) <= pli.col(f"{n}{suffix}") for n in self.columns]
+        else:
+            raise ValueError(f"got unexpected comparison operator: {op}")
+
+        return combined.select(expr)  # type: ignore[return-value]
+
+    def _compare_to_non_df(
+        self: DF,
+        other: Any,
+        op: Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"],
+    ) -> DF:
+        """Compare a DataFrame with a non-DataFrame object."""
+        if op == "eq":
+            return self.select(pli.all() == other)
+        elif op == "neq":
+            return self.select(pli.all() != other)
+        elif op == "gt":
+            return self.select(pli.all() > other)
+        elif op == "lt":
+            return self.select(pli.all() < other)
+        elif op == "gt_eq":
+            return self.select(pli.all() >= other)
+        elif op == "lt_eq":
+            return self.select(pli.all() <= other)
+        else:
+            raise ValueError(f"got unexpected comparison operator: {op}")
+
+    def __eq__(self: DF, other: Any) -> DF:  # type: ignore[override]
+        return self._comp(other, "eq")
+
+    def __ne__(self: DF, other: Any) -> DF:  # type: ignore[override]
+        return self._comp(other, "neq")
+
+    def __gt__(self: DF, other: Any) -> DF:
+        return self._comp(other, "gt")
+
+    def __lt__(self: DF, other: Any) -> DF:
+        return self._comp(other, "lt")
+
+    def __ge__(self: DF, other: Any) -> DF:
+        return self._comp(other, "gt_eq")
+
+    def __le__(self: DF, other: Any) -> DF:
+        return self._comp(other, "lt_eq")
+
     def __getstate__(self) -> list[pli.Series]:
         return self.get_columns()
 

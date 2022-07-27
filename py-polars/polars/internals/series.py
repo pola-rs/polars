@@ -309,7 +309,9 @@ class Series:
     def __rxor__(self, other: Series) -> Series:
         return self.__xor__(other)
 
-    def _comp(self, other: Any, op: str) -> Series:
+    def _comp(
+        self, other: Any, op: Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
+    ) -> Series:
         if isinstance(other, datetime) and self.dtype == Datetime:
             ts = _datetime_to_pl_timestamp(other, self.time_unit)
             f = get_ffi_func(op + "_<>", Int64, self._s)

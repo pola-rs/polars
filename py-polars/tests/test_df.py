@@ -42,6 +42,44 @@ def test_special_char_colname_init() -> None:
     assert df.is_empty()
 
 
+def test_comparisons() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+
+    # Constants
+    assert_frame_equal(df == 2, pl.DataFrame({"a": [False, True], "b": [False, False]}))
+    assert_frame_equal(df != 2, pl.DataFrame({"a": [True, False], "b": [True, True]}))
+    assert_frame_equal(df < 3.0, pl.DataFrame({"a": [True, True], "b": [False, False]}))
+    assert_frame_equal(df >= 2, pl.DataFrame({"a": [False, True], "b": [True, True]}))
+    assert_frame_equal(df <= 2, pl.DataFrame({"a": [True, True], "b": [False, False]}))
+
+    with pytest.raises(pl.ComputeError):
+        df > "2"  # noqa: B015
+
+    # Series
+    s = pl.Series([3, 1])
+    assert_frame_equal(df >= s, pl.DataFrame({"a": [False, True], "b": [True, True]}))
+
+    # DataFrame
+    other = pl.DataFrame({"a": [1, 2], "b": [2, 3]})
+    assert_frame_equal(
+        df == other, pl.DataFrame({"a": [True, True], "b": [False, False]})
+    )
+
+    # DataFrame columns mismatch
+    with pytest.raises(ValueError):
+        df == pl.DataFrame({"a": [1, 2], "c": [3, 4]})  # noqa: B015
+    with pytest.raises(ValueError):
+        df == pl.DataFrame({"b": [3, 4], "a": [1, 2]})  # noqa: B015
+
+    # DataFrame shape mismatch
+    with pytest.raises(ValueError):
+        df == pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})  # noqa: B015
+
+    # Type mismatch
+    with pytest.raises(pl.ComputeError):
+        df == pl.DataFrame({"a": [1, 2], "b": ["x", "y"]})  # noqa: B015
+
+
 def test_selection() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
 
