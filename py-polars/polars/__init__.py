@@ -45,6 +45,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Utf8,
+    get_idx_type,
 )
 from polars.exceptions import (
     ArrowError,
@@ -157,6 +158,7 @@ __all__ = [
     "Categorical",
     "Field",
     "Struct",
+    "get_idx_type",
     # polars.io
     "read_csv",
     "read_parquet",

@@ -51,8 +51,8 @@ use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
 use polars::prelude::Null;
 use polars_core::datatypes::TimeUnit;
-use polars_core::prelude::DataFrame;
 use polars_core::prelude::IntoSeries;
+use polars_core::prelude::{DataFrame, IDX_DTYPE};
 use polars_core::POOL;
 use pyo3::panic::PanicException;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
@@ -473,8 +473,13 @@ fn pool_size() -> usize {
 }
 
 #[pyfunction]
-pub fn arg_where(condition: PyExpr) -> PyExpr {
+fn arg_where(condition: PyExpr) -> PyExpr {
     polars::lazy::dsl::arg_where(condition.inner).into()
+}
+
+#[pyfunction]
+fn get_idx_type(py: Python) -> PyObject {
+    Wrap(IDX_DTYPE).to_object(py)
 }
 
 #[pymodule]
@@ -540,5 +545,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(repeat)).unwrap();
     m.add_wrapped(wrap_pyfunction!(pool_size)).unwrap();
     m.add_wrapped(wrap_pyfunction!(arg_where)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(get_idx_type)).unwrap();
     Ok(())
 }

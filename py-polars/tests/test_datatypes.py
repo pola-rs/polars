@@ -28,3 +28,7 @@ def test_dtype_temporal_units() -> None:
 
     assert pl.Datetime("ms") != pl.Datetime("ns")
     assert pl.Duration("ns") != pl.Duration("us")
+
+
+def test_get_idx_type() -> None:
+    assert datatypes.get_idx_type() == datatypes.UInt32
