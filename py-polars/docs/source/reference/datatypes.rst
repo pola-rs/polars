@@ -56,3 +56,10 @@ Other
     Null
     Object
     Utf8
+
+Functions
+~~~~~~~~~
+.. autosummary::
+    :toctree: api/
+
+    get_idx_type
