@@ -29,6 +29,7 @@ from polars.datatypes import (
     Utf8,
     dtype_to_ctype,
     dtype_to_ffiname,
+    get_idx_type,
     maybe_cast,
     numpy_char_code_to_dtype,
     py_type_to_dtype,
@@ -48,6 +49,8 @@ from polars.utils import (
     _ptr_to_numpy,
     _to_python_datetime,
     deprecated_alias,
+    is_bool_sequence,
+    is_int_sequence,
     range_to_slice,
 )
 
@@ -460,7 +463,79 @@ class Series:
     def __neg__(self) -> Series:
         return 0 - self
 
-    def __getitem__(self, item: int | Series | range | slice) -> Any:
+    def _pos_idxs(self, idxs: np.ndarray | Series) -> Series:
+        # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
+        idx_type = get_idx_type()
+
+        if isinstance(idxs, Series):
+            if idxs.dtype == idx_type:
+                return idxs
+            if idxs.dtype in {
+                UInt8,
+                UInt16,
+                UInt64 if idx_type == UInt32 else UInt32,
+                Int8,
+                Int16,
+                Int32,
+                Int64,
+            }:
+                if idx_type == UInt32:
+                    if idxs.dtype in {Int64, UInt64}:
+                        if idxs.max() >= 2**32:  # type: ignore[operator]
+                            raise ValueError(
+                                "Index positions should be smaller than 2^32."
+                            )
+                    if idxs.dtype == Int64:
+                        if idxs.min() < -(2**32):  # type: ignore[operator]
+                            raise ValueError(
+                                "Index positions should be bigger than -2^32 + 1."
+                            )
+                if idxs.dtype in {Int8, Int16, Int32, Int64}:
+                    if idxs.min() < 0:  # type: ignore[operator]
+                        if idx_type == UInt32:
+                            if idxs.dtype in {Int8, Int16}:
+                                idxs = idxs.cast(Int32)
+                        else:
+                            if idxs.dtype in {Int8, Int16, Int32}:
+                                idxs = idxs.cast(Int64)
+
+                        idxs = pli.select(
+                            pli.when(pli.lit(idxs) < 0)
+                            .then(self.len() + pli.lit(idxs))
+                            .otherwise(pli.lit(idxs))
+                        ).to_series()
+
+                return idxs.cast(idx_type)
+
+        if _NUMPY_AVAILABLE and isinstance(idxs, np.ndarray):
+            if idxs.ndim != 1:
+                raise ValueError("Only 1D numpy array is supported as index.")
+            if idxs.dtype.kind in ("i", "u"):
+                # Numpy array with signed or unsigned integers.
+
+                if idx_type == UInt32:
+                    if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2**32:
+                        raise ValueError("Index positions should be smaller than 2^32.")
+                    if idxs.dtype == np.int64 and idxs.min() < -(2**32):
+                        raise ValueError(
+                            "Index positions should be bigger than -2^32 + 1."
+                        )
+                if idxs.dtype.kind == "i" and idxs.min() < 0:
+                    if idx_type == UInt32:
+                        if idxs.dtype in (np.int8, np.int16):
+                            idxs = idxs.astype(np.int32)
+                    else:
+                        if idxs.dtype in (np.int8, np.int16, np.int32):
+                            idxs = idxs.astype(np.int64)
+
+                    # Update negative indexes to absolute indexes.
+                    idxs = np.where(idxs < 0, self.len() + idxs, idxs)
+
+                return Series("", idxs, dtype=idx_type)
+
+        raise NotImplementedError("Unsupported idxs datatype.")
+
+    def __getitem__(self, item: int | Series | range | slice | np.ndarray) -> Any:
         if isinstance(item, int):
             if item < 0:
                 item = self.len() + item
@@ -476,9 +551,29 @@ class Series:
                 return out
 
             return self._s.get_idx(item)
-        # assume it is boolean mask
+
+        if _NUMPY_AVAILABLE and isinstance(item, np.ndarray):
+            if item.ndim != 1:
+                raise ValueError("Only a 1D-Numpy array is supported as index.")
+            if item.dtype.kind in ("i", "u"):
+                # Numpy array with signed or unsigned integers.
+                return wrap_s(self._s.take_with_series(self._pos_idxs(item).inner()))
+            if item.dtype == bool:
+                return wrap_s(self._s.filter(pli.Series("", item).inner()))
+
+        if isinstance(item, Sequence):
+            if is_bool_sequence(item):
+                item = Series("", item)  # fall through to next if isinstance
+            elif is_int_sequence(item):
+                item = Series("", item)  # fall through to next if isinstance
+
         if isinstance(item, Series):
-            return wrap_s(self._s.filter(item._s))
+            if item.dtype == Boolean:
+                return wrap_s(self._s.filter(item._s))
+            if item.dtype == UInt32:
+                return wrap_s(self._s.take_with_series(item.inner()))
+            if item.dtype in {UInt8, UInt16, UInt64, Int8, Int16, Int32, Int64}:
+                return wrap_s(self._s.take_with_series(self._pos_idxs(item).inner()))
 
         if isinstance(item, range):
             return self[range_to_slice(item)]
