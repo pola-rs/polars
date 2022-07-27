@@ -16,10 +16,17 @@ pub(super) fn apply_trigonometric_function(
             let ca = s.f64().unwrap();
             apply_trigonometric_function_to_float(ca, trig_function)
         }
-        _ => {
+        dt if dt.is_numeric() => {
             let s = s.cast(&DataType::Float64)?;
             apply_trigonometric_function(&s, trig_function)
         }
+        dt => Err(PolarsError::ComputeError(
+            format!(
+                "cannot use trigonometric function on Series of dtype: {:?}",
+                dt
+            )
+            .into(),
+        )),
     }
 }
 
