@@ -34,6 +34,7 @@ dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object"]
 date_offset = []
 trigonometry = []
+sign = []
 
 true_div = []
 

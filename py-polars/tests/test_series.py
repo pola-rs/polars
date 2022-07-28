@@ -1702,9 +1702,20 @@ def test_str_split() -> None:
 
 
 def test_sign() -> None:
-    a = pl.Series("a", [10, -20, None])
-    expected = pl.Series("a", [1, -1, None])
+    # Integers
+    a = pl.Series("a", [-9, -0, 0, 4, None])
+    expected = pl.Series("a", [-1, 0, 0, 1, None])
     verify_series_and_expr_api(a, expected, "sign")
+
+    # Floats
+    a = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, None])
+    expected = pl.Series("a", [-1, 0, 0, 1, None])
+    verify_series_and_expr_api(a, expected, "sign")
+
+    # Invalid input
+    a = pl.Series("a", [date(1950, 2, 1), date(1970, 1, 1), date(2022, 12, 12), None])
+    with pytest.raises(pl.ComputeError):
+        a.sign()
 
 
 def test_exp() -> None:

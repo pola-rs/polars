@@ -6,6 +6,8 @@ mod is_in;
 mod pow;
 #[cfg(feature = "row_hash")]
 mod row_hash;
+#[cfg(feature = "sign")]
+mod sign;
 #[cfg(feature = "strings")]
 mod strings;
 #[cfg(any(feature = "temporal", feature = "date_offset"))]
@@ -42,6 +44,8 @@ pub enum FunctionExpr {
     DateOffset(Duration),
     #[cfg(feature = "trigonometry")]
     Trigonometry(TrigonometricFunction),
+    #[cfg(feature = "sign")]
+    Sign,
     FillNull {
         super_type: DataType,
     },
@@ -105,6 +109,8 @@ impl FunctionExpr {
             DateOffset(_) => same_type(),
             #[cfg(feature = "trigonometry")]
             Trigonometry(_) => float_dtype(),
+            #[cfg(feature = "sign")]
+            Sign => with_dtype(DataType::Int64),
             FillNull { super_type, .. } => with_dtype(super_type.clone()),
         }
     }
@@ -123,6 +129,18 @@ macro_rules! map_as_slice {
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
             $func(s, $($args),*)
+        };
+
+        SpecialEq::new(Arc::new(f))
+    }};
+}
+
+// Fn(&Series)
+macro_rules! map_without_args {
+    ($func:path) => {{
+        let f = move |s: &mut [Series]| {
+            let s = &s[0];
+            $func(s)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -198,6 +216,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "trigonometry")]
             Trigonometry(trig_function) => {
                 map_with_args!(trigonometry::apply_trigonometric_function, trig_function)
+            }
+            #[cfg(feature = "sign")]
+            Sign => {
+                map_without_args!(sign::sign)
             }
             FillNull { super_type } => {
                 map_as_slice!(fill_null::fill_null, &super_type)

@@ -2723,25 +2723,24 @@ class Series:
 
     def sign(self) -> Series:
         """
-        Return an element-wise indication of the sign of a number.
+        Compute the element-wise indication of the sign.
 
         Examples
         --------
-        >>> s = pl.Series("foo", [-9, -8, 0, 4])
-        >>> s.sign()  #
-        shape: (4,)
-        Series: 'foo' [i64]
+        >>> s = pl.Series("a", [-9.0, -0.0, 0.0, 4.0, None])
+        >>> s.sign()
+        shape: (5,)
+        Series: 'a' [i64]
         [
                 -1
-                -1
+                0
                 0
                 1
+                null
         ]
 
         """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.sign(self)  # type: ignore[return-value]
+        return self.to_frame().select(pli.col(self.name).sign()).to_series()
 
     def sin(self) -> Series:
         """

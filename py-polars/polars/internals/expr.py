@@ -4288,31 +4288,31 @@ class Expr:
 
     def sign(self) -> Expr:
         """
-        Return an element-wise indication of the sign of a number.
+        Compute the element-wise indication of the sign.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [-9, -8, 0, 4]})
-        >>> df.select(pl.col("foo").sign())
-        shape: (4, 1)
-        ┌─────┐
-        │ foo │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ -1  │
-        ├╌╌╌╌╌┤
-        │ -1  │
-        ├╌╌╌╌╌┤
-        │ 0   │
-        ├╌╌╌╌╌┤
-        │ 1   │
-        └─────┘
+        >>> df = pl.DataFrame({"a": [-9.0, -0.0, 0.0, 4.0, None]})
+        >>> df.select(pl.col("a").sign())
+        shape: (5, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ -1   │
+        ├╌╌╌╌╌╌┤
+        │ 0    │
+        ├╌╌╌╌╌╌┤
+        │ 0    │
+        ├╌╌╌╌╌╌┤
+        │ 1    │
+        ├╌╌╌╌╌╌┤
+        │ null │
+        └──────┘
 
         """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.sign(self)  # type: ignore[call-overload]
+        return wrap_expr(self._pyexpr.sign())
 
     def sin(self) -> Expr:
         """
