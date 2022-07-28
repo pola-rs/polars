@@ -119,14 +119,14 @@ def from_records(
     orient: Literal["col", "row"] | None = None,
 ) -> DataFrame:
     """
-    Construct a DataFrame from a numpy ndarray or sequence of sequences.
+    Construct a DataFrame from a sequence of sequences.
 
     Note that this is slower than creating from columnar memory.
 
     Parameters
     ----------
-    data : numpy ndarray or Sequence of sequences
-        Two-dimensional data represented as numpy ndarray or sequence of sequences.
+    data : Sequence of sequences
+        Two-dimensional data represented as a sequence of sequences.
     columns : Sequence of str, default None
         Column labels to use for resulting DataFrame. Must match data dimensions.
         If not specified, columns will be named `column_0`, `column_1`, etc.
