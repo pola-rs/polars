@@ -21,7 +21,7 @@ def test_from_to_buffer(df: pl.DataFrame, compressions: list[str]) -> None:
         buf = io.BytesIO()
         df.write_ipc(buf, compression=compression)  # type: ignore[arg-type]
         buf.seek(0)
-        read_df = pl.read_ipc(buf)
+        read_df = pl.read_ipc(buf, use_pyarrow=False)
         assert_frame_equal_local_categoricals(df, read_df)
 
 
@@ -35,7 +35,7 @@ def test_from_to_file(
         for compression in compressions:
             for f in (str(f_ipc), Path(f_ipc)):
                 df.write_ipc(f, compression=compression)  # type: ignore[arg-type]
-                df_read = pl.read_ipc(f)  # type: ignore[arg-type]
+                df_read = pl.read_ipc(f, use_pyarrow=False)  # type: ignore[arg-type]
                 assert_frame_equal_local_categoricals(df, df_read)
 
 
@@ -134,7 +134,7 @@ def test_glob_ipc(io_test_dir: str) -> None:
     if os.name != "nt":
         path = os.path.join(io_test_dir, "small*.ipc")
         assert pl.scan_ipc(path).collect().shape == (3, 12)
-        assert pl.read_ipc(path).shape == (3, 12)
+        assert pl.read_ipc(path, use_pyarrow=False).shape == (3, 12)
 
 
 def test_from_float16() -> None:
@@ -143,4 +143,4 @@ def test_from_float16() -> None:
     f = io.BytesIO()
     pandas_df.to_feather(f)
     f.seek(0)
-    assert pl.read_ipc(f).dtypes == [pl.Float32]
+    assert pl.read_ipc(f, use_pyarrow=False).dtypes == [pl.Float32]
