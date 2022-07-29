@@ -3104,6 +3104,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         └─────┴─────┴─────┘
 
         """
+        if not isinstance(maintain_order, bool):
+            raise TypeError(
+                f"invalid input for groupby arg `maintain_order`: {maintain_order}."
+            )
         if isinstance(by, str):
             by = [by]
         return GroupBy(

@@ -419,6 +419,10 @@ def test_groupby() -> None:
     # assert df.groupby("b").quantile(0.5).shape == (2, 3)
     assert df.groupby("b").agg_list().shape == (2, 3)
 
+    # Invalid input: `by` not specified as a sequence
+    with pytest.raises(TypeError):
+        df.groupby("a", "b")  # type: ignore[arg-type]
+
 
 @pytest.mark.parametrize(
     "stack,exp_shape,exp_columns",
