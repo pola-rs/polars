@@ -86,7 +86,6 @@ Aggregation
     Expr.list
     Expr.max
     Expr.mean
-    Expr.mean
     Expr.median
     Expr.min
     Expr.product
