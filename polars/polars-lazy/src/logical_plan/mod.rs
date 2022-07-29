@@ -215,37 +215,37 @@ impl LogicalPlan {
 }
 
 impl LogicalPlan {
-    pub(crate) fn schema(&self) -> Cow<'_, SchemaRef> {
+    pub(crate) fn schema(&self) -> Result<Cow<'_, SchemaRef>> {
         use LogicalPlan::*;
         match self {
             #[cfg(feature = "python")]
-            PythonScan { options } => Cow::Borrowed(&options.schema),
+            PythonScan { options } => Ok(Cow::Borrowed(&options.schema)),
             Union { inputs, .. } => inputs[0].schema(),
             Cache { input } => input.schema(),
             Sort { input, .. } => input.schema(),
-            Explode { schema, .. } => Cow::Borrowed(schema),
+            Explode { schema, .. } => Ok(Cow::Borrowed(schema)),
             #[cfg(feature = "parquet")]
-            ParquetScan { schema, .. } => Cow::Borrowed(schema),
+            ParquetScan { schema, .. } => Ok(Cow::Borrowed(schema)),
             #[cfg(feature = "ipc")]
-            IpcScan { schema, .. } => Cow::Borrowed(schema),
-            DataFrameScan { schema, .. } => Cow::Borrowed(schema),
-            AnonymousScan { schema, .. } => Cow::Borrowed(schema),
+            IpcScan { schema, .. } => Ok(Cow::Borrowed(schema)),
+            DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),
+            AnonymousScan { schema, .. } => Ok(Cow::Borrowed(schema)),
             Selection { input, .. } => input.schema(),
             #[cfg(feature = "csv-file")]
-            CsvScan { schema, .. } => Cow::Borrowed(schema),
-            Projection { schema, .. } => Cow::Borrowed(schema),
-            LocalProjection { schema, .. } => Cow::Borrowed(schema),
-            Aggregate { schema, .. } => Cow::Borrowed(schema),
-            Join { schema, .. } => Cow::Borrowed(schema),
-            HStack { schema, .. } => Cow::Borrowed(schema),
+            CsvScan { schema, .. } => Ok(Cow::Borrowed(schema)),
+            Projection { schema, .. } => Ok(Cow::Borrowed(schema)),
+            LocalProjection { schema, .. } => Ok(Cow::Borrowed(schema)),
+            Aggregate { schema, .. } => Ok(Cow::Borrowed(schema)),
+            Join { schema, .. } => Ok(Cow::Borrowed(schema)),
+            HStack { schema, .. } => Ok(Cow::Borrowed(schema)),
             Distinct { input, .. } => input.schema(),
             Slice { input, .. } => input.schema(),
-            Melt { schema, .. } => Cow::Borrowed(schema),
+            Melt { schema, .. } => Ok(Cow::Borrowed(schema)),
             Udf { input, schema, .. } => {
-                let input_schema = input.schema();
+                let input_schema = input.schema()?;
                 match schema {
-                    Some(schema) => Cow::Owned(schema.get_schema(&input_schema).unwrap()),
-                    None => input_schema,
+                    Some(schema) => schema.get_schema(&input_schema).map(Cow::Owned),
+                    None => Ok(input_schema),
                 }
             }
             Error { input, .. } => input.schema(),
@@ -313,14 +313,14 @@ mod test {
             .select(&[col("variety").alias("foo")])
             .logical_plan;
 
-        assert!(lp.schema().get("foo").is_some());
+        assert!(lp.schema().unwrap().get("foo").is_some());
 
         let lp = df
             .lazy()
             .groupby([col("variety")])
             .agg([col("sepal.width").min()])
             .logical_plan;
-        assert!(lp.schema().get("sepal.width").is_some());
+        assert!(lp.schema().unwrap().get("sepal.width").is_some());
     }
 
     #[test]

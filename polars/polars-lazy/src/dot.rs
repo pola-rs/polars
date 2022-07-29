@@ -234,12 +234,13 @@ impl LogicalPlan {
                 }
             }
             Projection { expr, input, .. } => {
-                let current_node = format!(
-                    "π {}/{} [{:?}]",
-                    expr.len(),
-                    input.schema().len(),
-                    (branch, id)
-                );
+                let schema = input.schema().map_err(|_| {
+                    eprintln!("could not determine schema");
+                    std::fmt::Error
+                })?;
+
+                let current_node =
+                    format!("π {}/{} [{:?}]", expr.len(), schema.len(), (branch, id));
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, (branch, id + 1), &current_node)
             }
@@ -251,10 +252,15 @@ impl LogicalPlan {
                 input.dot(acc_str, (branch, id + 1), &current_node)
             }
             LocalProjection { expr, input, .. } => {
+                let schema = input.schema().map_err(|_| {
+                    eprintln!("could not determine schema");
+                    std::fmt::Error
+                })?;
+
                 let current_node = format!(
                     "LOCAL π {}/{} [{:?}]",
                     expr.len(),
-                    input.schema().len(),
+                    schema.len(),
                     (branch, id)
                 );
                 self.write_dot(acc_str, prev_node, &current_node, id)?;

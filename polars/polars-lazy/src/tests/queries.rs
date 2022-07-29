@@ -1509,7 +1509,7 @@ fn test_when_then_schema() -> Result<()> {
             .then(Null {}.lit())
             .otherwise(col("A"))])
         .schema();
-    assert_ne!(schema.get_index(0).unwrap().1, &DataType::Null);
+    assert_ne!(schema?.get_index(0).unwrap().1, &DataType::Null);
 
     Ok(())
 }
