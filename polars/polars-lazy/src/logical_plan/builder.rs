@@ -229,8 +229,8 @@ impl LogicalPlanBuilder {
     }
 
     pub fn project(self, exprs: Vec<Expr>) -> Self {
-        let (exprs, schema) =
-            try_delayed!(prepare_projection(exprs, &self.0.schema()), &self.0, into);
+        let schema = try_delayed!(self.0.schema(), &self.0, into);
+        let (exprs, schema) = try_delayed!(prepare_projection(exprs, &schema), &self.0, into);
 
         if exprs.is_empty() {
             self.map(
@@ -250,8 +250,8 @@ impl LogicalPlanBuilder {
     }
 
     pub fn project_local(self, exprs: Vec<Expr>) -> Self {
-        let (exprs, schema) =
-            try_delayed!(prepare_projection(exprs, &self.0.schema()), &self.0, into);
+        let schema = try_delayed!(self.0.schema(), &self.0, into);
+        let (exprs, schema) = try_delayed!(prepare_projection(exprs, &schema), &self.0, into);
         LogicalPlan::LocalProjection {
             expr: exprs,
             input: Box::new(self.0),
@@ -261,7 +261,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn fill_null(self, fill_value: Expr) -> Self {
-        let schema = self.0.schema();
+        let schema = try_delayed!(self.0.schema(), &self.0, into);
         let exprs = schema
             .iter_names()
             .map(|name| {
@@ -275,7 +275,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {
-        let schema = self.0.schema();
+        let schema = try_delayed!(self.0.schema(), &self.0, into);
 
         let exprs = schema
             .iter()
@@ -291,7 +291,7 @@ impl LogicalPlanBuilder {
 
     pub fn with_columns(self, exprs: Vec<Expr>) -> Self {
         // current schema
-        let schema = self.0.schema();
+        let schema = try_delayed!(self.0.schema(), &self.0, into);
         let mut new_schema = (**schema).clone();
         let (exprs, _) = try_delayed!(prepare_projection(exprs, &schema), &self.0, into);
 
@@ -315,7 +315,8 @@ impl LogicalPlanBuilder {
             Expr::Wildcard | Expr::RenameAlias { .. } | Expr::Columns(_) => true,
             _ => false,
         }) {
-            let rewritten = rewrite_projections(vec![predicate], &self.0.schema(), &[]);
+            let schema = try_delayed!(self.0.schema(), &self.0, into);
+            let rewritten = rewrite_projections(vec![predicate], &schema, &[]);
             combine_predicates_expr(rewritten.into_iter())
         } else {
             predicate
@@ -336,7 +337,7 @@ impl LogicalPlanBuilder {
         dynamic_options: Option<DynamicGroupOptions>,
         rolling_options: Option<RollingGroupOptions>,
     ) -> Self {
-        let current_schema = self.0.schema();
+        let current_schema = try_delayed!(self.0.schema(), &self.0, into);
         let current_schema = current_schema.as_ref();
         let aggs = rewrite_projections(aggs.as_ref().to_vec(), current_schema, keys.as_ref());
 
@@ -403,7 +404,8 @@ impl LogicalPlanBuilder {
     }
 
     pub fn sort(self, by_column: Vec<Expr>, reverse: Vec<bool>, null_last: bool) -> Self {
-        let by_column = rewrite_projections(by_column, &self.0.schema(), &[]);
+        let schema = try_delayed!(self.0.schema(), &self.0, into);
+        let by_column = rewrite_projections(by_column, &schema, &[]);
         LogicalPlan::Sort {
             input: Box::new(self.0),
             by_column,
@@ -417,9 +419,10 @@ impl LogicalPlanBuilder {
     }
 
     pub fn explode(self, columns: Vec<Expr>) -> Self {
-        let columns = rewrite_projections(columns, &self.0.schema(), &[]);
+        let schema = try_delayed!(self.0.schema(), &self.0, into);
+        let columns = rewrite_projections(columns, &schema, &[]);
 
-        let mut schema = (**self.0.schema()).clone();
+        let mut schema = (**schema).clone();
 
         // columns to string
         let columns = columns
@@ -446,7 +449,8 @@ impl LogicalPlanBuilder {
     }
 
     pub fn melt(self, args: Arc<MeltArgs>) -> Self {
-        let schema = det_melt_schema(&args, &self.0.schema());
+        let schema = try_delayed!(self.0.schema(), &self.0, into);
+        let schema = det_melt_schema(&args, &schema);
         LogicalPlan::Melt {
             input: Box::new(self.0),
             args,
@@ -479,8 +483,8 @@ impl LogicalPlanBuilder {
         right_on: Vec<Expr>,
         options: JoinOptions,
     ) -> Self {
-        let schema_left = self.0.schema();
-        let schema_right = other.schema();
+        let schema_left = try_delayed!(self.0.schema(), &self.0, into);
+        let schema_right = try_delayed!(other.schema(), &self.0, into);
 
         // column names of left table
         let mut names: PlHashSet<&str> = PlHashSet::default();

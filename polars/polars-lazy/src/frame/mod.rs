@@ -149,9 +149,9 @@ pub type AllowedOptimizations = OptState;
 
 impl LazyFrame {
     /// Get a hold on the schema of the current LazyFrame computation.
-    pub fn schema(&self) -> SchemaRef {
+    pub fn schema(&self) -> Result<SchemaRef> {
         let logical_plan = self.clone().get_plan_builder().build();
-        logical_plan.schema().into_owned()
+        logical_plan.schema().map(|schema| schema.into_owned())
     }
 
     pub(crate) fn get_plan_builder(self) -> LogicalPlanBuilder {
@@ -351,7 +351,9 @@ impl LazyFrame {
             // schema after renaming
             let mut new_schema = s.clone();
             for (old, new) in existing2.iter().zip(new2.iter()) {
-                new_schema.rename(old, new.to_string()).unwrap();
+                new_schema
+                    .rename(old, new.to_string())
+                    .ok_or_else(|| PolarsError::NotFound(old.into()))?
             }
             Ok(Arc::new(new_schema))
         };
@@ -460,7 +462,8 @@ impl LazyFrame {
             .into_iter()
             .map(|a| a.as_ref().to_string())
             .collect::<Vec<_>>();
-        let schema = &*self.schema();
+        // todo! make delayed
+        let schema = &*self.schema().unwrap();
         // a column gets swapped
         if new.iter().any(|name| schema.get(name).is_some()) {
             self.rename_impl_swapping(existing, new)
@@ -564,7 +567,7 @@ impl LazyFrame {
 
         // during debug we check if the optimizations have not modified the final schema
         #[cfg(debug_assertions)]
-        let prev_schema = logical_plan.schema().into_owned();
+        let prev_schema = logical_plan.schema()?.into_owned();
 
         let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena)?;
 

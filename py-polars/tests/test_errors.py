@@ -106,3 +106,14 @@ def test_projection_update_schema_missing_column() -> None:
             .agg([pl.col("colB").sum().alias("result")])
             .collect()
         )
+
+
+def test_not_found_on_rename() -> None:
+    df = pl.DataFrame({"exists": [1, 2, 3]})
+
+    with pytest.raises(pl.NotFoundError):
+        df.rename(
+            {
+                "does_not_exist": "exists",
+            }
+        )
