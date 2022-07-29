@@ -65,7 +65,7 @@ else:
 
 
 def col(
-    name: (str | list[str] | Sequence[PolarsDataType] | pli.Series | PolarsDataType),
+    name: str | list[str] | Sequence[PolarsDataType] | pli.Series | PolarsDataType,
 ) -> pli.Expr:
     """
     Return an expression representing a column in a DataFrame.
@@ -603,7 +603,7 @@ def tail(column: str | pli.Series, n: int | None = None) -> pli.Expr | pli.Serie
 
 
 def lit(
-    value: None | (float | int | str | date | datetime | pli.Series | np.ndarray | Any),
+    value: float | int | str | date | datetime | pli.Series | np.ndarray | Any | None,
     dtype: type[DataType] | None = None,
 ) -> pli.Expr:
     """

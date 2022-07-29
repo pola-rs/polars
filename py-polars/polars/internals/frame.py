@@ -1416,10 +1416,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self,
         file: str | Path | BytesIO,
         *,
-        compression: None
-        | (
+        compression: (
             Literal["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"]
             | str
+            | None
         ) = "lz4",
         compression_level: int | None = None,
         statistics: bool = False,
@@ -1509,10 +1509,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def to_parquet(
         self,
         file: str | Path | BytesIO,
-        compression: None
-        | (
+        compression: (
             Literal["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"]
             | str
+            | None
         ) = "snappy",
         statistics: bool = False,
         use_pyarrow: bool = False,
