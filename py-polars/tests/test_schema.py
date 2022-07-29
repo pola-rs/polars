@@ -31,3 +31,8 @@ def test_fill_null_minimal_upcast_4056() -> None:
     df = df.with_columns(pl.col("a").cast(pl.Int8))
     assert df.with_column(pl.col(pl.Int8).fill_null(-1)).dtypes[0] == pl.Int8
     assert df.with_column(pl.col(pl.Int8).fill_null(-1000)).dtypes[0] == pl.Int32
+
+
+def test_with_column_duplicates() -> None:
+    df = pl.DataFrame({"a": [0, None, 2, 3, None], "b": [None, 1, 2, 3, None]})
+    assert df.with_columns([pl.all().alias("same")]).columns == ["a", "b", "same"]
