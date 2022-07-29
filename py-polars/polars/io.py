@@ -618,6 +618,14 @@ def scan_ipc(
     # Map legacy arguments to current ones and remove them from kwargs.
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
+    if (
+        _PYARROW_AVAILABLE
+        and row_count_name is None
+        and row_count_offset is None
+        and "*" not in file
+    ):
+        read_ipc(file=file, n_rows=n_rows, use_pyarrow=True, cache=False, rechunk=False)
+
     return LazyFrame.scan_ipc(
         file=file,
         n_rows=n_rows,
@@ -729,7 +737,7 @@ def read_ipc(
     file: str | BinaryIO | BytesIO | Path | bytes,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
-    use_pyarrow: bool = False,
+    use_pyarrow: bool = _PYARROW_AVAILABLE,
     memory_map: bool = True,
     storage_options: dict | None = None,
     row_count_name: str | None = None,
