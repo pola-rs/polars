@@ -93,6 +93,14 @@ pub(crate) fn has_wildcard(current_expr: &Expr) -> bool {
     has_expr(current_expr, |e| matches!(e, Expr::Wildcard))
 }
 
+// this one is used so much that it has its own function, to reduce inlining
+pub(crate) fn has_regex(current_expr: &Expr) -> bool {
+    has_expr(current_expr, |e| match e {
+        Expr::Column(name) => name.starts_with('^') && name.ends_with('$'),
+        _ => false,
+    })
+}
+
 pub(crate) fn has_nth(current_expr: &Expr) -> bool {
     has_expr(current_expr, |e| matches!(e, Expr::Nth(_)))
 }

@@ -690,7 +690,7 @@ where
     F: Fn(Series, Series) -> Result<Series> + Send + Sync + Clone,
 {
     let mut exprs = exprs.as_ref().to_vec();
-    if exprs.iter().any(has_wildcard) {
+    if exprs.iter().any(|e| has_wildcard(e) | has_regex(e)) {
         exprs.push(acc);
 
         let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
