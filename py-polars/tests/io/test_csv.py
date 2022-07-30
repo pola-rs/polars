@@ -591,3 +591,19 @@ def test_csv_write_escape_newlines() -> None:
     f.seek(0)
     read_df = pl.read_csv(f)
     assert df.frame_equal(read_df)
+
+
+def test_skip_new_line_embedded_lines() -> None:
+    csv = r"""a,b,c,d,e\n
+        1,2,3,"\n Test",\n
+        4,5,6,"Test A",\n
+        7,8,9,"Test B \n",\n"""
+
+    df = pl.read_csv(csv.encode(), skip_rows_after_header=1, infer_schema_length=0)
+    assert df.to_dict(False) == {
+        "a": ["4", "7"],
+        "b": ["5", "8"],
+        "c": ["6", "9"],
+        "d": ["Test A", "Test B \\n"],
+        "e\\n": ["\\n", "\\n"],
+    }

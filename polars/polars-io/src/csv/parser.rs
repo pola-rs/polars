@@ -16,7 +16,7 @@ pub(crate) fn skip_bom(input: &[u8]) -> &[u8] {
 /// Find the nearest next line position.
 /// Does not check for new line characters embedded in String fields.
 pub(crate) fn next_line_position_naive(input: &[u8], eol_char: u8) -> Option<usize> {
-    let pos = input.iter().position(|b| *b == eol_char)? + 1;
+    let pos = memchr::memchr(eol_char, input)? + 1;
     if input.len() - pos == 0 {
         return None;
     }
@@ -40,7 +40,10 @@ pub(crate) fn next_line_position(
         if input.len() - pos == 0 {
             return None;
         }
-        let line = SplitLines::new(&input[pos..], eol_char).next();
+        debug_assert!(pos <= input.len());
+        let new_input = unsafe { input.get_unchecked(pos..) };
+        let line = SplitLines::new(new_input, eol_char).next();
+
         if let Some(line) = line {
             if SplitFields::new(line, delimiter, quote_char, eol_char)
                 .into_iter()
@@ -49,10 +52,21 @@ pub(crate) fn next_line_position(
             {
                 return Some(total_pos + pos);
             } else {
-                input = &input[pos + 1..];
+                debug_assert!(pos < input.len());
+                unsafe {
+                    input = input.get_unchecked(pos + 1..);
+                }
                 total_pos += pos + 1;
             }
         } else {
+            // no new line found, check latest line (without eol) for number of fields
+            if SplitFields::new(new_input, delimiter, quote_char, eol_char)
+                .into_iter()
+                .count()
+                == expected_fields
+            {
+                return Some(total_pos + pos);
+            }
             return None;
         }
     }

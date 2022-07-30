@@ -67,7 +67,9 @@ pub(crate) struct CoreReader<'a> {
     /// Current line number, used in error reporting
     line_number: usize,
     ignore_parser_errors: bool,
-    skip_rows: usize,
+    skip_rows_before_header: usize,
+    // after the header, we need to take embedded lines into account
+    skip_rows_after_header: usize,
     n_rows: Option<usize>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
@@ -234,7 +236,6 @@ impl<'a> CoreReader<'a> {
                 }
             }
         };
-        skip_rows += skip_rows_after_header;
         if let Some(dtypes) = dtype_overwrite {
             let mut s = schema.into_owned();
             for (index, dt) in dtypes.iter().enumerate() {
@@ -267,7 +268,8 @@ impl<'a> CoreReader<'a> {
             projection,
             line_number: if has_header { 1 } else { 0 },
             ignore_parser_errors,
-            skip_rows,
+            skip_rows_before_header: skip_rows,
+            skip_rows_after_header,
             n_rows,
             encoding,
             n_threads,
@@ -307,11 +309,30 @@ impl<'a> CoreReader<'a> {
             bytes = skip_header(bytes, eol_char).0;
         }
 
-        if self.skip_rows > 0 {
-            for _ in 0..self.skip_rows {
-                // This does not check embedding of new line chars in string quotes.
+        if self.skip_rows_before_header > 0 {
+            for _ in 0..self.skip_rows_before_header {
                 let pos = next_line_position_naive(bytes, eol_char)
                     .ok_or_else(|| PolarsError::NoData("not enough lines to skip".into()))?;
+                bytes = &bytes[pos..];
+            }
+        }
+
+        if self.skip_rows_after_header > 0 {
+            for _ in 0..self.skip_rows_after_header {
+                let pos = match bytes.first() {
+                    Some(first) if Some(*first) == self.comment_char => {
+                        next_line_position_naive(bytes, eol_char)
+                    }
+                    _ => next_line_position(
+                        bytes,
+                        self.schema.len(),
+                        self.delimiter,
+                        self.quote_char,
+                        eol_char,
+                    ),
+                }
+                .ok_or_else(|| PolarsError::NoData("not enough lines to skip".into()))?;
+
                 bytes = &bytes[pos..];
             }
         }
