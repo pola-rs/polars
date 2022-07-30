@@ -299,6 +299,7 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
+    /// use polars_core::prelude::DataFrame;
     /// static EMPTY: DataFrame = DataFrame::empty();
     /// ```
     pub const fn empty() -> Self {
