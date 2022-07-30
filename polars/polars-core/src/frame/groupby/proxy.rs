@@ -230,7 +230,11 @@ impl GroupsProxy {
     #[cfg(feature = "private")]
     pub fn sort(&mut self) {
         match self {
-            GroupsProxy::Idx(groups) => groups.sort(),
+            GroupsProxy::Idx(groups) => {
+                if !groups.is_sorted() {
+                    groups.sort()
+                }
+            }
             GroupsProxy::Slice { groups, rolling } => {
                 if !*rolling {
                     groups.sort_unstable_by_key(|[first, _]| *first);

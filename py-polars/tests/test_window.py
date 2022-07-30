@@ -169,3 +169,25 @@ def test_count_window() -> None:
         .with_column(pl.count().over("a"))["count"]
         .to_list()
     ) == [2, 2, 1]
+
+
+def test_window_cached_keys_sorted_update_4183() -> None:
+    df = pl.DataFrame(
+        {
+            "customer_ID": [
+                "0",
+                "0",
+                "1",
+            ],
+            "date": [1, 2, 3],
+        }
+    )
+    assert df.sort(by=["customer_ID", "date"]).select(
+        [
+            pl.count("date").over(pl.col("customer_ID")).alias("count"),
+            pl.col("date")
+            .rank(method="ordinal")
+            .over(pl.col("customer_ID"))
+            .alias("rank"),
+        ]
+    ).to_dict(False) == {"count": [2, 2, 1], "rank": [1, 2, 1]}
