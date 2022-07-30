@@ -1240,3 +1240,19 @@ def test_sum_duration() -> None:
         "duration": [timedelta(seconds=150)],
         "sec": [150],
     }
+
+
+def test_supertype_timezones_4174() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": pl.date_range(datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo"),
+        }
+    ).with_columns(
+        [
+            pl.col("dt").dt.with_time_zone("Europe/London").suffix("_London"),
+        ]
+    )
+
+    # test if this runs without error
+    date_to_fill = df["dt_London"][0]
+    df["dt_London"] = df["dt_London"].shift_and_fill(1, date_to_fill)
