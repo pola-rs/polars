@@ -294,6 +294,17 @@ impl DataFrame {
         })
     }
 
+    /// Creates an empty `DataFrame` usable in a compile time context (such as static initializers).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// static EMPTY: DataFrame = DataFrame::empty();
+    /// ```
+    pub const fn empty() -> Self {
+        DataFrame::new_no_checks(Vec::new())
+    }
+
     /// Removes the last `Series` from the `DataFrame` and returns it, or [`None`] if it is empty.
     ///
     /// # Example
@@ -383,7 +394,7 @@ impl DataFrame {
     /// # Panic
     /// It is the callers responsibility to uphold the contract of all `Series`
     /// having an equal length, if not this may panic down the line.
-    pub fn new_no_checks(columns: Vec<Series>) -> DataFrame {
+    pub const fn new_no_checks(columns: Vec<Series>) -> DataFrame {
         DataFrame { columns }
     }
 
