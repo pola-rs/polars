@@ -99,3 +99,67 @@ def test_sliced_null_explode() -> None:
     s = pl.Series("", [[False], [False], [True], [False], [], [True]])
     assert s.slice(2, 2).explode().to_list() == [True, False]
     assert s.slice(2, 4).explode().to_list() == [True, False, None, True]
+
+
+def test_utf8_explode() -> None:
+    assert pl.Series(["foobar", None]).explode().to_list() == [
+        "f",
+        "o",
+        "o",
+        "b",
+        "a",
+        "r",
+        None,
+    ]
+    assert pl.Series([None, "foo", "bar"]).explode().to_list() == [
+        None,
+        "f",
+        "o",
+        "o",
+        "b",
+        "a",
+        "r",
+    ]
+    assert pl.Series([None, "foo", "bar", None, "ham"]).explode().to_list() == [
+        None,
+        "f",
+        "o",
+        "o",
+        "b",
+        "a",
+        "r",
+        None,
+        "h",
+        "a",
+        "m",
+    ]
+    assert pl.Series(["foo", "bar", "ham"]).explode().to_list() == [
+        "f",
+        "o",
+        "o",
+        "b",
+        "a",
+        "r",
+        "h",
+        "a",
+        "m",
+    ]
+    assert pl.Series(["", None, "foo", "bar"]).explode().to_list() == [
+        "",
+        None,
+        "f",
+        "o",
+        "o",
+        "b",
+        "a",
+        "r",
+    ]
+    assert pl.Series(["", "foo", "bar"]).explode().to_list() == [
+        "",
+        "f",
+        "o",
+        "o",
+        "b",
+        "a",
+        "r",
+    ]
