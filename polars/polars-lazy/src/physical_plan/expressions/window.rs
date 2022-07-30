@@ -228,9 +228,8 @@ impl PhysicalExpr for WindowExpr {
             .all(|s| matches!(s.is_sorted(), IsSorted::Ascending | IsSorted::Descending));
         let explicit_list_agg = self.is_explicit_list_agg();
 
-        let create_groups = || {
-            // if we flatten this column we need to make sure the groups are sorted.
-            let sorted = self.options.explode ||
+        // if we flatten this column we need to make sure the groups are sorted.
+        let sort_groups = self.options.explode ||
             // if not
             //      `col().over()`
             // and not
@@ -240,7 +239,9 @@ impl PhysicalExpr for WindowExpr {
             // and keys are sorted
             //  we may optimize with explode call
             (!self.is_simple_column_expr() && !explicit_list_agg && sorted_keys && !self.is_aggregation());
-            let gb = df.groupby_with_series(groupby_columns.clone(), true, sorted)?;
+
+        let create_groups = || {
+            let gb = df.groupby_with_series(groupby_columns.clone(), true, sort_groups)?;
             let out: Result<GroupsProxy> = Ok(gb.take_groups());
             out
         };
@@ -261,6 +262,9 @@ impl PhysicalExpr for WindowExpr {
                 if df.height() > 0 {
                     assert!(!gt.is_empty());
                 };
+                if sort_groups {
+                    gt.sort()
+                }
 
                 // We take now, but it is important that we set this before we return!
                 // a next windows function may get this cached key and get an empty if this
