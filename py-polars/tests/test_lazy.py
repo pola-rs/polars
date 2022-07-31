@@ -1396,3 +1396,11 @@ def test_update_schema_after_projection_pd_t4157() -> None:
             "c2": "c2_",
         }
     ).drop("c2_").select(pl.col("c0")).collect().columns == ["c0"]
+
+
+def test_type_coercion_unknown_4190() -> None:
+    assert (
+        pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+        .lazy()
+        .with_columns([pl.col("a") & pl.col("a").fill_null(True)])
+    ).collect().shape == (3, 2)

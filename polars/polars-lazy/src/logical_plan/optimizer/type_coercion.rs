@@ -143,7 +143,10 @@ impl OptimizationRule for TypeCoercionRule {
                 let (falsy, type_false) =
                     get_aexpr_and_type(expr_arena, falsy_node, &input_schema)?;
 
-                if type_true == type_false {
+                if type_true == type_false ||
+                    // data type unknown still has to be set
+                    matches!(&type_true, DataType::Unknown) || matches!(&type_false, DataType::Unknown)
+                {
                     None
                 } else {
                     let st = get_supertype(&type_true, &type_false).expect("supertype");
@@ -297,7 +300,10 @@ impl OptimizationRule for TypeCoercionRule {
                     }
                 }
 
-                if type_left == type_right || compare_cat_to_string || datetime_arithmetic {
+                if type_left == type_right || compare_cat_to_string || datetime_arithmetic  ||
+                    // data type unknown still has to be set
+                    matches!(&type_left, DataType::Unknown) || matches!(&type_right, DataType::Unknown)
+                {
                     None
                 } else {
                     let st = get_supertype(&type_left, &type_right)
@@ -421,6 +427,7 @@ mod test {
     use polars_core::prelude::*;
 
     #[test]
+    #[cfg(feature = "dtype-categorical")]
     fn test_categorical_utf8() {
         let mut rules: Vec<Box<dyn OptimizationRule>> = vec![Box::new(TypeCoercionRule {})];
         let schema = Schema::from(vec![Field::new("fruits", DataType::Categorical(None))]);
