@@ -84,6 +84,31 @@ def test_cross_join() -> None:
     assert df2.join(df1, how="cross").slice(0, 100).frame_equal(out)
 
 
+def test_cross_join_slice_pushdown() -> None:
+    # this will likely go out of memory if we did not pushdown the slice
+    df = pl.DataFrame(
+        [
+            pl.Series("x", pl.arange(0, 2**16 - 1, eager=True) % 2**15).cast(
+                pl.UInt16
+            )
+        ]
+    )
+
+    assert df.lazy().join(df.lazy(), how="cross", suffix="_").slice(
+        -5, 10
+    ).collect().to_dict(False) == {
+        "x": [32766, 32766, 32766, 32766, 32766],
+        "x_": [32762, 32763, 32764, 32765, 32766],
+    }
+
+    assert df.lazy().join(df.lazy(), how="cross", suffix="_").slice(
+        2, 10
+    ).collect().to_dict(False) == {
+        "x": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        "x_": [2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    }
+
+
 if __name__ == "__main__":
     test_windows_not_cached()
     test_cross_join()
