@@ -83,12 +83,15 @@ def _prepare_file_arg(
     if isinstance(file, Path):
         return managed_file(format_path(file))
     if isinstance(file, str):
+        # make sure that this is before fsspec
+        # as fsspec needs requests to be installed
+        # to read from http
+        if file.startswith("http"):
+            return _process_http_file(file)
         if _WITH_FSSPEC:
             if infer_storage_options(file)["protocol"] == "file":
                 return managed_file(format_path(file))
             return fsspec.open(file, **kwargs)
-        if file.startswith("http"):
-            return _process_http_file(file)
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _WITH_FSSPEC:
             if all(infer_storage_options(f)["protocol"] == "file" for f in file):
