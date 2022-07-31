@@ -1404,3 +1404,21 @@ def test_type_coercion_unknown_4190() -> None:
         .lazy()
         .with_columns([pl.col("a") & pl.col("a").fill_null(True)])
     ).collect().shape == (3, 2)
+
+
+def test_all_any_accept_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, None, 2],
+            "b": [1, 2, None],
+        }
+    )
+    assert df.select(
+        [
+            pl.any(pl.all().is_null()).alias("null_in_row"),
+            pl.all(pl.all().is_null()).alias("all_null_in_row"),
+        ]
+    ).to_dict(False) == {
+        "null_in_row": [False, True, True],
+        "all_null_in_row": [False, False, False],
+    }
