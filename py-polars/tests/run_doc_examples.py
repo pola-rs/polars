@@ -35,6 +35,7 @@ import importlib
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Generator
 
 import polars
@@ -85,14 +86,19 @@ if __name__ == "__main__":
     # __file__ returns the __init__.py, so grab the parent
     src_dir = Path(polars.__file__).parent
 
-    # collect all tests
-    tests = [
-        doctest.DocTestSuite(m, extraglobs={"pl": polars}, optionflags=1)
-        for m in modules_in_path(src_dir)
-    ]
-    test_suite = unittest.TestSuite(tests)
+    with TemporaryDirectory() as tmpdir:
+        # collect all tests
+        tests = [
+            doctest.DocTestSuite(
+                m, extraglobs={"pl": polars, "dirpath": Path(tmpdir)}, optionflags=1
+            )
+            for m in modules_in_path(src_dir)
+        ]
+        test_suite = unittest.TestSuite(tests)
 
-    # run doctests and report
-    result = unittest.TextTestRunner().run(test_suite)
-    success_flag = (result.testsRun > 0) & (len(result.failures) == 0)
-    sys.exit(int(not success_flag))
+        # Ensure that we clean up any artifacts produced by the doctests
+        # with patch(polars.DataFrame.to_csv, polars.DataFrame.write_csv):
+        # run doctests and report
+        result = unittest.TextTestRunner().run(test_suite)
+        success_flag = (result.testsRun > 0) & (len(result.failures) == 0)
+        sys.exit(int(not success_flag))

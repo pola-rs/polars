@@ -505,6 +505,8 @@ def scan_csv(
 
     Examples
     --------
+    >>> import pathlib
+    >>>
     >>> (
     ...     pl.scan_csv("my_long_file.csv")  # lazy, doesn't do a thing
     ...     .select(
@@ -521,9 +523,10 @@ def scan_csv(
     >>> df = pl.DataFrame(
     ...     {"BrEeZaH": [1, 2, 3, 4], "LaNgUaGe": ["is", "terrible", "to", "read"]}
     ... )
-    >>> df.to_csv("mydf.csv")
+    >>> path: pathlib.Path = dirpath / "mydf.csv"
+    >>> df.to_csv(path)
     >>> pl.scan_csv(
-    ...     "mydf.csv", with_column_names=lambda cols: [col.lower() for col in cols]
+    ...     path, with_column_names=lambda cols: [col.lower() for col in cols]
     ... ).fetch()
     shape: (4, 2)
     ┌─────────┬──────────┐

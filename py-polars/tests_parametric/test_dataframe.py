@@ -1,5 +1,5 @@
 # ----------------------------------------------------
-# Validate DataFrame behaviour with parameteric tests
+# Validate DataFrame behaviour with parametric tests
 # ----------------------------------------------------
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ from polars.testing import assert_frame_equal, column, dataframes
 def test_repr(df: pl.DataFrame) -> None:
     assert isinstance(repr(df), str)
     assert_frame_equal(df, df, check_exact=True)
-    # print(df)
 
 
 @given(df=dataframes(min_size=1, min_cols=1, max_size=10, null_probability=0.25))
@@ -29,7 +28,6 @@ def test_null_count(df: pl.DataFrame) -> None:
         assert null_count.shape == (1, ncols)
         for idx, count in enumerate(null_count.rows()[0]):
             assert count == sum(v is None for v in df.select_at_idx(idx).to_list())
-    print(null_count.rows())
 
 
 @given(
