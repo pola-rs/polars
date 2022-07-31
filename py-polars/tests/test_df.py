@@ -1850,13 +1850,13 @@ def test_preservation_of_subclasses_after_groupby_statements() -> None:
 
 def test_explode_empty() -> None:
     df = (
-        pl.DataFrame(dict(x=["a", "a", "b", "b"], y=[1, 1, 2, 2]))
+        pl.DataFrame({"x": ["a", "a", "b", "b"], "y": [1, 1, 2, 2]})
         .groupby("x")
         .agg(pl.col("y").take([]))
     )
     assert df.explode("y").shape == (0, 2)
 
-    df = pl.DataFrame(dict(x=["1", "2", "4"], y=[["a", "b", "c"], ["d"], []]))
+    df = pl.DataFrame({"x": ["1", "2", "4"], "y": [["a", "b", "c"], ["d"], []]})
     assert df.explode("y").frame_equal(
         pl.DataFrame({"x": ["1", "1", "1", "2", "4"], "y": ["a", "b", "c", "d", None]})
     )
