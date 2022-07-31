@@ -418,47 +418,99 @@ impl ChunkExplode for Utf8Chunked {
             .downcast_iter()
             .next()
             .ok_or_else(|| PolarsError::NoData("cannot explode empty str".into()))?;
+
         let values = array.values();
         let old_offsets = array.offsets().clone();
 
-        // Because the strings are u8 stored but really are utf8 data we need to traverse the utf8 to
-        // get the chars indexes
-        // Utf8Array guarantees that this holds.
-        let str_data = unsafe { std::str::from_utf8_unchecked(values) };
+        let (new_offsets, validity) = if let Some(validity) = array.validity() {
+            // capacity estimate
+            let capacity = self.get_values_size() + validity.unset_bits();
 
-        // iterator over index and chars, we take only the index
-        let chars = str_data
-            .char_indices()
-            .map(|t| t.0 as i64)
-            .chain(std::iter::once(str_data.len() as i64));
+            let mut new_offsets = Vec::with_capacity(capacity + 1);
+            new_offsets.push(0i64);
 
-        let offsets = Buffer::from_iter(chars);
+            let mut bitmap = MutableBitmap::with_capacity(capacity);
+            let values = values.as_slice();
+            let mut old_offset = 0i64;
+            for (&offset, valid) in old_offsets[1..].iter().zip(validity) {
+                // safety:
+                // new_offsets already has a single value, so -1 is always in bounds
+                let latest_offset = unsafe { *new_offsets.get_unchecked(new_offsets.len() - 1) };
 
-        // the old bitmap doesn't fit on the exploded array, so we need to create a new one.
-        let validity = if let Some(validity) = array.validity() {
-            let capacity = offsets.len();
-            let mut bitmap = MutableBitmap::with_capacity(offsets.len() - 1);
+                if valid {
+                    debug_assert!(old_offset as usize <= values.len());
+                    debug_assert!(offset as usize <= values.len());
+                    let val = unsafe { values.get_unchecked(old_offset as usize..offset as usize) };
 
-            let mut count = 0;
-            let mut last_idx = 0;
-            let mut last_valid = validity.get_bit(last_idx);
-            for &offset in offsets.iter().skip(1) {
-                while count < offset {
-                    count += 1;
-                    bitmap.push(last_valid);
+                    // take the string value and find the char offsets
+                    // create a new offset value for each char boundary
+                    // safety:
+                    // we know we have string data.
+                    let str_val = unsafe { std::str::from_utf8_unchecked(val) };
+
+                    let char_offsets = str_val
+                        .char_indices()
+                        .skip(1)
+                        .map(|t| t.0 as i64 + latest_offset);
+
+                    // extend the chars
+                    // also keep track of the amount of offsets added
+                    // as we must update the validity bitmap
+                    let len_before = new_offsets.len();
+                    new_offsets.extend(char_offsets);
+                    new_offsets.push(latest_offset + str_val.len() as i64);
+                    bitmap.extend_constant(new_offsets.len() - len_before, true);
+                } else {
+                    // no data, just add old offset and set null bit
+                    new_offsets.push(latest_offset);
+                    bitmap.push(false)
                 }
-                last_idx += 1;
-                last_valid = validity.get_bit(last_idx);
+                old_offset = offset;
             }
-            for _ in 0..(capacity - count as usize) {
-                bitmap.push(last_valid);
-            }
-            bitmap.into()
+
+            (new_offsets.into(), bitmap.into())
         } else {
-            None
+            // fast(er) explode
+
+            // we cannot naively explode, because there might be empty strings.
+
+            // capacity estimate
+            let capacity = self.get_values_size();
+            let mut new_offsets = Vec::with_capacity(capacity + 1);
+            new_offsets.push(0i64);
+
+            let values = values.as_slice();
+            let mut old_offset = 0i64;
+            for &offset in &old_offsets[1..] {
+                // safety:
+                // new_offsets already has a single value, so -1 is always in bounds
+                let latest_offset = unsafe { *new_offsets.get_unchecked(new_offsets.len() - 1) };
+                debug_assert!(old_offset as usize <= values.len());
+                debug_assert!(offset as usize <= values.len());
+                let val = unsafe { values.get_unchecked(old_offset as usize..offset as usize) };
+
+                // take the string value and find the char offsets
+                // create a new offset value for each char boundary
+                // safety:
+                // we know we have string data.
+                let str_val = unsafe { std::str::from_utf8_unchecked(val) };
+
+                let char_offsets = str_val
+                    .char_indices()
+                    .skip(1)
+                    .map(|t| t.0 as i64 + latest_offset);
+
+                // extend the chars
+                new_offsets.extend(char_offsets);
+                new_offsets.push(latest_offset + str_val.len() as i64);
+                old_offset = offset;
+            }
+
+            (new_offsets.into(), None)
         };
+
         let array = unsafe {
-            Utf8Array::<i64>::from_data_unchecked_default(offsets, values.clone(), validity)
+            Utf8Array::<i64>::from_data_unchecked_default(new_offsets, values.clone(), validity)
         };
 
         let new_arr = Box::new(array) as ArrayRef;
