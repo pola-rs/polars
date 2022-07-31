@@ -202,8 +202,7 @@ class Expr:
         def function(s: pli.Series) -> pli.Series:  # pragma: no cover
             return ufunc(s, *args, **kwargs)
 
-        if "dtype" in kwargs:
-            dtype = kwargs["dtype"]
+        dtype = kwargs.get("dtype", dtype)
 
         return self.map(function, return_dtype=dtype)
 
@@ -1793,9 +1792,9 @@ class Expr:
         └───────┴───────┘
 
         """
-        if isinstance(index, list):
-            index_lit = pli.lit(pli.Series("", index, dtype=UInt32))
-        elif _NUMPY_AVAILABLE and isinstance(index, np.ndarray):
+        if isinstance(index, list) or (
+            _NUMPY_AVAILABLE and isinstance(index, np.ndarray)
+        ):
             index_lit = pli.lit(pli.Series("", index, dtype=UInt32))
         else:
             index_lit = pli.expr_to_lit_or_expr(

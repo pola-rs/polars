@@ -1973,9 +1973,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 return self._from_pydf(self._df.select(item))
             elif isinstance(item[0], pli.Expr):
                 return self.select(item)
-            elif is_bool_sequence(item):
-                item = pli.Series("", item)  # fall through to next if isinstance
-            elif is_int_sequence(item):
+            elif is_bool_sequence(item) or is_int_sequence(item):
                 item = pli.Series("", item)  # fall through to next if isinstance
 
         if isinstance(item, pli.Series):

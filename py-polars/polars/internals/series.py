@@ -561,9 +561,7 @@ class Series:
                 return wrap_s(self._s.filter(pli.Series("", item).inner()))
 
         if isinstance(item, Sequence):
-            if is_bool_sequence(item):
-                item = Series("", item)  # fall through to next if isinstance
-            elif is_int_sequence(item):
+            if is_bool_sequence(item) or is_int_sequence(item):
                 item = Series("", item)  # fall through to next if isinstance
 
         if isinstance(item, Series):
@@ -2307,11 +2305,7 @@ class Series:
             args: list[int | float | np.ndarray] = []
 
             for arg in inputs:
-                if isinstance(arg, int):
-                    args.append(arg)
-                elif isinstance(arg, float):
-                    args.append(arg)
-                elif isinstance(arg, np.ndarray):
+                if isinstance(arg, (int, float, np.ndarray)):
                     args.append(arg)
                 elif isinstance(arg, Series):
                     args.append(arg.view(ignore_nulls=True))

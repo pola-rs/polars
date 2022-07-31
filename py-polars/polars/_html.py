@@ -100,9 +100,7 @@ class HTMLFormatter:
                 with Tag(self.elements, "tr"):
                     for c in self.col_idx:
                         with Tag(self.elements, "td"):
-                            if r == -1:
-                                self.elements.append("...")
-                            elif c == -1:
+                            if r == -1 or c == -1:
                                 self.elements.append("...")
                             else:
                                 series = self.df[:, c]
