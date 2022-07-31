@@ -64,16 +64,11 @@
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::*;
 use arrow::array::StructArray;
-use arrow::io::ndjson::read::FallibleStreamingIterator;
-pub use arrow::{
-    error::Result as ArrowResult,
-    io::{json, ndjson},
-};
+pub use arrow::{error::Result as ArrowResult, io::json};
 use polars_arrow::conversion::chunk_to_struct;
-use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 use polars_core::prelude::*;
 use std::convert::TryFrom;
-use std::io::{Cursor, Seek, Write};
+use std::io::Write;
 use std::ops::Deref;
 
 pub enum JsonFormat {
@@ -166,11 +161,11 @@ where
     }
 
     fn finish(self) -> Result<DataFrame> {
-        let mmap_read: ReaderBytes = (&self.reader).into();
-        let bytes = mmap_read.deref();
+        let rb: ReaderBytes = (&self.reader).into();
 
         let out = match self.json_format {
             JsonFormat::Json => {
+                let bytes = rb.deref();
                 let json_value = arrow::io::json::read::json_deserializer::parse(bytes)
                     .map_err(|err| PolarsError::ComputeError(format!("{:?}", err).into()))?;
                 // likely struct type
@@ -182,28 +177,21 @@ where
                 DataFrame::try_from(arr.clone())
             }
             JsonFormat::JsonLines => {
-                let mut file = Cursor::new(bytes);
-
-                let dtype = ndjson::read::infer(&mut file, self.infer_schema_len)?;
-                file.rewind()?;
-
-                let mut reader = ndjson::read::FileReader::new(
-                    &mut file,
-                    vec!["".to_string(); self.batch_size],
+                let mut json_reader = CoreJsonReader::new(
+                    rb,
                     None,
-                );
-                let mut arrays = vec![];
-                // `next` is IO-bounded
-                while let Some(rows) = reader.next()? {
-                    // `deserialize` is CPU-bounded
-                    let array = ndjson::read::deserialize(rows, dtype.clone())?;
-                    arrays.push(array);
+                    None,
+                    None,
+                    1024, // sample size
+                    1 << 18,
+                    false,
+                    self.infer_schema_len,
+                )?;
+                let mut df: DataFrame = json_reader.as_df()?;
+                if self.rechunk {
+                    df.as_single_chunk_par();
                 }
-                let arr = concatenate_owned_unchecked(&arrays)?;
-                let arr = arr.as_any().downcast_ref::<StructArray>().ok_or_else(|| {
-                    PolarsError::ComputeError("only can deserialize json objects".into())
-                })?;
-                DataFrame::try_from(arr.clone())
+                Ok(df)
             }
         }?;
 
