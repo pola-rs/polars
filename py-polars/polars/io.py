@@ -618,13 +618,18 @@ def scan_ipc(
     # Map legacy arguments to current ones and remove them from kwargs.
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
-    if (
-        _PYARROW_AVAILABLE
-        and row_count_name is None
-        and row_count_offset is None
-        and "*" not in file
-    ):
-        read_ipc(file=file, n_rows=n_rows, use_pyarrow=True, cache=False, rechunk=False)
+    if _PYARROW_AVAILABLE:
+        # we choose the read path as we can memory map the file
+        if isinstance(file, str) and "*" not in file or isinstance(file, Path):
+            return read_ipc(
+                file=file,
+                n_rows=n_rows,
+                use_pyarrow=True,
+                memory_map=True,
+                rechunk=False,
+                row_count_name=row_count_name,
+                row_count_offset=row_count_offset,
+            ).lazy()
 
     return LazyFrame.scan_ipc(
         file=file,
@@ -787,12 +792,11 @@ def read_ipc(
         columns = kwargs.pop("projection", None)
 
     if use_pyarrow:
-        if row_count_name is not None:
+        if n_rows and not memory_map:
             raise ValueError(
-                "``row_count_name`` cannot be used with ``use_pyarrow=True``."
+                "``n_rows`` cannot be used with ``use_pyarrow=True` "
+                "and memory_map=False`."
             )
-        if n_rows:
-            raise ValueError("``n_rows`` cannot be used with ``use_pyarrow=True``.")
 
     storage_options = storage_options or {}
     with _prepare_file_arg(file, **storage_options) as data:
@@ -804,7 +808,12 @@ def read_ipc(
                 )
 
             tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
-            return DataFrame._from_arrow(tbl, rechunk=rechunk)
+            df = DataFrame._from_arrow(tbl, rechunk=rechunk)
+            if row_count_name is not None:
+                df = df.with_row_count(row_count_name, row_count_offset)
+            if n_rows is not None:
+                df = df.slice(0, n_rows)
+            return df
 
         return DataFrame._read_ipc(
             data,
