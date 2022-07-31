@@ -339,13 +339,7 @@ impl DataFrame {
     ) -> Result<DataFrame> {
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = how {
-            let out = self.cross_join(other, suffix)?;
-            return Ok(if let Some((offset, len)) = slice {
-                // todo! don't materialize whole frame before slicing.
-                out.slice(offset, len)
-            } else {
-                out
-            });
+            return self.cross_join(other, suffix, slice);
         }
 
         #[cfg(feature = "chunked_ids")]
@@ -620,7 +614,7 @@ impl DataFrame {
     {
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = how {
-            return self.cross_join(other, suffix);
+            return self.cross_join(other, suffix, None);
         }
         let selected_left = self.select_series(left_on)?;
         let selected_right = other.select_series(right_on)?;
