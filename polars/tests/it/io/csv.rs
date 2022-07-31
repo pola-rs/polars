@@ -431,6 +431,7 @@ fn test_skip_rows() -> Result<()> {
         .with_delimiter(b' ')
         .finish()?;
 
+    dbg!(&df);
     assert_eq!(df.height(), 3);
     Ok(())
 }

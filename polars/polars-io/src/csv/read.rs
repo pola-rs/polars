@@ -101,7 +101,7 @@ where
     n_rows: Option<usize>,
     // used by error ignore logic
     max_records: Option<usize>,
-    skip_rows: usize,
+    skip_rows_before_header: usize,
     /// Optional indexes of the columns to project
     projection: Option<Vec<usize>>,
     /// Optional column names to project/ select.
@@ -179,9 +179,9 @@ where
         self
     }
 
-    /// Skip the first `n` rows during parsing. The header will be parsed an `n` lines.
+    /// Skip the first `n` rows during parsing. The header will be parsed at `n` lines.
     pub fn with_skip_rows(mut self, skip_rows: usize) -> Self {
-        self.skip_rows = skip_rows;
+        self.skip_rows_before_header = skip_rows;
         self
     }
 
@@ -334,7 +334,7 @@ where
             rechunk: true,
             n_rows: None,
             max_records: Some(128),
-            skip_rows: 0,
+            skip_rows_before_header: 0,
             projection: None,
             delimiter: None,
             has_header: true,
@@ -414,7 +414,7 @@ where
             let mut csv_reader = CoreReader::new(
                 reader_bytes,
                 self.n_rows,
-                self.skip_rows,
+                self.skip_rows_before_header,
                 self.projection,
                 self.max_records,
                 self.delimiter,
@@ -446,7 +446,7 @@ where
             let mut csv_reader = CoreReader::new(
                 reader_bytes,
                 self.n_rows,
-                self.skip_rows,
+                self.skip_rows_before_header,
                 self.projection,
                 self.max_records,
                 self.delimiter,
