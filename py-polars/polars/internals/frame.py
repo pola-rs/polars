@@ -1164,6 +1164,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         Examples
         --------
+        >>> import pathlib
+        >>>
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3, 4, 5],
@@ -1171,7 +1173,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ...         "ham": ["a", "b", "c", "d", "e"],
         ...     }
         ... )
-        >>> df.write_csv("new_file.csv", sep=",")
+        >>> path: pathlib.Path = dirpath / "new_file.csv"
+        >>> df.write_csv(path, sep=",")
 
         """
         if len(sep) > 1:

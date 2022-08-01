@@ -1,5 +1,5 @@
 # -------------------------------------------------
-# Validate Series behaviour with parameteric tests
+# Validate Series behaviour with parametric tests
 # -------------------------------------------------
 from __future__ import annotations
 

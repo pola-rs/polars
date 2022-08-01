@@ -337,11 +337,11 @@ if HYPOTHESIS_INSTALLED:
         UInt32: integers(min_value=0, max_value=(2**32) - 1),
         UInt64: integers(min_value=0, max_value=(2**64) - 1),
         # TODO: when generating text for categorical, ensure there are repeats -
-        # don't want all to be unique.
+        #  don't want all to be unique.
         Categorical: text(),
         Utf8: text(),
         # TODO: generate arrow temporal types with different resolution (32/64) to
-        # validate compatibility.
+        #  validate compatibility.
         Time: times(),
         Date: dates(),
         Duration: timedeltas(),
@@ -592,7 +592,6 @@ if HYPOTHESIS_INSTALLED:
         >>> @given(df=series())
         ... def test_repr(s: pl.Series) -> None:
         ...     assert isinstance(repr(s), str)
-        ...     # print(s)
         >>>
         >>> s = series(dtype=pl.Int32, max_size=5)
         >>> s.example()  # doctest: +SKIP
@@ -748,7 +747,6 @@ if HYPOTHESIS_INSTALLED:
         >>> @given(df=dataframes())
         ... def test_repr(df: pl.DataFrame) -> None:
         ...     assert isinstance(repr(df), str)
-        ...     # print(df)
         >>>
         >>> # generate LazyFrames with at least 1 column, random dtypes, and specific size:
         >>> df = dataframes(min_cols=1, lazy=True, max_size=5)
