@@ -30,4 +30,4 @@ jobs:
           target: aarch64-unknown-linux-gnu
           maturin-version: '0.13.0'
           command: publish
-          args: -m py-polars/Cargo.toml --no-default-features --features=all --no-sdist -o wheels -i python -u ritchie46
+          args: -m py-polars/Cargo.toml --no-sdist -o wheels -i python -u ritchie46
