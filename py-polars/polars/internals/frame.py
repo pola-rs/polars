@@ -4499,7 +4499,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ]]
 
         """
-        return list(map(lambda s: pli.wrap_s(s), self._df.get_columns()))
+        return [pli.wrap_s(s) for s in self._df.get_columns()]
 
     def get_column(self, name: str) -> pli.Series:
         """
@@ -4941,7 +4941,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             groups = [groups]
 
         if as_dict:
-            out: dict[Any, DF] = dict()
+            out: dict[Any, DF] = {}
             if len(groups) == 1:
                 for _df in self._df.partition_by(groups, maintain_order):
                     df = self._from_pydf(_df)

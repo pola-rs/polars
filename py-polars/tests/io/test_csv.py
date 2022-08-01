@@ -585,7 +585,7 @@ def test_different_eol_char() -> None:
 
 
 def test_csv_write_escape_newlines() -> None:
-    df = pl.DataFrame(dict(escape=["n\nn"]))
+    df = pl.DataFrame({"escape": ["n\nn"]})
     f = io.BytesIO()
     df.write_csv(f)
     f.seek(0)

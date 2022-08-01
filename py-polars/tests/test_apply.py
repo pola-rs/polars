@@ -125,9 +125,11 @@ def test_apply_struct() -> None:
 
 def test_apply_numpy_out_3057() -> None:
     df = pl.DataFrame(
-        dict(
-            id=[0, 0, 0, 1, 1, 1], t=[2.0, 4.3, 5, 10, 11, 14], y=[0.0, 1, 1.3, 2, 3, 4]
-        )
+        {
+            "id": [0, 0, 0, 1, 1, 1],
+            "t": [2.0, 4.3, 5, 10, 11, 14],
+            "y": [0.0, 1, 1.3, 2, 3, 4],
+        }
     )
 
     assert (

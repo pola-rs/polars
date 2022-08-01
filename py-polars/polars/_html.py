@@ -159,7 +159,7 @@ class NotebookFormatter(HTMLFormatter):
         if not in_vscode_notebook():
             element_props.append(("td", "line-height", "95%"))
 
-        template_mid = "\n\n".join(map(lambda t: template_select % t, element_props))
+        template_mid = "\n\n".join(template_select % t for t in element_props)
         template = dedent("\n".join((template_first, template_mid, template_last)))
         self.write(template)
 
