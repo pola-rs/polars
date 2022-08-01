@@ -20,9 +20,9 @@ except ImportError:
     _PYARROW_AVAILABLE = False
 
 from polars.convert import from_arrow
-from polars.datatypes import DataType, Utf8
+from polars.datatypes import Categorical, DataType, Utf8
 from polars.internals import DataFrame, LazyFrame, _scan_ds
-from polars.internals.io import _prepare_file_arg
+from polars.internals.io import _prepare_file_arg, read_ipc_schema
 
 try:
     import connectorx as cx
@@ -623,7 +623,13 @@ def scan_ipc(
 
     if _PYARROW_AVAILABLE:
         # we choose the read path as we can memory map the file
-        if isinstance(file, str) and "*" not in file or isinstance(file, Path):
+        if (
+            isinstance(file, str)
+            and "*" not in file
+            or isinstance(file, Path)
+            # categoricals are not memory mappable by pyarrow
+            and Categorical not in read_ipc_schema(file).values()
+        ):
             return read_ipc(
                 file=file,
                 n_rows=n_rows,
