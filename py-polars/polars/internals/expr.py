@@ -314,7 +314,7 @@ class Expr:
 
     def sqrt(self) -> Expr:
         """Compute the square root of the elements."""
-        return self**0.5
+        return self ** 0.5
 
     def log10(self) -> Expr:
         """Compute the base 10 logarithm of the input array, element-wise."""
@@ -1063,6 +1063,7 @@ class Expr:
 
         Examples
         --------
+
         >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
         >>> df.select(pl.all().head(1).append(pl.all().tail(1)))
         shape: (2, 2)
@@ -1081,7 +1082,33 @@ class Expr:
         return wrap_expr(self._pyexpr.append(other._pyexpr, upcast))
 
     def rechunk(self) -> Expr:
-        """Create a single chunk of memory for this Series."""
+        """Create a single chunk of memory for this Series.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> # Create a Series with 3 nulls, append column a then rechunk
+        >>> (df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk()))
+        shape: (6, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ i64     │
+        ╞═════════╡
+        │ null    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ null    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ null    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 1       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 1       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 2       │
+        └─────────┘
+        """
         return wrap_expr(self._pyexpr.rechunk())
 
     def drop_nulls(self) -> Expr:
@@ -2627,6 +2654,20 @@ class Expr:
         predicate
             Boolean expression.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"group_col":['g1','g1','g2'],"b": [1, 2, 3]})
+        >>> (df.groupby('group_col').agg([pl.col('b').filter(pl.col('b')<2).sum().alias('lt'),pl.col('b').filter(pl.col('b')>=2).sum().alias('gte')]))
+        shape: (2, 3)
+        ┌─────┬──────┬─────┐
+        │ a   ┆ lt   ┆ gte │
+        │ --- ┆ ---  ┆ --- │
+        │ str ┆ i64  ┆ i64 │
+        ╞═════╪══════╪═════╡
+        │ g1  ┆ 1    ┆ 2   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ g2  ┆ null ┆ 3   │
+        └─────┴──────┴─────┘
         """
         return wrap_expr(self._pyexpr.filter(predicate._pyexpr))
 
@@ -2638,6 +2679,21 @@ class Expr:
         ----------
         predicate
             Boolean expression.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"group_col":['g1','g1','g2'],"b": [1, 2, 3]})
+        >>> (df.groupby('group_col').agg([pl.col('b').where(pl.col('b')<2).sum().alias('lt'),pl.col('b').where(pl.col('b')>=2).sum().alias('gte')]))
+        shape: (2, 3)
+        ┌─────┬──────┬─────┐
+        │ a   ┆ lt   ┆ gte │
+        │ --- ┆ ---  ┆ --- │
+        │ str ┆ i64  ┆ i64 │
+        ╞═════╪══════╪═════╡
+        │ g2  ┆ null ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ g1  ┆ 1    ┆ 2   │
+        └─────┴──────┴─────┘
 
         """
         return self.filter(predicate)
@@ -2927,13 +2983,50 @@ class Expr:
         return wrap_expr(self._pyexpr.take_every(n))
 
     def head(self, n: int | Expr | None = None) -> Expr:
-        """Take the first n values."""
+        """Take the first n values.
         if isinstance(n, Expr):
             return self.slice(0, n)
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
+        >>> df.head(3)
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        ├╌╌╌╌╌┤
+        │ 3   │
+        └─────┘
+        """
+
         return wrap_expr(self._pyexpr.head(n))
 
     def tail(self, n: int | None = None) -> Expr:
-        """Take the last n values."""
+        """Take the last n values.
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
+        >>> df.tail(3)
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 5   │
+        ├╌╌╌╌╌┤
+        │ 6   │
+        ├╌╌╌╌╌┤
+        │ 7   │
+        └─────┘
+        """
+
         return wrap_expr(self._pyexpr.tail(n))
 
     def pow(self, exponent: int | float | pli.Series | Expr) -> Expr:
@@ -3186,6 +3279,23 @@ class Expr:
         signed
             If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 1, 2], dtype=pl.UInt64)
+        >>> df = pl.DataFrame([s])
+        >>> df.select([pl.col("a").reinterpret(signed=True).alias('reinterpreted'),pl.col('a').alias('original')])
+        shape: (3, 2)
+        ┌───────────────┬──────────┐
+        │ reinterpreted ┆ original │
+        │ ---           ┆ ---      │
+        │ i64           ┆ u64      │
+        ╞═══════════════╪══════════╡
+        │ 1             ┆ 1        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 1             ┆ 1        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 2             ┆ 2        │
+        └───────────────┴──────────┘
         """
         return wrap_expr(self._pyexpr.reinterpret(signed))
 
