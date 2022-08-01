@@ -11,7 +11,7 @@ except ImportError:
     warnings.warn("polars binary missing!")
 
 import polars.testing as testing
-from polars.cfg import Config, toggle_string_cache  # We do not export in __all__
+from polars.cfg import Config
 from polars.convert import (
     from_arrow,
     from_dict,
@@ -122,6 +122,7 @@ from polars.io import (
     scan_ipc,
     scan_parquet,
 )
+from polars.string_cache import toggle_string_cache  # We do not export in __all__
 from polars.string_cache import StringCache
 from polars.utils import threadpool_size
 
@@ -133,6 +134,8 @@ __all__ = [
     "ArrowError",
     "ComputeError",
     "NoDataError",
+    "DuplicateError",
+    "PanicException",
     "DataFrame",
     "Series",
     "LazyFrame",
@@ -154,6 +157,7 @@ __all__ = [
     "Date",
     "Datetime",
     "Time",
+    "Duration",
     "Object",
     "Categorical",
     "Field",
@@ -186,6 +190,8 @@ __all__ = [
     "date_range",
     "get_dummies",
     "repeat",
+    "element",
+    "cut",
     # polars.internal.lazy_functions
     "col",
     "count",
@@ -226,6 +232,8 @@ __all__ = [
     "list",  # named to_list, see import above
     "select",
     "var",
+    "struct",
+    "duration",
     # polars.convert
     "from_dict",
     "from_dicts",
