@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import warnings
+from contextlib import suppress
 from datetime import date, datetime, time, timedelta
 from itertools import zip_longest
 from typing import TYPE_CHECKING, Any, Iterable, Sequence
@@ -195,7 +196,7 @@ def sequence_to_pyseries(
             )
             return arrow_to_pyseries(name, pa.array(values, type=arrow_dtype))
 
-        elif dtype_ == list or dtype_ == tuple:
+        elif dtype_ in (list, tuple):
             if nested_dtype is None:
                 nested_value = _get_first_non_none(value)
                 nested_dtype = type(nested_value) if nested_value is not None else float
@@ -230,10 +231,8 @@ def sequence_to_pyseries(
                             count += 1
                     if equal_to_inner:
                         dtype = py_type_to_dtype(nested_dtype)
-                        try:
+                        with suppress(BaseException):
                             return PySeries.new_list(name, values, dtype)
-                        except BaseException:
-                            pass
                 # pass we create an object if we get here
             else:
                 try:

@@ -38,7 +38,7 @@ def test_special_char_colname_init() -> None:
     df = pl.DataFrame(columns=cols)
 
     assert len(cols) == len(df.columns)
-    assert 0 == len(df.rows())
+    assert len(df.rows()) == 0
     assert df.is_empty()
 
 

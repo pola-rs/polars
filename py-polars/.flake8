@@ -9,6 +9,8 @@ extend-ignore =
     D107, D203, D212, D402, D415, D416,
     # TODO: Remove errors below to further improve docstring linting
     D1, D400, D205,
+    # flake8-simplify
+    SIM102, SIM117,
 
 per-file-ignores =
     __init__.py:F401

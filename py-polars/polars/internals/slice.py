@@ -143,9 +143,9 @@ class LazyPolarsSlice:
         # [:0]
         # [i:<=i]
         # [i:>=i:-k]
-        if step > 0 and (s.stop is not None and start >= s.stop):
-            return self.obj.cleared()
-        elif step < 0 and (s.stop is not None and s.stop >= s.start >= 0):
+        if (step > 0 and (s.stop is not None and start >= s.stop)) or (
+            step < 0 and (s.stop is not None and s.stop >= s.start >= 0)
+        ):
             return self.obj.cleared()
 
         # ---------------------------------------
