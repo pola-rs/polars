@@ -512,7 +512,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             return dot
         with tempfile.TemporaryDirectory() as tmpdir_name:
             dot_path = os.path.join(tmpdir_name, "dot")
-            with open(dot_path, "w") as f:
+            with open(dot_path, "w", encoding="utf8") as f:
                 f.write(dot)
 
             subprocess.run(["dot", "-Nshape=box", "-Tpng", "-O", dot_path])
