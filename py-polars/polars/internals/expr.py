@@ -1906,6 +1906,7 @@ class Expr:
     ) -> Expr:
         """
         Fill null values using a filling strategy, literal, or Expr.
+        To interpolate over null values see interpolate
 
         Parameters
         ----------
@@ -2448,6 +2449,27 @@ class Expr:
 
         Examples
         --------
+        >>> df = pl.DataFrame(
+        ...   {
+        ... "groups": ["g1", "g1", "g2"],
+        ... "values": [1, 2, 3]
+        ... }
+        ... )
+        >>> df.with_column(
+        ... pl.col("values").max().over("groups").alias("max_by_group")
+        ... )
+        shape: (3, 3)
+        ┌────────┬────────┬──────────────┐
+        │ groups ┆ values ┆ max_by_group │
+        │ ---    ┆ ---    ┆ ---          │
+        │ str    ┆ i64    ┆ i64          │
+        ╞════════╪════════╪══════════════╡
+        │ g1     ┆ 1      ┆ 2            │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ g1     ┆ 2      ┆ 2            │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ g2     ┆ 3      ┆ 3            │
+        └────────┴────────┴──────────────┘
         >>> df = pl.DataFrame(
         ...     {
         ...         "groups": [1, 1, 2, 2, 1, 2, 3, 3, 1],
@@ -3336,7 +3358,25 @@ class Expr:
         return self.map(inspect, return_dtype=None, agg_list=True)
 
     def interpolate(self) -> Expr:
-        """Linearly interpolate intermediate values."""
+        """Fill nulls with linear interpolation over missing values.
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, None, 3],"b": [1.0, float('nan'), 3.0]})
+        >>> df.select(pl.all().interpolate())
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ f64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 1.0 │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ NaN │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 3.0 │
+        └─────┴─────┘
+        """
+
         return wrap_expr(self._pyexpr.interpolate())
 
     def rolling_min(
@@ -3799,6 +3839,34 @@ class Expr:
             window, consider using `groupby_rolling` this method can cache the window
             size computation.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_std(window_size=3),
+        ...         ]
+        ...     )
+        ... )
+        shape: (6, 1)
+        ┌──────────┐
+        │ A        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ null     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ null     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.527525 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 2.0      │
+        └──────────┘
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -3870,6 +3938,34 @@ class Expr:
             window, consider using `groupby_rolling` this method can cache the window
             size computation.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_var(window_size=3),
+        ...         ]
+        ...     )
+        ... )
+        shape: (6, 1)
+        ┌──────────┐
+        │ A        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ null     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ null     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 2.333333 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 4.0      │
+        └──────────┘
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -3937,6 +4033,34 @@ class Expr:
             window, consider using `groupby_rolling` this method can cache the window
             size computation.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_median(window_size=3),
+        ...         ]
+        ...     )
+        ... )
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 2.0  │
+        ├╌╌╌╌╌╌┤
+        │ 3.0  │
+        ├╌╌╌╌╌╌┤
+        │ 4.0  │
+        ├╌╌╌╌╌╌┤
+        │ 6.0  │
+        └──────┘
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -4011,6 +4135,34 @@ class Expr:
             window, consider using `groupby_rolling` this method can cache the window
             size computation.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_quantile(quantile=0.33,window_size=3),
+        ...         ]
+        ...     )
+        ... )
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 1.0  │
+        ├╌╌╌╌╌╌┤
+        │ 2.0  │
+        ├╌╌╌╌╌╌┤
+        │ 3.0  │
+        ├╌╌╌╌╌╌┤
+        │ 4.0  │
+        └──────┘
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -4116,11 +4268,58 @@ class Expr:
         return wrap_expr(self._pyexpr.rolling_skew(window_size, bias))
 
     def abs(self) -> Expr:
-        """Compute absolute values."""
+        """Compute absolute values.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "A": [-1.0, 0.0, 1.0, 2.0],
+        ...     }
+        ... )
+        >>> df.select(pl.col('A').abs())
+        shape: (4, 1)
+        ┌─────┐
+        │ A   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 1.0 │
+        ├╌╌╌╌╌┤
+        │ 0.0 │
+        ├╌╌╌╌╌┤
+        │ 1.0 │
+        ├╌╌╌╌╌┤
+        │ 2.0 │
+        └─────┘
+        """
         return wrap_expr(self._pyexpr.abs())
 
     def argsort(self, reverse: bool = False) -> Expr:
-        """Alias for `arg_sort`."""
+        """Alias for `arg_sort`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [20, 10, 30],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").argsort())
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 0   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        └─────┘
+
+        """
         return self.arg_sort(reverse)
 
     def rank(self, method: str = "average", reverse: bool = False) -> Expr:
