@@ -443,6 +443,9 @@ impl ToPyObject for Wrap<&Utf8Chunked> {
 impl ToPyObject for Wrap<&StructChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let s = self.0.clone().into_series();
+        // todo! iterate its chunks and flatten.
+        // make series::iter() accept a chunk index.
+        let s = s.rechunk();
         let iter = s.iter().map(|av| {
             if let AnyValue::Struct(vals, flds) = av {
                 struct_dict(py, vals, flds)

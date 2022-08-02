@@ -46,10 +46,6 @@ impl StructChunked {
         }
     }
 
-    pub(crate) fn arrow_array(&self) -> &ArrayRef {
-        &self.chunks[0]
-    }
-
     pub(crate) fn chunks(&self) -> &Vec<ArrayRef> {
         &self.chunks
     }
