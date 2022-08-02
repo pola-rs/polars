@@ -59,19 +59,14 @@ impl FromIterator<String> for Series {
 
 #[cfg(any(feature = "rows", feature = "dtype-struct"))]
 impl Series {
+    /// iterate over [`Series`] as [`AnyValue`].
+    ///
+    /// # Panics
+    /// This will panic if the array is not rechunked first.
     pub fn iter(&self) -> SeriesIter<'_> {
         let dtype = self.dtype();
-        let arr = match dtype {
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => {
-                let ca = self.struct_().unwrap();
-                &**ca.arrow_array()
-            }
-            _ => {
-                assert_eq!(self.chunks().len(), 1, "impl error");
-                &*self.chunks()[0]
-            }
-        };
+        assert_eq!(self.chunks().len(), 1, "impl error");
+        let arr = &*self.chunks()[0];
         let len = arr.len();
         SeriesIter {
             arr,

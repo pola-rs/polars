@@ -10,14 +10,7 @@ use polars_arrow::compute::cast::cast;
 impl Series {
     /// Returns a reference to the Arrow ArrayRef
     pub fn array_ref(&self, chunk_idx: usize) -> &ArrayRef {
-        match self.dtype() {
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => {
-                let ca = self.struct_().unwrap();
-                ca.arrow_array()
-            }
-            _ => &self.chunks()[chunk_idx] as &ArrayRef,
-        }
+        &self.chunks()[chunk_idx] as &ArrayRef
     }
 
     /// Convert a chunk in the Series to the correct Arrow type.
@@ -78,8 +71,6 @@ impl Series {
             }
             #[cfg(feature = "dtype-time")]
             DataType::Time => cast(&*self.chunks()[chunk_idx], &DataType::Time.to_arrow()).unwrap(),
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => self.array_ref(chunk_idx).clone(),
             _ => self.array_ref(chunk_idx).clone(),
         }
     }
