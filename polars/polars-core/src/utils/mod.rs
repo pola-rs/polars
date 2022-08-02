@@ -3,6 +3,7 @@ pub(crate) mod series;
 use crate::prelude::*;
 use crate::POOL;
 pub use arrow;
+use arrow::bitmap::Bitmap;
 pub use polars_arrow::utils::TrustMyLength;
 pub use polars_arrow::utils::*;
 pub use rayon;
@@ -953,6 +954,50 @@ pub(crate) fn create_chunked_index_mapping(chunks: &[ArrayRef], len: usize) -> V
     }
 
     vals
+}
+
+pub(crate) fn first_non_null<'a, I>(iter: I) -> Option<usize>
+where
+    I: Iterator<Item = Option<&'a Bitmap>>,
+{
+    let mut offset = 0;
+    for validity in iter {
+        if let Some(validity) = validity {
+            for (idx, is_valid) in validity.iter().enumerate() {
+                if is_valid {
+                    return Some(offset + idx);
+                }
+            }
+            offset += validity.len()
+        } else {
+            return Some(offset);
+        }
+    }
+    None
+}
+
+pub(crate) fn last_non_null<'a, I>(iter: I, len: usize) -> Option<usize>
+where
+    I: DoubleEndedIterator<Item = Option<&'a Bitmap>>,
+{
+    if len == 0 {
+        return None;
+    }
+    let mut offset = 0;
+    let len = len - 1;
+    for validity in iter.rev() {
+        if let Some(validity) = validity {
+            for (idx, is_valid) in validity.iter().rev().enumerate() {
+                if is_valid {
+                    return Some(len - (offset + idx));
+                }
+            }
+            offset += validity.len()
+        } else {
+            return Some(len - offset);
+        }
+    }
+    None
 }
 
 #[cfg(test)]
