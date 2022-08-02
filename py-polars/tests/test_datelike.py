@@ -1252,3 +1252,13 @@ def test_supertype_timezones_4174() -> None:
     # test if this runs without error
     date_to_fill = df["dt_London"][0]
     df["dt_London"] = df["dt_London"].shift_and_fill(1, date_to_fill)
+
+
+def test_weekday() -> None:
+    # monday
+    s = pl.Series([datetime(2020, 1, 6)])
+
+    for tu in ["ns", "us", "ms"]:
+        assert s.dt.cast_time_unit(tu).dt.weekday()[0] == 0
+
+    assert s.cast(pl.Date).dt.weekday()[0] == 0
