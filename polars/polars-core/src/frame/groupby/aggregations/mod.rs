@@ -22,6 +22,7 @@ use crate::frame::groupby::GroupsIdx;
 use crate::frame::groupby::GroupsIndicator;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
+use crate::series::IsSorted;
 use polars_arrow::kernels::rolling;
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
@@ -368,6 +369,17 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+        // faster paths
+        match (self.is_sorted2(), self.null_count()) {
+            (IsSorted::Ascending, 0) => {
+                return self.clone().into_series().agg_first(groups);
+            }
+            (IsSorted::Descending, 0) => {
+                return self.clone().into_series().agg_last(groups);
+            }
+            _ => {}
+        }
+
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx::<T, _>(groups, |(first, idx)| {
                 debug_assert!(idx.len() <= self.len());
@@ -401,12 +413,6 @@ where
                 groups: groups_slice,
                 rolling,
             } => {
-                if self.is_sorted() {
-                    return self.clone().into_series().agg_first(groups);
-                }
-                if self.is_sorted_reverse() {
-                    return self.clone().into_series().agg_last(groups);
-                }
                 if use_rolling_kernels(groups_slice, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
                     let values = arr.values().as_slice();
@@ -447,6 +453,16 @@ where
     }
 
     pub(crate) unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+        // faster paths
+        match (self.is_sorted2(), self.null_count()) {
+            (IsSorted::Ascending, 0) => {
+                return self.clone().into_series().agg_last(groups);
+            }
+            (IsSorted::Descending, 0) => {
+                return self.clone().into_series().agg_first(groups);
+            }
+            _ => {}
+        }
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx::<T, _>(groups, |(first, idx)| {
                 debug_assert!(idx.len() <= self.len());
@@ -482,13 +498,6 @@ where
                 groups: groups_slice,
                 rolling,
             } => {
-                if self.is_sorted() {
-                    return self.clone().into_series().agg_last(groups);
-                }
-                if self.is_sorted_reverse() {
-                    return self.clone().into_series().agg_first(groups);
-                }
-
                 if use_rolling_kernels(groups_slice, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
                     let values = arr.values().as_slice();

@@ -131,3 +131,51 @@ def test_sort_by_exps_nulls_last() -> None:
         "row_nr": [0, 4, 2, 1, 3],
         "a": [1, 1, -2, 3, None],
     }
+
+
+def test_sort_aggregation_fast_paths() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [None, 3, 2, 1],
+            "b": [3, 2, 1, None],
+            "c": [3, None, None, None],
+            "e": [None, None, None, 1],
+            "f": [1, 2, 5, 1],
+        }
+    )
+
+    expected = df.select(
+        [
+            pl.all().max().suffix("_max"),
+            pl.all().min().suffix("_min"),
+        ]
+    )
+
+    assert expected.to_dict(False) == {
+        "a_max": [3],
+        "b_max": [3],
+        "c_max": [3],
+        "e_max": [1],
+        "f_max": [5],
+        "a_min": [1],
+        "b_min": [1],
+        "c_min": [3],
+        "e_min": [1],
+        "f_min": [1],
+    }
+
+    for reverse in [True, False]:
+        for null_last in [True, False]:
+            out = df.select(
+                [
+                    pl.all()
+                    .sort(reverse=reverse, nulls_last=null_last)
+                    .max()
+                    .suffix("_max"),
+                    pl.all()
+                    .sort(reverse=reverse, nulls_last=null_last)
+                    .min()
+                    .suffix("_min"),
+                ]
+            )
+            assert out.frame_equal(expected)

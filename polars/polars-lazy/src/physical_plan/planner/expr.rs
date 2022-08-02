@@ -2,6 +2,7 @@ use super::super::expressions as phys_expr;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupByMethod;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 use polars_core::utils::parallel_op_series;
 
 impl DefaultPlanner {
@@ -161,7 +162,15 @@ impl DefaultPlanner {
                             Context::Default => {
                                 let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
-                                    parallel_op_series(|s| Ok(s.min_as_series()), s, None)
+
+                                    match s.is_sorted() {
+                                        IsSorted::Ascending | IsSorted::Descending => {
+                                            Ok(s.min_as_series())
+                                        }
+                                        IsSorted::Not => {
+                                            parallel_op_series(|s| Ok(s.min_as_series()), s, None)
+                                        }
+                                    }
                                 })
                                     as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
@@ -183,7 +192,15 @@ impl DefaultPlanner {
                             Context::Default => {
                                 let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
-                                    parallel_op_series(|s| Ok(s.max_as_series()), s, None)
+
+                                    match s.is_sorted() {
+                                        IsSorted::Ascending | IsSorted::Descending => {
+                                            Ok(s.max_as_series())
+                                        }
+                                        IsSorted::Not => {
+                                            parallel_op_series(|s| Ok(s.max_as_series()), s, None)
+                                        }
+                                    }
                                 })
                                     as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
