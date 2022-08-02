@@ -579,7 +579,10 @@ class Series:
         if isinstance(item, slice):
             return PolarsSlice(self).apply(item)
 
-        raise NotImplementedError
+        raise ValueError(
+            f"Cannot __getitem__ on Series of dtype: '{self.dtype}' "
+            f"with argument: '{item}' of type: '{type(item)}'."
+        )
 
     def __setitem__(
         self, key: int | Series | np.ndarray | list | tuple, value: Any

@@ -912,7 +912,8 @@ impl PyExpr {
             let gil = Python::acquire_gil();
             let py = gil.python();
 
-            let out = call_lambda_with_series(py, s.clone(), &lambda, &pypolars);
+            let out = call_lambda_with_series(py, s.clone(), &lambda, &pypolars)
+                .expect("python function failed");
             match out.getattr(py, "_s") {
                 Ok(pyseries) => {
                     let pyseries = pyseries.extract::<PySeries>(py).unwrap();

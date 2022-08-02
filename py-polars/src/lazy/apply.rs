@@ -49,7 +49,7 @@ pub(crate) fn call_lambda_with_series(
     s: Series,
     lambda: &PyObject,
     polars_module: &PyObject,
-) -> PyObject {
+) -> PyResult<PyObject> {
     let pypolars = polars_module.cast_as::<PyModule>(py).unwrap();
 
     // create a PySeries struct/object for Python
@@ -61,10 +61,7 @@ pub(crate) fn call_lambda_with_series(
         .call1((pyseries,))
         .unwrap();
     // call the lambda and get a python side Series wrapper
-    match lambda.call1(py, (python_series_wrapper,)) {
-        Ok(pyobj) => pyobj,
-        Err(e) => panic!("python apply failed: {}", e.value(py)),
-    }
+    lambda.call1(py, (python_series_wrapper,))
 }
 
 /// A python lambda taking two Series
@@ -159,7 +156,8 @@ pub fn map_single(
         let py = gil.python();
 
         // this is a python Series
-        let out = call_lambda_with_series(py, s.clone(), &lambda, &pypolars);
+        let out = call_lambda_with_series(py, s.clone(), &lambda, &pypolars)
+            .map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
 
         Ok(out.to_series(py, &pypolars, s.name()))
     };
