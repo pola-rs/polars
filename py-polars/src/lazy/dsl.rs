@@ -766,6 +766,10 @@ impl PyExpr {
         self.inner.clone().arr().lengths().into()
     }
 
+    pub fn arr_contains(&self, other: PyExpr) -> PyExpr {
+        self.inner.clone().arr().contains(other.inner).into()
+    }
+
     pub fn year(&self) -> PyExpr {
         self.clone().inner.dt().year().into()
     }

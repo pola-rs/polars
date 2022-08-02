@@ -3,6 +3,7 @@ mod arg_where;
 mod fill_null;
 #[cfg(feature = "is_in")]
 mod is_in;
+mod list;
 mod pow;
 #[cfg(feature = "row_hash")]
 mod row_hash;
@@ -49,6 +50,8 @@ pub enum FunctionExpr {
     FillNull {
         super_type: DataType,
     },
+    #[cfg(feature = "is_in")]
+    ListContains,
 }
 
 #[cfg(feature = "trigonometry")]
@@ -112,6 +115,8 @@ impl FunctionExpr {
             #[cfg(feature = "sign")]
             Sign => with_dtype(DataType::Int64),
             FillNull { super_type, .. } => with_dtype(super_type.clone()),
+            #[cfg(feature = "is_in")]
+            ListContains => with_dtype(DataType::Boolean),
         }
     }
 }
@@ -223,6 +228,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             }
             FillNull { super_type } => {
                 map_as_slice!(fill_null::fill_null, &super_type)
+            }
+            #[cfg(feature = "is_in")]
+            ListContains => {
+                wrap!(list::contains)
             }
         }
     }
