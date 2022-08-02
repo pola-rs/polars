@@ -144,7 +144,7 @@ def sequence_to_pyseries(
     strict: bool = True,
 ) -> PySeries:
     """Construct a PySeries from a sequence."""
-    dtype_: type | None = None
+    python_dtype: type | None = None
     nested_dtype: PolarsDataType | type | None = None
     temporal_unit: str | None = None
 
@@ -154,7 +154,7 @@ def sequence_to_pyseries(
     # lists defer to subsequent handling; identify nested type
     elif dtype == List:
         nested_dtype = getattr(dtype, "inner", None)
-        dtype_ = list
+        python_dtype = list
 
     # infer temporal type handling
     py_temporal_types = {date, datetime, timedelta, time}
@@ -162,26 +162,46 @@ def sequence_to_pyseries(
 
     value = _get_first_non_none(values)
     if value is not None:
+        # this branch is for dtypes set with python types.
+        # eg. 'datetime.date/datetime.datetime'
+        # and values that are integers
+        # if this holds we take the physical branch
+        # if the values are also python types we take the temporal branch
         if dtype in py_temporal_types and isinstance(value, int):
             dtype = py_type_to_dtype(dtype)  # construct from integer
         elif (
             dtype in pl_temporal_types or type(dtype) in pl_temporal_types
         ) and not isinstance(value, int):
             temporal_unit = getattr(dtype, "tu", None)
-            dtype_ = dtype_to_py_type(dtype)  # type: ignore[arg-type]
+            python_dtype = dtype_to_py_type(dtype)  # type: ignore[arg-type]
 
-    if (dtype is not None) and is_polars_dtype(dtype) and (dtype_ is None):
+    # physical branch
+    # flat data
+    if (dtype is not None) and is_polars_dtype(dtype) and (python_dtype is None):
         constructor = polars_type_to_constructor(dtype)
         pyseries = constructor(name, values, strict)
 
         if dtype in (Date, Datetime, Duration, Time, Categorical):
             pyseries = pyseries.cast(dtype, True)
         return pyseries
-    else:
-        if dtype_ is None:
-            dtype_ = float if (value is None) else type(value)
 
-        if dtype_ in py_temporal_types:
+    else:
+        if python_dtype is None:
+            python_dtype = float if (value is None) else type(value)
+
+        # temporal branch
+        if python_dtype in py_temporal_types:
+            if dtype is None:
+                dtype = py_type_to_dtype(python_dtype)  # construct from integer
+            elif dtype in py_temporal_types:
+                dtype = py_type_to_dtype(dtype)
+
+            # if no temporal unit given, we use anyvalues, so that we have one
+            # consistent level of entry that sets the units and timezones
+            # (e.g. we ignore them). They can be set afterwards.
+            if dtype == Datetime and temporal_unit is None:
+                return PySeries.new_from_anyvalues(name, values)
+
             if not _PYARROW_AVAILABLE:  # pragma: no cover
                 raise ImportError(
                     "'pyarrow' is required for converting a Sequence of date or"
@@ -189,14 +209,10 @@ def sequence_to_pyseries(
                 )
             # let arrow infer dtype if not timedelta
             # arrow uses microsecond durations by default, not supported yet.
-            arrow_dtype = (
-                dtype_to_arrow_type(dtype)
-                if (dtype is not None and temporal_unit)
-                else None
-            )
+            arrow_dtype = dtype_to_arrow_type(dtype)
             return arrow_to_pyseries(name, pa.array(values, type=arrow_dtype))
 
-        elif dtype_ in (list, tuple):
+        elif python_dtype in (list, tuple):
             if nested_dtype is None:
                 nested_value = _get_first_non_none(value)
                 nested_dtype = type(nested_value) if nested_value is not None else float
@@ -255,12 +271,12 @@ def sequence_to_pyseries(
             # Convert mixed sequences like `[[12], "foo", 9]`
             return PySeries.new_object(name, values, strict)
 
-        elif dtype_ == pli.Series:
+        elif python_dtype == pli.Series:
             return PySeries.new_series_list(name, [v.inner() for v in values], strict)
-        elif dtype_ == PySeries:
+        elif python_dtype == PySeries:
             return PySeries.new_series_list(name, values, strict)
         else:
-            constructor = py_type_to_constructor(dtype_)
+            constructor = py_type_to_constructor(python_dtype)
 
             if constructor == PySeries.new_object:
                 try:

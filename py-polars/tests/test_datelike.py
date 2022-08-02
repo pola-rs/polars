@@ -1262,3 +1262,12 @@ def test_weekday() -> None:
         assert s.dt.cast_time_unit(tu).dt.weekday()[0] == 0
 
     assert s.cast(pl.Date).dt.weekday()[0] == 0
+
+
+def test_from_dict_tu_consistency() -> None:
+    tz = pytz.timezone("PRC")
+    dt = datetime(2020, 8, 1, 12, 0, 0, tzinfo=tz)
+    from_dict = pl.from_dict({"dt": [dt]})
+    from_dicts = pl.from_dicts([{"dt": dt}])
+
+    assert from_dict.dtypes == from_dicts.dtypes
