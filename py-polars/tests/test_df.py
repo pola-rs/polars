@@ -612,7 +612,7 @@ def test_set() -> None:
             df[(1, 2, 3)] = 1  # type: ignore[index]
 
         # we cannot index with any type, such as bool
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(ValueError):
             df[True] = 1  # type: ignore[index]
 
 
@@ -1660,7 +1660,7 @@ def test_get_item() -> None:
 
     # note that we cannot use floats (even if they could be casted to integer without
     # loss)
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ValueError):
         _ = df[np.array([1.0])]
 
     # using boolean masks with numpy is deprecated

@@ -117,3 +117,26 @@ def test_not_found_on_rename() -> None:
                 "does_not_exist": "exists",
             }
         )
+
+
+@typing.no_type_check
+def test_getitem_errs() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    with pytest.raises(
+        ValueError,
+        match=r"Cannot __getitem__ on DataFrame with item: "
+        r"'{'some'}' of type: '<class 'set'>'.",
+    ):
+        df[{"some"}]
+
+    with pytest.raises(
+        ValueError,
+        match=r"Cannot __getitem__ on Series of dtype: "
+        r"'<class 'polars.datatypes.Int64'>' with argument: "
+        r"'{'strange'}' of type: '<class 'set'>'.",
+    ):
+        df["a"][{"strange"}]
+
+    with pytest.raises(ValueError, match="Cannot __setitem__ on DataFrame with key:.*"):
+        df[{"some"}] = "foo"

@@ -1993,7 +1993,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 )
 
         # if no data has been returned, the operation is not supported
-        raise NotImplementedError
+        raise ValueError(
+            f"Cannot __getitem__ on DataFrame with item: '{item}'"
+            f" of type: '{type(item)}'."
+        )
 
     def __setitem__(
         self, key: str | list | tuple[Any, str | int], value: Any
@@ -2048,7 +2051,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
             elif isinstance(col_selection, str):
                 self.replace(col_selection, s)
         else:
-            raise NotImplementedError
+            raise ValueError(
+                f"Cannot __setitem__ on DataFrame with key: '{key}' "
+                f"of type: '{type(key)}' and value: '{value}' "
+                f"of type: '{type(value)}'."
+            )
 
     def __len__(self) -> int:
         return self.height
