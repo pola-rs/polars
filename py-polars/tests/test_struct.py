@@ -607,3 +607,10 @@ def test_nested_struct_sliced_append() -> None:
         {"_experience": {"aaid": {"id": "B", "namespace": {"code": "bravo"}}}},
         {"_experience": {"aaid": {"id": "D", "namespace": {"code": "delta"}}}},
     ]
+
+
+def test_struct_groupby_field_agg_4216() -> None:
+    df = pl.DataFrame([{"a": {"b": 1}, "c": 0}])
+    assert df.groupby("c").agg(pl.col("a").struct.field("b").count()).to_dict(
+        False
+    ) == {"c": [0], "b": [1]}

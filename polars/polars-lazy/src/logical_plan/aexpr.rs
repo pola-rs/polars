@@ -334,7 +334,8 @@ impl AExpr {
             } => {
                 let fields = input
                     .iter()
-                    .map(|node| arena.get(*node).to_field(schema, ctxt, arena))
+                    // default context because `col()` would return a list in aggregation context
+                    .map(|node| arena.get(*node).to_field(schema, Context::Default, arena))
                     .collect::<Result<Vec<_>>>()?;
                 Ok(output_type.get_field(schema, ctxt, &fields))
             }
@@ -343,7 +344,8 @@ impl AExpr {
             } => {
                 let fields = input
                     .iter()
-                    .map(|node| arena.get(*node).to_field(schema, ctxt, arena))
+                    // default context because `col()` would return a list in aggregation context
+                    .map(|node| arena.get(*node).to_field(schema, Context::Default, arena))
                     .collect::<Result<Vec<_>>>()?;
                 function.get_field(schema, ctxt, &fields)
             }
