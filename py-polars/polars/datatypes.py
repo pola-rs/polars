@@ -3,7 +3,7 @@ from __future__ import annotations
 import ctypes
 import sys
 from datetime import date, datetime, time, timedelta
-from typing import Any, Dict, Optional, Sequence, Tuple, Type, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Tuple, Type, Union
 
 try:
     import pyarrow as pa
@@ -12,7 +12,6 @@ try:
 except ImportError:
     _PYARROW_AVAILABLE = False
 
-from _ctypes import _SimpleCData  # type: ignore[import]
 
 try:
     from polars.polars import dtype_str_repr
@@ -21,6 +20,9 @@ try:
     _DOCUMENTING = False
 except ImportError:
     _DOCUMENTING = True
+
+if TYPE_CHECKING:
+    from _ctypes import _SimpleCData  # type: ignore[import]
 
 
 def get_idx_type() -> Type[DataType]:

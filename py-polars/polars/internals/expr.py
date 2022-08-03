@@ -4,7 +4,7 @@ import copy
 import math
 import random
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, List, Sequence
+from typing import TYPE_CHECKING, Any, Callable, List, Sequence
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -22,18 +22,14 @@ from polars.datatypes import (
 from polars.utils import _timedelta_to_pl_duration
 
 try:
-    from polars.polars import PyExpr
-
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
-
-try:
     import numpy as np
 
     _NUMPY_AVAILABLE = True
 except ImportError:
     _NUMPY_AVAILABLE = False
+
+if TYPE_CHECKING:
+    from polars.polars import PyExpr
 
 
 def selection_to_pyexpr_list(

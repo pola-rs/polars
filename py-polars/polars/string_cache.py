@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from types import TracebackType
+from typing import TYPE_CHECKING
 
 try:
     from polars.polars import toggle_string_cache as pytoggle_string_cache
@@ -8,6 +8,9 @@ try:
     _DOCUMENTING = False
 except ImportError:
     _DOCUMENTING = True
+
+if TYPE_CHECKING:
+    from types import TracebackType
 
 
 class StringCache:

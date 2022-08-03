@@ -7,12 +7,15 @@ import textwrap
 import zlib
 from datetime import date
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
-from polars import DataType
 from polars.testing import assert_frame_equal_local_categoricals
+
+if TYPE_CHECKING:
+    from polars import DataType
 
 
 def test_quoted_date() -> None:

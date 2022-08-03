@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
-from _pytest.capture import CaptureFixture
 
 import polars as pl
 from polars import col, lit, map_binary, when
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from _pytest.capture import CaptureFixture
 
 
 def test_lazy() -> None:

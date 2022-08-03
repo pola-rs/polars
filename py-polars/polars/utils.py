@@ -7,8 +7,7 @@ import os
 import sys
 import warnings
 from datetime import date, datetime, time, timedelta, timezone
-from pathlib import Path
-from typing import Any, Callable, Iterable, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence
 
 from polars.datatypes import DataType, Date, Datetime
 
@@ -30,6 +29,9 @@ if sys.version_info >= (3, 10):
     from typing import TypeGuard
 else:
     from typing_extensions import TypeGuard
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _process_null_values(

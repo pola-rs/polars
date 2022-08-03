@@ -4,10 +4,17 @@ import glob
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    BinaryIO,
+    ContextManager,
+    Iterator,
+    TextIO,
+    overload,
+)
 from urllib.request import urlopen
 
-from polars.datatypes import DataType
 from polars.utils import format_path
 
 try:
@@ -23,6 +30,9 @@ try:
     from polars.polars import parquet_schema as _parquet_schema
 except ImportError:
     pass
+
+if TYPE_CHECKING:
+    from polars.datatypes import DataType
 
 
 def _process_http_file(path: str) -> BytesIO:

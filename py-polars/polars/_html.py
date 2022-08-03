@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import os
 from textwrap import dedent
-from types import TracebackType
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 
 from polars.datatypes import Object
+
+if TYPE_CHECKING:
+    from types import TracebackType
 
 
 class Tag:
