@@ -220,10 +220,8 @@ impl PhysicalExpr for BinaryExpr {
 
                                 // Safety:
                                 // we are in bounds
-                                let arr = unsafe { arr_l.slice_unchecked(idx, 1) };
-                                us.swap(arr);
-                                // ensure the length is correct
-                                us.as_mut()._get_inner_mut().compute_len();
+                                let mut arr = unsafe { arr_l.slice_unchecked(idx, 1) };
+                                us.swap(&mut arr);
 
                                 let l = us.as_ref();
 
@@ -272,10 +270,8 @@ impl PhysicalExpr for BinaryExpr {
                                 // TODO: optimize this? Its slow.
                                 // Safety:
                                 // we are in bounds
-                                let arr = unsafe { arr_r.slice_unchecked(idx, 1) };
-                                us.swap(arr);
-                                // ensure the length is correct
-                                us.as_mut()._get_inner_mut().compute_len();
+                                let mut arr = unsafe { arr_r.slice_unchecked(idx, 1) };
+                                us.swap(&mut arr);
                                 let r = us.as_ref();
 
                                 apply_operator(l, r, self.op)

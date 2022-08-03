@@ -5,6 +5,8 @@ mod fill_null;
 mod is_in;
 mod list;
 mod pow;
+#[cfg(all(feature = "rolling_window", feature = "moment"))]
+mod rolling;
 #[cfg(feature = "row_hash")]
 mod row_hash;
 #[cfg(feature = "sign")]
@@ -52,6 +54,12 @@ pub enum FunctionExpr {
     },
     #[cfg(feature = "is_in")]
     ListContains,
+    #[cfg(all(feature = "rolling_window", feature = "moment"))]
+    // if we add more, make a sub enum
+    RollingSkew {
+        window_size: usize,
+        bias: bool,
+    },
 }
 
 #[cfg(feature = "trigonometry")]
@@ -117,6 +125,8 @@ impl FunctionExpr {
             FillNull { super_type, .. } => with_dtype(super_type.clone()),
             #[cfg(feature = "is_in")]
             ListContains => with_dtype(DataType::Boolean),
+            #[cfg(all(feature = "rolling_window", feature = "moment"))]
+            RollingSkew { .. } => float_dtype(),
         }
     }
 }
@@ -232,6 +242,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "is_in")]
             ListContains => {
                 wrap!(list::contains)
+            }
+            #[cfg(all(feature = "rolling_window", feature = "moment"))]
+            RollingSkew { window_size, bias } => {
+                map_with_args!(rolling::rolling_skew, window_size, bias)
             }
         }
     }
