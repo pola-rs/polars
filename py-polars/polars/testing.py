@@ -298,9 +298,7 @@ def verify_series_and_expr_api(
 
     """
     expr = _getattr_multi(pli.col("*"), op)(*args, **kwargs)
-    result_expr: pli.Series = input.to_frame().select(expr)[  # type: ignore[assignment]
-        :, 0
-    ]
+    result_expr = input.to_frame().select(expr)[:, 0]
     result_series = _getattr_multi(input, op)(*args, **kwargs)
     if expected is None:
         assert_series_equal(result_series, result_expr)

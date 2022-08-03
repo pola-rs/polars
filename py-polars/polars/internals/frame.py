@@ -7,6 +7,7 @@ import warnings
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import (
+    TYPE_CHECKING,
     Any,
     BinaryIO,
     Callable,
@@ -98,9 +99,24 @@ if sys.version_info >= (3, 8):
 else:
     from typing_extensions import Literal
 
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias
+else:
+    from typing_extensions import TypeAlias
+
 # A type variable used to refer to a polars.DataFrame or any subclass of it.
 # Used to annotate DataFrame methods which returns the same type as self.
 DF = TypeVar("DF", bound="DataFrame")
+
+if TYPE_CHECKING:
+    # these aliases are used to annotate DataFrame.__getitem__()
+    # MultiRowSelector indexes into the vertical axis and
+    # MultiColSelector indexes into the horizontal axis
+    # NOTE: wrapping these as strings is necessary for Python <3.10
+    MultiRowSelector: TypeAlias = "slice | range | list[int] | list[bool] | pli.Series"
+    MultiColSelector: TypeAlias = (
+        "slice | range | list[int] | list[bool] | list[str] | pli.Series"
+    )
 
 
 def wrap_df(df: PyDataFrame) -> DataFrame:
@@ -1816,18 +1832,37 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         raise NotImplementedError("Unsupported idxs datatype.")
 
-    # __getitem__() mostly returns a dataframe. The major exception is when a string is
-    # passed in. Note that there are more subtle cases possible where a non-string value
-    # leads to a Series.
     @overload
-    def __getitem__(self, item: str) -> pli.Series:
+    def __getitem__(self: DF, item: str) -> pli.Series:
         ...
 
     @overload
     def __getitem__(
         self: DF,
-        item: int | range | slice | np.ndarray | pli.Expr | pli.Series | list | tuple,
+        item: int
+        | np.ndarray
+        | pli.Expr
+        | list[pli.Expr]
+        | MultiColSelector
+        | tuple[int, MultiColSelector]
+        | tuple[MultiRowSelector, MultiColSelector],
     ) -> DF:
+        ...
+
+    @overload
+    def __getitem__(self: DF, item: tuple[MultiRowSelector, int]) -> pli.Series:
+        ...
+
+    @overload
+    def __getitem__(self: DF, item: tuple[MultiRowSelector, str]) -> pli.Series:
+        ...
+
+    @overload
+    def __getitem__(self: DF, item: tuple[int, int]) -> Any:
+        ...
+
+    @overload
+    def __getitem__(self: DF, item: tuple[int, str]) -> Any:
         ...
 
     def __getitem__(
@@ -1835,13 +1870,16 @@ class DataFrame(metaclass=DataFrameMetaClass):
         item: (
             str
             | int
-            | range
-            | slice
             | np.ndarray
             | pli.Expr
-            | pli.Series
-            | list
-            | tuple
+            | list[pli.Expr]
+            | MultiColSelector
+            | tuple[int, MultiColSelector]
+            | tuple[MultiRowSelector, MultiColSelector]
+            | tuple[MultiRowSelector, int]
+            | tuple[MultiRowSelector, str]
+            | tuple[int, int]
+            | tuple[int, str]
         ),
     ) -> DF | pli.Series:
         """Get item. Does quite a lot. Read the comments."""
@@ -1923,11 +1961,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
             if isinstance(col_selection, list):
                 # df[:, [1, 2]]
-                # select by column indexes
-                if isinstance(col_selection[0], int):
+                if is_int_sequence(col_selection):
                     series_list = [self.to_series(i) for i in col_selection]
                     df = self.__class__(series_list)
                     return df[row_selection]
+
             df = self.__getitem__(col_selection)
             return df.__getitem__(row_selection)
 
@@ -2036,7 +2074,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             if isinstance(col_selection, str):
                 s = self.__getitem__(col_selection)
             elif isinstance(col_selection, int):
-                s = self[:, col_selection]  # type: ignore[assignment]
+                s = self[:, col_selection]
             else:
                 raise ValueError(f"column selection not understood: {col_selection}")
 
