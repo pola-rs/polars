@@ -123,9 +123,12 @@ impl PhysicalExpr for TernaryExpr {
         groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
-        if !self.predicate.is_valid_aggregation() {
+        let aggregation_predicate = self.predicate.is_valid_aggregation();
+        if !aggregation_predicate {
             // unwrap will not fail as it is not an aggregation expression.
-            return Err(PolarsError::ComputeError(format!("the predicate '{}' in 'when->then->otherwise' is not a valid aggregation and might produce a different number of rows than the groupby operation would", self.predicate.as_expression().unwrap()).into()));
+            eprintln!(
+                "The predicate '{}' in 'when->then->otherwise' is not a valid aggregation and might produce a different number of rows than the groupby operation would. This behavior is experimental and may be subject to change", self.predicate.as_expression().unwrap()
+            )
         }
         let op_mask = || self.predicate.evaluate_on_groups(df, groups, state);
         let op_truthy = || self.truthy.evaluate_on_groups(df, groups, state);
@@ -139,11 +142,6 @@ impl PhysicalExpr for TernaryExpr {
         let mut ac_falsy = ac_falsy?;
 
         let mask_s = ac_mask.flat_naive();
-
-        assert!(
-            ac_truthy.can_combine(&ac_falsy),
-            "cannot combine this ternary expression, the groups do not match"
-        );
 
         use AggState::*;
         match (ac_truthy.agg_state(), ac_falsy.agg_state()) {
@@ -175,6 +173,10 @@ impl PhysicalExpr for TernaryExpr {
             // otherwise:
             //     None
             (AggregatedList(_), Literal(_)) | (Literal(_), AggregatedList(_)) => {
+                if !aggregation_predicate {
+                    // experimental elementwise behavior tested in `test_binary_agg_context_1`
+                    return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
+                }
                 let mask = mask_s.bool()?;
                 let check_length = |ca: &ListChunked, mask: &BooleanChunked| {
                     if ca.len() != mask.len() {
@@ -262,6 +264,10 @@ impl PhysicalExpr for TernaryExpr {
             // Both are or a flat series or aggregated into a list
             // so we can flatten the Series an apply the operators
             _ => {
+                if !aggregation_predicate {
+                    // experimental elementwise behavior tested in `test_binary_agg_context_1`
+                    return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
+                }
                 let mut mask = mask_s.bool()?.clone();
                 let mut truthy = ac_truthy.flat_naive().into_owned();
                 let mut falsy = ac_falsy.flat_naive().into_owned();
