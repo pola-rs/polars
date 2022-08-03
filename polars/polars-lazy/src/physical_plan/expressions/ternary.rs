@@ -1,5 +1,6 @@
 use crate::physical_plan::state::{ExecutionState, StateFlags};
 use crate::prelude::*;
+use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
@@ -135,7 +136,7 @@ impl PhysicalExpr for TernaryExpr {
 
         let ac_mask = ac_mask?;
         let mut ac_truthy = ac_truthy?;
-        let ac_falsy = ac_falsy?;
+        let mut ac_falsy = ac_falsy?;
 
         let mask_s = ac_mask.flat_naive();
 
@@ -151,49 +152,113 @@ impl PhysicalExpr for TernaryExpr {
             // truthy -> aggregated-flat | literal
             // falsy -> aggregated-flat | literal
             // simply align lengths and zip
-            (
-                Literal(truthy) | AggregatedFlat(truthy),
-                AggregatedFlat(falsy) | Literal(falsy),
-            )
+            (Literal(truthy) | AggregatedFlat(truthy), AggregatedFlat(falsy) | Literal(falsy))
             | (AggregatedList(truthy), AggregatedList(falsy))
-            if matches!(ac_mask.agg_state(), AggState::AggregatedFlat(_))
-            =>
-                {
-                    let mut truthy = truthy.clone();
-                    let mut falsy = falsy.clone();
-                    let mut mask = ac_mask.series().bool()?.clone();
-                    expand_lengths(&mut truthy, &mut falsy, &mut mask);
-                    let mut out = truthy.zip_with(&mask, &falsy).unwrap();
-                    out.rename(truthy.name());
-                    ac_truthy.with_series(out, true);
-                    Ok(ac_truthy)
-                }
-
-            // Fallthrough from previous branch. That means the mask is not aggregated
-            // and may be longer than branches, so we iterate over the groups
-            (AggregatedFlat(agg), Literal(_)) |
-            (Literal(_), AggregatedFlat(agg))
-            // todo! check if we need to take this branch for those
-            //| (AggregatedFlat(agg), NotAggregated(_)) |
-            // (NotAggregated(_), AggregatedFlat(agg))
-
-            // if the groups_len == df.len we can just apply all flat.
-            // make sure that the order of the aggregation does not matter!
-            // this is the case when we have a flat aggregation combined with a literal:
-            // `sum(..) - lit(..)`.
-            if agg.len() != df.height()
-            => {
-                finish_as_iters(ac_truthy, ac_falsy, ac_mask)
+                if matches!(ac_mask.agg_state(), AggState::AggregatedFlat(_)) =>
+            {
+                let mut truthy = truthy.clone();
+                let mut falsy = falsy.clone();
+                let mut mask = ac_mask.series().bool()?.clone();
+                expand_lengths(&mut truthy, &mut falsy, &mut mask);
+                let mut out = truthy.zip_with(&mask, &falsy).unwrap();
+                out.rename(truthy.name());
+                ac_truthy.with_series(out, true);
+                Ok(ac_truthy)
             }
-
-            // Same branch as above, but without escape hatch for `num_groups == df.height()`
 
             // we cannot flatten a list because that changes the order, so we apply over groups
-            (AggregatedList(_), NotAggregated(_)) |
-            (NotAggregated(_), AggregatedList(_)) => {
+            (AggregatedList(_), NotAggregated(_)) | (NotAggregated(_), AggregatedList(_)) => {
                 finish_as_iters(ac_truthy, ac_falsy, ac_mask)
             }
+            // then:
+            //     col().shift()
+            // otherwise:
+            //     None
+            (AggregatedList(_), Literal(_)) | (Literal(_), AggregatedList(_)) => {
+                let mask = mask_s.bool()?;
+                let check_length = |ca: &ListChunked, mask: &BooleanChunked| {
+                    if ca.len() != mask.len() {
+                        Err(PolarsError::ComputeError(format!("the predicates length: '{}' does not match the length of the groups: {}", mask.len(), ca.len()).into()))
+                    } else {
+                        Ok(())
+                    }
+                };
 
+                if ac_falsy.is_literal() && self.falsy.as_expression().map(has_null) == Some(true) {
+                    let s = ac_truthy.aggregated();
+                    let ca = s.list().unwrap();
+                    check_length(ca, mask)?;
+                    let mut out: ListChunked = ca
+                        .into_iter()
+                        .zip(mask.into_iter())
+                        .map(|(truthy, take)| match (truthy, take) {
+                            (Some(v), Some(true)) => Some(v),
+                            (Some(_), Some(false)) => None,
+                            _ => None,
+                        })
+                        .collect_trusted();
+                    out.rename(ac_truthy.series().name());
+                    ac_truthy.with_series(out.into_series(), true);
+                    Ok(ac_truthy)
+                } else if ac_truthy.is_literal()
+                    && self.truthy.as_expression().map(has_null) == Some(true)
+                {
+                    let s = ac_falsy.aggregated();
+                    let ca = s.list().unwrap();
+                    check_length(ca, mask)?;
+                    let mut out: ListChunked = ca
+                        .into_iter()
+                        .zip(mask.into_iter())
+                        .map(|(falsy, take)| match (falsy, take) {
+                            (Some(_), Some(true)) => None,
+                            (Some(v), Some(false)) => Some(v),
+                            _ => None,
+                        })
+                        .collect_trusted();
+                    out.rename(ac_truthy.series().name());
+                    ac_truthy.with_series(out.into_series(), true);
+                    Ok(ac_truthy)
+                }
+                // then:
+                //     col().shift()
+                // otherwise:
+                //     lit(list)
+                else if ac_truthy.is_literal() {
+                    let literal = ac_truthy.series();
+                    let s = ac_falsy.aggregated();
+                    let ca = s.list().unwrap();
+                    check_length(ca, mask)?;
+                    let mut out: ListChunked = ca
+                        .into_iter()
+                        .zip(mask.into_iter())
+                        .map(|(falsy, take)| match (falsy, take) {
+                            (Some(_), Some(true)) => Some(literal.clone()),
+                            (Some(v), Some(false)) => Some(v),
+                            _ => None,
+                        })
+                        .collect_trusted();
+                    out.rename(ac_truthy.series().name());
+                    ac_truthy.with_series(out.into_series(), true);
+                    Ok(ac_truthy)
+                } else {
+                    let literal = ac_falsy.series();
+                    let s = ac_truthy.aggregated();
+                    let ca = s.list().unwrap();
+                    check_length(ca, mask)?;
+                    let mut out: ListChunked = ca
+                        .into_iter()
+                        .zip(mask.into_iter())
+                        .map(|(truthy, take)| match (truthy, take) {
+                            (Some(v), Some(true)) => Some(v),
+                            (Some(_), Some(false)) => Some(literal.clone()),
+                            _ => None,
+                        })
+                        .collect_trusted();
+                    out.rename(ac_truthy.series().name());
+                    ac_truthy.with_series(out.into_series(), true);
+                    Ok(ac_truthy)
+                }
+            }
             // Both are or a flat series or aggregated into a list
             // so we can flatten the Series an apply the operators
             _ => {

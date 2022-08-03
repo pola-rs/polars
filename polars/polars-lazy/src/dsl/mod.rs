@@ -46,7 +46,6 @@ use crate::dsl::function_expr::FunctionExpr;
 #[cfg(feature = "trigonometry")]
 use crate::dsl::function_expr::TrigonometricFunction;
 
-use polars_arrow::array::default_arrays::FromData;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
@@ -859,47 +858,13 @@ impl Expr {
         }
     }
 
-    pub fn shift_and_fill_impl(self, periods: i64, fill_value: Expr) -> Self {
-        // Note:
-        // The order of the then | otherwise is important
-        if periods > 0 {
-            when(self.clone().apply(
-                move |s: Series| {
-                    let len = s.len();
-                    let mut bits = MutableBitmap::with_capacity(s.len());
-                    bits.extend_constant(periods as usize, false);
-                    bits.extend_constant(len.saturating_sub(periods as usize), true);
-                    let mask = BooleanArray::from_data_default(bits.into(), None);
-                    let ca: BooleanChunked = mask.into();
-                    Ok(ca.into_series())
-                },
-                GetOutput::from_type(DataType::Boolean),
-            ))
-            .then(self.shift(periods))
-            .otherwise(fill_value)
-        } else {
-            when(self.clone().apply(
-                move |s: Series| {
-                    let length = s.len() as i64;
-                    // periods is negative, so subtraction.
-                    let tipping_point = std::cmp::max(length + periods, 0);
-                    let mut bits = MutableBitmap::with_capacity(s.len());
-                    bits.extend_constant(tipping_point as usize, true);
-                    bits.extend_constant(-periods as usize, false);
-                    let mask = BooleanArray::from_data_default(bits.into(), None);
-                    let ca: BooleanChunked = mask.into();
-                    Ok(ca.into_series())
-                },
-                GetOutput::from_type(DataType::Boolean),
-            ))
-            .then(self.shift(periods))
-            .otherwise(fill_value)
-        }
-    }
-
     /// Shift the values in the array by some period and fill the resulting empty values.
     pub fn shift_and_fill<E: Into<Expr>>(self, periods: i64, fill_value: E) -> Self {
-        self.shift_and_fill_impl(periods, fill_value.into())
+        self.apply_many_private(
+            FunctionExpr::ShiftAndFill { periods },
+            &[fill_value.into()],
+            "shift_and_fill",
+        )
     }
 
     /// Get an array with the cumulative sum computed at every element
