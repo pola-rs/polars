@@ -9,6 +9,7 @@ mod pow;
 mod rolling;
 #[cfg(feature = "row_hash")]
 mod row_hash;
+mod shift_and_fill;
 #[cfg(feature = "sign")]
 mod sign;
 #[cfg(feature = "strings")]
@@ -59,6 +60,9 @@ pub enum FunctionExpr {
     RollingSkew {
         window_size: usize,
         bias: bool,
+    },
+    ShiftAndFill {
+        periods: i64,
     },
 }
 
@@ -127,6 +131,7 @@ impl FunctionExpr {
             ListContains => with_dtype(DataType::Boolean),
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { .. } => float_dtype(),
+            ShiftAndFill { .. } => same_type(),
         }
     }
 }
@@ -246,6 +251,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { window_size, bias } => {
                 map_with_args!(rolling::rolling_skew, window_size, bias)
+            }
+            ShiftAndFill { periods } => {
+                map_as_slice!(shift_and_fill::shift_and_fill, periods)
             }
         }
     }

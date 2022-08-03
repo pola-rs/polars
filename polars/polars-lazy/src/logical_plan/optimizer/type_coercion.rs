@@ -413,6 +413,56 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             }
+            AExpr::Function {
+                // only for `DataType::Unknown` as it still has to be set.
+                function: FunctionExpr::ShiftAndFill { periods },
+                ref input,
+                options,
+            } => {
+                let input_schema = get_schema(lp_arena, lp_node);
+                let self_node = input[0];
+                let other_node = input[1];
+                let (left, type_self) = get_aexpr_and_type(expr_arena, self_node, &input_schema)?;
+                let (fill_value, type_other) =
+                    get_aexpr_and_type(expr_arena, other_node, &input_schema)?;
+
+                if type_self == type_other {
+                    return None;
+                }
+
+                let super_type = get_supertype(&type_self, &type_other).ok()?;
+                let super_type =
+                    modify_supertype(super_type, left, fill_value, &type_self, &type_other);
+
+                // only cast if the type is not already the super type.
+                // this can prevent an expensive flattening and subsequent aggregation
+                // in a groupby context. To be able to cast the groups need to be
+                // flattened
+                let new_node_self = if type_self != super_type {
+                    expr_arena.add(AExpr::Cast {
+                        expr: self_node,
+                        data_type: super_type.clone(),
+                        strict: false,
+                    })
+                } else {
+                    self_node
+                };
+                let new_node_other = if type_other != super_type {
+                    expr_arena.add(AExpr::Cast {
+                        expr: other_node,
+                        data_type: super_type,
+                        strict: false,
+                    })
+                } else {
+                    other_node
+                };
+
+                Some(AExpr::Function {
+                    function: FunctionExpr::ShiftAndFill { periods },
+                    input: vec![new_node_self, new_node_other],
+                    options,
+                })
+            }
 
             _ => None,
         }

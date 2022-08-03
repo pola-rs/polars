@@ -105,6 +105,12 @@ pub(crate) fn has_nth(current_expr: &Expr) -> bool {
     has_expr(current_expr, |e| matches!(e, Expr::Nth(_)))
 }
 
+pub(crate) fn has_null(current_expr: &Expr) -> bool {
+    has_expr(current_expr, |e| {
+        matches!(e, Expr::Literal(LiteralValue::Null))
+    })
+}
+
 /// output name of expr
 pub(crate) fn expr_output_name(expr: &Expr) -> Result<Arc<str>> {
     for e in expr {

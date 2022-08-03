@@ -271,3 +271,81 @@ fn test_binary_over_3930() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_ternary_aggregation_set_literals() -> Result<()> {
+    let df = df![
+        "name" => ["a", "b", "a", "b"],
+        "value" => [1, 3, 2, 4]
+    ]?;
+
+    let out = df
+        .clone()
+        .lazy()
+        .groupby([col("name")])
+        .agg([when(col("value").sum().eq(lit(3)))
+            .then(col("value").rank(Default::default()))
+            .otherwise(lit(Series::new("", &[10 as IdxSize])))])
+        .sort("name", Default::default())
+        .collect()?;
+
+    let out = out.column("value")?;
+    assert_eq!(
+        out.get(0),
+        AnyValue::List(Series::new("", &[1 as IdxSize, 2 as IdxSize]))
+    );
+    assert_eq!(
+        out.get(1),
+        AnyValue::List(Series::new("", &[10 as IdxSize]))
+    );
+
+    let out = df
+        .clone()
+        .lazy()
+        .groupby([col("name")])
+        .agg([when(col("value").sum().eq(lit(3)))
+            .then(lit(Series::new("", &[10 as IdxSize])).alias("value"))
+            .otherwise(col("value").rank(Default::default()))])
+        .sort("name", Default::default())
+        .collect()?;
+
+    let out = out.column("value")?;
+    assert_eq!(
+        out.get(1),
+        AnyValue::List(Series::new("", &[1 as IdxSize, 2]))
+    );
+    assert_eq!(
+        out.get(0),
+        AnyValue::List(Series::new("", &[10 as IdxSize]))
+    );
+
+    let out = df
+        .clone()
+        .lazy()
+        .groupby([col("name")])
+        .agg([when(col("value").sum().eq(lit(3)))
+            .then(col("value").rank(Default::default()))
+            .otherwise(Null {}.lit())])
+        .sort("name", Default::default())
+        .collect()?;
+
+    let out = out.column("value")?;
+    assert!(matches!(out.get(0), AnyValue::List(_)));
+    assert_eq!(out.get(1), AnyValue::Null);
+
+    // swapped branch
+    let out = df
+        .lazy()
+        .groupby([col("name")])
+        .agg([when(col("value").sum().eq(lit(3)))
+            .then(Null {}.lit().alias("value"))
+            .otherwise(col("value").rank(Default::default()))])
+        .sort("name", Default::default())
+        .collect()?;
+
+    let out = out.column("value")?;
+    assert!(matches!(out.get(1), AnyValue::List(_)));
+    assert_eq!(out.get(0), AnyValue::Null);
+
+    Ok(())
+}
