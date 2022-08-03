@@ -375,7 +375,7 @@ def min(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
 
 
 @overload
-def sum(column: str | list[pli.Expr | str]) -> pli.Expr:
+def sum(column: str | list[pli.Expr | str] | pli.Expr) -> pli.Expr:
     ...
 
 
@@ -384,7 +384,7 @@ def sum(column: pli.Series) -> int | float:
     ...
 
 
-def sum(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
+def sum(column: str | list[pli.Expr | str] | pli.Series | pli.Expr) -> pli.Expr | Any:
     """
     Get the sum value.
 
@@ -402,6 +402,8 @@ def sum(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
         if isinstance(first, str):
             first = col(first)
         return fold(first, lambda a, b: a + b, column[1:]).alias("sum")
+    elif isinstance(column, pli.Expr):
+        return fold(lit(0), lambda a, b: a + b, column).alias("sum")
     else:
         return col(column).sum()
 
