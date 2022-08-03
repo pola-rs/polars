@@ -1,5 +1,6 @@
 [flake8]
 max-line-length = 88
+type-checking-exempt-modules = typing_extensions
 docstring-convention=all
 extend-ignore =
     # Satisfy black: https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html#flake8
@@ -11,6 +12,8 @@ extend-ignore =
     D1, D400, D205,
     # flake8-simplify
     SIM102, SIM117,
+    # flake8-type-checking
+    TC006,
 
 per-file-ignores =
     __init__.py:F401
