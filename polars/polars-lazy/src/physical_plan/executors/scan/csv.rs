@@ -62,7 +62,10 @@ impl Executor for CsvExec {
     fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
         let finger_print = FileFingerPrint {
             path: self.path.clone(),
-            predicate: self.predicate.as_ref().map(|ae| ae.as_expression().clone()),
+            predicate: self
+                .predicate
+                .as_ref()
+                .map(|ae| ae.as_expression().unwrap().clone()),
             slice: (self.options.skip_rows, self.options.n_rows),
         };
         state

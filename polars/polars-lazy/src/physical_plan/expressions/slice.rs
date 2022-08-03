@@ -74,8 +74,8 @@ fn slice_groups_slice(offset: i64, length: usize, first: IdxSize, len: IdxSize) 
 }
 
 impl PhysicalExpr for SliceExpr {
-    fn as_expression(&self) -> &Expr {
-        &self.expr
+    fn as_expression(&self) -> Option<&Expr> {
+        Some(&self.expr)
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
@@ -253,5 +253,9 @@ impl PhysicalExpr for SliceExpr {
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.input.to_field(input_schema)
+    }
+
+    fn is_valid_aggregation(&self) -> bool {
+        true
     }
 }

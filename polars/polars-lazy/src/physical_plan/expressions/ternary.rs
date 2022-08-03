@@ -83,8 +83,8 @@ fn finish_as_iters<'a>(
 }
 
 impl PhysicalExpr for TernaryExpr {
-    fn as_expression(&self) -> &Expr {
-        &self.expr
+    fn as_expression(&self) -> Option<&Expr> {
+        Some(&self.expr)
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let mut state = state.split();
@@ -122,12 +122,17 @@ impl PhysicalExpr for TernaryExpr {
         groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
+        if !self.predicate.is_valid_aggregation() {
+            // unwrap will not fail as it is not an aggregation expression.
+            return Err(PolarsError::ComputeError(format!("the predicate '{}' in 'when->then->otherwise' is not a valid aggregation and might produce a different number of rows than the groupby operation would", self.predicate.as_expression().unwrap()).into()));
+        }
         let op_mask = || self.predicate.evaluate_on_groups(df, groups, state);
         let op_truthy = || self.truthy.evaluate_on_groups(df, groups, state);
         let op_falsy = || self.falsy.evaluate_on_groups(df, groups, state);
 
         let (ac_mask, (ac_truthy, ac_falsy)) =
             POOL.install(|| rayon::join(op_mask, || rayon::join(op_truthy, op_falsy)));
+
         let ac_mask = ac_mask?;
         let mut ac_truthy = ac_truthy?;
         let ac_falsy = ac_falsy?;
@@ -198,6 +203,11 @@ impl PhysicalExpr for TernaryExpr {
                 expand_lengths(&mut truthy, &mut falsy, &mut mask);
                 let out = truthy.zip_with(&mask, &falsy)?;
 
+                // because of the flattening we don't have to do that anymore
+                if matches!(ac_truthy.update_groups, UpdateGroups::WithSeriesLen) {
+                    ac_truthy.with_update_groups(UpdateGroups::No);
+                }
+
                 ac_truthy.with_series(out, false);
 
                 Ok(ac_truthy)
@@ -206,6 +216,10 @@ impl PhysicalExpr for TernaryExpr {
     }
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
+    }
+
+    fn is_valid_aggregation(&self) -> bool {
+        self.truthy.is_valid_aggregation() || self.falsy.is_valid_aggregation()
     }
 }
 

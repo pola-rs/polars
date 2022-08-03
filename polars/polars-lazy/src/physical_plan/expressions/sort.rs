@@ -47,10 +47,9 @@ pub(crate) fn map_sorted_indices_to_group_slice(
 }
 
 impl PhysicalExpr for SortExpr {
-    fn as_expression(&self) -> &Expr {
-        &self.expr
+    fn as_expression(&self) -> Option<&Expr> {
+        Some(&self.expr)
     }
-
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let series = self.physical_expr.evaluate(df, state)?;
         Ok(series.sort_with(self.options))
@@ -102,5 +101,9 @@ impl PhysicalExpr for SortExpr {
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.physical_expr.to_field(input_schema)
+    }
+
+    fn is_valid_aggregation(&self) -> bool {
+        true
     }
 }

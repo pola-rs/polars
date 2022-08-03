@@ -87,8 +87,8 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> Result<Ser
 }
 
 impl PhysicalExpr for BinaryExpr {
-    fn as_expression(&self) -> &Expr {
-        &self.expr
+    fn as_expression(&self) -> Option<&Expr> {
+        Some(&self.expr)
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
@@ -389,6 +389,16 @@ impl PhysicalExpr for BinaryExpr {
     #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         Some(self)
+    }
+
+    fn is_valid_aggregation(&self) -> bool {
+        // we don't want:
+        // col(a) == lit(1)
+
+        // we do want
+        // col(a).sum() == lit(1)
+        (!self.left.is_literal() && self.left.is_valid_aggregation())
+            | (!self.right.is_literal() && self.right.is_valid_aggregation())
     }
 }
 

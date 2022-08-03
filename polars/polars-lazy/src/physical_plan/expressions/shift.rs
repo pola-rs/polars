@@ -11,8 +11,8 @@ pub struct ShiftExpr {
 }
 
 impl PhysicalExpr for ShiftExpr {
-    fn as_expression(&self) -> &Expr {
-        &self.expr
+    fn as_expression(&self) -> Option<&Expr> {
+        Some(&self.expr)
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
@@ -44,5 +44,9 @@ impl PhysicalExpr for ShiftExpr {
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.input.to_field(input_schema)
+    }
+
+    fn is_valid_aggregation(&self) -> bool {
+        true
     }
 }

@@ -16,10 +16,9 @@ impl CountExpr {
 }
 
 impl PhysicalExpr for CountExpr {
-    fn as_expression(&self) -> &Expr {
-        &self.expr
+    fn as_expression(&self) -> Option<&Expr> {
+        Some(&self.expr)
     }
-
     fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
         Ok(Series::new("count", [df.height() as IdxSize]))
     }
@@ -42,6 +41,10 @@ impl PhysicalExpr for CountExpr {
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
+    }
+
+    fn is_valid_aggregation(&self) -> bool {
+        true
     }
 }
 
