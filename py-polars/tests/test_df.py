@@ -742,7 +742,7 @@ def test_from_arrow_table() -> None:
     data = {"a": [1, 2], "b": [1, 2]}
     tbl = pa.table(data)
 
-    df: pl.DataFrame = pl.from_arrow(tbl)  # type: ignore[assignment]
+    df = pl.from_arrow(tbl)
     df.frame_equal(pl.DataFrame(data))
 
 
@@ -800,7 +800,7 @@ def test_column_names() -> None:
             "b": pa.array([1, 2, 3, 4, 5], pa.int64()),
         }
     )
-    df: pl.DataFrame = pl.from_arrow(tbl)  # type: ignore[assignment]
+    df = pl.from_arrow(tbl)
     assert df.columns == ["a", "b"]
 
 

@@ -531,7 +531,7 @@ def test_microseconds_accuracy() -> None:
         ),
     )
 
-    assert pl.from_arrow(a)["timestamp"].to_list() == timestamps  # type: ignore[index]
+    assert pl.from_arrow(a)["timestamp"].to_list() == timestamps
 
 
 def test_cast_time_units() -> None:

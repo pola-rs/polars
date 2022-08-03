@@ -22,7 +22,7 @@ def test_categorical_round_trip() -> None:
     tbl = df.to_arrow()
     assert "dictionary" in str(tbl["cat"].type)
 
-    df2: pl.DataFrame = pl.from_arrow(tbl)  # type: ignore[assignment]
+    df2 = pl.from_arrow(tbl)
     assert df2.dtypes == [pl.Int64, pl.Categorical]
 
 
