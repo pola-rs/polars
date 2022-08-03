@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, Mapping, TextIO, cast
+from typing import Any, BinaryIO, Callable, Mapping, TextIO
 
 from polars.utils import format_path, handle_projection_columns
 
@@ -271,7 +271,7 @@ def read_csv(
                 [f"column_{int(column[1:]) + 1}" for column in tbl.column_names]
             )
 
-        df = cast(DataFrame, from_arrow(tbl, rechunk))
+        df = from_arrow(tbl, rechunk)
         if new_columns:
             return _update_columns(df, new_columns)
         return df
@@ -909,7 +909,7 @@ def read_parquet(
                     " 'read_parquet(..., use_pyarrow=True)'."
                 )
 
-            return from_arrow(  # type: ignore[return-value]
+            return from_arrow(
                 pa.parquet.read_table(
                     source_prep,
                     memory_map=memory_map,
@@ -1029,7 +1029,7 @@ def read_sql(
             partition_num=partition_num,
             protocol=protocol,
         )
-        return cast(DataFrame, from_arrow(tbl))
+        return from_arrow(tbl)
     else:
         raise ImportError(
             "connectorx is not installed. Please run `pip install connectorx>=0.2.2`."
