@@ -47,6 +47,7 @@ from polars.internals.construction import (
     sequence_to_pydf,
     series_to_pydf,
 )
+from polars.internals.lazy_frame import LazyFrame
 from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _prepare_row_count_args,
@@ -59,8 +60,6 @@ from polars.utils import (
     is_str_sequence,
     range_to_slice,
 )
-
-from .lazy_frame import LazyFrame  # noqa: F401
 
 try:
     from polars.polars import PyDataFrame, PySeries
