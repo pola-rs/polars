@@ -183,9 +183,9 @@ mod inner_mod {
         T::Native: Float + IsFloat + SubAssign + num::pow::Pow<T::Native, Output = T::Native>,
     {
         /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
-        pub fn rolling_apply_float<F>(&self, window_size: usize, f: F) -> Result<Self>
+        pub fn rolling_apply_float<F>(&self, window_size: usize, mut f: F) -> Result<Self>
         where
-            F: Fn(&ChunkedArray<T>) -> Option<T::Native>,
+            F: FnMut(&mut ChunkedArray<T>) -> Option<T::Native>,
         {
             if window_size >= self.len() {
                 return Ok(Self::full_null(self.name(), self.len()));
@@ -193,8 +193,11 @@ mod inner_mod {
             let ca = self.rechunk();
             let arr = ca.downcast_iter().next().unwrap();
 
-            let arr_container = ChunkedArray::<T>::from_slice("", &[T::Native::zero()]);
-            let array_ptr = &arr_container.chunks()[0];
+            // we create a temporary dummy ChunkedArray
+            // this will be a container where we swap the window contents every iteration
+            // doing so will save a lot of heap allocations.
+            let mut heap_container = ChunkedArray::<T>::from_slice("", &[T::Native::zero()]);
+            let array_ptr = &heap_container.chunks()[0];
             let ptr = array_ptr.as_ref() as *const dyn Array as *mut dyn Array
                 as *mut PrimitiveArray<T::Native>;
 
@@ -207,7 +210,10 @@ mod inner_mod {
             values.extend(std::iter::repeat(T::Native::default()).take(window_size - 1));
 
             for offset in 0..self.len() + 1 - window_size {
-                let arr_window = arr.slice(offset, window_size);
+                debug_assert!(offset + window_size <= arr.len());
+                let arr_window = unsafe { arr.slice_unchecked(offset, window_size) };
+                // the lengths are cached, so we must update them
+                heap_container.length = arr_window.len() as IdxSize;
 
                 // Safety.
                 // ptr is not dropped as we are in scope
@@ -217,7 +223,7 @@ mod inner_mod {
                     *ptr = arr_window;
                 }
 
-                let out = f(&arr_container);
+                let out = f(&mut heap_container);
                 match out {
                     Some(v) => unsafe { values.push_unchecked(v) },
                     None => unsafe { unset_bit_raw(validity_ptr, offset + window_size - 1) },

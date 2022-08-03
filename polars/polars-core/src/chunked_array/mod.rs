@@ -302,8 +302,18 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// A reference to the chunks
+    #[inline]
     pub fn chunks(&self) -> &Vec<ArrayRef> {
         &self.chunks
+    }
+
+    /// A mutable reference to the chunks
+    ///
+    /// # Safety
+    /// The caller must ensure to not change the `DataType` or `length` of any of the chunks.
+    #[inline]
+    pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        &mut self.chunks
     }
 
     /// Returns true if contains a single chunk and has no null values

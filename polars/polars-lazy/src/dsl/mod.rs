@@ -1765,6 +1765,17 @@ impl Expr {
         )
     }
 
+    /// Apply a rolling skew
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "rolling_window", feature = "moment"))))]
+    #[cfg(feature = "rolling_window")]
+    #[cfg(feature = "moment")]
+    pub fn rolling_skew(self, window_size: usize, bias: bool) -> Expr {
+        self.apply_private(
+            FunctionExpr::RollingSkew { window_size, bias },
+            "rolling_skew",
+        )
+    }
+
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     /// Apply a custom function over a rolling/ moving window of the array.
@@ -1789,7 +1800,7 @@ impl Expr {
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
     pub fn rolling_apply_float<F>(self, window_size: usize, f: F) -> Expr
     where
-        F: 'static + Fn(&Float64Chunked) -> Option<f64> + Send + Sync + Copy,
+        F: 'static + FnMut(&mut Float64Chunked) -> Option<f64> + Send + Sync + Copy,
     {
         self.apply(
             move |s| {
@@ -1860,6 +1871,15 @@ impl Expr {
 
     #[cfg(feature = "moment")]
     #[cfg_attr(docsrs, doc(cfg(feature = "moment")))]
+    /// Compute the sample skewness of a data set.
+    ///
+    /// For normally distributed data, the skewness should be about zero. For
+    /// uni-modal continuous distributions, a skewness value greater than zero means
+    /// that there is more weight in the right tail of the distribution. The
+    /// function `skewtest` can be used to determine if the skewness value
+    /// is close enough to zero, statistically speaking.
+    ///
+    /// see: https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1024
     pub fn skew(self, bias: bool) -> Expr {
         self.apply(
             move |s| s.skew(bias).map(|opt_v| Series::new(s.name(), &[opt_v])),

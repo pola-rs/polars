@@ -13,6 +13,7 @@ use std::ops::{Deref, DerefMut};
 
 #[cfg(feature = "private")]
 pub use crate::chunked_array::ops::sort::argsort_no_nulls;
+pub use series::*;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);

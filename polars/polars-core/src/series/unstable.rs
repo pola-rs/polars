@@ -33,6 +33,7 @@ pub type ArrayBox = Box<dyn Array>;
 
 impl<'a> UnstableSeries<'a> {
     pub fn new(series: &'a mut Series) -> Self {
+        debug_assert_eq!(series.chunks().len(), 1);
         let container = series as *mut Series;
         let inner_chunk = series.array_ref(0);
         UnstableSeries {
@@ -59,7 +60,25 @@ impl<'a> UnstableSeries<'a> {
         Series::try_from((name, array_ref)).unwrap()
     }
 
-    pub fn swap(&mut self, array: ArrayRef) {
-        unsafe { *self.inner.as_mut() = array };
+    #[inline]
+    /// Swaps inner state with the `array`. Prefer `UnstableSeries::with_array` as this
+    /// restores the state.
+    pub fn swap(&mut self, array: &mut ArrayRef) {
+        unsafe { std::mem::swap(self.inner.as_mut(), array) }
+        // ensure lengths are correct.
+        self.as_mut()._get_inner_mut().compute_len();
+    }
+
+    /// Temporary swaps out the array, and restores the original state
+    /// when application of the function `f` is done.
+    #[inline]
+    pub fn with_array<F, T>(&mut self, array: &mut ArrayRef, f: F) -> T
+    where
+        F: Fn(&UnstableSeries) -> T,
+    {
+        self.swap(array);
+        let out = f(self);
+        self.swap(array);
+        out
     }
 }
