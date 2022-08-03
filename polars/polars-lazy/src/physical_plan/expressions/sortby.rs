@@ -41,10 +41,9 @@ fn prepare_reverse(reverse: &[bool], by_len: usize) -> Vec<bool> {
 }
 
 impl PhysicalExpr for SortByExpr {
-    fn as_expression(&self) -> &Expr {
-        &self.expr
+    fn as_expression(&self) -> Option<&Expr> {
+        Some(&self.expr)
     }
-
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let series_f = || self.input.evaluate(df, state);
         let reverse = prepare_reverse(&self.reverse, self.by.len());
@@ -178,5 +177,9 @@ impl PhysicalExpr for SortByExpr {
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.input.to_field(input_schema)
+    }
+
+    fn is_valid_aggregation(&self) -> bool {
+        true
     }
 }

@@ -23,7 +23,7 @@ impl Executor for SortExec {
                 // this should only be done with simple col("foo") expressions
                 // therefore we rename more complex expressions so that
                 // polars core does not match these
-                if !matches!(e.as_expression(), Expr::Column(_)) {
+                if !matches!(e.as_expression(), Some(&Expr::Column(_))) {
                     s.rename(&format!("_POLARS_SORT_BY_{}", i));
                 }
                 Ok(s)

@@ -69,8 +69,8 @@ impl CastExpr {
 }
 
 impl PhysicalExpr for CastExpr {
-    fn as_expression(&self) -> &Expr {
-        &self.expr
+    fn as_expression(&self) -> Option<&Expr> {
+        Some(&self.expr)
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
@@ -109,6 +109,10 @@ impl PhysicalExpr for CastExpr {
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
+    }
+
+    fn is_valid_aggregation(&self) -> bool {
+        self.input.is_valid_aggregation()
     }
 }
 

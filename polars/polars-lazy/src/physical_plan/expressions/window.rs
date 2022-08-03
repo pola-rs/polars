@@ -485,8 +485,12 @@ impl PhysicalExpr for WindowExpr {
         ))
     }
 
-    fn as_expression(&self) -> &Expr {
-        &self.expr
+    fn as_expression(&self) -> Option<&Expr> {
+        Some(&self.expr)
+    }
+
+    fn is_valid_aggregation(&self) -> bool {
+        false
     }
 }
 

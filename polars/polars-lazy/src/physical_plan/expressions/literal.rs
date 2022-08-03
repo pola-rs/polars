@@ -15,8 +15,8 @@ impl LiteralExpr {
 }
 
 impl PhysicalExpr for LiteralExpr {
-    fn as_expression(&self) -> &Expr {
-        &self.1
+    fn as_expression(&self) -> Option<&Expr> {
+        Some(&self.1)
     }
     fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
         use LiteralValue::*;
@@ -136,6 +136,13 @@ impl PhysicalExpr for LiteralExpr {
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
         let dtype = self.0.get_datatype();
         Ok(Field::new("literal", dtype))
+    }
+    fn is_valid_aggregation(&self) -> bool {
+        // literals can be both
+        true
+    }
+    fn is_literal(&self) -> bool {
+        true
     }
 }
 

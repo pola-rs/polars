@@ -140,3 +140,12 @@ def test_getitem_errs() -> None:
 
     with pytest.raises(ValueError, match="Cannot __setitem__ on DataFrame with key:.*"):
         df[{"some"}] = "foo"
+
+
+def test_invalid_predication_ternary() -> None:
+    df = pl.DataFrame({"name": ["a", "b", "a", "b"], "value": [1, 3, 2, 1]})
+
+    with pytest.raises(pl.ComputeError):
+        df.groupby("name").agg(
+            pl.when(pl.col("value") > 2).then(pl.col("value").rank()).otherwise(None)
+        )

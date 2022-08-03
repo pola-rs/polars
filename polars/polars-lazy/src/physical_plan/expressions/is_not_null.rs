@@ -19,10 +19,9 @@ impl IsNotNullExpr {
 }
 
 impl PhysicalExpr for IsNotNullExpr {
-    fn as_expression(&self) -> &Expr {
-        &self.expr
+    fn as_expression(&self) -> Option<&Expr> {
+        Some(&self.expr)
     }
-
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let series = self.physical_expr.evaluate(df, state)?;
         Ok(series.is_not_null().into_series())
@@ -47,6 +46,10 @@ impl PhysicalExpr for IsNotNullExpr {
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
+    }
+
+    fn is_valid_aggregation(&self) -> bool {
+        self.physical_expr.is_valid_aggregation()
     }
 }
 

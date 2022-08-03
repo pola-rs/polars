@@ -14,8 +14,8 @@ impl ColumnExpr {
 }
 
 impl PhysicalExpr for ColumnExpr {
-    fn as_expression(&self) -> &Expr {
-        &self.1
+    fn as_expression(&self) -> Option<&Expr> {
+        Some(&self.1)
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         match state.get_schema() {
@@ -101,6 +101,9 @@ impl PhysicalExpr for ColumnExpr {
             ))
         })?;
         Ok(field)
+    }
+    fn is_valid_aggregation(&self) -> bool {
+        false
     }
 }
 
