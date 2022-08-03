@@ -12,7 +12,7 @@ from .anonymous_scan import (
 from .datatypes import IntoExpr
 from .expr import Expr, expr_to_lit_or_expr, selection_to_pyexpr_list, wrap_expr
 from .frame import DataFrame, wrap_df
-from .functions import concat, date_range  # DataFrame.describe() & DataFrame.upsample()
+from .functions import concat, date_range
 from .io import _is_local_file, _prepare_file_arg, read_ipc_schema, read_parquet_schema
 from .lazy_frame import LazyFrame, wrap_ldf
 from .lazy_functions import (
@@ -28,3 +28,34 @@ from .lazy_functions import (
 )
 from .series import Series, wrap_s
 from .whenthen import when  # used in expr.clip()
+
+__all__ = [
+    "DataFrame",
+    "Expr",
+    "IntoExpr",
+    "LazyFrame",
+    "Series",
+    "all",
+    "arg_where",
+    "col",
+    "concat",
+    "concat_list",
+    "element",
+    "expr_to_lit_or_expr",
+    "format",
+    "lit",
+    "read_ipc_schema",
+    "read_parquet_schema",
+    "select",
+    "selection_to_pyexpr_list",
+    "when",
+    "wrap_df",
+    "wrap_expr",
+    "wrap_ldf",
+    "wrap_s",
+    "_is_local_file",
+    "_prepare_file_arg",
+    "_scan_ds",
+    "_scan_ipc_fsspec",
+    "_scan_parquet_fsspec",
+]

@@ -24,6 +24,7 @@ from polars import internals as pli
 from polars._html import NotebookFormatter
 from polars.datatypes import (
     Boolean,
+    ColumnsType,
     DataType,
     Int8,
     Int16,
@@ -38,7 +39,6 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.internals.construction import (
-    ColumnsType,
     arrow_to_pydf,
     dict_to_pydf,
     numpy_to_pydf,
