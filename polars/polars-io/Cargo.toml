@@ -20,7 +20,16 @@ ipc_streaming = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 avro = ["arrow/io_avro", "arrow/io_avro_compression"]
 # ipc = []
 lazy = []
-parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "memmap"]
+parquet = [
+  "polars-core/parquet",
+  "arrow/io_parquet",
+  "arrow/io_parquet_zstd",
+  "arrow/io_parquet_lz4_flex",
+  "arrow/io_parquet_brotli",
+  "arrow/io_parquet_snappy",
+  "arrow/io_parquet_gzip_zlib_ng",
+  "memmap",
+]
 dtype-datetime = ["polars-core/dtype-datetime", "polars-core/temporal", "polars-time/dtype-datetime"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
@@ -38,7 +47,7 @@ private = ["polars-time/private"]
 ahash = "0.7"
 anyhow = "1.0"
 # arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "5711cfcbb785450697eb38e221b5dc1825550ee6", default-features = false }
-arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "ipc_meta", default-features = false }
+arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "polars", default-features = false }
 # arrow = { package = "arrow2", version = "0.12", default-features = false }
 # arrow = { package = "arrow2", path = "../../../arrow2", default-features = false }
 csv-core = { version = "0.1.10", optional = true }

@@ -364,7 +364,7 @@ impl IdxHash {
 /// Contains a ptr to the string slice an the precomputed hash of that string.
 /// During rehashes, we will rehash the hash instead of the string, that makes rehashing
 /// cheap and allows cache coherent small hash tables.
-#[derive(Eq, Copy, Clone, Debug)]
+#[derive(Eq, Copy, Clone)]
 pub(crate) struct StrHash<'a> {
     str: Option<&'a str>,
     hash: u64,

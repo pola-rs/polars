@@ -74,7 +74,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.13.0"
-source = "git+https://github.com/ritchie46/arrow2?branch=ipc_meta#fed029bc007ad77bfffb69f73d4d1339486a879b"
+source = "git+https://github.com/ritchie46/arrow2?branch=polars#fd6f26c91cc0d72916524b89dc3b8a7db7e69fe6"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -283,6 +283,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmake"
+version = "0.1.48"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8ad8cef104ac57b68b89df3208164d228503abbdce70f6880ffa3d970e7443a"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "comfy-table"
 version = "5.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -458,6 +467,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f82b0f4c27ad9f8bfd1f3208d882da2b09c301bc1c828fd3a00d0216d2fbbff6"
 dependencies = [
  "crc32fast",
+ "libz-ng-sys",
  "miniz_oxide",
 ]
 
@@ -843,6 +853,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "libz-ng-sys"
+version = "1.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4399ae96a9966bf581e726de86969f803a81b7ce795fcd5480e640589457e0f2"
+dependencies = [
+ "cmake",
+ "libc",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -879,6 +899,15 @@ checksum = "d7be8908e2ed6f31c02db8a9fa962f03e36c53fbfde437363eae3306b85d7e17"
 dependencies = [
  "cc",
  "libc",
+]
+
+[[package]]
+name = "lz4_flex"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c038063f7a78126c539d666a0323a2032de5e7366012cd14a6eafc5ba290bbd6"
+dependencies = [
+ "twox-hash",
 ]
 
 [[package]]
@@ -1120,15 +1149,14 @@ dependencies = [
 [[package]]
 name = "parquet2"
 version = "0.14.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3eb21c37048a08693214d1f0d34eea97a8d90322e15c4a5e2017d56420e1195"
+source = "git+https://github.com/ritchie46/parquet2.git?branch=zlib_ng#bac3065b8bdc1e5328f54a74253259900e4e5a34"
 dependencies = [
  "async-stream",
  "bitpacking",
  "brotli",
  "flate2",
  "futures",
- "lz4",
+ "lz4_flex",
  "parquet-format-async-temp",
  "snap",
  "streaming-decompression",
@@ -1765,6 +1793,16 @@ dependencies = [
  "libc",
  "wasi 0.10.0+wasi-snapshot-preview1",
  "winapi",
+]
+
+[[package]]
+name = "twox-hash"
+version = "1.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
+dependencies = [
+ "cfg-if",
+ "static_assertions",
 ]
 
 [[package]]
