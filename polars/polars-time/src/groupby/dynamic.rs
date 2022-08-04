@@ -653,26 +653,4 @@ mod test {
             },
         );
     }
-
-    #[test]
-    fn test_foo() {
-        let s = Series::new("a", (0..20i32).collect::<Vec<_>>());
-        let df = df![
-            "ints"=> s
-        ]
-        .unwrap();
-        let (_, _, groups) = df
-            .groupby_rolling(
-                vec![],
-                &RollingGroupOptions {
-                    index_column: "ints".into(),
-                    period: Duration::parse("2i"),
-                    offset: Duration::parse("-5i"),
-                    closed_window: ClosedWindow::Both,
-                },
-            )
-            .unwrap();
-
-        dbg!(groups);
-    }
 }
