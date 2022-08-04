@@ -194,3 +194,9 @@ def test_categorical_error_on_local_cmp() -> None:
         ),
     ):
         df_cat.filter(pl.col("a_cat") == pl.col("b_cat"))
+
+
+def test_cast_null_to_categorical() -> None:
+    assert pl.DataFrame().with_columns(
+        [pl.lit(None).cast(pl.Categorical).alias("nullable_enum")]
+    ).dtypes == [pl.Categorical]
