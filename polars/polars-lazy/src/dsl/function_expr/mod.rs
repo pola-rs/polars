@@ -105,11 +105,20 @@ impl FunctionExpr {
         };
 
         let same_type = || map_dtype(&|dtype| dtype.clone());
+        let super_type = || {
+            let mut first = fields[0].clone();
+            let mut st = first.data_type().clone();
+            for field in &fields[1..] {
+                st = get_supertype(&st, field.data_type())?
+            }
+            first.coerce(st);
+            Ok(first)
+        };
 
         use FunctionExpr::*;
         match self {
             NullCount => with_dtype(IDX_DTYPE),
-            Pow => float_dtype(),
+            Pow => super_type(),
             #[cfg(feature = "row_hash")]
             Hash(..) => with_dtype(DataType::UInt64),
             #[cfg(feature = "is_in")]
