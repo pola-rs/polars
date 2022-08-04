@@ -18,6 +18,7 @@ impl CastExpr {
         // in a ternary or binary operation, we then do type coercion to matching supertype.
         // here we create a null array for the types we cannot cast to from a booleanarray
 
+        // todo! check if the expression is really null
         if input.bool().is_ok() && input.null_count() == input.len() {
             match &self.data_type {
                 DataType::List(inner) => {
@@ -55,6 +56,12 @@ impl CastExpr {
                     return Ok(StructChunked::new(input.name(), &fields)
                         .unwrap()
                         .into_series());
+                }
+                #[cfg(feature = "dtype-categorical")]
+                DataType::Categorical(_) => {
+                    return Ok(
+                        CategoricalChunked::full_null(input.name(), input.len()).into_series()
+                    )
                 }
                 _ => {}
             }
