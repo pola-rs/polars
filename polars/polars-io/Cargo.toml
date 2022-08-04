@@ -13,7 +13,7 @@ description = "IO related logic for the Polars DataFrame library"
 # support for arrows json parsing
 json = ["arrow/io_json", "serde_json"]
 # support for arrows ipc file parsing
-ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
+ipc = ["arrow/io_ipc", "arrow/io_ipc_compression", "memmap"]
 # support for arrows streaming ipc file parsing
 ipc_streaming = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrow avro parsing
@@ -37,9 +37,9 @@ private = ["polars-time/private"]
 [dependencies]
 ahash = "0.7"
 anyhow = "1.0"
-arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "5711cfcbb785450697eb38e221b5dc1825550ee6", default-features = false }
-# arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "polars", default-features = false }
-arrow = { package = "arrow2", version = "0.13", default-features = false }
+# arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "5711cfcbb785450697eb38e221b5dc1825550ee6", default-features = false }
+arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "ipc_meta", default-features = false }
+# arrow = { package = "arrow2", version = "0.12", default-features = false }
 # arrow = { package = "arrow2", path = "../../../arrow2", default-features = false }
 csv-core = { version = "0.1.10", optional = true }
 dirs = "4.0"

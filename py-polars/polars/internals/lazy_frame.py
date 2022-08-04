@@ -220,6 +220,7 @@ class LazyFrame(Generic[DF]):
         row_count_name: str | None = None,
         row_count_offset: int = 0,
         storage_options: dict | None = None,
+        memory_map: bool = True,
     ) -> LDF:
         """
         See Also
@@ -245,6 +246,7 @@ class LazyFrame(Generic[DF]):
             cache,
             rechunk,
             _prepare_row_count_args(row_count_name, row_count_offset),
+            memory_map=memory_map,
         )
         return self
 

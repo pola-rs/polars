@@ -257,6 +257,7 @@ impl PyLazyFrame {
         cache: bool,
         rechunk: bool,
         row_count: Option<(String, IdxSize)>,
+        memory_map: bool,
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let args = ScanArgsIpc {
@@ -264,6 +265,7 @@ impl PyLazyFrame {
             cache,
             rechunk,
             row_count,
+            memmap: memory_map,
         };
         let lf = LazyFrame::scan_ipc(path, args).map_err(PyPolarsErr::from)?;
         Ok(lf.into())

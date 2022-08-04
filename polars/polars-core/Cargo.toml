@@ -173,12 +173,11 @@ thiserror = "^1.0"
 
 [dependencies.arrow]
 package = "arrow2"
-# git = "https://github.com/jorgecarleitao/arrow2"
-# git = "https://github.com/ritchie46/arrow2"
-rev = "5711cfcbb785450697eb38e221b5dc1825550ee6"
+git = "https://github.com/ritchie46/arrow2"
+# rev = "5711cfcbb785450697eb38e221b5dc1825550ee6"
 # path = "../../../arrow2"
-# branch = "polars"
-version = "0.13"
+branch = "ipc_meta"
+# version = "0.12"
 default-features = false
 features = [
   "compute_aggregate",

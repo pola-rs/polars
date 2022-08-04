@@ -10,7 +10,7 @@ pub struct IpcExec {
 }
 
 impl IpcExec {
-    fn read(&mut self) -> Result<DataFrame> {
+    fn read(&mut self, verbose: bool) -> Result<DataFrame> {
         let (file, projection, n_rows, aggregate, predicate) = prepare_scan_args(
             &self.path,
             &self.predicate,
@@ -24,7 +24,8 @@ impl IpcExec {
             .with_row_count(std::mem::take(&mut self.options.row_count))
             .set_rechunk(self.options.rechunk)
             .with_projection(projection)
-            .finish_with_scan_ops(predicate, aggregate)
+            .memory_mapped(self.options.memmap)
+            .finish_with_scan_ops(predicate, aggregate, verbose)
     }
 }
 
@@ -40,6 +41,8 @@ impl Executor for IpcExec {
         };
         state
             .file_cache
-            .read(finger_print, self.options.file_counter, &mut || self.read())
+            .read(finger_print, self.options.file_counter, &mut || {
+                self.read(state.verbose())
+            })
     }
 }
