@@ -534,7 +534,9 @@ class Series:
 
         raise NotImplementedError("Unsupported idxs datatype.")
 
-    def __getitem__(self, item: int | Series | range | slice | np.ndarray) -> Any:
+    def __getitem__(
+        self, item: int | Series | range | slice | np.ndarray | list[int] | list[bool]
+    ) -> Any:
         if isinstance(item, int):
             if item < 0:
                 item = self.len() + item
