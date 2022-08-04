@@ -322,3 +322,17 @@ def test_when_then_edge_cases_3994() -> None:
             .keep_name()
         )
     ).to_dict(False) == {"id": [], "type": []}
+
+
+def test_edge_cast_string_duplicates_4259() -> None:
+    # carefully constructed data.
+    # note that row 2, 3 concattenated are the same string
+    df = pl.DataFrame(
+        {
+            "a": [99, 54612, 546121],
+            "b": [1, 14484, 4484],
+        }
+    ).with_columns(pl.all().cast(pl.Utf8))
+
+    mask = df.select(["a", "b"]).is_duplicated()
+    assert df.filter(pl.lit(mask)).shape == (0, 2)

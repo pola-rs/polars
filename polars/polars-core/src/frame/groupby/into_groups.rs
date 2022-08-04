@@ -384,8 +384,10 @@ pub(super) fn pack_utf8_columns(
             let lhs = lhs.slice(offset as i64, len);
             let rhs = rhs.slice(offset as i64, len);
 
-            // the additional 2 is needed for the validity
-            let size = lhs.get_values_size() + rhs.get_values_size() + lhs.len() * 2 + 1;
+            // the additional:
+            // 2 is needed for the validity
+            // 1 for the '_' delimiter
+            let size = lhs.get_values_size() + rhs.get_values_size() + lhs.len() * 3 + 1;
 
             let mut values = Vec::with_capacity(size);
             let ptr = values.as_ptr() as usize;
@@ -397,6 +399,7 @@ pub(super) fn pack_utf8_columns(
                         let start = values.len();
                         values.extend_from_slice("11".as_bytes());
                         values.extend_from_slice(lhs.as_bytes());
+                        values.push(b'_');
                         values.extend_from_slice(rhs.as_bytes());
                         // reallocated lifetime is invalid
                         debug_assert_eq!(ptr, values.as_ptr() as usize);
@@ -417,6 +420,7 @@ pub(super) fn pack_utf8_columns(
                     (None, Some(rhs)) => {
                         let start = values.len();
                         values.extend_from_slice("01".as_bytes());
+                        values.push(b'_');
                         values.extend_from_slice(rhs.as_bytes());
                         debug_assert_eq!(ptr, values.as_ptr() as usize);
                         let end = values.len();
@@ -432,6 +436,7 @@ pub(super) fn pack_utf8_columns(
                         let start = values.len();
                         values.extend_from_slice("10".as_bytes());
                         values.extend_from_slice(lhs.as_bytes());
+                        values.push(b'_');
                         debug_assert_eq!(ptr, values.as_ptr() as usize);
                         let end = values.len();
                         let str_val: &'static str = unsafe {
