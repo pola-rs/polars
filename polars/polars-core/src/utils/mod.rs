@@ -523,6 +523,13 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (UInt32, UInt64) => Some(UInt64),
 
             #[cfg(feature = "dtype-u8")]
+            (Boolean, UInt8) => Some(UInt8),
+            #[cfg(feature = "dtype-u16")]
+            (Boolean, UInt16) => Some(UInt16),
+            (Boolean, UInt32) => Some(UInt32),
+            (Boolean, UInt64) => Some(UInt64),
+
+            #[cfg(feature = "dtype-u8")]
             (Float32, UInt8) => Some(Float32),
             #[cfg(feature = "dtype-u16")]
             (Float32, UInt16) => Some(Float32),
