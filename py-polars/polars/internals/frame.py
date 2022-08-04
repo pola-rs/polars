@@ -760,6 +760,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         row_count_name: str | None = None,
         row_count_offset: int = 0,
         rechunk: bool = True,
+        memory_map: bool = True,
     ) -> DF:
         """
         Read into a DataFrame from Arrow IPC stream format. This is also called the
@@ -780,6 +781,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             Row count offset.
         rechunk
             Make sure that all data is contiguous.
+        memory_map
+            Memory map the file
 
         Returns
         -------
@@ -798,6 +801,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 rechunk=rechunk,
                 row_count_name=row_count_name,
                 row_count_offset=row_count_offset,
+                memory_map=memory_map,
             )
             if columns is None:
                 return scan.collect()
@@ -817,6 +821,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             projection,
             n_rows,
             _prepare_row_count_args(row_count_name, row_count_offset),
+            memory_map=memory_map,
         )
         return self
 

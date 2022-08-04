@@ -63,7 +63,7 @@ pub fn get_reader_bytes<R: Read + MmapBytesReader>(reader: &mut R) -> Result<Rea
         // we can get the bytes for free
         if reader.to_bytes().is_some() {
             // duplicate .to_bytes() is necessary to satisfy the borrow checker
-            Ok(ReaderBytes::Borrowed(reader.to_bytes().unwrap()))
+            Ok(ReaderBytes::Borrowed((*reader).to_bytes().unwrap()))
         } else {
             // we have to read to an owned buffer to get the bytes.
             let mut bytes = Vec::with_capacity(1024 * 128);

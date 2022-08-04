@@ -192,8 +192,13 @@ impl Series {
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(key_type, value_type, _) => {
                 use arrow::datatypes::IntegerType;
-                let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
-                let arr = arrow::compute::concatenate::concatenate(&chunks)?;
+                // don't spuriously call this. This triggers a read on mmaped data
+                let arr = if chunks.len() > 1 {
+                    let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
+                    arrow::compute::concatenate::concatenate(&chunks)?
+                } else {
+                    chunks[0].clone()
+                };
 
                 if !matches!(
                     value_type.as_ref(),
@@ -301,6 +306,7 @@ impl Series {
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Map(_field, _sorted) => {
                 let arr = if chunks.len() > 1 {
+                    // don't spuriously call this. This triggers a read on mmaped data
                     concatenate_owned_unchecked(&chunks).unwrap() as ArrayRef
                 } else {
                     chunks[0].clone()
@@ -328,6 +334,7 @@ impl Series {
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(_) => {
                 let arr = if chunks.len() > 1 {
+                    // don't spuriously call this. This triggers a read on mmaped data
                     concatenate_owned_unchecked(&chunks).unwrap() as ArrayRef
                 } else {
                     chunks[0].clone()
