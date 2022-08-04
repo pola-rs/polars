@@ -73,8 +73,9 @@ dependencies = [
 
 [[package]]
 name = "arrow2"
-version = "0.12.0"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=8604cb760b8ac475d7968b714d47e4ff714c61a1#8604cb760b8ac475d7968b714d47e4ff714c61a1"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "afc54f0b14083abaf6bc71cf1aeccd7831a24b1e29d07683ba9a4a0f6c5d9326"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -1190,7 +1191,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.22.6"
+version = "0.23.0"
 dependencies = [
  "polars-core",
  "polars-io",
@@ -1201,7 +1202,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.22.6"
+version = "0.23.0"
 dependencies = [
  "arrow2",
  "hashbrown",
@@ -1212,7 +1213,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.22.6"
+version = "0.23.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1243,7 +1244,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.22.6"
+version = "0.23.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1270,7 +1271,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.22.6"
+version = "0.23.0"
 dependencies = [
  "ahash",
  "bitflags",
@@ -1290,7 +1291,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.22.6"
+version = "0.23.0"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -1298,7 +1299,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.22.6"
+version = "0.23.0"
 dependencies = [
  "chrono",
  "lexical",
@@ -1310,7 +1311,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.22.6"
+version = "0.23.0"
 dependencies = [
  "parking_lot",
  "rayon",
