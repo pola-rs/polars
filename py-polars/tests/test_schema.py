@@ -36,3 +36,19 @@ def test_fill_null_minimal_upcast_4056() -> None:
 def test_with_column_duplicates() -> None:
     df = pl.DataFrame({"a": [0, None, 2, 3, None], "b": [None, 1, 2, 3, None]})
     assert df.with_columns([pl.all().alias("same")]).columns == ["a", "b", "same"]
+
+
+def test_pow_dtype() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3, 4, 5],
+        }
+    ).lazy()
+
+    df = df.with_columns([pl.col("foo").cast(pl.UInt32)]).with_columns(
+        [
+            (pl.col("foo") * 2**2).alias("scaled_foo"),
+            (pl.col("foo") * 2**2.1).alias("scaled_foo2"),
+        ]
+    )
+    assert df.collect().dtypes == [pl.UInt32, pl.UInt32, pl.Float64]
