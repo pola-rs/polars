@@ -26,7 +26,6 @@ flake8-docstrings==1.6.0
 flake8-simplify==0.19.3
 sphinx==4.2.0
 pydata-sphinx-theme==0.6.3
-sphinx-panels==0.6.0
 sphinxcontrib-applehelp==1.0.2
 sphinxcontrib-devhelp==1.0.2
 sphinxcontrib-htmlhelp==2.0.0
