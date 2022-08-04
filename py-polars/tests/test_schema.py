@@ -52,3 +52,21 @@ def test_pow_dtype() -> None:
         ]
     )
     assert df.collect().dtypes == [pl.UInt32, pl.UInt32, pl.Float64]
+
+
+def test_bool_numeric_supertype() -> None:
+    df = pl.DataFrame({"v": [1, 2, 3, 4, 5, 6]})
+    for dt in [
+        pl.UInt8,
+        pl.UInt16,
+        pl.UInt32,
+        pl.UInt64,
+        pl.Int8,
+        pl.Int16,
+        pl.Int32,
+        pl.Int64,
+    ]:
+        assert (
+            df.select([(pl.col("v") < 3).sum().cast(dt) / pl.count()])[0, 0] - 0.3333333
+            <= 0.00001
+        )
