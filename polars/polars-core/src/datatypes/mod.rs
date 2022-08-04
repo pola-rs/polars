@@ -1031,7 +1031,7 @@ impl From<&ArrowDataType> for DataType {
                     panic!("activate the 'object' feature to be able to load POLARS_EXTENSION_TYPE")
                 }
             }
-            dt => panic!("Arrow datatype {:?} not supported by Polars", dt),
+            dt => panic!("Arrow datatype {:?} not supported by Polars. You probably need to activate that data-type feature.", dt),
         }
     }
 }
