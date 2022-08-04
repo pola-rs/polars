@@ -128,10 +128,7 @@ from polars.io import (
     scan_ipc,
     scan_parquet,
 )
-
-# toggle_string_cache is not exported in __all__
-from polars.string_cache import toggle_string_cache  # noqa: F401
-from polars.string_cache import StringCache
+from polars.string_cache import StringCache, toggle_string_cache
 from polars.utils import threadpool_size
 
 __all__ = [
@@ -189,6 +186,7 @@ __all__ = [
     "read_avro",
     # polars.stringcache
     "StringCache",
+    "toggle_string_cache",
     # polars.config
     "Config",
     # polars.internal.when
