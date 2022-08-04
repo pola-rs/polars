@@ -1,6 +1,6 @@
 [package]
 name = "polars-lazy"
-version = "0.22.6"
+version = "0.23.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -128,12 +128,12 @@ rayon = "1.5"
 regex = { version = "1.5", optional = true }
 serde = { version = "1", features = ["derive", "rc"], optional = true }
 
-polars-arrow = { version = "0.22.6", path = "../polars-arrow" }
-polars-core = { version = "0.22.6", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.22.6", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
-polars-ops = { version = "0.22.6", path = "../polars-ops", default-features = false }
-polars-time = { version = "0.22.6", path = "../polars-time", optional = true }
-polars-utils = { version = "0.22.6", path = "../polars-utils" }
+polars-arrow = { version = "0.23.0", path = "../polars-arrow" }
+polars-core = { version = "0.23.0", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
+polars-io = { version = "0.23.0", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
+polars-ops = { version = "0.23.0", path = "../polars-ops", default-features = false }
+polars-time = { version = "0.23.0", path = "../polars-time", optional = true }
+polars-utils = { version = "0.23.0", path = "../polars-utils" }
 
 [package.metadata.docs.rs]
 all-features = true
