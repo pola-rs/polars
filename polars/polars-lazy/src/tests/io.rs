@@ -179,6 +179,7 @@ fn test_ipc_globbing() -> Result<()> {
             cache: true,
             rechunk: false,
             row_count: None,
+            memmap: true,
         },
     )?
     .collect()?;
