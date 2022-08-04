@@ -13,7 +13,6 @@ extend-ignore =
     SIM102, SIM117,
 
 per-file-ignores =
-    __init__.py:F401
     tests/*.py: E101, W191
 extend-exclude =
     # Automatically generated test artifacts
