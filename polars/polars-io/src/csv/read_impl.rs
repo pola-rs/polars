@@ -342,7 +342,7 @@ impl<'a> CoreReader<'a> {
         } else {
             None
         };
-        
+
         Ok((bytes, starting_point_offset))
     }
 
