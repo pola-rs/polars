@@ -74,7 +74,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.13.0"
-source = "git+https://github.com/ritchie46/arrow2?branch=ipc_meta#fed029bc007ad77bfffb69f73d4d1339486a879b"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=3b9d86bfb65bc786bf9315a41737a77895716443#3b9d86bfb65bc786bf9315a41737a77895716443"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -83,7 +83,6 @@ dependencies = [
  "bytemuck",
  "chrono",
  "chrono-tz",
- "crc",
  "dyn-clone",
  "either",
  "fallible-streaming-iterator",
@@ -93,14 +92,11 @@ dependencies = [
  "indexmap",
  "json-deserializer",
  "lexical-core",
- "libflate",
  "lz4",
  "multiversion",
  "num-traits",
  "parquet2",
- "serde_json",
  "simdutf8",
- "snap",
  "streaming-iterator",
  "strength_reduce",
  "zstd",
@@ -146,12 +142,16 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
 name = "avro-schema"
-version = "0.2.2"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d38707606731f68521a6f43d8089cee0278fbb235a967bc214dcb3238a1567c8"
+checksum = "b5281855b39aba9684d2f47bf96983fbfd8f1725f12fabb0513a8ab879647bbd"
 dependencies = [
+ "crc",
+ "fallible-streaming-iterator",
+ "libflate",
  "serde",
  "serde_json",
+ "snap",
 ]
 
 [[package]]
