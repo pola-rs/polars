@@ -58,7 +58,10 @@ from polars.exceptions import (
     ShapeError,
 )
 from polars.internals.expr import Expr
-from polars.internals.frame import DataFrame, wrap_df  # TODO: remove need for wrap_df
+
+# TODO remove need for wrap_df
+from polars.internals.frame import wrap_df  # noqa: F401
+from polars.internals.frame import DataFrame
 from polars.internals.functions import concat, cut, date_range, get_dummies
 from polars.internals.io import read_ipc_schema, read_parquet_schema
 from polars.internals.lazy_frame import LazyFrame
@@ -107,7 +110,10 @@ from polars.internals.lazy_functions import (
 )
 from polars.internals.lazy_functions import to_list as list
 from polars.internals.lazy_functions import var
-from polars.internals.series import Series, wrap_s  # TODO: remove need for wrap_s
+
+# TODO: remove need for wrap_s
+from polars.internals.series import wrap_s  # noqa: F401
+from polars.internals.series import Series
 from polars.internals.whenthen import when
 from polars.io import (
     read_avro,
@@ -122,8 +128,7 @@ from polars.io import (
     scan_ipc,
     scan_parquet,
 )
-from polars.string_cache import toggle_string_cache  # We do not export in __all__
-from polars.string_cache import StringCache
+from polars.string_cache import StringCache, toggle_string_cache
 from polars.utils import threadpool_size
 
 __all__ = [
@@ -162,9 +167,12 @@ __all__ = [
     "Categorical",
     "Field",
     "Struct",
+    "Null",
+    "PolarsDataType",
     "get_idx_type",
     # polars.io
     "read_csv",
+    "read_excel",
     "read_parquet",
     "read_json",
     "read_sql",
@@ -178,6 +186,7 @@ __all__ = [
     "read_avro",
     # polars.stringcache
     "StringCache",
+    "toggle_string_cache",
     # polars.config
     "Config",
     # polars.internal.when
