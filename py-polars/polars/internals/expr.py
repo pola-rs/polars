@@ -2449,15 +2449,8 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...   {
-        ... "groups": ["g1", "g1", "g2"],
-        ... "values": [1, 2, 3]
-        ... }
-        ... )
-        >>> df.with_column(
-        ... pl.col("values").max().over("groups").alias("max_by_group")
-        ... )
+        >>> df = pl.DataFrame({"groups": ["g1", "g1", "g2"], "values": [1, 2, 3]})
+        >>> df.with_column(pl.col("values").max().over("groups").alias("max_by_group"))
         shape: (3, 3)
         ┌────────┬────────┬──────────────┐
         │ groups ┆ values ┆ max_by_group │
@@ -2678,8 +2671,15 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"group_col":['g1','g1','g2'],"b": [1, 2, 3]})
-        >>> (df.groupby('group_col').agg([pl.col('b').filter(pl.col('b')<2).sum().alias('lt'),pl.col('b').filter(pl.col('b')>=2).sum().alias('gte')]))
+        >>> df = pl.DataFrame({"group_col": ["g1", "g1", "g2"], "b": [1, 2, 3]})
+        >>> (
+        ...     df.groupby("group_col").agg(
+        ...         [
+        ...             pl.col("b").filter(pl.col("b") < 2).sum().alias("lt"),
+        ...             pl.col("b").filter(pl.col("b") >= 2).sum().alias("gte"),
+        ...         ]
+        ...     )
+        ... )
         shape: (2, 3)
         ┌─────┬──────┬─────┐
         │ a   ┆ lt   ┆ gte │
@@ -2704,8 +2704,15 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"group_col":['g1','g1','g2'],"b": [1, 2, 3]})
-        >>> (df.groupby('group_col').agg([pl.col('b').where(pl.col('b')<2).sum().alias('lt'),pl.col('b').where(pl.col('b')>=2).sum().alias('gte')]))
+        >>> df = pl.DataFrame({"group_col": ["g1", "g1", "g2"], "b": [1, 2, 3]})
+        >>> (
+        ...     df.groupby("group_col").agg(
+        ...         [
+        ...             pl.col("b").where(pl.col("b") < 2).sum().alias("lt"),
+        ...             pl.col("b").where(pl.col("b") >= 2).sum().alias("gte"),
+        ...         ]
+        ...     )
+        ... )
         shape: (2, 3)
         ┌─────┬──────┬─────┐
         │ a   ┆ lt   ┆ gte │
@@ -3305,7 +3312,12 @@ class Expr:
         --------
         >>> s = pl.Series("a", [1, 1, 2], dtype=pl.UInt64)
         >>> df = pl.DataFrame([s])
-        >>> df.select([pl.col("a").reinterpret(signed=True).alias('reinterpreted'),pl.col('a').alias('original')])
+        >>> df.select(
+        ...     [
+        ...         pl.col("a").reinterpret(signed=True).alias("reinterpreted"),
+        ...         pl.col("a").alias("original"),
+        ...     ]
+        ... )
         shape: (3, 2)
         ┌───────────────┬──────────┐
         │ reinterpreted ┆ original │
@@ -3361,7 +3373,7 @@ class Expr:
         """Fill nulls with linear interpolation over missing values.
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, None, 3],"b": [1.0, float('nan'), 3.0]})
+        >>> df = pl.DataFrame({"a": [1, None, 3], "b": [1.0, float("nan"), 3.0]})
         >>> df.select(pl.all().interpolate())
         shape: (3, 2)
         ┌─────┬─────┐
@@ -4141,7 +4153,7 @@ class Expr:
         >>> (
         ...     df.select(
         ...         [
-        ...             pl.col("A").rolling_quantile(quantile=0.33,window_size=3),
+        ...             pl.col("A").rolling_quantile(quantile=0.33, window_size=3),
         ...         ]
         ...     )
         ... )
@@ -4277,7 +4289,7 @@ class Expr:
         ...         "A": [-1.0, 0.0, 1.0, 2.0],
         ...     }
         ... )
-        >>> df.select(pl.col('A').abs())
+        >>> df.select(pl.col("A").abs())
         shape: (4, 1)
         ┌─────┐
         │ A   │
@@ -4509,6 +4521,19 @@ class Expr:
         .. math::
             G_1 = \frac{k_3}{k_2^{3/2}} = \frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 2, 1]})
+        >>> df.select(pl.col("a").skew())
+        shape: (1, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.343622 │
+        └──────────┘
+
         """
         return wrap_expr(self._pyexpr.skew(bias))
 
@@ -4532,6 +4557,18 @@ class Expr:
         bias : bool, optional
             If False, then the calculations are corrected for statistical bias.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 2, 1]})
+        >>> df.select(pl.col("a").kurtosis())
+        shape: (1, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ f64       │
+        ╞═══════════╡
+        │ -1.153061 │
+        └───────────┘
         """
         return wrap_expr(self._pyexpr.kurtosis(fisher, bias))
 
@@ -4581,6 +4618,18 @@ class Expr:
         Returns a unit Series with the lowest value possible for the dtype of this
         expression.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 2, 1]})
+        >>> df.select(pl.col("a").lower_bound())
+        shape: (1, 1)
+        ┌──────────────────────┐
+        │ a                    │
+        │ ---                  │
+        │ i64                  │
+        ╞══════════════════════╡
+        │ -9223372036854775808 │
+        └──────────────────────┘
         """
         return wrap_expr(self._pyexpr.lower_bound())
 
@@ -4591,6 +4640,18 @@ class Expr:
         Returns a unit Series with the highest value possible for the dtype of this
         expression.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 2, 1]})
+        >>> df.select(pl.col("a").upper_bound())
+        shape: (1, 1)
+        ┌─────────────────────┐
+        │ a                   │
+        │ ---                 │
+        │ i64                 │
+        ╞═════════════════════╡
+        │ 9223372036854775807 │
+        └─────────────────────┘
         """
         return wrap_expr(self._pyexpr.upper_bound())
 
@@ -4956,6 +5017,22 @@ class Expr:
             Seed initialization. If None given, the `random` module is used to generate
             a random seed.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").shuffle())
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 3   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        └─────┘
         """
         if seed is None:
             seed = random.randint(0, 10000)
@@ -4982,6 +5059,22 @@ class Expr:
         shuffle
             Shuffle the order of sampled data points.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").sample())
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 2   │
+        ├╌╌╌╌╌┤
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        └─────┘
         """
         return wrap_expr(
             self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
@@ -5023,6 +5116,22 @@ class Expr:
             Minimum number of observations in window required to have a value
             (otherwise result is Null).
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").ewm_mean(com=1))
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.666667 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 2.428571 │
+        └──────────┘
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_mean(alpha, adjust, min_periods))
@@ -5063,6 +5172,22 @@ class Expr:
             Minimum number of observations in window required to have a value
             (otherwise result is Null).
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").ewm_std(com=1))
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 0.5      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 0.754615 │
+        └──────────┘
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_std(alpha, adjust, min_periods))
@@ -5103,6 +5228,22 @@ class Expr:
             Minimum number of observations in window required to have a value
             (otherwise result is Null).
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").ewm_var(com=1))
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 0.25     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 0.569444 │
+        └──────────┘
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_var(alpha, adjust, min_periods))
@@ -5224,6 +5365,22 @@ class Expr:
         base
             Given base, defaults to `e`
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").log(base=2))
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.584963 │
+        └──────────┘
         """
         return wrap_expr(self._pyexpr.log(base))
 
@@ -5238,7 +5395,27 @@ class Expr:
             Given base, defaults to `e`
         normalize
             Normalize pk if it doesn't sum to 1.
-
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").entropy(base=2))
+        shape: (1, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.459148 │
+        └──────────┘
+        >>> df.select(pl.col("a").entropy(base=2, normalize=False))
+        shape: (1, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ f64       │
+        ╞═══════════╡
+        │ -6.754888 │
+        └───────────┘
         """
         return wrap_expr(self._pyexpr.entropy(base, normalize))
 
@@ -5313,6 +5490,22 @@ class Expr:
         reverse
             If the `Series` order is reversed, e.g. descending.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [1, 3, 2]})
+        >>> df.select(pl.col("values").sort().set_sorted())
+        shape: (3, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ i64    │
+        ╞════════╡
+        │ 1      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 2      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 3      │
+        └────────┘
         """
         return self.map(lambda s: s.set_sorted(reverse))
 
@@ -5321,27 +5514,139 @@ class Expr:
 
     @property
     def dt(self) -> ExprDateTimeNameSpace:
-        """Create an object namespace of all datetime related methods."""
+        """
+        Create an object namespace of all datetime related methods.
+
+        See the individual method pages for full details
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"date": ["2020-01-01", "2021-01-01"]}).select(
+        ...     pl.col("date").str.strptime(pl.Date, fmt="%Y-%m-%d")
+        ... )
+        >>> df.select(pl.col("date").dt.year())
+        shape: (2, 1)
+        ┌──────┐
+        │ date │
+        │ ---  │
+        │ i32  │
+        ╞══════╡
+        │ 2020 │
+        ├╌╌╌╌╌╌┤
+        │ 2021 │
+        └──────┘
+        """
         return ExprDateTimeNameSpace(self)
 
     @property
     def str(self) -> ExprStringNameSpace:
-        """Create an object namespace of all string related methods."""
+        """
+        Create an object namespace of all string related methods.
+
+        See the individual method pages for full details
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"letters": ["a", "b"]})
+        >>> df.select(pl.col("letters").str.to_uppercase())
+        shape: (2, 1)
+        ┌─────────┐
+        │ letters │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ A       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ B       │
+        └─────────┘
+        """
         return ExprStringNameSpace(self)
 
     @property
     def arr(self) -> ExprListNameSpace:
-        """Create an object namespace of all list related methods."""
+        """
+        Create an object namespace of all list related methods.
+
+        See the individual method pages for full details
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [["a", "b"]]})
+        ... df.select(
+        ...     [
+        ...         pl.col("values").arr.get(0).alias("first"),
+        ...         pl.col("values").arr.get(1).alias("second"),
+        ...     ]
+        ... )
+        shape: (1, 2)
+        ┌───────┬────────┐
+        │ first ┆ second │
+        │ ---   ┆ ---    │
+        │ str   ┆ str    │
+        ╞═══════╪════════╡
+        │ a     ┆ b      │
+        └───────┴────────┘
+        """
         return ExprListNameSpace(self)
 
     @property
     def cat(self) -> ExprCatNameSpace:
-        """Create an object namespace of all categorical related methods."""
+        """
+        Create an object namespace of all categorical related methods.
+
+        See the individual method pages for full details
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": ["a", "b"]}).select(
+        ...     pl.col("values").cast(pl.Categorical)
+        ... )
+        >>> df.select(pl.col("values").cat.set_ordering(ordering="physical"))
+        shape: (2, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ cat    │
+        ╞════════╡
+        │ a      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ b      │
+        └────────┘
+        """
         return ExprCatNameSpace(self)
 
     @property
     def struct(self) -> ExprStructNameSpace:
-        """Create an object namespace of all struct related methods."""
+        """
+        Create an object namespace of all struct related methods.
+        See the individual method pages for full details
+
+        Examples
+        --------
+        >>> df = (
+        ...     pl.DataFrame(
+        ...         {
+        ...             "int": [1, 2],
+        ...             "str": ["a", "b"],
+        ...             "bool": [True, None],
+        ...             "list": [[1, 2], [3]],
+        ...         }
+        ...     )
+        ...     .to_struct("my_struct")
+        ...     .to_frame()
+        ... )
+        >>> df.select(pl.col("my_struct").struct.field("str"))
+        shape: (2, 1)
+        ┌─────┐
+        │ str │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ a   │
+        ├╌╌╌╌╌┤
+        │ b   │
+        └─────┘
+        """
         return ExprStructNameSpace(self)
 
 
@@ -5465,19 +5770,86 @@ class ExprListNameSpace:
         return wrap_expr(self._pyexpr.arr_lengths())
 
     def sum(self) -> Expr:
-        """Sum all the arrays in the list."""
+        """
+        Sum all the arrays in the list.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[1], [2,3]]})
+        >>> df.select(pl.col("values").arr.sum())
+        shape: (2, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ i64    │
+        ╞════════╡
+        │ 1      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 5      │
+        └────────┘
+        """
         return wrap_expr(self._pyexpr.lst_sum())
 
     def max(self) -> Expr:
-        """Compute the max value of the arrays in the list."""
+        """Compute the max value of the arrays in the list.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[1], [2,3]]})
+        >>> df.select(pl.col("values").arr.max())
+        shape: (2, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ i64    │
+        ╞════════╡
+        │ 1      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 3      │
+        └────────┘
+        """
         return wrap_expr(self._pyexpr.lst_max())
 
     def min(self) -> Expr:
-        """Compute the min value of the arrays in the list."""
+        """Compute the min value of the arrays in the list.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[1], [2,3]]})
+        >>> df.select(pl.col("values").arr.min())
+        shape: (2, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ i64    │
+        ╞════════╡
+        │ 1      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 2      │
+        └────────┘
+
+        """
         return wrap_expr(self._pyexpr.lst_min())
 
     def mean(self) -> Expr:
-        """Compute the mean value of the arrays in the list."""
+        """Compute the mean value of the arrays in the list.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[1], [2,3]]})
+        >>> df.select(pl.col("values").arr.mean())
+        shape: (2, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ f64    │
+        ╞════════╡
+        │ 1.0    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 2.5    │
+        └────────┘
+
+        """
         return wrap_expr(self._pyexpr.lst_mean())
 
     def sort(self, reverse: bool = False) -> Expr:
