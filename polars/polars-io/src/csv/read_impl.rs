@@ -337,10 +337,10 @@ impl<'a> CoreReader<'a> {
             }
         }
 
-        let starting_point_offset = if bytes.len() > 0 {
-            Some(bytes.as_ptr() as usize - starting_point_offset)
-        } else {
+        let starting_point_offset = if bytes.is_empty() {
             None
+        } else {
+            Some(bytes.as_ptr() as usize - starting_point_offset)
         };
 
         Ok((bytes, starting_point_offset))
