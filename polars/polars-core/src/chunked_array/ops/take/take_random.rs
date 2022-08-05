@@ -10,8 +10,10 @@ use std::convert::TryFrom;
 
 macro_rules! take_random_get {
     ($self:ident, $index:ident) => {{
-        let (chunk_idx, arr_idx) =
-            crate::utils::index_to_chunked_index($self.chunk_lens.iter().copied(), $index as u32);
+        let (chunk_idx, arr_idx) = crate::utils::index_to_chunked_index(
+            $self.chunk_lens.iter().copied(),
+            $index as IdxSize,
+        );
 
         // Safety:
         // bounds are checked above
@@ -29,8 +31,10 @@ macro_rules! take_random_get {
 
 macro_rules! take_random_get_unchecked {
     ($self:ident, $index:ident) => {{
-        let (chunk_idx, arr_idx) =
-            crate::utils::index_to_chunked_index($self.chunk_lens.iter().copied(), $index as u32);
+        let (chunk_idx, arr_idx) = crate::utils::index_to_chunked_index(
+            $self.chunk_lens.iter().copied(),
+            $index as IdxSize,
+        );
 
         // Safety:
         // bounds are checked above
@@ -155,7 +159,7 @@ where
         } else {
             let t = NumTakeRandomChunked {
                 chunks: chunks.collect(),
-                chunk_lens: self.chunks.iter().map(|a| a.len() as u32).collect(),
+                chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
             };
             TakeRandBranch3::Multi(t)
         }
@@ -164,7 +168,7 @@ where
 
 pub struct Utf8TakeRandom<'a> {
     pub(crate) chunks: Chunks<'a, Utf8Array<i64>>,
-    pub(crate) chunk_lens: Vec<u32>,
+    pub(crate) chunk_lens: Vec<IdxSize>,
 }
 
 impl<'a> TakeRandom for Utf8TakeRandom<'a> {
@@ -218,7 +222,7 @@ impl<'a> IntoTakeRandom<'a> for &'a Utf8Chunked {
                 let chunks = self.downcast_chunks();
                 let t = Utf8TakeRandom {
                     chunks,
-                    chunk_lens: self.chunks.iter().map(|a| a.len() as u32).collect(),
+                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
                 };
                 TakeRandBranch2::Multi(t)
             }
@@ -241,7 +245,7 @@ impl<'a> IntoTakeRandom<'a> for &'a BooleanChunked {
                 let chunks = self.downcast_chunks();
                 let t = BoolTakeRandom {
                     chunks,
-                    chunk_lens: self.chunks.iter().map(|a| a.len() as u32).collect(),
+                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
                 };
                 TakeRandBranch2::Multi(t)
             }
@@ -265,7 +269,7 @@ impl<'a> IntoTakeRandom<'a> for &'a ListChunked {
             let t = ListTakeRandom {
                 ca: self,
                 chunks: chunks.collect(),
-                chunk_lens: self.chunks.iter().map(|a| a.len() as u32).collect(),
+                chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
             };
             TakeRandBranch2::Multi(t)
         }
@@ -277,7 +281,7 @@ where
     T: NumericNative,
 {
     pub(crate) chunks: Vec<&'a PrimitiveArray<T>>,
-    pub(crate) chunk_lens: Vec<u32>,
+    pub(crate) chunk_lens: Vec<IdxSize>,
 }
 
 impl<'a, T> TakeRandom for NumTakeRandomChunked<'a, T>
@@ -377,7 +381,7 @@ where
 
 pub struct BoolTakeRandom<'a> {
     pub(crate) chunks: Chunks<'a, BooleanArray>,
-    pub(crate) chunk_lens: Vec<u32>,
+    pub(crate) chunk_lens: Vec<IdxSize>,
 }
 
 impl<'a> TakeRandom for BoolTakeRandom<'a> {
@@ -419,7 +423,7 @@ impl<'a> TakeRandom for BoolTakeRandomSingleChunk<'a> {
 pub struct ListTakeRandom<'a> {
     ca: &'a ListChunked,
     chunks: Vec<&'a ListArray<i64>>,
-    chunk_lens: Vec<u32>,
+    chunk_lens: Vec<IdxSize>,
 }
 
 impl<'a> TakeRandom for ListTakeRandom<'a> {
@@ -476,7 +480,7 @@ impl<'a> TakeRandom for ListTakeRandomSingleChunk<'a> {
 #[cfg(feature = "object")]
 pub struct ObjectTakeRandom<'a, T: PolarsObject> {
     pub(crate) chunks: Chunks<'a, ObjectArray<T>>,
-    pub(crate) chunk_lens: Vec<u32>,
+    pub(crate) chunk_lens: Vec<IdxSize>,
 }
 
 #[cfg(feature = "object")]
@@ -533,7 +537,7 @@ impl<'a, T: PolarsObject> IntoTakeRandom<'a> for &'a ObjectChunked<T> {
         } else {
             let t = ObjectTakeRandom {
                 chunks,
-                chunk_lens: self.chunks.iter().map(|a| a.len() as u32).collect(),
+                chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
             };
             TakeRandBranch2::Multi(t)
         }

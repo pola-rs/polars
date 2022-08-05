@@ -112,7 +112,7 @@ where
         } else {
             let t = NumTakeRandomChunked::<'_, T::Native> {
                 chunks: chunks.collect(),
-                chunk_lens: self.chunks.iter().map(|a| a.len() as u32).collect(),
+                chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
             };
             Box::new(t)
         }
@@ -131,7 +131,7 @@ impl<'a> IntoPartialEqInner<'a> for &'a Utf8Chunked {
                 let chunks = self.downcast_chunks();
                 let t = Utf8TakeRandom {
                     chunks,
-                    chunk_lens: self.chunks.iter().map(|a| a.len() as u32).collect(),
+                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
                 };
                 Box::new(t)
             }
@@ -151,7 +151,7 @@ impl<'a> IntoPartialEqInner<'a> for &'a BooleanChunked {
                 let chunks = self.downcast_chunks();
                 let t = BoolTakeRandom {
                     chunks,
-                    chunk_lens: self.chunks.iter().map(|a| a.len() as u32).collect(),
+                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
                 };
                 Box::new(t)
             }
@@ -212,7 +212,7 @@ where
         } else {
             let t = NumTakeRandomChunked::<'_, T::Native> {
                 chunks: chunks.collect(),
-                chunk_lens: self.chunks.iter().map(|a| a.len() as u32).collect(),
+                chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
             };
             Box::new(t)
         }
@@ -231,7 +231,7 @@ impl<'a> IntoPartialOrdInner<'a> for &'a Utf8Chunked {
                 let chunks = self.downcast_chunks();
                 let t = Utf8TakeRandom {
                     chunks,
-                    chunk_lens: self.chunks.iter().map(|a| a.len() as u32).collect(),
+                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
                 };
                 Box::new(t)
             }
@@ -251,7 +251,7 @@ impl<'a> IntoPartialOrdInner<'a> for &'a BooleanChunked {
                 let chunks = self.downcast_chunks();
                 let t = BoolTakeRandom {
                     chunks,
-                    chunk_lens: self.chunks.iter().map(|a| a.len() as u32).collect(),
+                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
                 };
                 Box::new(t)
             }
@@ -304,7 +304,7 @@ impl<'a, T: PolarsObject> IntoPartialEqInner<'a> for &'a ObjectChunked<T> {
                 let chunks = self.downcast_chunks();
                 let t = ObjectTakeRandom {
                     chunks,
-                    chunk_lens: self.chunks.iter().map(|a| a.len() as u32).collect(),
+                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
                 };
                 Box::new(t)
             }
