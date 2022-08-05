@@ -11,7 +11,6 @@ pub mod sort_partition;
 pub mod sorted_join;
 #[cfg(feature = "strings")]
 pub mod string;
-pub mod take;
 pub mod take_agg;
 
 /// Internal state of [SlicesIterator]

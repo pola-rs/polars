@@ -190,7 +190,6 @@ features = [
   "compute_concatenate",
   "compute_filter",
   "compute_if_then_else",
-  "compute_take",
 ]
 
 [dev-dependencies]
