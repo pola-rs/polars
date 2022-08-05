@@ -359,7 +359,13 @@ def test_groupby() -> None:
         }
     )
 
-    gb_df = df.groupby("a").agg({"b": ["sum", "min"], "c": "count"})
+    gb_df = df.groupby("a").agg(
+        [
+            pl.col("b").sum().alias("b_sum"),
+            pl.col("b").min().alias("b_min"),
+            pl.col("c").count(),
+        ]
+    )
     assert "b_sum" in gb_df.columns
     assert "b_min" in gb_df.columns
 
@@ -422,6 +428,85 @@ def test_groupby() -> None:
     # Invalid input: `by` not specified as a sequence
     with pytest.raises(TypeError):
         df.groupby("a", "b")  # type: ignore[arg-type]
+
+
+BAD_AGG_PARAMETERS = [[("b", "sum")], [("b", ["sum"])], {"b": "sum"}, {"b": ["sum"]}]
+GOOD_AGG_PARAMETERS: list[pl.Expr | list[pl.Expr]] = [
+    [pl.col("b").sum()],
+    pl.col("b").sum(),
+]
+
+
+@pytest.mark.parametrize("lazy", [True, False])
+def test_groupby_agg_input_types(lazy: bool) -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 2], "b": [1, 2, 3, 4]})
+    df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
+
+    for bad_param in BAD_AGG_PARAMETERS:
+        with pytest.raises(TypeError):
+            result = df_or_lazy.groupby("a").agg(bad_param)  # type: ignore[arg-type]
+            if lazy:
+                result.collect()
+
+    expected = pl.DataFrame({"a": [1, 2], "b": [3, 7]})
+
+    for good_param in GOOD_AGG_PARAMETERS:
+        result = df_or_lazy.groupby("a", maintain_order=True).agg(good_param)
+        if lazy:
+            result = result.collect()
+        assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("lazy", [True, False])
+def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
+    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]})
+    df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
+
+    for bad_param in BAD_AGG_PARAMETERS:
+        with pytest.raises(TypeError):
+            result = df_or_lazy.groupby_rolling(
+                index_column="index_column", period="2i"
+            ).agg(
+                bad_param  # type: ignore[arg-type]
+            )
+            if lazy:
+                result.collect()
+
+    expected = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 4, 4, 3]})
+
+    for good_param in GOOD_AGG_PARAMETERS:
+        result = df_or_lazy.groupby_rolling(
+            index_column="index_column", period="2i"
+        ).agg(good_param)
+        if lazy:
+            result = result.collect()
+        assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("lazy", [True, False])
+def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
+    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]})
+    df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
+
+    for bad_param in BAD_AGG_PARAMETERS:
+        with pytest.raises(TypeError):
+            result = df_or_lazy.groupby_dynamic(
+                index_column="index_column", every="2i"
+            ).agg(
+                bad_param  # type: ignore[arg-type]
+            )
+            if lazy:
+                result.collect()
+
+    expected = pl.DataFrame({"index_column": [0, 0, 2], "b": [1, 4, 2]})
+
+    for good_param in GOOD_AGG_PARAMETERS:
+        result = df_or_lazy.groupby_dynamic(
+            index_column="index_column", every="2i"
+        ).agg(good_param)
+        if lazy:
+            result = result.collect()
+        assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize(

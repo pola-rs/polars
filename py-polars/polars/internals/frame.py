@@ -6261,21 +6261,13 @@ class RollingGroupBy(Generic[DF]):
         self.closed = closed
         self.by = by
 
-    def agg(
-        self,
-        column_to_agg: (
-            list[tuple[str, list[str]]]
-            | dict[str, str | list[str]]
-            | list[pli.Expr]
-            | pli.Expr
-        ),
-    ) -> DF:
+    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> DF:
         return (
             self.df.lazy()
             .groupby_rolling(
                 self.time_column, self.period, self.offset, self.closed, self.by
             )
-            .agg(column_to_agg)  # type: ignore[arg-type]
+            .agg(aggs)
             .collect(no_optimization=True, string_cache=False)
         )
 
@@ -6308,15 +6300,7 @@ class DynamicGroupBy(Generic[DF]):
         self.closed = closed
         self.by = by
 
-    def agg(
-        self,
-        column_to_agg: (
-            list[tuple[str, list[str]]]
-            | dict[str, str | list[str]]
-            | list[pli.Expr]
-            | pli.Expr
-        ),
-    ) -> DF:
+    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> DF:
         return (
             self.df.lazy()
             .groupby_dynamic(
@@ -6329,7 +6313,7 @@ class DynamicGroupBy(Generic[DF]):
                 self.closed,
                 self.by,
             )
-            .agg(column_to_agg)  # type: ignore[arg-type]
+            .agg(aggs)
             .collect(no_optimization=True, string_cache=False)
         )
 
@@ -6620,23 +6604,15 @@ class GroupBy(Generic[DF]):
         """
         return self._dataframe_class._from_pydf(self._df.groupby_apply(self.by, f))
 
-    def agg(
-        self,
-        column_to_agg: (
-            list[tuple[str, list[str]]]
-            | dict[str, str | list[str]]
-            | list[pli.Expr]
-            | pli.Expr
-        ),
-    ) -> DF:
+    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> DF:
         """
         Use multiple aggregations on columns. This can be combined with complete lazy
         API and is considered idiomatic polars.
 
         Parameters
         ----------
-        column_to_agg
-            map column to aggregation functions.
+        aggs
+            Single / multiple aggregation expression(s).
 
         Returns
         -------
@@ -6665,45 +6641,12 @@ class GroupBy(Generic[DF]):
         └─────┴─────────┴──────────────┘
 
         """
-        # a single list comprehension would be cleaner, but mypy complains on different
-        # lines for py3.7 vs py3.10 about typing errors, so this is the same logic,
-        # but broken down into two small functions
-        def _str_to_list(y: Any) -> Any:
-            return [y] if isinstance(y, str) else y
-
-        def _wrangle(x: Any) -> list:
-            return [(xi[0], _str_to_list(xi[1])) for xi in x]
-
-        if isinstance(column_to_agg, pli.Expr):
-            column_to_agg = [column_to_agg]
-        if isinstance(column_to_agg, dict):
-            column_to_agg = _wrangle(column_to_agg.items())
-        elif isinstance(column_to_agg, list):
-
-            if isinstance(column_to_agg[0], tuple):
-                column_to_agg = _wrangle(column_to_agg)
-
-            elif isinstance(column_to_agg[0], pli.Expr):
-                return (
-                    self._dataframe_class._from_pydf(self._df)
-                    .lazy()
-                    .groupby(self.by, maintain_order=self.maintain_order)
-                    .agg(column_to_agg)  # type: ignore[arg-type]
-                    .collect(no_optimization=True, string_cache=False)
-                )
-            else:
-                raise ValueError(
-                    f"argument: {column_to_agg} not understood, have you passed a list"
-                    " of expressions?"
-                )
-        else:
-            raise ValueError(
-                f"argument: {column_to_agg} not understood, have you passed a list of"
-                " expressions?"
-            )
-
-        return self._dataframe_class._from_pydf(
-            self._df.groupby_agg(self.by, column_to_agg)
+        return (
+            self._dataframe_class._from_pydf(self._df)
+            .lazy()
+            .groupby(self.by, maintain_order=self.maintain_order)
+            .agg(aggs)
+            .collect(no_optimization=True, string_cache=False)
         )
 
     def head(self, n: int = 5) -> DF:

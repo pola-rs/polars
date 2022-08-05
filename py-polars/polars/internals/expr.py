@@ -19,7 +19,7 @@ from polars.datatypes import (
     UInt32,
     py_type_to_dtype,
 )
-from polars.utils import _timedelta_to_pl_duration
+from polars.utils import _timedelta_to_pl_duration, is_expr_sequence, is_pyexpr_sequence
 
 try:
     from polars.polars import PyExpr
@@ -38,11 +38,27 @@ except ImportError:
 
 def selection_to_pyexpr_list(
     exprs: str | Expr | Sequence[str | Expr | pli.Series] | pli.Series,
-) -> List[PyExpr]:
+) -> list[PyExpr]:
     if isinstance(exprs, (str, Expr, pli.Series)):
         exprs = [exprs]
 
     return [expr_to_lit_or_expr(e, str_to_lit=False)._pyexpr for e in exprs]
+
+
+def ensure_list_of_pyexpr(exprs: object) -> list[PyExpr]:
+    if isinstance(exprs, PyExpr):
+        return [exprs]
+
+    if is_pyexpr_sequence(exprs):
+        return list(exprs)
+
+    if isinstance(exprs, Expr):
+        return [exprs._pyexpr]
+
+    if is_expr_sequence(exprs):
+        return [e._pyexpr for e in exprs]
+
+    raise TypeError(f"unexpected type '{type(exprs)}'")
 
 
 def wrap_expr(pyexpr: PyExpr) -> Expr:
