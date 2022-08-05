@@ -44,6 +44,16 @@ impl<T: MmapBytesReader + ?Sized> MmapBytesReader for Box<T> {
     }
 }
 
+impl<T: MmapBytesReader> MmapBytesReader for &mut T {
+    fn to_file(&self) -> Option<&File> {
+        T::to_file(self)
+    }
+
+    fn to_bytes(&self) -> Option<&[u8]> {
+        T::to_bytes(self)
+    }
+}
+
 // Handle various forms of input bytes
 pub enum ReaderBytes<'a> {
     Borrowed(&'a [u8]),

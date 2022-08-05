@@ -612,7 +612,7 @@ def test_set() -> None:
             df[(1, 2, 3)] = 1  # type: ignore[index]
 
         # we cannot index with any type, such as bool
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(ValueError):
             df[True] = 1  # type: ignore[index]
 
 
@@ -742,7 +742,7 @@ def test_from_arrow_table() -> None:
     data = {"a": [1, 2], "b": [1, 2]}
     tbl = pa.table(data)
 
-    df: pl.DataFrame = pl.from_arrow(tbl)  # type: ignore[assignment]
+    df = pl.from_arrow(tbl)
     df.frame_equal(pl.DataFrame(data))
 
 
@@ -800,7 +800,7 @@ def test_column_names() -> None:
             "b": pa.array([1, 2, 3, 4, 5], pa.int64()),
         }
     )
-    df: pl.DataFrame = pl.from_arrow(tbl)  # type: ignore[assignment]
+    df = pl.from_arrow(tbl)
     assert df.columns == ["a", "b"]
 
 
@@ -1660,7 +1660,7 @@ def test_get_item() -> None:
 
     # note that we cannot use floats (even if they could be casted to integer without
     # loss)
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ValueError):
         _ = df[np.array([1.0])]
 
     # using boolean masks with numpy is deprecated

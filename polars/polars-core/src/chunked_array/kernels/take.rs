@@ -2,7 +2,7 @@ use crate::prelude::*;
 use arrow::bitmap::MutableBitmap;
 use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
-use polars_arrow::kernels::take::take_value_indices_from_list;
+use polars_arrow::compute::take::take_value_indices_from_list;
 use std::convert::TryFrom;
 
 /// Take kernel for multiple chunks. We directly return a ChunkedArray because that path chooses the fastest collection path.

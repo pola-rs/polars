@@ -534,7 +534,9 @@ class Series:
 
         raise NotImplementedError("Unsupported idxs datatype.")
 
-    def __getitem__(self, item: int | Series | range | slice | np.ndarray) -> Any:
+    def __getitem__(
+        self, item: int | Series | range | slice | np.ndarray | list[int] | list[bool]
+    ) -> Any:
         if isinstance(item, int):
             if item < 0:
                 item = self.len() + item
@@ -579,7 +581,10 @@ class Series:
         if isinstance(item, slice):
             return PolarsSlice(self).apply(item)
 
-        raise NotImplementedError
+        raise ValueError(
+            f"Cannot __getitem__ on Series of dtype: '{self.dtype}' "
+            f"with argument: '{item}' of type: '{type(item)}'."
+        )
 
     def __setitem__(
         self, key: int | Series | np.ndarray | list | tuple, value: Any

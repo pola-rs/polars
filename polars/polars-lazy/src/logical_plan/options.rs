@@ -50,6 +50,7 @@ pub struct IpcScanOptions {
     pub cache: bool,
     pub row_count: Option<RowCount>,
     pub rechunk: bool,
+    pub memmap: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -61,6 +62,7 @@ pub struct IpcScanOptionsInner {
     pub(crate) row_count: Option<RowCount>,
     pub(crate) rechunk: bool,
     pub(crate) file_counter: FileCount,
+    pub(crate) memmap: bool,
 }
 
 impl From<IpcScanOptions> for IpcScanOptionsInner {
@@ -72,6 +74,7 @@ impl From<IpcScanOptions> for IpcScanOptionsInner {
             row_count: options.row_count,
             rechunk: options.rechunk,
             file_counter: Default::default(),
+            memmap: options.memmap,
         }
     }
 }

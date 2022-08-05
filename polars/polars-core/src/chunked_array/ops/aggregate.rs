@@ -2,6 +2,7 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::BooleanChunked;
+use crate::series::IsSorted;
 use crate::{datatypes::PolarsNumericType, prelude::*, utils::CustomIterTools};
 use arrow::compute;
 use arrow::types::simd::Simd;
@@ -68,15 +69,49 @@ where
     }
 
     fn min(&self) -> Option<T::Native> {
-        self.downcast_iter()
-            .filter_map(compute::aggregate::min_primitive)
-            .fold_first_(|acc, v| if acc < v { acc } else { v })
+        match self.is_sorted2() {
+            IsSorted::Ascending => {
+                self.first_non_null().and_then(|idx| {
+                    // Safety:
+                    // first_non_null returns in bound index
+                    unsafe { self.get_unchecked(idx) }
+                })
+            }
+            IsSorted::Descending => {
+                self.last_non_null().and_then(|idx| {
+                    // Safety:
+                    // last returns in bound index
+                    unsafe { self.get_unchecked(idx) }
+                })
+            }
+            IsSorted::Not => self
+                .downcast_iter()
+                .filter_map(compute::aggregate::min_primitive)
+                .fold_first_(|acc, v| if acc < v { acc } else { v }),
+        }
     }
 
     fn max(&self) -> Option<T::Native> {
-        self.downcast_iter()
-            .filter_map(compute::aggregate::max_primitive)
-            .fold_first_(|acc, v| if acc > v { acc } else { v })
+        match self.is_sorted2() {
+            IsSorted::Ascending => {
+                self.last_non_null().and_then(|idx| {
+                    // Safety:
+                    // first_non_null returns in bound index
+                    unsafe { self.get_unchecked(idx) }
+                })
+            }
+            IsSorted::Descending => {
+                self.first_non_null().and_then(|idx| {
+                    // Safety:
+                    // last returns in bound index
+                    unsafe { self.get_unchecked(idx) }
+                })
+            }
+            IsSorted::Not => self
+                .downcast_iter()
+                .filter_map(compute::aggregate::max_primitive)
+                .fold_first_(|acc, v| if acc > v { acc } else { v }),
+        }
     }
 
     fn mean(&self) -> Option<f64> {

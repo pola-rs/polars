@@ -9,7 +9,6 @@ from typing import Any, Callable, List, Sequence
 from polars import internals as pli
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
-    Boolean,
     DataType,
     Date,
     Datetime,
@@ -6034,7 +6033,7 @@ class ExprListNameSpace:
         """
         return self.get(-1)
 
-    def contains(self, item: float | str | bool | int | date | datetime) -> Expr:
+    def contains(self, item: float | str | bool | int | date | datetime | Expr) -> Expr:
         """
         Check if sublists contain the given item.
 
@@ -6065,7 +6064,7 @@ class ExprListNameSpace:
         └───────┘
 
         """
-        return wrap_expr(self._pyexpr).map(lambda s: s.arr.contains(item), Boolean)
+        return wrap_expr(self._pyexpr.arr_contains(expr_to_lit_or_expr(item)._pyexpr))
 
     def join(self, separator: str) -> Expr:
         """
@@ -7795,6 +7794,8 @@ def expr_to_lit_or_expr(
         | str
         | pli.Series
         | None
+        | date
+        | datetime
         | Sequence[(int | float | str | None)]
     ),
     str_to_lit: bool = True,

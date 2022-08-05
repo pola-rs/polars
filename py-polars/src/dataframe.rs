@@ -245,19 +245,21 @@ impl PyDataFrame {
     #[staticmethod]
     #[cfg(feature = "ipc")]
     pub fn read_ipc(
-        py_f: PyObject,
+        py_f: &PyAny,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
         row_count: Option<(String, IdxSize)>,
+        memory_map: bool,
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
-        let file = get_file_like(py_f, false)?;
-        let df = IpcReader::new(file)
+        let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
+        let df = IpcReader::new(mmap_bytes_r)
             .with_projection(projection)
             .with_columns(columns)
             .with_n_rows(n_rows)
             .with_row_count(row_count)
+            .memory_mapped(memory_map)
             .finish()
             .map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))

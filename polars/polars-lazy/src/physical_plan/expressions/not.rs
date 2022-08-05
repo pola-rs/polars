@@ -22,8 +22,8 @@ impl NotExpr {
     }
 }
 impl PhysicalExpr for NotExpr {
-    fn as_expression(&self) -> &Expr {
-        &self.1
+    fn as_expression(&self) -> Option<&Expr> {
+        Some(&self.1)
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
@@ -50,6 +50,9 @@ impl PhysicalExpr for NotExpr {
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
+    }
+    fn is_valid_aggregation(&self) -> bool {
+        self.0.is_valid_aggregation()
     }
 }
 

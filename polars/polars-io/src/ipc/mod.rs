@@ -5,6 +5,7 @@ mod ipc_file;
 
 #[cfg(feature = "ipc_streaming")]
 mod ipc_stream;
+mod mmap;
 
 #[cfg(feature = "ipc")]
 pub use ipc_file::{IpcCompression, IpcReader, IpcWriter, IpcWriterOption};

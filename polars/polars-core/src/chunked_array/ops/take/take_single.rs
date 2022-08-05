@@ -30,6 +30,7 @@ macro_rules! impl_take_random_get {
 macro_rules! impl_take_random_get_unchecked {
     ($self:ident, $index:ident, $array_type:ty) => {{
         let (chunk_idx, idx) = $self.index_to_chunked_index($index);
+        debug_assert!(chunk_idx < $self.chunks.len());
         // Safety:
         // bounds are checked above
         let arr = $self.chunks.get_unchecked(chunk_idx);
@@ -40,6 +41,7 @@ macro_rules! impl_take_random_get_unchecked {
 
         // Safety:
         // index should be in bounds
+        debug_assert!(idx < arr.len());
         if arr.is_valid_unchecked(idx) {
             Some(arr.value_unchecked(idx))
         } else {

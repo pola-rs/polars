@@ -566,3 +566,51 @@ def test_nested_explode_4026() -> None:
         ],
         "day": ["monday", "monday"],
     }
+
+
+def test_nested_struct_sliced_append() -> None:
+    s = pl.Series(
+        [
+            {
+                "_experience": {
+                    "aaid": {
+                        "id": "A",
+                        "namespace": {"code": "alpha"},
+                    }
+                }
+            },
+            {
+                "_experience": {
+                    "aaid": {
+                        "id": "B",
+                        "namespace": {"code": "bravo"},
+                    },
+                }
+            },
+            {
+                "_experience": {
+                    "aaid": {
+                        "id": "D",
+                        "namespace": {"code": "delta"},
+                    }
+                }
+            },
+        ]
+    )
+    s2 = s[1:]
+    s.append(s2)
+
+    assert s.to_list() == [
+        {"_experience": {"aaid": {"id": "A", "namespace": {"code": "alpha"}}}},
+        {"_experience": {"aaid": {"id": "B", "namespace": {"code": "bravo"}}}},
+        {"_experience": {"aaid": {"id": "D", "namespace": {"code": "delta"}}}},
+        {"_experience": {"aaid": {"id": "B", "namespace": {"code": "bravo"}}}},
+        {"_experience": {"aaid": {"id": "D", "namespace": {"code": "delta"}}}},
+    ]
+
+
+def test_struct_groupby_field_agg_4216() -> None:
+    df = pl.DataFrame([{"a": {"b": 1}, "c": 0}])
+    assert df.groupby("c").agg(pl.col("a").struct.field("b").count()).to_dict(
+        False
+    ) == {"c": [0], "b": [1]}

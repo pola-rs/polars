@@ -552,7 +552,6 @@ fn test_take_in_groups() -> Result<()> {
             .alias("taken")])
         .collect()?;
 
-    dbg!(&out);
     assert_eq!(
         Vec::from(out.column("taken")?.i32()?),
         &[Some(3), Some(3), Some(5), Some(5), Some(5)]

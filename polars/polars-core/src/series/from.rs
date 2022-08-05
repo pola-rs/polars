@@ -192,8 +192,13 @@ impl Series {
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(key_type, value_type, _) => {
                 use arrow::datatypes::IntegerType;
-                let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
-                let arr = arrow::compute::concatenate::concatenate(&chunks)?;
+                // don't spuriously call this. This triggers a read on mmaped data
+                let arr = if chunks.len() > 1 {
+                    let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
+                    arrow::compute::concatenate::concatenate(&chunks)?
+                } else {
+                    chunks[0].clone()
+                };
 
                 if !matches!(
                     value_type.as_ref(),
@@ -299,8 +304,37 @@ impl Series {
                 Ok(s)
             }
             #[cfg(feature = "dtype-struct")]
+            ArrowDataType::Map(_field, _sorted) => {
+                let arr = if chunks.len() > 1 {
+                    // don't spuriously call this. This triggers a read on mmaped data
+                    concatenate_owned_unchecked(&chunks).unwrap() as ArrayRef
+                } else {
+                    chunks[0].clone()
+                };
+                let arr = arr.as_any().downcast_ref::<MapArray>().unwrap();
+                // inner type is a struct
+                let struct_array = arr.field().clone();
+
+                // small list, because that's the maps offset dtype.
+                // means we are limited to i32::MAX rows
+                let data_type =
+                    ListArray::<i32>::default_datatype(struct_array.data_type().clone());
+                // physical representation of the map
+                let new_arr = ListArray::new_unchecked(
+                    data_type.clone(),
+                    arr.offsets().clone(),
+                    struct_array,
+                    arr.validity().cloned(),
+                );
+                let mut chunks = chunks;
+                chunks.clear();
+                chunks.push(Box::new(new_arr));
+                Self::try_from_arrow_unchecked(name, chunks, &data_type)
+            }
+            #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(_) => {
                 let arr = if chunks.len() > 1 {
+                    // don't spuriously call this. This triggers a read on mmaped data
                     concatenate_owned_unchecked(&chunks).unwrap() as ArrayRef
                 } else {
                     chunks[0].clone()

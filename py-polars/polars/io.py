@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, Mapping, TextIO, cast
+from typing import Any, BinaryIO, Callable, Mapping, TextIO
 
 from polars.utils import format_path, handle_projection_columns
 
@@ -20,9 +20,9 @@ except ImportError:
     _PYARROW_AVAILABLE = False
 
 from polars.convert import from_arrow
-from polars.datatypes import Categorical, DataType, Utf8
+from polars.datatypes import DataType, Utf8
 from polars.internals import DataFrame, LazyFrame, _scan_ds
-from polars.internals.io import _prepare_file_arg, read_ipc_schema
+from polars.internals.io import _prepare_file_arg
 
 try:
     import connectorx as cx
@@ -271,7 +271,7 @@ def read_csv(
                 [f"column_{int(column[1:]) + 1}" for column in tbl.column_names]
             )
 
-        df = cast(DataFrame, from_arrow(tbl, rechunk))
+        df = from_arrow(tbl, rechunk)
         if new_columns:
             return _update_columns(df, new_columns)
         return df
@@ -589,6 +589,7 @@ def scan_ipc(
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     storage_options: dict | None = None,
+    memory_map: bool = True,
     **kwargs: Any,
 ) -> LazyFrame:
     """
@@ -616,29 +617,14 @@ def scan_ipc(
         Extra options that make sense for ``fsspec.open()`` or a
         particular storage connection.
         e.g. host, port, username, password, etc.
+    memory_map
+        Try to memory map the file. This can greatly improve performance on repeated
+        queries as the OS may cache pages.
+        Only uncompressed IPC files can be memory mapped.
 
     """
     # Map legacy arguments to current ones and remove them from kwargs.
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
-    if _PYARROW_AVAILABLE:
-        # we choose the read path as we can memory map the file
-        if (
-            isinstance(file, str)
-            and "*" not in file
-            or isinstance(file, Path)
-            # categoricals are not memory mappable by pyarrow
-            and Categorical not in read_ipc_schema(file).values()
-        ):
-            return read_ipc(
-                file=file,
-                n_rows=n_rows,
-                use_pyarrow=True,
-                memory_map=True,
-                rechunk=False,
-                row_count_name=row_count_name,
-                row_count_offset=row_count_offset,
-            ).lazy()
 
     return LazyFrame.scan_ipc(
         file=file,
@@ -648,6 +634,7 @@ def scan_ipc(
         row_count_name=row_count_name,
         row_count_offset=row_count_offset,
         storage_options=storage_options,
+        memory_map=memory_map,
     )
 
 
@@ -751,7 +738,7 @@ def read_ipc(
     file: str | BinaryIO | BytesIO | Path | bytes,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
-    use_pyarrow: bool = _PYARROW_AVAILABLE,
+    use_pyarrow: bool = False,
     memory_map: bool = True,
     storage_options: dict | None = None,
     row_count_name: str | None = None,
@@ -776,8 +763,9 @@ def read_ipc(
     use_pyarrow
         Use pyarrow or the native rust reader.
     memory_map
-        Memory map underlying file. This will likely increase performance.
-        Only used when ``use_pyarrow=True``.
+        Try to memory map the file. This can greatly improve performance on repeated
+        queries as the OS may cache pages.
+        Only uncompressed IPC files can be memory mapped.
     storage_options
         Extra options that make sense for ``fsspec.open()`` or a particular storage
         connection, e.g. host, port, username, password, etc.
@@ -831,6 +819,7 @@ def read_ipc(
             row_count_name=row_count_name,
             row_count_offset=row_count_offset,
             rechunk=rechunk,
+            memory_map=memory_map,
         )
 
 
@@ -909,7 +898,7 @@ def read_parquet(
                     " 'read_parquet(..., use_pyarrow=True)'."
                 )
 
-            return from_arrow(  # type: ignore[return-value]
+            return from_arrow(
                 pa.parquet.read_table(
                     source_prep,
                     memory_map=memory_map,
@@ -1029,7 +1018,7 @@ def read_sql(
             partition_num=partition_num,
             protocol=protocol,
         )
-        return cast(DataFrame, from_arrow(tbl))
+        return from_arrow(tbl)
     else:
         raise ImportError(
             "connectorx is not installed. Please run `pip install connectorx>=0.2.2`."

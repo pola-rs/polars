@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 import numpy as np
 import pytest
 from _pytest.capture import CaptureFixture
@@ -879,7 +881,13 @@ def test_arithmetic() -> None:
 
 def test_ufunc() -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    out = df.select(np.log(col("a")))  # type: ignore[call-overload]
+    # NOTE: unfortunately we must use cast instead of a type: ignore comment
+    #   1. CI job with Python 3.10, numpy==1.23.1 -> mypy complains about arg-type
+    #   2. so we try to resolve it with type: ignore[arg-type]
+    #   3. CI job with Python 3.7, numpy==1.21.6 -> mypy complains about
+    #       unused type: ignore comment
+    # for more information, see: https://github.com/python/mypy/issues/8823
+    out = df.select(np.log(cast(Any, col("a"))))
     assert out["a"][1] == 0.6931471805599453
 
 

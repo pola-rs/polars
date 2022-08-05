@@ -1,4 +1,5 @@
 use crate::dsl::eval::prepare_eval_expr;
+use crate::dsl::function_expr::FunctionExpr;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use parking_lot::Mutex;
@@ -212,6 +213,7 @@ impl ListNameSpace {
 
     /// Run any [`Expr`] on these lists elements
     #[cfg(feature = "list_eval")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "list_eval")))]
     pub fn eval(self, expr: Expr, parallel: bool) -> Expr {
         let expr = prepare_eval_expr(expr);
 
@@ -312,6 +314,7 @@ impl ListNameSpace {
     }
 
     #[cfg(feature = "list_to_struct")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "list_to_struct")))]
     #[allow(clippy::wrong_self_convention)]
     /// Convert this `List` to a `Series` of type `Struct`. The width will be determined according to
     /// `ListToStructWidthStrategy` and the names of the fields determined by the given `name_generator`.
@@ -331,5 +334,23 @@ impl ListNameSpace {
                 GetOutput::from_type(DataType::Struct(vec![])),
             )
             .with_fmt("arr.to_struct")
+    }
+
+    #[cfg(feature = "is_in")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
+    /// Check if the list array contain an element
+    pub fn contains<E: Into<Expr>>(self, other: E) -> Expr {
+        let other = other.into();
+
+        Expr::Function {
+            input: vec![self.0, other],
+            function: FunctionExpr::ListContains,
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: true,
+                auto_explode: true,
+                fmt_str: "arr.contains",
+            },
+        }
     }
 }

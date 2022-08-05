@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use std::borrow::Cow;
 use std::fmt;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 
 impl fmt::Debug for LogicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -176,6 +176,12 @@ FROM
             Udf { input, options, .. } => write!(f, "{} \n{:?}", options.fmt_str, input),
             Error { input, err } => write!(f, "{:?}\n{:?}", err, input),
         }
+    }
+}
+
+impl Display for Expr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Debug::fmt(self, f)
     }
 }
 

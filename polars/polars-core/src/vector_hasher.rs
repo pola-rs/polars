@@ -248,14 +248,14 @@ impl AsU64 for i32 {
     #[inline]
     fn as_u64(self) -> u64 {
         let asu32: u32 = unsafe { std::mem::transmute(self) };
-        dbg!(asu32 as u64)
+        asu32 as u64
     }
 }
 
 impl AsU64 for i64 {
     #[inline]
     fn as_u64(self) -> u64 {
-        unsafe { dbg!(std::mem::transmute(self)) }
+        unsafe { std::mem::transmute(self) }
     }
 }
 
@@ -364,7 +364,7 @@ impl IdxHash {
 /// Contains a ptr to the string slice an the precomputed hash of that string.
 /// During rehashes, we will rehash the hash instead of the string, that makes rehashing
 /// cheap and allows cache coherent small hash tables.
-#[derive(Eq, Copy, Clone)]
+#[derive(Eq, Copy, Clone, Debug)]
 pub(crate) struct StrHash<'a> {
     str: Option<&'a str>,
     hash: u64,

@@ -11,19 +11,22 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 pub(crate) struct AggregationExpr {
-    pub(crate) expr: Arc<dyn PhysicalExpr>,
+    pub(crate) input: Arc<dyn PhysicalExpr>,
     pub(crate) agg_type: GroupByMethod,
 }
 
 impl AggregationExpr {
     pub fn new(expr: Arc<dyn PhysicalExpr>, agg_type: GroupByMethod) -> Self {
-        Self { expr, agg_type }
+        Self {
+            input: expr,
+            agg_type,
+        }
     }
 }
 
 impl PhysicalExpr for AggregationExpr {
-    fn as_expression(&self) -> &Expr {
-        unimplemented!()
+    fn as_expression(&self) -> Option<&Expr> {
+        None
     }
 
     fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
@@ -36,7 +39,7 @@ impl PhysicalExpr for AggregationExpr {
         groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
-        let mut ac = self.expr.evaluate_on_groups(df, groups, state)?;
+        let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.series().name().to_string();
 
@@ -164,11 +167,15 @@ impl PhysicalExpr for AggregationExpr {
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        self.expr.to_field(input_schema)
+        self.input.to_field(input_schema)
     }
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
+    }
+
+    fn is_valid_aggregation(&self) -> bool {
+        true
     }
 }
 
@@ -184,7 +191,7 @@ impl PartitionedAggregation for AggregationExpr {
         groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Series> {
-        let expr = self.expr.as_partitioned_aggregator().unwrap();
+        let expr = self.input.as_partitioned_aggregator().unwrap();
         let series = expr.evaluate_partitioned(df, groups, state)?;
 
         // Safety:
@@ -398,8 +405,8 @@ impl AggQuantileExpr {
 }
 
 impl PhysicalExpr for AggQuantileExpr {
-    fn as_expression(&self) -> &Expr {
-        unimplemented!()
+    fn as_expression(&self) -> Option<&Expr> {
+        None
     }
 
     fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
@@ -429,5 +436,9 @@ impl PhysicalExpr for AggQuantileExpr {
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.expr.to_field(input_schema)
+    }
+
+    fn is_valid_aggregation(&self) -> bool {
+        true
     }
 }

@@ -19,10 +19,9 @@ impl FilterExpr {
 }
 
 impl PhysicalExpr for FilterExpr {
-    fn as_expression(&self) -> &Expr {
-        &self.expr
+    fn as_expression(&self) -> Option<&Expr> {
+        Some(&self.expr)
     }
-
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let s_f = || self.input.evaluate(df, state);
         let predicate_f = || self.by.evaluate(df, state);
@@ -103,5 +102,9 @@ impl PhysicalExpr for FilterExpr {
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.input.to_field(input_schema)
+    }
+
+    fn is_valid_aggregation(&self) -> bool {
+        self.input.is_valid_aggregation()
     }
 }

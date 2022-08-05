@@ -1,6 +1,6 @@
 [package]
 name = "polars"
-version = "0.22.6"
+version = "0.23.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 keywords = ["dataframe", "query-engine", "arrow"]
@@ -92,7 +92,7 @@ list = ["polars-lazy/list", "polars-ops/list"]
 rank = ["polars-core/rank", "polars-lazy/rank"]
 diff = ["polars-core/diff", "polars-lazy/diff", "polars-ops/diff"]
 pct_change = ["polars-core/pct_change", "polars-lazy/pct_change"]
-moment = ["polars-core/moment", "polars-lazy/moment"]
+moment = ["polars-core/moment", "polars-lazy/moment", "polars-ops/moment"]
 arange = ["polars-lazy/arange"]
 true_div = ["polars-lazy/true_div"]
 diagonal_concat = ["polars-core/diagonal_concat"]
@@ -252,11 +252,11 @@ bench = [
 ]
 
 [dependencies]
-polars-core = { version = "0.22.6", path = "./polars-core", features = ["docs", "private"], default-features = false }
-polars-io = { version = "0.22.6", path = "./polars-io", features = ["private"], default-features = false, optional = true }
-polars-lazy = { version = "0.22.6", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
-polars-ops = { version = "0.22.6", path = "./polars-ops" }
-polars-time = { version = "0.22.6", path = "./polars-time", default-features = false, optional = true }
+polars-core = { version = "0.23.0", path = "./polars-core", features = ["docs", "private"], default-features = false }
+polars-io = { version = "0.23.0", path = "./polars-io", features = ["private"], default-features = false, optional = true }
+polars-lazy = { version = "0.23.0", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
+polars-ops = { version = "0.23.0", path = "./polars-ops" }
+polars-time = { version = "0.23.0", path = "./polars-time", default-features = false, optional = true }
 
 [dev-dependencies]
 ahash = "0.7"

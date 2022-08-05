@@ -67,7 +67,7 @@ fn execute_projection_cached_window_fns(
     let mut index = 0u32;
     exprs.iter().for_each(|phys| {
         index += 1;
-        let e = phys.as_expression();
+        let e = phys.as_expression().unwrap();
 
         let mut is_window = false;
         for e in e.into_iter() {
@@ -119,6 +119,7 @@ fn execute_projection_cached_window_fns(
 
         for (index, _, e) in partition.1 {
             if e.as_expression()
+                .unwrap()
                 .into_iter()
                 .filter(|e| matches!(e, Expr::Window { .. }))
                 .count()

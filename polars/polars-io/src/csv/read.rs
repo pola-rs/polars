@@ -376,30 +376,26 @@ where
             #[allow(clippy::unnecessary_filter_map)]
             let fields: Vec<_> = schema
                 .iter_fields()
-                .filter_map(|fld| {
+                .filter_map(|mut fld| {
                     use DataType::*;
                     match fld.data_type() {
                         // For categorical we first read as utf8 and later cast to categorical
                         #[cfg(feature = "dtype-categorical")]
                         Categorical(_) => {
                             to_cast_local.push(fld.clone());
-                            Some(Field::new(fld.name(), DataType::Utf8))
-                        }
-                        Date | Datetime(_, _) => {
-                            to_cast.push(fld);
-                            // let inference decide the column type
-                            None
+                            fld.coerce(DataType::Utf8);
+                            Some(fld)
                         }
                         Time => {
                             to_cast.push(fld);
                             // let inference decide the column type
                             None
                         }
-                        Int8 | Int16 | UInt8 | UInt16 | Boolean => {
+                        Int8 | Int16 | UInt8 | UInt16 => {
                             // We have not compiled these buffers, so we cast them later.
-                            to_cast.push(fld);
-                            // let inference decide the column type
-                            None
+                            to_cast.push(fld.clone());
+                            fld.coerce(DataType::Int32);
+                            Some(fld)
                         }
                         _ => Some(fld),
                     }

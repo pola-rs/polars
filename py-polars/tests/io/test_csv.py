@@ -607,3 +607,12 @@ def test_skip_new_line_embedded_lines() -> None:
         "d": ["Test A", "Test B \\n"],
         "e\\n": ["\\n", "\\n"],
     }
+
+
+def test_csv_dtype_overwrite_bool() -> None:
+    csv = "a, b\n" + ",false\n" + ",false\n" + ",false"
+    df = pl.read_csv(
+        csv.encode(),
+        dtypes={"a": pl.Boolean, "b": pl.Boolean},
+    )
+    assert df.dtypes == [pl.Boolean, pl.Boolean]

@@ -516,7 +516,9 @@ impl<'a> AggregationContext<'a> {
 /// Take a DataFrame and evaluate the expressions.
 /// Implement this for Column, lt, eq, etc
 pub trait PhysicalExpr: Send + Sync {
-    fn as_expression(&self) -> &Expr;
+    fn as_expression(&self) -> Option<&Expr> {
+        None
+    }
 
     /// Take a DataFrame and evaluate the expression.
     fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> Result<Series>;
@@ -565,6 +567,12 @@ pub trait PhysicalExpr: Send + Sync {
     #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         None
+    }
+
+    fn is_valid_aggregation(&self) -> bool;
+
+    fn is_literal(&self) -> bool {
+        false
     }
 }
 

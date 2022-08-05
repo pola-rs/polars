@@ -15,7 +15,7 @@ pub struct DatetimeInfer<T> {
     transform: fn(&str, &str) -> Option<T>,
     transform_bytes: fn(&[u8], &[u8], u16) -> Option<T>,
     fmt_len: u16,
-    logical_type: DataType,
+    pub logical_type: DataType,
 }
 
 impl TryFrom<Pattern> for DatetimeInfer<i64> {

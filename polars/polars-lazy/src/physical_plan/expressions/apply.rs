@@ -64,8 +64,8 @@ fn check_map_output_len(input_len: usize, output_len: usize) -> Result<()> {
 }
 
 impl PhysicalExpr for ApplyExpr {
-    fn as_expression(&self) -> &Expr {
-        &self.expr
+    fn as_expression(&self) -> Option<&Expr> {
+        Some(&self.expr)
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
@@ -229,5 +229,8 @@ impl PhysicalExpr for ApplyExpr {
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.inputs[0].to_field(input_schema)
+    }
+    fn is_valid_aggregation(&self) -> bool {
+        matches!(self.collect_groups, ApplyOptions::ApplyGroups)
     }
 }

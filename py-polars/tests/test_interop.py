@@ -363,19 +363,19 @@ def test_from_empty_pandas_strings() -> None:
 
 def test_from_empty_arrow() -> None:
     df = pl.from_arrow(pa.table(pd.DataFrame({"a": [], "b": []})))
-    assert df.columns == ["a", "b"]  # type: ignore[union-attr]
-    assert df.dtypes == [pl.Float64, pl.Float64]  # type: ignore[union-attr]
+    assert df.columns == ["a", "b"]
+    assert df.dtypes == [pl.Float64, pl.Float64]
 
     # 2705
     df1 = pd.DataFrame(columns=["b"], dtype=float)
     tbl = pa.Table.from_pandas(df1)
     out = pl.from_arrow(tbl)
-    assert out.columns == ["b", "__index_level_0__"]  # type: ignore[union-attr]
-    assert out.dtypes == [pl.Float64, pl.Utf8]  # type: ignore[union-attr]
+    assert out.columns == ["b", "__index_level_0__"]
+    assert out.dtypes == [pl.Float64, pl.Utf8]
     tbl = pa.Table.from_pandas(df1, preserve_index=False)
     out = pl.from_arrow(tbl)
-    assert out.columns == ["b"]  # type: ignore[union-attr]
-    assert out.dtypes == [pl.Float64]  # type: ignore[union-attr]
+    assert out.columns == ["b"]
+    assert out.dtypes == [pl.Float64]
 
 
 def test_from_null_column() -> None:

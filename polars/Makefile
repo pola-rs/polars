@@ -87,16 +87,16 @@ doctest:
 
 publish:
 	cargo publish --allow-dirty -p polars-arrow
-	sleep 15
+	sleep 20
 	cargo publish --allow-dirty -p polars-utils
-	sleep 15
+	sleep 20
 	cargo publish --allow-dirty -p polars-core
-	sleep 15
+	sleep 20
 	cargo publish --allow-dirty -p polars-time
 	cargo publish --allow-dirty -p polars-ops
-	sleep 15
+	sleep 20
 	cargo publish --allow-dirty -p polars-io
-	sleep 15
+	sleep 20
 	cargo publish --allow-dirty -p polars-lazy
-	sleep 15
+	sleep 20
 	cargo publish --allow-dirty -p polars

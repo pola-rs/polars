@@ -61,18 +61,19 @@ use std::sync::Arc;
 /// }
 /// ```
 #[must_use]
-pub struct IpcReader<R> {
+pub struct IpcReader<R: MmapBytesReader> {
     /// File or Stream object
-    reader: R,
+    pub(super) reader: R,
     /// Aggregates chunks afterwards to a single chunk.
     rechunk: bool,
-    n_rows: Option<usize>,
-    projection: Option<Vec<usize>>,
+    pub(super) n_rows: Option<usize>,
+    pub(super) projection: Option<Vec<usize>>,
     columns: Option<Vec<String>>,
-    row_count: Option<RowCount>,
+    pub(super) row_count: Option<RowCount>,
+    memmap: bool,
 }
 
-impl<R: Read + Seek> IpcReader<R> {
+impl<R: MmapBytesReader> IpcReader<R> {
     /// Get schema of the Ipc File
     pub fn schema(&mut self) -> Result<Schema> {
         let metadata = read::read_file_metadata(&mut self.reader)?;
@@ -109,13 +110,40 @@ impl<R: Read + Seek> IpcReader<R> {
         self
     }
 
+    /// Set the reader's column projection. This counts from 0, meaning that
+    /// `vec![0, 4]` would select the 1st and 5th column.
+    pub fn memory_mapped(mut self, toggle: bool) -> Self {
+        self.memmap = toggle;
+        self
+    }
+
     // todo! hoist to lazy crate
     #[cfg(feature = "lazy")]
     pub fn finish_with_scan_ops(
         mut self,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&[ScanAggregation]>,
+        verbose: bool,
     ) -> Result<DataFrame> {
+        if self.memmap && self.reader.to_file().is_some() {
+            if verbose {
+                eprintln!("memory map ipc file")
+            }
+            match self.finish_memmapped(predicate.clone(), aggregate) {
+                Ok(df) => return Ok(df),
+                Err(err) => match err {
+                    PolarsError::ArrowError(e) => match e.as_ref() {
+                        arrow::error::Error::NotYetImplemented(s)
+                            if s == "mmap can only be done on uncompressed IPC files" =>
+                        {
+                            eprint!("could not mmap compressed IPC file, defaulting to normal read")
+                        }
+                        _ => return Err(PolarsError::ArrowError(e)),
+                    },
+                    err => return Err(err),
+                },
+            }
+        }
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
 
@@ -125,8 +153,7 @@ impl<R: Read + Seek> IpcReader<R> {
             metadata.schema.clone()
         };
 
-        let reader =
-            read::FileReader::new(&mut self.reader, metadata, self.projection, self.n_rows);
+        let reader = read::FileReader::new(self.reader, metadata, self.projection, self.n_rows);
 
         finish_reader(
             reader,
@@ -140,7 +167,7 @@ impl<R: Read + Seek> IpcReader<R> {
     }
 }
 
-impl<R> ArrowReader for read::FileReader<R>
+impl<R: MmapBytesReader> ArrowReader for read::FileReader<R>
 where
     R: Read + Seek,
 {
@@ -149,10 +176,7 @@ where
     }
 }
 
-impl<R> SerReader<R> for IpcReader<R>
-where
-    R: Read + Seek,
-{
+impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
     fn new(reader: R) -> Self {
         IpcReader {
             reader,
@@ -161,6 +185,7 @@ where
             columns: None,
             projection: None,
             row_count: None,
+            memmap: true,
         }
     }
 
@@ -170,6 +195,22 @@ where
     }
 
     fn finish(mut self) -> Result<DataFrame> {
+        if self.memmap && self.reader.to_file().is_some() {
+            match self.finish_memmapped(None, None) {
+                Ok(df) => return Ok(df),
+                Err(err) => match err {
+                    PolarsError::ArrowError(e) => match e.as_ref() {
+                        arrow::error::Error::NotYetImplemented(s)
+                            if s == "mmap can only be done on uncompressed IPC files" =>
+                        {
+                            eprint!("could not mmap compressed IPC file, defaulting to normal read")
+                        }
+                        _ => return Err(PolarsError::ArrowError(e)),
+                    },
+                    err => return Err(err),
+                },
+            }
+        }
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
         let schema = &metadata.schema;
@@ -185,12 +226,8 @@ where
             metadata.schema.clone()
         };
 
-        let ipc_reader = read::FileReader::new(
-            &mut self.reader,
-            metadata.clone(),
-            self.projection,
-            self.n_rows,
-        );
+        let ipc_reader =
+            read::FileReader::new(self.reader, metadata.clone(), self.projection, self.n_rows);
         finish_reader(
             ipc_reader,
             rechunk,
@@ -228,6 +265,7 @@ pub struct IpcWriter<W> {
 }
 
 use crate::aggregations::ScanAggregation;
+use crate::mmap::MmapBytesReader;
 use crate::RowCount;
 use polars_core::frame::ArrowChunk;
 pub use write::Compression as IpcCompression;

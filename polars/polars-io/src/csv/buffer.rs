@@ -399,7 +399,10 @@ pub(crate) fn init_buffers(
                     ignore_errors,
                 )),
                 #[cfg(feature = "dtype-datetime")]
-                &DataType::Datetime(_, _) => Buffer::Datetime(DatetimeField::new(name, capacity)),
+                &DataType::Datetime(tu, _) => Buffer::Datetime {
+                    buf: DatetimeField::new(name, capacity),
+                    tu,
+                },
                 #[cfg(feature = "dtype-date")]
                 &DataType::Date => Buffer::Date(DatetimeField::new(name, capacity)),
                 other => {
@@ -425,7 +428,10 @@ pub(crate) enum Buffer {
     /// Stores the Utf8 fields and the total string length seen for that column
     Utf8(Utf8Field),
     #[cfg(feature = "dtype-datetime")]
-    Datetime(DatetimeField<Int64Type>),
+    Datetime {
+        buf: DatetimeField<Int64Type>,
+        tu: TimeUnit,
+    },
     #[cfg(feature = "dtype-date")]
     Date(DatetimeField<Int32Type>),
 }
@@ -441,11 +447,11 @@ impl Buffer {
             Buffer::Float32(v) => v.finish().into_series(),
             Buffer::Float64(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-datetime")]
-            Buffer::Datetime(v) => v
+            Buffer::Datetime { buf, tu } => buf
                 .builder
                 .finish()
                 .into_series()
-                .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+                .cast(&DataType::Datetime(tu, None))
                 .unwrap(),
             #[cfg(feature = "dtype-date")]
             Buffer::Date(v) => v
@@ -518,7 +524,7 @@ impl Buffer {
                 v.validity.push(false);
             }
             #[cfg(feature = "dtype-datetime")]
-            Buffer::Datetime(v) => v.builder.append_null(),
+            Buffer::Datetime { buf, .. } => buf.builder.append_null(),
             #[cfg(feature = "dtype-date")]
             Buffer::Date(v) => v.builder.append_null(),
         };
@@ -535,7 +541,7 @@ impl Buffer {
             Buffer::Float64(_) => DataType::Float64,
             Buffer::Utf8(_) => DataType::Utf8,
             #[cfg(feature = "dtype-datetime")]
-            Buffer::Datetime(_) => DataType::Datetime(TimeUnit::Microseconds, None),
+            Buffer::Datetime { tu, .. } => DataType::Datetime(*tu, None),
             #[cfg(feature = "dtype-date")]
             Buffer::Date(_) => DataType::Date,
         }
@@ -596,7 +602,7 @@ impl Buffer {
                 <Utf8Field as ParsedBuffer>::parse_bytes(buf, bytes, ignore_errors, needs_escaping)
             }
             #[cfg(feature = "dtype-datetime")]
-            Datetime(buf) => <DatetimeField<Int64Type> as ParsedBuffer>::parse_bytes(
+            Datetime { buf, .. } => <DatetimeField<Int64Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,

@@ -8,10 +8,12 @@ impl<'a> AggregationContext<'a> {
     ) -> Box<dyn Iterator<Item = Option<UnstableSeries<'_>>> + '_> {
         match self.agg_state() {
             AggState::Literal(_) => {
+                self.groups();
                 let s = self.series();
                 Box::new(LitIter::new(s.array_ref(0).clone(), self.groups.len()))
             }
             AggState::AggregatedFlat(_) => {
+                self.groups();
                 let s = self.series();
                 Box::new(FlatIter::new(s.array_ref(0).clone(), self.groups.len()))
             }
@@ -99,11 +101,9 @@ impl<'a> Iterator for FlatIter<'a> {
         if self.len == self.offset {
             None
         } else {
-            let arr = unsafe { self.array.slice_unchecked(self.offset, 1) };
+            let mut arr = unsafe { self.array.slice_unchecked(self.offset, 1) };
             self.offset += 1;
-            self.item.swap(arr);
-            // ensure lengths are correct.
-            self.series_container._get_inner_mut().compute_len();
+            self.item.swap(&mut arr);
             Some(Some(self.item))
         }
     }

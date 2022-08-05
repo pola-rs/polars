@@ -3,9 +3,13 @@ mod arg_where;
 mod fill_null;
 #[cfg(feature = "is_in")]
 mod is_in;
+mod list;
 mod pow;
+#[cfg(all(feature = "rolling_window", feature = "moment"))]
+mod rolling;
 #[cfg(feature = "row_hash")]
 mod row_hash;
+mod shift_and_fill;
 #[cfg(feature = "sign")]
 mod sign;
 #[cfg(feature = "strings")]
@@ -49,6 +53,17 @@ pub enum FunctionExpr {
     FillNull {
         super_type: DataType,
     },
+    #[cfg(feature = "is_in")]
+    ListContains,
+    #[cfg(all(feature = "rolling_window", feature = "moment"))]
+    // if we add more, make a sub enum
+    RollingSkew {
+        window_size: usize,
+        bias: bool,
+    },
+    ShiftAndFill {
+        periods: i64,
+    },
 }
 
 #[cfg(feature = "trigonometry")]
@@ -90,11 +105,20 @@ impl FunctionExpr {
         };
 
         let same_type = || map_dtype(&|dtype| dtype.clone());
+        let super_type = || {
+            let mut first = fields[0].clone();
+            let mut st = first.data_type().clone();
+            for field in &fields[1..] {
+                st = get_supertype(&st, field.data_type())?
+            }
+            first.coerce(st);
+            Ok(first)
+        };
 
         use FunctionExpr::*;
         match self {
             NullCount => with_dtype(IDX_DTYPE),
-            Pow => float_dtype(),
+            Pow => super_type(),
             #[cfg(feature = "row_hash")]
             Hash(..) => with_dtype(DataType::UInt64),
             #[cfg(feature = "is_in")]
@@ -112,6 +136,11 @@ impl FunctionExpr {
             #[cfg(feature = "sign")]
             Sign => with_dtype(DataType::Int64),
             FillNull { super_type, .. } => with_dtype(super_type.clone()),
+            #[cfg(feature = "is_in")]
+            ListContains => with_dtype(DataType::Boolean),
+            #[cfg(all(feature = "rolling_window", feature = "moment"))]
+            RollingSkew { .. } => float_dtype(),
+            ShiftAndFill { .. } => same_type(),
         }
     }
 }
@@ -223,6 +252,17 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             }
             FillNull { super_type } => {
                 map_as_slice!(fill_null::fill_null, &super_type)
+            }
+            #[cfg(feature = "is_in")]
+            ListContains => {
+                wrap!(list::contains)
+            }
+            #[cfg(all(feature = "rolling_window", feature = "moment"))]
+            RollingSkew { window_size, bias } => {
+                map_with_args!(rolling::rolling_skew, window_size, bias)
+            }
+            ShiftAndFill { periods } => {
+                map_as_slice!(shift_and_fill::shift_and_fill, periods)
             }
         }
     }

@@ -8,6 +8,7 @@ pub struct ScanArgsIpc {
     pub cache: bool,
     pub rechunk: bool,
     pub row_count: Option<RowCount>,
+    pub memmap: bool,
 }
 
 impl Default for ScanArgsIpc {
@@ -17,6 +18,7 @@ impl Default for ScanArgsIpc {
             cache: true,
             rechunk: true,
             row_count: None,
+            memmap: true,
         }
     }
 }
@@ -29,6 +31,7 @@ impl LazyFrame {
             with_columns: None,
             row_count: args.row_count,
             rechunk: args.rechunk,
+            memmap: args.memmap,
         };
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_ipc(path, options)?.build().into();
         lf.opt_state.file_caching = true;

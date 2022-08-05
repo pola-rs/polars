@@ -567,7 +567,7 @@ impl PartialEq for AnyValue<'_> {
             #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
             (Datetime(l, tul, tzl), Datetime(r, tur, tzr)) => l == r && tul == tur && tzl == tzr,
             (Boolean(l), Boolean(r)) => l == r,
-            (List(_), List(_)) => panic!("eq between list series not supported"),
+            (List(l), List(r)) => l == r,
             #[cfg(feature = "object")]
             (Object(_), Object(_)) => panic!("eq between object not supported"),
             // should it?
@@ -1031,7 +1031,7 @@ impl From<&ArrowDataType> for DataType {
                     panic!("activate the 'object' feature to be able to load POLARS_EXTENSION_TYPE")
                 }
             }
-            dt => panic!("Arrow datatype {:?} not supported by Polars", dt),
+            dt => panic!("Arrow datatype {:?} not supported by Polars. You probably need to activate that data-type feature.", dt),
         }
     }
 }

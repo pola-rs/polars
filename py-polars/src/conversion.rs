@@ -443,6 +443,9 @@ impl ToPyObject for Wrap<&Utf8Chunked> {
 impl ToPyObject for Wrap<&StructChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let s = self.0.clone().into_series();
+        // todo! iterate its chunks and flatten.
+        // make series::iter() accept a chunk index.
+        let s = s.rechunk();
         let iter = s.iter().map(|av| {
             if let AnyValue::Struct(vals, flds) = av {
                 struct_dict(py, vals, flds)
@@ -545,9 +548,9 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 kwargs.set_item("is_dst", py.None())?;
                 let loc_tz = tz.call_method("localize", (dt,), Some(kwargs))?;
                 loc_tz.call_method0("timestamp")?;
-                // s to ms
-                let v = (ts.extract::<f64>()? * 1000.0) as i64;
-                Ok(AnyValue::Datetime(v, TimeUnit::Milliseconds, &None).into())
+                // s to us
+                let v = (ts.extract::<f64>()? * 1000_000.0) as i64;
+                Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
             }
             // unix
             #[cfg(not(target_arch = "windows"))]
@@ -558,9 +561,10 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 kwargs.set_item("tzinfo", timezone.getattr("utc")?)?;
                 let dt = ob.call_method("replace", (), Some(kwargs))?;
                 let ts = dt.call_method0("timestamp")?;
-                // s to ms
-                let v = (ts.extract::<f64>()? * 1000.0) as i64;
-                Ok(AnyValue::Datetime(v, TimeUnit::Milliseconds, &None).into())
+                // s to us
+                let v = (ts.extract::<f64>()? * 1_000_000.0) as i64;
+                // we choose us as that is pythons default unit
+                Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
             }
         } else if ob.is_none() {
             Ok(AnyValue::Null.into())

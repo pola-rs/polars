@@ -2,6 +2,7 @@
 use crate::prelude::*;
 use arrow::{array::*, bitmap::Bitmap};
 use polars_arrow::prelude::ValueSize;
+use std::iter::Map;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -45,9 +46,10 @@ use polars_arrow::prelude::*;
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::categorical::RevMapping;
 use crate::series::IsSorted;
-use crate::utils::CustomIterTools;
+use crate::utils::{first_non_null, last_non_null, CustomIterTools};
 use bitflags::bitflags;
 use std::mem;
+use std::slice::Iter;
 
 #[cfg(not(feature = "dtype-categorical"))]
 pub struct RevMapping {}
@@ -207,26 +209,26 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Get the index of the first non null value in this ChunkedArray.
     pub fn first_non_null(&self) -> Option<usize> {
-        let mut offset = 0;
-        for validity in self.iter_validities() {
-            if let Some(validity) = validity {
-                for (idx, is_valid) in validity.iter().enumerate() {
-                    if is_valid {
-                        return Some(offset + idx);
-                    }
-                }
-                offset += validity.len()
-            } else {
-                return Some(offset);
-            }
+        if self.is_empty() {
+            None
+        } else {
+            first_non_null(self.iter_validities())
         }
-        None
+    }
+
+    /// Get the index of the last non null value in this ChunkedArray.
+    pub fn last_non_null(&self) -> Option<usize> {
+        last_non_null(self.iter_validities(), self.length as usize)
     }
 
     /// Get the buffer of bits representing null values
     #[inline]
-    pub fn iter_validities(&self) -> impl Iterator<Item = Option<&Bitmap>> + '_ {
-        self.chunks.iter().map(|arr| arr.validity())
+    #[allow(clippy::type_complexity)]
+    pub fn iter_validities(&self) -> Map<Iter<'_, ArrayRef>, fn(&ArrayRef) -> Option<&Bitmap>> {
+        fn to_validity(arr: &ArrayRef) -> Option<&Bitmap> {
+            arr.validity()
+        }
+        self.chunks.iter().map(to_validity)
     }
 
     #[inline]
@@ -300,8 +302,18 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// A reference to the chunks
+    #[inline]
     pub fn chunks(&self) -> &Vec<ArrayRef> {
         &self.chunks
+    }
+
+    /// A mutable reference to the chunks
+    ///
+    /// # Safety
+    /// The caller must ensure to not change the `DataType` or `length` of any of the chunks.
+    #[inline]
+    pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        &mut self.chunks
     }
 
     /// Returns true if contains a single chunk and has no null values
@@ -761,16 +773,6 @@ pub(crate) mod test {
 
         let s = Utf8Chunked::new("", &[Some("a"), None, Some("c")]);
         assert_eq!(Vec::from(&s.reverse()), &[Some("c"), None, Some("a")]);
-    }
-
-    #[test]
-    fn test_null_sized_chunks() {
-        let mut s = Float64Chunked::new("s", &Vec::<f64>::new());
-        s.append(&Float64Chunked::new("s2", &[1., 2., 3.]));
-        dbg!(&s);
-
-        let s = Float64Chunked::new("s", &Vec::<f64>::new());
-        dbg!(&s.into_iter().next());
     }
 
     #[test]
