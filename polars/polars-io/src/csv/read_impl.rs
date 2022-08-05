@@ -338,7 +338,7 @@ impl<'a> CoreReader<'a> {
         }
 
         let starting_point_offset = if bytes.len() > 0 {
-            Some(starting_point_offset)
+            Some(bytes.as_ptr() as usize - starting_point_offset)
         } else {
             None
         };
