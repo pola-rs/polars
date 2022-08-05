@@ -175,6 +175,9 @@ FROM
             }
             Udf { input, options, .. } => write!(f, "{} \n{:?}", options.fmt_str, input),
             Error { input, err } => write!(f, "{:?}\n{:?}", err, input),
+            ExtContext { input, .. } => {
+                write!(f, "{:?}\nExtContext", input)
+            }
         }
     }
 }

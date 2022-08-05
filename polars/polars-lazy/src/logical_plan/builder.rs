@@ -308,6 +308,29 @@ impl LogicalPlanBuilder {
         .into()
     }
 
+    pub fn with_context(self, contexts: Vec<LogicalPlan>) -> Self {
+        let mut schema = try_delayed!(self.0.schema(), &self.0, into)
+            .as_ref()
+            .as_ref()
+            .clone();
+
+        for lp in &contexts {
+            let other_schema = try_delayed!(lp.schema(), lp, into);
+
+            for fld in other_schema.iter_fields() {
+                if schema.get(fld.name()).is_none() {
+                    schema.with_column(fld.name, fld.dtype)
+                }
+            }
+        }
+        LogicalPlan::ExtContext {
+            input: Box::new(self.0),
+            contexts,
+            schema: Arc::new(schema),
+        }
+        .into()
+    }
+
     /// Apply a filter
     pub fn filter(self, predicate: Expr) -> Self {
         let predicate = if has_expr(&predicate, |e| match e {

@@ -887,8 +887,8 @@ impl PartialEq<ArrowDataType> for DataType {
     derive(Serialize, Deserialize)
 )]
 pub struct Field {
-    name: String,
-    dtype: DataType,
+    pub name: String,
+    pub dtype: DataType,
 }
 
 impl Field {

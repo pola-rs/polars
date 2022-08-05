@@ -96,7 +96,7 @@ def test_join_lazy_on_df() -> None:
 
 def test_projection_update_schema_missing_column() -> None:
     with pytest.raises(
-        pl.ComputeError, match="column colC not available in schema Schema:*"
+        pl.ComputeError, match="column 'colC' not available in schema Schema:*"
     ):
         (
             pl.DataFrame({"colA": ["a", "b", "c"], "colB": [1, 2, 3]})

@@ -13,12 +13,37 @@ impl ColumnExpr {
     }
 }
 
+impl ColumnExpr {
+    fn check_external_context(
+        &self,
+        out: Result<Series>,
+        state: &ExecutionState,
+    ) -> Result<Series> {
+        match out {
+            Ok(col) => Ok(col),
+            Err(e) => {
+                if state.ext_contexts.is_empty() {
+                    Err(e)
+                } else {
+                    for df in state.ext_contexts.as_ref() {
+                        let out = df.column(&self.0);
+                        if out.is_ok() {
+                            return out.cloned();
+                        }
+                    }
+                    Err(e)
+                }
+            }
+        }
+    }
+}
+
 impl PhysicalExpr for ColumnExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.1)
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
-        match state.get_schema() {
+        let out = match state.get_schema() {
             None => df.column(&self.0).map(|s| s.clone()),
             Some(schema) => {
                 match schema.get_full(&self.0) {
@@ -31,12 +56,17 @@ impl PhysicalExpr for ColumnExpr {
                                 // this path should not happen
                                 #[cfg(feature = "panic_on_schema")]
                                 {
-                                    panic!("invalid schema")
+                                    if state.ext_contexts.is_empty() {
+                                        panic!("invalid schema")
+                                    }
                                 }
                                 // in release we fallback to linear search
                                 #[allow(unreachable_code)]
                                 {
-                                    return df.column(&self.0).map(|s| s.clone());
+                                    return self.check_external_context(
+                                        df.column(&self.0).map(|s| s.clone()),
+                                        state,
+                                    );
                                 }
                             }
                         };
@@ -45,13 +75,15 @@ impl PhysicalExpr for ColumnExpr {
                             // this path should not happen
                             #[cfg(feature = "panic_on_schema")]
                             {
-                                panic!(
-                                    "got {} expected: {} from schema: {:?} and DataFrame: {:?}",
-                                    out.name(),
-                                    &*self.0,
-                                    &schema,
-                                    &df
-                                )
+                                if state.ext_contexts.is_empty() {
+                                    panic!(
+                                        "got {} expected: {} from schema: {:?} and DataFrame: {:?}",
+                                        out.name(),
+                                        &*self.0,
+                                        &schema,
+                                        &df
+                                    )
+                                }
                             }
                             // in release we fallback to linear search
                             #[allow(unreachable_code)]
@@ -68,7 +100,9 @@ impl PhysicalExpr for ColumnExpr {
                     None => {
                         #[cfg(feature = "panic_on_schema")]
                         {
-                            panic!("invalid schema")
+                            if state.ext_contexts.is_empty() {
+                                panic!("invalid schema")
+                            }
                         }
                         // in release we fallback to linear search
                         #[allow(unreachable_code)]
@@ -76,8 +110,10 @@ impl PhysicalExpr for ColumnExpr {
                     }
                 }
             }
-        }
+        };
+        self.check_external_context(out, state)
     }
+
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,

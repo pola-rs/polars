@@ -193,6 +193,12 @@ fn can_run_partitioned(keys: &[Series], original_df: &DataFrame, state: &Executi
 
 impl Executor for PartitionGroupByExec {
     fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run PartititonGroupbyExec")
+            }
+        }
         let dfs = {
             let original_df = self.input.execute(state)?;
 

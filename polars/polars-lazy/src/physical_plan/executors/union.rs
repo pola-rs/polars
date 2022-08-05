@@ -12,6 +12,12 @@ pub(crate) struct UnionExec {
 
 impl Executor for UnionExec {
     fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run UnionExec")
+            }
+        }
         let mut inputs = std::mem::take(&mut self.inputs);
 
         if self.options.slice && self.options.slice_offset >= 0 {

@@ -515,6 +515,16 @@ impl DefaultPlanner {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 Ok(Box::new(executors::UdfExec { input, function }))
             }
+            ExtContext {
+                input, contexts, ..
+            } => {
+                let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
+                let contexts = contexts
+                    .into_iter()
+                    .map(|node| self.create_physical_plan(node, lp_arena, expr_arena))
+                    .collect::<Result<_>>()?;
+                Ok(Box::new(executors::ExternalContext { input, contexts }))
+            }
         }
     }
 }

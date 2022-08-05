@@ -189,6 +189,12 @@ pub enum LogicalPlan {
         input: Box<LogicalPlan>,
         err: Arc<Mutex<Option<PolarsError>>>,
     },
+    /// This allows expressions to access other tables
+    ExtContext {
+        input: Box<LogicalPlan>,
+        contexts: Vec<LogicalPlan>,
+        schema: SchemaRef,
+    },
 }
 
 impl Default for LogicalPlan {
@@ -249,6 +255,7 @@ impl LogicalPlan {
                 }
             }
             Error { input, .. } => input.schema(),
+            ExtContext { schema, .. } => Ok(Cow::Borrowed(schema)),
         }
     }
     pub fn describe(&self) -> String {

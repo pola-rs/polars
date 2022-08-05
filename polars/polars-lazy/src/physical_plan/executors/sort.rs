@@ -10,6 +10,12 @@ pub(crate) struct SortExec {
 
 impl Executor for SortExec {
     fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run SortExec")
+            }
+        }
         let mut df = self.input.execute(state)?;
         df.as_single_chunk_par();
 

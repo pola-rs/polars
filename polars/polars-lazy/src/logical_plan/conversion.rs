@@ -426,6 +426,22 @@ pub(crate) fn to_alp(
             let mut err = err.lock();
             return Err(err.take().unwrap());
         }
+        LogicalPlan::ExtContext {
+            input,
+            contexts,
+            schema,
+        } => {
+            let input = to_alp(*input, expr_arena, lp_arena)?;
+            let contexts = contexts
+                .into_iter()
+                .map(|lp| to_alp(lp, expr_arena, lp_arena))
+                .collect::<Result<_>>()?;
+            ALogicalPlan::ExtContext {
+                input,
+                contexts,
+                schema,
+            }
+        }
     };
     Ok(lp_arena.add(v))
 }
@@ -903,6 +919,22 @@ pub(crate) fn node_to_lp(
                 input,
                 function,
                 options,
+                schema,
+            }
+        }
+        ALogicalPlan::ExtContext {
+            input,
+            contexts,
+            schema,
+        } => {
+            let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
+            let contexts = contexts
+                .into_iter()
+                .map(|node| node_to_lp(node, expr_arena, lp_arena))
+                .collect();
+            LogicalPlan::ExtContext {
+                input,
+                contexts,
                 schema,
             }
         }
