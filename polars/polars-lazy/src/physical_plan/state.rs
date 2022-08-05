@@ -51,6 +51,7 @@ pub struct ExecutionState {
     // every join/union split gets an increment to distinguish between schema state
     pub(super) branch_idx: usize,
     pub(super) flags: StateFlags,
+    pub(super) ext_contexts: Arc<Vec<DataFrame>>,
 }
 
 impl ExecutionState {
@@ -65,6 +66,7 @@ impl ExecutionState {
             join_tuples: Default::default(),
             branch_idx: self.branch_idx,
             flags: self.flags,
+            ext_contexts: self.ext_contexts.clone(),
         }
     }
 
@@ -83,6 +85,7 @@ impl ExecutionState {
             join_tuples: Arc::new(Mutex::new(PlHashMap::default())),
             branch_idx: 0,
             flags: StateFlags::init(),
+            ext_contexts: Default::default(),
         }
     }
 
@@ -101,6 +104,7 @@ impl ExecutionState {
             join_tuples: Arc::new(Mutex::new(PlHashMap::default())),
             branch_idx: 0,
             flags: StateFlags::init(),
+            ext_contexts: Default::default(),
         }
     }
     pub(crate) fn set_schema(&mut self, schema: SchemaRef) {

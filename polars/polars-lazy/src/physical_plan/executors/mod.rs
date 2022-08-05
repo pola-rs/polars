@@ -1,6 +1,7 @@
 mod cache;
 mod drop_duplicates;
 mod explode;
+mod ext_context;
 mod filter;
 mod groupby;
 mod groupby_dynamic;
@@ -22,9 +23,9 @@ mod union;
 pub(super) use self::python_scan::*;
 
 pub(super) use self::{
-    cache::*, drop_duplicates::*, explode::*, filter::*, groupby::*, groupby_dynamic::*,
-    groupby_partitioned::*, groupby_rolling::*, join::*, melt::*, projection::*, scan::*, slice::*,
-    sort::*, stack::*, udf::*, union::*,
+    cache::*, drop_duplicates::*, explode::*, ext_context::*, filter::*, groupby::*,
+    groupby_dynamic::*, groupby_partitioned::*, groupby_rolling::*, join::*, melt::*,
+    projection::*, scan::*, slice::*, sort::*, stack::*, udf::*, union::*,
 };
 
 use super::*;
@@ -194,12 +195,20 @@ fn check_expand_literals(
             .into_iter()
             .map(|series| {
                 if series.len() == 1 && df_height > 1 {
-                    series.expand_at_index(0, df_height)
+                    Ok(series.expand_at_index(0, df_height))
+                } else if series.len() == df_height || series.len() == 0 {
+                    Ok(series)
                 } else {
-                    series
+                    Err(PolarsError::ComputeError(
+                        format!(
+                            "Series {:?} does not match the DataFrame height of {}",
+                            series, df_height
+                        )
+                        .into(),
+                    ))
                 }
             })
-            .collect()
+            .collect::<Result<_>>()?
     }
 
     let df = DataFrame::new_no_checks(selected_columns);

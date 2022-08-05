@@ -15,6 +15,12 @@ impl FilterExec {
 
 impl Executor for FilterExec {
     fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run FilterExec")
+            }
+        }
         let df = self.input.execute(state)?;
         let s = self.predicate.evaluate(&df, state)?;
         let mask = s.bool().expect("filter predicate wasn't of type boolean");

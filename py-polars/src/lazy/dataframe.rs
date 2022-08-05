@@ -452,6 +452,11 @@ impl PyLazyFrame {
         PyLazyGroupBy { lgb: Some(lazy_gb) }
     }
 
+    pub fn with_context(&self, contexts: Vec<PyLazyFrame>) -> PyLazyFrame {
+        let contexts = contexts.into_iter().map(|ldf| ldf.ldf).collect::<Vec<_>>();
+        self.ldf.clone().with_context(contexts).into()
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "asof_join")]
     pub fn join_asof(

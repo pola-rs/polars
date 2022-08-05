@@ -20,6 +20,12 @@ impl Executor for GroupByDynamicExec {
 
     #[cfg(feature = "dynamic_groupby")]
     fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run GroupbyDynamicExec")
+            }
+        }
         let mut df = self.input.execute(state)?;
         df.as_single_chunk_par();
         state.set_schema(self.input_schema.clone());

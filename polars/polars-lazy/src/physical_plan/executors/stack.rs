@@ -13,6 +13,12 @@ pub struct StackExec {
 
 impl Executor for StackExec {
     fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run StackExec")
+            }
+        }
         let mut df = self.input.execute(state)?;
 
         state.set_schema(self.input_schema.clone());

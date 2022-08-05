@@ -63,8 +63,11 @@ impl PredicatePushDown {
             }
 
             // projections should only have a single input.
-            assert_eq!(inputs.len(), 1);
-            let input = inputs[0];
+            if inputs.len() > 1 {
+                // except for ExtContext
+                assert!(matches!(lp, ALogicalPlan::ExtContext { .. }));
+            }
+            let input = inputs[inputs.len() - 1];
             let (local_predicates, projections) =
                 rewrite_projection_node(expr_arena, lp_arena, &mut acc_predicates, exprs, input);
 
@@ -506,7 +509,7 @@ impl PredicatePushDown {
             lp @ Cache { .. } |  lp @ Sort { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             }
-            lp @ HStack {..} | lp @ Projection {..} => {
+            lp @ HStack {..} | lp @ Projection {..} | lp @ ExtContext {..} => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
             }
             // NOT Pushed down passed these nodes

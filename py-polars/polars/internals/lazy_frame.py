@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import typing
 import warnings
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
@@ -1629,6 +1630,25 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 raise ValueError(f"Expected an expression, got {e}")
 
         return self._from_pyldf(self._ldf.with_columns(pyexprs))
+
+    @typing.no_type_check
+    def with_context(self, other: LDF | list[LDF]) -> LDF:
+        """
+        Add an external context to the computation graph.
+
+        This allows expressions to also access columns from DataFrames
+        that are not part of this one.
+
+        Parameters
+        ----------
+        other
+            One or multiple LazyFrames as external context
+
+        """
+        if not isinstance(other, list):
+            other = [other]
+
+        return self._from_pyldf(self._ldf.with_context([lf._ldf for lf in other]))
 
     def with_column(self: LDF, expr: pli.Expr) -> LDF:
         """
