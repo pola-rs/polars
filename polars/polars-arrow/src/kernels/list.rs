@@ -1,4 +1,4 @@
-use crate::kernels::take::take_unchecked;
+use crate::compute::take::take_unchecked;
 use crate::prelude::*;
 use crate::trusted_len::PushUnchecked;
 use crate::utils::CustomIterTools;

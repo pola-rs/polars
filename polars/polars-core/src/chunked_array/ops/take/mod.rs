@@ -3,9 +3,7 @@
 //! IntoTakeRandom provides structs that implement the TakeRandom trait.
 //! There are several structs that implement the fastest path for random access.
 //!
-
-use arrow::compute::take::take;
-use polars_arrow::kernels::take::*;
+use polars_arrow::compute::take::*;
 
 use crate::chunked_array::kernels::take::*;
 
@@ -175,7 +173,7 @@ impl ChunkTake for BooleanChunked {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take::take(chunks.next().unwrap(), array).unwrap(),
+                    1 => take::take_unchecked(chunks.next().unwrap(), array),
                     _ => {
                         return if !array.has_validity() {
                             let iter = array.values().iter().map(|i| *i as usize);

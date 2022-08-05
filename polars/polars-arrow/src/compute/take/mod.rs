@@ -1,3 +1,5 @@
+mod boolean;
+
 use crate::trusted_len::{PushUnchecked, TrustedLen};
 use crate::utils::with_match_primitive_type;
 use crate::{bit_util::unset_bit_raw, prelude::*, utils::CustomIterTools};
@@ -23,6 +25,10 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
         LargeUtf8 => {
             let arr = arr.as_any().downcast_ref().unwrap();
             take_utf8_unchecked(arr, idx)
+        }
+        Boolean => {
+            let arr = arr.as_any().downcast_ref().unwrap();
+            Box::new(boolean::take_unchecked(arr, idx))
         }
         // TODO! implement proper unchecked version
         #[cfg(feature = "compute")]
