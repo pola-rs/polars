@@ -293,7 +293,7 @@ impl<'a> CoreReader<'a> {
         &self,
         mut bytes: &'b [u8],
         eol_char: u8,
-    ) -> Result<(&'b [u8], usize)> {
+    ) -> Result<(&'b [u8], Option<usize>)> {
         let starting_point_offset = bytes.as_ptr() as usize;
 
         // Skip all leading white space and the occasional utf8-bom
@@ -337,7 +337,11 @@ impl<'a> CoreReader<'a> {
             }
         }
 
-        let starting_point_offset = bytes.as_ptr() as usize - starting_point_offset;
+        let starting_point_offset = if bytes.is_empty() {
+            None
+        } else {
+            Some(bytes.as_ptr() as usize - starting_point_offset)
+        };
 
         Ok((bytes, starting_point_offset))
     }
@@ -523,7 +527,7 @@ impl<'a> CoreReader<'a> {
                             let local_bytes = &bytes[read..stop_at_nbytes];
 
                             last_read = read;
-                            let offset = read + starting_point_offset;
+                            let offset = read + starting_point_offset.unwrap();
                             read += parse_lines(
                                 local_bytes,
                                 offset,
@@ -642,7 +646,7 @@ impl<'a> CoreReader<'a> {
                             let local_bytes = &bytes[read..stop_at_nbytes];
 
                             last_read = read;
-                            let offset = read + starting_point_offset;
+                            let offset = read + starting_point_offset.unwrap();
                             read += parse_lines(
                                 local_bytes,
                                 offset,
