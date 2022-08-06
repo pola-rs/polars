@@ -580,7 +580,16 @@ class DataFrame(metaclass=DataFrameMetaClass):
         sample_size: int = 1024,
         eol_char: str = "\n",
     ) -> DF:
-        """See pl.read_csv."""
+        """
+        Read a CSV file into a DataFrame.
+
+        Use ``pl.read_csv`` to dispatch to this method.
+
+        See Also
+        --------
+        polars.io.read_csv
+
+        """
         self = cls.__new__(cls)
 
         path: str | None

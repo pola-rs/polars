@@ -136,9 +136,14 @@ class LazyFrame(Generic[DF]):
         eol_char: str = "\n",
     ) -> LDF:
         """
+        Lazily read from a CSV file or multiple files via glob patterns.
+
+        Use ``pl.scan_csv`` to dispatch to this method.
+
         See Also
         --------
-        scan_csv
+        polars.io.scan_csv
+
         """
         dtype_list: list[tuple[str, type[DataType]]] | None = None
         if dtypes is not None:

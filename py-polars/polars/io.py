@@ -96,7 +96,7 @@ def read_csv(
     **kwargs: Any,
 ) -> DataFrame:
     """
-    Read a CSV file into a Dataframe.
+    Read a CSV file into a DataFrame.
 
     Parameters
     ----------
