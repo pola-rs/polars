@@ -799,10 +799,9 @@ impl<'a> ALogicalPlanBuilder<'a> {
 
         let right_names: PlHashSet<_> = right_on
             .iter()
-            .map(|e| match self.expr_arena.get(*e) {
-                AExpr::Alias(_, name) => name.clone(),
-                AExpr::Column(name) => name.clone(),
-                _ => panic!("could not determine join column names"),
+            .map(|e| {
+                aexpr_to_root_column_name(*e, self.expr_arena)
+                    .expect("could not determine join column names")
             })
             .collect();
 
