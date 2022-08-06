@@ -1312,7 +1312,7 @@ def test_str_encode() -> None:
     verify_series_and_expr_api(s, hex_encoded, "str.encode", "hex")
     verify_series_and_expr_api(s, base64_encoded, "str.encode", "base64")
     with pytest.raises(ValueError):
-        s.str.encode("utf8")
+        s.str.encode("utf8")  # type: ignore[arg-type]
 
 
 def test_str_decode() -> None:
@@ -1331,7 +1331,7 @@ def test_str_decode_exception() -> None:
     with pytest.raises(Exception):
         s.str.decode(encoding="base64", strict=True)
     with pytest.raises(ValueError):
-        s.str.decode("utf8")
+        s.str.decode("utf8")  # type: ignore[arg-type]
 
 
 def test_str_replace_str_replace_all() -> None:

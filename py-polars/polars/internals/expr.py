@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import math
 import random
+import sys
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, List, Sequence
 
@@ -34,6 +35,11 @@ try:
     _NUMPY_AVAILABLE = True
 except ImportError:
     _NUMPY_AVAILABLE = False
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 
 def selection_to_pyexpr_list(
@@ -6105,7 +6111,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
-    def decode(self, encoding: str, strict: bool = False) -> Expr:
+    def decode(self, encoding: Literal["hex", "base64"], strict: bool = False) -> Expr:
         """
         Decode a value using the provided encoding.
 
@@ -6143,7 +6149,7 @@ class ExprStringNameSpace:
         else:
             raise ValueError("supported encodings are 'hex' and 'base64'")
 
-    def encode(self, encoding: str) -> Expr:
+    def encode(self, encoding: Literal["hex", "base64"]) -> Expr:
         """
         Encode a value using the provided encoding.
 

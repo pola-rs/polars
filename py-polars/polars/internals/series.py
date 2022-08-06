@@ -4500,7 +4500,9 @@ class StringNameSpace:
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.starts_with(sub)).to_series()
 
-    def decode(self, encoding: str, strict: bool = False) -> Series:
+    def decode(
+        self, encoding: Literal["hex", "base64"], strict: bool = False
+    ) -> Series:
         """
         Decode a value using the provided encoding.
 
@@ -4533,7 +4535,7 @@ class StringNameSpace:
         else:
             raise ValueError("supported encodings are 'hex' and 'base64'")
 
-    def encode(self, encoding: str) -> Series:
+    def encode(self, encoding: Literal["hex", "base64"]) -> Series:
         """
         Encode a value using the provided encoding
 
