@@ -304,11 +304,16 @@ impl FromPyObject<'_> for Wrap<ClosedWindow> {
     fn extract(ob: &'_ PyAny) -> PyResult<Self> {
         let s = ob.extract::<&str>()?;
         Ok(Wrap(match s {
-            "none" => ClosedWindow::None,
-            "both" => ClosedWindow::Both,
             "left" => ClosedWindow::Left,
             "right" => ClosedWindow::Right,
-            _ => panic!("{}", "closed should be any of {'none', 'left', 'right'}"),
+            "both" => ClosedWindow::Both,
+            "none" => ClosedWindow::None,
+            e => {
+                return Err(PyValueError::new_err(format!(
+                    "closed must be one of {{'left', 'right', 'both', 'none'}}, got {}",
+                    e,
+                )))
+            }
         }))
     }
 }
