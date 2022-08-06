@@ -20,7 +20,7 @@ from polars.datatypes import (
     UInt32,
     py_type_to_dtype,
 )
-from polars.internals.datatypes import ClosedWindow
+from polars.internals.datatypes import ClosedWindow, InterpolationMethod
 from polars.utils import _timedelta_to_pl_duration
 
 try:
@@ -2556,7 +2556,11 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.is_duplicated())
 
-    def quantile(self, quantile: float, interpolation: str = "nearest") -> Expr:
+    def quantile(
+        self,
+        quantile: float,
+        interpolation: InterpolationMethod = "nearest",
+    ) -> Expr:
         """
         Get quantile value.
 
@@ -2564,11 +2568,9 @@ class Expr:
         Parameters
         ----------
         quantile
-            quantile between 0.0 and 1.0
-
-        interpolation
-            interpolation type, options:
-            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
 
         Examples
         --------
@@ -3839,9 +3841,7 @@ class Expr:
     def rolling_quantile(
         self,
         quantile: float,
-        interpolation: Literal[
-            "nearest", "higher", "lower", "midpoint", "linear"
-        ] = "nearest",
+        interpolation: InterpolationMethod = "nearest",
         window_size: int | str = 2,
         weights: List[float] | None = None,
         min_periods: int | None = None,
@@ -3855,10 +3855,9 @@ class Expr:
         Parameters
         ----------
         quantile
-            quantile to compute
-        interpolation
-            interpolation type, options:
-            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
             size indicated by the following string language:

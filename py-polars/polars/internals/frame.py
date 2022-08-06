@@ -47,7 +47,7 @@ from polars.internals.construction import (
     sequence_to_pydf,
     series_to_pydf,
 )
-from polars.internals.datatypes import ClosedWindow
+from polars.internals.datatypes import ClosedWindow, InterpolationMethod
 from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _prepare_row_count_args,
@@ -5653,18 +5653,18 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         return self.select(pli.all().product())
 
-    def quantile(self: DF, quantile: float, interpolation: str = "nearest") -> DF:
+    def quantile(
+        self: DF, quantile: float, interpolation: InterpolationMethod = "nearest"
+    ) -> DF:
         """
         Aggregate the columns of this DataFrame to their quantile value.
 
         Parameters
         ----------
         quantile
-            quantile between 0.0 and 1.0
-
-        interpolation
-            interpolation type, options:
-            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
 
         Examples
         --------
@@ -7150,18 +7150,18 @@ class GroupBy(Generic[DF]):
         """
         return self.agg(pli.all().n_unique())
 
-    def quantile(self, quantile: float, interpolation: str = "nearest") -> DF:
+    def quantile(
+        self, quantile: float, interpolation: InterpolationMethod = "nearest"
+    ) -> DF:
         """
         Compute the quantile per group.
 
         Parameters
         ----------
         quantile
-            quantile between 0.0 and 1.0
-
-        interpolation
-            interpolation type, options:
-            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
 
         Examples
         --------
@@ -7394,18 +7394,18 @@ class GBSelection(Generic[DF]):
             self._df.groupby(self.by, self.selection, "n_unique")
         )
 
-    def quantile(self, quantile: float, interpolation: str = "nearest") -> DF:
+    def quantile(
+        self, quantile: float, interpolation: InterpolationMethod = "nearest"
+    ) -> DF:
         """
         Compute the quantile per group.
 
         Parameters
         ----------
         quantile
-            quantile between 0.0 and 1.0
-
-        interpolation
-            interpolation type, options:
-            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
 
         """
         return self._dataframe_class._from_pydf(

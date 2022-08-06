@@ -42,6 +42,7 @@ from polars.internals.construction import (
     sequence_to_pyseries,
     series_to_pyseries,
 )
+from polars.internals.datatypes import InterpolationMethod
 from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _date_to_pl_date,
@@ -967,18 +968,18 @@ class Series:
         """
         return self._s.median()
 
-    def quantile(self, quantile: float, interpolation: str = "nearest") -> float:
+    def quantile(
+        self, quantile: float, interpolation: InterpolationMethod = "nearest"
+    ) -> float:
         """
         Get the quantile value of this Series.
 
         Parameters
         ----------
         quantile
-            quantile between 0.0 and 1.0
-
-        interpolation
-            interpolation type, options:
-            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
 
         Examples
         --------
@@ -3492,7 +3493,7 @@ class Series:
     def rolling_quantile(
         self,
         quantile: float,
-        interpolation: str = "nearest",
+        interpolation: InterpolationMethod = "nearest",
         window_size: int = 2,
         weights: list[float] | None = None,
         min_periods: int | None = None,
@@ -3504,10 +3505,9 @@ class Series:
         Parameters
         ----------
         quantile
-            quantile to compute
-        interpolation
-            interpolation type, options:
-            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
         window_size
             The length of the window.
         weights

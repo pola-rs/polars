@@ -14,6 +14,7 @@ from polars.datatypes import (
     PolarsDataType,
     py_type_to_dtype,
 )
+from polars.internals.datatypes import InterpolationMethod
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _timedelta_to_pl_timedelta,
@@ -1028,8 +1029,20 @@ def groups(column: str) -> pli.Expr:
     return col(column).agg_groups()
 
 
-def quantile(column: str, quantile: float, interpolation: str = "nearest") -> pli.Expr:
-    """Syntactic sugar for `pl.col("foo").quantile(..)`."""
+def quantile(
+    column: str, quantile: float, interpolation: InterpolationMethod = "nearest"
+) -> pli.Expr:
+    """
+    Syntactic sugar for `pl.col("foo").quantile(..)`.
+
+    Parameters
+    ----------
+    quantile
+        Quantile between 0.0 and 1.0.
+    interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        Interpolation method.
+
+    """
     return col(column).quantile(quantile, interpolation)
 
 

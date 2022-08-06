@@ -15,7 +15,7 @@ from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import Any, Callable, Generic, Sequence, TypeVar, overload
 
-from polars.internals.datatypes import ClosedWindow
+from polars.internals.datatypes import ClosedWindow, InterpolationMethod
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -2058,8 +2058,20 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """Aggregate the columns in the DataFrame to their median value."""
         return self._from_pyldf(self._ldf.median())
 
-    def quantile(self: LDF, quantile: float, interpolation: str = "nearest") -> LDF:
-        """Aggregate the columns in the DataFrame to their quantile value."""
+    def quantile(
+        self: LDF, quantile: float, interpolation: InterpolationMethod = "nearest"
+    ) -> LDF:
+        """
+        Aggregate the columns in the DataFrame to their quantile value.
+
+        Parameters
+        ----------
+        quantile
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
+
+        """
         return self._from_pyldf(self._ldf.quantile(quantile, interpolation))
 
     def explode(
