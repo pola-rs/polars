@@ -301,3 +301,6 @@ def test_join_on_cast() -> None:
         "row_nr": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
     }
+    assert df_a.lazy().join(
+        df_b.lazy(), on=pl.col("a").cast(pl.Int64)
+    ).collect().to_dict(False) == {"row_nr": [1, 2, 3, 5], "a": [-2, 3, 3, 10]}
