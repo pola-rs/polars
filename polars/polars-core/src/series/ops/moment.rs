@@ -62,7 +62,7 @@ impl Series {
 
         if !bias {
             let n = self.len() as f64;
-            Ok(Some(((n - 1.0) * n).sqrt() / (n - 2.0) * m3 / m2.powf(1.5)))
+            Ok(Some(((n - 1.0) * n).sqrt() / (n - 2.0) * out))
         } else {
             Ok(Some(out))
         }

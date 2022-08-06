@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
 import polars as pl
 
 
@@ -52,7 +54,7 @@ def test_rolling_kernels_and_groupby_rolling() -> None:
 
 def test_rolling_skew() -> None:
     s = pl.Series([1, 2, 3, 3, 2, 10, 8])
-    assert s.rolling_skew(window_size=4, bias=True).to_list() == [
+    assert s.rolling_skew(window_size=4, bias=True).to_list() == pytest.approx([
         None,
         None,
         None,
@@ -60,9 +62,9 @@ def test_rolling_skew() -> None:
         0.0,
         1.097025449363867,
         0.09770939201338157,
-    ]
+    ])
 
-    assert s.rolling_skew(window_size=4, bias=False).to_list() == [
+    assert s.rolling_skew(window_size=4, bias=False).to_list() == pytest.approx([
         None,
         None,
         None,
@@ -70,4 +72,4 @@ def test_rolling_skew() -> None:
         0.0,
         1.9001038154942962,
         0.16923763134384154,
-    ]
+    ])
