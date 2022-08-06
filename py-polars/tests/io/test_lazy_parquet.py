@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from os import path
 from pathlib import Path
 
@@ -101,3 +102,10 @@ def test_parquet_stats(io_test_dir: str) -> None:
     assert (
         pl.scan_parquet(file).filter(4 < pl.col("a")).select(pl.col("a").sum())
     ).collect()[0, "a"] == 10.0
+
+
+def test_row_count_schema(io_test_dir: str) -> None:
+    f = os.path.join(io_test_dir, "..", "files", "small.parquet")
+    assert (
+        pl.scan_parquet(f, row_count_name="id").select(["id", "b"]).collect()
+    ).dtypes == [pl.UInt32, pl.Utf8]

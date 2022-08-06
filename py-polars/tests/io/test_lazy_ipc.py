@@ -39,3 +39,9 @@ def test_is_in_type_coercion(foods_ipc: str) -> None:
         .collect()
     )
     assert out.shape == (7, 1)
+
+
+def test_row_count_schema(foods_ipc: str) -> None:
+    assert (
+        pl.scan_ipc(foods_ipc, row_count_name="id").select(["id", "category"]).collect()
+    ).dtypes == [pl.UInt32, pl.Utf8]
