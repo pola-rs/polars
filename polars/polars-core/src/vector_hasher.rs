@@ -230,6 +230,22 @@ pub(crate) trait AsU64 {
     fn as_u64(self) -> u64;
 }
 
+#[cfg(feature = "performant")]
+impl AsU64 for u8 {
+    #[inline]
+    fn as_u64(self) -> u64 {
+        self as u64
+    }
+}
+
+#[cfg(feature = "performant")]
+impl AsU64 for u16 {
+    #[inline]
+    fn as_u64(self) -> u64 {
+        self as u64
+    }
+}
+
 impl AsU64 for u32 {
     #[inline]
     fn as_u64(self) -> u64 {
@@ -260,6 +276,30 @@ impl AsU64 for i64 {
 }
 
 impl AsU64 for Option<u32> {
+    #[inline]
+    fn as_u64(self) -> u64 {
+        match self {
+            Some(v) => v as u64,
+            // just a number safe from overflow
+            None => u64::MAX >> 2,
+        }
+    }
+}
+
+#[cfg(feature = "performant")]
+impl AsU64 for Option<u8> {
+    #[inline]
+    fn as_u64(self) -> u64 {
+        match self {
+            Some(v) => v as u64,
+            // just a number safe from overflow
+            None => u64::MAX >> 2,
+        }
+    }
+}
+
+#[cfg(feature = "performant")]
+impl AsU64 for Option<u16> {
     #[inline]
     fn as_u64(self) -> u64 {
         match self {
