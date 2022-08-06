@@ -1177,7 +1177,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         batch_size: int = 1024,
     ) -> str | None:
         """
-        Write Dataframe to comma-separated values file (csv).
+        Write to comma-separated values (CSV) file.
 
         Parameters
         ----------
@@ -1249,13 +1249,12 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ----------
         file
             File path to which the file should be written.
-        compression
-            Compression method. Choose one of:
-                - "uncompressed"
-                - "snappy"
-                - "deflate"
+        compression : {'uncompressed', 'snappy', 'deflate'}
+            Compression method. Defaults to "uncompressed".
 
         """
+        if compression is None:
+            compression = "uncompressed"
         if isinstance(file, (str, Path)):
             file = format_path(file)
 
@@ -1278,20 +1277,17 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def write_ipc(
         self,
         file: BinaryIO | BytesIO | str | Path,
-        compression: Literal["uncompressed", "lz4", "zstd"] | None = "uncompressed",
+        compression: Literal["uncompressed", "lz4", "zstd"] = "uncompressed",
     ) -> None:
         """
-        Write to Arrow IPC binary stream, or a feather file.
+        Write to Arrow IPC binary stream or Feather file.
 
         Parameters
         ----------
         file
             File path to which the file should be written.
-        compression
-            Compression method. Choose one of:
-                - "uncompressed"
-                - "lz4"
-                - "zstd"
+        compression : {'uncompressed', 'lz4', 'zstd'}
+            Compression method. Defaults to "uncompressed".
 
         """
         if compression is None:
@@ -1304,7 +1300,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def to_ipc(
         self,
         file: BinaryIO | BytesIO | str | Path,
-        compression: Literal["uncompressed", "lz4", "zstd"] | None = "uncompressed",
+        compression: Literal["uncompressed", "lz4", "zstd"] = "uncompressed",
     ) -> None:  # pragma: no cover
         """
         .. deprecated:: 0.13.12
@@ -1449,11 +1445,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self,
         file: str | Path | BytesIO,
         *,
-        compression: (
-            Literal["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"]
-            | str
-            | None
-        ) = "lz4",
+        compression: Literal[
+            "uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"
+        ] = "lz4",
         compression_level: int | None = None,
         statistics: bool = False,
         row_group_size: int | None = None,
@@ -1461,26 +1455,17 @@ class DataFrame(metaclass=DataFrameMetaClass):
         **kwargs: Any,
     ) -> None:
         """
-        Write the DataFrame to disk in parquet format.
+        Write to Apache Parquet file.
 
         Parameters
         ----------
         file
             File path to which the file should be written.
-        compression
-            Compression method. Choose one of:
-
-            - "uncompressed" (not supported by pyarrow)
-            - "snappy"
-            - "gzip"
-            - "lzo"
-            - "brotli"
-            - "lz4"
-            - "zstd"
-
-            The default compression "lz4" (actually lz4raw) has very good performance,
-            but may not yet been supported by older readers. If you want more
-            compatability guarantees, consider using "snappy".
+        compression : {'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'lz4', 'zstd'}
+            Compression method. The default compression "lz4" (actually lz4raw) has very
+            good performance, but may not yet been supported by older readers. If you
+            want more compatability guarantees, consider using "snappy".
+            Method "uncompressed" is not supported by pyarrow.
         compression_level
             The level of compression to use. Higher compression means smaller files on
             disk.
@@ -1544,8 +1529,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
         file: str | Path | BytesIO,
         compression: (
             Literal["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"]
-            | str
-            | None
         ) = "snappy",
         statistics: bool = False,
         use_pyarrow: bool = False,
