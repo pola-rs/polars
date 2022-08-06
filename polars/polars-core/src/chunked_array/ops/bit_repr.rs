@@ -11,6 +11,11 @@ where
 
     fn bit_repr_large(&self) -> UInt64Chunked {
         if std::mem::size_of::<T::Native>() == 8 {
+            if matches!(self.dtype(), DataType::UInt64) {
+                let ca = self.clone();
+                // convince the compiler we are this type. This keeps flags
+                return unsafe { std::mem::transmute(ca) };
+            }
             let chunks = self
                 .downcast_iter()
                 .map(|array| {
@@ -42,6 +47,11 @@ where
 
     fn bit_repr_small(&self) -> UInt32Chunked {
         if std::mem::size_of::<T::Native>() == 4 {
+            if matches!(self.dtype(), DataType::UInt32) {
+                let ca = self.clone();
+                // convince the compiler we are this type. This keeps flags
+                return unsafe { std::mem::transmute(ca) };
+            }
             let chunks = self
                 .downcast_iter()
                 .map(|array| {

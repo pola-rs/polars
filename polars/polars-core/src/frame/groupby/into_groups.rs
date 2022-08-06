@@ -174,7 +174,7 @@ where
                 num_groups_proxy(&ca, multithreaded, sorted)
             }
             _ => {
-                let ca = self.cast(&DataType::UInt32).unwrap();
+                let ca = self.cast_unchecked(&DataType::UInt32).unwrap();
                 let ca = ca.u32().unwrap();
                 num_groups_proxy(ca, multithreaded, sorted)
             }
