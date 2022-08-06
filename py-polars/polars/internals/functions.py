@@ -5,6 +5,7 @@ from typing import Optional, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import Categorical, Date, Float64
+from polars.internals.datatypes import ClosedWindow
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _timedelta_to_pl_duration,
@@ -168,7 +169,7 @@ def date_range(
     low: date | datetime,
     high: date | datetime,
     interval: str | timedelta,
-    closed: str | None = "both",
+    closed: ClosedWindow = "both",
     name: str | None = None,
     time_unit: str | None = None,
 ) -> pli.Series:

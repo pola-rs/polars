@@ -47,6 +47,7 @@ from polars.internals.construction import (
     sequence_to_pydf,
     series_to_pydf,
 )
+from polars.internals.datatypes import ClosedWindow
 from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _prepare_row_count_args,
@@ -3182,7 +3183,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         index_column: str,
         period: str,
         offset: str | None = None,
-        closed: str = "right",
+        closed: ClosedWindow = "right",
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> RollingGroupBy[DF]:
         """
@@ -3236,9 +3237,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             length of the window
         offset
             offset of the window. Default is -period
-        closed
+        closed : {'left', 'right', 'both', 'none'}
             Defines if the window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
         by
             Also group by this column/these columns
 
@@ -3296,7 +3296,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         offset: str | None = None,
         truncate: bool = True,
         include_boundaries: bool = False,
-        closed: str = "right",
+        closed: ClosedWindow = "right",
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> DynamicGroupBy:
         """
@@ -6260,7 +6260,7 @@ class RollingGroupBy(Generic[DF]):
         index_column: str,
         period: str,
         offset: str | None,
-        closed: str = "none",
+        closed: ClosedWindow = "none",
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ):
         self.df = df
@@ -6304,7 +6304,7 @@ class DynamicGroupBy(Generic[DF]):
         offset: str | None,
         truncate: bool = True,
         include_boundaries: bool = True,
-        closed: str = "none",
+        closed: ClosedWindow = "none",
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ):
         self.df = df

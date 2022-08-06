@@ -20,6 +20,7 @@ from polars.datatypes import (
     UInt32,
     py_type_to_dtype,
 )
+from polars.internals.datatypes import ClosedWindow
 from polars.utils import _timedelta_to_pl_duration
 
 try:
@@ -3241,7 +3242,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Apply a rolling min (moving min) over the values in this array.
@@ -3342,7 +3343,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Apply a rolling max (moving max) over the values in this array.
@@ -3442,7 +3443,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Apply a rolling mean (moving mean) over the values in this array.
@@ -3540,7 +3541,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Apply a rolling sum (moving sum) over the values in this array.
@@ -3640,7 +3641,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Compute a rolling standard deviation.
@@ -3711,7 +3712,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Compute a rolling variance.
@@ -3782,7 +3783,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Compute a rolling median.
@@ -3845,13 +3846,15 @@ class Expr:
     def rolling_quantile(
         self,
         quantile: float,
-        interpolation: str = "nearest",
+        interpolation: Literal[
+            "nearest", "higher", "lower", "midpoint", "linear"
+        ] = "nearest",
         window_size: int | str = 2,
         weights: List[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Compute a rolling quantile.

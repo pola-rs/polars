@@ -15,6 +15,8 @@ from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import Any, Callable, Generic, Sequence, TypeVar, overload
 
+from polars.internals.datatypes import ClosedWindow
+
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
@@ -992,7 +994,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         index_column: str,
         period: str,
         offset: str | None = None,
-        closed: str = "right",
+        closed: ClosedWindow = "right",
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> LazyGroupBy[LDF]:
         """
@@ -1111,7 +1113,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         offset: str | None = None,
         truncate: bool = True,
         include_boundaries: bool = False,
-        closed: str = "right",
+        closed: ClosedWindow = "right",
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> LazyGroupBy[LDF]:
         """
