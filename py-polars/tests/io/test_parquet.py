@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import os
+import sys
 
 import numpy as np
 import pandas as pd
@@ -10,13 +11,25 @@ import pytest
 import polars as pl
 from polars.testing import assert_frame_equal_local_categoricals
 
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
+
+
+CompressionMethod = Literal[
+    "uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"
+]
+
 
 @pytest.fixture
-def compressions() -> list[str]:
+def compressions() -> list[CompressionMethod]:
     return ["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"]
 
 
-def test_to_from_buffer(df: pl.DataFrame, compressions: list[str]) -> None:
+def test_to_from_buffer(
+    df: pl.DataFrame, compressions: list[CompressionMethod]
+) -> None:
     for compression in compressions:
         if compression == "lzo":
             # lzo compression is not supported now
@@ -47,7 +60,7 @@ def test_to_from_buffer(df: pl.DataFrame, compressions: list[str]) -> None:
 
 
 def test_to_from_file(
-    io_test_dir: str, df: pl.DataFrame, compressions: list[str]
+    io_test_dir: str, df: pl.DataFrame, compressions: list[CompressionMethod]
 ) -> None:
     f = os.path.join(io_test_dir, "small.parquet")
     for compression in compressions:
