@@ -27,6 +27,30 @@ pub use into_groups::*;
 use polars_arrow::array::ValueSize;
 pub use proxy::*;
 
+// This will remove the sorted flag on signed integers
+fn prepare_dataframe_unsorted(by: &[Series]) -> DataFrame {
+    DataFrame::new_no_checks(
+        by.iter()
+            .map(|s| match s.dtype() {
+                #[cfg(feature = "dtype-categorical")]
+                DataType::Categorical(_) => s.cast(&DataType::UInt32).unwrap(),
+                _ => {
+                    if s.dtype().to_physical().is_numeric() {
+                        let s = s.to_physical_repr();
+                        if s.bit_repr_is_large() {
+                            s.bit_repr_large().into_series()
+                        } else {
+                            s.bit_repr_small().into_series()
+                        }
+                    } else {
+                        s.clone()
+                    }
+                }
+            })
+            .collect(),
+    )
+}
+
 impl DataFrame {
     pub fn groupby_with_series(
         &self,
@@ -81,29 +105,6 @@ impl DataFrame {
             ));
         };
 
-        use DataType::*;
-        // make sure that categorical and small integers are used as uint32 in value type
-        let keys_df = DataFrame::new_no_checks(
-            by.iter()
-                .map(|s| match s.dtype() {
-                    Int8 | UInt8 | Int16 | UInt16 => s.cast(&DataType::UInt32).unwrap(),
-                    #[cfg(feature = "dtype-categorical")]
-                    Categorical(_) => s.cast(&DataType::UInt32).unwrap(),
-                    Float32 => s.bit_repr_small().into_series(),
-                    // otherwise we use the vec hash for float
-                    Float64 => s.bit_repr_large().into_series(),
-                    _ => {
-                        // is date like
-                        if !s.dtype().is_numeric() && s.is_numeric_physical() {
-                            s.to_physical_repr().into_owned()
-                        } else {
-                            s.clone()
-                        }
-                    }
-                })
-                .collect(),
-        );
-
         let n_partitions = set_partition_size();
 
         let groups = match by.len() {
@@ -114,6 +115,8 @@ impl DataFrame {
             2 => {
                 // multiple keys is always multi-threaded
                 // reduce code paths
+                let keys_df = prepare_dataframe_unsorted(&by);
+
                 let s0 = &keys_df.get_columns()[0];
                 let s1 = &keys_df.get_columns()[1];
 
@@ -159,7 +162,10 @@ impl DataFrame {
                     groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
                 }
             }
-            _ => groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted),
+            _ => {
+                let keys_df = prepare_dataframe_unsorted(&by);
+                groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
+            }
         };
         Ok(GroupBy::new(self, by, groups, None))
     }
