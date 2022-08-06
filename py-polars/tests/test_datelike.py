@@ -1238,6 +1238,7 @@ def test_sum_duration() -> None:
     }
 
 
+@pytest.mark.filterwarnings("ignore:setting a DataFrame by indexing:DeprecationWarning")
 def test_supertype_timezones_4174() -> None:
     df = pl.DataFrame(
         {
