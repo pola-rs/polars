@@ -54,22 +54,26 @@ def test_rolling_kernels_and_groupby_rolling() -> None:
 
 def test_rolling_skew() -> None:
     s = pl.Series([1, 2, 3, 3, 2, 10, 8])
-    assert s.rolling_skew(window_size=4, bias=True).to_list() == pytest.approx([
-        None,
-        None,
-        None,
-        -0.49338220021815865,
-        0.0,
-        1.097025449363867,
-        0.09770939201338157,
-    ])
+    assert s.rolling_skew(window_size=4, bias=True).to_list() == pytest.approx(
+        [
+            None,
+            None,
+            None,
+            -0.49338220021815865,
+            0.0,
+            1.097025449363867,
+            0.09770939201338157,
+        ]
+    )
 
-    assert s.rolling_skew(window_size=4, bias=False).to_list() == pytest.approx([
-        None,
-        None,
-        None,
-        -0.8545630383279711,
-        0.0,
-        1.9001038154942962,
-        0.16923763134384154,
-    ])
+    assert s.rolling_skew(window_size=4, bias=False).to_list() == pytest.approx(
+        [
+            None,
+            None,
+            None,
+            -0.8545630383279711,
+            0.0,
+            1.9001038154942962,
+            0.16923763134384154,
+        ]
+    )
