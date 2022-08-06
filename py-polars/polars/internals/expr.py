@@ -6117,12 +6117,13 @@ class ExprStringNameSpace:
 
         Parameters
         ----------
-        encoding
-            'hex' or 'base64'
+        encoding : {'hex', 'base64'}
+            The encoding to use.
         strict
-            how to handle invalid inputs
-            - True: method will throw error if unable to decode a value
-            - False: unhandled values will be replaced with `None`
+            How to handle invalid inputs:
+
+            - ``True``: An error will be thrown if unable to decode a value.
+            - ``False``: Unhandled values will be replaced with `None`.
 
         Examples
         --------
@@ -6157,8 +6158,8 @@ class ExprStringNameSpace:
 
         Parameters
         ----------
-        encoding
-            'hex' or 'base64'
+        encoding : {'hex', 'base64'}
+            The encoding to use.
 
         Returns
         -------
