@@ -327,7 +327,12 @@ impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
             "nearest" => QuantileInterpolOptions::Nearest,
             "linear" => QuantileInterpolOptions::Linear,
             "midpoint" => QuantileInterpolOptions::Midpoint,
-            _ => panic!("{}", "interpolation should be any of {'lower', 'higher', 'nearest', 'linear', 'midpoint'}"),
+            e => {
+                return Err(PyValueError::new_err(format!(
+                    "interpolation must be one of {{'lower', 'higher', 'nearest', 'linear', 'midpoint'}}, got {}",
+                    e,
+                )))
+            }
         }))
     }
 }
