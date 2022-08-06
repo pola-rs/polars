@@ -184,10 +184,10 @@ def read_csv(
         the DataFrame.
     row_count_offset
         Offset to start the row_count column (only used if the name is set).
-    sample_size:
+    sample_size
         Set the sample size. This is used to sample statistics to estimate the
         allocation needed.
-    eol_char:
+    eol_char
         Single byte end of line character
 
     Returns
@@ -498,7 +498,7 @@ def scan_csv(
     parse_dates
         Try to automatically parse dates. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
-    eol_char:
+    eol_char
         Single byte end of line character
 
     Returns
@@ -874,7 +874,7 @@ def read_parquet(
         DataFrame.
     row_count_offset
         Offset to start the row_count column (only use if the name is set).
-    low_memory: bool
+    low_memory
         Reduce memory pressure at the expense of performance.
     **kwargs
         kwargs for `pyarrow.parquet.read_table
