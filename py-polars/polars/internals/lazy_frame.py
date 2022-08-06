@@ -1048,9 +1048,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             length of the window
         offset
             offset of the window. Default is -period
-        closed
-            Defines if the window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'right', 'left', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
         by
             Also group by this column/these columns
 
@@ -1181,9 +1180,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Add the lower and upper bound of the window to the "_lower_bound" and
             "_upper_bound" columns. This will impact performance because it's harder to
             parallelize
-        closed
-            Defines if the window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'right', 'left', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
         by
             Also group by this column/these columns
 

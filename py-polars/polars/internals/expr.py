@@ -3283,9 +3283,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
 
         .. warning::
@@ -3384,9 +3383,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -3484,9 +3482,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -3582,9 +3579,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -3682,9 +3678,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -3753,9 +3748,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -3820,9 +3814,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -3896,9 +3889,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change

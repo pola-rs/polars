@@ -186,8 +186,8 @@ def date_range(
         Interval periods. It can be a python timedelta object, like
         ``timedelta(days=10)``, or a polars duration string, such as ``3d12h4m25s``
         representing 3 days, 12 hours, 4 minutes, and 25 seconds.
-    closed : {None, 'left', 'right', 'both', 'none'}
-        Make the interval closed to the 'left', 'right', 'none' or 'both' sides.
+    closed : {'both', 'left', 'right', 'none'}
+        Define whether the temporal window interval is closed or not.
     name
         Name of the output Series.
     time_unit : {'ns', 'us', 'ms'}

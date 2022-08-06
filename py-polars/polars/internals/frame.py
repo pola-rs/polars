@@ -3237,8 +3237,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             length of the window
         offset
             offset of the window. Default is -period
-        closed : {'left', 'right', 'both', 'none'}
-            Defines if the window interval is closed or not.
+        closed : {'right', 'left', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
         by
             Also group by this column/these columns
 
@@ -3360,9 +3360,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             Add the lower and upper bound of the window to the "_lower_bound" and
             "_upper_bound" columns. This will impact performance because it's harder to
             parallelize
-        closed
-            Defines if the window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'right', 'left', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
         by
             Also group by this column/these columns
 
