@@ -660,7 +660,14 @@ impl DataFrame {
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
         let (join_tuples_left, join_tuples_right) = if use_sort_merge(s_left, s_right) {
-            par_sorted_merge_inner(s_left, s_right)
+            #[cfg(feature = "performant")]
+            {
+                par_sorted_merge_inner(s_left, s_right)
+            }
+            #[cfg(not(feature = "performant"))]
+            {
+                s_left.hash_join_inner(s_right)
+            }
         } else {
             s_left.hash_join_inner(s_right)
         };
@@ -824,15 +831,22 @@ impl DataFrame {
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
         let ids = if use_sort_merge(s_left, s_right) {
-            let (left_idx, right_idx) = par_sorted_merge_left(s_left, s_right);
-            #[cfg(feature = "chunked_ids")]
+            #[cfg(feature = "performant")]
             {
-                (Either::Left(left_idx), Either::Left(right_idx))
-            }
+                let (left_idx, right_idx) = par_sorted_merge_left(s_left, s_right);
+                #[cfg(feature = "chunked_ids")]
+                {
+                    (Either::Left(left_idx), Either::Left(right_idx))
+                }
 
-            #[cfg(not(feature = "chunked_ids"))]
+                #[cfg(not(feature = "chunked_ids"))]
+                {
+                    (left_idx, right_idx)
+                }
+            }
+            #[cfg(not(feature = "performant"))]
             {
-                (left_idx, right_idx)
+                s_left.hash_join_left(s_right)
             }
         } else {
             s_left.hash_join_left(s_right)

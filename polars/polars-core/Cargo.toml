@@ -20,7 +20,7 @@ lazy = ["sort_multiple"]
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
 # more fast paths, slower compilation
-performant = []
+performant = ["polars-arrow/performant"]
 
 # extra utilities for Utf8Chunked
 strings = ["regex", "polars-arrow/strings", "arrow/compute_substring"]
