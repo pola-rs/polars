@@ -1446,7 +1446,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         file: str | Path | BytesIO,
         *,
         compression: Literal[
-            "uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"
+            "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
         ] = "lz4",
         compression_level: int | None = None,
         statistics: bool = False,
@@ -1461,7 +1461,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ----------
         file
             File path to which the file should be written.
-        compression : {'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'lz4', 'zstd'}
+        compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
             Compression method. The default compression "lz4" (actually lz4raw) has very
             good performance, but may not yet been supported by older readers. If you
             want more compatability guarantees, consider using "snappy".
@@ -1528,7 +1528,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self,
         file: str | Path | BytesIO,
         compression: (
-            Literal["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"]
+            Literal["lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"]
         ) = "snappy",
         statistics: bool = False,
         use_pyarrow: bool = False,

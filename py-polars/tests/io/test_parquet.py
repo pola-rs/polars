@@ -18,13 +18,13 @@ else:
 
 
 CompressionMethod = Literal[
-    "uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"
+    "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
 ]
 
 
 @pytest.fixture
 def compressions() -> list[CompressionMethod]:
-    return ["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"]
+    return ["lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"]
 
 
 def test_to_from_buffer(
