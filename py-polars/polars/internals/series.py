@@ -4533,7 +4533,9 @@ class StringNameSpace:
         elif encoding == "base64":
             return wrap_s(self._s.str_base64_decode(strict))
         else:
-            raise ValueError("supported encodings are 'hex' and 'base64'")
+            raise ValueError(
+                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+            )
 
     def encode(self, encoding: Literal["hex", "base64"]) -> Series:
         """
@@ -4566,7 +4568,9 @@ class StringNameSpace:
         elif encoding == "base64":
             return wrap_s(self._s.str_base64_encode())
         else:
-            raise ValueError("supported encodings are 'hex' and 'base64'")
+            raise ValueError(
+                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+            )
 
     def json_path_match(self, json_path: str) -> Series:
         """

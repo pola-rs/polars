@@ -6147,7 +6147,9 @@ class ExprStringNameSpace:
         elif encoding == "base64":
             return wrap_expr(self._pyexpr.str_base64_decode(strict))
         else:
-            raise ValueError("supported encodings are 'hex' and 'base64'")
+            raise ValueError(
+                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+            )
 
     def encode(self, encoding: Literal["hex", "base64"]) -> Expr:
         """
@@ -6185,7 +6187,9 @@ class ExprStringNameSpace:
         elif encoding == "base64":
             return wrap_expr(self._pyexpr.str_base64_encode())
         else:
-            raise ValueError("supported encodings are 'hex' and 'base64'")
+            raise ValueError(
+                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+            )
 
     def extract(self, pattern: str, group_index: int = 1) -> Expr:
         r"""
