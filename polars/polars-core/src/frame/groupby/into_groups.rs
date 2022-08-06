@@ -173,6 +173,37 @@ where
                 let ca = self.bit_repr_small();
                 num_groups_proxy(&ca, multithreaded, sorted)
             }
+            #[cfg(feature = "performant")]
+            DataType::Int8 => {
+                // convince the compiler that we are this type.
+                let ca: &Int8Chunked =
+                    unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<Int8Type>) };
+                let ca = ca.reinterpret_unsigned();
+                num_groups_proxy(&ca, multithreaded, sorted)
+            }
+            #[cfg(feature = "performant")]
+            DataType::UInt8 => {
+                // convince the compiler that we are this type.
+                let ca: &UInt8Chunked =
+                    unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt8Type>) };
+                num_groups_proxy(ca, multithreaded, sorted)
+            }
+            #[cfg(feature = "performant")]
+            DataType::Int16 => {
+                // convince the compiler that we are this type.
+                let ca: &Int16Chunked =
+                    unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<Int16Type>) };
+                let ca = ca.reinterpret_unsigned();
+                num_groups_proxy(&ca, multithreaded, sorted)
+            }
+            #[cfg(feature = "performant")]
+            DataType::UInt16 => {
+                // convince the compiler that we are this type.
+                let ca: &UInt16Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt16Type>)
+                };
+                num_groups_proxy(ca, multithreaded, sorted)
+            }
             _ => {
                 let ca = self.cast_unchecked(&DataType::UInt32).unwrap();
                 let ca = ca.u32().unwrap();
@@ -183,9 +214,18 @@ where
 }
 impl IntoGroupsProxy for BooleanChunked {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
-        let ca = self.cast(&DataType::UInt32).unwrap();
-        let ca = ca.u32().unwrap();
-        ca.group_tuples(multithreaded, sorted)
+        #[cfg(feature = "performant")]
+        {
+            let ca = self.cast(&DataType::UInt8).unwrap();
+            let ca = ca.u8().unwrap();
+            ca.group_tuples(multithreaded, sorted)
+        }
+        #[cfg(not(feature = "performant"))]
+        {
+            let ca = self.cast(&DataType::UInt32).unwrap();
+            let ca = ca.u32().unwrap();
+            ca.group_tuples(multithreaded, sorted)
+        }
     }
 }
 

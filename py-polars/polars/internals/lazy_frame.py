@@ -1471,7 +1471,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         else:
             right_on_ = right_on
 
-        if isinstance(on, str):
+        if isinstance(on, (str, pli.Expr)):
             left_on_ = [on]
             right_on_ = [on]
         elif isinstance(on, list):

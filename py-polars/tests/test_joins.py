@@ -286,3 +286,18 @@ def test_joins_dispatch() -> None:
         dfa.join(dfa, on=["date", "a"], how=how)
         dfa.join(dfa, on=["a", "datetime"], how=how)
         dfa.join(dfa, on=["date"], how=how)
+
+
+def test_join_on_cast() -> None:
+    df_a = (
+        pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
+        .with_row_count()
+        .with_column(pl.col("a").cast(pl.Int32))
+    )
+
+    df_b = pl.DataFrame({"a": [-2, -3, 3, 10]})
+
+    assert df_a.join(df_b, on=pl.col("a").cast(pl.Int64)).to_dict(False) == {
+        "row_nr": [1, 2, 3, 5],
+        "a": [-2, 3, 3, 10],
+    }
