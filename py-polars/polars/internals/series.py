@@ -4500,18 +4500,21 @@ class StringNameSpace:
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.starts_with(sub)).to_series()
 
-    def decode(self, encoding: str, strict: bool = False) -> Series:
+    def decode(
+        self, encoding: Literal["hex", "base64"], strict: bool = False
+    ) -> Series:
         """
         Decode a value using the provided encoding.
 
         Parameters
         ----------
-        encoding
-            'hex' or 'base64'
+        encoding : {'hex', 'base64'}
+            The encoding to use.
         strict
-            how to handle invalid inputs
-            - True: method will throw error if unable to decode a value
-            - False: unhandled values will be replaced with `None`
+            How to handle invalid inputs:
+
+            - ``True``: An error will be thrown if unable to decode a value.
+            - ``False``: Unhandled values will be replaced with `None`.
 
         Examples
         --------
@@ -4531,16 +4534,18 @@ class StringNameSpace:
         elif encoding == "base64":
             return wrap_s(self._s.str_base64_decode(strict))
         else:
-            raise ValueError("supported encodings are 'hex' and 'base64'")
+            raise ValueError(
+                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+            )
 
-    def encode(self, encoding: str) -> Series:
+    def encode(self, encoding: Literal["hex", "base64"]) -> Series:
         """
         Encode a value using the provided encoding
 
         Parameters
         ----------
-        encoding
-            'hex' or 'base64'
+        encoding : {'hex', 'base64'}
+            The encoding to use.
 
         Returns
         -------
@@ -4564,7 +4569,9 @@ class StringNameSpace:
         elif encoding == "base64":
             return wrap_s(self._s.str_base64_encode())
         else:
-            raise ValueError("supported encodings are 'hex' and 'base64'")
+            raise ValueError(
+                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+            )
 
     def json_path_match(self, json_path: str) -> Series:
         """

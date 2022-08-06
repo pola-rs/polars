@@ -571,7 +571,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         infer_schema_length: int | None = 100,
         batch_size: int = 8192,
         n_rows: int | None = None,
-        encoding: str = "utf8",
+        encoding: Literal["utf8", "utf8-lossy"] = "utf8",
         low_memory: bool = False,
         rechunk: bool = True,
         skip_rows_after_header: int = 0,
@@ -580,7 +580,16 @@ class DataFrame(metaclass=DataFrameMetaClass):
         sample_size: int = 1024,
         eol_char: str = "\n",
     ) -> DF:
-        """See pl.read_csv."""
+        """
+        Read a CSV file into a DataFrame.
+
+        Use ``pl.read_csv`` to dispatch to this method.
+
+        See Also
+        --------
+        polars.io.read_csv
+
+        """
         self = cls.__new__(cls)
 
         path: str | None

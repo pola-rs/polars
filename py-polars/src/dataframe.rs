@@ -152,9 +152,10 @@ impl PyDataFrame {
             "utf8" => CsvEncoding::Utf8,
             "utf8-lossy" => CsvEncoding::LossyUtf8,
             e => {
-                return Err(
-                    PyPolarsErr::Other(format!("encoding not {} not implemented.", e)).into(),
-                )
+                return Err(PyValueError::new_err(format!(
+                    "encoding must be one of {{'utf8', 'utf8-lossy'}}, got {}",
+                    e
+                )))
             }
         };
 

@@ -1,6 +1,7 @@
 """Functions for reading and writing data."""
 from __future__ import annotations
 
+import sys
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Mapping, TextIO
@@ -30,6 +31,11 @@ try:
     _WITH_CX = True
 except ImportError:
     _WITH_CX = False
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 
 def _check_arg_is_1byte(
@@ -77,7 +83,7 @@ def read_csv(
     infer_schema_length: int | None = 100,
     batch_size: int = 8192,
     n_rows: int | None = None,
-    encoding: str = "utf8",
+    encoding: Literal["utf8", "utf8-lossy"] = "utf8",
     low_memory: bool = False,
     rechunk: bool = True,
     use_pyarrow: bool = False,
@@ -90,7 +96,7 @@ def read_csv(
     **kwargs: Any,
 ) -> DataFrame:
     """
-    Read a CSV file into a Dataframe.
+    Read a CSV file into a DataFrame.
 
     Parameters
     ----------
@@ -413,7 +419,7 @@ def scan_csv(
     with_column_names: Callable[[list[str]], list[str]] | None = None,
     infer_schema_length: int | None = 100,
     n_rows: int | None = None,
-    encoding: str = "utf8",
+    encoding: Literal["utf8", "utf8-lossy"] = "utf8",
     low_memory: bool = False,
     rechunk: bool = True,
     skip_rows_after_header: int = 0,

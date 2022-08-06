@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import math
 import random
+import sys
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, List, Sequence
 
@@ -34,6 +35,11 @@ try:
     _NUMPY_AVAILABLE = True
 except ImportError:
     _NUMPY_AVAILABLE = False
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 
 def selection_to_pyexpr_list(
@@ -6105,18 +6111,19 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
-    def decode(self, encoding: str, strict: bool = False) -> Expr:
+    def decode(self, encoding: Literal["hex", "base64"], strict: bool = False) -> Expr:
         """
         Decode a value using the provided encoding.
 
         Parameters
         ----------
-        encoding
-            'hex' or 'base64'
+        encoding : {'hex', 'base64'}
+            The encoding to use.
         strict
-            how to handle invalid inputs
-            - True: method will throw error if unable to decode a value
-            - False: unhandled values will be replaced with `None`
+            How to handle invalid inputs:
+
+            - ``True``: An error will be thrown if unable to decode a value.
+            - ``False``: Unhandled values will be replaced with `None`.
 
         Examples
         --------
@@ -6141,16 +6148,18 @@ class ExprStringNameSpace:
         elif encoding == "base64":
             return wrap_expr(self._pyexpr.str_base64_decode(strict))
         else:
-            raise ValueError("supported encodings are 'hex' and 'base64'")
+            raise ValueError(
+                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+            )
 
-    def encode(self, encoding: str) -> Expr:
+    def encode(self, encoding: Literal["hex", "base64"]) -> Expr:
         """
         Encode a value using the provided encoding.
 
         Parameters
         ----------
-        encoding
-            'hex' or 'base64'
+        encoding : {'hex', 'base64'}
+            The encoding to use.
 
         Returns
         -------
@@ -6179,7 +6188,9 @@ class ExprStringNameSpace:
         elif encoding == "base64":
             return wrap_expr(self._pyexpr.str_base64_encode())
         else:
-            raise ValueError("supported encodings are 'hex' and 'base64'")
+            raise ValueError(
+                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+            )
 
     def extract(self, pattern: str, group_index: int = 1) -> Expr:
         r"""

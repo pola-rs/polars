@@ -126,7 +126,7 @@ class LazyFrame(Generic[DF]):
         with_column_names: Callable[[list[str]], list[str]] | None = None,
         infer_schema_length: int | None = 100,
         n_rows: int | None = None,
-        encoding: str = "utf8",
+        encoding: Literal["utf8", "utf8-lossy"] = "utf8",
         low_memory: bool = False,
         rechunk: bool = True,
         skip_rows_after_header: int = 0,
@@ -136,9 +136,14 @@ class LazyFrame(Generic[DF]):
         eol_char: str = "\n",
     ) -> LDF:
         """
+        Lazily read from a CSV file or multiple files via glob patterns.
+
+        Use ``pl.scan_csv`` to dispatch to this method.
+
         See Also
         --------
-        scan_csv
+        polars.io.scan_csv
+
         """
         dtype_list: list[tuple[str, type[DataType]]] | None = None
         if dtypes is not None:
