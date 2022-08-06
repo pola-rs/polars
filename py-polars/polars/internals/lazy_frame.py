@@ -183,7 +183,7 @@ class LazyFrame(Generic[DF]):
         file: str,
         n_rows: int | None = None,
         cache: bool = True,
-        parallel: str = "auto",
+        parallel: Literal["auto", "columns", "row_groups", "none"] = "auto",
         rechunk: bool = True,
         row_count_name: str | None = None,
         row_count_offset: int = 0,
@@ -191,9 +191,14 @@ class LazyFrame(Generic[DF]):
         low_memory: bool = False,
     ) -> LDF:
         """
+        Lazily read from a parquet file or multiple files via glob patterns.
+
+        Use ``pl.scan_parquet`` to dispatch to this method.
+
         See Also
         --------
-        scan_ipc, scan_csv
+        polars.io.scan_parquet
+
         """
         # try fsspec scanner
         if not pli._is_local_file(file):

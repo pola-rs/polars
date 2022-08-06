@@ -865,10 +865,11 @@ impl FromPyObject<'_> for Wrap<ParallelStrategy> {
             "columns" => ParallelStrategy::Columns,
             "row_groups" => ParallelStrategy::RowGroups,
             "none" => ParallelStrategy::None,
-            _ => {
-                return Err(PyValueError::new_err(
-                    "expected one of {'auto', 'columns', 'row_groups', 'none'}",
-                ))
+            e => {
+                return Err(PyValueError::new_err(format!(
+                    "parallel must be one of {{'auto', 'columns', 'row_groups', 'none'}}, got {}",
+                    e,
+                )))
             }
         };
         Ok(Wrap(unit))
