@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import os
+import sys
 from os import path
 from pathlib import Path
 
 import pandas as pd
 
 import polars as pl
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 
 def test_scan_parquet() -> None:
@@ -59,7 +65,13 @@ def test_categorical_parquet_statistics(io_test_dir: str) -> None:
         .write_parquet(file, statistics=True)
     )
 
-    for par in ["auto", "columns", "row_groups", "none"]:
+    parallel_options: list[Literal["auto", "columns", "row_groups", "none"]] = [
+        "auto",
+        "columns",
+        "row_groups",
+        "none",
+    ]
+    for par in parallel_options:
         df = (
             pl.scan_parquet(file, parallel=par)
             .filter(pl.col("book") == "bookA")
