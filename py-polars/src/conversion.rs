@@ -792,10 +792,11 @@ pub(crate) fn str_to_null_strategy(strategy: &str) -> PyResult<NullStrategy> {
     let strategy = match strategy {
         "ignore" => NullStrategy::Ignore,
         "propagate" => NullStrategy::Propagate,
-        _ => {
-            return Err(PyValueError::new_err(
-                "use one of 'ignore', 'propagate'".to_string(),
-            ))
+        e => {
+            return Err(PyValueError::new_err(format!(
+                "null_strategy must be one of {{'ignore', 'propagate'}}, got {}",
+                e,
+            )))
         }
     };
     Ok(strategy)
@@ -846,10 +847,10 @@ pub(crate) fn parse_strategy(strat: &str, limit: FillNullLimit) -> PyResult<Fill
             "mean" => FillNullStrategy::Mean,
             "zero" => FillNullStrategy::Zero,
             "one" => FillNullStrategy::One,
-            s => {
+            e => {
                 return Err(PyValueError::new_err(format!(
-                    "Strategy {} not supported",
-                    s
+                    "strategy must be one of {{'backward', 'forward', 'min', 'max', 'mean', 'zero', 'one'}}, got {}",
+                    e,
                 )))
             }
         };

@@ -20,7 +20,7 @@ def test_fill_null() -> None:
     s = pl.Series("A", [dt, None])
 
     for fill_val in (dt, pl.lit(dt)):
-        out = s.fill_null(fill_val)  # type: ignore[arg-type]
+        out = s.fill_null(fill_val)
 
         assert out.null_count() == 0
         assert out.dt[0] == dt
@@ -32,7 +32,7 @@ def test_fill_null() -> None:
     s = pl.Series("a", [dt1, dt2, dt3, None])
     dt_2 = date(2001, 1, 4)
     for fill_val in (dt_2, pl.lit(dt_2)):
-        out = s.fill_null(fill_val)  # type: ignore[arg-type]
+        out = s.fill_null(fill_val)
 
         assert out.null_count() == 0
         assert out.dt[0] == dt1

@@ -473,18 +473,24 @@ impl PyLazyFrame {
         strategy: &str,
         tolerance: Option<Wrap<AnyValue<'_>>>,
         tolerance_str: Option<String>,
-    ) -> PyLazyFrame {
+    ) -> PyResult<Self> {
         let strategy = match strategy {
-            "forward" => AsofStrategy::Forward,
             "backward" => AsofStrategy::Backward,
-            _ => panic!("expected one of {{'forward', 'backward'}}"),
+            "forward" => AsofStrategy::Forward,
+            e => {
+                return Err(PyValueError::new_err(format!(
+                    "strategy must be one of {{'backward', 'forward'}}, got {}",
+                    e,
+                )))
+            }
         };
 
         let ldf = self.ldf.clone();
         let other = other.ldf;
         let left_on = left_on.inner;
         let right_on = right_on.inner;
-        ldf.join_builder()
+        Ok(ldf
+            .join_builder()
             .with(other)
             .left_on([left_on])
             .right_on([right_on])
@@ -499,7 +505,7 @@ impl PyLazyFrame {
             }))
             .suffix(suffix)
             .finish()
-            .into()
+            .into())
     }
 
     #[allow(clippy::too_many_arguments)]

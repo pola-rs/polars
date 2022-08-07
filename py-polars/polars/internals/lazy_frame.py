@@ -1216,7 +1216,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         by_left: str | list[str] | None = None,
         by_right: str | list[str] | None = None,
         by: str | list[str] | None = None,
-        strategy: str = "backward",
+        strategy: Literal["backward", "forward"] = "backward",
         suffix: str = "_right",
         tolerance: str | int | float | None = None,
         allow_parallel: bool = True,
@@ -1250,13 +1250,13 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Join column of both DataFrames. If set, `left_on` and `right_on` should be
             None.
         by
-            join on these columns before doing asof join
+            Join on these columns before doing asof join.
         by_left
-            join on these columns before doing asof join
+            Join on these columns before doing asof join.
         by_right
-            join on these columns before doing asof join
-        strategy
-            One of {'forward', 'backward'}
+            Join on these columns before doing asof join.
+        strategy : {'backward', 'forward'}
+            Join strategy.
         suffix
             Suffix to append to columns with a duplicate name.
         tolerance
