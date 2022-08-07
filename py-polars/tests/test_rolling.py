@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import polars as pl
+
+if TYPE_CHECKING:
+    from polars.internals.datatypes import ClosedWindow
 
 
 def test_rolling_kernels_and_groupby_rolling() -> None:
@@ -19,7 +23,8 @@ def test_rolling_kernels_and_groupby_rolling() -> None:
         }
     )
     for period in ["1d", "2d", "3d"]:
-        for closed in ["left", "right", "none", "both"]:
+        closed_windows: list[ClosedWindow] = ["left", "right", "none", "both"]
+        for closed in closed_windows:
 
             out1 = df.select(
                 [

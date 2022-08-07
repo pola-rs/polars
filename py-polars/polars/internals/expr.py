@@ -5,7 +5,7 @@ import math
 import random
 import sys
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, List, Sequence
+from typing import TYPE_CHECKING, Any, Callable, List, Sequence
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -20,7 +20,6 @@ from polars.datatypes import (
     UInt32,
     py_type_to_dtype,
 )
-from polars.internals.datatypes import ClosedWindow, InterpolationMethod
 from polars.utils import _timedelta_to_pl_duration
 
 try:
@@ -41,6 +40,9 @@ if sys.version_info >= (3, 8):
     from typing import Literal
 else:
     from typing_extensions import Literal
+
+if TYPE_CHECKING:
+    from polars.internals.datatypes import ClosedWindow, InterpolationMethod
 
 
 def selection_to_pyexpr_list(

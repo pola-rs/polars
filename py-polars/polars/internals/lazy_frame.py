@@ -13,9 +13,7 @@ import typing
 import warnings
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
-from typing import Any, Callable, Generic, Sequence, TypeVar, overload
-
-from polars.internals.datatypes import ClosedWindow, InterpolationMethod
+from typing import TYPE_CHECKING, Any, Callable, Generic, Sequence, TypeVar, overload
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -48,6 +46,10 @@ try:
     _PYARROW_AVAILABLE = True
 except ImportError:
     _PYARROW_AVAILABLE = False
+
+if TYPE_CHECKING:
+    from polars.internals.datatypes import ClosedWindow, InterpolationMethod
+
 
 # Used to type any type or subclass of LazyFrame.
 # Used to indicate when LazyFrame methods return the same type as self,

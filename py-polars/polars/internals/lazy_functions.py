@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from datetime import date, datetime, timedelta
 from inspect import isclass
-from typing import Any, Callable, Sequence, cast, overload
+from typing import TYPE_CHECKING, Any, Callable, Sequence, cast, overload
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -14,7 +14,6 @@ from polars.datatypes import (
     PolarsDataType,
     py_type_to_dtype,
 )
-from polars.internals.datatypes import InterpolationMethod
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _timedelta_to_pl_timedelta,
@@ -63,6 +62,9 @@ if sys.version_info >= (3, 8):
     from typing import Literal
 else:
     from typing_extensions import Literal
+
+if TYPE_CHECKING:
+    from polars.internals.datatypes import InterpolationMethod
 
 
 def col(
@@ -1037,6 +1039,8 @@ def quantile(
 
     Parameters
     ----------
+    column
+        Column name.
     quantile
         Quantile between 0.0 and 1.0.
     interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}

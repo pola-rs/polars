@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import sys
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, Sequence, Union, overload
+from typing import TYPE_CHECKING, Any, Callable, Sequence, Union, overload
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -42,7 +42,6 @@ from polars.internals.construction import (
     sequence_to_pyseries,
     series_to_pyseries,
 )
-from polars.internals.datatypes import InterpolationMethod
 from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _date_to_pl_date,
@@ -87,6 +86,9 @@ if sys.version_info >= (3, 8):
     from typing import Literal
 else:
     from typing_extensions import Literal
+
+if TYPE_CHECKING:
+    from polars.internals.datatypes import InterpolationMethod
 
 
 def get_ffi_func(

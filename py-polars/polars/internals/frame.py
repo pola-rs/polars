@@ -47,7 +47,6 @@ from polars.internals.construction import (
     sequence_to_pydf,
     series_to_pydf,
 )
-from polars.internals.datatypes import ClosedWindow, InterpolationMethod
 from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _prepare_row_count_args,
@@ -105,11 +104,14 @@ if sys.version_info >= (3, 10):
 else:
     from typing_extensions import TypeAlias
 
+
 # A type variable used to refer to a polars.DataFrame or any subclass of it.
 # Used to annotate DataFrame methods which returns the same type as self.
 DF = TypeVar("DF", bound="DataFrame")
 
 if TYPE_CHECKING:
+    from polars.internals.datatypes import ClosedWindow, InterpolationMethod
+
     # these aliases are used to annotate DataFrame.__getitem__()
     # MultiRowSelector indexes into the vertical axis and
     # MultiColSelector indexes into the horizontal axis
