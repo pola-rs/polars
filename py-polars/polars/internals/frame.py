@@ -138,75 +138,7 @@ def _prepare_other_arg(other: Any) -> pli.Series:
     return other
 
 
-class DataFrameMetaClass(type):
-    """
-    Custom metaclass for DataFrame class.
-
-    This metaclass is responsible for constructing the relationship between the
-    DataFrame class and the LazyFrame class. Originally, without inheritance, the
-    relationship is as follows:
-
-    DataFrame <-> LazyFrame
-
-    This two-way relationship is represented by the following pointers:
-        - cls._lazyframe_class: A pointer on the DataFrame (sub)class to a LazyFrame
-            (sub)class. This class property can be used in DataFrame methods in order
-            to construct new lazy dataframes.
-        - cls._lazyframe_class._dataframe_class: A pointer on the LazyFrame (sub)class
-            back to the original DataFrame (sub)class. This allows LazyFrame methods to
-            construct new non-lazy dataframes with the correct type. This pointer should
-            always be set to cls such that the following is always `True`:
-                `type(cls) is type(cls.lazy().collect())`.
-
-    If an end user subclasses DataFrame like so:
-
-    >>> class MyDataFrame(pl.DataFrame):
-    ...     pass
-    ...
-
-    Then the following class is dynamically created by the metaclass and saved on the
-    class variable `MyDataFrame._lazyframe_class`.
-
-    >>> class LazyMyDataFrame(pl.DataFrame):
-    ...     _dataframe_class = MyDataFrame
-    ...
-
-    If an end user needs to extend both `DataFrame` and `LazyFrame`, it can be done like
-    so:
-
-    >>> class MyLazyFrame(pl.LazyFrame):
-    ...     @classmethod
-    ...     @property
-    ...     def _dataframe_class(cls):
-    ...         return MyDataFrame
-    ...
-
-    >>> class MyDataFrame(pl.DataFrame):
-    ...     _lazyframe_class = MyLazyFrame
-    ...
-
-    """
-
-    def __init__(cls, name: str, bases: tuple, clsdict: dict) -> None:
-        """Construct new DataFrame class."""
-        if not bases:
-            # This is not a subclass of DataFrame and we can simply hard-link to
-            # LazyFrame instead of dynamically defining a new subclass of LazyFrame.
-            cls._lazyframe_class = LazyFrame
-        elif cls._lazyframe_class is LazyFrame:
-            # This is a subclass of DataFrame which has *not* specified a custom
-            # LazyFrame subclass by setting `cls._lazyframe_class`. We must therefore
-            # dynamically create a subclass of LazyFrame with `_dataframe_class` set
-            # to `cls` in order to preserve types after `.lazy().collect()` roundtrips.
-            cls._lazyframe_class = type(  # type: ignore[assignment]
-                f"Lazy{name}",
-                (LazyFrame,),
-                {"_dataframe_class": cls},
-            )
-        super().__init__(name, bases, clsdict)
-
-
-class DataFrame(metaclass=DataFrameMetaClass):
+class DataFrame:
     """
     A DataFrame is a two-dimensional data structure that represents data as a table
     with rows and columns.
@@ -316,6 +248,18 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
     │ 4   ┆ 5   ┆ 6   │
     └─────┴─────┴─────┘
+
+    Notes
+    -----
+    Some methods internally convert the DataFrame into a LazyFrame before collecting
+    the results back into a DataFrame. This can lead to unexpected behavior when using
+    a subclassed DataFrame. For example,
+
+    >>> class MyDataFrame(pl.DataFrame):
+    ...     pass
+    >>>
+    >>> isinstance(MyDataFrame().lazy().collect(), MyDataFrame)
+    False
 
     """
 
@@ -783,7 +727,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     @classmethod
     def _read_ipc(
-        cls: type[DF],
+        cls,
         file: str | Path | BinaryIO,
         columns: list[int] | list[str] | None = None,
         n_rows: int | None = None,
@@ -791,7 +735,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         row_count_offset: int = 0,
         rechunk: bool = True,
         memory_map: bool = True,
-    ) -> DF:
+    ) -> DataFrame:
         """
         Read into a DataFrame from Arrow IPC stream format. This is also called the
         Feather (v2) format.
@@ -1585,8 +1529,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             return out
 
     def _comp(
-        self: DF, other: Any, op: Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
-    ) -> DF:
+        self, other: Any, op: Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
+    ) -> DataFrame:
         """Compare a DataFrame with another object."""
         if isinstance(other, DataFrame):
             return self._compare_to_other_df(other, op)
@@ -1594,10 +1538,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
             return self._compare_to_non_df(other, op)
 
     def _compare_to_other_df(
-        self: DF,
+        self,
         other: DataFrame,
         op: Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"],
-    ) -> DF:
+    ) -> DataFrame:
         """Compare a DataFrame with another DataFrame."""
         if self.columns != other.columns:
             raise ValueError("DataFrame columns do not match")
@@ -1623,13 +1567,13 @@ class DataFrame(metaclass=DataFrameMetaClass):
         else:
             raise ValueError(f"got unexpected comparison operator: {op}")
 
-        return combined.select(expr)  # type: ignore[return-value]
+        return combined.select(expr)
 
     def _compare_to_non_df(
-        self: DF,
+        self,
         other: Any,
         op: Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"],
-    ) -> DF:
+    ) -> DataFrame:
         """Compare a DataFrame with a non-DataFrame object."""
         if op == "eq":
             return self.select(pli.all() == other)
@@ -1646,22 +1590,22 @@ class DataFrame(metaclass=DataFrameMetaClass):
         else:
             raise ValueError(f"got unexpected comparison operator: {op}")
 
-    def __eq__(self: DF, other: Any) -> DF:  # type: ignore[override]
+    def __eq__(self, other: Any) -> DataFrame:  # type: ignore[override]
         return self._comp(other, "eq")
 
-    def __ne__(self: DF, other: Any) -> DF:  # type: ignore[override]
+    def __ne__(self, other: Any) -> DataFrame:  # type: ignore[override]
         return self._comp(other, "neq")
 
-    def __gt__(self: DF, other: Any) -> DF:
+    def __gt__(self, other: Any) -> DataFrame:
         return self._comp(other, "gt")
 
-    def __lt__(self: DF, other: Any) -> DF:
+    def __lt__(self, other: Any) -> DataFrame:
         return self._comp(other, "lt")
 
-    def __ge__(self: DF, other: Any) -> DF:
+    def __ge__(self, other: Any) -> DataFrame:
         return self._comp(other, "gt_eq")
 
-    def __le__(self: DF, other: Any) -> DF:
+    def __le__(self, other: Any) -> DataFrame:
         return self._comp(other, "lt_eq")
 
     def __getstate__(self) -> list[pli.Series]:
@@ -1868,7 +1812,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ...
 
     def __getitem__(
-        self: DF,
+        self,
         item: (
             str
             | int
@@ -1883,7 +1827,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             | tuple[int, int]
             | tuple[int, str]
         ),
-    ) -> DF | pli.Series:
+    ) -> DataFrame | pli.Series:
         """Get item. Does quite a lot. Read the comments."""
         if isinstance(item, pli.Expr):  # pragma: no cover
             warnings.warn(
@@ -1986,7 +1930,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         # df[:]
         if isinstance(item, slice):
-            return PolarsSlice(self).apply(item)  # type: ignore[return-value]
+            return PolarsSlice(self).apply(item)
 
         # select rows by numpy mask or index
         # df[np.array([1, 2, 3])]
@@ -2147,7 +2091,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             index = len(self.columns) + index
         return pli.wrap_s(self._df.select_at_idx(index))
 
-    def reverse(self: DF) -> DF:
+    def reverse(self) -> DataFrame:
         """
         Reverse the DataFrame.
 
@@ -2176,7 +2120,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         return self.select(pli.col("*").reverse())
 
-    def rename(self: DF, mapping: dict[str, str]) -> DF:
+    def rename(self, mapping: dict[str, str]) -> DataFrame:
         """
         Rename column names.
 
@@ -2267,7 +2211,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             index = len(self.columns) + index
         self._df.insert_at_idx(index, series._s)
 
-    def filter(self: DF, predicate: pli.Expr) -> DF:
+    def filter(self, predicate: pli.Expr) -> DataFrame:
         """
         Filter the rows in the DataFrame based on a predicate expression.
 
@@ -2573,13 +2517,13 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     @overload
     def sort(
-        self: DF,
+        self,
         by: str | pli.Expr | list[str] | list[pli.Expr],
         reverse: bool | list[bool] = ...,
         nulls_last: bool = ...,
         *,
         in_place: Literal[False] = ...,
-    ) -> DF:
+    ) -> DataFrame:
         ...
 
     @overload
@@ -2595,23 +2539,23 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     @overload
     def sort(
-        self: DF,
+        self,
         by: str | pli.Expr | list[str] | list[pli.Expr],
         reverse: bool | list[bool] = ...,
         nulls_last: bool = ...,
         *,
         in_place: bool,
-    ) -> DF | None:
+    ) -> DataFrame | None:
         ...
 
     def sort(
-        self: DF,
+        self,
         by: str | pli.Expr | list[str] | list[pli.Expr],
         reverse: bool | list[bool] = False,
         nulls_last: bool = False,
         *,
         in_place: bool = False,
-    ) -> DF | None:
+    ) -> DataFrame | None:
         """
         Sort the DataFrame by column.
 
@@ -4076,7 +4020,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         else:
             return self._from_pydf(pli.wrap_s(out).to_frame()._df)
 
-    def with_column(self: DF, column: pli.Series | pli.Expr) -> DF:
+    def with_column(self, column: pli.Series | pli.Expr) -> DataFrame:
         """
         Return a new DataFrame with the column added or replaced.
 
@@ -4569,14 +4513,14 @@ class DataFrame(metaclass=DataFrameMetaClass):
         return self[name]
 
     def fill_null(
-        self: DF,
+        self,
         strategy: (
             Literal["backward", "forward", "min", "max", "mean", "zero", "one"]
             | pli.Expr
             | Any
         ),
         limit: int | None = None,
-    ) -> DF:
+    ) -> DataFrame:
         """
         Fill null values using a filling strategy, literal, or Expr.
 
@@ -4628,7 +4572,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             return self.fill_null(pli.lit(strategy))
         return self._from_pydf(self._df.fill_null(strategy, limit))
 
-    def fill_nan(self: DF, fill_value: pli.Expr | int | float) -> DF:
+    def fill_nan(self, fill_value: pli.Expr | int | float) -> DataFrame:
         """
         Fill floating point NaN values by an Expression evaluation.
 
@@ -4678,9 +4622,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         return self.lazy().fill_nan(fill_value).collect(no_optimization=True)
 
     def explode(
-        self: DF,
+        self,
         columns: str | list[str] | pli.Expr | list[pli.Expr],
-    ) -> DF:
+    ) -> DataFrame:
         """
         Explode `DataFrame` to long format by exploding a column with Lists.
 
@@ -5057,7 +5001,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         return self._from_pydf(self._df.shift(periods))
 
-    def shift_and_fill(self: DF, periods: int, fill_value: int | str | float) -> DF:
+    def shift_and_fill(self, periods: int, fill_value: int | str | float) -> DataFrame:
         """
         Shift the values by a given period and fill the parts that will be empty due to
         this operation with the result of the `fill_value` expression.
@@ -5149,7 +5093,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         return pli.wrap_s(self._df.is_unique())
 
-    def lazy(self: DF) -> pli.LazyFrame[DF]:
+    def lazy(self: DF) -> pli.LazyFrame:
         """
         Start a lazy query from this point. This returns a `LazyFrame` object.
 
@@ -5175,17 +5119,17 @@ class DataFrame(metaclass=DataFrameMetaClass):
         LazyFrame
 
         """
-        return self._lazyframe_class._from_pyldf(self._df.lazy())
+        return pli.wrap_ldf(self._df.lazy())
 
     def select(
-        self: DF,
+        self,
         exprs: (
             str
             | pli.Expr
             | Sequence[str | pli.Expr | bool | int | float | pli.Series]
             | pli.Series
         ),
-    ) -> DF:
+    ) -> DataFrame:
         """
         Select columns from this DataFrame.
 
@@ -5225,10 +5169,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         )
 
     def with_columns(
-        self: DF,
+        self,
         exprs: pli.Expr | pli.Series | Sequence[pli.Expr | pli.Series] | None = None,
         **named_exprs: pli.Expr | pli.Series,
-    ) -> DF:
+    ) -> DataFrame:
         """
         Add or overwrite multiple columns in a DataFrame.
 
@@ -5650,7 +5594,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         return self._from_pydf(self._df.median())
 
-    def product(self: DF) -> DF:
+    def product(self) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their product values
 
@@ -6069,7 +6013,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             df._df.shrink_to_fit()
             return df
 
-    def take_every(self: DF, n: int) -> DF:
+    def take_every(self, n: int) -> DataFrame:
         """
         Take every nth row in the DataFrame and return as a new DataFrame.
 
@@ -6140,7 +6084,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         k3 = seed_3 if seed_3 is not None else seed
         return pli.wrap_s(self._df.hash_rows(k0, k1, k2, k3))
 
-    def interpolate(self: DF) -> DF:
+    def interpolate(self) -> DataFrame:
         """
         Interpolate intermediate values. The interpolation method is linear.
 
@@ -6293,7 +6237,7 @@ class RollingGroupBy(Generic[DF]):
         self.closed = closed
         self.by = by
 
-    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> DF:
+    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> DataFrame:
         return (
             self.df.lazy()
             .groupby_rolling(
@@ -6332,7 +6276,7 @@ class DynamicGroupBy(Generic[DF]):
         self.closed = closed
         self.by = by
 
-    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> DF:
+    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> DataFrame:
         return (
             self.df.lazy()
             .groupby_dynamic(
@@ -6383,6 +6327,11 @@ class GroupBy(Generic[DF]):
     └─────┴─────┘
 
     """
+
+    _df: PyDataFrame
+    _dataframe_class: type[DF]
+    by: str | list[str]
+    maintain_order: bool
 
     def __init__(
         self,
@@ -6636,7 +6585,7 @@ class GroupBy(Generic[DF]):
         """
         return self._dataframe_class._from_pydf(self._df.groupby_apply(self.by, f))
 
-    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> DF:
+    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> DataFrame:
         """
         Use multiple aggregations on columns. This can be combined with complete lazy
         API and is considered idiomatic polars.
@@ -6673,13 +6622,14 @@ class GroupBy(Generic[DF]):
         └─────┴─────────┴──────────────┘
 
         """
-        return (
-            self._dataframe_class._from_pydf(self._df)
+        df = (
+            wrap_df(self._df)
             .lazy()
             .groupby(self.by, maintain_order=self.maintain_order)
             .agg(aggs)
             .collect(no_optimization=True, string_cache=False)
         )
+        return self._dataframe_class._from_pydf(df._df)
 
     def head(self, n: int = 5) -> DF:
         """
@@ -6736,13 +6686,14 @@ class GroupBy(Generic[DF]):
         └─────────┴─────┘
 
         """
-        return (
-            self._dataframe_class._from_pydf(self._df)
+        df = (
+            wrap_df(self._df)
             .lazy()
             .groupby(self.by, self.maintain_order)
             .head(n)
             .collect(no_optimization=True, string_cache=False)
         )
+        return self._dataframe_class._from_pydf(df._df)
 
     def tail(self, n: int = 5) -> DF:
         """
@@ -6799,13 +6750,14 @@ class GroupBy(Generic[DF]):
         └─────────┴─────┘
 
         """
-        return (
-            self._dataframe_class._from_pydf(self._df)
+        df = (
+            wrap_df(self._df)
             .lazy()
             .groupby(self.by, self.maintain_order)
             .tail(n)
             .collect(no_optimization=True, string_cache=False)
         )
+        return self._dataframe_class._from_pydf(df._df)
 
     def _select_all(self) -> GBSelection[DF]:
         """Select all columns for aggregation."""
@@ -6870,7 +6822,7 @@ class GroupBy(Generic[DF]):
             dataframe_class=self._dataframe_class,
         )
 
-    def first(self) -> DF:
+    def first(self) -> DataFrame:
         """
         Aggregate the first values in the group.
 
@@ -6901,7 +6853,7 @@ class GroupBy(Generic[DF]):
         """
         return self.agg(pli.all().first())
 
-    def last(self) -> DF:
+    def last(self) -> DataFrame:
         """
         Aggregate the last values in the group.
 
@@ -6932,7 +6884,7 @@ class GroupBy(Generic[DF]):
         """
         return self.agg(pli.all().last())
 
-    def sum(self) -> DF:
+    def sum(self) -> DataFrame:
         """
         Reduce the groups to the sum.
 
@@ -6963,7 +6915,7 @@ class GroupBy(Generic[DF]):
         """
         return self.agg(pli.all().sum())
 
-    def min(self) -> DF:
+    def min(self) -> DataFrame:
         """
         Reduce the groups to the minimal value.
 
@@ -6994,7 +6946,7 @@ class GroupBy(Generic[DF]):
         """
         return self.agg(pli.all().min())
 
-    def max(self) -> DF:
+    def max(self) -> DataFrame:
         """
         Reduce the groups to the maximal value.
 
@@ -7025,7 +6977,7 @@ class GroupBy(Generic[DF]):
         """
         return self.agg(pli.all().max())
 
-    def count(self) -> DF:
+    def count(self) -> DataFrame:
         """
         Count the number of values in each group.
 
@@ -7056,7 +7008,7 @@ class GroupBy(Generic[DF]):
         """
         return self.agg(pli.lazy_functions.count())
 
-    def mean(self) -> DF:
+    def mean(self) -> DataFrame:
         """
         Reduce the groups to the mean values.
 
@@ -7088,7 +7040,7 @@ class GroupBy(Generic[DF]):
         """
         return self.agg(pli.all().mean())
 
-    def n_unique(self) -> DF:
+    def n_unique(self) -> DataFrame:
         """
         Count the unique values per group.
 
@@ -7119,7 +7071,7 @@ class GroupBy(Generic[DF]):
 
     def quantile(
         self, quantile: float, interpolation: InterpolationMethod = "nearest"
-    ) -> DF:
+    ) -> DataFrame:
         """
         Compute the quantile per group.
 
@@ -7156,7 +7108,7 @@ class GroupBy(Generic[DF]):
         """
         return self.agg(pli.all().quantile(quantile, interpolation))
 
-    def median(self) -> DF:
+    def median(self) -> DataFrame:
         """
         Return the median per group.
 
@@ -7184,7 +7136,7 @@ class GroupBy(Generic[DF]):
         """
         return self.agg(pli.all().median())
 
-    def agg_list(self) -> DF:
+    def agg_list(self) -> DataFrame:
         """
         Aggregate the groups into Series.
 
@@ -7212,7 +7164,7 @@ class PivotOps(Generic[DF]):
 
     def __init__(
         self,
-        df: DataFrame,
+        df: PyDataFrame,
         by: str | list[str],
         pivot_column: str | list[str],
         values_column: str | list[str],

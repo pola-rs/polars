@@ -59,11 +59,6 @@ if TYPE_CHECKING:
 # including sub-classes.
 LDF = TypeVar("LDF", bound="LazyFrame")
 
-# We redefine the DF type variable from polars.internals.frame here in order to prevent
-# circular import issues. The frame module needs this module to be defined at import
-# time due to how the metaclass of DataFrame is defined.
-DF = TypeVar("DF", bound="pli.DataFrame")
-
 
 def wrap_ldf(ldf: PyLazyFrame) -> LazyFrame:
     return LazyFrame._from_pyldf(ldf)
@@ -87,35 +82,16 @@ def _prepare_groupby_inputs(
     return new_by
 
 
-class LazyFrame(Generic[DF]):
+class LazyFrame:
     """Representation of a Lazy computation graph/query."""
 
-    def __init__(self) -> None:
-        self._ldf: PyLazyFrame
+    _ldf: PyLazyFrame
 
     @classmethod
     def _from_pyldf(cls: type[LDF], ldf: PyLazyFrame) -> LDF:
         self = cls.__new__(cls)
         self._ldf = ldf
         return self
-
-    @property
-    def _dataframe_class(self) -> type[DF]:
-        """
-        Return the associated DataFrame which is the equivalent of this LazyFrame
-        object.
-
-        This class is used when a LazyFrame object is casted to a non-lazy
-        representation by the invocation of `.collect()`, `.fetch()`, and so on. By
-        default we specify the regular `polars.internals.frame.DataFrame` class here,
-        but any subclass of DataFrame that wishes to preserve its type when converted to
-        LazyFrame and back (with `.lazy().collect()` for instance) must overwrite this
-        class variable before setting DataFrame._lazyframe_class.
-
-        This property is dynamically overwritten when DataFrame is sub-classed. See
-        `polars.internals.frame.DataFrameMetaClass.__init__` for implementation details.
-        """
-        return pli.DataFrame  # type: ignore[return-value]
 
     @classmethod
     def scan_csv(
@@ -613,7 +589,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         string_cache: bool = False,
         no_optimization: bool = False,
         slice_pushdown: bool = True,
-    ) -> DF:
+    ) -> pli.DataFrame:
         """
         Collect into a DataFrame.
 
@@ -661,7 +637,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             string_cache,
             slice_pushdown,
         )
-        return self._dataframe_class._from_pydf(ldf.collect())
+        return pli.wrap_df(ldf.collect())
 
     def fetch(
         self,
@@ -673,7 +649,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         string_cache: bool = False,
         no_optimization: bool = False,
         slice_pushdown: bool = True,
-    ) -> DF:
+    ) -> pli.DataFrame:
         """
         Fetch is like a :func:`collect` operation, but it overwrites the number of rows
         read by every scan operation. This is a utility that helps debug a query on a
@@ -723,7 +699,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             string_cache,
             slice_pushdown,
         )
-        return self._dataframe_class._from_pydf(ldf.fetch(n_rows))
+        return pli.wrap_df(ldf.fetch(n_rows))
 
     def lazy(self: LDF) -> LDF:
         """
@@ -812,7 +788,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """Cache the result once the execution of the physical plan hits this node."""
         return self._from_pyldf(self._ldf.cache())
 
-    def cleared(self: LDF) -> LDF:
+    def cleared(self) -> LazyFrame:
         """
         Create an empty copy of the current LazyFrame.
 
@@ -841,7 +817,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         └─────┴─────┴──────┘
 
         """
-        return self._dataframe_class(columns=self.schema).lazy()
+        return pli.DataFrame(columns=self.schema).lazy()
 
     def clone(self: LDF) -> LDF:
         """
