@@ -151,6 +151,13 @@ def test_selection() -> None:
     assert df[::2].frame_equal(expect)
 
 
+def test_mixed_sequence_selection() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    result = df.select(["a", pl.col("b"), pl.lit("c")])
+    expected = pl.DataFrame({"a": [1, 2], "b": [3, 4], "literal": ["c", "c"]})
+    assert_frame_equal(result, expected)
+
+
 def test_from_arrow() -> None:
     tbl = pa.table(
         {

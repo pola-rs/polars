@@ -55,6 +55,7 @@ from polars.utils import (
     format_path,
     handle_projection_columns,
     is_bool_sequence,
+    is_expr_sequence,
     is_int_sequence,
     is_str_sequence,
     range_to_slice,
@@ -593,7 +594,7 @@ class DataFrame:
             )
             if columns is None:
                 return self._from_pydf(scan.collect()._df)
-            elif is_str_sequence(columns, False):
+            elif is_str_sequence(columns, allow_str=False):
                 return self._from_pydf(scan.select(columns).collect()._df)
             else:
                 raise ValueError(
@@ -671,7 +672,7 @@ class DataFrame:
 
             if columns is None:
                 return cls._from_pydf(scan.collect()._df)
-            elif is_str_sequence(columns, False):
+            elif is_str_sequence(columns, allow_str=False):
                 return cls._from_pydf(scan.select(columns).collect()._df)
             else:
                 raise ValueError(
@@ -777,7 +778,7 @@ class DataFrame:
             )
             if columns is None:
                 return scan.collect()
-            elif is_str_sequence(columns, False):
+            elif is_str_sequence(columns, allow_str=False):
                 return scan.select(columns).collect()
             else:
                 raise ValueError(
@@ -1953,15 +1954,14 @@ class DataFrame:
                 )
                 return self._from_pydf(self._df.filter(pli.Series("", item).inner()))
 
-        if isinstance(item, Sequence):
-            if isinstance(item[0], str):
-                # select multiple columns
-                # df[["foo", "bar"]]
-                return self._from_pydf(self._df.select(item))
-            elif isinstance(item[0], pli.Expr):
-                return self.select(item)
-            elif is_bool_sequence(item) or is_int_sequence(item):
-                item = pli.Series("", item)  # fall through to next if isinstance
+        if is_str_sequence(item, allow_str=False):
+            # select multiple columns
+            # df[["foo", "bar"]]
+            return self._from_pydf(self._df.select(item))
+        elif is_expr_sequence(item):
+            return self.select(item)
+        elif is_bool_sequence(item) or is_int_sequence(item):
+            item = pli.Series("", item)  # fall through to next if isinstance
 
         if isinstance(item, pli.Series):
             dtype = item.dtype
@@ -5123,12 +5123,7 @@ class DataFrame:
 
     def select(
         self,
-        exprs: (
-            str
-            | pli.Expr
-            | Sequence[str | pli.Expr | bool | int | float | pli.Series]
-            | pli.Series
-        ),
+        exprs: str | pli.Expr | pli.Series | Sequence[str | pli.Expr | pli.Series],
     ) -> DataFrame:
         """
         Select columns from this DataFrame.
@@ -5163,9 +5158,7 @@ class DataFrame:
 
         """
         return (
-            self.lazy()
-            .select(exprs)  # type: ignore[arg-type]
-            .collect(no_optimization=True, string_cache=False)
+            self.lazy().select(exprs).collect(no_optimization=True, string_cache=False)
         )
 
     def with_columns(

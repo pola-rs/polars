@@ -572,9 +572,8 @@ class Series:
             if item.dtype == bool:
                 return wrap_s(self._s.filter(pli.Series("", item).inner()))
 
-        if isinstance(item, Sequence):
-            if is_bool_sequence(item) or is_int_sequence(item):
-                item = Series("", item)  # fall through to next if isinstance
+        if is_bool_sequence(item) or is_int_sequence(item):
+            item = Series("", item)  # fall through to next if isinstance
 
         if isinstance(item, Series):
             if item.dtype == Boolean:
