@@ -293,7 +293,12 @@ impl PyDataFrame {
             "uncompressed" => None,
             "snappy" => Some(AvroCompression::Snappy),
             "deflate" => Some(AvroCompression::Deflate),
-            s => return Err(PyPolarsErr::Other(format!("compression {} not supported", s)).into()),
+            e => {
+                return Err(PyValueError::new_err(format!(
+                    "compression must be one of {{'uncompressed', 'snappy', 'deflate'}}, got {}",
+                    e
+                )))
+            }
         };
 
         if let Ok(s) = py_f.extract::<&str>(py) {
@@ -462,7 +467,12 @@ impl PyDataFrame {
             "uncompressed" => None,
             "lz4" => Some(IpcCompression::LZ4),
             "zstd" => Some(IpcCompression::ZSTD),
-            s => return Err(PyPolarsErr::Other(format!("compression {} not supported", s)).into()),
+            e => {
+                return Err(PyValueError::new_err(format!(
+                    "compression must be one of {{'uncompressed', 'lz4', 'zstd'}}, got {}",
+                    e
+                )))
+            }
         };
 
         if let Ok(s) = py_f.extract::<&str>(py) {
@@ -613,7 +623,12 @@ impl PyDataFrame {
                     })
                     .transpose()?,
             ),
-            s => return Err(PyPolarsErr::Other(format!("compression {} not supported", s)).into()),
+            e => {
+                return Err(PyValueError::new_err(format!(
+                    "compression must be one of {{'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'lz4', 'zstd'}}, got {}",
+                    e
+                )))
+            }
         };
 
         if let Ok(s) = py_f.extract::<&str>(py) {
