@@ -224,9 +224,6 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.day
     DateTimeNameSpace.days
     DateTimeNameSpace.epoch
-    DateTimeNameSpace.epoch_days
-    DateTimeNameSpace.epoch_milliseconds
-    DateTimeNameSpace.epoch_seconds
     DateTimeNameSpace.hour
     DateTimeNameSpace.hours
     DateTimeNameSpace.max

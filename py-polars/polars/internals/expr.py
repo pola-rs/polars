@@ -6885,53 +6885,6 @@ class ExprDateTimeNameSpace:
         else:
             raise ValueError(f"time unit {tu} not understood")
 
-    def epoch_days(self) -> Expr:
-        """
-        Get the number of days since the unix EPOCH.
-        If the date is before the unix EPOCH, the number of days will be negative.
-
-        .. deprecated:: 0.13.9
-            Use :func:`epoch` instead.
-
-        Returns
-        -------
-        Days as Int32
-
-        """
-        return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
-
-    def epoch_milliseconds(self) -> Expr:
-        """
-        Get the number of milliseconds since the unix EPOCH.
-
-        If the date is before the unix EPOCH, the number of milliseconds will be
-        negative.
-
-        .. deprecated:: 0.13.9
-            Use :func:`epoch` instead.
-
-        Returns
-        -------
-        Milliseconds as Int64
-
-        """
-        return self.timestamp("ms")
-
-    def epoch_seconds(self) -> Expr:
-        """
-        Get the number of seconds since the unix EPOCH
-        If the date is before the unix EPOCH, the number of seconds will be negative.
-
-        .. deprecated:: 0.13.9
-            Use :func:`epoch` instead.
-
-        Returns
-        -------
-        Milliseconds as Int64
-
-        """
-        return wrap_expr(self._pyexpr.dt_epoch_seconds())
-
     def timestamp(self, tu: str = "us") -> Expr:
         """
         Return a timestamp in the given time unit.

@@ -275,9 +275,6 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.day
     ExprDateTimeNameSpace.days
     ExprDateTimeNameSpace.epoch
-    ExprDateTimeNameSpace.epoch_days
-    ExprDateTimeNameSpace.epoch_milliseconds
-    ExprDateTimeNameSpace.epoch_seconds
     ExprDateTimeNameSpace.hour
     ExprDateTimeNameSpace.hours
     ExprDateTimeNameSpace.milliseconds
