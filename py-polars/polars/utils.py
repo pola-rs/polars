@@ -119,39 +119,45 @@ def _date_to_pl_date(d: date) -> int:
     return int(dt.timestamp()) // (3600 * 24)
 
 
-def _is_iterable_of(val: Iterable[object], itertype: type, eltype: type) -> bool:
+def _is_iterable_of(val: Iterable[object], eltype: type) -> bool:
     """Check whether the given iterable is of a certain type."""
-    return isinstance(val, itertype) and all(isinstance(x, eltype) for x in val)
+    return all(isinstance(x, eltype) for x in val)
 
 
-def is_bool_sequence(val: Sequence[object]) -> TypeGuard[Sequence[bool]]:
+def is_bool_sequence(val: object) -> TypeGuard[Sequence[bool]]:
     """Check whether the given sequence is a sequence of booleans."""
-    return _is_iterable_of(val, Sequence, bool)
+    if isinstance(val, Sequence):
+        return _is_iterable_of(val, bool)
+    else:
+        return False
 
 
-def is_int_sequence(val: Sequence[object]) -> TypeGuard[Sequence[int]]:
+def is_int_sequence(val: object) -> TypeGuard[Sequence[int]]:
     """Check whether the given sequence is a sequence of integers."""
-    return _is_iterable_of(val, Sequence, int)
+    if isinstance(val, Sequence):
+        return _is_iterable_of(val, int)
+    else:
+        return False
 
 
 def is_expr_sequence(val: object) -> TypeGuard[Sequence[pli.Expr]]:
     """Check whether the given object is a sequence of Exprs."""
     if isinstance(val, Sequence):
-        return _is_iterable_of(val, Sequence, pli.Expr)
+        return _is_iterable_of(val, pli.Expr)
     else:
         return False
 
 
 def is_pyexpr_sequence(val: object) -> TypeGuard[Sequence[PyExpr]]:
-    """Check whether the given object is a sequence of Exprs."""
+    """Check whether the given object is a sequence of PyExprs."""
     if isinstance(val, Sequence):
-        return _is_iterable_of(val, Sequence, PyExpr)
+        return _is_iterable_of(val, PyExpr)
     else:
         return False
 
 
 def is_str_sequence(
-    val: Sequence[object], allow_str: bool = False
+    val: object, *, allow_str: bool = False
 ) -> TypeGuard[Sequence[str]]:
     """
     Check that `val` is a sequence of strings.
@@ -159,9 +165,12 @@ def is_str_sequence(
     Note that a single string is a sequence of strings by definition, use
     `allow_str=False` to return False on a single string.
     """
-    if (not allow_str) and isinstance(val, str):
+    if allow_str is False and isinstance(val, str):
         return False
-    return _is_iterable_of(val, Sequence, str)
+    if isinstance(val, Sequence):
+        return _is_iterable_of(val, str)
+    else:
+        return False
 
 
 def range_to_slice(rng: range) -> slice:

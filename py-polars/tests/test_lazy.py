@@ -572,13 +572,6 @@ def test_col_series_selection() -> None:
     assert df.select(pl.col(srs)).columns == ["b", "c"]
 
 
-def test_literal_projection() -> None:
-    df = pl.DataFrame({"a": [1, 2]})
-    assert df.select([True]).dtypes == [pl.Boolean]
-    assert df.select([1]).dtypes == [pl.Int32]
-    assert df.select([2.0]).dtypes == [pl.Float64]
-
-
 def test_interpolate() -> None:
     df = pl.DataFrame({"a": [1, None, 3]})
     assert df.select(col("a").interpolate())["a"] == [1, 2, 3]
