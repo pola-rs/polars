@@ -1681,15 +1681,6 @@ def test_add_string() -> None:
     assert result.frame_equal(expected)
 
 
-def test_getattr() -> None:
-    with pytest.deprecated_call():
-        df = pl.DataFrame({"a": [1.0, 2.0]})
-        assert_series_equal(df.a, pl.Series("a", [1.0, 2.0]))
-
-        with pytest.raises(AttributeError):
-            _ = df.b
-
-
 def test_get_item() -> None:
     """Test all the methods to use [] on a dataframe."""
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0], "b": [3, 4, 5, 6]})
