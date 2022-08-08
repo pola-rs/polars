@@ -26,7 +26,6 @@ try:
     from polars.polars import arg_where as py_arg_where
     from polars.polars import argsort_by as pyargsort_by
     from polars.polars import as_struct as _as_struct
-    from polars.polars import binary_function as pybinary_function
     from polars.polars import col as pycol
     from polars.polars import collect_all as _collect_all
     from polars.polars import cols as pycols
@@ -650,7 +649,7 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
         return (
             lit(_datetime_to_pl_timestamp(value, tu))
             .cast(Datetime)
-            .dt.and_time_unit(tu)
+            .dt.with_time_unit(tu)
         )
     if isinstance(value, timedelta):
         if timedelta_in_nanoseconds_window(value):
@@ -660,7 +659,7 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
         return (
             lit(_timedelta_to_pl_timedelta(value, tu))
             .cast(Duration)
-            .dt.and_time_unit(tu, dtype=Duration)
+            .dt.with_time_unit(tu)
         )
 
     if isinstance(value, date):
@@ -813,37 +812,6 @@ def apply(
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_map_mul(exprs, f, return_dtype, apply_groups=True))
-
-
-def map_binary(
-    a: str | pli.Expr,
-    b: str | pli.Expr,
-    f: Callable[[pli.Series, pli.Series], pli.Series],
-    return_dtype: type[DataType] | None = None,
-) -> pli.Expr:
-    """
-    Map a custom function over two columns and produce a single Series result.
-
-    .. deprecated:: 0.10.4
-        Use :func:`map` or :func:`apply` instead.
-
-    Parameters
-    ----------
-    a
-        Input Series a.
-    b
-        Input Series b.
-    f
-        Function to apply.
-    return_dtype
-        Output type of the udf.
-
-    """
-    if isinstance(a, str):
-        a = col(a)
-    if isinstance(b, str):
-        b = col(b)
-    return pli.wrap_expr(pybinary_function(a._pyexpr, b._pyexpr, f, return_dtype))
 
 
 def fold(

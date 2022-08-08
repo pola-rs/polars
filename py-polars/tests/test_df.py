@@ -372,11 +372,6 @@ def test_groupby() -> None:
             if subdf["a"][0] == "b":
                 assert subdf.shape == (3, 3)
 
-    with pytest.deprecated_call():
-        assert df.groupby("a").get_group("c").shape == (1, 3)
-        assert df.groupby("a").get_group("b").shape == (3, 3)
-        assert df.groupby("a").get_group("a").shape == (2, 3)
-
     # Use lazy API in eager groupby
     assert df.groupby("a").agg([pl.sum("b")]).shape == (3, 2)
     # test if it accepts a single expression
@@ -1227,12 +1222,12 @@ def test_hashing_on_python_objects() -> None:
 
     df = df.with_column(pl.col("a").apply(lambda x: Foo()).alias("foo"))
     assert df.groupby(["foo"]).first().shape == (1, 3)
-    assert df.distinct().shape == (3, 3)
+    assert df.unique().shape == (3, 3)
 
 
-def test_distinct_unit_rows() -> None:
+def test_unique_unit_rows() -> None:
     # simply test if we don't panic.
-    pl.DataFrame({"a": [1], "b": [None]}).distinct(subset="a")
+    pl.DataFrame({"a": [1], "b": [None]}).unique(subset="a")
 
 
 def test_panic() -> None:

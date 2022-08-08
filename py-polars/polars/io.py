@@ -530,7 +530,7 @@ def scan_csv(
     ...     {"BrEeZaH": [1, 2, 3, 4], "LaNgUaGe": ["is", "terrible", "to", "read"]}
     ... )
     >>> path: pathlib.Path = dirpath / "mydf.csv"
-    >>> df.to_csv(path)
+    >>> df.write_csv(path)
     >>> pl.scan_csv(
     ...     path, with_column_names=lambda cols: [col.lower() for col in cols]
     ... ).fetch()

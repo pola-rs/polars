@@ -38,7 +38,6 @@ from polars.utils import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
-    deprecated_alias,
     format_path,
     is_expr_sequence,
 )
@@ -327,7 +326,7 @@ class LazyFrame:
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if to_string or file is None or to_string_io:
             with BytesIO() as buf:
-                self._ldf.to_json(buf)
+                self._ldf.write_json(buf)
                 json_bytes = buf.getvalue()
 
             json_str = json_bytes.decode("utf8")
@@ -336,7 +335,7 @@ class LazyFrame:
             else:
                 return json_str
         else:
-            self._ldf.to_json(file)
+            self._ldf.write_json(file)
         return None
 
     @classmethod
@@ -1192,7 +1191,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         )
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
-    @deprecated_alias(ldf="other")
     def join_asof(
         self: LDF,
         other: LazyFrame,
@@ -1326,7 +1324,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             )
         )
 
-    @deprecated_alias(ldf="other")
     def join(
         self: LDF,
         other: LazyFrame,
@@ -2123,18 +2120,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         columns = pli.selection_to_pyexpr_list(columns)
         return self._from_pyldf(self._ldf.explode(columns))
-
-    def distinct(
-        self: LDF,
-        maintain_order: bool = True,
-        subset: str | list[str] | None = None,
-        keep: str = "first",
-    ) -> LDF:
-        """
-        .. deprecated:: 0.13.13
-            Use :func:`unique` instead.
-        """
-        return self.unique(maintain_order, subset, keep)
 
     def unique(
         self: LDF,

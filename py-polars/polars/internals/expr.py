@@ -6885,53 +6885,6 @@ class ExprDateTimeNameSpace:
         else:
             raise ValueError(f"time unit {tu} not understood")
 
-    def epoch_days(self) -> Expr:
-        """
-        Get the number of days since the unix EPOCH.
-        If the date is before the unix EPOCH, the number of days will be negative.
-
-        .. deprecated:: 0.13.9
-            Use :func:`epoch` instead.
-
-        Returns
-        -------
-        Days as Int32
-
-        """
-        return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
-
-    def epoch_milliseconds(self) -> Expr:
-        """
-        Get the number of milliseconds since the unix EPOCH.
-
-        If the date is before the unix EPOCH, the number of milliseconds will be
-        negative.
-
-        .. deprecated:: 0.13.9
-            Use :func:`epoch` instead.
-
-        Returns
-        -------
-        Milliseconds as Int64
-
-        """
-        return self.timestamp("ms")
-
-    def epoch_seconds(self) -> Expr:
-        """
-        Get the number of seconds since the unix EPOCH
-        If the date is before the unix EPOCH, the number of seconds will be negative.
-
-        .. deprecated:: 0.13.9
-            Use :func:`epoch` instead.
-
-        Returns
-        -------
-        Milliseconds as Int64
-
-        """
-        return wrap_expr(self._pyexpr.dt_epoch_seconds())
-
     def timestamp(self, tu: str = "us") -> Expr:
         """
         Return a timestamp in the given time unit.
@@ -6970,41 +6923,6 @@ class ExprDateTimeNameSpace:
 
         """
         return wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
-
-    def and_time_unit(self, tu: str, dtype: type[DataType] = Datetime) -> Expr:
-        """
-        Set time unit a Series of type Datetime. This does not modify underlying data,
-        and should be used to fix an incorrect time unit.
-
-        .. deprecated::
-            Use :func:`with_time_unit` instead.
-
-        Parameters
-        ----------
-        tu
-            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
-        dtype
-            Output data type.
-
-        """
-        return self.with_time_unit(tu)
-
-    def and_time_zone(self, tz: str | None) -> Expr:
-        """
-        Set time zone for a Series of type Datetime.
-
-        .. deprecated::
-            Use :func:`with_time_zone` instead.
-
-        Parameters
-        ----------
-        tz
-            Time zone for the `Datetime` Series.
-
-        """
-        return wrap_expr(self._pyexpr).map(
-            lambda s: s.dt.with_time_zone(tz), return_dtype=Datetime
-        )
 
     def with_time_zone(self, tz: str | None) -> Expr:
         """

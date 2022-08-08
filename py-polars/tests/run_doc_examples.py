@@ -98,7 +98,7 @@ if __name__ == "__main__":
         test_suite = unittest.TestSuite(tests)
 
         # Ensure that we clean up any artifacts produced by the doctests
-        # with patch(polars.DataFrame.to_csv, polars.DataFrame.write_csv):
+        # with patch(polars.DataFrame.write_csv):
         # run doctests and report
         result = unittest.TextTestRunner().run(test_suite)
         success_flag = (result.testsRun > 0) & (len(result.failures) == 0)

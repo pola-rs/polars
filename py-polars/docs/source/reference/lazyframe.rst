@@ -48,7 +48,6 @@ Manipulation/ selection
 
     LazyFrame.cleared
     LazyFrame.clone
-    LazyFrame.distinct
     LazyFrame.drop
     LazyFrame.drop_nulls
     LazyFrame.explode

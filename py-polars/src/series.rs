@@ -1457,7 +1457,7 @@ impl PySeries {
         }
     }
 
-    pub fn and_time_zone(&self, tz: Option<TimeZone>) -> PyResult<Self> {
+    pub fn with_time_zone(&self, tz: Option<TimeZone>) -> PyResult<Self> {
         let mut dt = self.series.datetime().map_err(PyPolarsErr::from)?.clone();
         dt.set_time_zone(tz);
         Ok(dt.into_series().into())

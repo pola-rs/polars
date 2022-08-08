@@ -1423,17 +1423,19 @@ def test_dt_datetimes() -> None:
 
     # epoch methods
     verify_series_and_expr_api(
-        s, pl.Series("", [18262, 18294], dtype=Int32), "dt.epoch_days"
+        s, pl.Series("", [18262, 18294], dtype=Int32), "dt.epoch", tu="d"
     )
     verify_series_and_expr_api(
         s,
         pl.Series("", [1_577_836_800, 1_580_613_610], dtype=Int64),
-        "dt.epoch_seconds",
+        "dt.epoch",
+        tu="s",
     )
     verify_series_and_expr_api(
         s,
         pl.Series("", [1_577_836_800_000, 1_580_613_610_000], dtype=Int64),
-        "dt.epoch_milliseconds",
+        "dt.epoch",
+        tu="ms",
     )
 
 

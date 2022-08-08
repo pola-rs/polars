@@ -218,15 +218,10 @@ The following methods are available under the `Series.dt` attribute.
 .. autosummary::
    :toctree: api/
 
-    DateTimeNameSpace.and_time_unit
-    DateTimeNameSpace.and_time_zone
     DateTimeNameSpace.cast_time_unit
     DateTimeNameSpace.day
     DateTimeNameSpace.days
     DateTimeNameSpace.epoch
-    DateTimeNameSpace.epoch_days
-    DateTimeNameSpace.epoch_milliseconds
-    DateTimeNameSpace.epoch_seconds
     DateTimeNameSpace.hour
     DateTimeNameSpace.hours
     DateTimeNameSpace.max

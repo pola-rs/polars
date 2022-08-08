@@ -48,7 +48,6 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _ptr_to_numpy,
     _to_python_datetime,
-    deprecated_alias,
     is_bool_sequence,
     is_int_sequence,
     range_to_slice,
@@ -3693,7 +3692,6 @@ class Series:
             series._s.shrink_to_fit()
             return series
 
-    @deprecated_alias(k0="seed", k1="seed_1", k2="seed_2", k3="seed_3")
     def hash(
         self,
         seed: int = 0,
@@ -5719,53 +5717,6 @@ class DateTimeNameSpace:
         else:
             raise ValueError(f"time unit {tu} not understood")
 
-    def epoch_days(self) -> Series:
-        """
-        Get the number of days since the unix EPOCH.
-        If the date is before the unix EPOCH, the number of days will be negative.
-
-        .. deprecated:: 0.13.9
-            Use :func:`epoch` instead.
-
-        Returns
-        -------
-        Days as Int32
-
-        """
-        return wrap_s(self._s).cast(Date).cast(Int32)
-
-    def epoch_milliseconds(self) -> Series:
-        """
-        Get the number of milliseconds since the unix EPOCH.
-
-        If the date is before the unix EPOCH, the number of milliseconds will be
-        negative.
-
-        .. deprecated:: 0.13.9
-            Use :func:`epoch` instead.
-
-        Returns
-        -------
-        Milliseconds as Int64
-
-        """
-        return self.timestamp("ms")
-
-    def epoch_seconds(self) -> Series:
-        """
-        Get the number of seconds since the unix EPOCH
-        If the date is before the unix EPOCH, the number of seconds will be negative.
-
-        .. deprecated:: 0.13.9
-            Use :func:`epoch` instead.
-
-        Returns
-        -------
-        Milliseconds as Int64
-
-        """
-        return wrap_s(self._s.dt_epoch_seconds())
-
     def with_time_unit(self, tu: str) -> Series:
         """
         Set time unit a Series of dtype Datetime or Duration. This does not modify
@@ -5791,36 +5742,6 @@ class DateTimeNameSpace:
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.cast_time_unit(tu)).to_series()
 
-    def and_time_unit(self, tu: str) -> Series:
-        """
-        Set time unit a Series of type Datetime
-
-        .. deprecated::
-            Use :func:`with_time_unit` instead.
-
-        Parameters
-        ----------
-        tu
-            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
-
-        """
-        return self.with_time_unit(tu)
-
-    def and_time_zone(self, tz: str | None) -> Series:
-        """
-        Set time zone a Series of type Datetime.
-
-        .. deprecated::
-            Use :func:`with_time_zone` instead.
-
-        Parameters
-        ----------
-        tz
-            Time zone for the `Datetime` Series.
-
-        """
-        return wrap_s(self._s.and_time_zone(tz))
-
     def with_time_zone(self, tz: str | None) -> Series:
         """
         Set time zone a Series of type Datetime.
@@ -5831,7 +5752,7 @@ class DateTimeNameSpace:
             Time zone for the `Datetime` Series.
 
         """
-        return wrap_s(self._s.and_time_zone(tz))
+        return wrap_s(self._s.with_time_zone(tz))
 
     def days(self) -> Series:
         """

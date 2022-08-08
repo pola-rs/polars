@@ -51,7 +51,6 @@ from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
-    deprecated_alias,
     format_path,
     handle_projection_columns,
     is_bool_sequence,
@@ -943,62 +942,6 @@ class DataFrame:
             return {s.name: s.to_list() for s in self}
 
     @overload
-    def to_json(
-        self,
-        file: IOBase | str | Path | None = ...,
-        pretty: bool = ...,
-        row_oriented: bool = ...,
-        json_lines: bool = ...,
-        *,
-        to_string: Literal[True],
-    ) -> str:
-        ...
-
-    @overload
-    def to_json(
-        self,
-        file: IOBase | str | Path | None = ...,
-        pretty: bool = ...,
-        row_oriented: bool = ...,
-        json_lines: bool = ...,
-        *,
-        to_string: Literal[False] = ...,
-    ) -> None:
-        ...
-
-    @overload
-    def to_json(
-        self,
-        file: IOBase | str | Path | None = ...,
-        pretty: bool = ...,
-        row_oriented: bool = ...,
-        json_lines: bool = ...,
-        *,
-        to_string: bool = ...,
-    ) -> str | None:
-        ...
-
-    def to_json(
-        self,
-        file: IOBase | str | Path | None = None,
-        pretty: bool = False,
-        row_oriented: bool = False,
-        json_lines: bool = False,
-        *,
-        to_string: bool = False,
-    ) -> str | None:  # pragma: no cover
-        """
-        .. deprecated:: 0.13.12
-            Use :func:`write_json` instead.
-        """
-        warnings.warn(
-            "'to_json' is deprecated. please use 'write_json'", DeprecationWarning
-        )
-        return self.write_json(
-            file, pretty, row_oriented, json_lines, to_string=to_string
-        )
-
-    @overload
     def write_json(
         self,
         file: IOBase | str | Path | None = ...,
@@ -1065,7 +1008,7 @@ class DataFrame:
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if to_string or file is None or to_string_io:
             with BytesIO() as buf:
-                self._df.to_json(buf, pretty, row_oriented, json_lines)
+                self._df.write_json(buf, pretty, row_oriented, json_lines)
                 json_bytes = buf.getvalue()
 
             json_str = json_bytes.decode("utf8")
@@ -1074,7 +1017,7 @@ class DataFrame:
             else:
                 return json_str
         else:
-            self._df.to_json(file, pretty, row_oriented, json_lines)
+            self._df.write_json(file, pretty, row_oriented, json_lines)
         return None
 
     def to_pandas(
@@ -1160,29 +1103,14 @@ class DataFrame:
             raise ValueError("only single byte quote char is allowed")
         if file is None:
             buffer = BytesIO()
-            self._df.to_csv(buffer, has_header, ord(sep), ord(quote), batch_size)
+            self._df.write_csv(buffer, has_header, ord(sep), ord(quote), batch_size)
             return str(buffer.getvalue(), encoding="utf-8")
 
         if isinstance(file, (str, Path)):
             file = format_path(file)
 
-        self._df.to_csv(file, has_header, ord(sep), ord(quote), batch_size)
+        self._df.write_csv(file, has_header, ord(sep), ord(quote), batch_size)
         return None
-
-    def to_csv(
-        self,
-        file: TextIO | BytesIO | str | Path | None = None,
-        has_header: bool = True,
-        sep: str = ",",
-    ) -> str | None:  # pragma: no cover
-        """
-        .. deprecated:: 0.13.12
-            Use :func:`write_csv` instead.
-        """
-        warnings.warn(
-            "'to_csv' is deprecated. please use 'write_csv'", DeprecationWarning
-        )
-        return self.write_csv(file, has_header, sep)
 
     def write_avro(
         self,
@@ -1205,21 +1133,7 @@ class DataFrame:
         if isinstance(file, (str, Path)):
             file = format_path(file)
 
-        self._df.to_avro(file, compression)
-
-    def to_avro(
-        self,
-        file: BinaryIO | BytesIO | str | Path,
-        compression: Literal["uncompressed", "snappy", "deflate"] = "uncompressed",
-    ) -> None:  # pragma: no cover
-        """
-        .. deprecated:: 0.13.12
-            Use :func:`write_avro` instead.
-        """
-        warnings.warn(
-            "'to_avro' is deprecated. please use 'write_avro'", DeprecationWarning
-        )
-        return self.write_avro(file, compression)
+        self._df.write_avro(file, compression)
 
     def write_ipc(
         self,
@@ -1242,21 +1156,7 @@ class DataFrame:
         if isinstance(file, (str, Path)):
             file = format_path(file)
 
-        self._df.to_ipc(file, compression)
-
-    def to_ipc(
-        self,
-        file: BinaryIO | BytesIO | str | Path,
-        compression: Literal["uncompressed", "lz4", "zstd"] = "uncompressed",
-    ) -> None:  # pragma: no cover
-        """
-        .. deprecated:: 0.13.12
-            Use :func:`write_ipc` instead.
-        """
-        warnings.warn(
-            "'to_ipc' is deprecated. please use 'write_ipc'", DeprecationWarning
-        )
-        return self.write_ipc(file, compression)
+        self._df.write_ipc(file, compression)
 
     def to_dicts(self) -> list[dict[str, Any]]:
         """
@@ -1467,34 +1367,9 @@ class DataFrame:
                 **kwargs,
             )
         else:
-            self._df.to_parquet(
+            self._df.write_parquet(
                 file, compression, compression_level, statistics, row_group_size
             )
-
-    def to_parquet(
-        self,
-        file: str | Path | BytesIO,
-        compression: (
-            Literal["lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"]
-        ) = "snappy",
-        statistics: bool = False,
-        use_pyarrow: bool = False,
-        **kwargs: Any,
-    ) -> None:  # pragma: no cover
-        """
-        .. deprecated:: 0.13.12
-            Use :func:`write_parquet` instead.
-        """
-        warnings.warn(
-            "'to_parquet' is deprecated. please use 'write_parquet'", DeprecationWarning
-        )
-        return self.write_parquet(
-            file,
-            compression=compression,
-            statistics=statistics,
-            use_pyarrow=use_pyarrow,
-            **kwargs,
-        )
 
     def to_numpy(self) -> np.ndarray[Any, Any]:
         """
@@ -3633,7 +3508,6 @@ class DataFrame:
             self._df.upsample(by, time_column, every, offset, maintain_order)
         )
 
-    @deprecated_alias(df="other")
     def join_asof(
         self,
         other: DataFrame,
@@ -3777,7 +3651,6 @@ class DataFrame:
             .collect(no_optimization=True)
         )
 
-    @deprecated_alias(df="other")
     def join(
         self,
         other: DataFrame,
@@ -5696,18 +5569,6 @@ class DataFrame:
         """
         return self._from_pydf(self._df.to_dummies())
 
-    def distinct(
-        self: DF,
-        maintain_order: bool = True,
-        subset: str | list[str] | None = None,
-        keep: str = "first",
-    ) -> DF:
-        """
-        .. deprecated:: 0.13.13
-            Use :func:`unique` instead.
-        """
-        return self.unique(maintain_order, subset, keep)
-
     def unique(
         self: DF,
         maintain_order: bool = True,
@@ -6045,7 +5906,6 @@ class DataFrame:
         """
         return self.select(pli.col("*").take_every(n))
 
-    @deprecated_alias(k0="seed", k1="seed_1", k2="seed_2", k3="seed_3")
     def hash_rows(
         self,
         seed: int = 0,
@@ -6409,69 +6269,6 @@ class GroupBy(Generic[DF]):
         df = self._dataframe_class._from_pydf(self._df)
         for i in range(groups_df.height):
             yield df[groups[i]]
-
-    def get_group(self, group_value: Any | tuple[Any]) -> DF:
-        """
-        Select a single group as a new DataFrame.
-
-        .. deprecated:: 0.13.32
-            Use :func:`partition_by` instead.
-
-        Parameters
-        ----------
-        group_value
-            Group to select.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": ["one", "one", "one", "two", "two", "two"],
-        ...         "bar": ["A", "B", "C", "A", "B", "C"],
-        ...         "baz": [1, 2, 3, 4, 5, 6],
-        ...     }
-        ... )
-        >>> df.groupby("foo").get_group("one")
-        shape: (3, 3)
-        ┌─────┬─────┬─────┐
-        │ foo ┆ bar ┆ baz │
-        │ --- ┆ --- ┆ --- │
-        │ str ┆ str ┆ i64 │
-        ╞═════╪═════╪═════╡
-        │ one ┆ A   ┆ 1   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ one ┆ B   ┆ 2   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ one ┆ C   ┆ 3   │
-        └─────┴─────┴─────┘
-
-        """
-        groups_df = self.groups()
-        groups = groups_df["groups"]
-
-        if not isinstance(group_value, list):
-            group_value = [group_value]
-
-        by = self.by
-        if not isinstance(by, list):
-            by = [by]
-
-        mask = None
-        for column, group_val in zip(by, group_value):
-            local_mask = groups_df[column] == group_val
-            if mask is None:
-                mask = local_mask
-            else:
-                mask = mask & local_mask
-
-        # should be only one match
-        try:
-            groups_idx = groups[mask][0]  # type: ignore[index]
-        except IndexError:
-            raise ValueError(f"no group: {group_value} found") from None
-
-        df = self._dataframe_class._from_pydf(self._df)
-        return df[groups_idx]
 
     def groups(self) -> DF:  # pragma: no cover
         """

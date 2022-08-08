@@ -269,15 +269,10 @@ The following methods are available under the `expr.dt` attribute.
 .. autosummary::
    :toctree: api/
 
-    ExprDateTimeNameSpace.and_time_unit
-    ExprDateTimeNameSpace.and_time_zone
     ExprDateTimeNameSpace.cast_time_unit
     ExprDateTimeNameSpace.day
     ExprDateTimeNameSpace.days
     ExprDateTimeNameSpace.epoch
-    ExprDateTimeNameSpace.epoch_days
-    ExprDateTimeNameSpace.epoch_milliseconds
-    ExprDateTimeNameSpace.epoch_seconds
     ExprDateTimeNameSpace.hour
     ExprDateTimeNameSpace.hours
     ExprDateTimeNameSpace.milliseconds
