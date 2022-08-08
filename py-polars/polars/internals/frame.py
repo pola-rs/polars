@@ -104,11 +104,14 @@ if sys.version_info >= (3, 10):
 else:
     from typing_extensions import TypeAlias
 
+
 # A type variable used to refer to a polars.DataFrame or any subclass of it.
 # Used to annotate DataFrame methods which returns the same type as self.
 DF = TypeVar("DF", bound="DataFrame")
 
 if TYPE_CHECKING:
+    from polars.internals.datatypes import ClosedWindow, InterpolationMethod
+
     # these aliases are used to annotate DataFrame.__getitem__()
     # MultiRowSelector indexes into the vertical axis and
     # MultiColSelector indexes into the horizontal axis
@@ -3182,7 +3185,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         index_column: str,
         period: str,
         offset: str | None = None,
-        closed: str = "right",
+        closed: ClosedWindow = "right",
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> RollingGroupBy[DF]:
         """
@@ -3236,9 +3239,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             length of the window
         offset
             offset of the window. Default is -period
-        closed
-            Defines if the window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'right', 'left', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
         by
             Also group by this column/these columns
 
@@ -3296,7 +3298,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         offset: str | None = None,
         truncate: bool = True,
         include_boundaries: bool = False,
-        closed: str = "right",
+        closed: ClosedWindow = "right",
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> DynamicGroupBy:
         """
@@ -3360,9 +3362,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             Add the lower and upper bound of the window to the "_lower_bound" and
             "_upper_bound" columns. This will impact performance because it's harder to
             parallelize
-        closed
-            Defines if the window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'right', 'left', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
         by
             Also group by this column/these columns
 
@@ -5654,18 +5655,18 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         return self.select(pli.all().product())
 
-    def quantile(self: DF, quantile: float, interpolation: str = "nearest") -> DF:
+    def quantile(
+        self: DF, quantile: float, interpolation: InterpolationMethod = "nearest"
+    ) -> DF:
         """
         Aggregate the columns of this DataFrame to their quantile value.
 
         Parameters
         ----------
         quantile
-            quantile between 0.0 and 1.0
-
-        interpolation
-            interpolation type, options:
-            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
 
         Examples
         --------
@@ -6260,7 +6261,7 @@ class RollingGroupBy(Generic[DF]):
         index_column: str,
         period: str,
         offset: str | None,
-        closed: str = "none",
+        closed: ClosedWindow = "none",
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ):
         self.df = df
@@ -6304,7 +6305,7 @@ class DynamicGroupBy(Generic[DF]):
         offset: str | None,
         truncate: bool = True,
         include_boundaries: bool = True,
-        closed: str = "none",
+        closed: ClosedWindow = "none",
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ):
         self.df = df
@@ -7151,18 +7152,18 @@ class GroupBy(Generic[DF]):
         """
         return self.agg(pli.all().n_unique())
 
-    def quantile(self, quantile: float, interpolation: str = "nearest") -> DF:
+    def quantile(
+        self, quantile: float, interpolation: InterpolationMethod = "nearest"
+    ) -> DF:
         """
         Compute the quantile per group.
 
         Parameters
         ----------
         quantile
-            quantile between 0.0 and 1.0
-
-        interpolation
-            interpolation type, options:
-            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
 
         Examples
         --------
@@ -7395,18 +7396,18 @@ class GBSelection(Generic[DF]):
             self._df.groupby(self.by, self.selection, "n_unique")
         )
 
-    def quantile(self, quantile: float, interpolation: str = "nearest") -> DF:
+    def quantile(
+        self, quantile: float, interpolation: InterpolationMethod = "nearest"
+    ) -> DF:
         """
         Compute the quantile per group.
 
         Parameters
         ----------
         quantile
-            quantile between 0.0 and 1.0
-
-        interpolation
-            interpolation type, options:
-            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
 
         """
         return self._dataframe_class._from_pydf(

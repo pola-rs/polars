@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from datetime import date, datetime, timedelta
 from inspect import isclass
-from typing import Any, Callable, Sequence, cast, overload
+from typing import TYPE_CHECKING, Any, Callable, Sequence, cast, overload
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -62,6 +62,9 @@ if sys.version_info >= (3, 8):
     from typing import Literal
 else:
     from typing_extensions import Literal
+
+if TYPE_CHECKING:
+    from polars.internals.datatypes import InterpolationMethod
 
 
 def col(
@@ -1028,8 +1031,22 @@ def groups(column: str) -> pli.Expr:
     return col(column).agg_groups()
 
 
-def quantile(column: str, quantile: float, interpolation: str = "nearest") -> pli.Expr:
-    """Syntactic sugar for `pl.col("foo").quantile(..)`."""
+def quantile(
+    column: str, quantile: float, interpolation: InterpolationMethod = "nearest"
+) -> pli.Expr:
+    """
+    Syntactic sugar for `pl.col("foo").quantile(..)`.
+
+    Parameters
+    ----------
+    column
+        Column name.
+    quantile
+        Quantile between 0.0 and 1.0.
+    interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        Interpolation method.
+
+    """
     return col(column).quantile(quantile, interpolation)
 
 

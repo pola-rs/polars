@@ -5,7 +5,7 @@ import math
 import random
 import sys
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, List, Sequence
+from typing import TYPE_CHECKING, Any, Callable, List, Sequence
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -40,6 +40,9 @@ if sys.version_info >= (3, 8):
     from typing import Literal
 else:
     from typing_extensions import Literal
+
+if TYPE_CHECKING:
+    from polars.internals.datatypes import ClosedWindow, InterpolationMethod
 
 
 def selection_to_pyexpr_list(
@@ -2555,7 +2558,11 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.is_duplicated())
 
-    def quantile(self, quantile: float, interpolation: str = "nearest") -> Expr:
+    def quantile(
+        self,
+        quantile: float,
+        interpolation: InterpolationMethod = "nearest",
+    ) -> Expr:
         """
         Get quantile value.
 
@@ -2563,11 +2570,9 @@ class Expr:
         Parameters
         ----------
         quantile
-            quantile between 0.0 and 1.0
-
-        interpolation
-            interpolation type, options:
-            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
 
         Examples
         --------
@@ -3241,7 +3246,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Apply a rolling min (moving min) over the values in this array.
@@ -3282,9 +3287,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
 
         .. warning::
@@ -3342,7 +3346,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Apply a rolling max (moving max) over the values in this array.
@@ -3383,9 +3387,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -3442,7 +3445,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Apply a rolling mean (moving mean) over the values in this array.
@@ -3483,9 +3486,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -3540,7 +3542,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Apply a rolling sum (moving sum) over the values in this array.
@@ -3581,9 +3583,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -3640,7 +3641,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Compute a rolling standard deviation.
@@ -3681,9 +3682,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -3711,7 +3711,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Compute a rolling variance.
@@ -3752,9 +3752,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -3782,7 +3781,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Compute a rolling median.
@@ -3819,9 +3818,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -3845,13 +3843,13 @@ class Expr:
     def rolling_quantile(
         self,
         quantile: float,
-        interpolation: str = "nearest",
+        interpolation: InterpolationMethod = "nearest",
         window_size: int | str = 2,
         weights: List[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Compute a rolling quantile.
@@ -3859,10 +3857,9 @@ class Expr:
         Parameters
         ----------
         quantile
-            quantile to compute
-        interpolation
-            interpolation type, options:
-            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
             size indicated by the following string language:
@@ -3893,9 +3890,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change

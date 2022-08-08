@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import Optional, Sequence, overload
+from typing import TYPE_CHECKING, Optional, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import Categorical, Date, Float64
@@ -22,6 +22,9 @@ try:
     _DOCUMENTING = False
 except ImportError:
     _DOCUMENTING = True
+
+if TYPE_CHECKING:
+    from polars.internals.datatypes import ClosedWindow
 
 
 def get_dummies(df: pli.DataFrame) -> pli.DataFrame:
@@ -168,7 +171,7 @@ def date_range(
     low: date | datetime,
     high: date | datetime,
     interval: str | timedelta,
-    closed: str | None = "both",
+    closed: ClosedWindow = "both",
     name: str | None = None,
     time_unit: str | None = None,
 ) -> pli.Series:
@@ -185,8 +188,8 @@ def date_range(
         Interval periods. It can be a python timedelta object, like
         ``timedelta(days=10)``, or a polars duration string, such as ``3d12h4m25s``
         representing 3 days, 12 hours, 4 minutes, and 25 seconds.
-    closed : {None, 'left', 'right', 'both', 'none'}
-        Make the interval closed to the 'left', 'right', 'none' or 'both' sides.
+    closed : {'both', 'left', 'right', 'none'}
+        Define whether the temporal window interval is closed or not.
     name
         Name of the output Series.
     time_unit : {'ns', 'us', 'ms'}

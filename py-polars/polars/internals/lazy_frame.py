@@ -13,7 +13,7 @@ import typing
 import warnings
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
-from typing import Any, Callable, Generic, Sequence, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, Sequence, TypeVar, overload
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -46,6 +46,10 @@ try:
     _PYARROW_AVAILABLE = True
 except ImportError:
     _PYARROW_AVAILABLE = False
+
+if TYPE_CHECKING:
+    from polars.internals.datatypes import ClosedWindow, InterpolationMethod
+
 
 # Used to type any type or subclass of LazyFrame.
 # Used to indicate when LazyFrame methods return the same type as self,
@@ -992,7 +996,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         index_column: str,
         period: str,
         offset: str | None = None,
-        closed: str = "right",
+        closed: ClosedWindow = "right",
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> LazyGroupBy[LDF]:
         """
@@ -1046,9 +1050,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             length of the window
         offset
             offset of the window. Default is -period
-        closed
-            Defines if the window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'right', 'left', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
         by
             Also group by this column/these columns
 
@@ -1111,7 +1114,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         offset: str | None = None,
         truncate: bool = True,
         include_boundaries: bool = False,
-        closed: str = "right",
+        closed: ClosedWindow = "right",
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> LazyGroupBy[LDF]:
         """
@@ -1179,9 +1182,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Add the lower and upper bound of the window to the "_lower_bound" and
             "_upper_bound" columns. This will impact performance because it's harder to
             parallelize
-        closed
-            Defines if the window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'right', 'left', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
         by
             Also group by this column/these columns
 
@@ -2058,8 +2060,20 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """Aggregate the columns in the DataFrame to their median value."""
         return self._from_pyldf(self._ldf.median())
 
-    def quantile(self: LDF, quantile: float, interpolation: str = "nearest") -> LDF:
-        """Aggregate the columns in the DataFrame to their quantile value."""
+    def quantile(
+        self: LDF, quantile: float, interpolation: InterpolationMethod = "nearest"
+    ) -> LDF:
+        """
+        Aggregate the columns in the DataFrame to their quantile value.
+
+        Parameters
+        ----------
+        quantile
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
+
+        """
         return self._from_pyldf(self._ldf.quantile(quantile, interpolation))
 
     def explode(
