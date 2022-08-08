@@ -7,9 +7,10 @@ use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::*;
 use crate::utils::has_wildcard;
 use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
+use polars_core::functions::pearson_corr_i;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
-use polars_core::utils::get_supertype;
+use polars_core::utils::{coalesce_nulls_series, get_supertype};
 #[cfg(feature = "list")]
 use polars_ops::prelude::ListNameSpaceImpl;
 use rayon::prelude::*;
@@ -80,46 +81,67 @@ pub fn cov(a: Expr, b: Expr) -> Expr {
 }
 
 /// Compute the pearson correlation between two columns.
-pub fn pearson_corr(a: Expr, b: Expr) -> Expr {
+pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
     let name = "pearson_corr";
     let function = move |a: Series, b: Series| {
         let s = match a.dtype() {
             DataType::Float32 => {
                 let ca_a = a.f32().unwrap();
                 let ca_b = b.f32().unwrap();
-                Series::new(name, &[polars_core::functions::pearson_corr_f(ca_a, ca_b)])
+                Series::new(
+                    name,
+                    &[polars_core::functions::pearson_corr_f(ca_a, ca_b, ddof)],
+                )
             }
             DataType::Float64 => {
                 let ca_a = a.f64().unwrap();
                 let ca_b = b.f64().unwrap();
-                Series::new(name, &[polars_core::functions::pearson_corr_f(ca_a, ca_b)])
+                Series::new(
+                    name,
+                    &[polars_core::functions::pearson_corr_f(ca_a, ca_b, ddof)],
+                )
             }
             DataType::Int32 => {
                 let ca_a = a.i32().unwrap();
                 let ca_b = b.i32().unwrap();
-                Series::new(name, &[polars_core::functions::pearson_corr_i(ca_a, ca_b)])
+                Series::new(
+                    name,
+                    &[polars_core::functions::pearson_corr_i(ca_a, ca_b, ddof)],
+                )
             }
             DataType::Int64 => {
                 let ca_a = a.i64().unwrap();
                 let ca_b = b.i64().unwrap();
-                Series::new(name, &[polars_core::functions::pearson_corr_i(ca_a, ca_b)])
+                Series::new(
+                    name,
+                    &[polars_core::functions::pearson_corr_i(ca_a, ca_b, ddof)],
+                )
             }
             DataType::UInt32 => {
                 let ca_a = a.u32().unwrap();
                 let ca_b = b.u32().unwrap();
-                Series::new(name, &[polars_core::functions::pearson_corr_i(ca_a, ca_b)])
+                Series::new(
+                    name,
+                    &[polars_core::functions::pearson_corr_i(ca_a, ca_b, ddof)],
+                )
             }
             DataType::UInt64 => {
                 let ca_a = a.u64().unwrap();
                 let ca_b = b.u64().unwrap();
-                Series::new(name, &[polars_core::functions::pearson_corr_i(ca_a, ca_b)])
+                Series::new(
+                    name,
+                    &[polars_core::functions::pearson_corr_i(ca_a, ca_b, ddof)],
+                )
             }
             _ => {
                 let a = a.cast(&DataType::Float64)?;
                 let b = b.cast(&DataType::Float64)?;
                 let ca_a = a.f64().unwrap();
                 let ca_b = b.f64().unwrap();
-                Series::new(name, &[polars_core::functions::pearson_corr_f(ca_a, ca_b)])
+                Series::new(
+                    name,
+                    &[polars_core::functions::pearson_corr_f(ca_a, ca_b, ddof)],
+                )
             }
         };
         Ok(s)
@@ -146,18 +168,32 @@ pub fn pearson_corr(a: Expr, b: Expr) -> Expr {
 /// Compute the spearman rank correlation between two columns.
 #[cfg(feature = "rank")]
 #[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
-pub fn spearman_rank_corr(a: Expr, b: Expr) -> Expr {
-    pearson_corr(
-        a.rank(RankOptions {
+pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
+    let function = move |a: Series, b: Series| {
+        let (a, b) = coalesce_nulls_series(&a, &b);
+
+        let a = a.rank(RankOptions {
             method: RankMethod::Min,
             ..Default::default()
-        }),
-        b.rank(RankOptions {
+        });
+        let b = b.rank(RankOptions {
             method: RankMethod::Min,
             ..Default::default()
-        }),
+        });
+        let a = a.idx().unwrap();
+        let b = b.idx().unwrap();
+
+        let name = "spearman_rank_correlation";
+        Ok(Series::new(name, &[pearson_corr_i(a, b, ddof)]))
+    };
+
+    apply_binary(a, b, function, GetOutput::from_type(DataType::Float64)).with_function_options(
+        |mut options| {
+            options.auto_explode = true;
+            options.fmt_str = "spearman_rank_correlation";
+            options
+        },
     )
-    .with_fmt("spearman_rank_correlation")
 }
 
 /// Find the indexes that would sort these series in order of appearance.

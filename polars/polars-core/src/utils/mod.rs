@@ -1008,6 +1008,47 @@ where
     None
 }
 
+/// ensure that nulls are propagated to both arrays
+pub fn coalesce_nulls<'a, T: PolarsDataType>(
+    a: &'a ChunkedArray<T>,
+    b: &'a ChunkedArray<T>,
+) -> (Cow<'a, ChunkedArray<T>>, Cow<'a, ChunkedArray<T>>) {
+    if a.null_count() > 0 || b.null_count() > 0 {
+        let (a, b) = align_chunks_binary(a, b);
+        let mut b = b.into_owned();
+        let a = a.coalesce_nulls(b.chunks());
+
+        for arr in a.chunks().iter() {
+            for arr_b in unsafe { b.chunks_mut() } {
+                *arr_b = arr_b.with_validity(arr.validity().cloned())
+            }
+        }
+        (Cow::Owned(a), Cow::Owned(b))
+    } else {
+        (Cow::Borrowed(a), Cow::Borrowed(b))
+    }
+}
+
+pub fn coalesce_nulls_series(a: &Series, b: &Series) -> (Series, Series) {
+    if a.null_count() > 0 || b.null_count() > 0 {
+        let mut a = a.rechunk();
+        let mut b = b.rechunk();
+        for (arr_a, arr_b) in unsafe { a.chunks_mut().iter_mut().zip(b.chunks_mut()) } {
+            let validity = match (arr_a.validity(), arr_b.validity()) {
+                (None, Some(b)) => Some(b.clone()),
+                (Some(a), Some(b)) => Some(a & b),
+                (Some(a), None) => Some(a.clone()),
+                (None, None) => None,
+            };
+            *arr_a = arr_a.with_validity(validity.clone());
+            *arr_b = arr_b.with_validity(validity);
+        }
+        (a, b)
+    } else {
+        (a.clone(), b.clone())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

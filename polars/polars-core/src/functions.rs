@@ -5,6 +5,7 @@
 #[cfg(feature = "sort_multiple")]
 use crate::chunked_array::ops::sort::prepare_argsort;
 use crate::prelude::*;
+use crate::utils::coalesce_nulls;
 #[cfg(feature = "diagonal_concat")]
 use crate::utils::concat_df;
 #[cfg(feature = "diagonal_concat")]
@@ -58,7 +59,7 @@ where
 }
 
 /// Compute the pearson correlation between two columns.
-pub fn pearson_corr_i<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<f64>
+pub fn pearson_corr_i<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>, ddof: u8) -> Option<f64>
 where
     T: PolarsIntegerType,
     T::Native: ToPrimitive,
@@ -67,11 +68,15 @@ where
         + compute::aggregate::SimdOrd<T::Native>,
     ChunkedArray<T>: ChunkVar<f64>,
 {
-    Some(cov_i(a, b)? / (a.std(1)? * b.std(1)?))
+    let (a, b) = coalesce_nulls(a, b);
+    let a = a.as_ref();
+    let b = b.as_ref();
+
+    Some(cov_i(a, b)? / (a.std(ddof)? * b.std(ddof)?))
 }
 
 /// Compute the pearson correlation between two columns.
-pub fn pearson_corr_f<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
+pub fn pearson_corr_f<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>, ddof: u8) -> Option<T::Native>
 where
     T: PolarsFloatType,
     T::Native: Float,
@@ -80,7 +85,11 @@ where
         + compute::aggregate::SimdOrd<T::Native>,
     ChunkedArray<T>: ChunkVar<T::Native>,
 {
-    Some(cov_f(a, b)? / (a.std(1)? * b.std(1)?))
+    let (a, b) = coalesce_nulls(a, b);
+    let a = a.as_ref();
+    let b = b.as_ref();
+
+    Some(cov_f(a, b)? / (a.std(ddof)? * b.std(ddof)?))
 }
 
 #[cfg(feature = "sort_multiple")]
@@ -298,7 +307,9 @@ mod test {
         let a = Series::new("a", &[1.0f32, 2.0]);
         let b = Series::new("b", &[1.0f32, 2.0]);
         assert!((cov_f(a.f32().unwrap(), b.f32().unwrap()).unwrap() - 0.5).abs() < 0.001);
-        assert!((pearson_corr_f(a.f32().unwrap(), b.f32().unwrap()).unwrap() - 1.0).abs() < 0.001);
+        assert!(
+            (pearson_corr_f(a.f32().unwrap(), b.f32().unwrap(), 1).unwrap() - 1.0).abs() < 0.001
+        );
     }
 
     #[test]

@@ -687,10 +687,7 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
     return pli.wrap_expr(pylit(item))
 
 
-def spearman_rank_corr(
-    a: str | pli.Expr,
-    b: str | pli.Expr,
-) -> pli.Expr:
+def spearman_rank_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Expr:
     """
     Compute the spearman rank correlation between two columns.
 
@@ -700,19 +697,18 @@ def spearman_rank_corr(
         Column name or Expression.
     b
         Column name or Expression.
+    ddof
+        Delta degrees of freedom
 
     """
     if isinstance(a, str):
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return pli.wrap_expr(pyspearman_rank_corr(a._pyexpr, b._pyexpr))
+    return pli.wrap_expr(pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof))
 
 
-def pearson_corr(
-    a: str | pli.Expr,
-    b: str | pli.Expr,
-) -> pli.Expr:
+def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Expr:
     """
     Compute the pearson's correlation between two columns.
 
@@ -722,13 +718,15 @@ def pearson_corr(
         Column name or Expression.
     b
         Column name or Expression.
+    ddof
+        Delta degrees of freedom
 
     """
     if isinstance(a, str):
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return pli.wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr))
+    return pli.wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr, ddof))
 
 
 def cov(

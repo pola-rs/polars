@@ -410,6 +410,27 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         BooleanChunked::from_chunks(self.name(), chunks)
     }
 
+    pub(crate) fn coalesce_nulls(&self, other: &[ArrayRef]) -> Self {
+        assert_eq!(self.chunks.len(), other.len());
+        let chunks = self
+            .chunks
+            .iter()
+            .zip(other)
+            .map(|(a, b)| {
+                assert_eq!(a.len(), b.len());
+                let validity = match (a.validity(), b.validity()) {
+                    (None, Some(b)) => Some(b.clone()),
+                    (Some(a), Some(b)) => Some(a & b),
+                    (Some(a), None) => Some(a.clone()),
+                    (None, None) => None,
+                };
+
+                a.with_validity(validity)
+            })
+            .collect();
+        self.copy_with_chunks(chunks, true)
+    }
+
     /// Get data type of ChunkedArray.
     pub fn dtype(&self) -> &DataType {
         self.field.data_type()

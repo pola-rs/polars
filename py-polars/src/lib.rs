@@ -151,13 +151,13 @@ fn repeat(value: &PyAny, n_times: PyExpr) -> PyExpr {
 }
 
 #[pyfunction]
-fn pearson_corr(a: dsl::PyExpr, b: dsl::PyExpr) -> dsl::PyExpr {
-    polars::lazy::dsl::pearson_corr(a.inner, b.inner).into()
+fn pearson_corr(a: dsl::PyExpr, b: dsl::PyExpr, ddof: u8) -> dsl::PyExpr {
+    polars::lazy::dsl::pearson_corr(a.inner, b.inner, ddof).into()
 }
 
 #[pyfunction]
-fn spearman_rank_corr(a: dsl::PyExpr, b: dsl::PyExpr) -> dsl::PyExpr {
-    polars::lazy::dsl::spearman_rank_corr(a.inner, b.inner).into()
+fn spearman_rank_corr(a: dsl::PyExpr, b: dsl::PyExpr, ddof: u8) -> dsl::PyExpr {
+    polars::lazy::dsl::spearman_rank_corr(a.inner, b.inner, ddof).into()
 }
 
 #[pyfunction]

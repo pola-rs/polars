@@ -14,7 +14,7 @@ fn test_pearson_corr() -> Result<()> {
         .lazy()
         .groupby_stable([col("uid")])
         // a double aggregation expression.
-        .agg([pearson_corr(col("day"), col("cumcases")).alias("pearson_corr")])
+        .agg([pearson_corr(col("day"), col("cumcases"), 1).alias("pearson_corr")])
         .collect()?;
     let s = out.column("pearson_corr")?.f64()?;
     assert!((s.get(0).unwrap() - 0.997176).abs() < 0.000001);
@@ -24,7 +24,7 @@ fn test_pearson_corr() -> Result<()> {
         .lazy()
         .groupby_stable([col("uid")])
         // a double aggregation expression.
-        .agg([pearson_corr(col("day"), col("cumcases"))
+        .agg([pearson_corr(col("day"), col("cumcases"), 1)
             .pow(2.0)
             .alias("pearson_corr")])
         .collect()
