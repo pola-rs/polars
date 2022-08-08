@@ -36,12 +36,13 @@ import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Generator
+from types import ModuleType
+from typing import Any, Iterator
 
 import polars
 
 
-def modules_in_path(p: Path) -> Generator:
+def modules_in_path(p: Path) -> Iterator[ModuleType]:
     for file in p.rglob("*.py"):
         # Construct path as string for import, for instance "internals.frame"
         # The -3 drops the ".py"

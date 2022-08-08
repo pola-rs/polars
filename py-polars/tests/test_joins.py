@@ -191,9 +191,9 @@ def test_deprecated() -> None:
     result = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [3, 4]})
 
     with pytest.deprecated_call():
-        df.join(df=other, on="a")
+        df.join(df=other, on="a")  # type: ignore[call-arg]
     with pytest.deprecated_call():
-        df.lazy().join(ldf=other.lazy(), on="a").collect()
+        df.lazy().join(ldf=other.lazy(), on="a").collect()  # type: ignore[call-arg]
 
     np.testing.assert_equal(df.join(other=other, on="a").to_numpy(), result.to_numpy())
     np.testing.assert_equal(

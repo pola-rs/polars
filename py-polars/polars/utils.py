@@ -8,7 +8,7 @@ import sys
 import warnings
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence, TypeVar
 
 import polars.internals as pli
 from polars.datatypes import DataType, Date, Datetime
@@ -29,9 +29,9 @@ except ImportError:
     _NUMPY_AVAILABLE = False
 
 if sys.version_info >= (3, 10):
-    from typing import TypeGuard
+    from typing import ParamSpec, TypeGuard
 else:
-    from typing_extensions import TypeGuard
+    from typing_extensions import ParamSpec, TypeGuard
 
 
 def _process_null_values(
@@ -44,7 +44,7 @@ def _process_null_values(
 
 
 # https://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy
-def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
+def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray[Any, Any]:
     """
     Create a memory block view as a numpy array.
 
@@ -119,7 +119,7 @@ def _date_to_pl_date(d: date) -> int:
     return int(dt.timestamp()) // (3600 * 24)
 
 
-def _is_iterable_of(val: Iterable, itertype: type, eltype: type) -> bool:
+def _is_iterable_of(val: Iterable[object], itertype: type, eltype: type) -> bool:
     """Check whether the given iterable is of a certain type."""
     return isinstance(val, itertype) and all(isinstance(x, eltype) for x in val)
 
@@ -279,7 +279,11 @@ def threadpool_size() -> int:
     return _pool_size()
 
 
-def deprecated_alias(**aliases: str) -> Callable:
+P = ParamSpec("P")
+T = TypeVar("T")
+
+
+def deprecated_alias(**aliases: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """
     Deprecate a function or method argument.
 
@@ -290,11 +294,11 @@ def deprecated_alias(**aliases: str) -> Callable:
         ...
     """
 
-    def deco(f: Callable) -> Callable:
-        @functools.wraps(f)
-        def wrapper(*args: Any, **kwargs: Any) -> Callable:
-            _rename_kwargs(f.__name__, kwargs, aliases)
-            return f(*args, **kwargs)
+    def deco(fn: Callable[P, T]) -> Callable[P, T]:
+        @functools.wraps(fn)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            _rename_kwargs(fn.__name__, kwargs, aliases)
+            return fn(*args, **kwargs)
 
         return wrapper
 
@@ -302,7 +306,7 @@ def deprecated_alias(**aliases: str) -> Callable:
 
 
 def _rename_kwargs(
-    func_name: str, kwargs: dict[str, str], aliases: dict[str, str]
+    func_name: str, kwargs: dict[str, object], aliases: dict[str, str]
 ) -> None:
     """
     Rename the keyword arguments of a function.

@@ -170,7 +170,7 @@ class LazyFrame:
         rechunk: bool = True,
         row_count_name: str | None = None,
         row_count_offset: int = 0,
-        storage_options: dict | None = None,
+        storage_options: dict[str, object] | None = None,
         low_memory: bool = False,
     ) -> LDF:
         """
@@ -213,7 +213,7 @@ class LazyFrame:
         rechunk: bool = True,
         row_count_name: str | None = None,
         row_count_offset: int = 0,
-        storage_options: dict | None = None,
+        storage_options: dict[str, object] | None = None,
         memory_map: bool = True,
     ) -> LDF:
         """

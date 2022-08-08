@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Generator
+from typing import Iterator
 
 import pytest
 
@@ -9,7 +9,7 @@ import polars as pl
 
 
 @pytest.fixture()
-def environ() -> Generator:
+def environ() -> Iterator[None]:
     """Fixture to restore the environment variables after the test"""
     old_environ = dict(os.environ)
     yield

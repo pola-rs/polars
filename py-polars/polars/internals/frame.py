@@ -266,7 +266,7 @@ class DataFrame:
         data: (
             dict[str, Sequence[Any]]
             | Sequence[Any]
-            | np.ndarray
+            | np.ndarray[Any, Any]
             | pa.Table
             | pd.DataFrame
             | pli.Series
@@ -341,7 +341,7 @@ class DataFrame:
     @classmethod
     def _from_dict(
         cls: type[DF],
-        data: dict[str, Sequence[Any]],
+        data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]]],
         columns: Sequence[str] | None = None,
     ) -> DF:
         """
@@ -395,7 +395,7 @@ class DataFrame:
     @classmethod
     def _from_numpy(
         cls: type[DF],
-        data: np.ndarray,
+        data: np.ndarray[Any, Any],
         columns: Sequence[str] | None = None,
         orient: Literal["col", "row"] | None = None,
     ) -> DF:
@@ -1496,7 +1496,7 @@ class DataFrame:
             **kwargs,
         )
 
-    def to_numpy(self) -> np.ndarray:
+    def to_numpy(self) -> np.ndarray[Any, Any]:
         """
         Convert DataFrame to a 2d numpy array.
         This operation clones data.
@@ -1704,7 +1704,9 @@ class DataFrame:
         else:
             return self.shape[dim] + idx
 
-    def _pos_idxs(self, idxs: np.ndarray | pli.Series, dim: int) -> pli.Series:
+    def _pos_idxs(
+        self, idxs: np.ndarray[Any, Any] | pli.Series, dim: int
+    ) -> pli.Series:
         # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
         idx_type = get_idx_type()
 
@@ -1784,7 +1786,7 @@ class DataFrame:
     def __getitem__(
         self: DF,
         item: int
-        | np.ndarray
+        | np.ndarray[Any, Any]
         | pli.Expr
         | list[pli.Expr]
         | MultiColSelector
@@ -1814,7 +1816,7 @@ class DataFrame:
         item: (
             str
             | int
-            | np.ndarray
+            | np.ndarray[Any, Any]
             | pli.Expr
             | list[pli.Expr]
             | MultiColSelector
@@ -1981,7 +1983,7 @@ class DataFrame:
         )
 
     def __setitem__(
-        self, key: str | list | tuple[Any, str | int], value: Any
+        self, key: str | list[Any] | tuple[Any, str | int], value: Any
     ) -> None:  # pragma: no cover
         warnings.warn(
             "setting a DataFrame by indexing is deprecated; Consider using"
@@ -3218,7 +3220,7 @@ class DataFrame:
         return RollingGroupBy(self, index_column, period, offset, closed, by)
 
     def groupby_dynamic(
-        self,
+        self: DF,
         index_column: str,
         every: str,
         period: str | None = None,
@@ -3227,7 +3229,7 @@ class DataFrame:
         include_boundaries: bool = False,
         closed: ClosedWindow = "right",
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
-    ) -> DynamicGroupBy:
+    ) -> DynamicGroupBy[DF]:
         """
         Group based on a time value (or index value of type Int32, Int64).
 
@@ -3633,7 +3635,7 @@ class DataFrame:
 
     @deprecated_alias(df="other")
     def join_asof(
-        self: DF,
+        self,
         other: DataFrame,
         left_on: str | None = None,
         right_on: str | None = None,
@@ -3646,7 +3648,7 @@ class DataFrame:
         tolerance: str | int | float | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
-    ) -> DF:
+    ) -> DataFrame:
         """
         Perform an asof join. This is similar to a left-join except that we
         match on nearest key rather than equal keys.
@@ -3777,7 +3779,7 @@ class DataFrame:
 
     @deprecated_alias(df="other")
     def join(
-        self: DF,
+        self,
         other: DataFrame,
         left_on: str | pli.Expr | list[str | pli.Expr] | None = None,
         right_on: str | pli.Expr | list[str | pli.Expr] | None = None,
@@ -3787,7 +3789,7 @@ class DataFrame:
         asof_by: str | list[str] | None = None,
         asof_by_left: str | list[str] | None = None,
         asof_by_right: str | list[str] | None = None,
-    ) -> DF:
+    ) -> DataFrame:
         """
         Join in SQL-like fashion.
 
@@ -5978,7 +5980,7 @@ class DataFrame:
         """
         return self._df.row_tuple(index)
 
-    def rows(self) -> list[tuple]:
+    def rows(self) -> list[tuple[object, ...]]:
         """
         Convert columnar data to rows as python tuples.
 

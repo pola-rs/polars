@@ -465,7 +465,7 @@ class Series:
     def __neg__(self) -> Series:
         return 0 - self
 
-    def _pos_idxs(self, idxs: np.ndarray | Series) -> Series:
+    def _pos_idxs(self, idxs: np.ndarray[Any, Any] | Series) -> Series:
         # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
         idx_type = get_idx_type()
 
@@ -538,7 +538,14 @@ class Series:
         raise NotImplementedError("Unsupported idxs datatype.")
 
     def __getitem__(
-        self, item: int | Series | range | slice | np.ndarray | list[int] | list[bool]
+        self,
+        item: int
+        | Series
+        | range
+        | slice
+        | np.ndarray[Any, Any]
+        | list[int]
+        | list[bool],
     ) -> Any:
         if isinstance(item, int):
             if item < 0:
@@ -590,7 +597,9 @@ class Series:
         )
 
     def __setitem__(
-        self, key: int | Series | np.ndarray | list | tuple, value: Any
+        self,
+        key: int | Series | np.ndarray[Any, Any] | Sequence[object] | tuple[object],
+        value: Any,
     ) -> None:
         if isinstance(value, Sequence) and not isinstance(value, str):
             if self.is_numeric() or self.is_datelike():
@@ -1424,7 +1433,7 @@ class Series:
             else:
                 raise e
 
-    def filter(self, predicate: Series | list) -> Series:
+    def filter(self, predicate: Series | list[bool]) -> Series:
         """
         Filter elements by a boolean mask.
 
@@ -1632,7 +1641,7 @@ class Series:
             return pli.select(pli.lit(self).unique(maintain_order)).to_series()
         return wrap_s(self._s.unique())
 
-    def take(self, indices: np.ndarray | list[int] | pli.Expr) -> Series:
+    def take(self, indices: np.ndarray[Any, Any] | list[int] | pli.Expr) -> Series:
         """
         Take values by index.
 
@@ -1830,7 +1839,7 @@ class Series:
         """
         return wrap_s(self._s.is_not_nan())
 
-    def is_in(self, other: Series | list) -> Series:
+    def is_in(self, other: Series | list[object]) -> Series:
         """
         Check if elements of this Series are in the right Series, or List values of the
         right Series.
@@ -2254,7 +2263,7 @@ class Series:
         """
         return self.dtype is Utf8
 
-    def view(self, ignore_nulls: bool = False) -> np.ndarray:
+    def view(self, ignore_nulls: bool = False) -> np.ndarray[Any, Any]:
         """
         Get a view into this Series data with a numpy array. This operation doesn't
         clone data, but does not include missing values. Don't use this unless you know
@@ -2282,7 +2291,7 @@ class Series:
         array.setflags(write=False)
         return array
 
-    def __array__(self, dtype: Any = None) -> np.ndarray:
+    def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
         if dtype:
             return self.to_numpy().__array__(dtype)
         else:
@@ -2310,7 +2319,7 @@ class Series:
                     "Only ufuncs that return one 1D array, are supported."
                 )
 
-            args: list[int | float | np.ndarray] = []
+            args: list[int | float | np.ndarray[Any, Any]] = []
 
             for arg in inputs:
                 if isinstance(arg, (int, float, np.ndarray)):
@@ -2366,7 +2375,7 @@ class Series:
 
     def to_numpy(
         self, *args: Any, zero_copy_only: bool = False, **kwargs: Any
-    ) -> np.ndarray:
+    ) -> np.ndarray[Any, Any]:
         """
         Convert this Series to numpy. This operation clones data but is completely safe.
 
@@ -2399,7 +2408,7 @@ class Series:
 
         """
 
-        def convert_to_date(arr: np.ndarray) -> np.ndarray:
+        def convert_to_date(arr: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
             if self.dtype == Date:
                 tp = "datetime64[D]"
             elif self.dtype == Duration:
@@ -2473,7 +2482,7 @@ class Series:
 
     def set_at_idx(
         self,
-        idx: Series | np.ndarray | list[int] | tuple[int],
+        idx: Series | np.ndarray[Any, Any] | list[int] | tuple[int],
         value: int
         | float
         | str

@@ -4,7 +4,7 @@ import sys
 from contextlib import suppress
 from datetime import date, datetime, time, timedelta
 from itertools import zip_longest
-from typing import TYPE_CHECKING, Any, Iterable, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -91,7 +91,10 @@ def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySe
 
 
 def numpy_to_pyseries(
-    name: str, values: np.ndarray, strict: bool = True, nan_to_null: bool = False
+    name: str,
+    values: np.ndarray[Any, Any],
+    strict: bool = True,
+    nan_to_null: bool = False,
 ) -> PySeries:
     """Construct a PySeries from a numpy array."""
     if not values.flags["C_CONTIGUOUS"]:
@@ -411,7 +414,8 @@ def _unpack_columns(
 
 
 def dict_to_pydf(
-    data: dict[str, Sequence[Any]], columns: ColumnsType | None = None
+    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]]],
+    columns: ColumnsType | None = None,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a dictionary of sequences."""
     if columns is not None:
@@ -520,7 +524,7 @@ def sequence_to_pydf(
 
 
 def numpy_to_pydf(
-    data: np.ndarray,
+    data: np.ndarray[Any, Any],
     columns: ColumnsType | None = None,
     orient: Literal["col", "row"] | None = None,
 ) -> PyDataFrame:

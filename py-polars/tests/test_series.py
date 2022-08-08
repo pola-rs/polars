@@ -539,7 +539,7 @@ def test_set_np_array(dtype: Any) -> None:
 
 
 @pytest.mark.parametrize("idx", [[0, 2], (0, 2)])
-def test_set_list_and_tuple(idx: list | tuple) -> None:
+def test_set_list_and_tuple(idx: list[int] | tuple[int]) -> None:
     a = pl.Series("a", [1, 2, 3])
     a[idx] = 4
     assert_series_equal(a, pl.Series("a", [4, 2, 4]))

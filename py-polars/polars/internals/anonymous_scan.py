@@ -93,7 +93,7 @@ def _scan_ipc_impl(uri: str, with_columns: list[str] | None) -> pli.DataFrame:
 
 def _scan_ipc_fsspec(
     file: str,
-    storage_options: dict | None = None,
+    storage_options: dict[str, object] | None = None,
 ) -> pli.LazyFrame:
     func = partial(_scan_ipc_impl, file)
     func_serialized = pickle.dumps(func)
@@ -124,7 +124,7 @@ def _scan_parquet_impl(uri: str, with_columns: list[str] | None) -> pli.DataFram
 
 def _scan_parquet_fsspec(
     file: str,
-    storage_options: dict | None = None,
+    storage_options: dict[str, object] | None = None,
 ) -> pli.LazyFrame:
     func = partial(_scan_parquet_impl, file)
     func_serialized = pickle.dumps(func)

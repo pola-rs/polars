@@ -87,7 +87,7 @@ def read_csv(
     low_memory: bool = False,
     rechunk: bool = True,
     use_pyarrow: bool = False,
-    storage_options: dict | None = None,
+    storage_options: dict[str, object] | None = None,
     skip_rows_after_header: int = 0,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
@@ -594,7 +594,7 @@ def scan_ipc(
     rechunk: bool = True,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
-    storage_options: dict | None = None,
+    storage_options: dict[str, object] | None = None,
     memory_map: bool = True,
     **kwargs: Any,
 ) -> LazyFrame:
@@ -652,7 +652,7 @@ def scan_parquet(
     rechunk: bool = True,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
-    storage_options: dict | None = None,
+    storage_options: dict[str, object] | None = None,
     low_memory: bool = False,
     **kwargs: Any,
 ) -> LazyFrame:
@@ -746,7 +746,7 @@ def read_ipc(
     n_rows: int | None = None,
     use_pyarrow: bool = False,
     memory_map: bool = True,
-    storage_options: dict | None = None,
+    storage_options: dict[str, object] | None = None,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     rechunk: bool = True,
@@ -835,7 +835,7 @@ def read_parquet(
     n_rows: int | None = None,
     use_pyarrow: bool = False,
     memory_map: bool = True,
-    storage_options: dict | None = None,
+    storage_options: dict[str, object] | None = None,
     parallel: Literal["auto", "columns", "row_groups", "none"] = "auto",
     row_count_name: str | None = None,
     row_count_offset: int = 0,
@@ -1035,8 +1035,8 @@ def read_excel(
     file: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: int | None = 1,
     sheet_name: str | None = None,
-    xlsx2csv_options: dict | None = None,
-    read_csv_options: dict | None = None,
+    xlsx2csv_options: dict[str, object] | None = None,
+    read_csv_options: dict[str, object] | None = None,
 ) -> DataFrame:
     """
     Read Excel (XLSX) sheet into a DataFrame.
@@ -1140,7 +1140,7 @@ def read_excel(
     csv_buffer.seek(0)
 
     # Parse CSV output.
-    return read_csv(csv_buffer, **read_csv_options)
+    return read_csv(csv_buffer, **read_csv_options)  # type: ignore[arg-type]
 
 
 def scan_ds(ds: pa.dataset.dataset) -> LazyFrame:
