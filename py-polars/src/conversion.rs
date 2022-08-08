@@ -844,30 +844,24 @@ pub(crate) fn dicts_to_rows(records: &PyAny) -> PyResult<(Vec<Row>, Vec<String>)
 }
 
 pub(crate) fn parse_strategy(strat: &str, limit: FillNullLimit) -> PyResult<FillNullStrategy> {
-    if limit.is_some() && strat != "forward" && strat != "backward" {
-        Err(PyValueError::new_err(
-            "'limit' argument in 'fill_null' only allowed for {'forward', 'backward'} strategies",
-        ))
-    } else {
-        let strat = match strat {
-            "backward" => FillNullStrategy::Backward(limit),
-            "forward" => FillNullStrategy::Forward(limit),
-            "min" => FillNullStrategy::Min,
-            "max" => FillNullStrategy::Max,
-            "mean" => FillNullStrategy::Mean,
-            "zero" => FillNullStrategy::Zero,
-            "one" => FillNullStrategy::One,
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "strategy must be one of {{'backward', 'forward', 'min', 'max', 'mean', 'zero', 'one'}}, got {}",
-                    e,
-                )))
-            }
-        };
-
-        Ok(strat)
-    }
+    let strat = match strat {
+        "forward" => FillNullStrategy::Forward(limit),
+        "backward" => FillNullStrategy::Backward(limit),
+        "min" => FillNullStrategy::Min,
+        "max" => FillNullStrategy::Max,
+        "mean" => FillNullStrategy::Mean,
+        "zero" => FillNullStrategy::Zero,
+        "one" => FillNullStrategy::One,
+        e => {
+            return Err(PyValueError::new_err(format!(
+                "strategy must be one of {{'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}}, got {}",
+                e,
+            )))
+        }
+    };
+    Ok(strat)
 }
+
 #[cfg(feature = "parquet")]
 impl FromPyObject<'_> for Wrap<ParallelStrategy> {
     fn extract(ob: &PyAny) -> PyResult<Self> {

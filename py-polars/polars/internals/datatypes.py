@@ -13,4 +13,5 @@ else:
 IntoExpr = Union[int, float, str, "pli.Expr", "pli.Series"]
 
 ClosedWindow = Literal["left", "right", "both", "none"]
+FillStrategy = Literal["forward", "backward", "min", "max", "mean", "zero", "one"]
 InterpolationMethod = Literal["nearest", "higher", "lower", "midpoint", "linear"]

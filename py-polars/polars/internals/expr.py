@@ -42,7 +42,11 @@ else:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import ClosedWindow, InterpolationMethod
+    from polars.internals.datatypes import (
+        ClosedWindow,
+        FillStrategy,
+        InterpolationMethod,
+    )
 
 
 def selection_to_pyexpr_list(
@@ -1880,25 +1884,27 @@ class Expr:
 
     def fill_null(
         self,
-        fill_value: int | float | bool | str | Expr,
+        value: Any | None = None,
+        strategy: FillStrategy | None = None,
         limit: int | None = None,
     ) -> Expr:
         """
-        Fill null values using a filling strategy, literal, or Expr.
+        Fill null values using the specified value or strategy.
 
         Parameters
         ----------
-        fill_value
-            One of {"backward", "forward", "min", "max", "mean", "one", "zero"}
-            or an expression.
+        value
+            Value used to fill null values.
+        strategy : {None, 'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}
+            Strategy used to fill null values.
         limit
-            The number of consecutive null values to forward/backward fill.
-            Only valid if ``fill_value`` is 'forward' or 'backward'.
+            Number of consecutive null values to fill when using the 'forward' or
+            'backward' strategy.
 
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
-        >>> df.fill_null("zero")
+        >>> df.fill_null(strategy="zero")
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -1926,21 +1932,21 @@ class Expr:
         └─────┴─────┘
 
         """
-        # we first must check if it is not an expr, as expr does not implement __bool__
-        # and thus leads to a value error in the second comparison.
-        if not isinstance(fill_value, Expr) and fill_value in [
-            "backward",
-            "forward",
-            "min",
-            "max",
-            "mean",
-            "zero",
-            "one",
-        ]:
-            return wrap_expr(self._pyexpr.fill_null_with_strategy(fill_value, limit))
+        if value is not None and strategy is not None:
+            raise ValueError("cannot specify both 'value' and 'strategy'.")
+        elif value is None and strategy is None:
+            raise ValueError("must specify either a fill 'value' or 'strategy'")
+        elif strategy not in ("forward", "backward") and limit is not None:
+            raise ValueError(
+                "can only specify 'limit' when strategy is set to"
+                " 'backward' or 'forward'"
+            )
 
-        fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
-        return wrap_expr(self._pyexpr.fill_null(fill_value._pyexpr))
+        if value is not None:
+            value = expr_to_lit_or_expr(value, str_to_lit=True)
+            return wrap_expr(self._pyexpr.fill_null(value._pyexpr))
+        else:
+            return wrap_expr(self._pyexpr.fill_null_with_strategy(strategy, limit))
 
     def fill_nan(self, fill_value: str | int | float | bool | Expr) -> Expr:
         """

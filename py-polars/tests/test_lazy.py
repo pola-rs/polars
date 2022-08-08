@@ -596,8 +596,16 @@ def test_fill_nan() -> None:
 
 def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
-    assert df.select([pl.col("a").fill_null("min")])["a"][1] == 1.0
+
+    assert df.select([pl.col("a").fill_null(strategy="min")])["a"][1] == 1.0
     assert df.lazy().fill_null(2).collect()["a"] == [1.0, 2.0, 3.0]
+
+    with pytest.raises(ValueError, match="must specify either"):
+        df.fill_null()
+    with pytest.raises(ValueError, match="cannot specify both"):
+        df.fill_null(value=3.0, strategy="max")
+    with pytest.raises(ValueError, match="can only specify 'limit'"):
+        df.fill_null(strategy="max", limit=2)
 
 
 def test_backward_fill() -> None:

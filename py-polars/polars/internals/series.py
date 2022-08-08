@@ -87,7 +87,7 @@ else:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import InterpolationMethod
+    from polars.internals.datatypes import FillStrategy, InterpolationMethod
 
 
 def get_ffi_func(
@@ -2599,29 +2599,27 @@ class Series:
 
     def fill_null(
         self,
-        strategy: (
-            Literal["backward", "forward", "min", "max", "mean", "zero", "one"]
-            | pli.Expr
-            | Any
-        ),
+        value: Any | None = None,
+        strategy: FillStrategy | None = None,
         limit: int | None = None,
     ) -> Series:
         """
-        Fill null values using a filling strategy, literal, or Expr.
+        Fill null values using the specified value or strategy.
 
         Parameters
         ----------
-        strategy
-            One of {'backward', 'forward', 'min', 'max', 'mean', 'zero', 'one'}
-            or an expression.
+        value
+            Value used to fill null values.
+        strategy : {None, 'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}
+            Strategy used to fill null values.
         limit
-            The number of consecutive null values to forward/backward fill.
-            Only valid if ``strategy`` is 'forward' or 'backward'.
+            Number of consecutive null values to fill when using the 'forward' or
+            'backward' strategy.
 
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, None])
-        >>> s.fill_null("forward")
+        >>> s.fill_null(strategy="forward")
         shape: (4,)
         Series: 'a' [i64]
         [
@@ -2630,7 +2628,7 @@ class Series:
             3
             3
         ]
-        >>> s.fill_null("min")
+        >>> s.fill_null(strategy="min")
         shape: (4,)
         Series: 'a' [i64]
         [
@@ -2650,11 +2648,9 @@ class Series:
         ]
 
         """
-        if not isinstance(strategy, str):
-            return self.to_frame().select(pli.col(self.name).fill_null(strategy))[
-                self.name
-            ]
-        return wrap_s(self._s.fill_null(strategy, limit))
+        return self.to_frame().select(
+            pli.col(self.name).fill_null(value, strategy, limit)
+        )[self.name]
 
     def floor(self) -> Series:
         """
