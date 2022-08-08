@@ -943,62 +943,6 @@ class DataFrame:
             return {s.name: s.to_list() for s in self}
 
     @overload
-    def to_json(
-        self,
-        file: IOBase | str | Path | None = ...,
-        pretty: bool = ...,
-        row_oriented: bool = ...,
-        json_lines: bool = ...,
-        *,
-        to_string: Literal[True],
-    ) -> str:
-        ...
-
-    @overload
-    def to_json(
-        self,
-        file: IOBase | str | Path | None = ...,
-        pretty: bool = ...,
-        row_oriented: bool = ...,
-        json_lines: bool = ...,
-        *,
-        to_string: Literal[False] = ...,
-    ) -> None:
-        ...
-
-    @overload
-    def to_json(
-        self,
-        file: IOBase | str | Path | None = ...,
-        pretty: bool = ...,
-        row_oriented: bool = ...,
-        json_lines: bool = ...,
-        *,
-        to_string: bool = ...,
-    ) -> str | None:
-        ...
-
-    def to_json(
-        self,
-        file: IOBase | str | Path | None = None,
-        pretty: bool = False,
-        row_oriented: bool = False,
-        json_lines: bool = False,
-        *,
-        to_string: bool = False,
-    ) -> str | None:  # pragma: no cover
-        """
-        .. deprecated:: 0.13.12
-            Use :func:`write_json` instead.
-        """
-        warnings.warn(
-            "'to_json' is deprecated. please use 'write_json'", DeprecationWarning
-        )
-        return self.write_json(
-            file, pretty, row_oriented, json_lines, to_string=to_string
-        )
-
-    @overload
     def write_json(
         self,
         file: IOBase | str | Path | None = ...,
@@ -1065,7 +1009,7 @@ class DataFrame:
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if to_string or file is None or to_string_io:
             with BytesIO() as buf:
-                self._df.to_json(buf, pretty, row_oriented, json_lines)
+                self._df.write_json(buf, pretty, row_oriented, json_lines)
                 json_bytes = buf.getvalue()
 
             json_str = json_bytes.decode("utf8")
@@ -1074,7 +1018,7 @@ class DataFrame:
             else:
                 return json_str
         else:
-            self._df.to_json(file, pretty, row_oriented, json_lines)
+            self._df.write_json(file, pretty, row_oriented, json_lines)
         return None
 
     def to_pandas(
@@ -1160,29 +1104,14 @@ class DataFrame:
             raise ValueError("only single byte quote char is allowed")
         if file is None:
             buffer = BytesIO()
-            self._df.to_csv(buffer, has_header, ord(sep), ord(quote), batch_size)
+            self._df.write_csv(buffer, has_header, ord(sep), ord(quote), batch_size)
             return str(buffer.getvalue(), encoding="utf-8")
 
         if isinstance(file, (str, Path)):
             file = format_path(file)
 
-        self._df.to_csv(file, has_header, ord(sep), ord(quote), batch_size)
+        self._df.write_csv(file, has_header, ord(sep), ord(quote), batch_size)
         return None
-
-    def to_csv(
-        self,
-        file: TextIO | BytesIO | str | Path | None = None,
-        has_header: bool = True,
-        sep: str = ",",
-    ) -> str | None:  # pragma: no cover
-        """
-        .. deprecated:: 0.13.12
-            Use :func:`write_csv` instead.
-        """
-        warnings.warn(
-            "'to_csv' is deprecated. please use 'write_csv'", DeprecationWarning
-        )
-        return self.write_csv(file, has_header, sep)
 
     def write_avro(
         self,
@@ -1205,21 +1134,7 @@ class DataFrame:
         if isinstance(file, (str, Path)):
             file = format_path(file)
 
-        self._df.to_avro(file, compression)
-
-    def to_avro(
-        self,
-        file: BinaryIO | BytesIO | str | Path,
-        compression: Literal["uncompressed", "snappy", "deflate"] = "uncompressed",
-    ) -> None:  # pragma: no cover
-        """
-        .. deprecated:: 0.13.12
-            Use :func:`write_avro` instead.
-        """
-        warnings.warn(
-            "'to_avro' is deprecated. please use 'write_avro'", DeprecationWarning
-        )
-        return self.write_avro(file, compression)
+        self._df.write_avro(file, compression)
 
     def write_ipc(
         self,
@@ -1242,21 +1157,7 @@ class DataFrame:
         if isinstance(file, (str, Path)):
             file = format_path(file)
 
-        self._df.to_ipc(file, compression)
-
-    def to_ipc(
-        self,
-        file: BinaryIO | BytesIO | str | Path,
-        compression: Literal["uncompressed", "lz4", "zstd"] = "uncompressed",
-    ) -> None:  # pragma: no cover
-        """
-        .. deprecated:: 0.13.12
-            Use :func:`write_ipc` instead.
-        """
-        warnings.warn(
-            "'to_ipc' is deprecated. please use 'write_ipc'", DeprecationWarning
-        )
-        return self.write_ipc(file, compression)
+        self._df.write_ipc(file, compression)
 
     def to_dicts(self) -> list[dict[str, Any]]:
         """
@@ -1467,34 +1368,9 @@ class DataFrame:
                 **kwargs,
             )
         else:
-            self._df.to_parquet(
+            self._df.write_parquet(
                 file, compression, compression_level, statistics, row_group_size
             )
-
-    def to_parquet(
-        self,
-        file: str | Path | BytesIO,
-        compression: (
-            Literal["lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"]
-        ) = "snappy",
-        statistics: bool = False,
-        use_pyarrow: bool = False,
-        **kwargs: Any,
-    ) -> None:  # pragma: no cover
-        """
-        .. deprecated:: 0.13.12
-            Use :func:`write_parquet` instead.
-        """
-        warnings.warn(
-            "'to_parquet' is deprecated. please use 'write_parquet'", DeprecationWarning
-        )
-        return self.write_parquet(
-            file,
-            compression=compression,
-            statistics=statistics,
-            use_pyarrow=use_pyarrow,
-            **kwargs,
-        )
 
     def to_numpy(self) -> np.ndarray[Any, Any]:
         """

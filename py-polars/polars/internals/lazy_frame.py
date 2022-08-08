@@ -327,7 +327,7 @@ class LazyFrame:
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if to_string or file is None or to_string_io:
             with BytesIO() as buf:
-                self._ldf.to_json(buf)
+                self._ldf.write_json(buf)
                 json_bytes = buf.getvalue()
 
             json_str = json_bytes.decode("utf8")
@@ -336,7 +336,7 @@ class LazyFrame:
             else:
                 return json_str
         else:
-            self._ldf.to_json(file)
+            self._ldf.write_json(file)
         return None
 
     @classmethod

@@ -287,7 +287,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "avro")]
-    pub fn to_avro(&mut self, py: Python, py_f: PyObject, compression: &str) -> PyResult<()> {
+    pub fn write_avro(&mut self, py: Python, py_f: PyObject, compression: &str) -> PyResult<()> {
         use polars::io::avro::{AvroCompression, AvroWriter};
         let compression = match compression {
             "uncompressed" => None,
@@ -352,7 +352,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "json")]
-    pub fn to_json(
+    pub fn write_json(
         &mut self,
         py_f: PyObject,
         pretty: bool,
@@ -428,7 +428,7 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn to_csv(
+    pub fn write_csv(
         &mut self,
         py: Python,
         py_f: PyObject,
@@ -462,7 +462,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "ipc")]
-    pub fn to_ipc(&mut self, py: Python, py_f: PyObject, compression: &str) -> PyResult<()> {
+    pub fn write_ipc(&mut self, py: Python, py_f: PyObject, compression: &str) -> PyResult<()> {
         let compression = match compression {
             "uncompressed" => None,
             "lz4" => Some(IpcCompression::LZ4),
@@ -585,7 +585,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "parquet")]
-    pub fn to_parquet(
+    pub fn write_parquet(
         &mut self,
         py: Python,
         py_f: PyObject,
