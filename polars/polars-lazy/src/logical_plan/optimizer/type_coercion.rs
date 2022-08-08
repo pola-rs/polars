@@ -369,6 +369,7 @@ impl OptimizationRule for TypeCoercionRule {
                 match (&type_left, type_other) {
                     // cast both local and global string cache
                     // note that there might not yet be a rev
+                    #[cfg(feature = "dtype-categorical")]
                     (DataType::Categorical(_), DataType::Utf8) => {
                         let mut input = input.clone();
 
