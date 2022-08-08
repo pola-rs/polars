@@ -13,13 +13,16 @@ from polars.testing import assert_frame_equal
 
 def test_lazy() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    _ = df.lazy().with_column(lit(1).alias("foo")).select([col("a"), col("foo")])
+    _ = df.lazy().with_column(pl.lit(1).alias("foo")).select([col("a"), col("foo")])
 
     # test if it executes
     _ = (
         df.lazy()
         .with_column(
-            when(col("a").gt(lit(2))).then(lit(10)).otherwise(lit(1)).alias("new")
+            when(pl.col("a") > pl.lit(2))
+            .then(pl.lit(10))
+            .otherwise(pl.lit(1))
+            .alias("new")
         )
         .collect()
     )
@@ -922,10 +925,10 @@ def test_expr_bool_cmp() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
 
     with pytest.raises(ValueError):
-        df.select([pl.col("a").gt(pl.col("b")) and pl.col("b").gt(pl.col("b"))])
+        df.select([(pl.col("a") > pl.col("b")) and (pl.col("b") > pl.col("b"))])
 
     with pytest.raises(ValueError):
-        df.select([pl.col("a").gt(pl.col("b")) or pl.col("b").gt(pl.col("b"))])
+        df.select([(pl.col("a") > pl.col("b")) or (pl.col("b") > pl.col("b"))])
 
 
 def test_is_in() -> None:

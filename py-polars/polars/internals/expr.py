@@ -170,40 +170,22 @@ class Expr:
         return pli.expr_to_lit_or_expr(base) ** self
 
     def __ge__(self, other: Any) -> Expr:
-        return self.gt_eq(self.__to_expr(other))
+        return wrap_expr(self._pyexpr.gt_eq(self.__to_expr(other)._pyexpr))
 
     def __le__(self, other: Any) -> Expr:
-        return self.lt_eq(self.__to_expr(other))
+        return wrap_expr(self._pyexpr.lt_eq(self.__to_expr(other)._pyexpr))
 
     def __eq__(self, other: Any) -> Expr:  # type: ignore[override]
-        return self.eq(self.__to_expr(other))
+        return wrap_expr(self._pyexpr.eq(self.__to_expr(other)._pyexpr))
 
     def __ne__(self, other: Any) -> Expr:  # type: ignore[override]
-        return self.neq(self.__to_expr(other))
+        return wrap_expr(self._pyexpr.neq(self.__to_expr(other)._pyexpr))
 
     def __lt__(self, other: Any) -> Expr:
-        return self.lt(self.__to_expr(other))
+        return wrap_expr(self._pyexpr.lt(self.__to_expr(other)._pyexpr))
 
     def __gt__(self, other: Any) -> Expr:
-        return self.gt(self.__to_expr(other))
-
-    def eq(self, other: Expr) -> Expr:
-        return wrap_expr(self._pyexpr.eq(other._pyexpr))
-
-    def neq(self, other: Expr) -> Expr:
-        return wrap_expr(self._pyexpr.neq(other._pyexpr))
-
-    def gt(self, other: Expr) -> Expr:
-        return wrap_expr(self._pyexpr.gt(other._pyexpr))
-
-    def gt_eq(self, other: Expr) -> Expr:
-        return wrap_expr(self._pyexpr.gt_eq(other._pyexpr))
-
-    def lt_eq(self, other: Expr) -> Expr:
-        return wrap_expr(self._pyexpr.lt_eq(other._pyexpr))
-
-    def lt(self, other: Expr) -> Expr:
-        return wrap_expr(self._pyexpr.lt(other._pyexpr))
+        return wrap_expr(self._pyexpr.gt(self.__to_expr(other)._pyexpr))
 
     def __neg__(self) -> Expr:
         return pli.lit(0) - self
