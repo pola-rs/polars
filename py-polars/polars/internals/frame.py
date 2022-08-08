@@ -54,7 +54,6 @@ from polars.utils import (
     format_path,
     handle_projection_columns,
     is_bool_sequence,
-    is_expr_sequence,
     is_int_sequence,
     is_str_sequence,
     range_to_slice,
@@ -1667,8 +1666,6 @@ class DataFrame:
         self: DF,
         item: int
         | np.ndarray[Any, Any]
-        | pli.Expr
-        | list[pli.Expr]
         | MultiColSelector
         | tuple[int, MultiColSelector]
         | tuple[MultiRowSelector, MultiColSelector],
@@ -1697,8 +1694,6 @@ class DataFrame:
             str
             | int
             | np.ndarray[Any, Any]
-            | pli.Expr
-            | list[pli.Expr]
             | MultiColSelector
             | tuple[int, MultiColSelector]
             | tuple[MultiRowSelector, MultiColSelector]
@@ -1709,12 +1704,6 @@ class DataFrame:
         ),
     ) -> DataFrame | pli.Series:
         """Get item. Does quite a lot. Read the comments."""
-        if isinstance(item, pli.Expr):  # pragma: no cover
-            warnings.warn(
-                "'using expressions in []' is deprecated. please use 'select'",
-                DeprecationWarning,
-            )
-            return self.select(item)
         # select rows and columns at once
         # every 2d selection, i.e. tuple is row column order, just like numpy
         if isinstance(item, tuple) and len(item) == 2:
@@ -1837,8 +1826,6 @@ class DataFrame:
             # select multiple columns
             # df[["foo", "bar"]]
             return self._from_pydf(self._df.select(item))
-        elif is_expr_sequence(item):
-            return self.select(item)
         elif is_bool_sequence(item) or is_int_sequence(item):
             item = pli.Series("", item)  # fall through to next if isinstance
 

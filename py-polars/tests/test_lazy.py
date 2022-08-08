@@ -344,13 +344,13 @@ def test_window_deadlock() -> None:
         }
     )
 
-    df = df[
+    df = df.select(
         [
             col("*"),  # select all
             col("random").sum().over("groups").alias("sum[random]/groups"),
             col("random").list().over("names").alias("random/name"),
         ]
-    ]
+    )
 
 
 def test_concat_str() -> None:
