@@ -337,11 +337,11 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     fn median_as_series(&self) -> Series {
         QuantileAggSeries::median_as_series(&self.0)
     }
-    fn var_as_series(&self) -> Series {
-        VarAggSeries::var_as_series(&self.0)
+    fn var_as_series(&self, ddof: u8) -> Series {
+        VarAggSeries::var_as_series(&self.0, ddof)
     }
-    fn std_as_series(&self) -> Series {
-        VarAggSeries::std_as_series(&self.0)
+    fn std_as_series(&self, ddof: u8) -> Series {
+        VarAggSeries::std_as_series(&self.0, ddof)
     }
     fn quantile_as_series(
         &self,

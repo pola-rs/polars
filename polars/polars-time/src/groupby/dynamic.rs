@@ -517,14 +517,14 @@ mod test {
         let max = unsafe { nulls.agg_max(&groups) };
         assert_eq!(max, expected);
 
-        let var = unsafe { a.agg_var(&groups) };
+        let var = unsafe { a.agg_var(&groups, 1) };
         let expected = Series::new(
             "",
             [0.0, 8.0, 4.000000000000002, 6.666666666666667, 24.5, 0.0],
         );
         assert_eq!(var, expected);
 
-        let var = unsafe { nulls.agg_var(&groups) };
+        let var = unsafe { nulls.agg_var(&groups, 1) };
         let expected = Series::new("", [0.0, 8.0, 8.0, 9.333333333333343, 24.5, 0.0]);
         assert_eq!(var, expected);
 

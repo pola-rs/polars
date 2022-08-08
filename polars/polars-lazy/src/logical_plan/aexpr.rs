@@ -24,8 +24,8 @@ pub enum AAggExpr {
     },
     Sum(Node),
     Count(Node),
-    Std(Node),
-    Var(Node),
+    Std(Node, u8),
+    Var(Node, u8),
     AggGroups(Node),
 }
 
@@ -279,12 +279,12 @@ impl AExpr {
                         field.coerce(DataType::List(field.data_type().clone().into()));
                         Ok(field)
                     }
-                    Std(expr) => {
+                    Std(expr, _) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         field.coerce(DataType::Float64);
                         Ok(field)
                     }
-                    Var(expr) => {
+                    Var(expr, _) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         field.coerce(DataType::Float64);
                         Ok(field)

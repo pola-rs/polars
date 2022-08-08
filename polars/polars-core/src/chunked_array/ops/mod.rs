@@ -392,12 +392,12 @@ pub trait ChunkQuantile<T> {
 /// Variance and standard deviation aggregation.
 pub trait ChunkVar<T> {
     /// Compute the variance of this ChunkedArray/Series.
-    fn var(&self) -> Option<T> {
+    fn var(&self, _ddof: u8) -> Option<T> {
         None
     }
 
     /// Compute the standard deviation of this ChunkedArray/Series.
-    fn std(&self) -> Option<T> {
+    fn std(&self, _ddof: u8) -> Option<T> {
         None
     }
 }

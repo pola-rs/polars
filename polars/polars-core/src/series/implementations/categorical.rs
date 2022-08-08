@@ -378,10 +378,10 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     fn median_as_series(&self) -> Series {
         CategoricalChunked::full_null(self.0.logical().name(), 1).into_series()
     }
-    fn var_as_series(&self) -> Series {
+    fn var_as_series(&self, _ddof: u8) -> Series {
         CategoricalChunked::full_null(self.0.logical().name(), 1).into_series()
     }
-    fn std_as_series(&self) -> Series {
+    fn std_as_series(&self, _ddof: u8) -> Series {
         CategoricalChunked::full_null(self.0.logical().name(), 1).into_series()
     }
     fn quantile_as_series(

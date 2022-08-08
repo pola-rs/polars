@@ -148,12 +148,12 @@ impl PhysicalExpr for AggregationExpr {
                     column.rename(&keep_name);
                     column.into_series()
                 }
-                GroupByMethod::Std => {
-                    let agg_s = ac.flat_naive().into_owned().agg_std(ac.groups());
+                GroupByMethod::Std(ddof) => {
+                    let agg_s = ac.flat_naive().into_owned().agg_std(ac.groups(), ddof);
                     rename_series(agg_s, &keep_name)
                 }
-                GroupByMethod::Var => {
-                    let agg_s = ac.flat_naive().into_owned().agg_var(ac.groups());
+                GroupByMethod::Var(ddof) => {
+                    let agg_s = ac.flat_naive().into_owned().agg_var(ac.groups(), ddof);
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Quantile(_, _) => {

@@ -282,37 +282,37 @@ def to_list(name: str) -> pli.Expr:
 
 
 @overload
-def std(column: str) -> pli.Expr:
+def std(column: str, ddof: int = 1) -> pli.Expr:
     ...
 
 
 @overload
-def std(column: pli.Series) -> float | None:
+def std(column: pli.Series, ddof: int = 1) -> float | None:
     ...
 
 
-def std(column: str | pli.Series) -> pli.Expr | float | None:
+def std(column: str | pli.Series, ddof: int = 1) -> pli.Expr | float | None:
     """Get the standard deviation."""
     if isinstance(column, pli.Series):
-        return column.std()
-    return col(column).std()
+        return column.std(ddof)
+    return col(column).std(ddof)
 
 
 @overload
-def var(column: str) -> pli.Expr:
+def var(column: str, ddof: int = 1) -> pli.Expr:
     ...
 
 
 @overload
-def var(column: pli.Series) -> float | None:
+def var(column: pli.Series, ddof: int = 1) -> float | None:
     ...
 
 
-def var(column: str | pli.Series) -> pli.Expr | float | None:
+def var(column: str | pli.Series, ddof: int = 1) -> pli.Expr | float | None:
     """Get the variance."""
     if isinstance(column, pli.Series):
-        return column.var()
-    return col(column).var()
+        return column.var(ddof)
+    return col(column).var(ddof)
 
 
 @overload

@@ -1118,13 +1118,13 @@ impl Expr {
     }
 
     /// Standard deviation of the values of the Series
-    pub fn std(self) -> Self {
-        AggExpr::Std(Box::new(self)).into()
+    pub fn std(self, ddof: u8) -> Self {
+        AggExpr::Std(Box::new(self), ddof).into()
     }
 
     /// Variance of the values of the Series
-    pub fn var(self) -> Self {
-        AggExpr::Var(Box::new(self)).into()
+    pub fn var(self, ddof: u8) -> Self {
+        AggExpr::Var(Box::new(self), ddof).into()
     }
 
     /// Get a mask of duplicated values

@@ -251,8 +251,8 @@ impl fmt::Debug for Expr {
                     Sum(expr) => write!(f, "{:?}.sum()", expr),
                     AggGroups(expr) => write!(f, "{:?}.groups()", expr),
                     Count(expr) => write!(f, "{:?}.count()", expr),
-                    Var(expr) => write!(f, "{:?}.var()", expr),
-                    Std(expr) => write!(f, "{:?}.var()", expr),
+                    Var(expr, _) => write!(f, "{:?}.var()", expr),
+                    Std(expr, _) => write!(f, "{:?}.var()", expr),
                     Quantile { expr, .. } => write!(f, "{:?}.quantile()", expr),
                 }
             }

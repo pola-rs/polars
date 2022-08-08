@@ -2085,9 +2085,14 @@ class Expr:
         """  # noqa: E501
         return wrap_expr(self._pyexpr.reverse())
 
-    def std(self) -> Expr:
+    def std(self, ddof: int = 1) -> Expr:
         """
         Get standard deviation.
+
+        Parameters
+        ----------
+        ddof
+            Degrees of freedom.
 
         Examples
         --------
@@ -2103,11 +2108,16 @@ class Expr:
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.std())
+        return wrap_expr(self._pyexpr.std(ddof))
 
-    def var(self) -> Expr:
+    def var(self, ddof: int = 1) -> Expr:
         """
         Get variance.
+
+        Parameters
+        ----------
+        ddof
+            Degrees of freedom.
 
         Examples
         --------
@@ -2123,7 +2133,7 @@ class Expr:
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.var())
+        return wrap_expr(self._pyexpr.var(ddof))
 
     def max(self) -> Expr:
         """

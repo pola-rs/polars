@@ -2040,13 +2040,13 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             fill_value = pli.lit(fill_value)
         return self._from_pyldf(self._ldf.fill_nan(fill_value._pyexpr))
 
-    def std(self: LDF) -> LDF:
+    def std(self: LDF, ddof: int = 1) -> LDF:
         """Aggregate the columns in the DataFrame to their standard deviation value."""
-        return self._from_pyldf(self._ldf.std())
+        return self._from_pyldf(self._ldf.std(ddof))
 
-    def var(self: LDF) -> LDF:
+    def var(self: LDF, ddof: int = 1) -> LDF:
         """Aggregate the columns in the DataFrame to their variance value."""
-        return self._from_pyldf(self._ldf.var())
+        return self._from_pyldf(self._ldf.var(ddof))
 
     def max(self: LDF) -> LDF:
         """Aggregate the columns in the DataFrame to their maximum value."""

@@ -298,11 +298,11 @@ impl PyExpr {
     pub fn reverse(&self) -> PyExpr {
         self.clone().inner.reverse().into()
     }
-    pub fn std(&self) -> PyExpr {
-        self.clone().inner.std().into()
+    pub fn std(&self, ddof: u8) -> PyExpr {
+        self.clone().inner.std(ddof).into()
     }
-    pub fn var(&self) -> PyExpr {
-        self.clone().inner.var().into()
+    pub fn var(&self, ddof: u8) -> PyExpr {
+        self.clone().inner.var(ddof).into()
     }
     pub fn is_unique(&self) -> PyExpr {
         self.clone().inner.is_unique().into()
