@@ -218,8 +218,6 @@ The following methods are available under the `Series.dt` attribute.
 .. autosummary::
    :toctree: api/
 
-    DateTimeNameSpace.and_time_unit
-    DateTimeNameSpace.and_time_zone
     DateTimeNameSpace.cast_time_unit
     DateTimeNameSpace.day
     DateTimeNameSpace.days

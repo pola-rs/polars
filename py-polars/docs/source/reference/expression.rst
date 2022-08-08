@@ -269,8 +269,6 @@ The following methods are available under the `expr.dt` attribute.
 .. autosummary::
    :toctree: api/
 
-    ExprDateTimeNameSpace.and_time_unit
-    ExprDateTimeNameSpace.and_time_zone
     ExprDateTimeNameSpace.cast_time_unit
     ExprDateTimeNameSpace.day
     ExprDateTimeNameSpace.days

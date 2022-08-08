@@ -6924,41 +6924,6 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
 
-    def and_time_unit(self, tu: str, dtype: type[DataType] = Datetime) -> Expr:
-        """
-        Set time unit a Series of type Datetime. This does not modify underlying data,
-        and should be used to fix an incorrect time unit.
-
-        .. deprecated::
-            Use :func:`with_time_unit` instead.
-
-        Parameters
-        ----------
-        tu
-            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
-        dtype
-            Output data type.
-
-        """
-        return self.with_time_unit(tu)
-
-    def and_time_zone(self, tz: str | None) -> Expr:
-        """
-        Set time zone for a Series of type Datetime.
-
-        .. deprecated::
-            Use :func:`with_time_zone` instead.
-
-        Parameters
-        ----------
-        tz
-            Time zone for the `Datetime` Series.
-
-        """
-        return wrap_expr(self._pyexpr).map(
-            lambda s: s.dt.with_time_zone(tz), return_dtype=Datetime
-        )
-
     def with_time_zone(self, tz: str | None) -> Expr:
         """
         Set time zone for a Series of type Datetime.

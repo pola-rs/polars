@@ -5744,36 +5744,6 @@ class DateTimeNameSpace:
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.cast_time_unit(tu)).to_series()
 
-    def and_time_unit(self, tu: str) -> Series:
-        """
-        Set time unit a Series of type Datetime
-
-        .. deprecated::
-            Use :func:`with_time_unit` instead.
-
-        Parameters
-        ----------
-        tu
-            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
-
-        """
-        return self.with_time_unit(tu)
-
-    def and_time_zone(self, tz: str | None) -> Series:
-        """
-        Set time zone a Series of type Datetime.
-
-        .. deprecated::
-            Use :func:`with_time_zone` instead.
-
-        Parameters
-        ----------
-        tz
-            Time zone for the `Datetime` Series.
-
-        """
-        return wrap_s(self._s.and_time_zone(tz))
-
     def with_time_zone(self, tz: str | None) -> Series:
         """
         Set time zone a Series of type Datetime.
@@ -5784,7 +5754,7 @@ class DateTimeNameSpace:
             Time zone for the `Datetime` Series.
 
         """
-        return wrap_s(self._s.and_time_zone(tz))
+        return wrap_s(self._s.with_time_zone(tz))
 
     def days(self) -> Series:
         """

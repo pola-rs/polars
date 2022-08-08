@@ -650,7 +650,7 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
         return (
             lit(_datetime_to_pl_timestamp(value, tu))
             .cast(Datetime)
-            .dt.and_time_unit(tu)
+            .dt.with_time_unit(tu)
         )
     if isinstance(value, timedelta):
         if timedelta_in_nanoseconds_window(value):
@@ -660,7 +660,7 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
         return (
             lit(_timedelta_to_pl_timedelta(value, tu))
             .cast(Duration)
-            .dt.and_time_unit(tu, dtype=Duration)
+            .dt.with_time_unit(tu)
         )
 
     if isinstance(value, date):
