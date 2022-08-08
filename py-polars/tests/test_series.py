@@ -349,10 +349,12 @@ def test_arrow() -> None:
     a = pa.array(["foo", "bar"], pa.dictionary(pa.int32(), pa.utf8()))
     s = pl.Series("a", a)
     assert s.dtype == pl.Categorical
-    assert (
-        pl.from_arrow(pa.array([["foo"], ["foo", "bar"]], pa.list_(pa.utf8()))).dtype
-        == pl.List
+
+    s = cast(
+        pl.Series,
+        pl.from_arrow(pa.array([["foo"], ["foo", "bar"]], pa.list_(pa.utf8()))),
     )
+    assert s.dtype == pl.List
 
 
 def test_view() -> None:

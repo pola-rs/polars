@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, no_type_check
+from typing import Any, cast, no_type_check
 from unittest.mock import patch
 
 import numpy as np
@@ -176,7 +176,7 @@ def test_arrow_dict_to_polars() -> None:
 def test_arrow_list_chunked_array() -> None:
     a = pa.array([[1, 2], [3, 4]])
     ca = pa.chunked_array([a, a, a])
-    s = pl.from_arrow(ca)
+    s = cast(pl.Series, pl.from_arrow(ca))
     assert s.dtype == pl.List
 
 
@@ -404,8 +404,8 @@ def test_cat_int_types_3500() -> None:
     with pl.StringCache():
         # Create an enum / categorical / dictionary typed pyarrow array
         # Most simply done by creating a pandas categorical series first
-        categorical_df = pd.Series(["a", "a", "b"], dtype="category")
-        pyarrow_array = pa.Array.from_pandas(categorical_df)
+        categorical_s = pd.Series(["a", "a", "b"], dtype="category")
+        pyarrow_array = pa.Array.from_pandas(categorical_s)
 
         # The in-memory representation of each category can either be a signed or
         # unsigned 8-bit integer. Pandas uses Int8...
@@ -414,7 +414,7 @@ def test_cat_int_types_3500() -> None:
         uint_dict_type = pa.dictionary(index_type=pa.uint8(), value_type=pa.utf8())
 
         for t in [int_dict_type, uint_dict_type]:
-            s = pl.from_arrow(pyarrow_array.cast(t))
+            s = cast(pl.Series, pl.from_arrow(pyarrow_array.cast(t)))
             assert s.series_equal(pl.Series(["a", "a", "b"]).cast(pl.Categorical))
 
 
