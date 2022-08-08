@@ -1844,7 +1844,7 @@ class Expr:
         return wrap_expr(self._pyexpr.shift(periods))
 
     def shift_and_fill(
-        self, periods: int, fill_value: int | float | bool | str | Expr
+        self, periods: int, fill_value: int | float | bool | str | Expr | list
     ) -> Expr:
         """
         Shift the values by a given period and fill the parts that will be empty due to
