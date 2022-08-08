@@ -338,7 +338,7 @@ def test_describe_plan() -> None:
     assert isinstance(pl.DataFrame({"a": [1]}).lazy().describe_plan(), str)
 
 
-def test_inspect(capsys: CaptureFixture) -> None:
+def test_inspect(capsys: CaptureFixture[str]) -> None:
     df = pl.DataFrame({"a": [1]})
     df.lazy().inspect().collect()
     captured = capsys.readouterr()

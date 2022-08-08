@@ -5,12 +5,13 @@ import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from functools import reduce
-from typing import Any, Callable, Sequence
+from typing import Any, Sequence
 
 try:
     from hypothesis import settings
     from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
     from hypothesis.strategies import (
+        DrawFn,
         SearchStrategy,
         booleans,
         composite,
@@ -360,7 +361,7 @@ if HYPOTHESIS_INSTALLED:
 
     strategy_dtypes = list(dtype_strategy_mapping)
 
-    def between(draw: Callable, type_: type, min_: Any, max_: Any) -> Any:
+    def between(draw: DrawFn, type_: type, min_: Any, max_: Any) -> Any:
         """Draw a value in a given range from a type-inferred strategy."""
         strategy_init = from_type(type_).function  # type: ignore[attr-defined]
         return draw(strategy_init(min_, max_))
@@ -397,7 +398,7 @@ if HYPOTHESIS_INSTALLED:
 
         name: str
         dtype: PolarsDataType | None = None
-        strategy: SearchStrategy | None = None
+        strategy: SearchStrategy[pli.Series] | None = None
         null_probability: float | None = None
         unique: bool = False
 
@@ -507,10 +508,7 @@ if HYPOTHESIS_INSTALLED:
         else:
             names = list(cols)
 
-        # determine column dtypes
-        if is_polars_dtype(dtype):
-            dtypes = [dtype] * len(names)
-        elif isinstance(dtype, Sequence):
+        if isinstance(dtype, Sequence):
             if len(dtype) != len(names):
                 raise InvalidArgument(
                     f"Given {len(dtype)} dtypes for {len(names)} names"
@@ -518,13 +516,14 @@ if HYPOTHESIS_INSTALLED:
             dtypes = list(dtype)
         elif dtype is None:
             dtypes = [random.choice(strategy_dtypes) for _ in range(len(names))]
+        elif is_polars_dtype(dtype):
+            dtypes = [dtype] * len(names)
         else:
             raise InvalidArgument(f"{dtype} is not a valid polars datatype")
 
         # init list of named/typed columns
         return [
-            column(name=nm, dtype=tp, unique=unique)  # type: ignore[arg-type]
-            for nm, tp in zip(names, dtypes)
+            column(name=nm, dtype=tp, unique=unique) for nm, tp in zip(names, dtypes)
         ]
 
     @defines_strategy()
@@ -535,7 +534,7 @@ if HYPOTHESIS_INSTALLED:
         size: int | None = None,
         min_size: int | None = 0,
         max_size: int | None = MAX_DATA_SIZE,
-        strategy: SearchStrategy | None = None,
+        strategy: SearchStrategy[object] | None = None,
         null_probability: float = 0.0,
         unique: bool = False,
         allowed_dtypes: Sequence[PolarsDataType] | None = None,
@@ -603,6 +602,8 @@ if HYPOTHESIS_INSTALLED:
         ]
 
         """
+        assert 0 <= null_probability <= 1.0, "null_probability must be in range [0, 1]"
+
         selectable_dtypes = [
             dtype
             for dtype in (allowed_dtypes or strategy_dtypes)
@@ -616,7 +617,7 @@ if HYPOTHESIS_INSTALLED:
         null_probability = float(null_probability or 0.0)
 
         @composite
-        def draw_series(draw: Callable) -> pli.Series:
+        def draw_series(draw: DrawFn) -> pli.Series:
             # create/assign series dtype and retrieve matching strategy
             series_dtype = (
                 draw(sampled_from(selectable_dtypes)) if dtype is None else dtype
@@ -633,30 +634,26 @@ if HYPOTHESIS_INSTALLED:
             )
 
             # assign series name
-            series_name = name if isinstance(name, (str, type(None))) else draw(name)
+            series_name = name if isinstance(name, str) or name is None else draw(name)
 
             # create series using dtype-specific strategy to generate values
-            series_values = (
-                [None] * series_size
-                if null_probability == 1
-                else (
-                    draw(
-                        lists(
-                            dtype_strategy,
-                            min_size=series_size,
-                            max_size=series_size,
-                            unique=unique,
-                        )
+
+            if series_size == 0:
+                series_values = []
+            else:
+                series_values = draw(
+                    lists(
+                        dtype_strategy,
+                        min_size=series_size,
+                        max_size=series_size,
+                        unique=unique,
                     )
-                    if (series_size > 0)
-                    else []
                 )
-            )
-            # optionally apply null values (custom frequency)
-            if 0.0 < null_probability < 1.0:
-                for idx in range(series_size):
-                    if random.random() < null_probability:
-                        series_values[idx] = None
+
+            # apply null values (custom frequency)
+            for idx in range(series_size):
+                if random.random() < null_probability:
+                    series_values[idx] = None
 
             # init series with strategy-generated data
             s = pli.Series(
@@ -784,7 +781,7 @@ if HYPOTHESIS_INSTALLED:
         ]
 
         @composite
-        def draw_frames(draw: Callable) -> pli.DataFrame | pli.LazyFrame:
+        def draw_frames(draw: DrawFn) -> pli.DataFrame | pli.LazyFrame:
             # if not given, create 'n' cols with random dtypes
             if cols is None:
                 n = between(

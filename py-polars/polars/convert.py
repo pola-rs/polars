@@ -34,7 +34,7 @@ else:
 
 
 def from_dict(
-    data: Mapping[str, Sequence | Mapping],
+    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]]],
     columns: Sequence[str] | None = None,
 ) -> DataFrame:
     """
@@ -70,7 +70,7 @@ def from_dict(
     └─────┴─────┘
 
     """
-    return DataFrame._from_dict(data=data, columns=columns)  # type: ignore[arg-type]
+    return DataFrame._from_dict(data=data, columns=columns)
 
 
 def from_dicts(
@@ -170,7 +170,7 @@ def from_records(
 
 
 def from_numpy(
-    data: np.ndarray,
+    data: np.ndarray[Any, Any],
     columns: Sequence[str] | None = None,
     orient: Literal["col", "row"] | None = None,
 ) -> DataFrame:

@@ -507,7 +507,10 @@ def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
 )
 @pytest.mark.parametrize("in_place", [True, False])
 def test_hstack_list_of_series(
-    stack: list, exp_shape: tuple, exp_columns: list, in_place: bool
+    stack: list[pl.Series],
+    exp_shape: tuple[int, int],
+    exp_columns: list[str],
+    in_place: bool,
 ) -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
     if in_place:

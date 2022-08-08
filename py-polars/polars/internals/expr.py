@@ -1757,7 +1757,7 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    def take(self, index: List[int] | Expr | pli.Series | np.ndarray) -> Expr:
+    def take(self, index: List[int] | Expr | pli.Series | np.ndarray[Any, Any]) -> Expr:
         """
         Take values by index.
 
@@ -1842,7 +1842,7 @@ class Expr:
         return wrap_expr(self._pyexpr.shift(periods))
 
     def shift_and_fill(
-        self, periods: int, fill_value: int | float | bool | str | Expr | list
+        self, periods: int, fill_value: int | float | bool | str | Expr | list[Any]
     ) -> Expr:
         """
         Shift the values by a given period and fill the parts that will be empty due to

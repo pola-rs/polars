@@ -607,10 +607,7 @@ def tail(column: str | pli.Series, n: int | None = None) -> pli.Expr | pli.Serie
     return col(column).tail(n)
 
 
-def lit(
-    value: float | int | str | date | datetime | pli.Series | np.ndarray | Any | None,
-    dtype: type[DataType] | None = None,
-) -> pli.Expr:
+def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
     """
     Return an expression representing a literal value.
 
@@ -682,11 +679,13 @@ def lit(
 
     if dtype:
         return pli.wrap_expr(pylit(value)).cast(dtype)
-    # numpy literals like np.float32(0)
-    # have an item
-    if hasattr(value, "item"):
-        value = value.item()  # type: ignore[union-attr]
-    return pli.wrap_expr(pylit(value))
+
+    try:
+        # numpy literals like np.float32(0) have an item
+        item = value.item()
+    except AttributeError:
+        item = value
+    return pli.wrap_expr(pylit(item))
 
 
 def spearman_rank_corr(
