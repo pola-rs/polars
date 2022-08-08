@@ -248,10 +248,10 @@ where
     fn median_as_series(&self) -> Series {
         ObjectChunked::<T>::full_null(self.name(), 1).into_series()
     }
-    fn var_as_series(&self) -> Series {
+    fn var_as_series(&self, _ddof: u8) -> Series {
         ObjectChunked::<T>::full_null(self.name(), 1).into_series()
     }
-    fn std_as_series(&self) -> Series {
+    fn std_as_series(&self, _ddof: u8) -> Series {
         ObjectChunked::<T>::full_null(self.name(), 1).into_series()
     }
 }

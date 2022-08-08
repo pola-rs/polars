@@ -310,17 +310,17 @@ fn test_window_exprs_in_binary_exprs() -> Result<()> {
         (col("value") - col("value").mean().over([col("cat")]))
             .cast(DataType::Int32)
             .alias("centered"),
-        (col("value") - col("value").std().over([col("cat")]))
+        (col("value") - col("value").std(1).over([col("cat")]))
             .cast(DataType::Int32)
             .alias("scaled"),
         ((col("value") - col("value").mean().over([col("cat")]))
-            / col("value").std().over([col("cat")]))
+            / col("value").std(1).over([col("cat")]))
         .cast(DataType::Int32)
         .alias("stdized"),
-        ((col("value") - col("value").mean()).over([col("cat")]) / col("value").std())
+        ((col("value") - col("value").mean()).over([col("cat")]) / col("value").std(1))
             .cast(DataType::Int32)
             .alias("stdized2"),
-        ((col("value") - col("value").mean()) / col("value").std())
+        ((col("value") - col("value").mean()) / col("value").std(1))
             .over([col("cat")])
             .cast(DataType::Int32)
             .alias("stdized3"),

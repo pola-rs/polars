@@ -132,10 +132,10 @@ pub(crate) mod private {
         unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        unsafe fn agg_std(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_std(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        unsafe fn agg_var(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_var(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
         unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
@@ -584,11 +584,11 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
     /// Get the variance of the Series as a new Series of length 1.
-    fn var_as_series(&self) -> Series {
+    fn var_as_series(&self, _ddof: u8) -> Series {
         invalid_operation_panic!(self)
     }
     /// Get the standard deviation of the Series as a new Series of length 1.
-    fn std_as_series(&self) -> Series {
+    fn std_as_series(&self, _ddof: u8) -> Series {
         invalid_operation_panic!(self)
     }
     /// Get the quantile of the ChunkedArray as a new Series of length 1.

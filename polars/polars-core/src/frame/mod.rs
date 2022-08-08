@@ -2433,7 +2433,7 @@ impl DataFrame {
         let mut tmp: Vec<DataFrame> = vec![
             describe_cast(&count(self)),
             describe_cast(&self.mean()),
-            describe_cast(&self.std()),
+            describe_cast(&self.std(1)),
             describe_cast(&self.min()),
         ];
 
@@ -2504,7 +2504,7 @@ impl DataFrame {
     ///                          "Die n°2" => &[3, 2, 3, 5, 3])?;
     /// assert_eq!(df1.shape(), (5, 2));
     ///
-    /// let df2: DataFrame = df1.std();
+    /// let df2: DataFrame = df1.std(1);
     /// assert_eq!(df2.shape(), (1, 2));
     /// println!("{}", df2);
     /// # Ok::<(), PolarsError>(())
@@ -2523,8 +2523,8 @@ impl DataFrame {
     /// +-------------------+--------------------+
     /// ```
     #[must_use]
-    pub fn std(&self) -> Self {
-        let columns = self.apply_columns_par(&|s| s.std_as_series());
+    pub fn std(&self, ddof: u8) -> Self {
+        let columns = self.apply_columns_par(&|s| s.std_as_series(ddof));
 
         DataFrame::new_no_checks(columns)
     }
@@ -2538,7 +2538,7 @@ impl DataFrame {
     ///                          "Die n°2" => &[3, 2, 3, 5, 3])?;
     /// assert_eq!(df1.shape(), (5, 2));
     ///
-    /// let df2: DataFrame = df1.var();
+    /// let df2: DataFrame = df1.var(1);
     /// assert_eq!(df2.shape(), (1, 2));
     /// println!("{}", df2);
     /// # Ok::<(), PolarsError>(())
@@ -2557,8 +2557,8 @@ impl DataFrame {
     /// +---------+---------+
     /// ```
     #[must_use]
-    pub fn var(&self) -> Self {
-        let columns = self.apply_columns_par(&|s| s.var_as_series());
+    pub fn var(&self, ddof: u8) -> Self {
+        let columns = self.apply_columns_par(&|s| s.var_as_series(ddof));
         DataFrame::new_no_checks(columns)
     }
 

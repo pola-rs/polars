@@ -1076,16 +1076,6 @@ impl PyDataFrame {
         finish_groupby(selection, agg)
     }
 
-    pub fn groupby_agg(
-        &self,
-        by: Vec<&str>,
-        column_to_agg: Vec<(&str, Vec<&str>)>,
-    ) -> PyResult<Self> {
-        let gb = self.df.groupby(&by).map_err(PyPolarsErr::from)?;
-        let df = gb.agg(&column_to_agg).map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
-    }
-
     pub fn groupby_apply(&self, by: Vec<&str>, lambda: PyObject) -> PyResult<Self> {
         let gb = self.df.groupby(&by).map_err(PyPolarsErr::from)?;
         let function = move |df: DataFrame| {
@@ -1272,12 +1262,12 @@ impl PyDataFrame {
         self.df.mean().into()
     }
 
-    pub fn std(&self) -> Self {
-        self.df.std().into()
+    pub fn std(&self, ddof: u8) -> Self {
+        self.df.std(ddof).into()
     }
 
-    pub fn var(&self) -> Self {
-        self.df.var().into()
+    pub fn var(&self, ddof: u8) -> Self {
+        self.df.var(ddof).into()
     }
 
     pub fn median(&self) -> Self {
@@ -1466,8 +1456,6 @@ fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {
         "median" => gb.median(),
         "agg_list" => gb.agg_list(),
         "groups" => gb.groups(),
-        "std" => gb.std(),
-        "var" => gb.var(),
         a => Err(PolarsError::ComputeError(
             format!("agg fn {} does not exists", a).into(),
         )),

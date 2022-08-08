@@ -1057,13 +1057,13 @@ impl LazyFrame {
     }
 
     /// Aggregate all the columns as their standard deviation values.
-    pub fn std(self) -> LazyFrame {
-        self.select_local(vec![col("*").std()])
+    pub fn std(self, ddof: u8) -> LazyFrame {
+        self.select_local(vec![col("*").std(ddof)])
     }
 
     /// Aggregate all the columns as their variance values.
-    pub fn var(self) -> LazyFrame {
-        self.select_local(vec![col("*").var()])
+    pub fn var(self, ddof: u8) -> LazyFrame {
+        self.select_local(vec![col("*").var(ddof)])
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).

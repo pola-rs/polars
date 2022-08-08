@@ -5516,9 +5516,14 @@ class DataFrame:
             return pli.wrap_s(self._df.hmean(null_strategy))
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
-    def std(self: DF) -> DF:
+    def std(self: DF, ddof: int = 1) -> DF:
         """
         Aggregate the columns of this DataFrame to their standard deviation value.
+
+        Parameters
+        ----------
+        ddof
+            Degrees of freedom
 
         Examples
         --------
@@ -5540,11 +5545,16 @@ class DataFrame:
         └─────┴─────┴──────┘
 
         """
-        return self._from_pydf(self._df.std())
+        return self._from_pydf(self._df.std(ddof))
 
-    def var(self: DF) -> DF:
+    def var(self: DF, ddof: int = 1) -> DF:
         """
         Aggregate the columns of this DataFrame to their variance value.
+
+        Parameters
+        ----------
+        ddof
+            Degrees of freedom
 
         Examples
         --------
@@ -5566,7 +5576,7 @@ class DataFrame:
         └─────┴─────┴──────┘
 
         """
-        return self._from_pydf(self._df.var())
+        return self._from_pydf(self._df.var(ddof))
 
     def median(self: DF) -> DF:
         """

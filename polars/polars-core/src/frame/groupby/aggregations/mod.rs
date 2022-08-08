@@ -700,7 +700,7 @@ where
         }
     }
 
-    pub(crate) unsafe fn agg_var(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Series {
         let ca = &self.0;
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<T, _>(groups, |idx| {
@@ -709,7 +709,7 @@ where
                     return None;
                 }
                 let take = { ca.take_unchecked(idx.into()) };
-                take.var_as_series().unpack::<T>().unwrap().get(0)
+                take.var_as_series(ddof).unpack::<T>().unwrap().get(0)
             }),
             GroupsProxy::Slice { groups, .. } => {
                 if use_rolling_kernels(groups, self.chunks()) {
@@ -736,7 +736,7 @@ where
                             1 => NumCast::from(0),
                             _ => {
                                 let arr_group = slice_from_offsets(self, first, len);
-                                arr_group.var().map(|flt| NumCast::from(flt).unwrap())
+                                arr_group.var(ddof).map(|flt| NumCast::from(flt).unwrap())
                             }
                         }
                     })
@@ -744,7 +744,7 @@ where
             }
         }
     }
-    pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series {
         let ca = &self.0;
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<T, _>(groups, |idx| {
@@ -753,7 +753,7 @@ where
                     return None;
                 }
                 let take = { ca.take_unchecked(idx.into()) };
-                take.std_as_series().unpack::<T>().unwrap().get(0)
+                take.std_as_series(ddof).unpack::<T>().unwrap().get(0)
             }),
             GroupsProxy::Slice { groups, .. } => {
                 if use_rolling_kernels(groups, self.chunks()) {
@@ -780,7 +780,7 @@ where
                             1 => NumCast::from(0),
                             _ => {
                                 let arr_group = slice_from_offsets(self, first, len);
-                                arr_group.std().map(|flt| NumCast::from(flt).unwrap())
+                                arr_group.std(ddof).map(|flt| NumCast::from(flt).unwrap())
                             }
                         }
                     })
@@ -955,7 +955,7 @@ where
         }
     }
 
-    pub(crate) unsafe fn agg_var(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
                 debug_assert!(idx.len() <= self.len());
@@ -963,7 +963,10 @@ where
                     return None;
                 }
                 let take = { self.take_unchecked(idx.into()) };
-                take.var_as_series().unpack::<Float64Type>().unwrap().get(0)
+                take.var_as_series(ddof)
+                    .unpack::<Float64Type>()
+                    .unwrap()
+                    .get(0)
             }),
             GroupsProxy::Slice {
                 groups: groups_slice,
@@ -971,7 +974,7 @@ where
             } => {
                 if use_rolling_kernels(groups_slice, self.chunks()) {
                     let ca = self.cast(&DataType::Float64).unwrap();
-                    ca.agg_var(groups)
+                    ca.agg_var(groups, ddof)
                 } else {
                     agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -980,7 +983,7 @@ where
                             1 => NumCast::from(0),
                             _ => {
                                 let arr_group = slice_from_offsets(self, first, len);
-                                arr_group.var()
+                                arr_group.var(ddof)
                             }
                         }
                     })
@@ -988,7 +991,7 @@ where
             }
         }
     }
-    pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
                 debug_assert!(idx.len() <= self.len());
@@ -996,7 +999,10 @@ where
                     return None;
                 }
                 let take = { self.take_unchecked(idx.into()) };
-                take.std_as_series().unpack::<Float64Type>().unwrap().get(0)
+                take.std_as_series(ddof)
+                    .unpack::<Float64Type>()
+                    .unwrap()
+                    .get(0)
             }),
             GroupsProxy::Slice {
                 groups: groups_slice,
@@ -1004,7 +1010,7 @@ where
             } => {
                 if use_rolling_kernels(groups_slice, self.chunks()) {
                     let ca = self.cast(&DataType::Float64).unwrap();
-                    ca.agg_std(groups)
+                    ca.agg_std(groups, ddof)
                 } else {
                     agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -1013,7 +1019,7 @@ where
                             1 => NumCast::from(0),
                             _ => {
                                 let arr_group = slice_from_offsets(self, first, len);
-                                arr_group.std()
+                                arr_group.std(ddof)
                             }
                         }
                     })

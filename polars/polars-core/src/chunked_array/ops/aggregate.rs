@@ -33,9 +33,9 @@ pub trait ChunkAggSeries {
 
 pub trait VarAggSeries {
     /// Get the variance of the ChunkedArray as a new Series of length 1.
-    fn var_as_series(&self) -> Series;
+    fn var_as_series(&self, ddof: u8) -> Series;
     /// Get the standard deviation of the ChunkedArray as a new Series of length 1.
-    fn std_as_series(&self) -> Series;
+    fn std_as_series(&self, ddof: u8) -> Series;
 }
 
 pub trait QuantileAggSeries {
@@ -425,58 +425,77 @@ where
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
 {
-    fn var(&self) -> Option<f64> {
+    fn var(&self, ddof: u8) -> Option<f64> {
         if self.len() == 1 {
             return Some(0.0);
         }
+        let n_values = self.len() - self.null_count();
+
+        if ddof as usize > n_values {
+            return None;
+        }
+        let n_values = n_values as f64;
 
         let mean = self.mean()?;
         let squared = self.apply_cast_numeric::<_, Float64Type>(|value| {
-            (value.to_f64().unwrap() - mean).powf(2.0)
+            let tmp = value.to_f64().unwrap() - mean;
+            tmp * tmp
         });
         // Note, this is similar behavior to numpy if DDOF=1.
         // in statistics DDOF often = 1.
         // this last step is similar to mean, only now instead of 1/n it is 1/(n-1)
-        squared
-            .sum()
-            .map(|sum| sum / (self.len() - self.null_count() - 1) as f64)
+        squared.sum().map(|sum| sum / (n_values - ddof as f64))
     }
-    fn std(&self) -> Option<f64> {
-        self.var().map(|var| var.sqrt())
+    fn std(&self, ddof: u8) -> Option<f64> {
+        self.var(ddof).map(|var| var.sqrt())
     }
 }
 
 impl ChunkVar<f32> for Float32Chunked {
-    fn var(&self) -> Option<f32> {
+    fn var(&self, ddof: u8) -> Option<f32> {
         if self.len() == 1 {
             return Some(0.0);
         }
+        let n_values = self.len() - self.null_count();
+
+        if ddof as usize > n_values {
+            return None;
+        }
+        let n_values = n_values as f32;
 
         let mean = self.mean()? as f32;
-        let squared = self.apply(|value| (value - mean).powf(2.0));
-        squared
-            .sum()
-            .map(|sum| sum / (self.len() - self.null_count() - 1) as f32)
+        let squared = self.apply(|value| {
+            let tmp = value - mean;
+            tmp * tmp
+        });
+        squared.sum().map(|sum| sum / (n_values - ddof as f32))
     }
-    fn std(&self) -> Option<f32> {
-        self.var().map(|var| var.sqrt())
+    fn std(&self, ddof: u8) -> Option<f32> {
+        self.var(ddof).map(|var| var.sqrt())
     }
 }
 
 impl ChunkVar<f64> for Float64Chunked {
-    fn var(&self) -> Option<f64> {
+    fn var(&self, ddof: u8) -> Option<f64> {
         if self.len() == 1 {
             return Some(0.0);
         }
+        let n_values = self.len() - self.null_count();
+
+        if ddof as usize > n_values {
+            return None;
+        }
+        let n_values = n_values as f64;
 
         let mean = self.mean()?;
-        let squared = self.apply(|value| (value - mean).powf(2.0));
-        squared
-            .sum()
-            .map(|sum| sum / (self.len() - self.null_count() - 1) as f64)
+        let squared = self.apply(|value| {
+            let tmp = value - mean;
+            tmp * tmp
+        });
+        squared.sum().map(|sum| sum / (n_values - ddof as f64))
     }
-    fn std(&self) -> Option<f64> {
-        self.var().map(|var| var.sqrt())
+    fn std(&self, ddof: u8) -> Option<f64> {
+        self.var(ddof).map(|var| var.sqrt())
     }
 }
 
@@ -577,6 +596,12 @@ macro_rules! impl_as_series {
         ca.rename($self.name());
         ca.into_series()
     }};
+    ($self:expr, $agg:ident, $arg:expr, $ty: ty) => {{
+        let v = $self.$agg($arg);
+        let mut ca: $ty = [v].iter().copied().collect();
+        ca.rename($self.name());
+        ca.into_series()
+    }};
 }
 
 impl<T> VarAggSeries for ChunkedArray<T>
@@ -586,69 +611,69 @@ where
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
 {
-    fn var_as_series(&self) -> Series {
-        impl_as_series!(self, var, Float64Chunked)
+    fn var_as_series(&self, ddof: u8) -> Series {
+        impl_as_series!(self, var, ddof, Float64Chunked)
     }
 
-    fn std_as_series(&self) -> Series {
-        impl_as_series!(self, std, Float64Chunked)
+    fn std_as_series(&self, ddof: u8) -> Series {
+        impl_as_series!(self, std, ddof, Float64Chunked)
     }
 }
 
 impl VarAggSeries for Float32Chunked {
-    fn var_as_series(&self) -> Series {
-        impl_as_series!(self, var, Float32Chunked)
+    fn var_as_series(&self, ddof: u8) -> Series {
+        impl_as_series!(self, var, ddof, Float32Chunked)
     }
 
-    fn std_as_series(&self) -> Series {
-        impl_as_series!(self, std, Float32Chunked)
+    fn std_as_series(&self, ddof: u8) -> Series {
+        impl_as_series!(self, std, ddof, Float32Chunked)
     }
 }
 
 impl VarAggSeries for Float64Chunked {
-    fn var_as_series(&self) -> Series {
-        impl_as_series!(self, var, Float64Chunked)
+    fn var_as_series(&self, ddof: u8) -> Series {
+        impl_as_series!(self, var, ddof, Float64Chunked)
     }
 
-    fn std_as_series(&self) -> Series {
-        impl_as_series!(self, std, Float64Chunked)
+    fn std_as_series(&self, ddof: u8) -> Series {
+        impl_as_series!(self, std, ddof, Float64Chunked)
     }
 }
 
 impl VarAggSeries for BooleanChunked {
-    fn var_as_series(&self) -> Series {
+    fn var_as_series(&self, _ddof: u8) -> Series {
         Self::full_null(self.name(), 1).into_series()
     }
 
-    fn std_as_series(&self) -> Series {
+    fn std_as_series(&self, _ddof: u8) -> Series {
         Self::full_null(self.name(), 1).into_series()
     }
 }
 impl VarAggSeries for ListChunked {
-    fn var_as_series(&self) -> Series {
+    fn var_as_series(&self, _ddof: u8) -> Series {
         Self::full_null(self.name(), 1).into_series()
     }
 
-    fn std_as_series(&self) -> Series {
+    fn std_as_series(&self, _ddof: u8) -> Series {
         Self::full_null(self.name(), 1).into_series()
     }
 }
 #[cfg(feature = "object")]
 impl<T: PolarsObject> VarAggSeries for ObjectChunked<T> {
-    fn var_as_series(&self) -> Series {
+    fn var_as_series(&self, _ddof: u8) -> Series {
         unimplemented!()
     }
 
-    fn std_as_series(&self) -> Series {
+    fn std_as_series(&self, _ddof: u8) -> Series {
         unimplemented!()
     }
 }
 impl VarAggSeries for Utf8Chunked {
-    fn var_as_series(&self) -> Series {
+    fn var_as_series(&self, _ddof: u8) -> Series {
         Self::full_null(self.name(), 1).into_series()
     }
 
-    fn std_as_series(&self) -> Series {
+    fn std_as_series(&self, _ddof: u8) -> Series {
         Self::full_null(self.name(), 1).into_series()
     }
 }
@@ -879,9 +904,9 @@ mod test {
             ],
         );
         for ca in &[ca1, ca2] {
-            let out = ca.var();
+            let out = ca.var(1);
             assert_eq!(out, Some(12.3));
-            let out = ca.std().unwrap();
+            let out = ca.std(1).unwrap();
             assert!((3.5071355833500366 - out).abs() < 0.000000001);
         }
     }

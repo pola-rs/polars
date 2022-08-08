@@ -67,7 +67,7 @@ where
         + compute::aggregate::SimdOrd<T::Native>,
     ChunkedArray<T>: ChunkVar<f64>,
 {
-    Some(cov_i(a, b)? / (a.std()? * b.std()?))
+    Some(cov_i(a, b)? / (a.std(1)? * b.std(1)?))
 }
 
 /// Compute the pearson correlation between two columns.
@@ -80,7 +80,7 @@ where
         + compute::aggregate::SimdOrd<T::Native>,
     ChunkedArray<T>: ChunkVar<T::Native>,
 {
-    Some(cov_f(a, b)? / (a.std()? * b.std()?))
+    Some(cov_f(a, b)? / (a.std(1)? * b.std(1)?))
 }
 
 #[cfg(feature = "sort_multiple")]

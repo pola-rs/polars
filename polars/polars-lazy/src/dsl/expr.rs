@@ -225,8 +225,8 @@ pub enum AggExpr {
     },
     Sum(Box<Expr>),
     AggGroups(Box<Expr>),
-    Std(Box<Expr>),
-    Var(Box<Expr>),
+    Std(Box<Expr>, u8),
+    Var(Box<Expr>, u8),
 }
 
 impl AsRef<Expr> for AggExpr {
@@ -245,8 +245,8 @@ impl AsRef<Expr> for AggExpr {
             Quantile { expr, .. } => expr,
             Sum(e) => e,
             AggGroups(e) => e,
-            Std(e) => e,
-            Var(e) => e,
+            Std(e, _) => e,
+            Var(e, _) => e,
         }
     }
 }
