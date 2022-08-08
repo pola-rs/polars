@@ -1359,10 +1359,11 @@ impl PyExpr {
         let n_fields = match width_strat {
             "first_non_null" => ListToStructWidthStrategy::FirstNonNull,
             "max_width" => ListToStructWidthStrategy::MaxWidth,
-            strat => {
+            e => {
                 return Err(PyValueError::new_err(format!(
-                "strategy: {strat} not allowed, choose any of {{ 'first_non_null', 'max_width' }}"
-            )))
+                    "n_field_strategy must be one of {{'first_non_null', 'max_width'}}, got {}",
+                    e,
+                )))
             }
         };
 

@@ -5563,17 +5563,16 @@ class ExprListNameSpace:
 
     def to_struct(
         self,
-        n_field_strategy: str = "first_non_null",
+        n_field_strategy: Literal["first_non_null", "max_width"] = "first_non_null",
         name_generator: Callable[[int], str] | None = None,
     ) -> Expr:
         """
-        Convert the series of type `List` to a series of type `Struct`.
+        Convert the series of type ``List`` to a series of type ``Struct``.
 
         Parameters
         ----------
-        n_field_strategy
+        n_field_strategy : {'first_non_null', 'max_width'}
             Strategy to determine the number of fields of the struct.
-            Any of {'first_non_null', 'max_width'}
         name_generator
             A custom function that can be used to generate the field names.
             Default field names are `field_0, field_1 .. field_n`

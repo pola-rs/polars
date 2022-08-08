@@ -3714,7 +3714,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         by_left: str | list[str] | None = None,
         by_right: str | list[str] | None = None,
         by: str | list[str] | None = None,
-        strategy: str = "backward",
+        strategy: Literal["backward", "forward"] = "backward",
         suffix: str = "_right",
         tolerance: str | int | float | None = None,
         allow_parallel: bool = True,
@@ -3753,8 +3753,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             join on these columns before doing asof join
         by_right
             join on these columns before doing asof join
-        strategy
-            One of {'forward', 'backward'}
+        strategy : {'backward', 'forward'}
+            Join strategy.
         suffix
             Suffix to append to columns with a duplicate name.
         tolerance
@@ -4584,19 +4584,21 @@ class DataFrame(metaclass=DataFrameMetaClass):
         return self[name]
 
     def fill_null(
-        self: DF, strategy: str | pli.Expr | Any, limit: int | None = None
+        self: DF,
+        strategy: (
+            Literal["backward", "forward", "min", "max", "mean", "zero", "one"]
+            | pli.Expr
+            | Any
+        ),
+        limit: int | None = None,
     ) -> DF:
         """
         Fill null values using a filling strategy, literal, or Expr.
 
-        .. seealso::
-
-            :func:`fill_nan`
-
         Parameters
         ----------
         strategy
-            One of {"backward", "forward", "min", "max", "mean", "one", "zero"}
+            One of {'backward', 'forward', 'min', 'max', 'mean', 'zero', 'one'}
             or an expression.
         limit
             The number of consecutive null values to forward/backward fill.
@@ -4605,6 +4607,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Returns
         -------
             DataFrame with None values replaced by the filling strategy.
+
+        See Also
+        --------
+        fill_nan
 
         Examples
         --------
@@ -4641,15 +4647,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         Fill floating point NaN values by an Expression evaluation.
 
-        .. seealso::
-
-            :func:`fill_null`
-
-        Warnings
-        --------
-        NOTE that floating point NaNs (Not a Number) are not missing values!
-        to replace missing values, use :func:`fill_null`.
-
         Parameters
         ----------
         fill_value
@@ -4658,6 +4655,15 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Returns
         -------
             DataFrame with NaN replaced with fill_value
+
+        Warnings
+        --------
+        Note that floating point NaNs (Not a Number) are not missing values!
+        To replace missing values, use :func:`fill_null`.
+
+        See Also
+        --------
+        fill_null
 
         Examples
         --------
@@ -5415,21 +5421,37 @@ class DataFrame(metaclass=DataFrameMetaClass):
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     @overload
-    def sum(self: DF, *, axis: Literal[0] = ..., null_strategy: str = "ignore") -> DF:
-        ...
-
-    @overload
-    def sum(self, *, axis: Literal[1], null_strategy: str = "ignore") -> pli.Series:
+    def sum(
+        self: DF,
+        *,
+        axis: Literal[0] = ...,
+        null_strategy: Literal["ignore", "propagate"] = "ignore",
+    ) -> DF:
         ...
 
     @overload
     def sum(
-        self: DF, *, axis: int = 0, null_strategy: str = "ignore"
+        self,
+        *,
+        axis: Literal[1],
+        null_strategy: Literal["ignore", "propagate"] = "ignore",
+    ) -> pli.Series:
+        ...
+
+    @overload
+    def sum(
+        self: DF,
+        *,
+        axis: int = 0,
+        null_strategy: Literal["ignore", "propagate"] = "ignore",
     ) -> DF | pli.Series:
         ...
 
     def sum(
-        self: DF, *, axis: int = 0, null_strategy: str = "ignore"
+        self: DF,
+        *,
+        axis: int = 0,
+        null_strategy: Literal["ignore", "propagate"] = "ignore",
     ) -> DF | pli.Series:
         """
         Aggregate the columns of this DataFrame to their sum value.
@@ -5437,10 +5459,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Parameters
         ----------
         axis
-            either 0 or 1
-        null_strategy
-            {'ignore', 'propagate'}
-            this argument is only used if axis == 1
+            Either 0 or 1.
+        null_strategy : {'ignore', 'propagate'}
+            This argument is only used if axis == 1.
 
         Examples
         --------
@@ -5469,30 +5490,46 @@ class DataFrame(metaclass=DataFrameMetaClass):
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     @overload
-    def mean(self: DF, *, axis: Literal[0] = ..., null_strategy: str = "ignore") -> DF:
-        ...
-
-    @overload
-    def mean(self, *, axis: Literal[1], null_strategy: str = "ignore") -> pli.Series:
+    def mean(
+        self: DF,
+        *,
+        axis: Literal[0] = ...,
+        null_strategy: Literal["ignore", "propagate"] = "ignore",
+    ) -> DF:
         ...
 
     @overload
     def mean(
-        self: DF, *, axis: int = 0, null_strategy: str = "ignore"
+        self,
+        *,
+        axis: Literal[1],
+        null_strategy: Literal["ignore", "propagate"] = "ignore",
+    ) -> pli.Series:
+        ...
+
+    @overload
+    def mean(
+        self: DF,
+        *,
+        axis: int = 0,
+        null_strategy: Literal["ignore", "propagate"] = "ignore",
     ) -> DF | pli.Series:
         ...
 
-    def mean(self: DF, axis: int = 0, null_strategy: str = "ignore") -> DF | pli.Series:
+    def mean(
+        self: DF,
+        axis: int = 0,
+        null_strategy: Literal["ignore", "propagate"] = "ignore",
+    ) -> DF | pli.Series:
         """
         Aggregate the columns of this DataFrame to their mean value.
 
         Parameters
         ----------
         axis
-            either 0 or 1
-        null_strategy
-            {'ignore', 'propagate'}
-            this argument is only used if axis == 1
+            Either 0 or 1.
+        null_strategy : {'ignore', 'propagate'}
+            This argument is only used if axis == 1.
 
         Examples
         --------

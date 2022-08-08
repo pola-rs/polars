@@ -2591,7 +2591,13 @@ class Series:
         )
 
     def fill_null(
-        self, strategy: str | int | pli.Expr, limit: int | None = None
+        self,
+        strategy: (
+            Literal["backward", "forward", "min", "max", "mean", "zero", "one"]
+            | pli.Expr
+            | Any
+        ),
+        limit: int | None = None,
     ) -> Series:
         """
         Fill null values using a filling strategy, literal, or Expr.
@@ -2599,7 +2605,7 @@ class Series:
         Parameters
         ----------
         strategy
-            One of {"backward", "forward", "min", "max", "mean", "one", "zero"}
+            One of {'backward', 'forward', 'min', 'max', 'mean', 'zero', 'one'}
             or an expression.
         limit
             The number of consecutive null values to forward/backward fill.
