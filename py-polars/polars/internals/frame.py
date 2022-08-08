@@ -107,7 +107,11 @@ else:
 DF = TypeVar("DF", bound="DataFrame")
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import ClosedWindow, InterpolationMethod
+    from polars.internals.datatypes import (
+        ClosedWindow,
+        FillStrategy,
+        InterpolationMethod,
+    )
 
     # these aliases are used to annotate DataFrame.__getitem__()
     # MultiRowSelector indexes into the vertical axis and
@@ -4387,24 +4391,22 @@ class DataFrame:
 
     def fill_null(
         self,
-        strategy: (
-            Literal["backward", "forward", "min", "max", "mean", "zero", "one"]
-            | pli.Expr
-            | Any
-        ),
+        value: Any | None = None,
+        strategy: FillStrategy | None = None,
         limit: int | None = None,
     ) -> DataFrame:
         """
-        Fill null values using a filling strategy, literal, or Expr.
+        Fill null values using the specified value or strategy.
 
         Parameters
         ----------
-        strategy
-            One of {'backward', 'forward', 'min', 'max', 'mean', 'zero', 'one'}
-            or an expression.
+        value
+            Value used to fill null values.
+        strategy : {None, 'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}
+            Strategy used to fill null values.
         limit
-            The number of consecutive null values to forward/backward fill.
-            Only valid if ``strategy`` is 'forward' or 'backward'.
+            Number of consecutive null values to fill when using the 'forward' or
+            'backward' strategy.
 
         Returns
         -------
@@ -4439,11 +4441,7 @@ class DataFrame:
         └─────┴──────┘
 
         """
-        if isinstance(strategy, pli.Expr):
-            return self.lazy().fill_null(strategy).collect(no_optimization=True)
-        if not isinstance(strategy, str):
-            return self.fill_null(pli.lit(strategy))
-        return self._from_pydf(self._df.fill_null(strategy, limit))
+        return self.select(pli.all().fill_null(value, strategy, limit))
 
     def fill_nan(self, fill_value: pli.Expr | int | float) -> DataFrame:
         """

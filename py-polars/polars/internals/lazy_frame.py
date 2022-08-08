@@ -50,7 +50,11 @@ except ImportError:
     _PYARROW_AVAILABLE = False
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import ClosedWindow, InterpolationMethod
+    from polars.internals.datatypes import (
+        ClosedWindow,
+        FillStrategy,
+        InterpolationMethod,
+    )
 
 
 # Used to type any type or subclass of LazyFrame.
@@ -1981,19 +1985,27 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         return self.select(pli.col("*").take_every(n))
 
-    def fill_null(self: LDF, fill_value: int | str | pli.Expr) -> LDF:
+    def fill_null(
+        self: LDF,
+        value: Any | None = None,
+        strategy: FillStrategy | None = None,
+        limit: int | None = None,
+    ) -> LDF:
         """
-        Fill missing values with a literal or Expr.
+        Fill null values using the specified value or strategy.
 
         Parameters
         ----------
-        fill_value
-            Value to fill the missing values with.
+        value
+            Value used to fill null values.
+        strategy : {None, 'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}
+            Strategy used to fill null values.
+        limit
+            Number of consecutive null values to fill when using the 'forward' or
+            'backward' strategy.
 
         """
-        if not isinstance(fill_value, pli.Expr):
-            fill_value = pli.lit(fill_value)
-        return self._from_pyldf(self._ldf.fill_null(fill_value._pyexpr))
+        return self.select(pli.all().fill_null(value, strategy, limit))
 
     def fill_nan(self: LDF, fill_value: int | str | float | pli.Expr) -> LDF:
         """
