@@ -372,11 +372,6 @@ def test_groupby() -> None:
             if subdf["a"][0] == "b":
                 assert subdf.shape == (3, 3)
 
-    with pytest.deprecated_call():
-        assert df.groupby("a").get_group("c").shape == (1, 3)
-        assert df.groupby("a").get_group("b").shape == (3, 3)
-        assert df.groupby("a").get_group("a").shape == (2, 3)
-
     # Use lazy API in eager groupby
     assert df.groupby("a").agg([pl.sum("b")]).shape == (3, 2)
     # test if it accepts a single expression
