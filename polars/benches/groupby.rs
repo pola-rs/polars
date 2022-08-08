@@ -143,7 +143,7 @@ fn q9(c: &mut Criterion) {
                 .lazy()
                 .drop_nulls(Some(vec![col("v1"), col("v2")]))
                 .groupby([col("id2"), col("id4")])
-                .agg([pearson_corr(col("v1"), col("v2")).alias("r2").pow(2.0)])
+                .agg([pearson_corr(col("v1"), col("v2"), 1).alias("r2").pow(2.0)])
                 .collect()
                 .unwrap();
         })
