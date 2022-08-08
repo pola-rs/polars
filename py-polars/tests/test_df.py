@@ -1877,39 +1877,6 @@ def test_join_suffixes() -> None:
     df_a.join_asof(df_b, on="A", suffix="_y")["B_y"]
 
 
-def test_preservation_of_subclasses() -> None:
-    """Test for DataFrame inheritance."""
-    # We should be able to inherit from polars.DataFrame
-    class SubClassedDataFrame(pl.DataFrame):
-        pass
-
-    # The constructor creates an object which is an instance of both the
-    # superclass and subclass
-    df = SubClassedDataFrame({"column_1": [1, 2, 3]})
-    assert isinstance(df, pl.DataFrame)
-    assert isinstance(df, SubClassedDataFrame)
-
-    # Methods which yield new dataframes should preserve the subclass,
-    # and here we choose a random method to test with
-    assert isinstance(df.transpose(), SubClassedDataFrame)
-
-    # The type of the dataframe should be preserved when casted to LazyFrame and back
-    assert isinstance(df.lazy().collect(), SubClassedDataFrame)
-
-    # Check if the end user can extend the functionality of both DataFrame and LazyFrame
-    # and connect these classes together
-    class MyLazyFrame(pl.LazyFrame):
-        @property
-        def _dataframe_class(cls) -> type[MyDataFrame]:
-            return MyDataFrame
-
-    class MyDataFrame(pl.DataFrame):
-        _lazyframe_class = MyLazyFrame
-
-    assert isinstance(MyDataFrame().lazy(), MyLazyFrame)
-    assert isinstance(MyDataFrame().lazy().collect(), MyDataFrame)
-
-
 def test_preservation_of_subclasses_after_groupby_statements() -> None:
     """Group by operations should preserve inherited dataframe classes."""
 

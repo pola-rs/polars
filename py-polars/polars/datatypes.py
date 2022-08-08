@@ -3,7 +3,7 @@ from __future__ import annotations
 import ctypes
 import sys
 from datetime import date, datetime, time, timedelta
-from typing import Any, Dict, Optional, Sequence, Tuple, Type, Union
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple, Type, Union
 
 try:
     import pyarrow as pa
@@ -55,7 +55,7 @@ PolarsDataType = Union[Type[DataType], DataType]
 
 ColumnsType = Union[
     Sequence[str],
-    Dict[str, PolarsDataType],
+    Mapping[str, PolarsDataType],
     Sequence[Tuple[str, Optional[PolarsDataType]]],
 ]
 
