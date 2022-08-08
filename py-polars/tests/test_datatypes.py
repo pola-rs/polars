@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 
 import polars as pl
-import polars.datatypes as datatypes
+from polars import datatypes
 
 
 def test_dtype_init_equivalence() -> None:
