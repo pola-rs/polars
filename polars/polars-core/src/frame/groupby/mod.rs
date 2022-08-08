@@ -254,7 +254,7 @@ impl DataFrame {
 ///
 #[derive(Debug, Clone)]
 pub struct GroupBy<'df> {
-    df: &'df DataFrame,
+    pub df: &'df DataFrame,
     pub(crate) selected_keys: Vec<Series>,
     // [first idx, [other idx]]
     groups: GroupsProxy,

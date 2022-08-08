@@ -159,20 +159,13 @@ impl PhysicalExpr for ApplyExpr {
 
                     // aggregate representation of the aggregation contexts
                     // then unpack the lists and finally create iterators from this list chunked arrays.
-                    let lists = acs
+                    let mut iters = acs
                         .iter_mut()
-                        .map(|ac| {
-                            let s = match ac.agg_state() {
-                                AggState::AggregatedFlat(s) => s.reshape(&[-1, 1]).unwrap(),
-                                _ => ac.aggregated(),
-                            };
-                            s.list().unwrap().clone()
-                        })
+                        .map(|ac| ac.iter_groups())
                         .collect::<Vec<_>>();
-                    let mut iters = lists.iter().map(|ca| ca.into_iter()).collect::<Vec<_>>();
 
                     // length of the items to iterate over
-                    let len = lists[0].len();
+                    let len = iters[0].size_hint().0;
 
                     let mut ca: ListChunked = (0..len)
                         .map(|_| {
@@ -180,13 +173,15 @@ impl PhysicalExpr for ApplyExpr {
                             for iter in &mut iters {
                                 match iter.next().unwrap() {
                                     None => return None,
-                                    Some(s) => container.push(s),
+                                    Some(s) => container.push(s.deep_clone()),
                                 }
                             }
                             self.function.call_udf(&mut container).ok()
                         })
                         .collect_trusted();
                     ca.rename(&name);
+                    drop(iters);
+
                     // take the first aggregation context that as that is the input series
                     let ac = acs.swap_remove(0);
                     let ac = self.finish_apply_groups(ac, ca);
