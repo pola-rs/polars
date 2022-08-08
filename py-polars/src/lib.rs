@@ -151,16 +151,6 @@ fn repeat(value: &PyAny, n_times: PyExpr) -> PyExpr {
 }
 
 #[pyfunction]
-fn binary_function(
-    a: dsl::PyExpr,
-    b: dsl::PyExpr,
-    lambda: PyObject,
-    output_type: Option<Wrap<DataType>>,
-) -> dsl::PyExpr {
-    lazy::binary_function(a, b, lambda, output_type.map(|dt| dt.0))
-}
-
-#[pyfunction]
 fn pearson_corr(a: dsl::PyExpr, b: dsl::PyExpr) -> dsl::PyExpr {
     polars::lazy::dsl::pearson_corr(a.inner, b.inner).into()
 }
@@ -514,7 +504,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(fold)).unwrap();
     m.add_wrapped(wrap_pyfunction!(binary_expr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(arange)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(binary_function)).unwrap();
     m.add_wrapped(wrap_pyfunction!(pearson_corr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(cov)).unwrap();
     m.add_wrapped(wrap_pyfunction!(argsort_by)).unwrap();

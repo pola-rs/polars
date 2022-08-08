@@ -114,31 +114,6 @@ pub(crate) fn binary_lambda(lambda: &PyObject, a: Series, b: Series) -> Result<S
     Ok(pyseries.series)
 }
 
-pub fn binary_function(
-    input_a: PyExpr,
-    input_b: PyExpr,
-    lambda: PyObject,
-    output_type: Option<DataType>,
-) -> PyExpr {
-    let input_a = input_a.inner;
-    let input_b = input_b.inner;
-
-    let output_field = match output_type {
-        None => Field::new("binary_function", DataType::Null),
-        Some(dt) => Field::new("binary_function", dt),
-    };
-
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
-
-    polars::lazy::dsl::map_binary(
-        input_a,
-        input_b,
-        func,
-        GetOutput::map_field(move |_| output_field.clone()),
-    )
-    .into()
-}
-
 pub fn map_single(
     pyexpr: &PyExpr,
     py: Python,

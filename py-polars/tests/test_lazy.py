@@ -7,7 +7,7 @@ import pytest
 from _pytest.capture import CaptureFixture
 
 import polars as pl
-from polars import col, lit, map_binary, when
+from polars import col, lit, when
 from polars.testing import assert_frame_equal
 
 
@@ -130,28 +130,6 @@ def test_groupby_apply() -> None:
     df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 3.0]})
     ldf = df.lazy().groupby("a").apply(lambda df: df)
     assert ldf.collect().sort("b").frame_equal(df)
-
-
-def test_binary_function() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    out = (
-        df.lazy()
-        .with_column(
-            (map_binary(col("a"), col("b"), lambda a, b: a + b)).alias(
-                "binary_function"
-            )
-        )
-        .collect()
-    )
-    assert out["binary_function"] == (out["a"] + out["b"])
-
-    # we can also avoid pl.col and insert column names directly
-    out = (
-        df.lazy()
-        .with_column(map_binary("a", "b", lambda a, b: a + b).alias("binary_function"))
-        .collect()
-    )
-    assert out["binary_function"] == (out["a"] + out["b"])
 
 
 def test_filter_str() -> None:
