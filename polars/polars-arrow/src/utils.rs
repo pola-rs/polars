@@ -52,7 +52,7 @@ pub fn combine_validities(opt_l: Option<&Bitmap>, opt_r: Option<&Bitmap>) -> Opt
     match (opt_l, opt_r) {
         (Some(l), Some(r)) => Some(l.bitand(r)),
         (None, Some(r)) => Some(r.clone()),
-        (Some(l), None) => (Some(l.clone())),
+        (Some(l), None) => Some(l.clone()),
         (None, None) => None,
     }
 }
