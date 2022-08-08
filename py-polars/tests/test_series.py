@@ -547,7 +547,9 @@ def test_set_list_and_tuple(idx: list[int] | tuple[int]) -> None:
 
 def test_fill_null() -> None:
     a = pl.Series("a", [1, 2, None])
-    verify_series_and_expr_api(a, pl.Series("a", [1, 2, 2]), "fill_null", "forward")
+    verify_series_and_expr_api(
+        a, pl.Series("a", [1, 2, 2]), "fill_null", strategy="forward"
+    )
 
     verify_series_and_expr_api(
         a, pl.Series("a", [1, 2, 14], dtype=Int64), "fill_null", 14

@@ -1541,7 +1541,9 @@ def test_rename_same_name() -> None:
 def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, None]})
     assert df.fill_null(4).frame_equal(pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
-    assert df.fill_null("max").frame_equal(pl.DataFrame({"a": [1, 2], "b": [3, 3]}))
+    assert df.fill_null(strategy="max").frame_equal(
+        pl.DataFrame({"a": [1, 2], "b": [3, 3]})
+    )
 
 
 def test_fill_nan() -> None:
@@ -1981,8 +1983,8 @@ def test_fill_null_limits() -> None:
         }
     ).select(
         [
-            pl.all().fill_null("forward", limit=2),
-            pl.all().fill_null("backward", limit=2).suffix("_backward"),
+            pl.all().fill_null(strategy="forward", limit=2),
+            pl.all().fill_null(strategy="backward", limit=2).suffix("_backward"),
         ]
     ).to_dict(
         False
