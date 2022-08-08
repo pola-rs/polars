@@ -10,9 +10,11 @@ from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
+import polars.internals as pli
 from polars.datatypes import DataType, Date, Datetime
 
 try:
+    from polars.polars import PyExpr
     from polars.polars import pool_size as _pool_size
 
     _DOCUMENTING = False
@@ -130,6 +132,22 @@ def is_bool_sequence(val: Sequence[object]) -> TypeGuard[Sequence[bool]]:
 def is_int_sequence(val: Sequence[object]) -> TypeGuard[Sequence[int]]:
     """Check whether the given sequence is a sequence of integers."""
     return _is_iterable_of(val, Sequence, int)
+
+
+def is_expr_sequence(val: object) -> TypeGuard[Sequence[pli.Expr]]:
+    """Check whether the given object is a sequence of Exprs."""
+    if isinstance(val, Sequence):
+        return _is_iterable_of(val, Sequence, pli.Expr)
+    else:
+        return False
+
+
+def is_pyexpr_sequence(val: object) -> TypeGuard[Sequence[PyExpr]]:
+    """Check whether the given object is a sequence of Exprs."""
+    if isinstance(val, Sequence):
+        return _is_iterable_of(val, Sequence, PyExpr)
+    else:
+        return False
 
 
 def is_str_sequence(

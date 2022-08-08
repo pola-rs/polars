@@ -15,6 +15,8 @@ from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Generic, Sequence, TypeVar, overload
 
+from polars.internals.expr import ensure_list_of_pyexpr
+
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
@@ -38,6 +40,7 @@ from polars.utils import (
     _process_null_values,
     deprecated_alias,
     format_path,
+    is_expr_sequence,
 )
 
 try:
@@ -2470,14 +2473,14 @@ class LazyGroupBy(Generic[LDF]):
         self.lgb = lgb
         self._lazyframe_class = lazyframe_class
 
-    def agg(self, aggs: list[pli.Expr] | pli.Expr) -> LDF:
+    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> LDF:
         """
         Describe the aggregation that need to be done on a group.
 
         Parameters
         ----------
         aggs
-            Single/ Multiple aggregation expression(s).
+            Single / multiple aggregation expression(s).
 
         Examples
         --------
@@ -2493,8 +2496,12 @@ class LazyGroupBy(Generic[LDF]):
         ... )  # doctest: +SKIP
 
         """
-        aggs = pli.selection_to_pyexpr_list(aggs)
-        return self._lazyframe_class._from_pyldf(self.lgb.agg(aggs))
+        if not (isinstance(aggs, pli.Expr) or is_expr_sequence(aggs)):
+            msg = f"expected 'Expr | Sequence[Expr]', got '{type(aggs)}'"
+            raise TypeError(msg)
+
+        pyexprs = ensure_list_of_pyexpr(aggs)
+        return self._lazyframe_class._from_pyldf(self.lgb.agg(pyexprs))
 
     def head(self, n: int = 5) -> LDF:
         """
