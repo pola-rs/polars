@@ -78,7 +78,6 @@ Manipulation/ selection
 
     DataFrame.cleared
     DataFrame.clone
-    DataFrame.distinct
     DataFrame.drop
     DataFrame.drop_in_place
     DataFrame.drop_nulls

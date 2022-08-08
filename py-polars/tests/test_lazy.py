@@ -1170,16 +1170,16 @@ def test_is_between(fruits_cars: pl.DataFrame) -> None:
     )
 
 
-def test_distinct() -> None:
+def test_unique() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [3, 3, 3]})
 
     expected = pl.DataFrame({"a": [1, 2], "b": [3, 3]})
-    assert df.lazy().distinct(maintain_order=True).collect().frame_equal(expected)
+    assert df.lazy().unique(maintain_order=True).collect().frame_equal(expected)
 
     expected = pl.DataFrame({"a": [1], "b": [3]})
     assert (
         df.lazy()
-        .distinct(subset="b", maintain_order=True)
+        .unique(subset="b", maintain_order=True)
         .collect()
         .frame_equal(expected)
     )

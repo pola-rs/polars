@@ -1227,12 +1227,12 @@ def test_hashing_on_python_objects() -> None:
 
     df = df.with_column(pl.col("a").apply(lambda x: Foo()).alias("foo"))
     assert df.groupby(["foo"]).first().shape == (1, 3)
-    assert df.distinct().shape == (3, 3)
+    assert df.unique().shape == (3, 3)
 
 
-def test_distinct_unit_rows() -> None:
+def test_unique_unit_rows() -> None:
     # simply test if we don't panic.
-    pl.DataFrame({"a": [1], "b": [None]}).distinct(subset="a")
+    pl.DataFrame({"a": [1], "b": [None]}).unique(subset="a")
 
 
 def test_panic() -> None:

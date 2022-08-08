@@ -2124,18 +2124,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         columns = pli.selection_to_pyexpr_list(columns)
         return self._from_pyldf(self._ldf.explode(columns))
 
-    def distinct(
-        self: LDF,
-        maintain_order: bool = True,
-        subset: str | list[str] | None = None,
-        keep: str = "first",
-    ) -> LDF:
-        """
-        .. deprecated:: 0.13.13
-            Use :func:`unique` instead.
-        """
-        return self.unique(maintain_order, subset, keep)
-
     def unique(
         self: LDF,
         maintain_order: bool = True,

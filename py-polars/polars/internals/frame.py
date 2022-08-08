@@ -5572,18 +5572,6 @@ class DataFrame:
         """
         return self._from_pydf(self._df.to_dummies())
 
-    def distinct(
-        self: DF,
-        maintain_order: bool = True,
-        subset: str | list[str] | None = None,
-        keep: str = "first",
-    ) -> DF:
-        """
-        .. deprecated:: 0.13.13
-            Use :func:`unique` instead.
-        """
-        return self.unique(maintain_order, subset, keep)
-
     def unique(
         self: DF,
         maintain_order: bool = True,
