@@ -2394,47 +2394,12 @@ class DataFrame:
             index = len(self.columns) + index
         self._df.replace_at_idx(index, series._s)
 
-    @overload
-    def sort(
-        self,
-        by: str | pli.Expr | list[str] | list[pli.Expr],
-        reverse: bool | list[bool] = ...,
-        nulls_last: bool = ...,
-        *,
-        in_place: Literal[False] = ...,
-    ) -> DataFrame:
-        ...
-
-    @overload
-    def sort(
-        self,
-        by: str | pli.Expr | list[str] | list[pli.Expr],
-        reverse: bool | list[bool] = ...,
-        nulls_last: bool = ...,
-        *,
-        in_place: Literal[True],
-    ) -> None:
-        ...
-
-    @overload
-    def sort(
-        self,
-        by: str | pli.Expr | list[str] | list[pli.Expr],
-        reverse: bool | list[bool] = ...,
-        nulls_last: bool = ...,
-        *,
-        in_place: bool,
-    ) -> DataFrame | None:
-        ...
-
     def sort(
         self,
         by: str | pli.Expr | list[str] | list[pli.Expr],
         reverse: bool | list[bool] = False,
         nulls_last: bool = False,
-        *,
-        in_place: bool = False,
-    ) -> DataFrame | None:
+    ) -> DataFrame:
         """
         Sort the DataFrame by column.
 
@@ -2444,8 +2409,6 @@ class DataFrame:
             By which column to sort. Only accepts string.
         reverse
             Reverse/descending sort.
-        in_place
-            Perform operation in-place.
         nulls_last
             Place null values last. Can only be used if sorted by a single column.
 
@@ -2499,23 +2462,8 @@ class DataFrame:
                 .sort(by, reverse, nulls_last)
                 .collect(no_optimization=True, string_cache=False)
             )
-            if in_place:  # pragma: no cover
-                warnings.warn(
-                    "in-place sorting is deprecated; please use default sorting",
-                    DeprecationWarning,
-                )
-                self._df = df._df
-                return self
             return df
-        if in_place:  # pragma: no cover
-            warnings.warn(
-                "in-place sorting is deprecated; please use default sorting",
-                DeprecationWarning,
-            )
-            self._df.sort_in_place(by, reverse)
-            return None
-        else:
-            return self._from_pydf(self._df.sort(by, reverse, nulls_last))
+        return self._from_pydf(self._df.sort(by, reverse, nulls_last))
 
     def frame_equal(self, other: DataFrame, null_equal: bool = True) -> bool:
         """

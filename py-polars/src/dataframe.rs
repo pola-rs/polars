@@ -984,13 +984,6 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn sort_in_place(&mut self, by_column: &str, reverse: bool) -> PyResult<()> {
-        self.df
-            .sort_in_place([by_column], reverse)
-            .map_err(PyPolarsErr::from)?;
-        Ok(())
-    }
-
     pub fn replace(&mut self, column: &str, new_col: PySeries) -> PyResult<()> {
         self.df
             .replace(column, new_col.series)
