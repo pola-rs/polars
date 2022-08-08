@@ -1904,7 +1904,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
-        >>> df.fill_null("zero")
+        >>> df.fill_null(strategy="zero")
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │

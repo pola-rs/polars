@@ -2620,7 +2620,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, None])
-        >>> s.fill_null("forward")
+        >>> s.fill_null(strategy="forward")
         shape: (4,)
         Series: 'a' [i64]
         [
@@ -2629,7 +2629,7 @@ class Series:
             3
             3
         ]
-        >>> s.fill_null("min")
+        >>> s.fill_null(strategy="min")
         shape: (4,)
         Series: 'a' [i64]
         [
