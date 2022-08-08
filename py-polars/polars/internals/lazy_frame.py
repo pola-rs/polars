@@ -38,7 +38,6 @@ from polars.utils import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
-    deprecated_alias,
     format_path,
     is_expr_sequence,
 )
@@ -1192,7 +1191,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         )
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
-    @deprecated_alias(ldf="other")
     def join_asof(
         self: LDF,
         other: LazyFrame,
@@ -1326,7 +1324,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             )
         )
 
-    @deprecated_alias(ldf="other")
     def join(
         self: LDF,
         other: LazyFrame,

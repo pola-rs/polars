@@ -51,7 +51,6 @@ from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
-    deprecated_alias,
     format_path,
     handle_projection_columns,
     is_bool_sequence,
@@ -3509,7 +3508,6 @@ class DataFrame:
             self._df.upsample(by, time_column, every, offset, maintain_order)
         )
 
-    @deprecated_alias(df="other")
     def join_asof(
         self,
         other: DataFrame,
@@ -3653,7 +3651,6 @@ class DataFrame:
             .collect(no_optimization=True)
         )
 
-    @deprecated_alias(df="other")
     def join(
         self,
         other: DataFrame,
@@ -5909,7 +5906,6 @@ class DataFrame:
         """
         return self.select(pli.col("*").take_every(n))
 
-    @deprecated_alias(k0="seed", k1="seed_1", k2="seed_2", k3="seed_3")
     def hash_rows(
         self,
         seed: int = 0,

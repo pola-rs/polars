@@ -48,7 +48,6 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _ptr_to_numpy,
     _to_python_datetime,
-    deprecated_alias,
     is_bool_sequence,
     is_int_sequence,
     range_to_slice,
@@ -3693,7 +3692,6 @@ class Series:
             series._s.shrink_to_fit()
             return series
 
-    @deprecated_alias(k0="seed", k1="seed_1", k2="seed_2", k3="seed_3")
     def hash(
         self,
         seed: int = 0,
