@@ -696,7 +696,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         file: str | Path | BinaryIO,
         columns: list[int] | list[str] | None = None,
         n_rows: int | None = None,
-        parallel: str = "auto",
+        parallel: Literal["auto", "columns", "row_groups", "none"] = "auto",
         row_count_name: str | None = None,
         row_count_offset: int = 0,
         low_memory: bool = False,
@@ -704,9 +704,11 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         Read into a DataFrame from a parquet file.
 
+        Use ``pl.read_parquet`` to dispatch to this method.
+
         See Also
         --------
-        read_parquet
+        polars.io.read_parquet
 
         """
         if isinstance(file, (str, Path)):
