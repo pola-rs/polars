@@ -906,8 +906,8 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.min()
-        1
+        >>> s.max()
+        3
 
         """
         return self._s.max()

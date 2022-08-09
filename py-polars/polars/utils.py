@@ -242,7 +242,9 @@ def _to_python_datetime(
         # days to seconds
         # important to create from utc. Not doing this leads
         # to inconsistencies dependent on the timezone you are in.
-        return datetime.utcfromtimestamp(value * 3600 * 24).date()
+        dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        dt += timedelta(seconds=value * 3600 * 24)
+        return dt.date()
     elif dtype == Datetime:
         if tu == "ns":
             # nanoseconds to seconds
@@ -251,16 +253,14 @@ def _to_python_datetime(
             dt = EPOCH + timedelta(microseconds=value)
         elif tu == "ms":
             # milliseconds to seconds
-            dt = datetime.utcfromtimestamp(value / 1_000)
+            dt = datetime.utcfromtimestamp(value / 1000)
         else:
             raise ValueError(f"time unit: {tu} not expected")
         if tz is not None and len(tz) > 0:
             import pytz
 
-            timezone = pytz.timezone(tz)
-            return timezone.localize(dt)
+            return pytz.timezone(tz).localize(dt)
         return dt
-
     else:
         raise NotImplementedError  # pragma: no cover
 
