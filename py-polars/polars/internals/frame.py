@@ -61,7 +61,7 @@ from polars.utils import (
 )
 
 try:
-    from polars.polars import PyDataFrame, PySeries
+    from polars.polars import PyDataFrame
 
     _DOCUMENTING = False
 except ImportError:
@@ -1532,25 +1532,6 @@ class DataFrame:
 
     def __repr__(self) -> str:
         return self.__str__()
-
-    def __getattr__(self, item: Any) -> PySeries:
-        """Access columns as attribute."""
-        # it is important that we return an AttributeError here
-        # this is used by ipython to check some private
-        # `_ipython_canary_method_should_not_exist_`
-        # if we return any other error than AttributeError pretty printing
-        # will not work in notebooks.
-        # See: https://github.com/jupyter/notebook/issues/2014
-        if item.startswith("_"):
-            raise AttributeError(item)
-        try:  # pragma: no cover
-            warnings.warn(
-                "accessing series as Attribute of a DataFrame is deprecated",
-                DeprecationWarning,
-            )
-            return pli.wrap_s(self._df.column(item))
-        except Exception as exc:
-            raise AttributeError(item) from exc
 
     def __contains__(self, key: str) -> bool:
         return key in self.columns

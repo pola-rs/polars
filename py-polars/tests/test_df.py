@@ -413,14 +413,14 @@ def test_groupby_agg_input_types(lazy: bool) -> None:
         with pytest.raises(TypeError):
             result = df_or_lazy.groupby("a").agg(bad_param)  # type: ignore[arg-type]
             if lazy:
-                result.collect()
+                result.collect()  # type: ignore[union-attr]
 
     expected = pl.DataFrame({"a": [1, 2], "b": [3, 7]})
 
     for good_param in GOOD_AGG_PARAMETERS:
         result = df_or_lazy.groupby("a", maintain_order=True).agg(good_param)
         if lazy:
-            result = result.collect()
+            result = result.collect()  # type: ignore[union-attr]
         assert_frame_equal(result, expected)
 
 
@@ -437,7 +437,7 @@ def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
                 bad_param  # type: ignore[arg-type]
             )
             if lazy:
-                result.collect()
+                result.collect()  # type: ignore[union-attr]
 
     expected = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 4, 4, 3]})
 
@@ -446,7 +446,7 @@ def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
             index_column="index_column", period="2i"
         ).agg(good_param)
         if lazy:
-            result = result.collect()
+            result = result.collect()  # type: ignore[union-attr]
         assert_frame_equal(result, expected)
 
 
@@ -463,7 +463,7 @@ def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
                 bad_param  # type: ignore[arg-type]
             )
             if lazy:
-                result.collect()
+                result.collect()  # type: ignore[union-attr]
 
     expected = pl.DataFrame({"index_column": [0, 0, 2], "b": [1, 4, 2]})
 
@@ -472,7 +472,7 @@ def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
             index_column="index_column", every="2i"
         ).agg(good_param)
         if lazy:
-            result = result.collect()
+            result = result.collect()  # type: ignore[union-attr]
         assert_frame_equal(result, expected)
 
 
@@ -1610,15 +1610,6 @@ def test_add_string() -> None:
         {"a": ["hi hello", "there hello"], "b": ["hello hello", "world hello"]}
     )
     assert result.frame_equal(expected)
-
-
-def test_getattr() -> None:
-    with pytest.deprecated_call():
-        df = pl.DataFrame({"a": [1.0, 2.0]})
-        assert_series_equal(df.a, pl.Series("a", [1.0, 2.0]))
-
-        with pytest.raises(AttributeError):
-            _ = df.b
 
 
 def test_get_item() -> None:
