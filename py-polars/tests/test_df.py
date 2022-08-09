@@ -87,8 +87,8 @@ def test_selection() -> None:
     assert df.get_column("a").to_list() == [1, 2, 3]
 
     # select columns by mask
-    assert df[:2, [True, False, False]].shape == (2, 1)
-    assert df[:2, pl.Series([True, False, False])].shape == (2, 1)
+    assert df[:2, :1].shape == (2, 1)
+    assert df[:2, "a"].shape == (2, 1)
 
     # column selection by string(s) in first dimension
     assert df["a"].to_list() == [1, 2, 3]
@@ -111,9 +111,6 @@ def test_selection() -> None:
         pl.DataFrame({"a": [3, 2], "b": [3.0, 2.0], "c": ["c", "b"]})
     )
 
-    assert df[[True, False, True]].frame_equal(
-        pl.DataFrame({"a": [1, 3], "b": [1.0, 3.0], "c": ["a", "c"]})
-    )
     assert df[["a", "b"]].columns == ["a", "b"]
     assert df[[1, 2], [1, 2]].frame_equal(
         pl.DataFrame({"b": [2.0, 3.0], "c": ["b", "c"]})
@@ -121,9 +118,6 @@ def test_selection() -> None:
     assert df[1, 2] == "b"
     assert df[1, 1] == 2.0
     assert df[2, 0] == 3
-
-    assert df[[True, False, True], "b"].shape == (2, 1)
-    assert df[[True, False, False], ["a", "b"]].shape == (1, 2)
 
     assert df[[0, 1], "b"].shape == (2, 1)
     assert df[[2], ["a", "b"]].shape == (1, 2)
@@ -1644,12 +1638,6 @@ def test_get_item() -> None:
     with pytest.raises(ValueError):
         _ = df[np.array([1.0])]
 
-    # using boolean masks with numpy is deprecated
-    with pytest.deprecated_call():
-        assert df[np.array([True, False, False, True])].frame_equal(
-            pl.DataFrame({"a": [1.0, 4.0], "b": [3, 6]})
-        )
-
     # sequences (lists or tuples; tuple only if length != 2)
     # if strings or list of expressions, assumed to be column names
     # if bools, assumed to be a row mask
@@ -1658,9 +1646,6 @@ def test_get_item() -> None:
     assert df.select([pl.col("a"), pl.col("b")]).frame_equal(df)
     assert df[[1, -4, -1, 2, 1]].frame_equal(
         pl.DataFrame({"a": [2.0, 1.0, 4.0, 3.0, 2.0], "b": [4, 3, 6, 5, 4]})
-    )
-    assert df[[False, True, True, False]].frame_equal(
-        pl.DataFrame({"a": [2.0, 3.0], "b": [4, 5]})
     )
 
     # pl.Series: strings for column selections.
@@ -1687,10 +1672,13 @@ def test_get_item() -> None:
             pl.DataFrame({"a": [4.0, 1.0, 2.0, 3.0, 4.0, 1.0], "b": [6, 3, 4, 5, 6, 3]})
         )
 
-    # pl.Series: boolean masks for row selection.
-    assert df[pl.Series("", [False, True, True, False])].frame_equal(
-        pl.DataFrame({"a": [2.0, 3.0], "b": [4, 5]})
-    )
+    # Boolean masks not supported
+    with pytest.raises(ValueError):
+        df[np.array([True, False, True])]
+    with pytest.raises(ValueError):
+        df[[True, False, True], [False, True]]  # type: ignore[index]
+    with pytest.raises(ValueError):
+        df[pl.Series([True, False, True]), "b"]
 
 
 @pytest.mark.parametrize("as_series,inner_dtype", [(True, pl.Series), (False, list)])
