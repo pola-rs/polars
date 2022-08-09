@@ -170,3 +170,18 @@ fn test_sorted_path_joins() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_unknown_supertype_ignore() -> Result<()> {
+    let df = df![
+        "col1" => [0., 3., 2., 1.],
+        "col2" => [0., 0., 1., 1.],
+    ]?;
+
+    let out = df
+        .lazy()
+        .with_columns([(col("col1").fill_null(0f64) + col("col2"))])
+        .collect()?;
+    assert_eq!(out.shape(), (4, 2));
+    Ok(())
+}
