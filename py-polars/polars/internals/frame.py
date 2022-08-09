@@ -258,7 +258,7 @@ class DataFrame:
 
     >>> class MyDataFrame(pl.DataFrame):
     ...     pass
-    >>>
+    ...
     >>> isinstance(MyDataFrame().lazy().collect(), MyDataFrame)
     False
 
@@ -4026,40 +4026,6 @@ class DataFrame:
 
         """
         return pli.wrap_s(self._df.drop_in_place(name))
-
-    def select_at_idx(self, idx: int) -> pli.Series:
-        """
-        Select column at index location.
-
-        Parameters
-        ----------
-        idx
-            Location of selection.
-
-        .. deprecated:: 0.10.20
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
-        ...         "ham": ["a", "b", "c"],
-        ...     }
-        ... )
-        >>> df.select_at_idx(1)
-        shape: (3,)
-        Series: 'bar' [i64]
-        [
-                6
-                7
-                8
-        ]
-
-        """
-        if idx < 0:
-            idx = len(self.columns) + idx
-        return pli.wrap_s(self._df.select_at_idx(idx))
 
     def cleared(self: DF) -> DF:
         """
