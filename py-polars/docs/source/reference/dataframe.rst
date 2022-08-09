@@ -160,7 +160,6 @@ This namespace comes available by calling `DataFrame.groupby(..)`.
     GroupBy.apply
     GroupBy.count
     GroupBy.first
-    GroupBy.groups
     GroupBy.head
     GroupBy.last
     GroupBy.max
