@@ -2021,6 +2021,7 @@ def test_len_compute(df: pl.DataFrame) -> None:
         assert len(taken[col]) == 2
 
 
-def test_filter_python_list() -> None:
+def test_filter_sequence() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     assert df.filter([True, False, True])["a"].to_list() == [1, 3]
+    assert df.filter(np.array([True, False, True]))["a"].to_list() == [1, 3]

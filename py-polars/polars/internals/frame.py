@@ -1971,7 +1971,10 @@ class DataFrame:
             index = len(self.columns) + index
         self._df.insert_at_idx(index, series._s)
 
-    def filter(self, predicate: pli.Expr | str | pli.Series | list[bool]) -> DataFrame:
+    def filter(
+        self,
+        predicate: pli.Expr | str | pli.Series | list[bool] | np.ndarray[Any, Any],
+    ) -> DataFrame:
         """
         Filter the rows in the DataFrame based on a predicate expression.
 
@@ -2017,9 +2020,12 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
+        if _NUMPY_AVAILABLE and isinstance(predicate, np.ndarray):
+            predicate = pli.Series(predicate)
+
         return (
             self.lazy()
-            .filter(predicate)
+            .filter(predicate)  # type: ignore[arg-type]
             .collect(no_optimization=True, string_cache=False)
         )
 
