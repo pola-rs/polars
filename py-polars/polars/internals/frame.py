@@ -54,7 +54,6 @@ from polars.utils import (
     format_path,
     handle_projection_columns,
     is_bool_sequence,
-    is_expr_sequence,
     is_int_sequence,
     is_str_sequence,
     range_to_slice,
@@ -1648,8 +1647,6 @@ class DataFrame:
         self: DF,
         item: int
         | np.ndarray[Any, Any]
-        | pli.Expr
-        | list[pli.Expr]
         | MultiColSelector
         | tuple[int, MultiColSelector]
         | tuple[MultiRowSelector, MultiColSelector],
@@ -1678,8 +1675,6 @@ class DataFrame:
             str
             | int
             | np.ndarray[Any, Any]
-            | pli.Expr
-            | list[pli.Expr]
             | MultiColSelector
             | tuple[int, MultiColSelector]
             | tuple[MultiRowSelector, MultiColSelector]
@@ -1690,12 +1685,6 @@ class DataFrame:
         ),
     ) -> DataFrame | pli.Series:
         """Get item. Does quite a lot. Read the comments."""
-        if isinstance(item, pli.Expr):  # pragma: no cover
-            warnings.warn(
-                "'using expressions in []' is deprecated. please use 'select'",
-                DeprecationWarning,
-            )
-            return self.select(item)
         # select rows and columns at once
         # every 2d selection, i.e. tuple is row column order, just like numpy
         if isinstance(item, tuple) and len(item) == 2:
@@ -1818,8 +1807,6 @@ class DataFrame:
             # select multiple columns
             # df[["foo", "bar"]]
             return self._from_pydf(self._df.select(item))
-        elif is_expr_sequence(item):
-            return self.select(item)
         elif is_bool_sequence(item) or is_int_sequence(item):
             item = pli.Series("", item)  # fall through to next if isinstance
 
@@ -3585,9 +3572,6 @@ class DataFrame:
         on: str | pli.Expr | list[str | pli.Expr] | None = None,
         how: str = "inner",
         suffix: str = "_right",
-        asof_by: str | list[str] | None = None,
-        asof_by_left: str | list[str] | None = None,
-        asof_by_right: str | list[str] | None = None,
     ) -> DataFrame:
         """
         Join in SQL-like fashion.
@@ -3602,27 +3586,18 @@ class DataFrame:
             Name(s) of the right join column(s).
         on
             Name(s) of the join columns in both DataFrames.
-        how
-            Join strategy
-                - "inner"
-                - "left"
-                - "outer"
-                - "asof"
-                - "cross"
-                - "semi"
-                - "anti"
+        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross'}
+            Join strategy.
         suffix
             Suffix to append to columns with a duplicate name.
-        asof_by
-            join on these columns before doing asof join
-        asof_by_left
-            join on these columns before doing asof join
-        asof_by_right
-            join on these columns before doing asof join
 
         Returns
         -------
             Joined DataFrame
+
+        See Also
+        --------
+        join_asof
 
         Examples
         --------
@@ -3667,22 +3642,10 @@ class DataFrame:
         │ 3    ┆ 8.0  ┆ c   ┆ null  │
         └──────┴──────┴─────┴───────┘
 
-        **Asof join**
-        This is similar to a left-join except that we match on near keys rather than
-        equal keys.
-        The direction is backward
-        The keys must be sorted to perform an asof join
-
         **Joining on columns with categorical data**
         See pl.StringCache().
 
         """
-        if how == "asof":  # pragma: no cover
-            warnings.warn(
-                "using asof join via DataFrame.join is deprecated, please use"
-                " DataFrame.join_asof",
-                DeprecationWarning,
-            )
         if how == "cross":
             return self._from_pydf(self._df.join(other._df, [], [], how, suffix))
 
@@ -3708,13 +3671,7 @@ class DataFrame:
         if left_on_ is None or right_on_ is None:
             raise ValueError("You should pass the column to join on as an argument.")
 
-        if (
-            isinstance(left_on_[0], pli.Expr)
-            or isinstance(right_on_[0], pli.Expr)
-            or asof_by_left is not None
-            or asof_by_right is not None
-            or asof_by is not None
-        ):
+        if isinstance(left_on_[0], pli.Expr) or isinstance(right_on_[0], pli.Expr):
             return (
                 self.lazy()
                 .join(
@@ -3724,9 +3681,6 @@ class DataFrame:
                     on=on,
                     how=how,
                     suffix=suffix,
-                    asof_by_right=asof_by_right,
-                    asof_by_left=asof_by_left,
-                    asof_by=asof_by,
                 )
                 .collect(no_optimization=True)
             )

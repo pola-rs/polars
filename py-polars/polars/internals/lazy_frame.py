@@ -10,7 +10,6 @@ import subprocess
 import sys
 import tempfile
 import typing
-import warnings
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Generic, Sequence, TypeVar, overload
@@ -1338,9 +1337,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         suffix: str = "_right",
         allow_parallel: bool = True,
         force_parallel: bool = False,
-        asof_by: str | list[str] | None = None,
-        asof_by_left: str | list[str] | None = None,
-        asof_by_right: str | list[str] | None = None,
     ) -> LDF:
         """
         Add a join operation to the Logical Plan.
@@ -1356,15 +1352,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         on
             Join column of both DataFrames. If set, `left_on` and `right_on` should be
             None.
-        how
-            one of:
-                "inner"
-                "left"
-                "outer"
-                "asof",
-                "cross"
-                "semi"
-                "anti"
+        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross'}
+            Join strategy.
         suffix
             Suffix to append to columns with a duplicate name.
         allow_parallel
@@ -1373,16 +1362,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         force_parallel
             Force the physical plan to evaluate the computation of both DataFrames up to
             the join in parallel.
-        asof_by
-            join on these columns before doing asof join
-        asof_by_left
-            join on these columns before doing asof join
-        asof_by_right
-            join on these columns before doing asof join
 
-        # Asof joins
-        This is similar to a left-join except that we match on nearest key rather than
-        equal keys. The keys must be sorted to perform an asof join
+        See Also
+        --------
+        join_asof
 
         Examples
         --------
@@ -1430,24 +1413,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         if not isinstance(other, LazyFrame):
             raise ValueError(f"Expected a `LazyFrame` as join table, got {type(other)}")
 
-        if how == "asof":
-            warnings.warn(
-                "using asof join via LazyFrame.join is deprecated, please use"
-                " LazyFrame.join_asof",
-                DeprecationWarning,
-            )
         if how == "cross":
             return self._from_pyldf(
                 self._ldf.join(
-                    other._ldf,
-                    [],
-                    [],
-                    allow_parallel,
-                    force_parallel,
-                    how,
-                    suffix,
-                    [],
-                    [],
+                    other._ldf, [], [], allow_parallel, force_parallel, how, suffix
                 )
             )
 
@@ -1484,32 +1453,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 column = pli.col(column)
             new_right_on.append(column._pyexpr)
 
-        # set asof_by
-
-        left_asof_by_: list[str] | None
-        if isinstance(asof_by_left, str):
-            left_asof_by_ = [asof_by_left]
-        else:
-            left_asof_by_ = asof_by_left
-
-        right_asof_by_: list[str] | None
-        if isinstance(asof_by_right, (str, pli.Expr)):
-            right_asof_by_ = [asof_by_right]
-        else:
-            right_asof_by_ = asof_by_right
-
-        if isinstance(asof_by, str):
-            left_asof_by_ = [asof_by]
-            right_asof_by_ = [asof_by]
-        elif isinstance(asof_by, list):
-            left_asof_by_ = asof_by
-            right_asof_by_ = asof_by
-
-        if left_asof_by_ is None:
-            left_asof_by_ = []
-        if right_asof_by_ is None:
-            right_asof_by_ = []
-
         return self._from_pyldf(
             self._ldf.join(
                 other._ldf,
@@ -1519,8 +1462,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 force_parallel,
                 how,
                 suffix,
-                left_asof_by_,
-                right_asof_by_,
             )
         )
 
