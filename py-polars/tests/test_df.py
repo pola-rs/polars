@@ -2044,3 +2044,8 @@ def test_len_compute(df: pl.DataFrame) -> None:
     taken = df[[1, 2], :]
     for col in taken.columns:
         assert len(taken[col]) == 2
+
+
+def test_filter_python_list() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    assert df.filter([True, False, True])["a"].to_list() == [1, 3]
