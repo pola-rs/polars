@@ -90,19 +90,6 @@ def test_diff_datetime() -> None:
     assert out[0] == out[1]
 
 
-def test_timestamp() -> None:
-    a = pl.Series("a", [a * 1000_000 for a in [10000, 20000, 30000]], dtype=pl.Datetime)
-    assert a.dt.timestamp("ms") == [10000, 20000, 30000]
-    out = a.dt.to_python_datetime()
-    assert isinstance(out[0], datetime)
-    assert a.dt.min() == out[0]
-    assert a.dt.max() == out[2]
-
-    df = pl.DataFrame([out])
-    # test if rows returns objects
-    assert isinstance(df.row(0)[0], datetime)
-
-
 def test_from_pydatetime() -> None:
     datetimes = [
         datetime(2021, 1, 1),
@@ -127,10 +114,6 @@ def test_from_pydatetime() -> None:
 
 def test_to_python_datetime() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
-    assert (
-        df.select(pl.col("a").cast(pl.Datetime).dt.to_python_datetime())["a"].dtype
-        == pl.Object
-    )
     assert (
         df.select(pl.col("a").cast(pl.Datetime).dt.timestamp())["a"].dtype == pl.Int64
     )
