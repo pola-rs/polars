@@ -112,7 +112,6 @@ Manipulation/ selection
     DataFrame.rows
     DataFrame.sample
     DataFrame.select
-    DataFrame.select_at_idx
     DataFrame.shift
     DataFrame.shift_and_fill
     DataFrame.shrink_to_fit
@@ -160,7 +159,6 @@ This namespace comes available by calling `DataFrame.groupby(..)`.
     GroupBy.apply
     GroupBy.count
     GroupBy.first
-    GroupBy.groups
     GroupBy.head
     GroupBy.last
     GroupBy.max

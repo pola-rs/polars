@@ -906,8 +906,8 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.min()
-        1
+        >>> s.max()
+        3
 
         """
         return self._s.max()
@@ -5659,18 +5659,6 @@ class DateTimeNameSpace:
 
         """
         return wrap_s(self._s.timestamp(tu))
-
-    def to_python_datetime(self) -> Series:
-        """
-        Go from Date/Datetime to python DateTime objects
-
-        .. deprecated:: 0.13.23
-            Use :func:`Series.to_list` instead.
-
-        """
-        return (self.timestamp("ms") / 1000).apply(
-            lambda ts: datetime.utcfromtimestamp(ts), Object
-        )
 
     def min(self) -> date | datetime | timedelta:
         """Return minimum as python DateTime."""

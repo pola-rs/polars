@@ -127,7 +127,7 @@ def test_selection() -> None:
 
     assert df[[0, 1], "b"].shape == (2, 1)
     assert df[[2], ["a", "b"]].shape == (1, 2)
-    assert df.select_at_idx(0).name == "a"
+    assert df.to_series(0).name == "a"
     assert (df["a"] == df["a"]).sum() == 3
     assert (df["c"] == df["a"].cast(str)).sum() == 0
     assert df[:, "a":"b"].shape == (3, 2)  # type: ignore[misc]
@@ -180,15 +180,10 @@ def test_dataframe_membership_operator() -> None:
 
 def test_sort() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
-    with pytest.deprecated_call():
-        df.sort("a", in_place=True)
-    assert df.frame_equal(pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
-
-    # test in-place + passing a list
-    df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
-    with pytest.deprecated_call():
-        df.sort(["a", "b"], in_place=True)
-    assert df.frame_equal(pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
+    assert df.sort("a").frame_equal(pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
+    assert df.sort(["a", "b"]).frame_equal(
+        pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
+    )
 
 
 def test_replace() -> None:
@@ -209,15 +204,6 @@ def test_assignment() -> None:
     assert df["foo"].to_list() == [1, 9, 9]
 
 
-def test_select_at_idx() -> None:
-    df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
-    for idx in range(len(df.columns)):
-        assert_series_equal(
-            df.select_at_idx(idx),  # regular positive indexing
-            df.select_at_idx(idx - len(df.columns)),  # equivalent negative index
-        )
-
-
 def test_insert_at_idx() -> None:
     df = pl.DataFrame({"z": [3, 4, 5]})
     df.insert_at_idx(0, pl.Series("x", [1, 2, 3]))
@@ -235,26 +221,6 @@ def test_replace_at_idx() -> None:
 
     expected_df = pl.DataFrame({"a": [4, 5, 6], "b": [5, 6, 7], "c": [6, 7, 8]})
     assert_frame_equal(expected_df, df)
-
-
-def test_indexing_set() -> None:
-    # This is deprecated behaviour
-    df = pl.DataFrame({"bool": [True, True], "str": ["N/A", "N/A"], "nr": [1, 2]})
-
-    with pytest.deprecated_call():
-        df[0, "bool"] = False
-
-    with pytest.deprecated_call():
-        df[0, "nr"] = 100
-
-    with pytest.deprecated_call():
-        df[0, "str"] = "foo"
-
-    assert df.to_dict(False) == {
-        "bool": [False, True],
-        "str": ["foo", "N/A"],
-        "nr": [100, 2],
-    }
 
 
 def test_to_series() -> None:
@@ -369,10 +335,6 @@ def test_groupby() -> None:
     assert df.groupby("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
 
     with pytest.deprecated_call():
-        df_groups = df.groupby("a").groups().sort("a")
-        assert df_groups["a"].series_equal(pl.Series("a", ["a", "b", "c"]))
-
-    with pytest.deprecated_call():
         # TODO: find a way to avoid indexing into GroupBy
         for subdf in df.groupby("a"):  # type: ignore[attr-defined]
             # TODO: add __next__() to GroupBy
@@ -433,14 +395,14 @@ def test_groupby_agg_input_types(lazy: bool) -> None:
         with pytest.raises(TypeError):
             result = df_or_lazy.groupby("a").agg(bad_param)  # type: ignore[arg-type]
             if lazy:
-                result.collect()
+                result.collect()  # type: ignore[union-attr]
 
     expected = pl.DataFrame({"a": [1, 2], "b": [3, 7]})
 
     for good_param in GOOD_AGG_PARAMETERS:
         result = df_or_lazy.groupby("a", maintain_order=True).agg(good_param)
         if lazy:
-            result = result.collect()
+            result = result.collect()  # type: ignore[union-attr]
         assert_frame_equal(result, expected)
 
 
@@ -457,7 +419,7 @@ def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
                 bad_param  # type: ignore[arg-type]
             )
             if lazy:
-                result.collect()
+                result.collect()  # type: ignore[union-attr]
 
     expected = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 4, 4, 3]})
 
@@ -466,7 +428,7 @@ def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
             index_column="index_column", period="2i"
         ).agg(good_param)
         if lazy:
-            result = result.collect()
+            result = result.collect()  # type: ignore[union-attr]
         assert_frame_equal(result, expected)
 
 
@@ -478,21 +440,21 @@ def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
     for bad_param in BAD_AGG_PARAMETERS:
         with pytest.raises(TypeError):
             result = df_or_lazy.groupby_dynamic(
-                index_column="index_column", every="2i"
+                index_column="index_column", every="2i", closed="right"
             ).agg(
                 bad_param  # type: ignore[arg-type]
             )
             if lazy:
-                result.collect()
+                result.collect()  # type: ignore[union-attr]
 
     expected = pl.DataFrame({"index_column": [0, 0, 2], "b": [1, 4, 2]})
 
     for good_param in GOOD_AGG_PARAMETERS:
         result = df_or_lazy.groupby_dynamic(
-            index_column="index_column", every="2i"
+            index_column="index_column", every="2i", closed="right"
         ).agg(good_param)
         if lazy:
-            result = result.collect()
+            result = result.collect()  # type: ignore[union-attr]
         assert_frame_equal(result, expected)
 
 
@@ -640,55 +602,6 @@ def test_read_missing_file() -> None:
     with pytest.raises(FileNotFoundError, match="fake_csv_file"):
         with open("fake_csv_file", "r") as f:
             pl.read_csv(f)
-
-
-def test_set() -> None:
-    """
-    Setting a dataframe using indices is deprecated. We keep these tests because we
-    only generate a warning
-    """
-    with pytest.deprecated_call():
-        np.random.seed(1)
-        df = pl.DataFrame(
-            {"foo": np.random.rand(10), "bar": np.arange(10), "ham": ["h"] * 10}
-        )
-        df["new"] = np.random.rand(10)
-        df[df["new"] > 0.5, "new"] = 1
-
-        # set 2D
-        df = pl.DataFrame({"b": [0, 0]})
-        df[["A", "B"]] = [[1, 2], [1, 2]]
-        assert df["A"] == [1, 1]
-        assert df["B"] == [2, 2]
-
-        with pytest.raises(ValueError):
-            df[["C", "D"]] = 1
-        with pytest.raises(ValueError):
-            df[["C", "D"]] = [1, 1]
-        with pytest.raises(ValueError):
-            df[["C", "D"]] = [[1, 2, 3], [1, 2, 3]]
-
-        # set tuple
-        df = pl.DataFrame({"b": [0, 0]})
-        df[0, "b"] = 1
-        assert df[0, "b"] == 1
-
-        df[0, 0] = 2
-        assert df[0, "b"] == 2
-
-        # row and col selection have to be int or str
-        with pytest.raises(ValueError):
-            df[:, [1]] = 1  # type: ignore[index]
-        with pytest.raises(ValueError):
-            df[True, :] = 1  # type: ignore[index]
-
-        # needs to be a 2 element tuple
-        with pytest.raises(ValueError):
-            df[(1, 2, 3)] = 1  # type: ignore[index]
-
-        # we cannot index with any type, such as bool
-        with pytest.raises(ValueError):
-            df[True] = 1  # type: ignore[index]
 
 
 def test_melt() -> None:
@@ -899,34 +812,34 @@ def test_lazy_functions() -> None:
         ]
     )
     expected = 1.0
-    assert np.isclose(out.select_at_idx(0), expected)
+    assert np.isclose(out.to_series(0), expected)
     assert np.isclose(pl.var(df["b"]), expected)  # type: ignore[arg-type]
     expected = 1.0
-    assert np.isclose(out.select_at_idx(1), expected)
+    assert np.isclose(out.to_series(1), expected)
     assert np.isclose(pl.std(df["b"]), expected)  # type: ignore[arg-type]
     expected = 3
-    assert np.isclose(out.select_at_idx(2), expected)
+    assert np.isclose(out.to_series(2), expected)
     assert np.isclose(pl.max(df["b"]), expected)
     expected = 1
-    assert np.isclose(out.select_at_idx(3), expected)
+    assert np.isclose(out.to_series(3), expected)
     assert np.isclose(pl.min(df["b"]), expected)
     expected = 6
-    assert np.isclose(out.select_at_idx(4), expected)
+    assert np.isclose(out.to_series(4), expected)
     assert np.isclose(pl.sum(df["b"]), expected)
     expected = 2
-    assert np.isclose(out.select_at_idx(5), expected)
+    assert np.isclose(out.to_series(5), expected)
     assert np.isclose(pl.mean(df["b"]), expected)
     expected = 2
-    assert np.isclose(out.select_at_idx(6), expected)
+    assert np.isclose(out.to_series(6), expected)
     assert np.isclose(pl.median(df["b"]), expected)
     expected = 3
-    assert np.isclose(out.select_at_idx(7), expected)
+    assert np.isclose(out.to_series(7), expected)
     assert np.isclose(pl.n_unique(df["b"]), expected)
     expected = 1
-    assert np.isclose(out.select_at_idx(8), expected)
+    assert np.isclose(out.to_series(8), expected)
     assert np.isclose(pl.first(df["b"]), expected)
     expected = 3
-    assert np.isclose(out.select_at_idx(9), expected)
+    assert np.isclose(out.to_series(9), expected)
     assert np.isclose(pl.last(df["b"]), expected)
 
 
@@ -961,7 +874,7 @@ def test_describe() -> None:
         }
     )
     assert df.describe().shape != df.shape
-    assert set(df.describe().select_at_idx(2)) == {1.0, 4.0, 5.0, 6.0}
+    assert set(df.describe().to_series(2)) == {1.0, 4.0, 5.0, 6.0}
 
 
 def test_string_cache_eager_lazy() -> None:
@@ -1681,15 +1594,6 @@ def test_add_string() -> None:
     assert result.frame_equal(expected)
 
 
-def test_getattr() -> None:
-    with pytest.deprecated_call():
-        df = pl.DataFrame({"a": [1.0, 2.0]})
-        assert_series_equal(df.a, pl.Series("a", [1.0, 2.0]))
-
-        with pytest.raises(AttributeError):
-            _ = df.b
-
-
 def test_get_item() -> None:
     """Test all the methods to use [] on a dataframe."""
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0], "b": [3, 4, 5, 6]})
@@ -2127,3 +2031,8 @@ def test_len_compute(df: pl.DataFrame) -> None:
     taken = df[[1, 2], :]
     for col in taken.columns:
         assert len(taken[col]) == 2
+
+
+def test_filter_python_list() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    assert df.filter([True, False, True])["a"].to_list() == [1, 3]

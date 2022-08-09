@@ -141,6 +141,19 @@ def test_agg() -> None:
     assert series.max() == 2
 
 
+def test_date_agg() -> None:
+    series = pl.Series(
+        [
+            date(2022, 8, 2),
+            date(2096, 8, 1),
+            date(9009, 9, 9),
+        ],
+        dtype=pl.Date,
+    )
+    assert series.min() == date(2022, 8, 2)
+    assert series.max() == date(9009, 9, 9)
+
+
 @pytest.mark.parametrize(
     "s", [pl.Series([1, 2], dtype=Int64), pl.Series([1, 2], dtype=Float64)]
 )
@@ -349,10 +362,12 @@ def test_arrow() -> None:
     a = pa.array(["foo", "bar"], pa.dictionary(pa.int32(), pa.utf8()))
     s = pl.Series("a", a)
     assert s.dtype == pl.Categorical
-    assert (
-        pl.from_arrow(pa.array([["foo"], ["foo", "bar"]], pa.list_(pa.utf8()))).dtype
-        == pl.List
+
+    s = cast(
+        pl.Series,
+        pl.from_arrow(pa.array([["foo"], ["foo", "bar"]], pa.list_(pa.utf8()))),
     )
+    assert s.dtype == pl.List
 
 
 def test_view() -> None:
@@ -794,7 +809,7 @@ def test_arange_expr() -> None:
     df = pl.DataFrame({"a": ["foobar", "barfoo"]})
     out = df.select([pl.arange(0, pl.col("a").count() * 10)])
     assert out.shape == (20, 1)
-    assert out.select_at_idx(0)[-1] == 19
+    assert out.to_series(0)[-1] == 19
 
     # eager arange
     out2 = pl.arange(0, 10, 2, eager=True)

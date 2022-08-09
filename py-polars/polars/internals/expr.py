@@ -15,7 +15,6 @@ from polars.datatypes import (
     Datetime,
     Float64,
     Int32,
-    Object,
     Time,
     UInt32,
     py_type_to_dtype,
@@ -2828,7 +2827,7 @@ class Expr:
         def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
             return x.apply(f, return_dtype=return_dtype)
 
-        return self.map(wrap_f, agg_list=True)
+        return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
 
     def flatten(self) -> Expr:
         """
@@ -6865,12 +6864,6 @@ class ExprDateTimeNameSpace:
 
         """
         return wrap_expr(self._pyexpr.nanosecond())
-
-    def to_python_datetime(self) -> Expr:
-        """Go from Date/Datetime to python DateTime objects."""
-        return wrap_expr(self._pyexpr).map(
-            lambda s: s.dt.to_python_datetime(), return_dtype=Object
-        )
 
     def epoch(self, tu: str = "us") -> Expr:
         """

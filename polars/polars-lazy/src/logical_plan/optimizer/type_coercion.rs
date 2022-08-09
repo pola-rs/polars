@@ -143,45 +143,39 @@ impl OptimizationRule for TypeCoercionRule {
                 let (falsy, type_false) =
                     get_aexpr_and_type(expr_arena, falsy_node, &input_schema)?;
 
-                if type_true == type_false ||
-                    // data type unknown still has to be set
-                    matches!(&type_true, DataType::Unknown) || matches!(&type_false, DataType::Unknown)
-                {
-                    None
-                } else {
-                    let st = get_supertype(&type_true, &type_false).expect("supertype");
-                    let st = modify_supertype(st, truthy, falsy, &type_true, &type_false);
+                early_escape(&type_true, &type_false)?;
+                let st = get_supertype(&type_true, &type_false).expect("supertype");
+                let st = modify_supertype(st, truthy, falsy, &type_true, &type_false);
 
-                    // only cast if the type is not already the super type.
-                    // this can prevent an expensive flattening and subsequent aggregation
-                    // in a groupby context. To be able to cast the groups need to be
-                    // flattened
-                    let new_node_truthy = if type_true != st {
-                        expr_arena.add(AExpr::Cast {
-                            expr: truthy_node,
-                            data_type: st.clone(),
-                            strict: false,
-                        })
-                    } else {
-                        truthy_node
-                    };
-
-                    let new_node_falsy = if type_false != st {
-                        expr_arena.add(AExpr::Cast {
-                            expr: falsy_node,
-                            data_type: st,
-                            strict: false,
-                        })
-                    } else {
-                        falsy_node
-                    };
-
-                    Some(AExpr::Ternary {
-                        truthy: new_node_truthy,
-                        falsy: new_node_falsy,
-                        predicate,
+                // only cast if the type is not already the super type.
+                // this can prevent an expensive flattening and subsequent aggregation
+                // in a groupby context. To be able to cast the groups need to be
+                // flattened
+                let new_node_truthy = if type_true != st {
+                    expr_arena.add(AExpr::Cast {
+                        expr: truthy_node,
+                        data_type: st.clone(),
+                        strict: false,
                     })
-                }
+                } else {
+                    truthy_node
+                };
+
+                let new_node_falsy = if type_false != st {
+                    expr_arena.add(AExpr::Cast {
+                        expr: falsy_node,
+                        data_type: st,
+                        strict: false,
+                    })
+                } else {
+                    falsy_node
+                };
+
+                Some(AExpr::Ternary {
+                    truthy: new_node_truthy,
+                    falsy: new_node_falsy,
+                    predicate,
+                })
             }
             AExpr::BinaryExpr {
                 left: node_left,
@@ -300,9 +294,9 @@ impl OptimizationRule for TypeCoercionRule {
                     }
                 }
 
-                if type_left == type_right || compare_cat_to_string || datetime_arithmetic  ||
-                    // data type unknown still has to be set
-                    matches!(&type_left, DataType::Unknown) || matches!(&type_right, DataType::Unknown)
+                if compare_cat_to_string
+                    || datetime_arithmetic
+                    || early_escape(&type_left, &type_right).is_none()
                 {
                     None
                 } else {
@@ -366,6 +360,8 @@ impl OptimizationRule for TypeCoercionRule {
                 let (_, type_left) = get_aexpr_and_type(expr_arena, input[0], &input_schema)?;
                 let (_, type_other) = get_aexpr_and_type(expr_arena, other_node, &input_schema)?;
 
+                early_escape(&type_left, &type_other)?;
+
                 match (&type_left, type_other) {
                     // cast both local and global string cache
                     // note that there might not yet be a rev
@@ -405,6 +401,7 @@ impl OptimizationRule for TypeCoercionRule {
                 let (left, type_left) = get_aexpr_and_type(expr_arena, input[0], &input_schema)?;
                 let (fill_value, type_fill_value) =
                     get_aexpr_and_type(expr_arena, other_node, &input_schema)?;
+
                 let super_type = get_supertype(&type_left, &type_fill_value).ok()?;
                 let super_type =
                     modify_supertype(super_type, left, fill_value, &type_left, &type_fill_value);
@@ -427,9 +424,7 @@ impl OptimizationRule for TypeCoercionRule {
                 let (fill_value, type_other) =
                     get_aexpr_and_type(expr_arena, other_node, &input_schema)?;
 
-                if type_self == type_other {
-                    return None;
-                }
+                early_escape(&type_self, &type_other)?;
 
                 let super_type = get_supertype(&type_self, &type_other).ok()?;
                 let super_type =
@@ -467,6 +462,17 @@ impl OptimizationRule for TypeCoercionRule {
 
             _ => None,
         }
+    }
+}
+
+fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
+    if type_self == type_other
+        || matches!(type_self, DataType::Unknown)
+        || matches!(type_other, DataType::Unknown)
+    {
+        None
+    } else {
+        Some(())
     }
 }
 

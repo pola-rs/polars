@@ -27,7 +27,7 @@ def test_null_count(df: pl.DataFrame) -> None:
     else:
         assert null_count.shape == (1, ncols)
         for idx, count in enumerate(null_count.rows()[0]):
-            assert count == sum(v is None for v in df.select_at_idx(idx).to_list())
+            assert count == sum(v is None for v in df.to_series(idx).to_list())
 
 
 @given(

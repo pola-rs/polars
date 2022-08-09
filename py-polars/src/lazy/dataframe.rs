@@ -518,33 +518,20 @@ impl PyLazyFrame {
         force_parallel: bool,
         how: &str,
         suffix: String,
-        asof_by_left: Vec<String>,
-        asof_by_right: Vec<String>,
-    ) -> PyLazyFrame {
+    ) -> PyResult<Self> {
         let how = match how {
             "left" => JoinType::Left,
             "inner" => JoinType::Inner,
             "outer" => JoinType::Outer,
             "semi" => JoinType::Semi,
             "anti" => JoinType::Anti,
-            #[cfg(feature = "asof_join")]
-            "asof" => JoinType::AsOf(AsOfOptions {
-                strategy: AsofStrategy::Backward,
-                left_by: if asof_by_left.is_empty() {
-                    None
-                } else {
-                    Some(asof_by_left)
-                },
-                right_by: if asof_by_right.is_empty() {
-                    None
-                } else {
-                    Some(asof_by_right)
-                },
-                tolerance: None,
-                tolerance_str: None,
-            }),
             "cross" => JoinType::Cross,
-            _ => panic!("not supported"),
+            e => {
+                return Err(PyValueError::new_err(format!(
+                "how must be one of {{'left', 'inner', 'outer', 'semi', 'anti', 'cross'}}, got {}",
+                e,
+            )))
+            }
         };
 
         let ldf = self.ldf.clone();
@@ -558,7 +545,8 @@ impl PyLazyFrame {
             .map(|pyexpr| pyexpr.inner)
             .collect::<Vec<_>>();
 
-        ldf.join_builder()
+        Ok(ldf
+            .join_builder()
             .with(other)
             .left_on(left_on)
             .right_on(right_on)
@@ -567,7 +555,7 @@ impl PyLazyFrame {
             .how(how)
             .suffix(suffix)
             .finish()
-            .into()
+            .into())
     }
 
     pub fn with_column(&mut self, expr: PyExpr) -> PyLazyFrame {

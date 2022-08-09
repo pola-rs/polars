@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import warnings
 from typing import Any, Mapping, Sequence, overload
 
 from polars.internals import DataFrame, Series
@@ -158,15 +157,7 @@ def from_records(
     └─────┴─────┘
 
     """
-    if _NUMPY_AVAILABLE and isinstance(data, np.ndarray):
-        warnings.warn(
-            "using `from_records` with a numpy ndarray is deprecated, "
-            "use `from_numpy` instead",
-            DeprecationWarning,
-        )
-        return DataFrame._from_numpy(data, columns=columns, orient=orient)
-    else:
-        return DataFrame._from_records(data, columns=columns, orient=orient)
+    return DataFrame._from_records(data, columns=columns, orient=orient)
 
 
 def from_numpy(

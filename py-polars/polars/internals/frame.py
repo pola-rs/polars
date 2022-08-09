@@ -54,14 +54,13 @@ from polars.utils import (
     format_path,
     handle_projection_columns,
     is_bool_sequence,
-    is_expr_sequence,
     is_int_sequence,
     is_str_sequence,
     range_to_slice,
 )
 
 try:
-    from polars.polars import PyDataFrame, PySeries
+    from polars.polars import PyDataFrame
 
     _DOCUMENTING = False
 except ImportError:
@@ -259,7 +258,7 @@ class DataFrame:
 
     >>> class MyDataFrame(pl.DataFrame):
     ...     pass
-    >>>
+    ...
     >>> isinstance(MyDataFrame().lazy().collect(), MyDataFrame)
     False
 
@@ -1533,25 +1532,6 @@ class DataFrame:
     def __repr__(self) -> str:
         return self.__str__()
 
-    def __getattr__(self, item: Any) -> PySeries:
-        """Access columns as attribute."""
-        # it is important that we return an AttributeError here
-        # this is used by ipython to check some private
-        # `_ipython_canary_method_should_not_exist_`
-        # if we return any other error than AttributeError pretty printing
-        # will not work in notebooks.
-        # See: https://github.com/jupyter/notebook/issues/2014
-        if item.startswith("_"):
-            raise AttributeError(item)
-        try:  # pragma: no cover
-            warnings.warn(
-                "accessing series as Attribute of a DataFrame is deprecated",
-                DeprecationWarning,
-            )
-            return pli.wrap_s(self._df.column(item))
-        except Exception as exc:
-            raise AttributeError(item) from exc
-
     def __contains__(self, key: str) -> bool:
         return key in self.columns
 
@@ -1667,8 +1647,6 @@ class DataFrame:
         self: DF,
         item: int
         | np.ndarray[Any, Any]
-        | pli.Expr
-        | list[pli.Expr]
         | MultiColSelector
         | tuple[int, MultiColSelector]
         | tuple[MultiRowSelector, MultiColSelector],
@@ -1697,8 +1675,6 @@ class DataFrame:
             str
             | int
             | np.ndarray[Any, Any]
-            | pli.Expr
-            | list[pli.Expr]
             | MultiColSelector
             | tuple[int, MultiColSelector]
             | tuple[MultiRowSelector, MultiColSelector]
@@ -1709,12 +1685,6 @@ class DataFrame:
         ),
     ) -> DataFrame | pli.Series:
         """Get item. Does quite a lot. Read the comments."""
-        if isinstance(item, pli.Expr):  # pragma: no cover
-            warnings.warn(
-                "'using expressions in []' is deprecated. please use 'select'",
-                DeprecationWarning,
-            )
-            return self.select(item)
         # select rows and columns at once
         # every 2d selection, i.e. tuple is row column order, just like numpy
         if isinstance(item, tuple) and len(item) == 2:
@@ -1837,8 +1807,6 @@ class DataFrame:
             # select multiple columns
             # df[["foo", "bar"]]
             return self._from_pydf(self._df.select(item))
-        elif is_expr_sequence(item):
-            return self.select(item)
         elif is_bool_sequence(item) or is_int_sequence(item):
             item = pli.Series("", item)  # fall through to next if isinstance
 
@@ -1860,65 +1828,6 @@ class DataFrame:
             f"Cannot __getitem__ on DataFrame with item: '{item}'"
             f" of type: '{type(item)}'."
         )
-
-    def __setitem__(
-        self, key: str | list[Any] | tuple[Any, str | int], value: Any
-    ) -> None:  # pragma: no cover
-        warnings.warn(
-            "setting a DataFrame by indexing is deprecated; Consider using"
-            " DataFrame.with_column",
-            DeprecationWarning,
-        )
-        # df["foo"] = series
-        if isinstance(key, str):
-            try:
-                self.replace(key, pli.Series(key, value))
-            except Exception:
-                self.hstack([pli.Series(key, value)], in_place=True)
-        # df[["C", "D"]]
-        elif isinstance(key, list):
-            # TODO: Use python sequence constructors
-            if not _NUMPY_AVAILABLE:
-                raise ImportError("'numpy' is required for this functionality.")
-            value = np.array(value)
-            if value.ndim != 2:
-                raise ValueError("can only set multiple columns with 2D matrix")
-            if value.shape[1] != len(key):
-                raise ValueError(
-                    "matrix columns should be equal to list use to determine column"
-                    " names"
-                )
-            for (i, name) in enumerate(key):
-                self[name] = value[:, i]
-
-        # df[a, b]
-        elif isinstance(key, tuple):
-            row_selection, col_selection = key
-
-            # get series column selection
-            if isinstance(col_selection, str):
-                s = self.__getitem__(col_selection)
-            elif isinstance(col_selection, int):
-                s = self[:, col_selection]
-            else:
-                raise ValueError(f"column selection not understood: {col_selection}")
-
-            # dispatch to __setitem__ of Series to do modification
-            s[row_selection] = value
-
-            # now find the location to place series
-            # df[idx]
-            if isinstance(col_selection, int):
-                self.replace_at_idx(col_selection, s)
-            # df["foo"]
-            elif isinstance(col_selection, str):
-                self.replace(col_selection, s)
-        else:
-            raise ValueError(
-                f"Cannot __setitem__ on DataFrame with key: '{key}' "
-                f"of type: '{type(key)}' and value: '{value}' "
-                f"of type: '{type(value)}'."
-            )
 
     def __len__(self) -> int:
         return self.height
@@ -2090,7 +1999,7 @@ class DataFrame:
             index = len(self.columns) + index
         self._df.insert_at_idx(index, series._s)
 
-    def filter(self, predicate: pli.Expr) -> DataFrame:
+    def filter(self, predicate: pli.Expr | str | pli.Series | list[bool]) -> DataFrame:
         """
         Filter the rows in the DataFrame based on a predicate expression.
 
@@ -2394,47 +2303,12 @@ class DataFrame:
             index = len(self.columns) + index
         self._df.replace_at_idx(index, series._s)
 
-    @overload
-    def sort(
-        self,
-        by: str | pli.Expr | list[str] | list[pli.Expr],
-        reverse: bool | list[bool] = ...,
-        nulls_last: bool = ...,
-        *,
-        in_place: Literal[False] = ...,
-    ) -> DataFrame:
-        ...
-
-    @overload
-    def sort(
-        self,
-        by: str | pli.Expr | list[str] | list[pli.Expr],
-        reverse: bool | list[bool] = ...,
-        nulls_last: bool = ...,
-        *,
-        in_place: Literal[True],
-    ) -> None:
-        ...
-
-    @overload
-    def sort(
-        self,
-        by: str | pli.Expr | list[str] | list[pli.Expr],
-        reverse: bool | list[bool] = ...,
-        nulls_last: bool = ...,
-        *,
-        in_place: bool,
-    ) -> DataFrame | None:
-        ...
-
     def sort(
         self,
         by: str | pli.Expr | list[str] | list[pli.Expr],
         reverse: bool | list[bool] = False,
         nulls_last: bool = False,
-        *,
-        in_place: bool = False,
-    ) -> DataFrame | None:
+    ) -> DataFrame:
         """
         Sort the DataFrame by column.
 
@@ -2444,8 +2318,6 @@ class DataFrame:
             By which column to sort. Only accepts string.
         reverse
             Reverse/descending sort.
-        in_place
-            Perform operation in-place.
         nulls_last
             Place null values last. Can only be used if sorted by a single column.
 
@@ -2499,23 +2371,8 @@ class DataFrame:
                 .sort(by, reverse, nulls_last)
                 .collect(no_optimization=True, string_cache=False)
             )
-            if in_place:  # pragma: no cover
-                warnings.warn(
-                    "in-place sorting is deprecated; please use default sorting",
-                    DeprecationWarning,
-                )
-                self._df = df._df
-                return self
             return df
-        if in_place:  # pragma: no cover
-            warnings.warn(
-                "in-place sorting is deprecated; please use default sorting",
-                DeprecationWarning,
-            )
-            self._df.sort_in_place(by, reverse)
-            return None
-        else:
-            return self._from_pydf(self._df.sort(by, reverse, nulls_last))
+        return self._from_pydf(self._df.sort(by, reverse, nulls_last))
 
     def frame_equal(self, other: DataFrame, null_equal: bool = True) -> bool:
         """
@@ -3106,7 +2963,7 @@ class DataFrame:
         offset: str | None = None,
         truncate: bool = True,
         include_boundaries: bool = False,
-        closed: ClosedWindow = "right",
+        closed: ClosedWindow = "left",
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> DynamicGroupBy[DF]:
         """
@@ -3214,7 +3071,7 @@ class DataFrame:
         Group by windows of 1 hour starting at 2021-12-16 00:00:00.
 
         >>> (
-        ...     df.groupby_dynamic("time", every="1h").agg(
+        ...     df.groupby_dynamic("time", every="1h", closed="right").agg(
         ...         [
         ...             pl.col("time").min().alias("time_min"),
         ...             pl.col("time").max().alias("time_max"),
@@ -3239,9 +3096,9 @@ class DataFrame:
         The window boundaries can also be added to the aggregation result
 
         >>> (
-        ...     df.groupby_dynamic("time", every="1h", include_boundaries=True).agg(
-        ...         [pl.col("time").count().alias("time_count")]
-        ...     )
+        ...     df.groupby_dynamic(
+        ...         "time", every="1h", include_boundaries=True, closed="right"
+        ...     ).agg([pl.col("time").count().alias("time_count")])
         ... )
         shape: (4, 4)
         ┌─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
@@ -3386,6 +3243,7 @@ class DataFrame:
         ...         every="2i",
         ...         period="3i",
         ...         include_boundaries=True,
+        ...         closed="right",
         ...     ).agg(pl.col("A").list().alias("A_agg_list"))
         ... )
         shape: (3, 4)
@@ -3663,9 +3521,6 @@ class DataFrame:
         on: str | pli.Expr | list[str | pli.Expr] | None = None,
         how: str = "inner",
         suffix: str = "_right",
-        asof_by: str | list[str] | None = None,
-        asof_by_left: str | list[str] | None = None,
-        asof_by_right: str | list[str] | None = None,
     ) -> DataFrame:
         """
         Join in SQL-like fashion.
@@ -3680,27 +3535,18 @@ class DataFrame:
             Name(s) of the right join column(s).
         on
             Name(s) of the join columns in both DataFrames.
-        how
-            Join strategy
-                - "inner"
-                - "left"
-                - "outer"
-                - "asof"
-                - "cross"
-                - "semi"
-                - "anti"
+        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross'}
+            Join strategy.
         suffix
             Suffix to append to columns with a duplicate name.
-        asof_by
-            join on these columns before doing asof join
-        asof_by_left
-            join on these columns before doing asof join
-        asof_by_right
-            join on these columns before doing asof join
 
         Returns
         -------
             Joined DataFrame
+
+        See Also
+        --------
+        join_asof
 
         Examples
         --------
@@ -3745,22 +3591,10 @@ class DataFrame:
         │ 3    ┆ 8.0  ┆ c   ┆ null  │
         └──────┴──────┴─────┴───────┘
 
-        **Asof join**
-        This is similar to a left-join except that we match on near keys rather than
-        equal keys.
-        The direction is backward
-        The keys must be sorted to perform an asof join
-
         **Joining on columns with categorical data**
         See pl.StringCache().
 
         """
-        if how == "asof":  # pragma: no cover
-            warnings.warn(
-                "using asof join via DataFrame.join is deprecated, please use"
-                " DataFrame.join_asof",
-                DeprecationWarning,
-            )
         if how == "cross":
             return self._from_pydf(self._df.join(other._df, [], [], how, suffix))
 
@@ -3786,13 +3620,7 @@ class DataFrame:
         if left_on_ is None or right_on_ is None:
             raise ValueError("You should pass the column to join on as an argument.")
 
-        if (
-            isinstance(left_on_[0], pli.Expr)
-            or isinstance(right_on_[0], pli.Expr)
-            or asof_by_left is not None
-            or asof_by_right is not None
-            or asof_by is not None
-        ):
+        if isinstance(left_on_[0], pli.Expr) or isinstance(right_on_[0], pli.Expr):
             return (
                 self.lazy()
                 .join(
@@ -3802,9 +3630,6 @@ class DataFrame:
                     on=on,
                     how=how,
                     suffix=suffix,
-                    asof_by_right=asof_by_right,
-                    asof_by_left=asof_by_left,
-                    asof_by=asof_by,
                 )
                 .collect(no_optimization=True)
             )
@@ -4201,40 +4026,6 @@ class DataFrame:
 
         """
         return pli.wrap_s(self._df.drop_in_place(name))
-
-    def select_at_idx(self, idx: int) -> pli.Series:
-        """
-        Select column at index location.
-
-        Parameters
-        ----------
-        idx
-            Location of selection.
-
-        .. deprecated:: 0.10.20
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
-        ...         "ham": ["a", "b", "c"],
-        ...     }
-        ... )
-        >>> df.select_at_idx(1)
-        shape: (3,)
-        Series: 'bar' [i64]
-        [
-                6
-                7
-                8
-        ]
-
-        """
-        if idx < 0:
-            idx = len(self.columns) + idx
-        return pli.wrap_s(self._df.select_at_idx(idx))
 
     def cleared(self: DF) -> DF:
         """
@@ -6224,11 +6015,12 @@ class GroupBy(Generic[DF]):
         self.by = by
         self.maintain_order = maintain_order
 
-    def __getitem__(self, item: Any) -> GBSelection[DF]:
-        print(
-            "accessing GroupBy by index is deprecated, consider using the `.agg` method"
-        )
-        return self._select(item)
+    def __iter__(self) -> Iterable[Any]:
+        groups_df = self._groups()
+        groups = groups_df["groups"]
+        df = self._dataframe_class._from_pydf(self._df)
+        for i in range(groups_df.height):
+            yield df[groups[i]]
 
     def _select(self, columns: str | list[str]) -> GBSelection[DF]:  # pragma: no cover
         """
@@ -6254,14 +6046,16 @@ class GroupBy(Generic[DF]):
             dataframe_class=self._dataframe_class,
         )
 
-    def __iter__(self) -> Iterable[Any]:
-        groups_df = self.groups()
-        groups = groups_df["groups"]
-        df = self._dataframe_class._from_pydf(self._df)
-        for i in range(groups_df.height):
-            yield df[groups[i]]
+    def _select_all(self) -> GBSelection[DF]:
+        """Select all columns for aggregation."""
+        return GBSelection(
+            self._df,
+            self.by,
+            None,
+            dataframe_class=self._dataframe_class,
+        )
 
-    def groups(self) -> DF:  # pragma: no cover
+    def _groups(self) -> DF:  # pragma: no cover
         """
         Return a `DataFrame` with:
 
@@ -6279,7 +6073,7 @@ class GroupBy(Generic[DF]):
         ...     }
         ... )
 
-        >>> df.groupby("d").groups().sort(by="d")
+        >>> df.groupby("d")._groups().sort(by="d")
         shape: (3, 2)
         ┌────────┬───────────┐
         │ d      ┆ groups    │
@@ -6556,15 +6350,6 @@ class GroupBy(Generic[DF]):
             .collect(no_optimization=True, string_cache=False)
         )
         return self._dataframe_class._from_pydf(df._df)
-
-    def _select_all(self) -> GBSelection[DF]:
-        """Select all columns for aggregation."""
-        return GBSelection(
-            self._df,
-            self.by,
-            None,
-            dataframe_class=self._dataframe_class,
-        )
 
     def pivot(
         self, pivot_column: str | list[str], values_column: str | list[str]
@@ -7155,6 +6940,6 @@ class GBSelection(Generic[DF]):
         for name in self.selection:
             s = df.drop_in_place(name + "_agg_list").apply(func, return_dtype)
             s.rename(name, in_place=True)
-            df[name] = s
+            df.with_column(s)
 
         return df

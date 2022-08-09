@@ -139,5 +139,7 @@ def test_getitem_errs() -> None:
     ):
         df["a"][{"strange"}]
 
-    with pytest.raises(ValueError, match="Cannot __setitem__ on DataFrame with key:.*"):
+    with pytest.raises(
+        TypeError, match="'DataFrame' object does not support item assignment"
+    ):
         df[{"some"}] = "foo"
