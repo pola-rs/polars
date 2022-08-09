@@ -5920,7 +5920,25 @@ class ExprListNameSpace:
         return wrap_expr(self._pyexpr.lst_reverse())
 
     def unique(self) -> Expr:
-        """Get the unique/distinct values in the list."""
+        """Get the unique/distinct values in the list.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 1, 2]],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").arr.unique())
+        shape: (1, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [1, 2]    │
+        └───────────┘
+        """
         return wrap_expr(self._pyexpr.lst_unique())
 
     def concat(
