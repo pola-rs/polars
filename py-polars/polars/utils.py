@@ -258,6 +258,7 @@ def _to_python_datetime(
             raise ValueError(f"time unit: {tu} not expected")
         if tz is not None and len(tz) > 0:
             import pytz
+
             return pytz.timezone(tz).localize(dt)
         return dt
     else:

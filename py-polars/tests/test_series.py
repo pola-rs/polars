@@ -142,11 +142,14 @@ def test_agg() -> None:
 
 
 def test_date_agg() -> None:
-    series = pl.Series([
-        date(2022, 8, 2),
-        date(2096, 8, 1),
-        date(9009, 9, 9),
-    ], dtype=pl.Date)
+    series = pl.Series(
+        [
+            date(2022, 8, 2),
+            date(2096, 8, 1),
+            date(9009, 9, 9),
+        ],
+        dtype=pl.Date,
+    )
     assert series.min() == date(2022, 8, 2)
     assert series.max() == date(9009, 9, 9)
 
