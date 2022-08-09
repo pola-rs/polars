@@ -2640,7 +2640,7 @@ class DataFrame:
 
         Drop a column if all values are null:
 
-        >>> df[:, [not (s.null_count() == df.height) for s in df]]
+        >>> df[[s.name for s in df if not (s.null_count() == df.height)]]
         shape: (4, 2)
         ┌──────┬──────┐
         │ b    ┆ c    │
