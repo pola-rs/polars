@@ -1100,7 +1100,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         offset: str | None = None,
         truncate: bool = True,
         include_boundaries: bool = False,
-        closed: ClosedWindow = "right",
+        closed: ClosedWindow = "left",
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> LazyGroupBy[LDF]:
         """

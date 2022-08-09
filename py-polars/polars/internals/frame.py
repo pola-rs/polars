@@ -2963,7 +2963,7 @@ class DataFrame:
         offset: str | None = None,
         truncate: bool = True,
         include_boundaries: bool = False,
-        closed: ClosedWindow = "right",
+        closed: ClosedWindow = "left",
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> DynamicGroupBy[DF]:
         """
@@ -3071,7 +3071,7 @@ class DataFrame:
         Group by windows of 1 hour starting at 2021-12-16 00:00:00.
 
         >>> (
-        ...     df.groupby_dynamic("time", every="1h").agg(
+        ...     df.groupby_dynamic("time", every="1h", closed="right").agg(
         ...         [
         ...             pl.col("time").min().alias("time_min"),
         ...             pl.col("time").max().alias("time_max"),
@@ -3096,9 +3096,9 @@ class DataFrame:
         The window boundaries can also be added to the aggregation result
 
         >>> (
-        ...     df.groupby_dynamic("time", every="1h", include_boundaries=True).agg(
-        ...         [pl.col("time").count().alias("time_count")]
-        ...     )
+        ...     df.groupby_dynamic(
+        ...         "time", every="1h", include_boundaries=True, closed="right"
+        ...     ).agg([pl.col("time").count().alias("time_count")])
         ... )
         shape: (4, 4)
         ┌─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
@@ -3243,6 +3243,7 @@ class DataFrame:
         ...         every="2i",
         ...         period="3i",
         ...         include_boundaries=True,
+        ...         closed="right",
         ...     ).agg(pl.col("A").list().alias("A_agg_list"))
         ... )
         shape: (3, 4)
