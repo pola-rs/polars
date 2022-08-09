@@ -237,26 +237,6 @@ def test_replace_at_idx() -> None:
     assert_frame_equal(expected_df, df)
 
 
-def test_indexing_set() -> None:
-    # This is deprecated behaviour
-    df = pl.DataFrame({"bool": [True, True], "str": ["N/A", "N/A"], "nr": [1, 2]})
-
-    with pytest.deprecated_call():
-        df[0, "bool"] = False
-
-    with pytest.deprecated_call():
-        df[0, "nr"] = 100
-
-    with pytest.deprecated_call():
-        df[0, "str"] = "foo"
-
-    assert df.to_dict(False) == {
-        "bool": [False, True],
-        "str": ["foo", "N/A"],
-        "nr": [100, 2],
-    }
-
-
 def test_to_series() -> None:
     df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
 
@@ -640,55 +620,6 @@ def test_read_missing_file() -> None:
     with pytest.raises(FileNotFoundError, match="fake_csv_file"):
         with open("fake_csv_file", "r") as f:
             pl.read_csv(f)
-
-
-def test_set() -> None:
-    """
-    Setting a dataframe using indices is deprecated. We keep these tests because we
-    only generate a warning
-    """
-    with pytest.deprecated_call():
-        np.random.seed(1)
-        df = pl.DataFrame(
-            {"foo": np.random.rand(10), "bar": np.arange(10), "ham": ["h"] * 10}
-        )
-        df["new"] = np.random.rand(10)
-        df[df["new"] > 0.5, "new"] = 1
-
-        # set 2D
-        df = pl.DataFrame({"b": [0, 0]})
-        df[["A", "B"]] = [[1, 2], [1, 2]]
-        assert df["A"] == [1, 1]
-        assert df["B"] == [2, 2]
-
-        with pytest.raises(ValueError):
-            df[["C", "D"]] = 1
-        with pytest.raises(ValueError):
-            df[["C", "D"]] = [1, 1]
-        with pytest.raises(ValueError):
-            df[["C", "D"]] = [[1, 2, 3], [1, 2, 3]]
-
-        # set tuple
-        df = pl.DataFrame({"b": [0, 0]})
-        df[0, "b"] = 1
-        assert df[0, "b"] == 1
-
-        df[0, 0] = 2
-        assert df[0, "b"] == 2
-
-        # row and col selection have to be int or str
-        with pytest.raises(ValueError):
-            df[:, [1]] = 1  # type: ignore[index]
-        with pytest.raises(ValueError):
-            df[True, :] = 1  # type: ignore[index]
-
-        # needs to be a 2 element tuple
-        with pytest.raises(ValueError):
-            df[(1, 2, 3)] = 1  # type: ignore[index]
-
-        # we cannot index with any type, such as bool
-        with pytest.raises(ValueError):
-            df[True] = 1  # type: ignore[index]
 
 
 def test_melt() -> None:

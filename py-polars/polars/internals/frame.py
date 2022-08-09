@@ -1861,65 +1861,6 @@ class DataFrame:
             f" of type: '{type(item)}'."
         )
 
-    def __setitem__(
-        self, key: str | list[Any] | tuple[Any, str | int], value: Any
-    ) -> None:  # pragma: no cover
-        warnings.warn(
-            "setting a DataFrame by indexing is deprecated; Consider using"
-            " DataFrame.with_column",
-            DeprecationWarning,
-        )
-        # df["foo"] = series
-        if isinstance(key, str):
-            try:
-                self.replace(key, pli.Series(key, value))
-            except Exception:
-                self.hstack([pli.Series(key, value)], in_place=True)
-        # df[["C", "D"]]
-        elif isinstance(key, list):
-            # TODO: Use python sequence constructors
-            if not _NUMPY_AVAILABLE:
-                raise ImportError("'numpy' is required for this functionality.")
-            value = np.array(value)
-            if value.ndim != 2:
-                raise ValueError("can only set multiple columns with 2D matrix")
-            if value.shape[1] != len(key):
-                raise ValueError(
-                    "matrix columns should be equal to list use to determine column"
-                    " names"
-                )
-            for (i, name) in enumerate(key):
-                self[name] = value[:, i]
-
-        # df[a, b]
-        elif isinstance(key, tuple):
-            row_selection, col_selection = key
-
-            # get series column selection
-            if isinstance(col_selection, str):
-                s = self.__getitem__(col_selection)
-            elif isinstance(col_selection, int):
-                s = self[:, col_selection]
-            else:
-                raise ValueError(f"column selection not understood: {col_selection}")
-
-            # dispatch to __setitem__ of Series to do modification
-            s[row_selection] = value
-
-            # now find the location to place series
-            # df[idx]
-            if isinstance(col_selection, int):
-                self.replace_at_idx(col_selection, s)
-            # df["foo"]
-            elif isinstance(col_selection, str):
-                self.replace(col_selection, s)
-        else:
-            raise ValueError(
-                f"Cannot __setitem__ on DataFrame with key: '{key}' "
-                f"of type: '{type(key)}' and value: '{value}' "
-                f"of type: '{type(value)}'."
-            )
-
     def __len__(self) -> int:
         return self.height
 

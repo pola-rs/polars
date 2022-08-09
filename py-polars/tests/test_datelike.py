@@ -1238,7 +1238,6 @@ def test_sum_duration() -> None:
     }
 
 
-@pytest.mark.filterwarnings("ignore:setting a DataFrame by indexing:DeprecationWarning")
 def test_supertype_timezones_4174() -> None:
     df = pl.DataFrame(
         {
@@ -1252,7 +1251,7 @@ def test_supertype_timezones_4174() -> None:
 
     # test if this runs without error
     date_to_fill = df["dt_London"][0]
-    df["dt_London"] = df["dt_London"].shift_and_fill(1, date_to_fill)
+    df.with_column(df["dt_London"].shift_and_fill(1, date_to_fill))
 
 
 def test_weekday() -> None:
