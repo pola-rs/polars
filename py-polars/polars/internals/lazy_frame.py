@@ -887,6 +887,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         if isinstance(predicate, list):
             predicate = pli.Series(predicate)
+
         return self._from_pyldf(
             self._ldf.filter(
                 pli.expr_to_lit_or_expr(predicate, str_to_lit=False)._pyexpr

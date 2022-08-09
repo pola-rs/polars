@@ -349,10 +349,7 @@ impl PhysicalExpr for WindowExpr {
                 // The example below shows the naive version without group tuple mapping
 
                 // columns
-                // a
-                // b
-                // a
-                // a
+                // a b a a
                 //
                 // agg list
                 // [0, 2, 3]
@@ -368,6 +365,9 @@ impl PhysicalExpr for WindowExpr {
                 //
                 // take by argsorted indexes and voila groups mapped
                 // [0, 1, 2, 3]
+
+                // TODO!
+                // investigate if sorted arrays can be return directly
                 let out_column = ac.aggregated();
                 let mut original_idx = Vec::with_capacity(out_column.len());
                 match gb.get_groups() {
@@ -378,7 +378,7 @@ impl PhysicalExpr for WindowExpr {
                     }
                     GroupsProxy::Slice { groups, .. } => {
                         for g in groups {
-                            original_idx.extend(g[0]..g[0] + 1)
+                            original_idx.extend(g[0]..g[0] + g[1])
                         }
                     }
                 };

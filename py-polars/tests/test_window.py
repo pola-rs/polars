@@ -212,3 +212,19 @@ def test_window_functions_list_types() -> None:
         "col_list": [[1], [1], [2], [2]],
         "list_shifted": [[[], [1]], [[], [1]], [[], [2]], [[], [2]]],
     }
+
+
+def test_sorted_window_expression() -> None:
+    size = 10
+    df = pl.DataFrame(
+        {"a": np.random.randint(10, size=size), "b": np.random.randint(10, size=size)}
+    )
+    expr = (pl.col("a") + pl.col("b")).over("b").alias("computed")
+
+    out1 = df.with_column(expr).sort("b")
+
+    # explicit sort
+    df = df.sort("b")
+    out2 = df.with_column(expr)
+
+    assert out1.frame_equal(out2)

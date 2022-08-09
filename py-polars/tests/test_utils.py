@@ -35,10 +35,12 @@ def test_date_to_pl_date() -> None:
 def test_timedelta_to_pl_timedelta() -> None:
     out = _timedelta_to_pl_timedelta(timedelta(days=1), "ns")
     assert out == 86_400_000_000_000
+    out = _timedelta_to_pl_timedelta(timedelta(days=1), "us")
+    assert out == 86_400_000_000
     out = _timedelta_to_pl_timedelta(timedelta(days=1), "ms")
     assert out == 86_400_000
     out = _timedelta_to_pl_timedelta(timedelta(days=1), tu=None)
-    assert out == 86_400_000_000_000
+    assert out == 86_400_000_000
 
 
 def test_estimated_size() -> None:

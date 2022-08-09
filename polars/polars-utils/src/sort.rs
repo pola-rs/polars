@@ -5,7 +5,7 @@ use rayon::{prelude::*, ThreadPool};
 /// The second argsort sorts indices from `0` to `len` so can be just assigned to the
 /// new index location.
 ///
-/// Besides that we know that all indices are unique ang thus not alias so we can parallelize.
+/// Besides that we know that all indices are unique and thus not alias so we can parallelize.
 ///
 /// This sort does not sort in place and will allocate.
 ///
