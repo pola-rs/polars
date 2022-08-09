@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 import polars as pl
 
 
@@ -55,16 +53,6 @@ def test_sort_by() -> None:
     # by can also be a single column
     out = df.select([pl.col("a").sort_by("b", reverse=[False])])
     assert out["a"].to_list() == [1, 2, 3, 4, 5]
-
-
-def test_sort_in_place() -> None:
-    df = pl.DataFrame({"a": [1, 3, 2, 4, 5]})
-    with pytest.deprecated_call():
-        ret = df.sort("a", in_place=True)
-    result = df["a"].to_list()
-    expected = [1, 2, 3, 4, 5]
-    assert result == expected
-    assert ret is None
 
 
 def test_sort_by_exprs() -> None:
@@ -179,3 +167,25 @@ def test_sort_aggregation_fast_paths() -> None:
                 ]
             )
             assert out.frame_equal(expected)
+
+
+def test_sorted_join_and_dtypes() -> None:
+    for dt in [pl.Int8, pl.Int16, pl.Int32, pl.Int16]:
+        df_a = (
+            pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
+            .with_row_count()
+            .with_column(pl.col("a").cast(dt).set_sorted())
+        )
+
+    df_b = pl.DataFrame({"a": [-2, -3, 3, 10]}).with_column(
+        pl.col("a").cast(dt).set_sorted()
+    )
+
+    assert df_a.join(df_b, on="a", how="inner").to_dict(False) == {
+        "row_nr": [1, 2, 3, 5],
+        "a": [-2, 3, 3, 10],
+    }
+    assert df_a.join(df_b, on="a", how="left").to_dict(False) == {
+        "row_nr": [0, 1, 2, 3, 4, 5],
+        "a": [-5, -2, 3, 3, 9, 10],
+    }

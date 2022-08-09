@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import typing
 from datetime import datetime
-from typing import Sequence
+from typing import Any, cast, no_type_check
 from unittest.mock import patch
 
 import numpy as np
@@ -55,12 +54,12 @@ def test_df_from_numpy() -> None:
 def test_to_numpy() -> None:
     def test_series_to_numpy(
         name: str,
-        values: list,
+        values: list[object],
         pl_dtype: type[pl.DataType],
         np_dtype: (
-            type[np.signedinteger]
-            | type[np.unsignedinteger]
-            | type[np.floating]
+            type[np.signedinteger[Any]]
+            | type[np.unsignedinteger[Any]]
+            | type[np.floating[Any]]
             | type[np.object_]
         ),
     ) -> None:
@@ -83,12 +82,6 @@ def test_to_numpy() -> None:
     test_series_to_numpy("float64", [21.7, 21.8, 21], pl.Float64, np.float64)
 
     test_series_to_numpy("str", ["string1", "string2", "string3"], pl.Utf8, np.object_)
-    # test_series_to_numpy(
-    #     "bytes",
-    #     ["byte_string1", "byte_string2", "byte_string3"],
-    #     pl.Object,
-    #     np.bytes_,
-    # )
 
 
 def test_from_pandas() -> None:
@@ -183,7 +176,7 @@ def test_arrow_dict_to_polars() -> None:
 def test_arrow_list_chunked_array() -> None:
     a = pa.array([[1, 2], [3, 4]])
     ca = pa.chunked_array([a, a, a])
-    s = pl.from_arrow(ca)
+    s = cast(pl.Series, pl.from_arrow(ca))
     assert s.dtype == pl.List
 
 
@@ -222,7 +215,7 @@ def test_from_dict() -> None:
 
 
 def test_from_dict_struct() -> None:
-    data: dict[str, dict | Sequence] = {
+    data: dict[str, dict[str, list[int]] | list[int]] = {
         "a": {"b": [1, 3], "c": [2, 4]},
         "d": [5, 6],
     }
@@ -398,7 +391,7 @@ def test_from_pandas_ns_resolution() -> None:
     assert pl.from_pandas(df)[0, 0] == datetime(2021, 1, 1, 1, 0, 1)
 
 
-@typing.no_type_check
+@no_type_check
 def test_pandas_string_none_conversion_3298() -> None:
     data = {"col_1": ["a", "b", "c", "d"]}
     data["col_1"][0] = None
@@ -411,8 +404,8 @@ def test_cat_int_types_3500() -> None:
     with pl.StringCache():
         # Create an enum / categorical / dictionary typed pyarrow array
         # Most simply done by creating a pandas categorical series first
-        categorical_df = pd.Series(["a", "a", "b"], dtype="category")
-        pyarrow_array = pa.Array.from_pandas(categorical_df)
+        categorical_s = pd.Series(["a", "a", "b"], dtype="category")
+        pyarrow_array = pa.Array.from_pandas(categorical_s)
 
         # The in-memory representation of each category can either be a signed or
         # unsigned 8-bit integer. Pandas uses Int8...
@@ -421,7 +414,7 @@ def test_cat_int_types_3500() -> None:
         uint_dict_type = pa.dictionary(index_type=pa.uint8(), value_type=pa.utf8())
 
         for t in [int_dict_type, uint_dict_type]:
-            s = pl.from_arrow(pyarrow_array.cast(t))
+            s = cast(pl.Series, pl.from_arrow(pyarrow_array.cast(t)))
             assert s.series_equal(pl.Series(["a", "a", "b"]).cast(pl.Categorical))
 
 

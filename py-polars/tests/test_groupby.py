@@ -97,3 +97,19 @@ def test_groupby_rolling_negative_offset_3914() -> None:
         [14, 15],
         [15, 16],
     ]
+
+
+def test_groupby_signed_transmutes() -> None:
+    df = pl.DataFrame({"foo": [-1, -2, -3, -4, -5], "bar": [500, 600, 700, 800, 900]})
+
+    for dt in [pl.Int8, pl.Int16, pl.Int32, pl.Int64]:
+        df = (
+            df.with_columns([pl.col("foo").cast(dt), pl.col("bar")])
+            .groupby("foo", maintain_order=True)
+            .agg(pl.col("bar").median())
+        )
+
+        assert df.to_dict(False) == {
+            "foo": [-1, -2, -3, -4, -5],
+            "bar": [500.0, 600.0, 700.0, 800.0, 900.0],
+        }

@@ -23,6 +23,7 @@ flake8-bugbear==22.7.1
 flake8-comprehensions==3.10.0
 flake8-docstrings==1.6.0
 flake8-simplify==0.19.3
+flake8-tidy-imports==4.8.0
 ghp-import==2.1.0
 sphinx==4.3.2
 pydata-sphinx-theme==0.9.0

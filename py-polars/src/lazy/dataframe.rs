@@ -101,7 +101,7 @@ impl From<LazyFrame> for PyLazyFrame {
 #[allow(clippy::should_implement_trait)]
 impl PyLazyFrame {
     #[cfg(all(feature = "json", feature = "serde_json"))]
-    pub fn to_json(&self, py_f: PyObject) -> PyResult<()> {
+    pub fn write_json(&self, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
         serde_json::to_writer(file, &self.ldf.logical_plan)
             .map_err(|err| PyValueError::new_err(format!("{:?}", err)))?;
@@ -167,9 +167,10 @@ impl PyLazyFrame {
             "utf8" => CsvEncoding::Utf8,
             "utf8-lossy" => CsvEncoding::LossyUtf8,
             e => {
-                return Err(
-                    PyPolarsErr::Other(format!("encoding not {} not implemented.", e)).into(),
-                )
+                return Err(PyValueError::new_err(format!(
+                    "encoding must be one of {{'utf8', 'utf8-lossy'}}, got {}",
+                    e
+                )))
             }
         };
 
@@ -452,6 +453,11 @@ impl PyLazyFrame {
         PyLazyGroupBy { lgb: Some(lazy_gb) }
     }
 
+    pub fn with_context(&self, contexts: Vec<PyLazyFrame>) -> PyLazyFrame {
+        let contexts = contexts.into_iter().map(|ldf| ldf.ldf).collect::<Vec<_>>();
+        self.ldf.clone().with_context(contexts).into()
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "asof_join")]
     pub fn join_asof(
@@ -467,18 +473,24 @@ impl PyLazyFrame {
         strategy: &str,
         tolerance: Option<Wrap<AnyValue<'_>>>,
         tolerance_str: Option<String>,
-    ) -> PyLazyFrame {
+    ) -> PyResult<Self> {
         let strategy = match strategy {
-            "forward" => AsofStrategy::Forward,
             "backward" => AsofStrategy::Backward,
-            _ => panic!("expected one of {{'forward', 'backward'}}"),
+            "forward" => AsofStrategy::Forward,
+            e => {
+                return Err(PyValueError::new_err(format!(
+                    "strategy must be one of {{'backward', 'forward'}}, got {}",
+                    e,
+                )))
+            }
         };
 
         let ldf = self.ldf.clone();
         let other = other.ldf;
         let left_on = left_on.inner;
         let right_on = right_on.inner;
-        ldf.join_builder()
+        Ok(ldf
+            .join_builder()
             .with(other)
             .left_on([left_on])
             .right_on([right_on])
@@ -493,7 +505,7 @@ impl PyLazyFrame {
             }))
             .suffix(suffix)
             .finish()
-            .into()
+            .into())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -506,33 +518,20 @@ impl PyLazyFrame {
         force_parallel: bool,
         how: &str,
         suffix: String,
-        asof_by_left: Vec<String>,
-        asof_by_right: Vec<String>,
-    ) -> PyLazyFrame {
+    ) -> PyResult<Self> {
         let how = match how {
             "left" => JoinType::Left,
             "inner" => JoinType::Inner,
             "outer" => JoinType::Outer,
             "semi" => JoinType::Semi,
             "anti" => JoinType::Anti,
-            #[cfg(feature = "asof_join")]
-            "asof" => JoinType::AsOf(AsOfOptions {
-                strategy: AsofStrategy::Backward,
-                left_by: if asof_by_left.is_empty() {
-                    None
-                } else {
-                    Some(asof_by_left)
-                },
-                right_by: if asof_by_right.is_empty() {
-                    None
-                } else {
-                    Some(asof_by_right)
-                },
-                tolerance: None,
-                tolerance_str: None,
-            }),
             "cross" => JoinType::Cross,
-            _ => panic!("not supported"),
+            e => {
+                return Err(PyValueError::new_err(format!(
+                "how must be one of {{'left', 'inner', 'outer', 'semi', 'anti', 'cross'}}, got {}",
+                e,
+            )))
+            }
         };
 
         let ldf = self.ldf.clone();
@@ -546,7 +545,8 @@ impl PyLazyFrame {
             .map(|pyexpr| pyexpr.inner)
             .collect::<Vec<_>>();
 
-        ldf.join_builder()
+        Ok(ldf
+            .join_builder()
             .with(other)
             .left_on(left_on)
             .right_on(right_on)
@@ -555,7 +555,7 @@ impl PyLazyFrame {
             .how(how)
             .suffix(suffix)
             .finish()
-            .into()
+            .into())
     }
 
     pub fn with_column(&mut self, expr: PyExpr) -> PyLazyFrame {
@@ -588,11 +588,6 @@ impl PyLazyFrame {
         ldf.shift_and_fill(periods, fill_value.inner).into()
     }
 
-    pub fn fill_null(&self, fill_value: PyExpr) -> Self {
-        let ldf = self.ldf.clone();
-        ldf.fill_null(fill_value.inner).into()
-    }
-
     pub fn fill_nan(&self, fill_value: PyExpr) -> Self {
         let ldf = self.ldf.clone();
         ldf.fill_nan(fill_value.inner).into()
@@ -618,14 +613,14 @@ impl PyLazyFrame {
         ldf.mean().into()
     }
 
-    pub fn std(&self) -> Self {
+    pub fn std(&self, ddof: u8) -> Self {
         let ldf = self.ldf.clone();
-        ldf.std().into()
+        ldf.std(ddof).into()
     }
 
-    pub fn var(&self) -> Self {
+    pub fn var(&self, ddof: u8) -> Self {
         let ldf = self.ldf.clone();
-        ldf.var().into()
+        ldf.var(ddof).into()
     }
 
     pub fn median(&self) -> Self {

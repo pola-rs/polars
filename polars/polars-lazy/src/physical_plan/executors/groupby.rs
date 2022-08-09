@@ -92,6 +92,12 @@ pub(super) fn groupby_helper(
 
 impl Executor for GroupByExec {
     fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run GroupbyExec")
+            }
+        }
         if state.verbose() {
             eprintln!("keys/aggregates are not partitionable: running default HASH AGGREGATION")
         }

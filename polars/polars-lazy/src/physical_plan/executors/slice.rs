@@ -10,6 +10,12 @@ pub struct SliceExec {
 
 impl Executor for SliceExec {
     fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run SciceExec")
+            }
+        }
         let df = self.input.execute(state)?;
         Ok(df.slice(self.offset, self.len as usize))
     }

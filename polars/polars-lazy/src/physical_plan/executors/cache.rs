@@ -9,6 +9,12 @@ pub struct CacheExec {
 
 impl Executor for CacheExec {
     fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run Cache")
+            }
+        }
         if let Some(df) = state.cache_hit(&self.key) {
             return Ok(df);
         }

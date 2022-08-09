@@ -43,6 +43,12 @@ impl JoinExec {
 
 impl Executor for JoinExec {
     fn execute<'a>(&'a mut self, state: &'a mut ExecutionState) -> Result<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run JoinExec")
+            }
+        }
         if state.verbose() {
             eprintln!("join parallel: {}", self.parallel);
         };

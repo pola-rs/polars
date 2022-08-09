@@ -6,7 +6,6 @@ use crate::utils::{accumulate_dataframes_vertical, set_partition_size, split_off
 use crate::vector_hasher::{get_null_hash_value, AsU64, StrHash};
 use crate::POOL;
 use ahash::{CallHasher, RandomState};
-use hashbrown::HashMap;
 use num::NumCast;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;
@@ -26,6 +25,30 @@ pub use pivot::PivotAgg;
 pub use into_groups::*;
 use polars_arrow::array::ValueSize;
 pub use proxy::*;
+
+// This will remove the sorted flag on signed integers
+fn prepare_dataframe_unsorted(by: &[Series]) -> DataFrame {
+    DataFrame::new_no_checks(
+        by.iter()
+            .map(|s| match s.dtype() {
+                #[cfg(feature = "dtype-categorical")]
+                DataType::Categorical(_) => s.cast(&DataType::UInt32).unwrap(),
+                _ => {
+                    if s.dtype().to_physical().is_numeric() {
+                        let s = s.to_physical_repr();
+                        if s.bit_repr_is_large() {
+                            s.bit_repr_large().into_series()
+                        } else {
+                            s.bit_repr_small().into_series()
+                        }
+                    } else {
+                        s.clone()
+                    }
+                }
+            })
+            .collect(),
+    )
+}
 
 impl DataFrame {
     pub fn groupby_with_series(
@@ -81,29 +104,6 @@ impl DataFrame {
             ));
         };
 
-        use DataType::*;
-        // make sure that categorical and small integers are used as uint32 in value type
-        let keys_df = DataFrame::new_no_checks(
-            by.iter()
-                .map(|s| match s.dtype() {
-                    Int8 | UInt8 | Int16 | UInt16 => s.cast(&DataType::UInt32).unwrap(),
-                    #[cfg(feature = "dtype-categorical")]
-                    Categorical(_) => s.cast(&DataType::UInt32).unwrap(),
-                    Float32 => s.bit_repr_small().into_series(),
-                    // otherwise we use the vec hash for float
-                    Float64 => s.bit_repr_large().into_series(),
-                    _ => {
-                        // is date like
-                        if !s.dtype().is_numeric() && s.is_numeric_physical() {
-                            s.to_physical_repr().into_owned()
-                        } else {
-                            s.clone()
-                        }
-                    }
-                })
-                .collect(),
-        );
-
         let n_partitions = set_partition_size();
 
         let groups = match by.len() {
@@ -114,6 +114,8 @@ impl DataFrame {
             2 => {
                 // multiple keys is always multi-threaded
                 // reduce code paths
+                let keys_df = prepare_dataframe_unsorted(&by);
+
                 let s0 = &keys_df.get_columns()[0];
                 let s1 = &keys_df.get_columns()[1];
 
@@ -159,7 +161,10 @@ impl DataFrame {
                     groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
                 }
             }
-            _ => groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted),
+            _ => {
+                let keys_df = prepare_dataframe_unsorted(&by);
+                groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
+            }
         };
         Ok(GroupBy::new(self, by, groups, None))
     }
@@ -248,7 +253,7 @@ impl DataFrame {
 ///
 #[derive(Debug, Clone)]
 pub struct GroupBy<'df> {
-    df: &'df DataFrame,
+    pub df: &'df DataFrame,
     pub(crate) selected_keys: Vec<Series>,
     // [first idx, [other idx]]
     groups: GroupsProxy,
@@ -691,11 +696,11 @@ impl<'df> GroupBy<'df> {
     }
 
     /// Aggregate grouped `Series` and determine the variance per group.
-    pub fn var(&self) -> Result<DataFrame> {
+    pub fn var(&self, ddof: u8) -> Result<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Var);
-            let mut agg = unsafe { agg_col.agg_var(&self.groups) };
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Var(ddof));
+            let mut agg = unsafe { agg_col.agg_var(&self.groups, ddof) };
             agg.rename(&new_name);
             cols.push(agg.into_series());
         }
@@ -703,11 +708,11 @@ impl<'df> GroupBy<'df> {
     }
 
     /// Aggregate grouped `Series` and determine the standard deviation per group.
-    pub fn std(&self) -> Result<DataFrame> {
+    pub fn std(&self, ddof: u8) -> Result<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Std);
-            let mut agg = unsafe { agg_col.agg_std(&self.groups) };
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Std(ddof));
+            let mut agg = unsafe { agg_col.agg_std(&self.groups, ddof) };
             agg.rename(&new_name);
             cols.push(agg.into_series());
         }
@@ -782,104 +787,6 @@ impl<'df> GroupBy<'df> {
         let new_name = fmt_groupby_column("", GroupByMethod::Groups);
         column.rename(&new_name);
         cols.push(column.into_series());
-        DataFrame::new(cols)
-    }
-
-    /// Combine different aggregations on columns
-    ///
-    /// ## Operations
-    ///
-    /// * count
-    /// * first
-    /// * last
-    /// * sum
-    /// * min
-    /// * max
-    /// * mean
-    /// * median
-    ///
-    /// # Example
-    ///
-    ///  ```rust
-    ///  # use polars_core::prelude::*;
-    ///  fn example(df: DataFrame) -> Result<DataFrame> {
-    ///      df.groupby(["date"])?.agg(&[("temp", &["n_unique", "sum", "min"])])
-    ///  }
-    ///  ```
-    ///  Returns:
-    ///
-    ///  ```text
-    ///  +--------------+---------------+----------+----------+
-    ///  | date         | temp_n_unique | temp_sum | temp_min |
-    ///  | ---          | ---           | ---      | ---      |
-    ///  | Date(days) | u32           | i32      | i32      |
-    ///  +==============+===============+==========+==========+
-    ///  | 2020-08-23   | 1             | 9        | 9        |
-    ///  +--------------+---------------+----------+----------+
-    ///  | 2020-08-22   | 2             | 8        | 1        |
-    ///  +--------------+---------------+----------+----------+
-    ///  | 2020-08-21   | 2             | 30       | 10       |
-    ///  +--------------+---------------+----------+----------+
-    ///  ```
-    ///
-    pub fn agg<Column, S, Slice>(&self, column_to_agg: &[(Column, Slice)]) -> Result<DataFrame>
-    where
-        S: AsRef<str>,
-        S: AsRef<str>,
-        Slice: AsRef<[S]>,
-        Column: AsRef<str>,
-    {
-        // create a mapping from columns to aggregations on that column
-        let mut map = HashMap::with_hasher(RandomState::new());
-        column_to_agg.iter().for_each(|(column, aggregations)| {
-            map.insert(column.as_ref(), aggregations.as_ref());
-        });
-
-        macro_rules! finish_agg_opt {
-            ($self:ident, $name_fmt:expr, $agg_fn:ident, $agg_col:ident, $cols:ident) => {{
-                let new_name = format!($name_fmt, $agg_col.name());
-                let mut agg = unsafe { $agg_col.$agg_fn(&$self.groups) };
-                agg.rename(&new_name);
-                $cols.push(agg.into_series());
-            }};
-        }
-        macro_rules! finish_agg {
-            ($self:ident, $name_fmt:expr, $agg_fn:ident, $agg_col:ident, $cols:ident) => {{
-                let new_name = format!($name_fmt, $agg_col.name());
-                let mut agg = unsafe { $agg_col.$agg_fn(&$self.groups) };
-                agg.rename(&new_name);
-                $cols.push(agg.into_series());
-            }};
-        }
-
-        let (mut cols, agg_cols) = self.prepare_agg()?;
-        for agg_col in &agg_cols {
-            if let Some(&aggregations) = map.get(agg_col.name()) {
-                for aggregation_f in aggregations {
-                    match aggregation_f.as_ref() {
-                        "min" => finish_agg_opt!(self, "{}_min", agg_min, agg_col, cols),
-                        "max" => finish_agg_opt!(self, "{}_max", agg_max, agg_col, cols),
-                        "mean" => finish_agg_opt!(self, "{}_mean", agg_mean, agg_col, cols),
-                        "sum" => finish_agg_opt!(self, "{}_sum", agg_sum, agg_col, cols),
-                        "first" => finish_agg!(self, "{}_first", agg_first, agg_col, cols),
-                        "last" => finish_agg!(self, "{}_last", agg_last, agg_col, cols),
-                        "n_unique" => {
-                            finish_agg_opt!(self, "{}_n_unique", agg_n_unique, agg_col, cols)
-                        }
-                        "median" => finish_agg_opt!(self, "{}_median", agg_median, agg_col, cols),
-                        "std" => finish_agg_opt!(self, "{}_std", agg_std, agg_col, cols),
-                        "var" => finish_agg_opt!(self, "{}_var", agg_var, agg_col, cols),
-                        "count" => {
-                            let new_name = format!("{}_count", agg_col.name());
-                            let mut ca = self.groups.group_count();
-                            ca.rename(&new_name);
-                            cols.push(ca.into_series());
-                        }
-                        a => panic!("aggregation: {:?} is not supported", a),
-                    }
-                }
-            }
-        }
         DataFrame::new(cols)
     }
 
@@ -1002,8 +909,8 @@ pub enum GroupByMethod {
     Quantile(f64, QuantileInterpolOptions),
     Count,
     List,
-    Std,
-    Var,
+    Std(u8),
+    Var(u8),
 }
 
 // Formatting functions used in eager and lazy code for renaming grouped columns
@@ -1022,8 +929,8 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
         Count => format!("{}_count", name),
         List => format!("{}_agg_list", name),
         Quantile(quantile, _interpol) => format!("{}_quantile_{:.2}", name, quantile),
-        Std => format!("{}_agg_std", name),
-        Var => format!("{}_agg_var", name),
+        Std(_) => format!("{}_agg_std", name),
+        Var(_) => format!("{}_agg_var", name),
     }
 }
 
@@ -1276,10 +1183,10 @@ mod test {
             "int" => [1, 2, 3]
         ]?;
 
-        let out = df.groupby_stable(["g"])?.select(["int"]).var()?;
+        let out = df.groupby_stable(["g"])?.select(["int"]).var(1)?;
 
         assert_eq!(out.column("int_agg_var")?.f64()?.get(0), Some(0.5));
-        let out = df.groupby_stable(["g"])?.select(["int"]).std()?;
+        let out = df.groupby_stable(["g"])?.select(["int"]).std(1)?;
         let val = out.column("int_agg_std")?.f64()?.get(0).unwrap();
         let expected = f64::FRAC_1_SQRT_2();
         assert!((val - expected).abs() < 0.000001);

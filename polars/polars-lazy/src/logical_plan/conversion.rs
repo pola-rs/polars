@@ -75,8 +75,8 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
                     interpol,
                 },
                 AggExpr::Sum(expr) => AAggExpr::Sum(to_aexpr(*expr, arena)),
-                AggExpr::Std(expr) => AAggExpr::Std(to_aexpr(*expr, arena)),
-                AggExpr::Var(expr) => AAggExpr::Var(to_aexpr(*expr, arena)),
+                AggExpr::Std(expr, ddof) => AAggExpr::Std(to_aexpr(*expr, arena), ddof),
+                AggExpr::Var(expr, ddof) => AAggExpr::Var(to_aexpr(*expr, arena), ddof),
                 AggExpr::AggGroups(expr) => AAggExpr::AggGroups(to_aexpr(*expr, arena)),
             };
             AExpr::Agg(a_agg)
@@ -426,6 +426,22 @@ pub(crate) fn to_alp(
             let mut err = err.lock();
             return Err(err.take().unwrap());
         }
+        LogicalPlan::ExtContext {
+            input,
+            contexts,
+            schema,
+        } => {
+            let input = to_alp(*input, expr_arena, lp_arena)?;
+            let contexts = contexts
+                .into_iter()
+                .map(|lp| to_alp(lp, expr_arena, lp_arena))
+                .collect::<Result<_>>()?;
+            ALogicalPlan::ExtContext {
+                input,
+                contexts,
+                schema,
+            }
+        }
     };
     Ok(lp_arena.add(v))
 }
@@ -564,13 +580,13 @@ pub(crate) fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Sum(Box::new(exp)).into()
             }
-            AAggExpr::Std(expr) => {
+            AAggExpr::Std(expr, ddof) => {
                 let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Std(Box::new(exp)).into()
+                AggExpr::Std(Box::new(exp), ddof).into()
             }
-            AAggExpr::Var(expr) => {
+            AAggExpr::Var(expr, ddof) => {
                 let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Var(Box::new(exp)).into()
+                AggExpr::Var(Box::new(exp), ddof).into()
             }
             AAggExpr::AggGroups(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
@@ -903,6 +919,22 @@ pub(crate) fn node_to_lp(
                 input,
                 function,
                 options,
+                schema,
+            }
+        }
+        ALogicalPlan::ExtContext {
+            input,
+            contexts,
+            schema,
+        } => {
+            let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
+            let contexts = contexts
+                .into_iter()
+                .map(|node| node_to_lp(node, expr_arena, lp_arena))
+                .collect();
+            LogicalPlan::ExtContext {
+                input,
+                contexts,
                 schema,
             }
         }

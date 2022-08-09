@@ -96,7 +96,7 @@ def test_join_lazy_on_df() -> None:
 
 def test_projection_update_schema_missing_column() -> None:
     with pytest.raises(
-        pl.ComputeError, match="column colC not available in schema Schema:*"
+        pl.ComputeError, match="column 'colC' not available in schema Schema:*"
     ):
         (
             pl.DataFrame({"colA": ["a", "b", "c"], "colB": [1, 2, 3]})
@@ -120,6 +120,7 @@ def test_not_found_on_rename() -> None:
 
 
 @typing.no_type_check
+@pytest.mark.filterwarnings("ignore:setting a DataFrame by indexing:DeprecationWarning")
 def test_getitem_errs() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
@@ -138,5 +139,7 @@ def test_getitem_errs() -> None:
     ):
         df["a"][{"strange"}]
 
-    with pytest.raises(ValueError, match="Cannot __setitem__ on DataFrame with key:.*"):
+    with pytest.raises(
+        TypeError, match="'DataFrame' object does not support item assignment"
+    ):
         df[{"some"}] = "foo"

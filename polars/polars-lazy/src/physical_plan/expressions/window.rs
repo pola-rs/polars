@@ -150,6 +150,22 @@ impl WindowExpr {
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
             (false, false, AggState::AggregatedList(_)) => {
+                // if the output of a window expression is a list type, but not an explicit list
+                // e.g. due to a `col().shift()` we join back as the flattening and exploding makes
+                // my brain hurt atm.
+
+                // only select the aggregation columns to save allocations in computing the schema
+                if !self.phys_function.is_literal(){
+                    // 'literal' would fail, but also 'count()' would fail
+                    // so on failure ignore and continue.
+                    if let Ok(df) = gb.df.select(&self.apply_columns) {
+                        let schema = df.schema();
+                        if matches!(self.phys_function.to_field(&schema).map(|fld| fld.dtype), Ok(DataType::List(_))) {
+                            return Ok(MapStrategy::Join)
+                        }
+                    }
+                }
+
                 if sorted_keys  {
                     if let GroupsProxy::Idx(g) = gb.get_groups() {
                         debug_assert!(g.is_sorted())

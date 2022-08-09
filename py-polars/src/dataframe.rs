@@ -12,7 +12,7 @@ use crate::apply::dataframe::{
     apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
     apply_lambda_with_utf8_out_type,
 };
-use crate::conversion::{parse_strategy, ObjectValue, Wrap};
+use crate::conversion::{ObjectValue, Wrap};
 use crate::file::get_mmap_bytes_reader;
 use crate::lazy::dataframe::PyLazyFrame;
 use crate::prelude::{dicts_to_rows, str_to_null_strategy};
@@ -152,9 +152,10 @@ impl PyDataFrame {
             "utf8" => CsvEncoding::Utf8,
             "utf8-lossy" => CsvEncoding::LossyUtf8,
             e => {
-                return Err(
-                    PyPolarsErr::Other(format!("encoding not {} not implemented.", e)).into(),
-                )
+                return Err(PyValueError::new_err(format!(
+                    "encoding must be one of {{'utf8', 'utf8-lossy'}}, got {}",
+                    e
+                )))
             }
         };
 
@@ -286,13 +287,18 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "avro")]
-    pub fn to_avro(&mut self, py: Python, py_f: PyObject, compression: &str) -> PyResult<()> {
+    pub fn write_avro(&mut self, py: Python, py_f: PyObject, compression: &str) -> PyResult<()> {
         use polars::io::avro::{AvroCompression, AvroWriter};
         let compression = match compression {
             "uncompressed" => None,
             "snappy" => Some(AvroCompression::Snappy),
             "deflate" => Some(AvroCompression::Deflate),
-            s => return Err(PyPolarsErr::Other(format!("compression {} not supported", s)).into()),
+            e => {
+                return Err(PyValueError::new_err(format!(
+                    "compression must be one of {{'uncompressed', 'snappy', 'deflate'}}, got {}",
+                    e
+                )))
+            }
         };
 
         if let Ok(s) = py_f.extract::<&str>(py) {
@@ -346,7 +352,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "json")]
-    pub fn to_json(
+    pub fn write_json(
         &mut self,
         py_f: PyObject,
         pretty: bool,
@@ -422,7 +428,7 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn to_csv(
+    pub fn write_csv(
         &mut self,
         py: Python,
         py_f: PyObject,
@@ -456,12 +462,17 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "ipc")]
-    pub fn to_ipc(&mut self, py: Python, py_f: PyObject, compression: &str) -> PyResult<()> {
+    pub fn write_ipc(&mut self, py: Python, py_f: PyObject, compression: &str) -> PyResult<()> {
         let compression = match compression {
             "uncompressed" => None,
             "lz4" => Some(IpcCompression::LZ4),
             "zstd" => Some(IpcCompression::ZSTD),
-            s => return Err(PyPolarsErr::Other(format!("compression {} not supported", s)).into()),
+            e => {
+                return Err(PyValueError::new_err(format!(
+                    "compression must be one of {{'uncompressed', 'lz4', 'zstd'}}, got {}",
+                    e
+                )))
+            }
         };
 
         if let Ok(s) = py_f.extract::<&str>(py) {
@@ -574,7 +585,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "parquet")]
-    pub fn to_parquet(
+    pub fn write_parquet(
         &mut self,
         py: Python,
         py_f: PyObject,
@@ -612,7 +623,12 @@ impl PyDataFrame {
                     })
                     .transpose()?,
             ),
-            s => return Err(PyPolarsErr::Other(format!("compression {} not supported", s)).into()),
+            e => {
+                return Err(PyValueError::new_err(format!(
+                    "compression must be one of {{'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'lz4', 'zstd'}}, got {}",
+                    e
+                )))
+            }
         };
 
         if let Ok(s) = py_f.extract::<&str>(py) {
@@ -778,12 +794,6 @@ impl PyDataFrame {
     /// Format `DataFrame` as String
     pub fn as_str(&self) -> String {
         format!("{:?}", self.df)
-    }
-
-    pub fn fill_null(&self, strategy: &str, limit: FillNullLimit) -> PyResult<Self> {
-        let strat = parse_strategy(strategy, limit)?;
-        let df = self.df.fill_null(strat).map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
     }
 
     pub fn join(
@@ -974,13 +984,6 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn sort_in_place(&mut self, by_column: &str, reverse: bool) -> PyResult<()> {
-        self.df
-            .sort_in_place([by_column], reverse)
-            .map_err(PyPolarsErr::from)?;
-        Ok(())
-    }
-
     pub fn replace(&mut self, column: &str, new_col: PySeries) -> PyResult<()> {
         self.df
             .replace(column, new_col.series)
@@ -1058,16 +1061,6 @@ impl PyDataFrame {
             None => gb,
         };
         finish_groupby(selection, agg)
-    }
-
-    pub fn groupby_agg(
-        &self,
-        by: Vec<&str>,
-        column_to_agg: Vec<(&str, Vec<&str>)>,
-    ) -> PyResult<Self> {
-        let gb = self.df.groupby(&by).map_err(PyPolarsErr::from)?;
-        let df = gb.agg(&column_to_agg).map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
     }
 
     pub fn groupby_apply(&self, by: Vec<&str>, lambda: PyObject) -> PyResult<Self> {
@@ -1256,12 +1249,12 @@ impl PyDataFrame {
         self.df.mean().into()
     }
 
-    pub fn std(&self) -> Self {
-        self.df.std().into()
+    pub fn std(&self, ddof: u8) -> Self {
+        self.df.std(ddof).into()
     }
 
-    pub fn var(&self) -> Self {
-        self.df.var().into()
+    pub fn var(&self, ddof: u8) -> Self {
+        self.df.var(ddof).into()
     }
 
     pub fn median(&self) -> Self {
@@ -1450,8 +1443,6 @@ fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {
         "median" => gb.median(),
         "agg_list" => gb.agg_list(),
         "groups" => gb.groups(),
-        "std" => gb.std(),
-        "var" => gb.var(),
         a => Err(PolarsError::ComputeError(
             format!("agg fn {} does not exists", a).into(),
         )),

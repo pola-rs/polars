@@ -771,6 +771,7 @@ impl Expr {
         function_expr: FunctionExpr,
         arguments: &[Expr],
         fmt_str: &'static str,
+        auto_explode: bool,
     ) -> Self {
         let mut input = Vec::with_capacity(arguments.len() + 1);
         input.push(self);
@@ -782,7 +783,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
                 input_wildcard_expansion: false,
-                auto_explode: true,
+                auto_explode,
                 fmt_str,
             },
         }
@@ -864,6 +865,7 @@ impl Expr {
             FunctionExpr::ShiftAndFill { periods },
             &[fill_value.into()],
             "shift_and_fill",
+            false,
         )
     }
 
@@ -1116,13 +1118,13 @@ impl Expr {
     }
 
     /// Standard deviation of the values of the Series
-    pub fn std(self) -> Self {
-        AggExpr::Std(Box::new(self)).into()
+    pub fn std(self, ddof: u8) -> Self {
+        AggExpr::Std(Box::new(self), ddof).into()
     }
 
     /// Variance of the values of the Series
-    pub fn var(self) -> Self {
-        AggExpr::Var(Box::new(self)).into()
+    pub fn var(self, ddof: u8) -> Self {
+        AggExpr::Var(Box::new(self), ddof).into()
     }
 
     /// Get a mask of duplicated values
@@ -1394,7 +1396,7 @@ impl Expr {
         if has_literal {
             self.map_many_private(FunctionExpr::IsIn, arguments, "is_in_map")
         } else {
-            self.apply_many_private(FunctionExpr::IsIn, arguments, "is_in_apply")
+            self.apply_many_private(FunctionExpr::IsIn, arguments, "is_in_apply", true)
         }
     }
 

@@ -752,7 +752,7 @@ fn test_lazy_shift_and_fill() {
 
     let out = df
         .lazy()
-        .shift_and_fill(-1, col("B").std())
+        .shift_and_fill(-1, col("B").std(1))
         .collect()
         .unwrap();
     assert_eq!(out.column("A").unwrap().null_count(), 0);

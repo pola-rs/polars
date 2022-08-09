@@ -10,7 +10,7 @@ except ImportError:
     # this is only useful for documentation
     warnings.warn("polars binary missing!")
 
-import polars.testing as testing
+from polars import testing
 from polars.cfg import Config
 from polars.convert import (
     from_arrow,
@@ -92,7 +92,6 @@ from polars.internals.lazy_functions import (
     last,
     lit,
     map,
-    map_binary,
     max,
     mean,
     median,
@@ -223,7 +222,6 @@ __all__ = [
     "cov",
     "map",
     "apply",
-    "map_binary",
     "fold",
     "any",
     "all",

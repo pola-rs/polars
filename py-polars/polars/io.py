@@ -1,6 +1,7 @@
 """Functions for reading and writing data."""
 from __future__ import annotations
 
+import sys
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Mapping, TextIO
@@ -30,6 +31,11 @@ try:
     _WITH_CX = True
 except ImportError:
     _WITH_CX = False
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 
 def _check_arg_is_1byte(
@@ -77,11 +83,11 @@ def read_csv(
     infer_schema_length: int | None = 100,
     batch_size: int = 8192,
     n_rows: int | None = None,
-    encoding: str = "utf8",
+    encoding: Literal["utf8", "utf8-lossy"] = "utf8",
     low_memory: bool = False,
     rechunk: bool = True,
     use_pyarrow: bool = False,
-    storage_options: dict | None = None,
+    storage_options: dict[str, object] | None = None,
     skip_rows_after_header: int = 0,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
@@ -90,7 +96,7 @@ def read_csv(
     **kwargs: Any,
 ) -> DataFrame:
     """
-    Read a CSV file into a Dataframe.
+    Read a CSV file into a DataFrame.
 
     Parameters
     ----------
@@ -178,10 +184,10 @@ def read_csv(
         the DataFrame.
     row_count_offset
         Offset to start the row_count column (only used if the name is set).
-    sample_size:
+    sample_size
         Set the sample size. This is used to sample statistics to estimate the
         allocation needed.
-    eol_char:
+    eol_char
         Single byte end of line character
 
     Returns
@@ -413,7 +419,7 @@ def scan_csv(
     with_column_names: Callable[[list[str]], list[str]] | None = None,
     infer_schema_length: int | None = 100,
     n_rows: int | None = None,
-    encoding: str = "utf8",
+    encoding: Literal["utf8", "utf8-lossy"] = "utf8",
     low_memory: bool = False,
     rechunk: bool = True,
     skip_rows_after_header: int = 0,
@@ -492,7 +498,7 @@ def scan_csv(
     parse_dates
         Try to automatically parse dates. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
-    eol_char:
+    eol_char
         Single byte end of line character
 
     Returns
@@ -524,7 +530,7 @@ def scan_csv(
     ...     {"BrEeZaH": [1, 2, 3, 4], "LaNgUaGe": ["is", "terrible", "to", "read"]}
     ... )
     >>> path: pathlib.Path = dirpath / "mydf.csv"
-    >>> df.to_csv(path)
+    >>> df.write_csv(path)
     >>> pl.scan_csv(
     ...     path, with_column_names=lambda cols: [col.lower() for col in cols]
     ... ).fetch()
@@ -588,7 +594,7 @@ def scan_ipc(
     rechunk: bool = True,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
-    storage_options: dict | None = None,
+    storage_options: dict[str, object] | None = None,
     memory_map: bool = True,
     **kwargs: Any,
 ) -> LazyFrame:
@@ -642,11 +648,11 @@ def scan_parquet(
     file: str | Path,
     n_rows: int | None = None,
     cache: bool = True,
-    parallel: str = "auto",
+    parallel: Literal["auto", "columns", "row_groups", "none"] = "auto",
     rechunk: bool = True,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
-    storage_options: dict | None = None,
+    storage_options: dict[str, object] | None = None,
     low_memory: bool = False,
     **kwargs: Any,
 ) -> LazyFrame:
@@ -740,7 +746,7 @@ def read_ipc(
     n_rows: int | None = None,
     use_pyarrow: bool = False,
     memory_map: bool = True,
-    storage_options: dict | None = None,
+    storage_options: dict[str, object] | None = None,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     rechunk: bool = True,
@@ -829,8 +835,8 @@ def read_parquet(
     n_rows: int | None = None,
     use_pyarrow: bool = False,
     memory_map: bool = True,
-    storage_options: dict | None = None,
-    parallel: str = "auto",
+    storage_options: dict[str, object] | None = None,
+    parallel: Literal["auto", "columns", "row_groups", "none"] = "auto",
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     low_memory: bool = False,
@@ -868,7 +874,7 @@ def read_parquet(
         DataFrame.
     row_count_offset
         Offset to start the row_count column (only use if the name is set).
-    low_memory: bool
+    low_memory
         Reduce memory pressure at the expense of performance.
     **kwargs
         kwargs for `pyarrow.parquet.read_table
@@ -1029,8 +1035,8 @@ def read_excel(
     file: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: int | None = 1,
     sheet_name: str | None = None,
-    xlsx2csv_options: dict | None = None,
-    read_csv_options: dict | None = None,
+    xlsx2csv_options: dict[str, object] | None = None,
+    read_csv_options: dict[str, object] | None = None,
 ) -> DataFrame:
     """
     Read Excel (XLSX) sheet into a DataFrame.
@@ -1134,7 +1140,7 @@ def read_excel(
     csv_buffer.seek(0)
 
     # Parse CSV output.
-    return read_csv(csv_buffer, **read_csv_options)
+    return read_csv(csv_buffer, **read_csv_options)  # type: ignore[arg-type]
 
 
 def scan_ds(ds: pa.dataset.dataset) -> LazyFrame:

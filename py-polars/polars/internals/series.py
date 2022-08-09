@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import sys
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, Sequence, Union, overload
+from typing import TYPE_CHECKING, Any, Callable, Sequence, Union, overload
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -48,7 +48,6 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _ptr_to_numpy,
     _to_python_datetime,
-    deprecated_alias,
     is_bool_sequence,
     is_int_sequence,
     range_to_slice,
@@ -86,6 +85,9 @@ if sys.version_info >= (3, 8):
     from typing import Literal
 else:
     from typing_extensions import Literal
+
+if TYPE_CHECKING:
+    from polars.internals.datatypes import FillStrategy, InterpolationMethod
 
 
 def get_ffi_func(
@@ -462,7 +464,7 @@ class Series:
     def __neg__(self) -> Series:
         return 0 - self
 
-    def _pos_idxs(self, idxs: np.ndarray | Series) -> Series:
+    def _pos_idxs(self, idxs: np.ndarray[Any, Any] | Series) -> Series:
         # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
         idx_type = get_idx_type()
 
@@ -535,7 +537,14 @@ class Series:
         raise NotImplementedError("Unsupported idxs datatype.")
 
     def __getitem__(
-        self, item: int | Series | range | slice | np.ndarray | list[int] | list[bool]
+        self,
+        item: int
+        | Series
+        | range
+        | slice
+        | np.ndarray[Any, Any]
+        | list[int]
+        | list[bool],
     ) -> Any:
         if isinstance(item, int):
             if item < 0:
@@ -562,9 +571,8 @@ class Series:
             if item.dtype == bool:
                 return wrap_s(self._s.filter(pli.Series("", item).inner()))
 
-        if isinstance(item, Sequence):
-            if is_bool_sequence(item) or is_int_sequence(item):
-                item = Series("", item)  # fall through to next if isinstance
+        if is_bool_sequence(item) or is_int_sequence(item):
+            item = Series("", item)  # fall through to next if isinstance
 
         if isinstance(item, Series):
             if item.dtype == Boolean:
@@ -587,7 +595,9 @@ class Series:
         )
 
     def __setitem__(
-        self, key: int | Series | np.ndarray | list | tuple, value: Any
+        self,
+        key: int | Series | np.ndarray[Any, Any] | Sequence[object] | tuple[object],
+        value: Any,
     ) -> None:
         if isinstance(value, Sequence) and not isinstance(value, str):
             if self.is_numeric() or self.is_datelike():
@@ -896,8 +906,8 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.min()
-        1
+        >>> s.max()
+        3
 
         """
         return self._s.max()
@@ -967,18 +977,18 @@ class Series:
         """
         return self._s.median()
 
-    def quantile(self, quantile: float, interpolation: str = "nearest") -> float:
+    def quantile(
+        self, quantile: float, interpolation: InterpolationMethod = "nearest"
+    ) -> float:
         """
         Get the quantile value of this Series.
 
         Parameters
         ----------
         quantile
-            quantile between 0.0 and 1.0
-
-        interpolation
-            interpolation type, options:
-            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
 
         Examples
         --------
@@ -1421,7 +1431,7 @@ class Series:
             else:
                 raise e
 
-    def filter(self, predicate: Series | list) -> Series:
+    def filter(self, predicate: Series | list[bool]) -> Series:
         """
         Filter elements by a boolean mask.
 
@@ -1629,7 +1639,7 @@ class Series:
             return pli.select(pli.lit(self).unique(maintain_order)).to_series()
         return wrap_s(self._s.unique())
 
-    def take(self, indices: np.ndarray | list[int] | pli.Expr) -> Series:
+    def take(self, indices: np.ndarray[Any, Any] | list[int] | pli.Expr) -> Series:
         """
         Take values by index.
 
@@ -1827,7 +1837,7 @@ class Series:
         """
         return wrap_s(self._s.is_not_nan())
 
-    def is_in(self, other: Series | list) -> Series:
+    def is_in(self, other: Series | list[object]) -> Series:
         """
         Check if elements of this Series are in the right Series, or List values of the
         right Series.
@@ -2251,7 +2261,7 @@ class Series:
         """
         return self.dtype is Utf8
 
-    def view(self, ignore_nulls: bool = False) -> np.ndarray:
+    def view(self, ignore_nulls: bool = False) -> np.ndarray[Any, Any]:
         """
         Get a view into this Series data with a numpy array. This operation doesn't
         clone data, but does not include missing values. Don't use this unless you know
@@ -2279,7 +2289,7 @@ class Series:
         array.setflags(write=False)
         return array
 
-    def __array__(self, dtype: Any = None) -> np.ndarray:
+    def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
         if dtype:
             return self.to_numpy().__array__(dtype)
         else:
@@ -2307,7 +2317,7 @@ class Series:
                     "Only ufuncs that return one 1D array, are supported."
                 )
 
-            args: list[int | float | np.ndarray] = []
+            args: list[int | float | np.ndarray[Any, Any]] = []
 
             for arg in inputs:
                 if isinstance(arg, (int, float, np.ndarray)):
@@ -2363,7 +2373,7 @@ class Series:
 
     def to_numpy(
         self, *args: Any, zero_copy_only: bool = False, **kwargs: Any
-    ) -> np.ndarray:
+    ) -> np.ndarray[Any, Any]:
         """
         Convert this Series to numpy. This operation clones data but is completely safe.
 
@@ -2396,7 +2406,7 @@ class Series:
 
         """
 
-        def convert_to_date(arr: np.ndarray) -> np.ndarray:
+        def convert_to_date(arr: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
             if self.dtype == Date:
                 tp = "datetime64[D]"
             elif self.dtype == Duration:
@@ -2470,7 +2480,7 @@ class Series:
 
     def set_at_idx(
         self,
-        idx: Series | np.ndarray | list[int] | tuple[int],
+        idx: Series | np.ndarray[Any, Any] | list[int] | tuple[int],
         value: int
         | float
         | str
@@ -2588,24 +2598,28 @@ class Series:
         )
 
     def fill_null(
-        self, strategy: str | int | pli.Expr, limit: int | None = None
+        self,
+        value: Any | None = None,
+        strategy: FillStrategy | None = None,
+        limit: int | None = None,
     ) -> Series:
         """
-        Fill null values using a filling strategy, literal, or Expr.
+        Fill null values using the specified value or strategy.
 
         Parameters
         ----------
-        strategy
-            One of {"backward", "forward", "min", "max", "mean", "one", "zero"}
-            or an expression.
+        value
+            Value used to fill null values.
+        strategy : {None, 'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}
+            Strategy used to fill null values.
         limit
-            The number of consecutive null values to forward/backward fill.
-            Only valid if ``strategy`` is 'forward' or 'backward'.
+            Number of consecutive null values to fill when using the 'forward' or
+            'backward' strategy.
 
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, None])
-        >>> s.fill_null("forward")
+        >>> s.fill_null(strategy="forward")
         shape: (4,)
         Series: 'a' [i64]
         [
@@ -2614,7 +2628,7 @@ class Series:
             3
             3
         ]
-        >>> s.fill_null("min")
+        >>> s.fill_null(strategy="min")
         shape: (4,)
         Series: 'a' [i64]
         [
@@ -2634,11 +2648,9 @@ class Series:
         ]
 
         """
-        if not isinstance(strategy, str):
-            return self.to_frame().select(pli.col(self.name).fill_null(strategy))[
-                self.name
-            ]
-        return wrap_s(self._s.fill_null(strategy, limit))
+        return self.to_frame().select(
+            pli.col(self.name).fill_null(value, strategy, limit)
+        )[self.name]
 
     def floor(self) -> Series:
         """
@@ -3492,7 +3504,7 @@ class Series:
     def rolling_quantile(
         self,
         quantile: float,
-        interpolation: str = "nearest",
+        interpolation: InterpolationMethod = "nearest",
         window_size: int = 2,
         weights: list[float] | None = None,
         min_periods: int | None = None,
@@ -3504,10 +3516,9 @@ class Series:
         Parameters
         ----------
         quantile
-            quantile to compute
-        interpolation
-            interpolation type, options:
-            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
         window_size
             The length of the window.
         weights
@@ -3676,7 +3687,6 @@ class Series:
             series._s.shrink_to_fit()
             return series
 
-    @deprecated_alias(k0="seed", k1="seed_1", k2="seed_2", k3="seed_3")
     def hash(
         self,
         seed: int = 0,
@@ -4500,18 +4510,21 @@ class StringNameSpace:
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.starts_with(sub)).to_series()
 
-    def decode(self, encoding: str, strict: bool = False) -> Series:
+    def decode(
+        self, encoding: Literal["hex", "base64"], strict: bool = False
+    ) -> Series:
         """
         Decode a value using the provided encoding.
 
         Parameters
         ----------
-        encoding
-            'hex' or 'base64'
+        encoding : {'hex', 'base64'}
+            The encoding to use.
         strict
-            how to handle invalid inputs
-            - True: method will throw error if unable to decode a value
-            - False: unhandled values will be replaced with `None`
+            How to handle invalid inputs:
+
+            - ``True``: An error will be thrown if unable to decode a value.
+            - ``False``: Unhandled values will be replaced with `None`.
 
         Examples
         --------
@@ -4531,16 +4544,18 @@ class StringNameSpace:
         elif encoding == "base64":
             return wrap_s(self._s.str_base64_decode(strict))
         else:
-            raise ValueError("supported encodings are 'hex' and 'base64'")
+            raise ValueError(
+                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+            )
 
-    def encode(self, encoding: str) -> Series:
+    def encode(self, encoding: Literal["hex", "base64"]) -> Series:
         """
         Encode a value using the provided encoding
 
         Parameters
         ----------
-        encoding
-            'hex' or 'base64'
+        encoding : {'hex', 'base64'}
+            The encoding to use.
 
         Returns
         -------
@@ -4564,7 +4579,9 @@ class StringNameSpace:
         elif encoding == "base64":
             return wrap_s(self._s.str_base64_encode())
         else:
-            raise ValueError("supported encodings are 'hex' and 'base64'")
+            raise ValueError(
+                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+            )
 
     def json_path_match(self, json_path: str) -> Series:
         """
@@ -5695,53 +5712,6 @@ class DateTimeNameSpace:
         else:
             raise ValueError(f"time unit {tu} not understood")
 
-    def epoch_days(self) -> Series:
-        """
-        Get the number of days since the unix EPOCH.
-        If the date is before the unix EPOCH, the number of days will be negative.
-
-        .. deprecated:: 0.13.9
-            Use :func:`epoch` instead.
-
-        Returns
-        -------
-        Days as Int32
-
-        """
-        return wrap_s(self._s).cast(Date).cast(Int32)
-
-    def epoch_milliseconds(self) -> Series:
-        """
-        Get the number of milliseconds since the unix EPOCH.
-
-        If the date is before the unix EPOCH, the number of milliseconds will be
-        negative.
-
-        .. deprecated:: 0.13.9
-            Use :func:`epoch` instead.
-
-        Returns
-        -------
-        Milliseconds as Int64
-
-        """
-        return self.timestamp("ms")
-
-    def epoch_seconds(self) -> Series:
-        """
-        Get the number of seconds since the unix EPOCH
-        If the date is before the unix EPOCH, the number of seconds will be negative.
-
-        .. deprecated:: 0.13.9
-            Use :func:`epoch` instead.
-
-        Returns
-        -------
-        Milliseconds as Int64
-
-        """
-        return wrap_s(self._s.dt_epoch_seconds())
-
     def with_time_unit(self, tu: str) -> Series:
         """
         Set time unit a Series of dtype Datetime or Duration. This does not modify
@@ -5767,36 +5737,6 @@ class DateTimeNameSpace:
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.cast_time_unit(tu)).to_series()
 
-    def and_time_unit(self, tu: str) -> Series:
-        """
-        Set time unit a Series of type Datetime
-
-        .. deprecated::
-            Use :func:`with_time_unit` instead.
-
-        Parameters
-        ----------
-        tu
-            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
-
-        """
-        return self.with_time_unit(tu)
-
-    def and_time_zone(self, tz: str | None) -> Series:
-        """
-        Set time zone a Series of type Datetime.
-
-        .. deprecated::
-            Use :func:`with_time_zone` instead.
-
-        Parameters
-        ----------
-        tz
-            Time zone for the `Datetime` Series.
-
-        """
-        return wrap_s(self._s.and_time_zone(tz))
-
     def with_time_zone(self, tz: str | None) -> Series:
         """
         Set time zone a Series of type Datetime.
@@ -5807,7 +5747,7 @@ class DateTimeNameSpace:
             Time zone for the `Datetime` Series.
 
         """
-        return wrap_s(self._s.and_time_zone(tz))
+        return wrap_s(self._s.with_time_zone(tz))
 
     def days(self) -> Series:
         """

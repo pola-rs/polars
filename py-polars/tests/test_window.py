@@ -191,3 +191,24 @@ def test_window_cached_keys_sorted_update_4183() -> None:
             .alias("rank"),
         ]
     ).to_dict(False) == {"count": [2, 2, 1], "rank": [1, 2, 1]}
+
+
+def test_window_functions_list_types() -> None:
+    df = pl.DataFrame(
+        {
+            "col_int": [1, 1, 2, 2],
+            "col_list": [[1], [1], [2], [2]],
+        }
+    )
+    assert (
+        df.with_column(
+            pl.col("col_list")
+            .shift_and_fill(1, [])
+            .over("col_int")
+            .alias("list_shifted")
+        )
+    ).to_dict(False) == {
+        "col_int": [1, 1, 2, 2],
+        "col_list": [[1], [1], [2], [2]],
+        "list_shifted": [[[], [1]], [[], [1]], [[], [2]], [[], [2]]],
+    }

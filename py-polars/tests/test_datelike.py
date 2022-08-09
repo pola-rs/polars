@@ -20,7 +20,7 @@ def test_fill_null() -> None:
     s = pl.Series("A", [dt, None])
 
     for fill_val in (dt, pl.lit(dt)):
-        out = s.fill_null(fill_val)  # type: ignore[arg-type]
+        out = s.fill_null(fill_val)
 
         assert out.null_count() == 0
         assert out.dt[0] == dt
@@ -32,7 +32,7 @@ def test_fill_null() -> None:
     s = pl.Series("a", [dt1, dt2, dt3, None])
     dt_2 = date(2001, 1, 4)
     for fill_val in (dt_2, pl.lit(dt_2)):
-        out = s.fill_null(fill_val)  # type: ignore[arg-type]
+        out = s.fill_null(fill_val)
 
         assert out.null_count() == 0
         assert out.dt[0] == dt1
@@ -186,7 +186,7 @@ def test_rows() -> None:
     s1 = (
         pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]])
         .cast(pl.Datetime)
-        .dt.and_time_unit("ns")
+        .dt.with_time_unit("ns")
     )
     df = pl.DataFrame([s0, s1])
 
@@ -1251,7 +1251,7 @@ def test_supertype_timezones_4174() -> None:
 
     # test if this runs without error
     date_to_fill = df["dt_London"][0]
-    df["dt_London"] = df["dt_London"].shift_and_fill(1, date_to_fill)
+    df.with_column(df["dt_London"].shift_and_fill(1, date_to_fill))
 
 
 def test_weekday() -> None:

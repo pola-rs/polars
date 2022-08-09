@@ -55,7 +55,7 @@ avro = ["polars-io", "polars-io/avro"]
 csv-file = ["polars-io", "polars-io/csv-file", "polars-lazy/csv-file"]
 
 # slower builds
-performant = ["polars-core/performant", "chunked_ids"]
+performant = ["polars-core/performant", "chunked_ids", "dtype-u8", "dtype-u16"]
 
 # Dataframe formatting.
 fmt = ["polars-core/fmt"]

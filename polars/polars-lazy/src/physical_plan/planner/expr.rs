@@ -235,16 +235,17 @@ impl DefaultPlanner {
                             }
                         }
                     }
-                    AAggExpr::Std(expr) => {
+                    AAggExpr::Std(expr, ddof) => {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
-                            Context::Aggregation => {
-                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Std)))
-                            }
+                            Context::Aggregation => Ok(Arc::new(AggregationExpr::new(
+                                input,
+                                GroupByMethod::Std(ddof),
+                            ))),
                             Context::Default => {
                                 let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
-                                    Ok(s.std_as_series())
+                                    Ok(s.std_as_series(ddof))
                                 })
                                     as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
@@ -257,16 +258,17 @@ impl DefaultPlanner {
                             }
                         }
                     }
-                    AAggExpr::Var(expr) => {
+                    AAggExpr::Var(expr, ddof) => {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
-                            Context::Aggregation => {
-                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Var)))
-                            }
+                            Context::Aggregation => Ok(Arc::new(AggregationExpr::new(
+                                input,
+                                GroupByMethod::Var(ddof),
+                            ))),
                             Context::Default => {
                                 let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
-                                    Ok(s.var_as_series())
+                                    Ok(s.var_as_series(ddof))
                                 })
                                     as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {

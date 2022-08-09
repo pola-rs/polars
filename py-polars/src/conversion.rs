@@ -304,11 +304,16 @@ impl FromPyObject<'_> for Wrap<ClosedWindow> {
     fn extract(ob: &'_ PyAny) -> PyResult<Self> {
         let s = ob.extract::<&str>()?;
         Ok(Wrap(match s {
-            "none" => ClosedWindow::None,
-            "both" => ClosedWindow::Both,
             "left" => ClosedWindow::Left,
             "right" => ClosedWindow::Right,
-            _ => panic!("{}", "closed should be any of {'none', 'left', 'right'}"),
+            "both" => ClosedWindow::Both,
+            "none" => ClosedWindow::None,
+            e => {
+                return Err(PyValueError::new_err(format!(
+                    "closed must be one of {{'left', 'right', 'both', 'none'}}, got {}",
+                    e,
+                )))
+            }
         }))
     }
 }
@@ -322,7 +327,12 @@ impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
             "nearest" => QuantileInterpolOptions::Nearest,
             "linear" => QuantileInterpolOptions::Linear,
             "midpoint" => QuantileInterpolOptions::Midpoint,
-            _ => panic!("{}", "interpolation should be any of {'lower', 'higher', 'nearest', 'linear', 'midpoint'}"),
+            e => {
+                return Err(PyValueError::new_err(format!(
+                    "interpolation must be one of {{'lower', 'higher', 'nearest', 'linear', 'midpoint'}}, got {}",
+                    e,
+                )))
+            }
         }))
     }
 }
@@ -792,10 +802,11 @@ pub(crate) fn str_to_null_strategy(strategy: &str) -> PyResult<NullStrategy> {
     let strategy = match strategy {
         "ignore" => NullStrategy::Ignore,
         "propagate" => NullStrategy::Propagate,
-        _ => {
-            return Err(PyValueError::new_err(
-                "use one of 'ignore', 'propagate'".to_string(),
-            ))
+        e => {
+            return Err(PyValueError::new_err(format!(
+                "null_strategy must be one of {{'ignore', 'propagate'}}, got {}",
+                e,
+            )))
         }
     };
     Ok(strategy)
@@ -833,30 +844,24 @@ pub(crate) fn dicts_to_rows(records: &PyAny) -> PyResult<(Vec<Row>, Vec<String>)
 }
 
 pub(crate) fn parse_strategy(strat: &str, limit: FillNullLimit) -> PyResult<FillNullStrategy> {
-    if limit.is_some() && strat != "forward" && strat != "backward" {
-        Err(PyValueError::new_err(
-            "'limit' argument in 'fill_null' only allowed for {'forward', 'backward'} strategies",
-        ))
-    } else {
-        let strat = match strat {
-            "backward" => FillNullStrategy::Backward(limit),
-            "forward" => FillNullStrategy::Forward(limit),
-            "min" => FillNullStrategy::Min,
-            "max" => FillNullStrategy::Max,
-            "mean" => FillNullStrategy::Mean,
-            "zero" => FillNullStrategy::Zero,
-            "one" => FillNullStrategy::One,
-            s => {
-                return Err(PyValueError::new_err(format!(
-                    "Strategy {} not supported",
-                    s
-                )))
-            }
-        };
-
-        Ok(strat)
-    }
+    let strat = match strat {
+        "forward" => FillNullStrategy::Forward(limit),
+        "backward" => FillNullStrategy::Backward(limit),
+        "min" => FillNullStrategy::Min,
+        "max" => FillNullStrategy::Max,
+        "mean" => FillNullStrategy::Mean,
+        "zero" => FillNullStrategy::Zero,
+        "one" => FillNullStrategy::One,
+        e => {
+            return Err(PyValueError::new_err(format!(
+                "strategy must be one of {{'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}}, got {}",
+                e,
+            )))
+        }
+    };
+    Ok(strat)
 }
+
 #[cfg(feature = "parquet")]
 impl FromPyObject<'_> for Wrap<ParallelStrategy> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
@@ -865,10 +870,11 @@ impl FromPyObject<'_> for Wrap<ParallelStrategy> {
             "columns" => ParallelStrategy::Columns,
             "row_groups" => ParallelStrategy::RowGroups,
             "none" => ParallelStrategy::None,
-            _ => {
-                return Err(PyValueError::new_err(
-                    "expected one of {'auto', 'columns', 'row_groups', 'none'}",
-                ))
+            e => {
+                return Err(PyValueError::new_err(format!(
+                    "parallel must be one of {{'auto', 'columns', 'row_groups', 'none'}}, got {}",
+                    e,
+                )))
             }
         };
         Ok(Wrap(unit))

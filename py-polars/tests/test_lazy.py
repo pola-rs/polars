@@ -7,19 +7,22 @@ import pytest
 from _pytest.capture import CaptureFixture
 
 import polars as pl
-from polars import col, lit, map_binary, when
+from polars import col, lit, when
 from polars.testing import assert_frame_equal
 
 
 def test_lazy() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    _ = df.lazy().with_column(lit(1).alias("foo")).select([col("a"), col("foo")])
+    _ = df.lazy().with_column(pl.lit(1).alias("foo")).select([col("a"), col("foo")])
 
     # test if it executes
     _ = (
         df.lazy()
         .with_column(
-            when(col("a").gt(lit(2))).then(lit(10)).otherwise(lit(1)).alias("new")
+            when(pl.col("a") > pl.lit(2))
+            .then(pl.lit(10))
+            .otherwise(pl.lit(1))
+            .alias("new")
         )
         .collect()
     )
@@ -127,28 +130,6 @@ def test_groupby_apply() -> None:
     df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 3.0]})
     ldf = df.lazy().groupby("a").apply(lambda df: df)
     assert ldf.collect().sort("b").frame_equal(df)
-
-
-def test_binary_function() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    out = (
-        df.lazy()
-        .with_column(
-            (map_binary(col("a"), col("b"), lambda a, b: a + b)).alias(
-                "binary_function"
-            )
-        )
-        .collect()
-    )
-    assert out["binary_function"] == (out["a"] + out["b"])
-
-    # we can also avoid pl.col and insert column names directly
-    out = (
-        df.lazy()
-        .with_column(map_binary("a", "b", lambda a, b: a + b).alias("binary_function"))
-        .collect()
-    )
-    assert out["binary_function"] == (out["a"] + out["b"])
 
 
 def test_filter_str() -> None:
@@ -335,7 +316,7 @@ def test_describe_plan() -> None:
     assert isinstance(pl.DataFrame({"a": [1]}).lazy().describe_plan(), str)
 
 
-def test_inspect(capsys: CaptureFixture) -> None:
+def test_inspect(capsys: CaptureFixture[str]) -> None:
     df = pl.DataFrame({"a": [1]})
     df.lazy().inspect().collect()
     captured = capsys.readouterr()
@@ -363,13 +344,13 @@ def test_window_deadlock() -> None:
         }
     )
 
-    df = df[
+    df = df.select(
         [
             col("*"),  # select all
             col("random").sum().over("groups").alias("sum[random]/groups"),
             col("random").list().over("names").alias("random/name"),
         ]
-    ]
+    )
 
 
 def test_concat_str() -> None:
@@ -591,13 +572,6 @@ def test_col_series_selection() -> None:
     assert df.select(pl.col(srs)).columns == ["b", "c"]
 
 
-def test_literal_projection() -> None:
-    df = pl.DataFrame({"a": [1, 2]})
-    assert df.select([True]).dtypes == [pl.Boolean]
-    assert df.select([1]).dtypes == [pl.Int32]
-    assert df.select([2.0]).dtypes == [pl.Float64]
-
-
 def test_interpolate() -> None:
     df = pl.DataFrame({"a": [1, None, 3]})
     assert df.select(col("a").interpolate())["a"] == [1, 2, 3]
@@ -622,8 +596,16 @@ def test_fill_nan() -> None:
 
 def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
-    assert df.select([pl.col("a").fill_null("min")])["a"][1] == 1.0
+
+    assert df.select([pl.col("a").fill_null(strategy="min")])["a"][1] == 1.0
     assert df.lazy().fill_null(2).collect()["a"] == [1.0, 2.0, 3.0]
+
+    with pytest.raises(ValueError, match="must specify either"):
+        df.fill_null()
+    with pytest.raises(ValueError, match="cannot specify both"):
+        df.fill_null(value=3.0, strategy="max")
+    with pytest.raises(ValueError, match="can only specify 'limit'"):
+        df.fill_null(strategy="max", limit=2)
 
 
 def test_backward_fill() -> None:
@@ -922,10 +904,10 @@ def test_expr_bool_cmp() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
 
     with pytest.raises(ValueError):
-        df.select([pl.col("a").gt(pl.col("b")) and pl.col("b").gt(pl.col("b"))])
+        df.select([(pl.col("a") > pl.col("b")) and (pl.col("b") > pl.col("b"))])
 
     with pytest.raises(ValueError):
-        df.select([pl.col("a").gt(pl.col("b")) or pl.col("b").gt(pl.col("b"))])
+        df.select([(pl.col("a") > pl.col("b")) or (pl.col("b") > pl.col("b"))])
 
 
 def test_is_in() -> None:
@@ -1167,16 +1149,16 @@ def test_is_between(fruits_cars: pl.DataFrame) -> None:
     )
 
 
-def test_distinct() -> None:
+def test_unique() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [3, 3, 3]})
 
     expected = pl.DataFrame({"a": [1, 2], "b": [3, 3]})
-    assert df.lazy().distinct(maintain_order=True).collect().frame_equal(expected)
+    assert df.lazy().unique(maintain_order=True).collect().frame_equal(expected)
 
     expected = pl.DataFrame({"a": [1], "b": [3]})
     assert (
         df.lazy()
-        .distinct(subset="b", maintain_order=True)
+        .unique(subset="b", maintain_order=True)
         .collect()
         .frame_equal(expected)
     )

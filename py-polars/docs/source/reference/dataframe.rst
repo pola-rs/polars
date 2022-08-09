@@ -29,15 +29,10 @@ Conversion
    :toctree: api/
 
     DataFrame.to_arrow
-    DataFrame.to_avro
-    DataFrame.to_csv
     DataFrame.to_dict
     DataFrame.to_dicts
-    DataFrame.to_ipc
-    DataFrame.to_json
     DataFrame.to_numpy
     DataFrame.to_pandas
-    DataFrame.to_parquet
     DataFrame.to_struct
 
 Aggregation
@@ -83,7 +78,6 @@ Manipulation/ selection
 
     DataFrame.cleared
     DataFrame.clone
-    DataFrame.distinct
     DataFrame.drop
     DataFrame.drop_in_place
     DataFrame.drop_nulls
@@ -118,7 +112,6 @@ Manipulation/ selection
     DataFrame.rows
     DataFrame.sample
     DataFrame.select
-    DataFrame.select_at_idx
     DataFrame.shift
     DataFrame.shift_and_fill
     DataFrame.shrink_to_fit
@@ -166,8 +159,6 @@ This namespace comes available by calling `DataFrame.groupby(..)`.
     GroupBy.apply
     GroupBy.count
     GroupBy.first
-    GroupBy.get_group
-    GroupBy.groups
     GroupBy.head
     GroupBy.last
     GroupBy.max

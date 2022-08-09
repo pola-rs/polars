@@ -154,12 +154,12 @@ macro_rules! impl_dyn_series {
                 }
             }
 
-            unsafe fn agg_std(&self, groups: &GroupsProxy) -> Series {
-                self.0.agg_std(groups)
+            unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series {
+                self.0.agg_std(groups, ddof)
             }
 
-            unsafe fn agg_var(&self, groups: &GroupsProxy) -> Series {
-                self.0.agg_var(groups)
+            unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Series {
+                self.0.agg_var(groups, ddof)
             }
 
             unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
@@ -484,11 +484,11 @@ macro_rules! impl_dyn_series {
             fn median_as_series(&self) -> Series {
                 QuantileAggSeries::median_as_series(&self.0)
             }
-            fn var_as_series(&self) -> Series {
-                VarAggSeries::var_as_series(&self.0)
+            fn var_as_series(&self, ddof: u8) -> Series {
+                VarAggSeries::var_as_series(&self.0, ddof)
             }
-            fn std_as_series(&self) -> Series {
-                VarAggSeries::std_as_series(&self.0)
+            fn std_as_series(&self, ddof: u8) -> Series {
+                VarAggSeries::std_as_series(&self.0, ddof)
             }
             fn quantile_as_series(
                 &self,

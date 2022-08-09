@@ -66,8 +66,12 @@ impl OptimizationRule for FastProjection {
                 schema,
                 ..
             } => {
-                let schema = Some(schema.clone());
-                impl_fast_projection(*input, expr, schema, expr_arena)
+                if !matches!(lp_arena.get(*input), ALogicalPlan::ExtContext { .. }) {
+                    let schema = Some(schema.clone());
+                    impl_fast_projection(*input, expr, schema, expr_arena)
+                } else {
+                    None
+                }
             }
             ALogicalPlan::LocalProjection {
                 input,

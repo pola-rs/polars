@@ -124,21 +124,20 @@ def test_init_ndarray() -> None:
     assert df.rows() == [(True, 2, "a"), (None, None, None)]
     assert df.schema == {"x": pl.Boolean, "y": pl.Int32, "z": pl.Utf8}
 
-    # TODO: Uncomment tests below when removing deprecation warning
-    # # 2D array - default to column orientation
-    # df = pl.DataFrame(np.array([[1, 2], [3, 4]]))
-    # truth = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
-    # assert df.frame_equal(truth)
+    # 2D array - default to column orientation
+    df = pl.DataFrame(np.array([[1, 2], [3, 4]]))
+    truth = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
+    assert df.frame_equal(truth)
 
-    # # 2D array - row orientation inferred
-    # df = pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b", "c"])
-    # truth = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
-    # assert df.frame_equal(truth)
+    # 2D array - row orientation inferred
+    df = pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b", "c"])
+    truth = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
+    assert df.frame_equal(truth)
 
-    # # 2D array - column orientation inferred
-    # df = pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b"])
-    # truth = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    # assert df.frame_equal(truth)
+    # 2D array - column orientation inferred
+    df = pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b"])
+    truth = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    assert df.frame_equal(truth)
 
     # 2D array - orientation conflicts with columns
     with pytest.raises(ValueError):
@@ -161,19 +160,16 @@ def test_init_ndarray() -> None:
             orient="wrong",  # type: ignore[arg-type]
         )
 
-    # numpy not available
+    # Dimensions mismatch
+    with pytest.raises(ValueError):
+        _ = pl.DataFrame(np.array([1, 2, 3]), columns=[])
+    with pytest.raises(ValueError):
+        _ = pl.DataFrame(np.array([[1, 2], [3, 4]]), columns=["a"])
+
+    # NumPy not available
     with patch("polars.internals.frame._NUMPY_AVAILABLE", False):
         with pytest.raises(ValueError):
             pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
-
-
-# TODO: Remove this test case when removing deprecated behaviour
-def test_init_ndarray_deprecated() -> None:
-    with pytest.deprecated_call():
-        # 2D array - default to row orientation
-        df = pl.DataFrame(np.array([[1, 2], [3, 4]]))
-        truth = pl.DataFrame({"column_0": [1, 3], "column_1": [2, 4]})
-        assert df.frame_equal(truth)
 
 
 def test_init_arrow() -> None:

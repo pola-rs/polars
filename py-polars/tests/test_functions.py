@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import polars as pl
 
 
@@ -107,3 +109,16 @@ def test_cut() -> None:
             "(-1.0, 1.0]",
         ],
     }
+
+
+def test_null_handling_correlation() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, None, 4], "b": [1, 2, 3, 10, 4]})
+
+    out = df.select(
+        [
+            pl.pearson_corr("a", "b").alias("pearson"),
+            pl.spearman_rank_corr("a", "b").alias("spearman"),
+        ]
+    )
+    assert out["pearson"][0] == pytest.approx(1.0)
+    assert out["spearman"][0] == pytest.approx(1.0)

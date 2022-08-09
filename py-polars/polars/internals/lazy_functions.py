@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from datetime import date, datetime, timedelta
 from inspect import isclass
-from typing import Any, Callable, Sequence, cast, overload
+from typing import TYPE_CHECKING, Any, Callable, Sequence, cast, overload
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -26,7 +26,6 @@ try:
     from polars.polars import arg_where as py_arg_where
     from polars.polars import argsort_by as pyargsort_by
     from polars.polars import as_struct as _as_struct
-    from polars.polars import binary_function as pybinary_function
     from polars.polars import col as pycol
     from polars.polars import collect_all as _collect_all
     from polars.polars import cols as pycols
@@ -62,6 +61,9 @@ if sys.version_info >= (3, 8):
     from typing import Literal
 else:
     from typing_extensions import Literal
+
+if TYPE_CHECKING:
+    from polars.internals.datatypes import InterpolationMethod
 
 
 def col(
@@ -279,37 +281,37 @@ def to_list(name: str) -> pli.Expr:
 
 
 @overload
-def std(column: str) -> pli.Expr:
+def std(column: str, ddof: int = 1) -> pli.Expr:
     ...
 
 
 @overload
-def std(column: pli.Series) -> float | None:
+def std(column: pli.Series, ddof: int = 1) -> float | None:
     ...
 
 
-def std(column: str | pli.Series) -> pli.Expr | float | None:
+def std(column: str | pli.Series, ddof: int = 1) -> pli.Expr | float | None:
     """Get the standard deviation."""
     if isinstance(column, pli.Series):
-        return column.std()
-    return col(column).std()
+        return column.std(ddof)
+    return col(column).std(ddof)
 
 
 @overload
-def var(column: str) -> pli.Expr:
+def var(column: str, ddof: int = 1) -> pli.Expr:
     ...
 
 
 @overload
-def var(column: pli.Series) -> float | None:
+def var(column: pli.Series, ddof: int = 1) -> float | None:
     ...
 
 
-def var(column: str | pli.Series) -> pli.Expr | float | None:
+def var(column: str | pli.Series, ddof: int = 1) -> pli.Expr | float | None:
     """Get the variance."""
     if isinstance(column, pli.Series):
-        return column.var()
-    return col(column).var()
+        return column.var(ddof)
+    return col(column).var(ddof)
 
 
 @overload
@@ -604,10 +606,7 @@ def tail(column: str | pli.Series, n: int | None = None) -> pli.Expr | pli.Serie
     return col(column).tail(n)
 
 
-def lit(
-    value: float | int | str | date | datetime | pli.Series | np.ndarray | Any | None,
-    dtype: type[DataType] | None = None,
-) -> pli.Expr:
+def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
     """
     Return an expression representing a literal value.
 
@@ -650,7 +649,7 @@ def lit(
         return (
             lit(_datetime_to_pl_timestamp(value, tu))
             .cast(Datetime)
-            .dt.and_time_unit(tu)
+            .dt.with_time_unit(tu)
         )
     if isinstance(value, timedelta):
         if timedelta_in_nanoseconds_window(value):
@@ -660,7 +659,7 @@ def lit(
         return (
             lit(_timedelta_to_pl_timedelta(value, tu))
             .cast(Duration)
-            .dt.and_time_unit(tu, dtype=Duration)
+            .dt.with_time_unit(tu)
         )
 
     if isinstance(value, date):
@@ -679,17 +678,16 @@ def lit(
 
     if dtype:
         return pli.wrap_expr(pylit(value)).cast(dtype)
-    # numpy literals like np.float32(0)
-    # have an item
-    if hasattr(value, "item"):
-        value = value.item()  # type: ignore[union-attr]
-    return pli.wrap_expr(pylit(value))
+
+    try:
+        # numpy literals like np.float32(0) have an item
+        item = value.item()
+    except AttributeError:
+        item = value
+    return pli.wrap_expr(pylit(item))
 
 
-def spearman_rank_corr(
-    a: str | pli.Expr,
-    b: str | pli.Expr,
-) -> pli.Expr:
+def spearman_rank_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Expr:
     """
     Compute the spearman rank correlation between two columns.
 
@@ -699,19 +697,18 @@ def spearman_rank_corr(
         Column name or Expression.
     b
         Column name or Expression.
+    ddof
+        Delta degrees of freedom
 
     """
     if isinstance(a, str):
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return pli.wrap_expr(pyspearman_rank_corr(a._pyexpr, b._pyexpr))
+    return pli.wrap_expr(pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof))
 
 
-def pearson_corr(
-    a: str | pli.Expr,
-    b: str | pli.Expr,
-) -> pli.Expr:
+def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Expr:
     """
     Compute the pearson's correlation between two columns.
 
@@ -721,13 +718,15 @@ def pearson_corr(
         Column name or Expression.
     b
         Column name or Expression.
+    ddof
+        Delta degrees of freedom
 
     """
     if isinstance(a, str):
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return pli.wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr))
+    return pli.wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr, ddof))
 
 
 def cov(
@@ -811,37 +810,6 @@ def apply(
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_map_mul(exprs, f, return_dtype, apply_groups=True))
-
-
-def map_binary(
-    a: str | pli.Expr,
-    b: str | pli.Expr,
-    f: Callable[[pli.Series, pli.Series], pli.Series],
-    return_dtype: type[DataType] | None = None,
-) -> pli.Expr:
-    """
-    Map a custom function over two columns and produce a single Series result.
-
-    .. deprecated:: 0.10.4
-        Use :func:`map` or :func:`apply` instead.
-
-    Parameters
-    ----------
-    a
-        Input Series a.
-    b
-        Input Series b.
-    f
-        Function to apply.
-    return_dtype
-        Output type of the udf.
-
-    """
-    if isinstance(a, str):
-        a = col(a)
-    if isinstance(b, str):
-        b = col(b)
-    return pli.wrap_expr(pybinary_function(a._pyexpr, b._pyexpr, f, return_dtype))
 
 
 def fold(
@@ -1028,8 +996,22 @@ def groups(column: str) -> pli.Expr:
     return col(column).agg_groups()
 
 
-def quantile(column: str, quantile: float, interpolation: str = "nearest") -> pli.Expr:
-    """Syntactic sugar for `pl.col("foo").quantile(..)`."""
+def quantile(
+    column: str, quantile: float, interpolation: InterpolationMethod = "nearest"
+) -> pli.Expr:
+    """
+    Syntactic sugar for `pl.col("foo").quantile(..)`.
+
+    Parameters
+    ----------
+    column
+        Column name.
+    quantile
+        Quantile between 0.0 and 1.0.
+    interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        Interpolation method.
+
+    """
     return col(column).quantile(quantile, interpolation)
 
 

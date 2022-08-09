@@ -105,9 +105,9 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    unsafe fn agg_std(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series {
         self.0
-            .agg_std(groups)
+            .agg_std(groups, ddof)
             // cast f64 back to physical type
             .cast(&DataType::Int64)
             .unwrap()
@@ -115,9 +115,9 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    unsafe fn agg_var(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Series {
         self.0
-            .agg_var(groups)
+            .agg_var(groups, ddof)
             // cast f64 back to physical type
             .cast(&DataType::Int64)
             .unwrap()
@@ -510,12 +510,12 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .cast(self.dtype())
             .unwrap()
     }
-    fn var_as_series(&self) -> Series {
+    fn var_as_series(&self, _ddof: u8) -> Series {
         Int32Chunked::full_null(self.name(), 1)
             .cast(self.dtype())
             .unwrap()
     }
-    fn std_as_series(&self) -> Series {
+    fn std_as_series(&self, _ddof: u8) -> Series {
         Int32Chunked::full_null(self.name(), 1)
             .cast(self.dtype())
             .unwrap()

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import warnings
 from typing import Any, Mapping, Sequence, overload
 
 from polars.internals import DataFrame, Series
@@ -30,11 +29,11 @@ except ImportError:
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
-    from typing_extensions import Literal  # pragma: no cover
+    from typing_extensions import Literal
 
 
 def from_dict(
-    data: Mapping[str, Sequence | Mapping],
+    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]]],
     columns: Sequence[str] | None = None,
 ) -> DataFrame:
     """
@@ -70,7 +69,7 @@ def from_dict(
     └─────┴─────┘
 
     """
-    return DataFrame._from_dict(data=data, columns=columns)  # type: ignore[arg-type]
+    return DataFrame._from_dict(data=data, columns=columns)
 
 
 def from_dicts(
@@ -158,19 +157,11 @@ def from_records(
     └─────┴─────┘
 
     """
-    if _NUMPY_AVAILABLE and isinstance(data, np.ndarray):
-        warnings.warn(
-            "using `from_records` with a numpy ndarray is deprecated, "
-            "use `from_numpy` instead",
-            DeprecationWarning,
-        )
-        return DataFrame._from_numpy(data, columns=columns, orient=orient)
-    else:
-        return DataFrame._from_records(data, columns=columns, orient=orient)
+    return DataFrame._from_records(data, columns=columns, orient=orient)
 
 
 def from_numpy(
-    data: np.ndarray,
+    data: np.ndarray[Any, Any],
     columns: Sequence[str] | None = None,
     orient: Literal["col", "row"] | None = None,
 ) -> DataFrame:

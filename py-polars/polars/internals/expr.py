@@ -3,8 +3,9 @@ from __future__ import annotations
 import copy
 import math
 import random
+import sys
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, List, Sequence
+from typing import TYPE_CHECKING, Any, Callable, List, Sequence
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -19,7 +20,7 @@ from polars.datatypes import (
     UInt32,
     py_type_to_dtype,
 )
-from polars.utils import _timedelta_to_pl_duration
+from polars.utils import _timedelta_to_pl_duration, is_expr_sequence, is_pyexpr_sequence
 
 try:
     from polars.polars import PyExpr
@@ -35,14 +36,42 @@ try:
 except ImportError:
     _NUMPY_AVAILABLE = False
 
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
+
+if TYPE_CHECKING:
+    from polars.internals.datatypes import (
+        ClosedWindow,
+        FillStrategy,
+        InterpolationMethod,
+    )
+
 
 def selection_to_pyexpr_list(
     exprs: str | Expr | Sequence[str | Expr | pli.Series] | pli.Series,
-) -> List[PyExpr]:
+) -> list[PyExpr]:
     if isinstance(exprs, (str, Expr, pli.Series)):
         exprs = [exprs]
 
     return [expr_to_lit_or_expr(e, str_to_lit=False)._pyexpr for e in exprs]
+
+
+def ensure_list_of_pyexpr(exprs: object) -> list[PyExpr]:
+    if isinstance(exprs, PyExpr):
+        return [exprs]
+
+    if is_pyexpr_sequence(exprs):
+        return list(exprs)
+
+    if isinstance(exprs, Expr):
+        return [exprs._pyexpr]
+
+    if is_expr_sequence(exprs):
+        return [e._pyexpr for e in exprs]
+
+    raise TypeError(f"unexpected type '{type(exprs)}'")
 
 
 def wrap_expr(pyexpr: PyExpr) -> Expr:
@@ -145,40 +174,22 @@ class Expr:
         return pli.expr_to_lit_or_expr(base) ** self
 
     def __ge__(self, other: Any) -> Expr:
-        return self.gt_eq(self.__to_expr(other))
+        return wrap_expr(self._pyexpr.gt_eq(self.__to_expr(other)._pyexpr))
 
     def __le__(self, other: Any) -> Expr:
-        return self.lt_eq(self.__to_expr(other))
+        return wrap_expr(self._pyexpr.lt_eq(self.__to_expr(other)._pyexpr))
 
     def __eq__(self, other: Any) -> Expr:  # type: ignore[override]
-        return self.eq(self.__to_expr(other))
+        return wrap_expr(self._pyexpr.eq(self.__to_expr(other)._pyexpr))
 
     def __ne__(self, other: Any) -> Expr:  # type: ignore[override]
-        return self.neq(self.__to_expr(other))
+        return wrap_expr(self._pyexpr.neq(self.__to_expr(other)._pyexpr))
 
     def __lt__(self, other: Any) -> Expr:
-        return self.lt(self.__to_expr(other))
+        return wrap_expr(self._pyexpr.lt(self.__to_expr(other)._pyexpr))
 
     def __gt__(self, other: Any) -> Expr:
-        return self.gt(self.__to_expr(other))
-
-    def eq(self, other: Expr) -> Expr:
-        return wrap_expr(self._pyexpr.eq(other._pyexpr))
-
-    def neq(self, other: Expr) -> Expr:
-        return wrap_expr(self._pyexpr.neq(other._pyexpr))
-
-    def gt(self, other: Expr) -> Expr:
-        return wrap_expr(self._pyexpr.gt(other._pyexpr))
-
-    def gt_eq(self, other: Expr) -> Expr:
-        return wrap_expr(self._pyexpr.gt_eq(other._pyexpr))
-
-    def lt_eq(self, other: Expr) -> Expr:
-        return wrap_expr(self._pyexpr.lt_eq(other._pyexpr))
-
-    def lt(self, other: Expr) -> Expr:
-        return wrap_expr(self._pyexpr.lt(other._pyexpr))
+        return wrap_expr(self._pyexpr.gt(self.__to_expr(other)._pyexpr))
 
     def __neg__(self) -> Expr:
         return pli.lit(0) - self
@@ -1777,7 +1788,7 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    def take(self, index: List[int] | Expr | pli.Series | np.ndarray) -> Expr:
+    def take(self, index: List[int] | Expr | pli.Series | np.ndarray[Any, Any]) -> Expr:
         """
         Take values by index.
 
@@ -1862,7 +1873,7 @@ class Expr:
         return wrap_expr(self._pyexpr.shift(periods))
 
     def shift_and_fill(
-        self, periods: int, fill_value: int | float | bool | str | Expr
+        self, periods: int, fill_value: int | float | bool | str | Expr | list[Any]
     ) -> Expr:
         """
         Shift the values by a given period and fill the parts that will be empty due to
@@ -1900,26 +1911,28 @@ class Expr:
 
     def fill_null(
         self,
-        fill_value: int | float | bool | str | Expr,
+        value: Any | None = None,
+        strategy: FillStrategy | None = None,
         limit: int | None = None,
     ) -> Expr:
         """
-        Fill null values using a filling strategy, literal, or Expr.
+        Fill null values using the specified value or strategy.
         To interpolate over null values see interpolate
 
         Parameters
         ----------
-        fill_value
-            One of {"backward", "forward", "min", "max", "mean", "one", "zero"}
-            or an expression.
+        value
+            Value used to fill null values.
+        strategy : {None, 'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}
+            Strategy used to fill null values.
         limit
-            The number of consecutive null values to forward/backward fill.
-            Only valid if ``fill_value`` is 'forward' or 'backward'.
+            Number of consecutive null values to fill when using the 'forward' or
+            'backward' strategy.
 
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
-        >>> df.fill_null("zero")
+        >>> df.fill_null(strategy="zero")
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -1947,21 +1960,21 @@ class Expr:
         └─────┴─────┘
 
         """
-        # we first must check if it is not an expr, as expr does not implement __bool__
-        # and thus leads to a value error in the second comparison.
-        if not isinstance(fill_value, Expr) and fill_value in [
-            "backward",
-            "forward",
-            "min",
-            "max",
-            "mean",
-            "zero",
-            "one",
-        ]:
-            return wrap_expr(self._pyexpr.fill_null_with_strategy(fill_value, limit))
+        if value is not None and strategy is not None:
+            raise ValueError("cannot specify both 'value' and 'strategy'.")
+        elif value is None and strategy is None:
+            raise ValueError("must specify either a fill 'value' or 'strategy'")
+        elif strategy not in ("forward", "backward") and limit is not None:
+            raise ValueError(
+                "can only specify 'limit' when strategy is set to"
+                " 'backward' or 'forward'"
+            )
 
-        fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
-        return wrap_expr(self._pyexpr.fill_null(fill_value._pyexpr))
+        if value is not None:
+            value = expr_to_lit_or_expr(value, str_to_lit=True)
+            return wrap_expr(self._pyexpr.fill_null(value._pyexpr))
+        else:
+            return wrap_expr(self._pyexpr.fill_null_with_strategy(strategy, limit))
 
     def fill_nan(self, fill_value: str | int | float | bool | Expr) -> Expr:
         """
@@ -2088,9 +2101,14 @@ class Expr:
         """  # noqa: E501
         return wrap_expr(self._pyexpr.reverse())
 
-    def std(self) -> Expr:
+    def std(self, ddof: int = 1) -> Expr:
         """
         Get standard deviation.
+
+        Parameters
+        ----------
+        ddof
+            Degrees of freedom.
 
         Examples
         --------
@@ -2106,11 +2124,16 @@ class Expr:
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.std())
+        return wrap_expr(self._pyexpr.std(ddof))
 
-    def var(self) -> Expr:
+    def var(self, ddof: int = 1) -> Expr:
         """
         Get variance.
+
+        Parameters
+        ----------
+        ddof
+            Degrees of freedom.
 
         Examples
         --------
@@ -2126,7 +2149,7 @@ class Expr:
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.var())
+        return wrap_expr(self._pyexpr.var(ddof))
 
     def max(self) -> Expr:
         """
@@ -2591,7 +2614,11 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.is_duplicated())
 
-    def quantile(self, quantile: float, interpolation: str = "nearest") -> Expr:
+    def quantile(
+        self,
+        quantile: float,
+        interpolation: InterpolationMethod = "nearest",
+    ) -> Expr:
         """
         Get quantile value.
 
@@ -2599,11 +2626,9 @@ class Expr:
         Parameters
         ----------
         quantile
-            quantile between 0.0 and 1.0
-
-        interpolation
-            interpolation type, options:
-            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
 
         Examples
         --------
@@ -2888,7 +2913,7 @@ class Expr:
         def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
             return x.apply(f, return_dtype=return_dtype)
 
-        return self.map(wrap_f, agg_list=True)
+        return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
 
     def flatten(self) -> Expr:
         """
@@ -3397,7 +3422,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Apply a rolling min (moving min) over the values in this array.
@@ -3438,9 +3463,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
 
         .. warning::
@@ -3498,7 +3522,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Apply a rolling max (moving max) over the values in this array.
@@ -3539,9 +3563,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -3598,7 +3621,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Apply a rolling mean (moving mean) over the values in this array.
@@ -3639,9 +3662,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -3696,7 +3718,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Apply a rolling sum (moving sum) over the values in this array.
@@ -3737,9 +3759,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -3796,7 +3817,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Compute a rolling standard deviation.
@@ -3837,9 +3858,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -3895,7 +3915,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Compute a rolling variance.
@@ -3936,9 +3956,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -3994,7 +4013,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Compute a rolling median.
@@ -4031,9 +4050,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -4085,13 +4103,13 @@ class Expr:
     def rolling_quantile(
         self,
         quantile: float,
-        interpolation: str = "nearest",
+        interpolation: InterpolationMethod = "nearest",
         window_size: int | str = 2,
         weights: List[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
-        closed: str = "left",
+        closed: ClosedWindow = "left",
     ) -> Expr:
         """
         Compute a rolling quantile.
@@ -4099,10 +4117,9 @@ class Expr:
         Parameters
         ----------
         quantile
-            quantile to compute
-        interpolation
-            interpolation type, options:
-            ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
         window_size
             The length of the window. Can be a fixed integer size, or a dynamic temporal
             size indicated by the following string language:
@@ -4133,9 +4150,8 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
-        closed
-            Defines if the temporal window interval is closed or not.
-            Any of {"left", "right", "both" "none"}
+        closed : {'left', 'right', 'both', 'none'}
+            Define whether the temporal window interval is closed or not.
 
         .. warning::
             The dynamic windows functionality is still experimental and may change
@@ -6242,17 +6258,16 @@ class ExprListNameSpace:
 
     def to_struct(
         self,
-        n_field_strategy: str = "first_non_null",
+        n_field_strategy: Literal["first_non_null", "max_width"] = "first_non_null",
         name_generator: Callable[[int], str] | None = None,
     ) -> Expr:
         """
-        Convert the series of type `List` to a series of type `Struct`.
+        Convert the series of type ``List`` to a series of type ``Struct``.
 
         Parameters
         ----------
-        n_field_strategy
+        n_field_strategy : {'first_non_null', 'max_width'}
             Strategy to determine the number of fields of the struct.
-            Any of {'first_non_null', 'max_width'}
         name_generator
             A custom function that can be used to generate the field names.
             Default field names are `field_0, field_1 .. field_n`
@@ -6786,18 +6801,19 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
-    def decode(self, encoding: str, strict: bool = False) -> Expr:
+    def decode(self, encoding: Literal["hex", "base64"], strict: bool = False) -> Expr:
         """
         Decode a value using the provided encoding.
 
         Parameters
         ----------
-        encoding
-            'hex' or 'base64'
+        encoding : {'hex', 'base64'}
+            The encoding to use.
         strict
-            how to handle invalid inputs
-            - True: method will throw error if unable to decode a value
-            - False: unhandled values will be replaced with `None`
+            How to handle invalid inputs:
+
+            - ``True``: An error will be thrown if unable to decode a value.
+            - ``False``: Unhandled values will be replaced with `None`.
 
         Examples
         --------
@@ -6822,16 +6838,18 @@ class ExprStringNameSpace:
         elif encoding == "base64":
             return wrap_expr(self._pyexpr.str_base64_decode(strict))
         else:
-            raise ValueError("supported encodings are 'hex' and 'base64'")
+            raise ValueError(
+                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+            )
 
-    def encode(self, encoding: str) -> Expr:
+    def encode(self, encoding: Literal["hex", "base64"]) -> Expr:
         """
         Encode a value using the provided encoding.
 
         Parameters
         ----------
-        encoding
-            'hex' or 'base64'
+        encoding : {'hex', 'base64'}
+            The encoding to use.
 
         Returns
         -------
@@ -6860,7 +6878,9 @@ class ExprStringNameSpace:
         elif encoding == "base64":
             return wrap_expr(self._pyexpr.str_base64_encode())
         else:
-            raise ValueError("supported encodings are 'hex' and 'base64'")
+            raise ValueError(
+                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+            )
 
     def extract(self, pattern: str, group_index: int = 1) -> Expr:
         r"""
@@ -7552,53 +7572,6 @@ class ExprDateTimeNameSpace:
         else:
             raise ValueError(f"time unit {tu} not understood")
 
-    def epoch_days(self) -> Expr:
-        """
-        Get the number of days since the unix EPOCH.
-        If the date is before the unix EPOCH, the number of days will be negative.
-
-        .. deprecated:: 0.13.9
-            Use :func:`epoch` instead.
-
-        Returns
-        -------
-        Days as Int32
-
-        """
-        return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
-
-    def epoch_milliseconds(self) -> Expr:
-        """
-        Get the number of milliseconds since the unix EPOCH.
-
-        If the date is before the unix EPOCH, the number of milliseconds will be
-        negative.
-
-        .. deprecated:: 0.13.9
-            Use :func:`epoch` instead.
-
-        Returns
-        -------
-        Milliseconds as Int64
-
-        """
-        return self.timestamp("ms")
-
-    def epoch_seconds(self) -> Expr:
-        """
-        Get the number of seconds since the unix EPOCH
-        If the date is before the unix EPOCH, the number of seconds will be negative.
-
-        .. deprecated:: 0.13.9
-            Use :func:`epoch` instead.
-
-        Returns
-        -------
-        Milliseconds as Int64
-
-        """
-        return wrap_expr(self._pyexpr.dt_epoch_seconds())
-
     def timestamp(self, tu: str = "us") -> Expr:
         """
         Return a timestamp in the given time unit.
@@ -7637,41 +7610,6 @@ class ExprDateTimeNameSpace:
 
         """
         return wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
-
-    def and_time_unit(self, tu: str, dtype: type[DataType] = Datetime) -> Expr:
-        """
-        Set time unit a Series of type Datetime. This does not modify underlying data,
-        and should be used to fix an incorrect time unit.
-
-        .. deprecated::
-            Use :func:`with_time_unit` instead.
-
-        Parameters
-        ----------
-        tu
-            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
-        dtype
-            Output data type.
-
-        """
-        return self.with_time_unit(tu)
-
-    def and_time_zone(self, tz: str | None) -> Expr:
-        """
-        Set time zone for a Series of type Datetime.
-
-        .. deprecated::
-            Use :func:`with_time_zone` instead.
-
-        Parameters
-        ----------
-        tz
-            Time zone for the `Datetime` Series.
-
-        """
-        return wrap_expr(self._pyexpr).map(
-            lambda s: s.dt.with_time_zone(tz), return_dtype=Datetime
-        )
 
     def with_time_zone(self, tz: str | None) -> Expr:
         """

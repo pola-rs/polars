@@ -571,11 +571,6 @@ impl LazyFrame {
 
         let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena)?;
 
-        // simplify expression is valuable for projection and predicate pushdown optimizers, so we
-        // run that first
-        // this optimization will run twice because optimizer may create dumb expressions
-        lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top);
-
         // we do simplification
         if simplify_expr {
             rules.push(Box::new(SimplifyExprRule {}));
@@ -1020,6 +1015,17 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    pub fn with_context<C: AsRef<[LazyFrame]>>(self, contexts: C) -> LazyFrame {
+        let contexts = contexts
+            .as_ref()
+            .iter()
+            .map(|lf| lf.logical_plan.clone())
+            .collect();
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().with_context(contexts).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     /// Aggregate all the columns as their maximum values.
     pub fn max(self) -> LazyFrame {
         self.select_local(vec![col("*").max()])
@@ -1051,13 +1057,13 @@ impl LazyFrame {
     }
 
     /// Aggregate all the columns as their standard deviation values.
-    pub fn std(self) -> LazyFrame {
-        self.select_local(vec![col("*").std()])
+    pub fn std(self, ddof: u8) -> LazyFrame {
+        self.select_local(vec![col("*").std(ddof)])
     }
 
     /// Aggregate all the columns as their variance values.
-    pub fn var(self) -> LazyFrame {
-        self.select_local(vec![col("*").var()])
+    pub fn var(self, ddof: u8) -> LazyFrame {
+        self.select_local(vec![col("*").var(ddof)])
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).

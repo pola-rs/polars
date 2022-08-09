@@ -37,10 +37,16 @@ impl LazyFrame {
         low_memory: bool,
     ) -> Result<Self> {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(
-            path, n_rows, cache, parallel, row_count, rechunk, low_memory,
+            path, n_rows, cache, parallel, None, rechunk, low_memory,
         )?
         .build()
         .into();
+
+        // it is a bit hacky, but this row_count function updates the schema
+        if let Some(row_count) = row_count {
+            lf = lf.with_row_count(&row_count.name, Some(row_count.offset))
+        }
+
         lf.opt_state.file_caching = true;
         Ok(lf)
     }

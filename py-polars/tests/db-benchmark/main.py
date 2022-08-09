@@ -23,9 +23,7 @@ x = pl.read_csv(
 ON_STRINGS = sys.argv.pop() == "on_strings"
 
 if not ON_STRINGS:
-    x["id1"] = x["id1"].cast(pl.Categorical)
-    x["id2"] = x["id2"].cast(pl.Categorical)
-    x["id3"] = x["id3"].cast(pl.Categorical)
+    x.with_columns([pl.col(["id1", "id2", "id3"]).cast(pl.Categorical)])
 df = x.clone()
 x = df.lazy()
 
@@ -274,7 +272,7 @@ out = (
 )
 print(time.time() - t0)
 assert out.shape == (9216, 3)
-assert np.isclose(out["r2"].sum(), 9.896846028461322)
+assert np.isclose(out["r2"].sum(), 9.902706276948825)
 
 t0 = time.time()
 print("q10")

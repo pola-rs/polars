@@ -179,7 +179,7 @@ def test_struct_logical_types_to_pandas() -> None:
 def test_struct_cols() -> None:
     """Test that struct columns can be imported and work as expected."""
 
-    def build_struct_df(data: list) -> DataFrame:
+    def build_struct_df(data: list[dict[str, object]]) -> DataFrame:
         """
         Build Polars df from list of dicts.
 

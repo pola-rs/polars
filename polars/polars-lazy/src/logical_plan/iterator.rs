@@ -44,8 +44,8 @@ macro_rules! push_expr {
                     Quantile { expr, .. } => $push(expr),
                     Sum(e) => $push(e),
                     AggGroups(e) => $push(e),
-                    Std(e) => $push(e),
-                    Var(e) => $push(e),
+                    Std(e, _) => $push(e),
+                    Var(e, _) => $push(e),
                 }
             }
             Ternary {
@@ -204,8 +204,8 @@ impl AExpr {
                     Quantile { expr, .. } => push(expr),
                     Sum(e) => push(e),
                     AggGroups(e) => push(e),
-                    Std(e) => push(e),
-                    Var(e) => push(e),
+                    Std(e, _) => push(e),
+                    Var(e, _) => push(e),
                 }
             }
             Ternary {

@@ -33,7 +33,7 @@ def test_apply_none() -> None:
     assert out_df["a"].to_list() == (df["a"] * df["b"]).to_list()
 
     # check if we can return None
-    def func(s: list) -> int | None:
+    def func(s: list[pl.Series]) -> pl.Series | None:
         if s[0][0] == 190:
             return None
         else:
@@ -199,3 +199,27 @@ def test_apply_all_types() -> None:
     # test we don't panic
     for dtype in dtypes:
         pl.Series([1, 2, 3, 4, 5], dtype=dtype).apply(lambda x: x)
+
+
+def test_apply_type_propagation() -> None:
+    assert (
+        pl.from_dict(
+            {
+                "a": [1, 2, 3],
+                "b": [{"c": 1, "d": 2}, {"c": 2, "d": 3}, {"c": None, "d": None}],
+            }
+        )
+        .groupby("a", maintain_order=True)
+        .agg(
+            [
+                pl.when(pl.col("b").null_count() == 0)
+                .then(
+                    pl.col("b").apply(
+                        lambda s: s[0]["c"],
+                        return_dtype=pl.Float64,
+                    )
+                )
+                .otherwise(None)
+            ]
+        )
+    ).to_dict(False) == {"a": [1, 2, 3], "b": [1.0, 2.0, None]}

@@ -105,7 +105,7 @@ fn update_scan_schema(
         for name in aexpr_to_root_names(*node, expr_arena) {
             let item = schema.get_full(&name).ok_or_else(|| {
                 PolarsError::ComputeError(
-                    format!("column {} not available in schema {:?}", name, schema).into(),
+                    format!("column '{}' not available in schema {:?}", name, schema).into(),
                 )
             })?;
             new_cols.push(item);
@@ -196,6 +196,8 @@ impl ProjectionPushDown {
     /// This pushes down the projection that are validated
     /// that they can be done successful at the schema above
     /// The result is assigned to this node.
+    ///
+    /// The local projections are return and still have to be applied
     fn pushdown_and_assign_check_schema(
         &self,
         input: Node,
@@ -939,6 +941,41 @@ impl ProjectionPushDown {
                     .with_columns(exprs)
                     .build();
                 Ok(lp)
+            }
+            ExtContext {
+                input, contexts, ..
+            } => {
+                // local projections are ignored. These are just root nodes
+                // complex expression will still be done later
+                let _local_projections = self.pushdown_and_assign_check_schema(
+                    input,
+                    acc_projections,
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                )?;
+
+                let mut new_schema = lp_arena
+                    .get(input)
+                    .schema(lp_arena)
+                    .as_ref()
+                    .as_ref()
+                    .clone();
+
+                for node in &contexts {
+                    let other_schema = lp_arena.get(*node).schema(lp_arena);
+                    for fld in other_schema.iter_fields() {
+                        if new_schema.get(fld.name()).is_none() {
+                            new_schema.with_column(fld.name, fld.dtype)
+                        }
+                    }
+                }
+
+                Ok(ExtContext {
+                    input,
+                    contexts,
+                    schema: Arc::new(new_schema),
+                })
             }
             Udf {
                 input,

@@ -298,11 +298,11 @@ impl PyExpr {
     pub fn reverse(&self) -> PyExpr {
         self.clone().inner.reverse().into()
     }
-    pub fn std(&self) -> PyExpr {
-        self.clone().inner.std().into()
+    pub fn std(&self, ddof: u8) -> PyExpr {
+        self.clone().inner.std(ddof).into()
     }
-    pub fn var(&self) -> PyExpr {
-        self.clone().inner.var().into()
+    pub fn var(&self, ddof: u8) -> PyExpr {
+        self.clone().inner.var(ddof).into()
     }
     pub fn is_unique(&self) -> PyExpr {
         self.clone().inner.is_unique().into()
@@ -1359,10 +1359,11 @@ impl PyExpr {
         let n_fields = match width_strat {
             "first_non_null" => ListToStructWidthStrategy::FirstNonNull,
             "max_width" => ListToStructWidthStrategy::MaxWidth,
-            strat => {
+            e => {
                 return Err(PyValueError::new_err(format!(
-                "strategy: {strat} not allowed, choose any of {{ 'first_non_null', 'max_width' }}"
-            )))
+                    "n_field_strategy must be one of {{'first_non_null', 'max_width'}}, got {}",
+                    e,
+                )))
             }
         };
 

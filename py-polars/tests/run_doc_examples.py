@@ -36,12 +36,13 @@ import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Generator
+from types import ModuleType
+from typing import Any, Iterator
 
 import polars
 
 
-def modules_in_path(p: Path) -> Generator:
+def modules_in_path(p: Path) -> Iterator[ModuleType]:
     for file in p.rglob("*.py"):
         # Construct path as string for import, for instance "internals.frame"
         # The -3 drops the ".py"
@@ -97,7 +98,7 @@ if __name__ == "__main__":
         test_suite = unittest.TestSuite(tests)
 
         # Ensure that we clean up any artifacts produced by the doctests
-        # with patch(polars.DataFrame.to_csv, polars.DataFrame.write_csv):
+        # with patch(polars.DataFrame.write_csv):
         # run doctests and report
         result = unittest.TextTestRunner().run(test_suite)
         success_flag = (result.testsRun > 0) & (len(result.failures) == 0)

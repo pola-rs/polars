@@ -141,6 +141,19 @@ def test_agg() -> None:
     assert series.max() == 2
 
 
+def test_date_agg() -> None:
+    series = pl.Series(
+        [
+            date(2022, 8, 2),
+            date(2096, 8, 1),
+            date(9009, 9, 9),
+        ],
+        dtype=pl.Date,
+    )
+    assert series.min() == date(2022, 8, 2)
+    assert series.max() == date(9009, 9, 9)
+
+
 @pytest.mark.parametrize(
     "s", [pl.Series([1, 2], dtype=Int64), pl.Series([1, 2], dtype=Float64)]
 )
@@ -349,10 +362,12 @@ def test_arrow() -> None:
     a = pa.array(["foo", "bar"], pa.dictionary(pa.int32(), pa.utf8()))
     s = pl.Series("a", a)
     assert s.dtype == pl.Categorical
-    assert (
-        pl.from_arrow(pa.array([["foo"], ["foo", "bar"]], pa.list_(pa.utf8()))).dtype
-        == pl.List
+
+    s = cast(
+        pl.Series,
+        pl.from_arrow(pa.array([["foo"], ["foo", "bar"]], pa.list_(pa.utf8()))),
     )
+    assert s.dtype == pl.List
 
 
 def test_view() -> None:
@@ -539,7 +554,7 @@ def test_set_np_array(dtype: Any) -> None:
 
 
 @pytest.mark.parametrize("idx", [[0, 2], (0, 2)])
-def test_set_list_and_tuple(idx: list | tuple) -> None:
+def test_set_list_and_tuple(idx: list[int] | tuple[int]) -> None:
     a = pl.Series("a", [1, 2, 3])
     a[idx] = 4
     assert_series_equal(a, pl.Series("a", [4, 2, 4]))
@@ -547,7 +562,9 @@ def test_set_list_and_tuple(idx: list | tuple) -> None:
 
 def test_fill_null() -> None:
     a = pl.Series("a", [1, 2, None])
-    verify_series_and_expr_api(a, pl.Series("a", [1, 2, 2]), "fill_null", "forward")
+    verify_series_and_expr_api(
+        a, pl.Series("a", [1, 2, 2]), "fill_null", strategy="forward"
+    )
 
     verify_series_and_expr_api(
         a, pl.Series("a", [1, 2, 14], dtype=Int64), "fill_null", 14
@@ -792,7 +809,7 @@ def test_arange_expr() -> None:
     df = pl.DataFrame({"a": ["foobar", "barfoo"]})
     out = df.select([pl.arange(0, pl.col("a").count() * 10)])
     assert out.shape == (20, 1)
-    assert out.select_at_idx(0)[-1] == 19
+    assert out.to_series(0)[-1] == 19
 
     # eager arange
     out2 = pl.arange(0, 10, 2, eager=True)
@@ -1312,7 +1329,7 @@ def test_str_encode() -> None:
     verify_series_and_expr_api(s, hex_encoded, "str.encode", "hex")
     verify_series_and_expr_api(s, base64_encoded, "str.encode", "base64")
     with pytest.raises(ValueError):
-        s.str.encode("utf8")
+        s.str.encode("utf8")  # type: ignore[arg-type]
 
 
 def test_str_decode() -> None:
@@ -1331,7 +1348,7 @@ def test_str_decode_exception() -> None:
     with pytest.raises(Exception):
         s.str.decode(encoding="base64", strict=True)
     with pytest.raises(ValueError):
-        s.str.decode("utf8")
+        s.str.decode("utf8")  # type: ignore[arg-type]
 
 
 def test_str_replace_str_replace_all() -> None:
@@ -1423,17 +1440,19 @@ def test_dt_datetimes() -> None:
 
     # epoch methods
     verify_series_and_expr_api(
-        s, pl.Series("", [18262, 18294], dtype=Int32), "dt.epoch_days"
+        s, pl.Series("", [18262, 18294], dtype=Int32), "dt.epoch", tu="d"
     )
     verify_series_and_expr_api(
         s,
         pl.Series("", [1_577_836_800, 1_580_613_610], dtype=Int64),
-        "dt.epoch_seconds",
+        "dt.epoch",
+        tu="s",
     )
     verify_series_and_expr_api(
         s,
         pl.Series("", [1_577_836_800_000, 1_580_613_610_000], dtype=Int64),
-        "dt.epoch_milliseconds",
+        "dt.epoch",
+        tu="ms",
     )
 
 

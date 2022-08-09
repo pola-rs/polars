@@ -8,11 +8,13 @@ import sys
 import warnings
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence, TypeVar
 
+import polars.internals as pli
 from polars.datatypes import DataType, Date, Datetime
 
 try:
+    from polars.polars import PyExpr
     from polars.polars import pool_size as _pool_size
 
     _DOCUMENTING = False
@@ -27,9 +29,9 @@ except ImportError:
     _NUMPY_AVAILABLE = False
 
 if sys.version_info >= (3, 10):
-    from typing import TypeGuard
+    from typing import ParamSpec, TypeGuard
 else:
-    from typing_extensions import TypeGuard
+    from typing_extensions import ParamSpec, TypeGuard
 
 
 def _process_null_values(
@@ -42,7 +44,7 @@ def _process_null_values(
 
 
 # https://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy
-def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
+def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray[Any, Any]:
     """
     Create a memory block view as a numpy array.
 
@@ -117,23 +119,45 @@ def _date_to_pl_date(d: date) -> int:
     return int(dt.timestamp()) // (3600 * 24)
 
 
-def _is_iterable_of(val: Iterable, itertype: type, eltype: type) -> bool:
+def _is_iterable_of(val: Iterable[object], eltype: type) -> bool:
     """Check whether the given iterable is of a certain type."""
-    return isinstance(val, itertype) and all(isinstance(x, eltype) for x in val)
+    return all(isinstance(x, eltype) for x in val)
 
 
-def is_bool_sequence(val: Sequence[object]) -> TypeGuard[Sequence[bool]]:
+def is_bool_sequence(val: object) -> TypeGuard[Sequence[bool]]:
     """Check whether the given sequence is a sequence of booleans."""
-    return _is_iterable_of(val, Sequence, bool)
+    if isinstance(val, Sequence):
+        return _is_iterable_of(val, bool)
+    else:
+        return False
 
 
-def is_int_sequence(val: Sequence[object]) -> TypeGuard[Sequence[int]]:
+def is_int_sequence(val: object) -> TypeGuard[Sequence[int]]:
     """Check whether the given sequence is a sequence of integers."""
-    return _is_iterable_of(val, Sequence, int)
+    if isinstance(val, Sequence):
+        return _is_iterable_of(val, int)
+    else:
+        return False
+
+
+def is_expr_sequence(val: object) -> TypeGuard[Sequence[pli.Expr]]:
+    """Check whether the given object is a sequence of Exprs."""
+    if isinstance(val, Sequence):
+        return _is_iterable_of(val, pli.Expr)
+    else:
+        return False
+
+
+def is_pyexpr_sequence(val: object) -> TypeGuard[Sequence[PyExpr]]:
+    """Check whether the given object is a sequence of PyExprs."""
+    if isinstance(val, Sequence):
+        return _is_iterable_of(val, PyExpr)
+    else:
+        return False
 
 
 def is_str_sequence(
-    val: Sequence[object], allow_str: bool = False
+    val: object, *, allow_str: bool = False
 ) -> TypeGuard[Sequence[str]]:
     """
     Check that `val` is a sequence of strings.
@@ -141,9 +165,12 @@ def is_str_sequence(
     Note that a single string is a sequence of strings by definition, use
     `allow_str=False` to return False on a single string.
     """
-    if (not allow_str) and isinstance(val, str):
+    if allow_str is False and isinstance(val, str):
         return False
-    return _is_iterable_of(val, Sequence, str)
+    if isinstance(val, Sequence):
+        return _is_iterable_of(val, str)
+    else:
+        return False
 
 
 def range_to_slice(rng: range) -> slice:
@@ -215,7 +242,9 @@ def _to_python_datetime(
         # days to seconds
         # important to create from utc. Not doing this leads
         # to inconsistencies dependent on the timezone you are in.
-        return datetime.utcfromtimestamp(value * 3600 * 24).date()
+        dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        dt += timedelta(seconds=value * 3600 * 24)
+        return dt.date()
     elif dtype == Datetime:
         if tu == "ns":
             # nanoseconds to seconds
@@ -224,16 +253,14 @@ def _to_python_datetime(
             dt = EPOCH + timedelta(microseconds=value)
         elif tu == "ms":
             # milliseconds to seconds
-            dt = datetime.utcfromtimestamp(value / 1_000)
+            dt = datetime.utcfromtimestamp(value / 1000)
         else:
             raise ValueError(f"time unit: {tu} not expected")
         if tz is not None and len(tz) > 0:
             import pytz
 
-            timezone = pytz.timezone(tz)
-            return timezone.localize(dt)
+            return pytz.timezone(tz).localize(dt)
         return dt
-
     else:
         raise NotImplementedError  # pragma: no cover
 
@@ -261,7 +288,11 @@ def threadpool_size() -> int:
     return _pool_size()
 
 
-def deprecated_alias(**aliases: str) -> Callable:
+P = ParamSpec("P")
+T = TypeVar("T")
+
+
+def deprecated_alias(**aliases: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """
     Deprecate a function or method argument.
 
@@ -272,11 +303,11 @@ def deprecated_alias(**aliases: str) -> Callable:
         ...
     """
 
-    def deco(f: Callable) -> Callable:
-        @functools.wraps(f)
-        def wrapper(*args: Any, **kwargs: Any) -> Callable:
-            _rename_kwargs(f.__name__, kwargs, aliases)
-            return f(*args, **kwargs)
+    def deco(fn: Callable[P, T]) -> Callable[P, T]:
+        @functools.wraps(fn)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            _rename_kwargs(fn.__name__, kwargs, aliases)
+            return fn(*args, **kwargs)
 
         return wrapper
 
@@ -284,7 +315,7 @@ def deprecated_alias(**aliases: str) -> Callable:
 
 
 def _rename_kwargs(
-    func_name: str, kwargs: dict[str, str], aliases: dict[str, str]
+    func_name: str, kwargs: dict[str, object], aliases: dict[str, str]
 ) -> None:
     """
     Rename the keyword arguments of a function.
