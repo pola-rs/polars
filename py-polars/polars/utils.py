@@ -106,10 +106,8 @@ def _timedelta_to_pl_timedelta(td: timedelta, tu: str | None = None) -> int:
     elif tu == "ms":
         return int(td.total_seconds() * 1e3)
     if tu is None:
-        if timedelta_in_nanoseconds_window(td):
-            return int(td.total_seconds() * 1e9)
-        else:
-            return int(td.total_seconds() * 1e3)
+        # python has us precision
+        return int(td.total_seconds() * 1e6)
     else:
         raise ValueError("expected one of {'ns', 'us, 'ms'}")
 

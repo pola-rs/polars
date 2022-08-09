@@ -17,7 +17,6 @@ from polars.datatypes import (
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _timedelta_to_pl_timedelta,
-    in_nanoseconds_window,
     timedelta_in_nanoseconds_window,
 )
 
@@ -642,16 +641,15 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
 
     """
     if isinstance(value, datetime):
-        if in_nanoseconds_window(value):
-            tu = "ns"
-        else:
-            tu = "ms"
+        tu = "us"
         return (
             lit(_datetime_to_pl_timestamp(value, tu))
             .cast(Datetime)
             .dt.with_time_unit(tu)
         )
     if isinstance(value, timedelta):
+        # TODO: python timedelta should also default to 'us' units.
+        #  (needs some corresponding work on the Rust side first)
         if timedelta_in_nanoseconds_window(value):
             tu = "ns"
         else:
@@ -684,6 +682,8 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
         item = value.item()
     except AttributeError:
         item = value
+        if isinstance(item, datetime):
+            return lit(item)
     return pli.wrap_expr(pylit(item))
 
 
