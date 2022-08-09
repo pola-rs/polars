@@ -344,10 +344,6 @@ def test_groupby() -> None:
     assert df.groupby("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
 
     with pytest.deprecated_call():
-        df_groups = df.groupby("a").groups().sort("a")
-        assert df_groups["a"].series_equal(pl.Series("a", ["a", "b", "c"]))
-
-    with pytest.deprecated_call():
         # TODO: find a way to avoid indexing into GroupBy
         for subdf in df.groupby("a"):  # type: ignore[attr-defined]
             # TODO: add __next__() to GroupBy

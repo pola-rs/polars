@@ -6049,11 +6049,12 @@ class GroupBy(Generic[DF]):
         self.by = by
         self.maintain_order = maintain_order
 
-    def __getitem__(self, item: Any) -> GBSelection[DF]:
-        print(
-            "accessing GroupBy by index is deprecated, consider using the `.agg` method"
-        )
-        return self._select(item)
+    def __iter__(self) -> Iterable[Any]:
+        groups_df = self._groups()
+        groups = groups_df["groups"]
+        df = self._dataframe_class._from_pydf(self._df)
+        for i in range(groups_df.height):
+            yield df[groups[i]]
 
     def _select(self, columns: str | list[str]) -> GBSelection[DF]:  # pragma: no cover
         """
@@ -6079,14 +6080,16 @@ class GroupBy(Generic[DF]):
             dataframe_class=self._dataframe_class,
         )
 
-    def __iter__(self) -> Iterable[Any]:
-        groups_df = self.groups()
-        groups = groups_df["groups"]
-        df = self._dataframe_class._from_pydf(self._df)
-        for i in range(groups_df.height):
-            yield df[groups[i]]
+    def _select_all(self) -> GBSelection[DF]:
+        """Select all columns for aggregation."""
+        return GBSelection(
+            self._df,
+            self.by,
+            None,
+            dataframe_class=self._dataframe_class,
+        )
 
-    def groups(self) -> DF:  # pragma: no cover
+    def _groups(self) -> DF:  # pragma: no cover
         """
         Return a `DataFrame` with:
 
@@ -6104,7 +6107,7 @@ class GroupBy(Generic[DF]):
         ...     }
         ... )
 
-        >>> df.groupby("d").groups().sort(by="d")
+        >>> df.groupby("d")._groups().sort(by="d")
         shape: (3, 2)
         ┌────────┬───────────┐
         │ d      ┆ groups    │
@@ -6381,15 +6384,6 @@ class GroupBy(Generic[DF]):
             .collect(no_optimization=True, string_cache=False)
         )
         return self._dataframe_class._from_pydf(df._df)
-
-    def _select_all(self) -> GBSelection[DF]:
-        """Select all columns for aggregation."""
-        return GBSelection(
-            self._df,
-            self.by,
-            None,
-            dataframe_class=self._dataframe_class,
-        )
 
     def pivot(
         self, pivot_column: str | list[str], values_column: str | list[str]
