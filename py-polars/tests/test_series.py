@@ -141,6 +141,16 @@ def test_agg() -> None:
     assert series.max() == 2
 
 
+def test_date_agg() -> None:
+    series = pl.Series([
+        date(2022, 8, 2),
+        date(2096, 8, 1),
+        date(9009, 9, 9),
+    ], dtype=pl.Date)
+    assert series.min() == date(2022, 8, 2)
+    assert series.max() == date(9009, 9, 9)
+
+
 @pytest.mark.parametrize(
     "s", [pl.Series([1, 2], dtype=Int64), pl.Series([1, 2], dtype=Float64)]
 )
