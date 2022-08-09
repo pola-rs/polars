@@ -127,7 +127,7 @@ def test_selection() -> None:
 
     assert df[[0, 1], "b"].shape == (2, 1)
     assert df[[2], ["a", "b"]].shape == (1, 2)
-    assert df.select_at_idx(0).name == "a"
+    assert df.to_series(0).name == "a"
     assert (df["a"] == df["a"]).sum() == 3
     assert (df["c"] == df["a"].cast(str)).sum() == 0
     assert df[:, "a":"b"].shape == (3, 2)  # type: ignore[misc]
@@ -202,15 +202,6 @@ def test_assignment() -> None:
         pl.when(pl.col("foo") > 1).then(9).otherwise(pl.col("foo")).alias("foo")
     )
     assert df["foo"].to_list() == [1, 9, 9]
-
-
-def test_select_at_idx() -> None:
-    df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
-    for idx in range(len(df.columns)):
-        assert_series_equal(
-            df.select_at_idx(idx),  # regular positive indexing
-            df.select_at_idx(idx - len(df.columns)),  # equivalent negative index
-        )
 
 
 def test_insert_at_idx() -> None:
@@ -821,34 +812,34 @@ def test_lazy_functions() -> None:
         ]
     )
     expected = 1.0
-    assert np.isclose(out.select_at_idx(0), expected)
+    assert np.isclose(out.to_series(0), expected)
     assert np.isclose(pl.var(df["b"]), expected)  # type: ignore[arg-type]
     expected = 1.0
-    assert np.isclose(out.select_at_idx(1), expected)
+    assert np.isclose(out.to_series(1), expected)
     assert np.isclose(pl.std(df["b"]), expected)  # type: ignore[arg-type]
     expected = 3
-    assert np.isclose(out.select_at_idx(2), expected)
+    assert np.isclose(out.to_series(2), expected)
     assert np.isclose(pl.max(df["b"]), expected)
     expected = 1
-    assert np.isclose(out.select_at_idx(3), expected)
+    assert np.isclose(out.to_series(3), expected)
     assert np.isclose(pl.min(df["b"]), expected)
     expected = 6
-    assert np.isclose(out.select_at_idx(4), expected)
+    assert np.isclose(out.to_series(4), expected)
     assert np.isclose(pl.sum(df["b"]), expected)
     expected = 2
-    assert np.isclose(out.select_at_idx(5), expected)
+    assert np.isclose(out.to_series(5), expected)
     assert np.isclose(pl.mean(df["b"]), expected)
     expected = 2
-    assert np.isclose(out.select_at_idx(6), expected)
+    assert np.isclose(out.to_series(6), expected)
     assert np.isclose(pl.median(df["b"]), expected)
     expected = 3
-    assert np.isclose(out.select_at_idx(7), expected)
+    assert np.isclose(out.to_series(7), expected)
     assert np.isclose(pl.n_unique(df["b"]), expected)
     expected = 1
-    assert np.isclose(out.select_at_idx(8), expected)
+    assert np.isclose(out.to_series(8), expected)
     assert np.isclose(pl.first(df["b"]), expected)
     expected = 3
-    assert np.isclose(out.select_at_idx(9), expected)
+    assert np.isclose(out.to_series(9), expected)
     assert np.isclose(pl.last(df["b"]), expected)
 
 
@@ -883,7 +874,7 @@ def test_describe() -> None:
         }
     )
     assert df.describe().shape != df.shape
-    assert set(df.describe().select_at_idx(2)) == {1.0, 4.0, 5.0, 6.0}
+    assert set(df.describe().to_series(2)) == {1.0, 4.0, 5.0, 6.0}
 
 
 def test_string_cache_eager_lazy() -> None:

@@ -112,7 +112,6 @@ Manipulation/ selection
     DataFrame.rows
     DataFrame.sample
     DataFrame.select
-    DataFrame.select_at_idx
     DataFrame.shift
     DataFrame.shift_and_fill
     DataFrame.shrink_to_fit

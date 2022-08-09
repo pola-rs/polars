@@ -809,7 +809,7 @@ def test_arange_expr() -> None:
     df = pl.DataFrame({"a": ["foobar", "barfoo"]})
     out = df.select([pl.arange(0, pl.col("a").count() * 10)])
     assert out.shape == (20, 1)
-    assert out.select_at_idx(0)[-1] == 19
+    assert out.to_series(0)[-1] == 19
 
     # eager arange
     out2 = pl.arange(0, 10, 2, eager=True)
