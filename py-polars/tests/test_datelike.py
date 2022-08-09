@@ -128,11 +128,38 @@ def test_from_numpy() -> None:
 
 
 def test_datetime_consistency() -> None:
-    # dt = datetime(2021, 1, 1, 10, 30, 45, 123456)
-    dt = datetime(2021, 1, 1, 10, 30, 45, 123000)
+    dt = datetime(2022, 7, 5, 10, 30, 45, 123455)
     df = pl.DataFrame({"date": [dt]})
+
     assert df["date"].dt[0] == dt
     assert df.select(pl.lit(dt))["literal"].dt[0] == dt
+    assert df.filter(pl.col("date") == dt).rows() == [(dt,)]
+
+    ddf = df.select(
+        [
+            pl.col("date"),
+            pl.lit(dt).alias("dt"),
+            pl.lit(dt).cast(pl.Datetime("ms")).alias("dt_ms"),
+            pl.lit(dt).cast(pl.Datetime("us")).alias("dt_us"),
+            pl.lit(dt).cast(pl.Datetime("ns")).alias("dt_ns"),
+        ]
+    )
+    assert ddf.schema == {
+        "date": pl.Datetime("us"),
+        "dt": pl.Datetime("us"),
+        "dt_ms": pl.Datetime("ms"),
+        "dt_us": pl.Datetime("us"),
+        "dt_ns": pl.Datetime("ns"),
+    }
+    assert ddf.select([pl.col(c).cast(int) for c in ddf.schema]).rows() == [
+        (
+            1657017045123455,
+            1657017045123455,
+            1657017045123,
+            1657017045123455,
+            1657017045123455000,
+        )
+    ]
 
 
 def test_timezone() -> None:
@@ -976,21 +1003,22 @@ def test_datetime_units() -> None:
 
 
 def test_datetime_instance_selection() -> None:
+    test_data = {
+        "ns": [datetime(2022, 12, 31, 1, 2, 3)],
+        "us": [datetime(2022, 12, 31, 4, 5, 6)],
+        "ms": [datetime(2022, 12, 31, 7, 8, 9)],
+    }
     df = pl.DataFrame(
-        data={
-            "ns": [datetime(2022, 12, 31, 1, 2, 3)],
-            "us": [datetime(2022, 12, 31, 4, 5, 6)],
-            "ms": [datetime(2022, 12, 31, 7, 8, 9)],
-        },
+        data=test_data,
         columns=[
             ("ns", pl.Datetime("ns")),
             ("us", pl.Datetime("us")),
             ("ms", pl.Datetime("ms")),
         ],
     )
-
     for tu in DTYPE_TEMPORAL_UNITS:
         assert df.select(pl.col([pl.Datetime(tu)])).dtypes == [pl.Datetime(tu)]
+        assert len(df.filter(pl.col(tu) == test_data[tu][0])) == 1
 
 
 def test_unique_counts_on_dates() -> None:
