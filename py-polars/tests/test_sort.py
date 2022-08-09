@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 import polars as pl
 
 
@@ -55,16 +53,6 @@ def test_sort_by() -> None:
     # by can also be a single column
     out = df.select([pl.col("a").sort_by("b", reverse=[False])])
     assert out["a"].to_list() == [1, 2, 3, 4, 5]
-
-
-def test_sort_in_place() -> None:
-    df = pl.DataFrame({"a": [1, 3, 2, 4, 5]})
-    with pytest.deprecated_call():
-        ret = df.sort("a", in_place=True)
-    result = df["a"].to_list()
-    expected = [1, 2, 3, 4, 5]
-    assert result == expected
-    assert ret is None
 
 
 def test_sort_by_exprs() -> None:

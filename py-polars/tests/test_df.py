@@ -180,15 +180,10 @@ def test_dataframe_membership_operator() -> None:
 
 def test_sort() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
-    with pytest.deprecated_call():
-        df.sort("a", in_place=True)
-    assert df.frame_equal(pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
-
-    # test in-place + passing a list
-    df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
-    with pytest.deprecated_call():
-        df.sort(["a", "b"], in_place=True)
-    assert df.frame_equal(pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
+    assert df.sort("a").frame_equal(pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
+    assert df.sort(["a", "b"]).frame_equal(
+        pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]})
+    )
 
 
 def test_replace() -> None:
