@@ -6980,6 +6980,6 @@ class GBSelection(Generic[DF]):
         for name in self.selection:
             s = df.drop_in_place(name + "_agg_list").apply(func, return_dtype)
             s.rename(name, in_place=True)
-            df[name] = s
+            df.with_column(s)
 
         return df

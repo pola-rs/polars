@@ -2828,7 +2828,7 @@ class Expr:
         def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
             return x.apply(f, return_dtype=return_dtype)
 
-        return self.map(wrap_f, agg_list=True)
+        return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
 
     def flatten(self) -> Expr:
         """
