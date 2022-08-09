@@ -839,7 +839,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def __deepcopy__(self: LDF, memo: None = None) -> LDF:
         return self.clone()
 
-    def filter(self: LDF, predicate: pli.Expr | str) -> LDF:
+    def filter(self: LDF, predicate: pli.Expr | str | pli.Series | list[bool]) -> LDF:
         """
         Filter the rows in the DataFrame based on a predicate expression.
 
@@ -885,9 +885,13 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         └─────┴─────┴─────┘
 
         """
-        if isinstance(predicate, str):
-            predicate = pli.col(predicate)
-        return self._from_pyldf(self._ldf.filter(predicate._pyexpr))
+        if isinstance(predicate, list):
+            predicate = pli.Series(predicate)
+        return self._from_pyldf(
+            self._ldf.filter(
+                pli.expr_to_lit_or_expr(predicate, str_to_lit=False)._pyexpr
+            )
+        )
 
     def select(
         self: LDF,

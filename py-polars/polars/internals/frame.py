@@ -1999,7 +1999,7 @@ class DataFrame:
             index = len(self.columns) + index
         self._df.insert_at_idx(index, series._s)
 
-    def filter(self, predicate: pli.Expr) -> DataFrame:
+    def filter(self, predicate: pli.Expr | str | pli.Series | list[bool]) -> DataFrame:
         """
         Filter the rows in the DataFrame based on a predicate expression.
 
