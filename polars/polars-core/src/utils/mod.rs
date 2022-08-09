@@ -656,6 +656,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                 let st = _get_supertype(inner, other)?;
                 Some(DataType::List(Box::new(st)))
             }
+            (dt, Unknown) => Some(dt.clone()),
             _ => None,
         }
     }
