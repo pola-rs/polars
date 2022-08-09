@@ -478,7 +478,7 @@ def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
     for bad_param in BAD_AGG_PARAMETERS:
         with pytest.raises(TypeError):
             result = df_or_lazy.groupby_dynamic(
-                index_column="index_column", every="2i"
+                index_column="index_column", every="2i", closed="right"
             ).agg(
                 bad_param  # type: ignore[arg-type]
             )
@@ -489,7 +489,7 @@ def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
 
     for good_param in GOOD_AGG_PARAMETERS:
         result = df_or_lazy.groupby_dynamic(
-            index_column="index_column", every="2i"
+            index_column="index_column", every="2i", closed="right"
         ).agg(good_param)
         if lazy:
             result = result.collect()
