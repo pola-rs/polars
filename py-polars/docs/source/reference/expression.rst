@@ -288,7 +288,6 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.seconds
     ExprDateTimeNameSpace.strftime
     ExprDateTimeNameSpace.timestamp
-    ExprDateTimeNameSpace.to_python_datetime
     ExprDateTimeNameSpace.truncate
     ExprDateTimeNameSpace.week
     ExprDateTimeNameSpace.weekday

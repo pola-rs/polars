@@ -5660,18 +5660,6 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.timestamp(tu))
 
-    def to_python_datetime(self) -> Series:
-        """
-        Go from Date/Datetime to python DateTime objects
-
-        .. deprecated:: 0.13.23
-            Use :func:`Series.to_list` instead.
-
-        """
-        return (self.timestamp("ms") / 1000).apply(
-            lambda ts: datetime.utcfromtimestamp(ts), Object
-        )
-
     def min(self) -> date | datetime | timedelta:
         """Return minimum as python DateTime."""
         # we can ignore types because we are certain we get a logical type
