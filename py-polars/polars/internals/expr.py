@@ -39,6 +39,7 @@ if TYPE_CHECKING:
         ClosedWindow,
         FillNullStrategy,
         InterpolationMethod,
+        NullBehavior,
         ToStructStrategy,
         TransferEncoding,
     )
@@ -4071,7 +4072,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.rank(method, reverse))
 
-    def diff(self, n: int = 1, null_behavior: str = "ignore") -> Expr:
+    def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Expr:
         """
         Calculate the n-th discrete difference.
 
@@ -4079,8 +4080,8 @@ class Expr:
         ----------
         n
             number of slots to shift
-        null_behavior
-            {'ignore', 'drop'}
+        null_behavior : {'ignore', 'drop'}
+            How to handle null values.
 
         Examples
         --------
@@ -5485,16 +5486,16 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_arg_max())
 
-    def diff(self, n: int = 1, null_behavior: str = "ignore") -> Expr:
+    def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Expr:
         """
         Calculate the n-th discrete difference of every sublist.
 
         Parameters
         ----------
         n
-            number of slots to shift
-        null_behavior
-            {'ignore', 'drop'}
+            Number of slots to shift.
+        null_behavior : {'ignore', 'drop'}
+            How to handle null values.
 
         Examples
         --------

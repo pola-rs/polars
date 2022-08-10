@@ -91,6 +91,7 @@ if TYPE_CHECKING:
         ComparisonOperator,
         FillNullStrategy,
         InterpolationMethod,
+        NullBehavior,
         TransferEncoding,
     )
 
@@ -3834,16 +3835,16 @@ class Series:
         """
         return wrap_s(self._s.rank(method, reverse))
 
-    def diff(self, n: int = 1, null_behavior: str = "ignore") -> Series:
+    def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
         """
         Calculate the n-th discrete difference.
 
         Parameters
         ----------
         n
-            number of slots to shift
-        null_behavior
-            {'ignore', 'drop'}
+            Number of slots to shift.
+        null_behavior : {'ignore', 'drop'}
+            How to handle null values.
 
         """
         return wrap_s(self._s.diff(n, null_behavior))
@@ -5227,16 +5228,16 @@ class ListNameSpace:
         """
         return pli.select(pli.lit(wrap_s(self._s)).arr.arg_max()).to_series()
 
-    def diff(self, n: int = 1, null_behavior: str = "ignore") -> Series:
+    def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
         """
         Calculate the n-th discrete difference of every sublist.
 
         Parameters
         ----------
         n
-            number of slots to shift
-        null_behavior
-            {'ignore', 'drop'}
+            Number of slots to shift.
+        null_behavior : {'ignore', 'drop'}
+            How to handle null values.
 
         Examples
         --------

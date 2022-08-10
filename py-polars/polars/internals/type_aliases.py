@@ -24,6 +24,7 @@ FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"
 ]
 NullStrategy: TypeAlias = Literal["ignore", "propagate"]
+NullBehavior: TypeAlias = Literal["ignore", "drop"]
 ParallelStrategy: TypeAlias = Literal["auto", "columns", "row_groups", "none"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
