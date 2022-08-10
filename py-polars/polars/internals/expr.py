@@ -324,7 +324,7 @@ class Expr:
 
     def sqrt(self) -> Expr:
         """Compute the square root of the elements."""
-        return self**0.5
+        return self ** 0.5
 
     def log10(self) -> Expr:
         """Compute the base 10 logarithm of the input array, element-wise."""
@@ -1039,7 +1039,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [8, 9, 10],
+        ...         "b": [None, 4, 4],
+        ...     }
+        ... )
         >>> df.select(pl.all().slice(1, 2))
         shape: (2, 2)
         ┌─────┬─────┐
@@ -1074,7 +1079,12 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [8, 9, 10],
+        ...         "b": [None, 4, 4],
+        ...     }
+        ... )
         >>> df.select(pl.all().head(1).append(pl.all().tail(1)))
         shape: (2, 2)
         ┌─────┬──────┐
@@ -1132,7 +1142,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"a": [8, 9, 10, 11], "b": [None, 4.0, 4.0, float("nan")]}
+        ...     {
+        ...         "a": [8, 9, 10, 11],
+        ...         "b": [None, 4.0, 4.0, float("nan")],
+        ...     }
         ... )
         >>> df.select(pl.col("b").drop_nulls())
         shape: (3, 1)
@@ -1162,7 +1175,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"a": [8, 9, 10, 11], "b": [None, 4.0, 4.0, float("nan")]}
+        ...     {
+        ...         "a": [8, 9, 10, 11],
+        ...         "b": [None, 4.0, 4.0, float("nan")],
+        ...     }
         ... )
         >>> df.select(pl.col("b").drop_nans())
         shape: (3, 1)
@@ -1534,7 +1550,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": ["4", "5", "6"]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": ["4", "5", "6"],
+        ...     }
+        ... )
         >>> df.with_columns(
         ...     [
         ...         pl.col("a").cast(pl.Float64),
@@ -1931,7 +1952,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, None],
+        ...         "b": [4, None, 6],
+        ...     }
+        ... )
         >>> df.fill_null(strategy="zero")
         shape: (3, 2)
         ┌─────┬─────┐
@@ -1983,7 +2009,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"a": [1.0, None, float("nan")], "b": [4.0, float("nan"), 6]}
+        ...     {
+        ...         "a": [1.0, None, float("nan")],
+        ...         "b": [4.0, float("nan"), 6],
+        ...     }
         ... )
         >>> df.fill_nan("zero")
         shape: (3, 2)
@@ -2014,7 +2043,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, None],
+        ...         "b": [4, None, 6],
+        ...     }
+        ... )
         >>> df.select(pl.all().forward_fill())
         shape: (3, 2)
         ┌─────┬─────┐
@@ -2043,7 +2077,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, None],
+        ...         "b": [4, None, 6],
+        ...     }
+        ... )
         >>> df.select(pl.all().backward_fill())
         shape: (3, 2)
         ┌──────┬─────┐
@@ -2302,7 +2341,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [None, 1, None], "b": [1, 2, 3]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [None, 1, None],
+        ...         "b": [1, 2, 3],
+        ...     }
+        ... )
         >>> df.select(pl.all().null_count())
         shape: (1, 2)
         ┌─────┬─────┐
@@ -2322,7 +2366,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [8, 9, 10],
+        ...         "b": [None, 4, 4],
+        ...     }
+        ... )
         >>> df.select(pl.col("a").arg_unique())
         shape: (3, 1)
         ┌─────┐
@@ -2471,8 +2520,17 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"groups": ["g1", "g1", "g2"], "values": [1, 2, 3]})
-        >>> df.with_column(pl.col("values").max().over("groups").alias("max_by_group"))
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "groups": ["g1", "g1", "g2"],
+        ...         "values": [1, 2, 3],
+        ...     }
+        ... )
+        >>> (
+        ...     df.with_column(
+        ...         pl.col("values").max().over("groups").alias("max_by_group")
+        ...     )
+        ... )
         shape: (3, 3)
         ┌────────┬────────┬──────────────┐
         │ groups ┆ values ┆ max_by_group │
@@ -2537,7 +2595,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> df.select(pl.col("a").is_unique())
+        >>> (df.select(pl.col("a").is_unique()))
         shape: (3, 1)
         ┌───────┐
         │ a     │
@@ -2569,7 +2627,7 @@ class Expr:
         ...         "num": [1, 2, 3, 1, 5],
         ...     }
         ... )
-        >>> df.with_column(pl.col("num").is_first().alias("is_first"))
+        >>> (df.with_column(pl.col("num").is_first().alias("is_first")))
         shape: (5, 2)
         ┌─────┬──────────┐
         │ num ┆ is_first │
@@ -2597,7 +2655,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> df.select(pl.col("a").is_duplicated())
+        >>> (df.select(pl.col("a").is_duplicated()))
         shape: (3, 1)
         ┌───────┐
         │ a     │
@@ -2633,7 +2691,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [0, 1, 2, 3, 4, 5]})
-        >>> df.select(pl.col("a").quantile(0.3))
+        >>> (df.select(pl.col("a").quantile(0.3)))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2642,7 +2700,7 @@ class Expr:
         ╞═════╡
         │ 1.0 │
         └─────┘
-        >>> df.select(pl.col("a").quantile(0.3, interpolation="higher"))
+        >>> (df.select(pl.col("a").quantile(0.3, interpolation="higher")))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2651,7 +2709,7 @@ class Expr:
         ╞═════╡
         │ 2.0 │
         └─────┘
-        >>> df.select(pl.col("a").quantile(0.3, interpolation="lower"))
+        >>> (df.select(pl.col("a").quantile(0.3, interpolation="lower")))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2660,7 +2718,7 @@ class Expr:
         ╞═════╡
         │ 1.0 │
         └─────┘
-        >>> df.select(pl.col("a").quantile(0.3, interpolation="midpoint"))
+        >>> (df.select(pl.col("a").quantile(0.3, interpolation="midpoint")))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2669,7 +2727,7 @@ class Expr:
         ╞═════╡
         │ 1.5 │
         └─────┘
-        >>> df.select(pl.col("a").quantile(0.3, interpolation="linear"))
+        >>> (df.select(pl.col("a").quantile(0.3, interpolation="linear")))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2695,7 +2753,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"group_col": ["g1", "g1", "g2"], "b": [1, 2, 3]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "group_col": ["g1", "g1", "g2"],
+        ...         "b": [1, 2, 3],
+        ...     }
+        ... )
         >>> (
         ...     df.groupby("group_col").agg(
         ...         [
@@ -2728,7 +2791,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"group_col": ["g1", "g1", "g2"], "b": [1, 2, 3]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "group_col": ["g1", "g1", "g2"],
+        ...         "b": [1, 2, 3],
+        ...     }
+        ... )
         >>> (
         ...     df.groupby("group_col").agg(
         ...         [
@@ -2931,7 +2999,7 @@ class Expr:
         The following example turns each character into a separate row:
 
         >>> df = pl.DataFrame({"foo": ["hello", "world"]})
-        >>> df.select(pl.col("foo").flatten())
+        >>> (df.select(pl.col("foo").flatten()))
         shape: (10, 1)
         ┌─────┐
         │ foo │
@@ -2960,7 +3028,7 @@ class Expr:
         This example turns each word into a separate row:
 
         >>> df = pl.DataFrame({"foo": ["hello world"]})
-        >>> df.select(pl.col("foo").str.split(by=" ").flatten())
+        >>> (df.select(pl.col("foo").str.split(by=" ").flatten()))
         shape: (2, 1)
         ┌───────┐
         │ foo   │
@@ -3128,7 +3196,7 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {"sets": [[1, 2, 3], [1, 2], [9, 10]], "optional_members": [1, 2, 3]}
         ... )
-        >>> df.select([pl.col("optional_members").is_in("sets").alias("contains")])
+        >>> (df.select([pl.col("optional_members").is_in("sets").alias("contains")]))
         shape: (3, 1)
         ┌──────────┐
         │ contains │
@@ -3394,10 +3462,21 @@ class Expr:
         return self.map(inspect, return_dtype=None, agg_list=True)
 
     def interpolate(self) -> Expr:
-        """Fill nulls with linear interpolation over missing values.
+        """
+        Fill nulls with linear interpolation over missing values.
+
+        Can also be used to regrid data to a new grid - see examples below
+
+
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, None, 3], "b": [1.0, float("nan"), 3.0]})
+        >>> # Fill nulls with linear interpolation
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, None, 3],
+        ...         "b": [1.0, float("nan"), 3.0],
+        ...     }
+        ... )
         >>> df.select(pl.all().interpolate())
         shape: (3, 2)
         ┌─────┬─────┐
@@ -3411,6 +3490,45 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 3   ┆ 3.0 │
         └─────┴─────┘
+
+        >>> # Re-grid data to a new grid
+        >>> df_original_grid = pl.DataFrame(
+        ...     {
+        ...         "grid_points": [1, 3, 10],
+        ...         "values": [2.0, 6.0, 20.0],
+        ...     }
+        ... )
+        >>> df_new_grid = pl.DataFrame({"grid_points": range(1, 11)})
+        >>> (
+        ...     df_new_grid.join(
+        ...         df_original_grid, on="grid_points", how="left"
+        ...     ).with_column(pl.col("values").interpolate())
+        ... )
+        shape: (10, 2)
+        ┌─────────────┬────────┐
+        │ grid_points ┆ values │
+        │ ---         ┆ ---    │
+        │ i64         ┆ f64    │
+        ╞═════════════╪════════╡
+        │ 1           ┆ 2.0    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2           ┆ 4.0    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 3           ┆ 6.0    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 4           ┆ 8.0    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ ...         ┆ ...    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 7           ┆ 14.0   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 8           ┆ 16.0   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 9           ┆ 18.0   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 10          ┆ 20.0   │
+        └─────────────┴────────┘
+
         """
 
         return wrap_expr(self._pyexpr.interpolate())
