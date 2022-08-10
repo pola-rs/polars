@@ -32,6 +32,7 @@ IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
 ParquetCompression: TypeAlias = Literal[
     "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
 ]
+RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 
 # The following have a Rust enum equivalent with a different name
 ToStructStrategy: TypeAlias = Literal[

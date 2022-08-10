@@ -92,6 +92,7 @@ if TYPE_CHECKING:
         FillNullStrategy,
         InterpolationMethod,
         NullBehavior,
+        RankMethod,
         TransferEncoding,
     )
 
@@ -3775,13 +3776,13 @@ class Series:
         """Compute absolute values."""
         return wrap_s(self._s.abs())
 
-    def rank(self, method: str = "average", reverse: bool = False) -> Series:
+    def rank(self, method: RankMethod = "average", reverse: bool = False) -> Series:
         """
         Assign ranks to data, dealing with ties appropriately.
 
         Parameters
         ----------
-        method : {'average', 'min', 'max', 'dense', 'ordinal', 'random'}, optional
+        method : {'average', 'min', 'max', 'dense', 'ordinal', 'random'}
             The method used to assign ranks to tied elements.
             The following methods are available (default is 'average'):
 

@@ -40,6 +40,7 @@ if TYPE_CHECKING:
         FillNullStrategy,
         InterpolationMethod,
         NullBehavior,
+        RankMethod,
         ToStructStrategy,
         TransferEncoding,
     )
@@ -3998,13 +3999,13 @@ class Expr:
         """Alias for `arg_sort`."""
         return self.arg_sort(reverse)
 
-    def rank(self, method: str = "average", reverse: bool = False) -> Expr:
+    def rank(self, method: RankMethod = "average", reverse: bool = False) -> Expr:
         """
         Assign ranks to data, dealing with ties appropriately.
 
         Parameters
         ----------
-        method : {'average', 'min', 'max', 'dense', 'ordinal', 'random'}, optional
+        method : {'average', 'min', 'max', 'dense', 'ordinal', 'random'}
             The method used to assign ranks to tied elements.
             The following methods are available (default is 'average'):
 
