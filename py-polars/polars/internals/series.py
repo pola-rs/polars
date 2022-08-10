@@ -4030,32 +4030,43 @@ class Series:
         min_periods: int = 1,
     ) -> Series:
         r"""
-        Exponential moving average.
+        Exponentially-weighted moving average.
 
         Parameters
         ----------
         com
-            Specify decay in terms of center of mass,
-            :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+            Specify decay in terms of center of mass, :math:`\gamma`, with
+
+                .. math::
+                    \alpha = \frac{1}{1 + \gamma} \; \forall \; \gamma \geq 0
         span
-            Specify decay in terms of span,
-            :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+            Specify decay in terms of span, :math:`\theta`, with
+
+                .. math::
+                    \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life,
-            :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+            Specify decay in terms of half-life, :math:`\lambda`, with
+
+                .. math::
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
+                    \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly,
-            :math:`0 < alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When adjust = True the EW function is calculated using weights
-                    :math:`w_i = (1 - alpha)^i`
-                - When adjust = False the EW function is calculated recursively.
+                - When ``adjust=True`` the EW function is calculated
+                  using weights :math:`w_i = (1 - \alpha)^i`
+                - When ``adjust=False`` the EW function is calculated
+                  recursively by
+
+                  .. math::
+                    y_0 &= x_0 \\
+                    y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
         min_periods
             Minimum number of observations in window required to have a value
-            (otherwise result is Null).
+            (otherwise result is null).
 
         """
         return (
@@ -4078,32 +4089,43 @@ class Series:
         min_periods: int = 1,
     ) -> Series:
         r"""
-        Exponential moving standard deviation.
+        Exponentially-weighted moving standard deviation.
 
         Parameters
         ----------
         com
-            Specify decay in terms of center of mass,
-            :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+            Specify decay in terms of center of mass, :math:`\gamma`, with
+
+                .. math::
+                    \alpha = \frac{1}{1 + \gamma} \; \forall \; \gamma \geq 0
         span
-            Specify decay in terms of span,
-            :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+            Specify decay in terms of span, :math:`\theta`, with
+
+                .. math::
+                    \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life,
-            :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+            Specify decay in terms of half-life, :math:`\lambda`, with
+
+                .. math::
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
+                    \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly,
-            :math:`0 < alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When adjust = True the EW function is calculated using weights
-                    :math:`w_i = (1 - alpha)^i`
-                - When adjust = False the EW function is calculated recursively.
+                - When ``adjust=True`` the EW function is calculated
+                  using weights :math:`w_i = (1 - \alpha)^i`
+                - When ``adjust=False`` the EW function is calculated
+                  recursively by
+
+                  .. math::
+                    y_0 &= x_0 \\
+                    y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
         min_periods
             Minimum number of observations in window required to have a value
-            (otherwise result is Null).
+            (otherwise result is null).
 
         """
         return (
@@ -4126,31 +4148,43 @@ class Series:
         min_periods: int = 1,
     ) -> Series:
         r"""
-        Exponential moving standard variation.
+        Exponentially-weighted moving variance.
 
         Parameters
         ----------
         com
-            Specify decay in terms of center of mass,
-            :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+            Specify decay in terms of center of mass, :math:`\gamma`, with
+
+                .. math::
+                    \alpha = \frac{1}{1 + \gamma} \; \forall \; \gamma \geq 0
         span
-            Specify decay in terms of span,
-            :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+            Specify decay in terms of span, :math:`\theta`, with
+
+                .. math::
+                    \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life,
-            :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+            Specify decay in terms of half-life, :math:`\lambda`, with
+
+                .. math::
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
+                    \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When adjust = True the EW function is calculated using weights
-                    :math:`w_i = (1 - alpha)^i`
-                - When adjust = False the EW function is calculated recursively.
+                - When ``adjust=True`` the EW function is calculated
+                  using weights :math:`w_i = (1 - \alpha)^i`
+                - When ``adjust=False`` the EW function is calculated
+                  recursively by
+
+                  .. math::
+                    y_0 &= x_0 \\
+                    y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
         min_periods
             Minimum number of observations in window required to have a value
-            (otherwise result is Null).
+            (otherwise result is null).
 
         """
         return (
