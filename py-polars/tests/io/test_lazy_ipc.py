@@ -28,7 +28,7 @@ def test_row_count(foods_ipc: str) -> None:
 def test_is_in_type_coercion(foods_ipc: str) -> None:
     out = (
         pl.scan_ipc(foods_ipc)
-        .filter(pl.col("category").is_in(["vegetables"]))
+        .filter(pl.col("category").is_in(("vegetables", "ice cream")))
         .collect()
     )
     assert out.shape == (7, 4)
