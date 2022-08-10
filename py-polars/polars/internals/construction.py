@@ -30,9 +30,6 @@ from polars.datatypes_constructor import (
 )
 from polars.utils import threadpool_size
 
-if TYPE_CHECKING:
-    import pandas as pd
-
 try:
     from polars.polars import PyDataFrame, PySeries
 
@@ -54,10 +51,10 @@ try:
 except ImportError:
     _PYARROW_AVAILABLE = False
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
+if TYPE_CHECKING:
+    import pandas as pd
+
+    from polars.internals.datatypes import Orientation
 
 
 ################################
@@ -466,7 +463,7 @@ def dict_to_pydf(
 def sequence_to_pydf(
     data: Sequence[Any],
     columns: ColumnsType | None = None,
-    orient: Literal["col", "row"] | None = None,
+    orient: Orientation | None = None,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a sequence."""
     data_series: list[PySeries]
@@ -526,7 +523,7 @@ def sequence_to_pydf(
 def numpy_to_pydf(
     data: np.ndarray[Any, Any],
     columns: ColumnsType | None = None,
-    orient: Literal["col", "row"] | None = None,
+    orient: Orientation | None = None,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a numpy ndarray."""
     shape = data.shape
