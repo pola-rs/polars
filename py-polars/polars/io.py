@@ -32,7 +32,7 @@ except ImportError:
     _WITH_CX = False
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import CsvEncoding, ParallelStrategy
+    from polars.internals.type_aliases import CsvEncoding, ParallelStrategy
 
 
 def _check_arg_is_1byte(

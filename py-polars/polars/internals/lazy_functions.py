@@ -62,7 +62,7 @@ else:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import InterpolationMethod
+    from polars.internals.type_aliases import InterpolationMethod
 
 
 def col(

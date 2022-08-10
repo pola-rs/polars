@@ -49,7 +49,7 @@ except ImportError:
     _PYARROW_AVAILABLE = False
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import (
+    from polars.internals.type_aliases import (
         AsofJoinStrategy,
         ClosedWindow,
         CsvEncoding,

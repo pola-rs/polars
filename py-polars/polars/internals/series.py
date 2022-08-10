@@ -87,7 +87,7 @@ else:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import (
+    from polars.internals.type_aliases import (
         ComparisonOperator,
         FillNullStrategy,
         InterpolationMethod,

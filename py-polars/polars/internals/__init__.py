@@ -9,7 +9,6 @@ from polars.internals.anonymous_scan import (
     _scan_ipc_fsspec,
     _scan_parquet_fsspec,
 )
-from polars.internals.datatypes import IntoExpr
 from polars.internals.expr import (
     Expr,
     expr_to_lit_or_expr,
@@ -37,6 +36,7 @@ from polars.internals.lazy_functions import (
     select,
 )
 from polars.internals.series import Series, wrap_s
+from polars.internals.type_aliases import IntoExpr
 from polars.internals.whenthen import when  # used in expr.clip()
 
 __all__ = [

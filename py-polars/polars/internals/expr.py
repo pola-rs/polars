@@ -35,7 +35,7 @@ except ImportError:
     _NUMPY_AVAILABLE = False
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import (
+    from polars.internals.type_aliases import (
         ClosedWindow,
         FillNullStrategy,
         InterpolationMethod,

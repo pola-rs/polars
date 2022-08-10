@@ -26,7 +26,7 @@ except ImportError:
     _PANDAS_AVAILABLE = False
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import Orientation
+    from polars.internals.type_aliases import Orientation
 
 
 def from_dict(

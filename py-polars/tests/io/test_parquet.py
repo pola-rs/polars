@@ -12,7 +12,7 @@ import polars as pl
 from polars.testing import assert_frame_equal_local_categoricals
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import ParquetCompression
+    from polars.internals.type_aliases import ParquetCompression
 
 
 @pytest.fixture

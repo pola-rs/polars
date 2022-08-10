@@ -10,7 +10,7 @@ import pandas as pd
 import polars as pl
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import ParallelStrategy
+    from polars.internals.type_aliases import ParallelStrategy
 
 
 def test_scan_parquet() -> None:

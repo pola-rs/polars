@@ -105,7 +105,7 @@ else:
 DF = TypeVar("DF", bound="DataFrame")
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import (
+    from polars.internals.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
         ClosedWindow,

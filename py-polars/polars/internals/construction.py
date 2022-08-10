@@ -53,7 +53,7 @@ except ImportError:
 if TYPE_CHECKING:
     import pandas as pd
 
-    from polars.internals.datatypes import Orientation
+    from polars.internals.type_aliases import Orientation
 
 
 ################################
