@@ -119,6 +119,7 @@ if TYPE_CHECKING:
         ParallelStrategy,
         ParquetCompression,
         PivotAgg,
+        UniqueKeepStrategy,
     )
 
     # these aliases are used to annotate DataFrame.__getitem__()
@@ -5329,7 +5330,7 @@ class DataFrame:
         self: DF,
         maintain_order: bool = True,
         subset: str | list[str] | None = None,
-        keep: str = "first",
+        keep: UniqueKeepStrategy = "first",
     ) -> DF:
         """
         Drop duplicate rows from this DataFrame.
@@ -5345,9 +5346,9 @@ class DataFrame:
             Keep the same order as the original DataFrame. This requires more work to
             compute.
         subset
-            Subset to use to compare rows
-        keep
-            any of {"first", "last"}
+            Subset to use to compare rows.
+        keep : {'first', 'last'}
+            Which of the duplicate rows to keep.
 
         Returns
         -------

@@ -36,6 +36,7 @@ RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "ra
 PivotAgg: TypeAlias = Literal[
     "first", "sum", "max", "min", "mean", "median", "last", "count"
 ]
+UniqueKeepStrategy: TypeAlias = Literal["first", "last"]
 
 # The following have a Rust enum equivalent with a different name
 ToStructStrategy: TypeAlias = Literal[
