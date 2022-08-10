@@ -10,8 +10,18 @@ if sys.version_info >= (3, 8):
 else:
     from typing_extensions import Literal
 
-IntoExpr = Union[int, float, str, "pli.Expr", "pli.Series"]
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias
+else:
+    from typing_extensions import TypeAlias
 
-ClosedWindow = Literal["left", "right", "both", "none"]
-FillStrategy = Literal["forward", "backward", "min", "max", "mean", "zero", "one"]
-InterpolationMethod = Literal["nearest", "higher", "lower", "midpoint", "linear"]
+IntoExpr: TypeAlias = "int | float | str | pli.Expr | pli.Series"
+
+# String literal types
+ClosedWindow: TypeAlias = Literal["left", "right", "both", "none"]
+FillStrategy: TypeAlias = Literal[
+    "forward", "backward", "min", "max", "mean", "zero", "one"
+]
+InterpolationMethod: TypeAlias = Literal[
+    "nearest", "higher", "lower", "midpoint", "linear"
+]
