@@ -6,9 +6,6 @@ pub use polars_arrow::kernels::ewm::EWMOptions;
 use polars_arrow::kernels::ewm::{
     ewm_std, ewm_var, ewma, ewma_inf_hist_no_nulls, ewma_inf_hists, ewma_no_nulls,
 };
-use polars_arrow::prelude::FromData;
-use polars_utils::mem::to_mutable_slice;
-
 use crate::prelude::*;
 
 fn prepare_primitive_array<T: NativeType>(
@@ -114,27 +111,37 @@ impl Series {
             unimplemented!("ewm_std does not yet handle missing data")
         }
 
-        let ca = self.rechunk();
-        match ca.dtype() {
+        match self.dtype() {
             DataType::Float32 | DataType::Float64 => {}
             _ => return self.cast(&DataType::Float64)?.ewm_std(options),
         }
 
-        match ewma.dtype() {
+        match self.dtype() {
             DataType::Float64 => {
-                let arr = ca.f64().unwrap().downcast_iter().next().unwrap();
-                let xs = arr.values().as_slice();
-
-                let result = ;
-                ewm_std(xs, result, options.alpha, options.adjust, options.bias);
+                let xs = self
+                    .f64()
+                    .unwrap()
+                    .downcast_iter()
+                    .next()
+                    .unwrap()
+                    .values()
+                    .as_slice();
+                let vals = ewm_std(xs, options);
+                let arr = prepare_primitive_array(vals, options.min_periods, 0);
+                Series::try_from((self.name(), Box::new(arr) as ArrayRef))
             }
             DataType::Float32 => {
-                let arr = ca.f32().unwrap().downcast_iter().next().unwrap();
-                let xs = arr.values().as_slice();
-
-                let result = ???;
-                ewm_std(xs, result, options.alpha, options.adjust, options.bias);
-
+                let xs = self
+                    .f32()
+                    .unwrap()
+                    .downcast_iter()
+                    .next()
+                    .unwrap()
+                    .values()
+                    .as_slice();
+                let vals = ewm_std(xs, options);
+                let arr = prepare_primitive_array(vals, options.min_periods, 0);
+                Series::try_from((self.name(), Box::new(arr) as ArrayRef))
             }
             _ => unimplemented!(),
         }
@@ -145,30 +152,37 @@ impl Series {
             unimplemented!("ewm_var does not yet handle missing data")
         }
 
-        let ca = self.rechunk();
-        match ca.dtype() {
+        match self.dtype() {
             DataType::Float32 | DataType::Float64 => {}
             _ => return self.cast(&DataType::Float64)?.ewm_var(options),
         }
 
-        match ewma.dtype() {
+        match self.dtype() {
             DataType::Float64 => {
-                let arr = ca.f64().unwrap().downcast_iter().next().unwrap();
-                let xs = arr.values().as_slice();
-
-                let result = ???;
-                ewm_var(xs, result, options.alpha, options.adjust, options.bias);
-                // we mask the original null values until we know better how to deal with them.
-                let out =
-                    Box::new(ewma_arr.clone().with_validity(arr.validity().cloned())) as ArrayRef;
-                Series::try_from((self.name(), out))
+                let xs = self
+                    .f64()
+                    .unwrap()
+                    .downcast_iter()
+                    .next()
+                    .unwrap()
+                    .values()
+                    .as_slice();
+                let vals = ewm_var(xs, options);
+                let arr = prepare_primitive_array(vals, options.min_periods, 0);
+                Series::try_from((self.name(), Box::new(arr) as ArrayRef))
             }
             DataType::Float32 => {
-                let arr = ca.f32().unwrap().downcast_iter().next().unwrap();
-                let xs = arr.values().as_slice();
-
-                let result = ???;
-                ewm_var(x_slice, result, options.alpha as f32, options.adjust, options.bias);
+                let xs = self
+                    .f32()
+                    .unwrap()
+                    .downcast_iter()
+                    .next()
+                    .unwrap()
+                    .values()
+                    .as_slice();
+                let vals = ewm_var(xs, options);
+                let arr = prepare_primitive_array(vals, options.min_periods, 0);
+                Series::try_from((self.name(), Box::new(arr) as ArrayRef))
             }
             _ => unimplemented!(),
         }

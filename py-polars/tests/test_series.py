@@ -1619,10 +1619,32 @@ def test_ewm_mean() -> None:
     )
 
 
-def test_ewm_std_var() -> None:
-    a = pl.Series("a", [2, 5, 3])
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64, pl.Int32, pl.Float64])
+def test_ewm_std_var(
+    dtype: type[pl.Float32 | pl.Float64 | pl.Int32 | pl.Float64],
+) -> None:
+    series = pl.Series("a", [2, 5, 3], dtype=dtype)
 
-    assert (a.ewm_std(alpha=0.5) ** 2).to_list() == a.ewm_var(alpha=0.5).to_list()
+    std = series.ewm_std(alpha=0.5)
+    var = series.ewm_var(alpha=0.5)
+    assert np.allclose(std**2, var)
+
+
+@pytest.mark.parametrize(
+    "min_periods,expected",
+    [
+        (0, [1.0, 1.0, 1.0, 1.0]),
+        (1, [1.0, 1.0, 1.0, 1.0]),
+        (2, [np.NaN, 1.0, 1.0, 1.0]),
+        (4, [np.NaN, np.NaN, np.NaN, 1.0]),
+        (5, [np.NaN, np.NaN, np.NaN, np.NaN]),
+        (6, [np.NaN, np.NaN, np.NaN, np.NaN]),
+    ],
+)
+def test_ewm_std_var_min_periods(min_periods: int, expected: list[float]) -> None:
+    series = pl.Series([1.0, 1.0, 1.0, 1.0])
+    var = series.ewm_var(alpha=0.5, min_periods=min_periods)
+    assert var == pl.Series(expected)
 
 
 def test_extend_constant() -> None:

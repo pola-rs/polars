@@ -1,4 +1,5 @@
 *.iml
+*.ipynb
 *.so
 .DS_Store
 .ENV

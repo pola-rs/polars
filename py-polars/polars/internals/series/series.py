@@ -4124,6 +4124,7 @@ class Series:
         half_life: float | None = None,
         alpha: float | None = None,
         adjust: bool = True,
+        bias: bool = False,
         min_periods: int = 1,
     ) -> Series:
         r"""
@@ -4161,6 +4162,12 @@ class Series:
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
+        bias
+            Optionally provide a correction to make the variance estimate
+            statistically unbiased. That is, if ``bias=False`` then
+
+                .. math::
+                    \mathbf{E} \left[ \hat{y} \right] = y
         min_periods
             Minimum number of observations in window required to have a value
             (otherwise result is null).
@@ -4170,7 +4177,7 @@ class Series:
             self.to_frame()
             .select(
                 pli.col(self.name).ewm_std(
-                    com, span, half_life, alpha, adjust, min_periods
+                    com, span, half_life, alpha, adjust, bias, min_periods
                 )
             )
             .to_series()
@@ -4183,6 +4190,7 @@ class Series:
         half_life: float | None = None,
         alpha: float | None = None,
         adjust: bool = True,
+        bias: bool = False,
         min_periods: int = 1,
     ) -> Series:
         r"""
@@ -4220,6 +4228,12 @@ class Series:
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
+        bias
+            Optionally provide a correction to make the variance estimate
+            statistically unbiased. That is, if ``bias=False`` then
+
+                .. math::
+                    \mathbf{E} \left[ \hat{y} \right] = y
         min_periods
             Minimum number of observations in window required to have a value
             (otherwise result is null).
@@ -4229,7 +4243,7 @@ class Series:
             self.to_frame()
             .select(
                 pli.col(self.name).ewm_var(
-                    com, span, half_life, alpha, adjust, min_periods
+                    com, span, half_life, alpha, adjust, bias, min_periods
                 )
             )
             .to_series()
