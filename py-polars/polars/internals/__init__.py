@@ -36,13 +36,11 @@ from polars.internals.lazy_functions import (
     select,
 )
 from polars.internals.series import Series, wrap_s
-from polars.internals.type_aliases import IntoExpr
 from polars.internals.whenthen import when  # used in expr.clip()
 
 __all__ = [
     "DataFrame",
     "Expr",
-    "IntoExpr",
     "LazyFrame",
     "Series",
     "all",
