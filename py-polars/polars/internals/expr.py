@@ -7007,8 +7007,9 @@ class ExprDateTimeNameSpace:
         """
         Offset this date by a relative time offset.
 
-         This differs from `pl.col("foo") + timedelta` in that it can
-         take months and leap years into account
+        This differs from ``pl.col("foo") + timedelta`` in that it can
+        take months and leap years into account. Note that only a single minus
+        sign is allowed in the ``by`` string, as the first character.
 
         Parameters
         ----------

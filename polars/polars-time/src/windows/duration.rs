@@ -56,6 +56,14 @@ impl Duration {
     ///
     /// # Panics if given str is incorrect
     pub fn parse(duration: &str) -> Self {
+        let num_minus_signs = duration.matches('-').count();
+        if num_minus_signs > 1 {
+            panic!("a Duration string can only have a single minus sign")
+        }
+        if (num_minus_signs > 0) & !duration.starts_with('-') {
+            panic!("only a single minus sign is allowed, at the front of the string")
+        }
+
         let mut nsecs = 0;
         let mut months = 0;
         let mut iter = duration.char_indices();
