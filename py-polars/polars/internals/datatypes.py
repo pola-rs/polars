@@ -26,3 +26,5 @@ InterpolationMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear"
 ]
 Orientation: TypeAlias = Literal["col", "row"]
+FileEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
+ParallelStrategy: TypeAlias = Literal["auto", "columns", "row_groups", "none"]

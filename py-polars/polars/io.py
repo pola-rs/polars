@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, Mapping, TextIO
+from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, TextIO
 
 from polars.utils import format_path, handle_projection_columns
 
@@ -32,10 +32,8 @@ try:
 except ImportError:
     _WITH_CX = False
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
+if TYPE_CHECKING:
+    from polars.internals.datatypes import FileEncoding, ParallelStrategy
 
 
 def _check_arg_is_1byte(
@@ -83,7 +81,7 @@ def read_csv(
     infer_schema_length: int | None = 100,
     batch_size: int = 8192,
     n_rows: int | None = None,
-    encoding: Literal["utf8", "utf8-lossy"] = "utf8",
+    encoding: FileEncoding = "utf8",
     low_memory: bool = False,
     rechunk: bool = True,
     use_pyarrow: bool = False,
@@ -419,7 +417,7 @@ def scan_csv(
     with_column_names: Callable[[list[str]], list[str]] | None = None,
     infer_schema_length: int | None = 100,
     n_rows: int | None = None,
-    encoding: Literal["utf8", "utf8-lossy"] = "utf8",
+    encoding: FileEncoding = "utf8",
     low_memory: bool = False,
     rechunk: bool = True,
     skip_rows_after_header: int = 0,
@@ -648,7 +646,7 @@ def scan_parquet(
     file: str | Path,
     n_rows: int | None = None,
     cache: bool = True,
-    parallel: Literal["auto", "columns", "row_groups", "none"] = "auto",
+    parallel: ParallelStrategy = "auto",
     rechunk: bool = True,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
@@ -836,7 +834,7 @@ def read_parquet(
     use_pyarrow: bool = False,
     memory_map: bool = True,
     storage_options: dict[str, object] | None = None,
-    parallel: Literal["auto", "columns", "row_groups", "none"] = "auto",
+    parallel: ParallelStrategy = "auto",
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     low_memory: bool = False,
