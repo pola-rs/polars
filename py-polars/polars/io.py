@@ -1,7 +1,6 @@
 """Functions for reading and writing data."""
 from __future__ import annotations
 
-import sys
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, TextIO

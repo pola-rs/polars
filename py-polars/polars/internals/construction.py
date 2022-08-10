@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from contextlib import suppress
 from datetime import date, datetime, time, timedelta
 from itertools import zip_longest

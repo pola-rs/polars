@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import os
-import sys
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -11,11 +10,6 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal_local_categoricals
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
 
 if TYPE_CHECKING:
     from polars.internals.datatypes import ParquetCompression

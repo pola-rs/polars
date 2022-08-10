@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-from typing import Union
 
 from polars import internals as pli
 
@@ -19,7 +18,7 @@ IntoExpr: TypeAlias = "int | float | str | pli.Expr | pli.Series"
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
 
 # User-facing string literal types
-# These all have an equivalent Rust enum with the same name
+# The following all have an equivalent Rust enum with the same name
 ClosedWindow: TypeAlias = Literal["left", "right", "both", "none"]
 FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"
@@ -29,7 +28,7 @@ ParallelStrategy: TypeAlias = Literal["auto", "columns", "row_groups", "none"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
-ParquetCompression = Literal[
+ParquetCompression: TypeAlias = Literal[
     "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
 ]
 
