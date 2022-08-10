@@ -118,6 +118,7 @@ if TYPE_CHECKING:
         Orientation,
         ParallelStrategy,
         ParquetCompression,
+        PivotAgg,
     )
 
     # these aliases are used to annotate DataFrame.__getitem__()
@@ -4343,7 +4344,7 @@ class DataFrame:
         values: list[str] | str,
         index: list[str] | str,
         columns: list[str] | str,
-        aggregate_fn: str = "first",
+        aggregate_fn: PivotAgg = "first",
         maintain_order: bool = True,
         sort_columns: bool = False,
     ) -> DF:
@@ -4359,18 +4360,8 @@ class DataFrame:
             One or multiple keys to group by
         columns
             Columns whose values will be used as the header of the output DataFrame
-        aggregate_fn
-            Any of:
-
-            - "sum"
-            - "max"
-            - "min"
-            - "mean"
-            - "median"
-            - "first"
-            - "last"
-            - "count"
-
+        aggregate_fn : {'first', 'sum', 'max', 'min', 'mean', 'median', 'last', 'count'}
+            Aggregate function.
         maintain_order
             Sort the grouped keys so that the output order is predictable.
         sort_columns

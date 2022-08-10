@@ -33,6 +33,9 @@ ParquetCompression: TypeAlias = Literal[
     "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
 ]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
+PivotAgg: TypeAlias = Literal[
+    "first", "sum", "max", "min", "mean", "median", "last", "count"
+]
 
 # The following have a Rust enum equivalent with a different name
 ToStructStrategy: TypeAlias = Literal[
