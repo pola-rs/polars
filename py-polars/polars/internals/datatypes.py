@@ -25,3 +25,4 @@ FillStrategy: TypeAlias = Literal[
 InterpolationMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear"
 ]
+Orientation: TypeAlias = Literal["col", "row"]

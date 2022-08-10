@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Any, Mapping, Sequence, overload
+from typing import TYPE_CHECKING, Any, Mapping, Sequence, overload
 
 from polars.internals import DataFrame, Series
 
@@ -26,10 +26,8 @@ try:
 except ImportError:
     _PANDAS_AVAILABLE = False
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
+if TYPE_CHECKING:
+    from polars.internals.datatypes import Orientation
 
 
 def from_dict(
@@ -115,7 +113,7 @@ def from_dicts(
 def from_records(
     data: Sequence[Sequence[Any]],
     columns: Sequence[str] | None = None,
-    orient: Literal["col", "row"] | None = None,
+    orient: Orientation | None = None,
 ) -> DataFrame:
     """
     Construct a DataFrame from a sequence of sequences.
@@ -129,7 +127,7 @@ def from_records(
     columns : Sequence of str, default None
         Column labels to use for resulting DataFrame. Must match data dimensions.
         If not specified, columns will be named `column_0`, `column_1`, etc.
-    orient : {'col', 'row'}, default None
+    orient : {None, 'col', 'row'}
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
@@ -163,7 +161,7 @@ def from_records(
 def from_numpy(
     data: np.ndarray[Any, Any],
     columns: Sequence[str] | None = None,
-    orient: Literal["col", "row"] | None = None,
+    orient: Orientation | None = None,
 ) -> DataFrame:
     """
     Construct a DataFrame from a numpy ndarray.
@@ -177,7 +175,7 @@ def from_numpy(
     columns : Sequence of str, default None
         Column labels to use for resulting DataFrame. Must match data dimensions.
         If not specified, columns will be named `column_0`, `column_1`, etc.
-    orient : {'col', 'row'}, default None
+    orient : {None, 'col', 'row'}
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
