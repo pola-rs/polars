@@ -3019,9 +3019,7 @@ class Expr:
         └──────────┘
 
         """
-        if isinstance(other, str):
-            raise TypeError("'other' parameter expects non-string sequence data")
-        elif isinstance(other, Sequence) and not isinstance(other, str):
+        if isinstance(other, Sequence) and not isinstance(other, str):
             other = pli.lit(pli.Series(other))
         else:
             other = expr_to_lit_or_expr(other, str_to_lit=False)
