@@ -110,13 +110,14 @@ if TYPE_CHECKING:
         AvroCompression,
         ClosedWindow,
         ComparisonOperator,
-        FileEncoding,
-        FillStrategy,
+        CsvEncoding,
+        FillNullStrategy,
         InterpolationMethod,
         IpcCompression,
         NullStrategy,
         Orientation,
         ParallelStrategy,
+        ParquetCompression,
     )
 
     # these aliases are used to annotate DataFrame.__getitem__()
@@ -523,7 +524,7 @@ class DataFrame:
         infer_schema_length: int | None = 100,
         batch_size: int = 8192,
         n_rows: int | None = None,
-        encoding: FileEncoding = "utf8",
+        encoding: CsvEncoding = "utf8",
         low_memory: bool = False,
         rechunk: bool = True,
         skip_rows_after_header: int = 0,
@@ -1300,9 +1301,7 @@ class DataFrame:
         self,
         file: str | Path | BytesIO,
         *,
-        compression: Literal[
-            "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
-        ] = "lz4",
+        compression: ParquetCompression = "lz4",
         compression_level: int | None = None,
         statistics: bool = False,
         row_group_size: int | None = None,
@@ -4167,7 +4166,7 @@ class DataFrame:
     def fill_null(
         self,
         value: Any | None = None,
-        strategy: FillStrategy | None = None,
+        strategy: FillNullStrategy | None = None,
         limit: int | None = None,
     ) -> DataFrame:
         """

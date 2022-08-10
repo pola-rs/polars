@@ -38,7 +38,7 @@ except ImportError:
 if TYPE_CHECKING:
     from polars.internals.datatypes import (
         ClosedWindow,
-        FillStrategy,
+        FillNullStrategy,
         InterpolationMethod,
         ToStructStrategy,
         TransferEncoding,
@@ -1881,7 +1881,7 @@ class Expr:
     def fill_null(
         self,
         value: Any | None = None,
-        strategy: FillStrategy | None = None,
+        strategy: FillNullStrategy | None = None,
         limit: int | None = None,
     ) -> Expr:
         """

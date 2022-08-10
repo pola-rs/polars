@@ -33,7 +33,7 @@ except ImportError:
     _WITH_CX = False
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import FileEncoding, ParallelStrategy
+    from polars.internals.datatypes import CsvEncoding, ParallelStrategy
 
 
 def _check_arg_is_1byte(
@@ -81,7 +81,7 @@ def read_csv(
     infer_schema_length: int | None = 100,
     batch_size: int = 8192,
     n_rows: int | None = None,
-    encoding: FileEncoding = "utf8",
+    encoding: CsvEncoding = "utf8",
     low_memory: bool = False,
     rechunk: bool = True,
     use_pyarrow: bool = False,
@@ -417,7 +417,7 @@ def scan_csv(
     with_column_names: Callable[[list[str]], list[str]] | None = None,
     infer_schema_length: int | None = 100,
     n_rows: int | None = None,
-    encoding: FileEncoding = "utf8",
+    encoding: CsvEncoding = "utf8",
     low_memory: bool = False,
     rechunk: bool = True,
     skip_rows_after_header: int = 0,

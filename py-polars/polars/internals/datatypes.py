@@ -16,31 +16,32 @@ else:
     from typing_extensions import TypeAlias
 
 IntoExpr: TypeAlias = "int | float | str | pli.Expr | pli.Series"
+ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
 
 # User-facing string literal types
+# These all have an equivalent Rust enum with the same name
 ClosedWindow: TypeAlias = Literal["left", "right", "both", "none"]
-FillStrategy: TypeAlias = Literal[
+FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"
 ]
 NullStrategy: TypeAlias = Literal["ignore", "propagate"]
-
-InterpolationMethod: TypeAlias = Literal[
-    "nearest", "higher", "lower", "midpoint", "linear"
-]
-Orientation: TypeAlias = Literal["col", "row"]
-
-FileEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
-TransferEncoding: TypeAlias = Literal["hex", "base64"]
-
 ParallelStrategy: TypeAlias = Literal["auto", "columns", "row_groups", "none"]
-ToStructStrategy: TypeAlias = Literal["first_non_null", "max_width"]
-AsofJoinStrategy: TypeAlias = Literal["backward", "forward"]
-
+CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
 ParquetCompression = Literal[
     "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
 ]
 
-# Other literal types
-ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
+# The following have a Rust enum equivalent with a different name
+ToStructStrategy: TypeAlias = Literal[
+    "first_non_null", "max_width"
+]  # ListToStructWidthStrategy
+AsofJoinStrategy: TypeAlias = Literal["backward", "forward"]  # AsofStrategy
+InterpolationMethod: TypeAlias = Literal[
+    "nearest", "higher", "lower", "midpoint", "linear"
+]  # QuantileInterpolOptions
+
+# The following have no equivalent on the Rust side
+Orientation: TypeAlias = Literal["col", "row"]
+TransferEncoding: TypeAlias = Literal["hex", "base64"]

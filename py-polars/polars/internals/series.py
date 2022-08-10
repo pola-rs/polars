@@ -89,7 +89,7 @@ else:
 if TYPE_CHECKING:
     from polars.internals.datatypes import (
         ComparisonOperator,
-        FillStrategy,
+        FillNullStrategy,
         InterpolationMethod,
         TransferEncoding,
     )
@@ -2603,7 +2603,7 @@ class Series:
     def fill_null(
         self,
         value: Any | None = None,
-        strategy: FillStrategy | None = None,
+        strategy: FillNullStrategy | None = None,
         limit: int | None = None,
     ) -> Series:
         """
