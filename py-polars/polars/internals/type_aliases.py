@@ -37,6 +37,7 @@ PivotAgg: TypeAlias = Literal[
     "first", "sum", "max", "min", "mean", "median", "last", "count"
 ]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last"]
+TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
 
 # The following have a Rust enum equivalent with a different name
 ToStructStrategy: TypeAlias = Literal[
@@ -48,5 +49,7 @@ InterpolationMethod: TypeAlias = Literal[
 ]  # QuantileInterpolOptions
 
 # The following have no equivalent on the Rust side
+EpochTimeUnit = Literal["ns", "us", "ms", "s", "d"]
 Orientation: TypeAlias = Literal["col", "row"]
 TransferEncoding: TypeAlias = Literal["hex", "base64"]
+EpochTimeUnit = TimeUnit | Literal["s", "d"]
