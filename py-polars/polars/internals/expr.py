@@ -2398,31 +2398,6 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.last())
 
-    def list(self) -> Expr:
-        """
-        Aggregate to list.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3],
-        ...         "b": [4, 5, 6],
-        ...     }
-        ... )
-        >>> df.select(pl.all().list())
-        shape: (1, 2)
-        ┌───────────┬───────────┐
-        │ a         ┆ b         │
-        │ ---       ┆ ---       │
-        │ list[i64] ┆ list[i64] │
-        ╞═══════════╪═══════════╡
-        │ [1, 2, 3] ┆ [4, 5, 6] │
-        └───────────┴───────────┘
-
-        """
-        return wrap_expr(self._pyexpr.list())
-
     def over(self, expr: str | Expr | List[Expr | str]) -> Expr:
         """
         Apply window function over a subgroup.
@@ -5052,18 +5027,43 @@ class Expr:
         """
         return self.map(lambda s: s.set_sorted(reverse))
 
-    # Below are the namespaces defined. Keep these at the end of the definition of Expr,
-    # as to not confuse mypy with the type annotation `str` with the namespace "str"
+    # Keep the `list` and `str` methods below at the end of the definition of Expr,
+    # as to not confuse mypy with the type annotation `str` and `list`
 
-    @property
-    def dt(self) -> ExprDateTimeNameSpace:
-        """Create an object namespace of all datetime related methods."""
-        return ExprDateTimeNameSpace(self)
+    def list(self) -> Expr:
+        """
+        Aggregate to list.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": [4, 5, 6],
+        ...     }
+        ... )
+        >>> df.select(pl.all().list())
+        shape: (1, 2)
+        ┌───────────┬───────────┐
+        │ a         ┆ b         │
+        │ ---       ┆ ---       │
+        │ list[i64] ┆ list[i64] │
+        ╞═══════════╪═══════════╡
+        │ [1, 2, 3] ┆ [4, 5, 6] │
+        └───────────┴───────────┘
+
+        """
+        return wrap_expr(self._pyexpr.list())
 
     @property
     def str(self) -> ExprStringNameSpace:
         """Create an object namespace of all string related methods."""
         return ExprStringNameSpace(self)
+
+    @property
+    def dt(self) -> ExprDateTimeNameSpace:
+        """Create an object namespace of all datetime related methods."""
+        return ExprDateTimeNameSpace(self)
 
     @property
     def arr(self) -> ExprListNameSpace:
