@@ -75,9 +75,11 @@ where
         self
     }
 
-    /// Set the CSV file's timestamp format array in
-    pub fn with_datetime(mut self, format: Option<String>) -> Self {
-        self.options.datetime_format = format;
+    /// Set the CSV file's timestamp format array
+    pub fn with_datetime_format(mut self, format: Option<String>) -> Self {
+        if format.is_some() {
+            self.options.datetime_format = format;
+        }
         self
     }
 
