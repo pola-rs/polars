@@ -437,6 +437,7 @@ impl PyDataFrame {
         quote: u8,
         batch_size: usize,
         datetime_format: Option<String>,
+        date_format: Option<String>,
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
@@ -447,6 +448,7 @@ impl PyDataFrame {
                 .with_quoting_char(quote)
                 .with_batch_size(batch_size)
                 .with_datetime_format(datetime_format)
+                .with_date_format(date_format)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         } else {
@@ -457,6 +459,7 @@ impl PyDataFrame {
                 .with_quoting_char(quote)
                 .with_batch_size(batch_size)
                 .with_datetime_format(datetime_format)
+                .with_date_format(date_format)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }

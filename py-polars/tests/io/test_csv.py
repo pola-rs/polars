@@ -625,10 +625,25 @@ def test_csv_dtype_overwrite_bool() -> None:
         ("%Y", "dt\n2022\n"),
         ("%m", "dt\n01\n"),
         ("%m$%d", "dt\n01$02\n"),
-        ("%R", "dt\n00:00\n")
+        ("%R", "dt\n00:00\n"),
     ],
 )
 def test_datetime_format(fmt: str, expected: str) -> None:
     df = pl.DataFrame({"dt": [datetime(2022, 1, 2)]})
     csv = df.write_csv(datetime_format=fmt)
+    assert csv == expected
+
+
+@pytest.mark.parametrize(
+    "fmt,expected",
+    [
+        (None, "dt\n2022-01-02\n"),
+        ("%Y", "dt\n2022\n"),
+        ("%m", "dt\n01\n"),
+        ("%m$%d", "dt\n01$02\n"),
+    ],
+)
+def test_date_format(fmt: str, expected: str) -> None:
+    df = pl.DataFrame({"dt": [date(2022, 1, 2)]})
+    csv = df.write_csv(date_format=fmt)
     assert csv == expected
