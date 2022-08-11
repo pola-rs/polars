@@ -106,6 +106,45 @@ pub enum AExpr {
     },
     Count,
     Nth(i64),
+    #[cfg(feature = "strings")]
+    Str(AStringExpr),
+}
+
+#[cfg(feature = "strings")]
+#[derive(Clone, Debug)]
+pub enum AStringExpr {
+    Contains {
+        expr: Node,
+        pat: String,
+        literal: bool,
+    },
+    StartsWith(Node, String),
+    EndsWith(Node, String),
+    Extract {
+        expr: Node,
+        pat: String,
+        group_index: usize,
+    },
+    #[cfg(feature = "string_justify")]
+    Zfill(Node, usize),
+    #[cfg(feature = "string_justify")]
+    LJust {
+        expr: Node,
+        width: usize,
+        fillchar: char,
+    },
+    #[cfg(feature = "string_justify")]
+    RJust {
+        expr: Node,
+        width: usize,
+        fillchar: char,
+    },
+    ExtractAll(Node, String),
+    CountMatch(Node, String),
+    #[cfg(feature = "temporal")]
+    Strptime(Node, StrpTimeOptions),
+    #[cfg(feature = "concat_str")]
+    Concat(Node, String),
 }
 
 impl Default for AExpr {
@@ -113,6 +152,7 @@ impl Default for AExpr {
         AExpr::Wildcard
     }
 }
+
 impl AExpr {
     /// This should be a 1 on 1 copy of the get_type method of Expr until Expr is completely phased out.
     pub(crate) fn get_type(
@@ -163,6 +203,13 @@ impl AExpr {
         arena: &Arena<AExpr>,
     ) -> Result<Field> {
         use AExpr::*;
+        let with_dtype = |node: Node, dtype: DataType| -> Result<Field> {
+            let field = arena.get(node).to_field(schema, ctxt, arena)?;
+
+            Ok(Field::new(field.name(), dtype))
+        };
+        let same_type = |node: Node| arena.get(node).to_field(schema, ctxt, arena);
+
         match self {
             Count => Ok(Field::new("count", DataType::UInt32)),
             Window { function, .. } => {
@@ -353,6 +400,28 @@ impl AExpr {
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
             Nth(_) => panic!("should be no nth at this point"),
+            Str(expr) => {
+                use AStringExpr::*;
+                match expr {
+                    Contains { expr, .. } => with_dtype(*expr, DataType::Boolean),
+                    StartsWith(expr, ..) => with_dtype(*expr, DataType::Boolean),
+                    EndsWith(expr, ..) => with_dtype(*expr, DataType::Boolean),
+                    Extract { expr, .. } => with_dtype(*expr, DataType::Utf8),
+                    ExtractAll(expr, ..) => {
+                        with_dtype(*expr, DataType::List(DataType::Utf8.into()))
+                    }
+                    CountMatch(expr, ..) => with_dtype(*expr, DataType::UInt32),
+                    #[cfg(feature = "string_justify")]
+                    Zfill(expr, ..) => same_type(*expr),
+                    #[cfg(feature = "string_justify")]
+                    LJust { expr, .. } => same_type(*expr),
+                    #[cfg(feature = "string_justify")]
+                    RJust { expr, .. } => same_type(*expr),
+                    #[cfg(feature = "temporal")]
+                    Strptime(expr, options) => with_dtype(*expr, options.date_dtype.clone()),
+                    Concat(expr, ..) => same_type(*expr),
+                }
+            }
         }
     }
 }

@@ -9,6 +9,8 @@ use crate::dsl::function_expr::FunctionExpr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use super::string::{StringNameSpace, StringExpr};
+
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> Result<Series>`
 pub trait SeriesUdf: Send + Sync {
     fn call_udf(&self, s: &mut [Series]) -> Result<Series>;
@@ -306,7 +308,6 @@ pub enum Expr {
         output_type: GetOutput,
         options: FunctionOptions,
     },
-    #[cfg_attr(feature = "serde", serde(skip))]
     Function {
         /// function arguments
         input: Vec<Expr>,
@@ -342,7 +343,6 @@ pub enum Expr {
         length: Box<Expr>,
     },
     /// Can be used in a select statement to exclude a column from selection
-    #[cfg_attr(feature = "serde", serde(skip))]
     Exclude(Box<Expr>, Vec<Excluded>),
     /// Set root name as Alias
     KeepName(Box<Expr>),
@@ -355,6 +355,7 @@ pub enum Expr {
     Count,
     /// Take the nth column in the `DataFrame`
     Nth(i64),
+    Str(StringExpr)
 }
 
 // TODO! derive. This is only a temporary fix
@@ -378,6 +379,8 @@ impl Default for Expr {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+
 pub enum Excluded {
     Name(Arc<str>),
     Dtype(DataType),

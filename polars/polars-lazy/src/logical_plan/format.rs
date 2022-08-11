@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::prelude::string::StringExpr;
 use std::borrow::Cow;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
@@ -299,6 +300,35 @@ impl fmt::Debug for Expr {
             RenameAlias { expr, .. } => write!(f, "RENAME_ALIAS {:?}", expr),
             Columns(names) => write!(f, "COLUMNS({:?})", names),
             DtypeColumn(dt) => write!(f, "COLUMN OF DTYPE: {:?}", dt),
+            Str(str_expr) => write!(f, "{}", str_expr),
+        }
+    }
+}
+impl Display for StringExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Debug::fmt(self, f)
+    }
+}
+impl Debug for StringExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        use StringExpr::*;
+        match self {
+            Contains { expr, pat, literal } => write!(f, "{:?}.str.contains({:?},{:?})", expr, pat, literal),
+            StartsWith(expr, pat) => write!(f, "{:?}.str.starts_with({:?})", expr, pat),
+            EndsWith(expr, pat) => write!(f, "{:?}.str.ends_with({:?})", expr, pat),
+            Extract{ expr, pat, group_index } => write!(f, "{:?}.str.extract({:?},{:?})", expr, pat, group_index),
+            #[cfg(feature = "string_justify")]
+            Zfill(expr, alignment) => write!(f, "{:?}.str.zfill({:?})", expr, alignment),
+            #[cfg(feature = "string_justify")]
+            LJust {expr, width, fillchar} => write!(f, "{:?}.str.ljust({:?},{:?})", expr, width, fillchar),
+            #[cfg(feature = "string_justify")]
+            RJust {expr, width, fillchar} => write!(f, "{:?}.str.rjust({:?},{:?})", expr, width, fillchar),
+            ExtractAll(expr, pat) => write!(f, "{:?}.str.extract_all({:?})", expr, pat),
+            CountMatch(expr, pat) => write!(f, "{:?}.str.count_match({:?})", expr, pat),
+            #[cfg(feature = "temporal")]
+            Strptime(expr, options) => write!(f, "{:?}.str.strptime({:?})", expr, options),
+            #[cfg(feature = "concat_str")]
+            Concat(expr, sep) => write!(f, "{:?}.str.concat({:?})", expr, sep),
         }
     }
 }

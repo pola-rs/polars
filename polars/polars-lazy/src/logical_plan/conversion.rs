@@ -147,6 +147,58 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::RenameAlias { .. } => panic!("no `rename_alias` expected at this point"),
         Expr::Columns { .. } => panic!("no `columns` expected at this point"),
         Expr::DtypeColumn { .. } => panic!("no `dtype-columns` expected at this point"),
+        #[cfg(feature = "strings")]
+        Expr::Str(expr) => {
+            use crate::dsl::string::StringExpr;
+            use AStringExpr::*;
+            let str_expr = match expr {
+                StringExpr::Contains { expr, pat, literal } => Contains {
+                    expr: to_aexpr(*expr, arena),
+                    pat,
+                    literal,
+                },
+                StringExpr::StartsWith(expr, pat) => StartsWith(to_aexpr(*expr, arena), pat),
+                StringExpr::EndsWith(expr, pat) => EndsWith(to_aexpr(*expr, arena), pat),
+                StringExpr::Extract {
+                    expr,
+                    pat,
+                    group_index,
+                } => Extract {
+                    expr: to_aexpr(*expr, arena),
+                    pat,
+                    group_index,
+                },
+                StringExpr::ExtractAll(expr, pat) => ExtractAll(to_aexpr(*expr, arena), pat),
+                StringExpr::CountMatch(expr, pat) => CountMatch(to_aexpr(*expr, arena), pat),
+                #[cfg(feature = "string_justify")]
+                StringExpr::Zfill(expr, alignment) => Zfill(to_aexpr(*expr, arena), alignment),
+                #[cfg(feature = "string_justify")]
+                StringExpr::LJust {
+                    expr,
+                    width,
+                    fillchar,
+                } => LJust {
+                    expr: to_aexpr(*expr, arena),
+                    width,
+                    fillchar,
+                },
+                #[cfg(feature = "string_justify")]
+                StringExpr::RJust {
+                    expr,
+                    width,
+                    fillchar,
+                } => RJust {
+                    expr: to_aexpr(*expr, arena),
+                    width,
+                    fillchar,
+                },
+                #[cfg(feature = "temporal")]
+                StringExpr::Strptime(expr, options) => Strptime(to_aexpr(*expr, arena), options),
+                #[cfg(feature = "concat_str")]
+                StringExpr::Concat(expr, delimiter) => Concat(to_aexpr(*expr, arena), delimiter),
+            };
+            AExpr::Str(str_expr)
+        }
     };
     arena.add(v)
 }
@@ -667,6 +719,73 @@ pub(crate) fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         AExpr::Count => Expr::Count,
         AExpr::Nth(i) => Expr::Nth(i),
         AExpr::Wildcard => Expr::Wildcard,
+
+        #[cfg(feature = "strings")]
+        AExpr::Str(expr) => {
+            use crate::dsl::string::StringExpr;
+            use AStringExpr::*;
+            let str_expr = match expr {
+                Contains { expr, pat, literal } => StringExpr::Contains {
+                    expr: Box::new(node_to_expr(expr, expr_arena)),
+                    pat,
+                    literal,
+                },
+                EndsWith(expr, pat) => {
+                    StringExpr::EndsWith(Box::new(node_to_expr(expr, expr_arena)), pat)
+                }
+                StartsWith(expr, pat) => {
+                    StringExpr::StartsWith(Box::new(node_to_expr(expr, expr_arena)), pat)
+                }
+                Extract {
+                    expr,
+                    pat,
+                    group_index,
+                } => StringExpr::Extract {
+                    expr: Box::new(node_to_expr(expr, expr_arena)),
+                    pat,
+                    group_index,
+                },
+                CountMatch(expr, pat) => {
+                    StringExpr::CountMatch(Box::new(node_to_expr(expr, expr_arena)), pat)
+                }
+                ExtractAll(expr, pat) => {
+                    StringExpr::ExtractAll(Box::new(node_to_expr(expr, expr_arena)), pat)
+                }
+                #[cfg(feature = "string_justify")]
+                Zfill(expr, alignment) => {
+                    StringExpr::Zfill(Box::new(node_to_expr(expr, expr_arena)), alignment)
+                }
+                #[cfg(feature = "string_justify")]
+                LJust {
+                    expr,
+                    width,
+                    fillchar,
+                } => StringExpr::LJust {
+                    expr: Box::new(node_to_expr(expr, expr_arena)),
+                    width,
+                    fillchar,
+                },
+                #[cfg(feature = "string_justify")]
+                RJust {
+                    expr,
+                    width,
+                    fillchar,
+                } => StringExpr::RJust {
+                    expr: Box::new(node_to_expr(expr, expr_arena)),
+                    width,
+                    fillchar,
+                },
+                #[cfg(feature = "temporal")]
+                Strptime(expr, options) => {
+                    StringExpr::Strptime(Box::new(node_to_expr(expr, expr_arena)), options)
+                }
+                #[cfg(feature = "concat_str")]
+                Concat(expr, delimiter) => {
+                    StringExpr::Concat(Box::new(node_to_expr(expr, expr_arena)), delimiter)
+                }
+            };
+            Expr::Str(str_expr)
+        }
     }
 }
 
