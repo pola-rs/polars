@@ -9,7 +9,6 @@ from polars.internals.anonymous_scan import (
     _scan_ipc_fsspec,
     _scan_parquet_fsspec,
 )
-from polars.internals.datatypes import IntoExpr
 from polars.internals.expr import (
     Expr,
     expr_to_lit_or_expr,
@@ -42,7 +41,6 @@ from polars.internals.whenthen import when  # used in expr.clip()
 __all__ = [
     "DataFrame",
     "Expr",
-    "IntoExpr",
     "LazyFrame",
     "Series",
     "all",

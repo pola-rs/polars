@@ -62,7 +62,7 @@ else:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import InterpolationMethod
+    from polars.internals.type_aliases import InterpolationMethod, IntoExpr
 
 
 def col(
@@ -818,7 +818,7 @@ def apply(
 
 
 def fold(
-    acc: pli.IntoExpr,
+    acc: IntoExpr,
     f: Callable[[pli.Series, pli.Series], pli.Series],
     exprs: Sequence[pli.Expr | str] | pli.Expr,
 ) -> pli.Expr:

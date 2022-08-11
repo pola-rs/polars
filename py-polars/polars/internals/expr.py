@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 import math
 import random
-import sys
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Callable, List, Sequence
 
@@ -35,16 +34,13 @@ try:
 except ImportError:
     _NUMPY_AVAILABLE = False
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
-
 if TYPE_CHECKING:
-    from polars.internals.datatypes import (
+    from polars.internals.type_aliases import (
         ClosedWindow,
-        FillStrategy,
+        FillNullStrategy,
         InterpolationMethod,
+        ToStructStrategy,
+        TransferEncoding,
     )
 
 
@@ -1884,7 +1880,7 @@ class Expr:
     def fill_null(
         self,
         value: Any | None = None,
-        strategy: FillStrategy | None = None,
+        strategy: FillNullStrategy | None = None,
         limit: int | None = None,
     ) -> Expr:
         """
@@ -5611,7 +5607,7 @@ class ExprListNameSpace:
 
     def to_struct(
         self,
-        n_field_strategy: Literal["first_non_null", "max_width"] = "first_non_null",
+        n_field_strategy: ToStructStrategy = "first_non_null",
         name_generator: Callable[[int], str] | None = None,
     ) -> Expr:
         """
@@ -6154,7 +6150,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
-    def decode(self, encoding: Literal["hex", "base64"], strict: bool = False) -> Expr:
+    def decode(self, encoding: TransferEncoding, strict: bool = False) -> Expr:
         """
         Decode a value using the provided encoding.
 
@@ -6195,7 +6191,7 @@ class ExprStringNameSpace:
                 f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
             )
 
-    def encode(self, encoding: Literal["hex", "base64"]) -> Expr:
+    def encode(self, encoding: TransferEncoding) -> Expr:
         """
         Encode a value using the provided encoding.
 

@@ -49,10 +49,13 @@ except ImportError:
     _PYARROW_AVAILABLE = False
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import (
+    from polars.internals.type_aliases import (
+        AsofJoinStrategy,
         ClosedWindow,
-        FillStrategy,
+        CsvEncoding,
+        FillNullStrategy,
         InterpolationMethod,
+        ParallelStrategy,
     )
 
 
@@ -111,7 +114,7 @@ class LazyFrame:
         with_column_names: Callable[[list[str]], list[str]] | None = None,
         infer_schema_length: int | None = 100,
         n_rows: int | None = None,
-        encoding: Literal["utf8", "utf8-lossy"] = "utf8",
+        encoding: CsvEncoding = "utf8",
         low_memory: bool = False,
         rechunk: bool = True,
         skip_rows_after_header: int = 0,
@@ -168,7 +171,7 @@ class LazyFrame:
         file: str,
         n_rows: int | None = None,
         cache: bool = True,
-        parallel: Literal["auto", "columns", "row_groups", "none"] = "auto",
+        parallel: ParallelStrategy = "auto",
         rechunk: bool = True,
         row_count_name: str | None = None,
         row_count_offset: int = 0,
@@ -1208,7 +1211,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         by_left: str | list[str] | None = None,
         by_right: str | list[str] | None = None,
         by: str | list[str] | None = None,
-        strategy: Literal["backward", "forward"] = "backward",
+        strategy: AsofJoinStrategy = "backward",
         suffix: str = "_right",
         tolerance: str | int | float | None = None,
         allow_parallel: bool = True,
@@ -1934,7 +1937,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def fill_null(
         self: LDF,
         value: Any | None = None,
-        strategy: FillStrategy | None = None,
+        strategy: FillNullStrategy | None = None,
         limit: int | None = None,
     ) -> LDF:
         """

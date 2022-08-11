@@ -8,7 +8,7 @@ import pytest
 import polars as pl
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import ClosedWindow
+    from polars.internals.type_aliases import ClosedWindow
 
 
 def test_rolling_kernels_and_groupby_rolling() -> None:

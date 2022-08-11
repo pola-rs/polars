@@ -87,7 +87,12 @@ else:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import FillStrategy, InterpolationMethod
+    from polars.internals.type_aliases import (
+        ComparisonOperator,
+        FillNullStrategy,
+        InterpolationMethod,
+        TransferEncoding,
+    )
 
 
 def get_ffi_func(
@@ -308,9 +313,7 @@ class Series:
     def __rxor__(self, other: Series) -> Series:
         return self.__xor__(other)
 
-    def _comp(
-        self, other: Any, op: Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
-    ) -> Series:
+    def _comp(self, other: Any, op: ComparisonOperator) -> Series:
         if isinstance(other, datetime) and self.dtype == Datetime:
             ts = _datetime_to_pl_timestamp(other, self.time_unit)
             f = get_ffi_func(op + "_<>", Int64, self._s)
@@ -2602,7 +2605,7 @@ class Series:
     def fill_null(
         self,
         value: Any | None = None,
-        strategy: FillStrategy | None = None,
+        strategy: FillNullStrategy | None = None,
         limit: int | None = None,
     ) -> Series:
         """
@@ -4546,9 +4549,7 @@ class StringNameSpace:
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.starts_with(sub)).to_series()
 
-    def decode(
-        self, encoding: Literal["hex", "base64"], strict: bool = False
-    ) -> Series:
+    def decode(self, encoding: TransferEncoding, strict: bool = False) -> Series:
         """
         Decode a value using the provided encoding.
 
@@ -4584,7 +4585,7 @@ class StringNameSpace:
                 f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
             )
 
-    def encode(self, encoding: Literal["hex", "base64"]) -> Series:
+    def encode(self, encoding: TransferEncoding) -> Series:
         """
         Encode a value using the provided encoding
 

@@ -105,10 +105,19 @@ else:
 DF = TypeVar("DF", bound="DataFrame")
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import (
+    from polars.internals.type_aliases import (
+        AsofJoinStrategy,
+        AvroCompression,
         ClosedWindow,
-        FillStrategy,
+        ComparisonOperator,
+        CsvEncoding,
+        FillNullStrategy,
         InterpolationMethod,
+        IpcCompression,
+        NullStrategy,
+        Orientation,
+        ParallelStrategy,
+        ParquetCompression,
     )
 
     # these aliases are used to annotate DataFrame.__getitem__()
@@ -272,7 +281,7 @@ class DataFrame:
             | None
         ) = None,
         columns: ColumnsType | None = None,
-        orient: Literal["col", "row"] | None = None,
+        orient: Orientation | None = None,
     ):
         if data is None:
             self._df = dict_to_pydf({}, columns=columns)
@@ -367,7 +376,7 @@ class DataFrame:
         cls: type[DF],
         data: Sequence[Sequence[Any]],
         columns: Sequence[str] | None = None,
-        orient: Literal["col", "row"] | None = None,
+        orient: Orientation | None = None,
     ) -> DF:
         """
         Construct a DataFrame from a sequence of sequences.
@@ -396,7 +405,7 @@ class DataFrame:
         cls: type[DF],
         data: np.ndarray[Any, Any],
         columns: Sequence[str] | None = None,
-        orient: Literal["col", "row"] | None = None,
+        orient: Orientation | None = None,
     ) -> DF:
         """
         Construct a DataFrame from a numpy ndarray.
@@ -515,7 +524,7 @@ class DataFrame:
         infer_schema_length: int | None = 100,
         batch_size: int = 8192,
         n_rows: int | None = None,
-        encoding: Literal["utf8", "utf8-lossy"] = "utf8",
+        encoding: CsvEncoding = "utf8",
         low_memory: bool = False,
         rechunk: bool = True,
         skip_rows_after_header: int = 0,
@@ -637,7 +646,7 @@ class DataFrame:
         file: str | Path | BinaryIO,
         columns: list[int] | list[str] | None = None,
         n_rows: int | None = None,
-        parallel: Literal["auto", "columns", "row_groups", "none"] = "auto",
+        parallel: ParallelStrategy = "auto",
         row_count_name: str | None = None,
         row_count_offset: int = 0,
         low_memory: bool = False,
@@ -1115,7 +1124,7 @@ class DataFrame:
     def write_avro(
         self,
         file: BinaryIO | BytesIO | str | Path,
-        compression: Literal["uncompressed", "snappy", "deflate"] = "uncompressed",
+        compression: AvroCompression = "uncompressed",
     ) -> None:
         """
         Write to Apache Avro file.
@@ -1138,7 +1147,7 @@ class DataFrame:
     def write_ipc(
         self,
         file: BinaryIO | BytesIO | str | Path,
-        compression: Literal["uncompressed", "lz4", "zstd"] = "uncompressed",
+        compression: IpcCompression = "uncompressed",
     ) -> None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -1292,9 +1301,7 @@ class DataFrame:
         self,
         file: str | Path | BytesIO,
         *,
-        compression: Literal[
-            "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
-        ] = "lz4",
+        compression: ParquetCompression = "lz4",
         compression_level: int | None = None,
         statistics: bool = False,
         row_group_size: int | None = None,
@@ -1401,9 +1408,7 @@ class DataFrame:
         else:
             return out
 
-    def _comp(
-        self, other: Any, op: Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
-    ) -> DataFrame:
+    def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
         """Compare a DataFrame with another object."""
         if isinstance(other, DataFrame):
             return self._compare_to_other_df(other, op)
@@ -1413,7 +1418,7 @@ class DataFrame:
     def _compare_to_other_df(
         self,
         other: DataFrame,
-        op: Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"],
+        op: ComparisonOperator,
     ) -> DataFrame:
         """Compare a DataFrame with another DataFrame."""
         if self.columns != other.columns:
@@ -1445,7 +1450,7 @@ class DataFrame:
     def _compare_to_non_df(
         self,
         other: Any,
-        op: Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"],
+        op: ComparisonOperator,
     ) -> DataFrame:
         """Compare a DataFrame with a non-DataFrame object."""
         if op == "eq":
@@ -3357,7 +3362,7 @@ class DataFrame:
         by_left: str | list[str] | None = None,
         by_right: str | list[str] | None = None,
         by: str | list[str] | None = None,
-        strategy: Literal["backward", "forward"] = "backward",
+        strategy: AsofJoinStrategy = "backward",
         suffix: str = "_right",
         tolerance: str | int | float | None = None,
         allow_parallel: bool = True,
@@ -4161,7 +4166,7 @@ class DataFrame:
     def fill_null(
         self,
         value: Any | None = None,
-        strategy: FillStrategy | None = None,
+        strategy: FillNullStrategy | None = None,
         limit: int | None = None,
     ) -> DataFrame:
         """
@@ -4987,7 +4992,7 @@ class DataFrame:
         self: DF,
         *,
         axis: Literal[0] = ...,
-        null_strategy: Literal["ignore", "propagate"] = "ignore",
+        null_strategy: NullStrategy = "ignore",
     ) -> DF:
         ...
 
@@ -4996,7 +5001,7 @@ class DataFrame:
         self,
         *,
         axis: Literal[1],
-        null_strategy: Literal["ignore", "propagate"] = "ignore",
+        null_strategy: NullStrategy = "ignore",
     ) -> pli.Series:
         ...
 
@@ -5005,7 +5010,7 @@ class DataFrame:
         self: DF,
         *,
         axis: int = 0,
-        null_strategy: Literal["ignore", "propagate"] = "ignore",
+        null_strategy: NullStrategy = "ignore",
     ) -> DF | pli.Series:
         ...
 
@@ -5013,7 +5018,7 @@ class DataFrame:
         self: DF,
         *,
         axis: int = 0,
-        null_strategy: Literal["ignore", "propagate"] = "ignore",
+        null_strategy: NullStrategy = "ignore",
     ) -> DF | pli.Series:
         """
         Aggregate the columns of this DataFrame to their sum value.
@@ -5056,7 +5061,7 @@ class DataFrame:
         self: DF,
         *,
         axis: Literal[0] = ...,
-        null_strategy: Literal["ignore", "propagate"] = "ignore",
+        null_strategy: NullStrategy = "ignore",
     ) -> DF:
         ...
 
@@ -5065,7 +5070,7 @@ class DataFrame:
         self,
         *,
         axis: Literal[1],
-        null_strategy: Literal["ignore", "propagate"] = "ignore",
+        null_strategy: NullStrategy = "ignore",
     ) -> pli.Series:
         ...
 
@@ -5074,14 +5079,14 @@ class DataFrame:
         self: DF,
         *,
         axis: int = 0,
-        null_strategy: Literal["ignore", "propagate"] = "ignore",
+        null_strategy: NullStrategy = "ignore",
     ) -> DF | pli.Series:
         ...
 
     def mean(
         self: DF,
         axis: int = 0,
-        null_strategy: Literal["ignore", "propagate"] = "ignore",
+        null_strategy: NullStrategy = "ignore",
     ) -> DF | pli.Series:
         """
         Aggregate the columns of this DataFrame to their mean value.

@@ -24,7 +24,7 @@ except ImportError:
     _DOCUMENTING = True
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import ClosedWindow
+    from polars.internals.type_aliases import ClosedWindow
 
 
 def get_dummies(df: pli.DataFrame) -> pli.DataFrame:
