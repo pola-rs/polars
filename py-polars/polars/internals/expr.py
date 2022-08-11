@@ -8268,7 +8268,7 @@ class ExprDateTimeNameSpace:
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 3)
-        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=1))})
+        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=1)),})
         >>> df.select(
         ...     [
         ...         pl.col("date"),
@@ -8308,7 +8308,7 @@ class ExprDateTimeNameSpace:
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 3)
-        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=1))})
+        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=1)),})
         >>> df.select(
         ...     [
         ...         pl.col("date"),
@@ -8382,6 +8382,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
