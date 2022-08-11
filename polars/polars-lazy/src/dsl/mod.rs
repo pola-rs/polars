@@ -44,6 +44,7 @@ pub use functions::*;
 pub use options::*;
 
 use crate::dsl::function_expr::FunctionExpr;
+use crate::dsl::function_expr::NanFunction;
 
 #[cfg(feature = "trigonometry")]
 use crate::dsl::function_expr::TrigonometricFunction;
@@ -303,22 +304,7 @@ impl Expr {
 
     /// Drop NaN values
     pub fn drop_nans(self) -> Self {
-        self.apply(
-            |s| match s.dtype() {
-                DataType::Float32 => {
-                    let ca = s.f32()?;
-                    let mask = ca.is_not_nan();
-                    ca.filter(&mask).map(|ca| ca.into_series())
-                }
-                DataType::Float64 => {
-                    let ca = s.f64()?;
-                    let mask = ca.is_not_nan();
-                    ca.filter(&mask).map(|ca| ca.into_series())
-                }
-                _ => Ok(s),
-            },
-            GetOutput::same_type(),
-        )
+        self.map_private(NanFunction::DropNans.into(), "drop_nans")
     }
 
     /// Reduce groups to minimal value.
@@ -834,23 +820,13 @@ impl Expr {
     }
 
     /// Get mask of NaN values if dtype is Float
-    #[allow(clippy::wrong_self_convention)]
     pub fn is_nan(self) -> Self {
-        self.map(
-            |s: Series| s.is_nan().map(|ca| ca.into_series()),
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_fmt("is_nan")
+        self.map_private(NanFunction::IsNan.into(), "is_nan")
     }
 
     /// Get inverse mask of NaN values if dtype is Float
-    #[allow(clippy::wrong_self_convention)]
     pub fn is_not_nan(self) -> Self {
-        self.map(
-            |s: Series| s.is_not_nan().map(|ca| ca.into_series()),
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_fmt("is_not_nan")
+        self.map_private(NanFunction::IsNotNan.into(), "is_not_nan")
     }
 
     /// Shift the values in the array by some period. See [the eager implementation](polars_core::series::SeriesTrait::shift).
@@ -1108,6 +1084,7 @@ impl Expr {
     pub fn fill_nan<E: Into<Expr>>(self, fill_value: E) -> Self {
         // we take the not branch so that self is truthy value of `when -> then -> otherwise`
         // and that ensure we keep the name of `self`
+
         when(self.clone().is_not_nan())
             .then(self)
             .otherwise(fill_value.into())

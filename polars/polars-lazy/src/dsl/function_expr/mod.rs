@@ -5,7 +5,7 @@ mod fill_null;
 mod is_in;
 #[cfg(feature = "is_in")]
 mod list;
-
+mod nan;
 mod pow;
 #[cfg(all(feature = "rolling_window", feature = "moment"))]
 mod rolling;
@@ -20,6 +20,8 @@ mod strings;
 mod temporal;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
+
+pub(super) use self::nan::NanFunction;
 
 use super::*;
 use polars_core::prelude::*;
@@ -38,7 +40,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "arg_where")]
     ArgWhere,
     #[cfg(feature = "strings")]
-    StringExpr(StringFunctionExpr),
+    StringExpr(StringFunction),
     #[cfg(feature = "date_offset")]
     DateOffset(Duration),
     #[cfg(feature = "trigonometry")]
@@ -59,12 +61,13 @@ pub enum FunctionExpr {
     ShiftAndFill {
         periods: i64,
     },
+    Nan(NanFunction),
 }
 
 #[cfg(feature = "strings")]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
-pub enum StringFunctionExpr {
+pub enum StringFunction {
     Contains {
         pat: String,
         literal: bool,
@@ -156,7 +159,7 @@ impl FunctionExpr {
             ArgWhere => with_dtype(IDX_DTYPE),
             #[cfg(feature = "strings")]
             StringExpr(s) => {
-                use StringFunctionExpr::*;
+                use StringFunction::*;
                 match s {
                     Contains { .. } | EndsWith(_) | StartsWith(_) => with_dtype(DataType::Boolean),
                     Extract { .. } => same_type(),
@@ -183,6 +186,7 @@ impl FunctionExpr {
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { .. } => float_dtype(),
             ShiftAndFill { .. } => same_type(),
+            Nan(n) => n.get_field(fields),
         }
     }
 }
@@ -207,10 +211,24 @@ macro_rules! map_as_slice {
 }
 
 // Fn(&Series)
+#[macro_export(super)]
 macro_rules! map_without_args {
     ($func:path) => {{
         let f = move |s: &mut [Series]| {
             let s = &s[0];
+            $func(s)
+        };
+
+        SpecialEq::new(Arc::new(f))
+    }};
+}
+
+// FnOnce(Series)
+#[macro_export(super)]
+macro_rules! map_owned_without_args {
+    ($func:path) => {{
+        let f = move |s: &mut [Series]| {
+            let s = std::mem::take(&mut s[0]);
             $func(s)
         };
 
@@ -231,6 +249,7 @@ macro_rules! map_with_args {
 }
 
 // FnOnce(Series, args)
+#[macro_export(super)]
 macro_rules! map_owned_with_args {
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
@@ -286,6 +305,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             FillNull { super_type } => {
                 map_as_slice!(fill_null::fill_null, &super_type)
             }
+
             #[cfg(feature = "is_in")]
             ListContains => {
                 wrap!(list::contains)
@@ -297,14 +317,15 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             ShiftAndFill { periods } => {
                 map_as_slice!(shift_and_fill::shift_and_fill, periods)
             }
+            Nan(n) => n.into(),
         }
     }
 }
 
 #[cfg(feature = "strings")]
-impl From<StringFunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
-    fn from(func: StringFunctionExpr) -> Self {
-        use StringFunctionExpr::*;
+impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+    fn from(func: StringFunction) -> Self {
+        use StringFunction::*;
         match func {
             Contains { pat, literal } => {
                 map_with_args!(strings::contains, &pat, literal)

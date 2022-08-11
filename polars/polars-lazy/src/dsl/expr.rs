@@ -355,7 +355,6 @@ pub enum Expr {
     Count,
     /// Take the nth column in the `DataFrame`
     Nth(i64),
-    Str(StringExpr)
 }
 
 // TODO! derive. This is only a temporary fix

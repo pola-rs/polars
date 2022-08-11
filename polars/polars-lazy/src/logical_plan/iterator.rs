@@ -90,28 +90,6 @@ macro_rules! push_expr {
             Exclude(e, _) => $push(e),
             KeepName(e) => $push(e),
             RenameAlias { expr, .. } => $push(expr),
-            #[cfg(feature = "strings")]
-            Str(expr) => {
-                use StringExpr::*;
-                match expr {
-                    Contains { expr, .. } => $push(expr),
-                    StartsWith(expr, ..) => $push(expr),
-                    EndsWith(expr, ..) => $push(expr),
-                    Extract { expr, .. } => $push(expr),
-                    #[cfg(feature = "string_justify")]
-                    Zfill(expr, ..) => $push(expr),
-                    #[cfg(feature = "string_justify")]
-                    LJust { expr, .. } => $push(expr),
-                    #[cfg(feature = "string_justify")]
-                    RJust { expr, .. } => $push(expr),
-                    ExtractAll(expr, ..) => $push(expr),
-                    CountMatch(expr, ..) => $push(expr),
-                    #[cfg(feature = "temporal")]
-                    Strptime(expr, ..) => $push(expr),
-                    #[cfg(feature = "concat_str")]
-                    Concat(expr, ..) => $push(expr),
-                }
-            }
         }
     }};
 }
@@ -267,28 +245,6 @@ impl AExpr {
                 push(input);
                 push(offset);
                 push(length);
-            }
-            #[cfg(feature = "strings")]
-            Str(e) => {
-                use AStringExpr::*;
-                match e {
-                    Contains { expr, .. } => push(expr),
-                    StartsWith(expr, ..) => push(expr),
-                    EndsWith(expr, ..) => push(expr),
-                    Extract { expr, .. } => push(expr),
-                    ExtractAll(e, ..) => push(e),
-                    CountMatch(e, ..) => push(e),
-                    #[cfg(feature = "string_justify")]
-                    Zfill(e, ..) => push(e),
-                    #[cfg(feature = "string_justify")]
-                    LJust { expr, .. } => push(expr),
-                    #[cfg(feature = "string_justify")]
-                    RJust { expr, .. } => push(expr),
-                    #[cfg(feature = "temporal")]
-                    Strptime(e, ..) => push(e),
-                    #[cfg(feature = "concat_str")]
-                    Concat(e, ..) => push(e),
-                }
             }
         }
     }
