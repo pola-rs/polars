@@ -18,6 +18,7 @@ pre-commit: venv
 	$(PYTHON_BIN)/isort .
 	$(PYTHON_BIN)/black .
 	$(PYTHON_BIN)/blackdoc .
+	$(PYTHON_BIN)/pyupgrade --py37-plus `find polars/ tests/ -name "*.py" -type f`
 	$(PYTHON_BIN)/mypy
 	$(PYTHON_BIN)/flake8
 	make -C .. fmt_toml
