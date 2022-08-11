@@ -1,13 +1,8 @@
 use super::function_expr::StringFunction;
 use super::*;
 use polars_arrow::array::ValueSize;
+#[cfg(feature = "dtype-struct")]
 use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
-use polars_ops::prelude::Utf8NameSpaceImpl;
-
-use polars_time::prelude::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 /// Specialized expressions for [`Series`] of [`DataType::Utf8`].
 pub struct StringNameSpace(pub(crate) Expr);
 
@@ -112,11 +107,11 @@ impl StringNameSpace {
             .map_private(StringFunction::Strptime(options).into(), "str.strptime")
     }
 
-    #[cfg(feature = "concat_str")]
     /// Concat the values into a string array.
     /// # Arguments
     ///
     /// * `delimiter` - A string that will act as delimiter between values.
+    #[cfg(feature = "concat_str")]
     pub fn concat(self, delimiter: &str) -> Expr {
         let delimiter = delimiter.to_owned();
 

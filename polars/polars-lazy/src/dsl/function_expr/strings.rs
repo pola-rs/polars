@@ -142,7 +142,7 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> Result<Series> 
 
 #[cfg(feature = "concat_str")]
 pub(super) fn concat(s: &Series, delimiter: &str) -> Result<Series> {
-    Ok(s.str_concat(&delimiter).into_series())
+    Ok(s.str_concat(delimiter).into_series())
 }
 
 impl From<StringFunction> for FunctionExpr {
