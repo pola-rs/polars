@@ -5,7 +5,7 @@ import io
 import os
 import textwrap
 import zlib
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pathlib import Path
 
 import pytest
@@ -646,4 +646,17 @@ def test_datetime_format(fmt: str, expected: str) -> None:
 def test_date_format(fmt: str, expected: str) -> None:
     df = pl.DataFrame({"dt": [date(2022, 1, 2)]})
     csv = df.write_csv(date_format=fmt)
+    assert csv == expected
+
+
+@pytest.mark.parametrize(
+    "fmt,expected",
+    [
+        (None, "dt\n16:15:30.000000000\n"),
+        ("%R", "dt\n16:15\n"),
+    ],
+)
+def test_time_format(fmt: str, expected: str) -> None:
+    df = pl.DataFrame({"dt": [time(16, 15, 30)]})
+    csv = df.write_csv(time_format=fmt)
     assert csv == expected

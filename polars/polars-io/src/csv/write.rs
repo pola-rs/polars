@@ -65,7 +65,9 @@ where
 
     /// Set the CSV file's date format
     pub fn with_date_format(mut self, format: Option<String>) -> Self {
-        self.options.date_format = format;
+        if format.is_some() {
+            self.options.date_format = format;
+        }
         self
     }
 
