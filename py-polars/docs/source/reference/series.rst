@@ -241,7 +241,6 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.seconds
     DateTimeNameSpace.strftime
     DateTimeNameSpace.timestamp
-    DateTimeNameSpace.to_python_datetime
     DateTimeNameSpace.truncate
     DateTimeNameSpace.week
     DateTimeNameSpace.weekday

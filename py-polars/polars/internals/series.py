@@ -204,7 +204,7 @@ class Series:
     def __init__(
         self,
         name: str | ArrayLike | None = None,
-        values: ArrayLike | None = None,
+        values: ArrayLike | Sequence[Any] | None = None,
         dtype: type[DataType] | DataType | None = None,
         strict: bool = True,
         nan_to_null: bool = False,
@@ -1837,10 +1837,10 @@ class Series:
         """
         return wrap_s(self._s.is_not_nan())
 
-    def is_in(self, other: Series | list[object]) -> Series:
+    def is_in(self, other: Series | Sequence[object]) -> Series:
         """
-        Check if elements of this Series are in the right Series, or List values of the
-        right Series.
+        Check if elements of this Series are in the other Series, or
+        if this Series is itself a member of the other Series.
 
         Returns
         -------
@@ -1887,7 +1887,9 @@ class Series:
         ]
 
         """
-        if isinstance(other, list):
+        if isinstance(other, str):
+            raise TypeError("'other' parameter expects non-string sequence data")
+        elif isinstance(other, Sequence):
             other = Series("", other)
         return wrap_s(self._s.is_in(other._s))
 
@@ -4030,32 +4032,43 @@ class Series:
         min_periods: int = 1,
     ) -> Series:
         r"""
-        Exponential moving average.
+        Exponentially-weighted moving average.
 
         Parameters
         ----------
         com
-            Specify decay in terms of center of mass,
-            :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+            Specify decay in terms of center of mass, :math:`\gamma`, with
+
+                .. math::
+                    \alpha = \frac{1}{1 + \gamma} \; \forall \; \gamma \geq 0
         span
-            Specify decay in terms of span,
-            :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+            Specify decay in terms of span, :math:`\theta`, with
+
+                .. math::
+                    \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life,
-            :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+            Specify decay in terms of half-life, :math:`\lambda`, with
+
+                .. math::
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
+                    \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly,
-            :math:`0 < alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When adjust = True the EW function is calculated using weights
-                    :math:`w_i = (1 - alpha)^i`
-                - When adjust = False the EW function is calculated recursively.
+                - When ``adjust=True`` the EW function is calculated
+                  using weights :math:`w_i = (1 - \alpha)^i`
+                - When ``adjust=False`` the EW function is calculated
+                  recursively by
+
+                  .. math::
+                    y_0 &= x_0 \\
+                    y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
         min_periods
             Minimum number of observations in window required to have a value
-            (otherwise result is Null).
+            (otherwise result is null).
 
         """
         return (
@@ -4078,32 +4091,43 @@ class Series:
         min_periods: int = 1,
     ) -> Series:
         r"""
-        Exponential moving standard deviation.
+        Exponentially-weighted moving standard deviation.
 
         Parameters
         ----------
         com
-            Specify decay in terms of center of mass,
-            :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+            Specify decay in terms of center of mass, :math:`\gamma`, with
+
+                .. math::
+                    \alpha = \frac{1}{1 + \gamma} \; \forall \; \gamma \geq 0
         span
-            Specify decay in terms of span,
-            :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+            Specify decay in terms of span, :math:`\theta`, with
+
+                .. math::
+                    \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life,
-            :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+            Specify decay in terms of half-life, :math:`\lambda`, with
+
+                .. math::
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
+                    \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly,
-            :math:`0 < alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When adjust = True the EW function is calculated using weights
-                    :math:`w_i = (1 - alpha)^i`
-                - When adjust = False the EW function is calculated recursively.
+                - When ``adjust=True`` the EW function is calculated
+                  using weights :math:`w_i = (1 - \alpha)^i`
+                - When ``adjust=False`` the EW function is calculated
+                  recursively by
+
+                  .. math::
+                    y_0 &= x_0 \\
+                    y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
         min_periods
             Minimum number of observations in window required to have a value
-            (otherwise result is Null).
+            (otherwise result is null).
 
         """
         return (
@@ -4126,31 +4150,43 @@ class Series:
         min_periods: int = 1,
     ) -> Series:
         r"""
-        Exponential moving standard variation.
+        Exponentially-weighted moving variance.
 
         Parameters
         ----------
         com
-            Specify decay in terms of center of mass,
-            :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+            Specify decay in terms of center of mass, :math:`\gamma`, with
+
+                .. math::
+                    \alpha = \frac{1}{1 + \gamma} \; \forall \; \gamma \geq 0
         span
-            Specify decay in terms of span,
-            :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+            Specify decay in terms of span, :math:`\theta`, with
+
+                .. math::
+                    \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life,
-            :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+            Specify decay in terms of half-life, :math:`\lambda`, with
+
+                .. math::
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
+                    \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When adjust = True the EW function is calculated using weights
-                    :math:`w_i = (1 - alpha)^i`
-                - When adjust = False the EW function is calculated recursively.
+                - When ``adjust=True`` the EW function is calculated
+                  using weights :math:`w_i = (1 - \alpha)^i`
+                - When ``adjust=False`` the EW function is calculated
+                  recursively by
+
+                  .. math::
+                    y_0 &= x_0 \\
+                    y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
         min_periods
             Minimum number of observations in window required to have a value
-            (otherwise result is Null).
+            (otherwise result is null).
 
         """
         return (
@@ -5660,18 +5696,6 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.timestamp(tu))
 
-    def to_python_datetime(self) -> Series:
-        """
-        Go from Date/Datetime to python DateTime objects
-
-        .. deprecated:: 0.13.23
-            Use :func:`Series.to_list` instead.
-
-        """
-        return (self.timestamp("ms") / 1000).apply(
-            lambda ts: datetime.utcfromtimestamp(ts), Object
-        )
-
     def min(self) -> date | datetime | timedelta:
         """Return minimum as python DateTime."""
         # we can ignore types because we are certain we get a logical type
@@ -5819,8 +5843,9 @@ class DateTimeNameSpace:
         """
         Offset this date by a relative time offset.
 
-         This differs from `pl.col("foo") + timedelta` in that it can
-         take months and leap years into account
+        This differs from ``pl.col("foo") + timedelta`` in that it can
+        take months and leap years into account. Note that only a single minus
+        sign is allowed in the ``by`` string, as the first character.
 
         Parameters
         ----------

@@ -15,7 +15,6 @@ from polars.datatypes import (
     Datetime,
     Float64,
     Int32,
-    Object,
     Time,
     UInt32,
     py_type_to_dtype,
@@ -3177,15 +3176,14 @@ class Expr:
         exponent = expr_to_lit_or_expr(exponent)
         return wrap_expr(self._pyexpr.pow(exponent._pyexpr))
 
-    def is_in(self, other: Expr | List[Any] | str) -> Expr:
+    def is_in(self, other: Expr | Sequence[Any] | str) -> Expr:
         """
-        Check if elements of this Series are in the right Series, or List values of the
-        right Series.
+        Check if elements of this expression are present in the other Series.
 
         Parameters
         ----------
         other
-            Series of primitive type or List type.
+            Series or sequence of primitive type.
 
         Returns
         -------
@@ -3211,7 +3209,7 @@ class Expr:
         └──────────┘
 
         """
-        if isinstance(other, list):
+        if isinstance(other, Sequence) and not isinstance(other, str):
             other = pli.lit(pli.Series(other))
         else:
             other = expr_to_lit_or_expr(other, str_to_lit=False)
@@ -5223,31 +5221,43 @@ class Expr:
         min_periods: int = 1,
     ) -> Expr:
         r"""
-        Exponential moving average.
+        Exponentially-weighted moving average.
 
         Parameters
         ----------
         com
-            Specify decay in terms of center of mass,
-            :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+            Specify decay in terms of center of mass, :math:`\gamma`, with
+
+                .. math::
+                    \alpha = \frac{1}{1 + \gamma} \; \forall \; \gamma \geq 0
         span
-            Specify decay in terms of span,
-            :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+            Specify decay in terms of span, :math:`\theta`, with
+
+                .. math::
+                    \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life,
-            :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+            Specify decay in terms of half-life, :math:`\lambda`, with
+
+                .. math::
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
+                    \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When adjust = True the EW function is calculated using weights
-                    :math:`w_i = (1 - alpha)^i`
-                - When adjust = False the EW function is calculated recursively.
+                - When ``adjust=True`` the EW function is calculated
+                  using weights :math:`w_i = (1 - \alpha)^i`
+                - When ``adjust=False`` the EW function is calculated
+                  recursively by
+
+                  .. math::
+                    y_0 &= x_0 \\
+                    y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
         min_periods
             Minimum number of observations in window required to have a value
-            (otherwise result is Null).
+            (otherwise result is null).
 
         Examples
         --------
@@ -5279,31 +5289,43 @@ class Expr:
         min_periods: int = 1,
     ) -> Expr:
         r"""
-        Exponential moving standard deviation.
+        Exponentially-weighted moving standard deviation.
 
         Parameters
         ----------
         com
-            Specify decay in terms of center of mass,
-            :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+            Specify decay in terms of center of mass, :math:`\gamma`, with
+
+                .. math::
+                    \alpha = \frac{1}{1 + \gamma} \; \forall \; \gamma \geq 0
         span
-            Specify decay in terms of span,
-            :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+            Specify decay in terms of span, :math:`\theta`, with
+
+                .. math::
+                    \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life,
-            :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+            Specify decay in terms of half-life, :math:`\lambda`, with
+
+                .. math::
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
+                    \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When adjust = True the EW function is calculated using weights
-                    :math:`w_i = (1 - alpha)^i`
-                - When adjust = False the EW function is calculated recursively.
+                - When ``adjust=True`` the EW function is calculated
+                  using weights :math:`w_i = (1 - \alpha)^i`
+                - When ``adjust=False`` the EW function is calculated
+                  recursively by
+
+                  .. math::
+                    y_0 &= x_0 \\
+                    y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
         min_periods
             Minimum number of observations in window required to have a value
-            (otherwise result is Null).
+            (otherwise result is null).
 
         Examples
         --------
@@ -5335,31 +5357,43 @@ class Expr:
         min_periods: int = 1,
     ) -> Expr:
         r"""
-        Exponential moving standard deviation.
+        Exponentially-weighted moving variance.
 
         Parameters
         ----------
         com
-            Specify decay in terms of center of mass,
-            :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+            Specify decay in terms of center of mass, :math:`\gamma`, with
+
+                .. math::
+                    \alpha = \frac{1}{1 + \gamma} \; \forall \; \gamma \geq 0
         span
-            Specify decay in terms of span,
-            :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+            Specify decay in terms of span, :math:`\theta`, with
+
+                .. math::
+                    \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
-            Specify decay in terms of half-life,
-            :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+            Specify decay in terms of half-life, :math:`\lambda`, with
+
+                .. math::
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
+                    \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When adjust = True the EW function is calculated using weights
-                    :math:`w_i = (1 - alpha)^i`
-                - When adjust = False the EW function is calculated recursively.
+                - When ``adjust=True`` the EW function is calculated
+                  using weights :math:`w_i = (1 - \alpha)^i`
+                - When ``adjust=False`` the EW function is calculated
+                  recursively by
+
+                  .. math::
+                    y_0 &= x_0 \\
+                    y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
         min_periods
             Minimum number of observations in window required to have a value
-            (otherwise result is Null).
+            (otherwise result is null).
 
         Examples
         --------
@@ -8170,46 +8204,6 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.nanosecond())
 
-    def to_python_datetime(self) -> Expr:
-        """Go from Date/Datetime to python DateTime objects.
-
-        Examples
-        --------
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 3)
-        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=1))})
-        >>> df
-        shape: (3, 1)
-        ┌─────────────────────┐
-        │ date                │
-        │ ---                 │
-        │ datetime[ns]        │
-        ╞═════════════════════╡
-        │ 2001-01-01 00:00:00 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2001-01-02 00:00:00 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2001-01-03 00:00:00 │
-        └─────────────────────┘
-        >>> df.select(pl.col("date").dt.to_python_datetime())
-        shape: (3, 1)
-        ┌─────────────────────┐
-        │ date                │
-        │ ---                 │
-        │ object              │
-        ╞═════════════════════╡
-        │ 2001-01-01 00:00:00 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2001-01-02 00:00:00 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2001-01-03 00:00:00 │
-        └─────────────────────┘
-        """
-        return wrap_expr(self._pyexpr).map(
-            lambda s: s.dt.to_python_datetime(), return_dtype=Object
-        )
-
     def epoch(self, tu: str = "us") -> Expr:
         """
         Get the time passed since the Unix EPOCH in the given time unit
@@ -8679,8 +8673,9 @@ class ExprDateTimeNameSpace:
         """
         Offset this date by a relative time offset.
 
-         This differs from `pl.col("foo") + timedelta` in that it can
-         take months and leap years into account
+        This differs from ``pl.col("foo") + timedelta`` in that it can
+        take months and leap years into account. Note that only a single minus
+        sign is allowed in the ``by`` string, as the first character.
 
         Parameters
         ----------

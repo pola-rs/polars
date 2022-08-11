@@ -17,7 +17,6 @@ from polars.datatypes import (
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _timedelta_to_pl_timedelta,
-    in_nanoseconds_window,
     timedelta_in_nanoseconds_window,
 )
 
@@ -642,25 +641,16 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
 
     """
     if isinstance(value, datetime):
-        if in_nanoseconds_window(value):
-            tu = "ns"
-        else:
-            tu = "ms"
-        return (
-            lit(_datetime_to_pl_timestamp(value, tu))
-            .cast(Datetime)
-            .dt.with_time_unit(tu)
-        )
+        tu = "us"
+        return lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime(tu))
     if isinstance(value, timedelta):
+        # TODO: python timedelta should also default to 'us' units.
+        #  (needs some corresponding work on the Rust side first)
         if timedelta_in_nanoseconds_window(value):
             tu = "ns"
         else:
             tu = "ms"
-        return (
-            lit(_timedelta_to_pl_timedelta(value, tu))
-            .cast(Duration)
-            .dt.with_time_unit(tu)
-        )
+        return lit(_timedelta_to_pl_timedelta(value, tu)).cast(Duration(tu))
 
     if isinstance(value, date):
         return lit(datetime(value.year, value.month, value.day)).cast(Date)
@@ -680,10 +670,25 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
         return pli.wrap_expr(pylit(value)).cast(dtype)
 
     try:
-        # numpy literals like np.float32(0) have an item
+        # numpy literals like np.float32(0) have item/dtype
         item = value.item()
+
+        # numpy item() is py-native datetime/timedelta when units < 'ns'
+        if isinstance(item, (datetime, timedelta)):
+            return lit(item)
+
+        # handle 'ns' units
+        if isinstance(item, int) and hasattr(value, "dtype"):
+            dtype_name = value.dtype.name
+            if dtype_name.startswith(("datetime64[", "timedelta64[")):
+                tu = dtype_name[11:-1]
+                return lit(item).cast(
+                    Datetime(tu) if dtype_name.startswith("date") else Duration(tu)
+                )
+
     except AttributeError:
         item = value
+
     return pli.wrap_expr(pylit(item))
 
 

@@ -155,7 +155,7 @@ def test_categorical_is_in_list() -> None:
             {"a": [1, 2, 3, 1, 2], "b": ["a", "b", "c", "d", "e"]}
         ).with_column(pl.col("b").cast(pl.Categorical))
 
-        cat_list = ["a", "b", "c"]
+        cat_list = ("a", "b", "c")
         assert df.filter(pl.col("b").is_in(cat_list)).to_dict(False) == {
             "a": [1, 2, 3],
             "b": ["a", "b", "c"],

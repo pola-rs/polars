@@ -24,7 +24,6 @@ from typing import (
 from polars import internals as pli
 from polars._html import NotebookFormatter
 from polars.datatypes import (
-    Boolean,
     ColumnsType,
     DataType,
     Int8,
@@ -53,7 +52,6 @@ from polars.utils import (
     _process_null_values,
     format_path,
     handle_projection_columns,
-    is_bool_sequence,
     is_int_sequence,
     is_str_sequence,
     range_to_slice,
@@ -117,10 +115,8 @@ if TYPE_CHECKING:
     # MultiRowSelector indexes into the vertical axis and
     # MultiColSelector indexes into the horizontal axis
     # NOTE: wrapping these as strings is necessary for Python <3.10
-    MultiRowSelector: TypeAlias = "slice | range | list[int] | list[bool] | pli.Series"
-    MultiColSelector: TypeAlias = (
-        "slice | range | list[int] | list[bool] | list[str] | pli.Series"
-    )
+    MultiRowSelector: TypeAlias = "slice | range | list[int] | pli.Series"
+    MultiColSelector: TypeAlias = "slice | range | list[int] | list[str] | pli.Series"
 
 
 def wrap_df(df: PyDataFrame) -> DataFrame:
@@ -1714,21 +1710,6 @@ class DataFrame:
                     df = self.__getitem__(self.columns[col_selection])
                     return df[row_selection]
 
-                # slice and boolean mask
-                # df[:2, [True, False, True]]
-                if isinstance(col_selection, (Sequence, pli.Series)):
-                    if (
-                        isinstance(col_selection[0], bool)
-                        or isinstance(col_selection, pli.Series)
-                        and col_selection.dtype() == Boolean
-                    ):
-                        df = self.__getitem__(row_selection)
-                        select = []
-                        for col, valid in zip(df.columns, col_selection):
-                            if valid:
-                                select.append(col)
-                        return df.select(select)
-
                 # single slice
                 # df[:, unknown]
                 series = self.__getitem__(col_selection)
@@ -1795,27 +1776,18 @@ class DataFrame:
                 )
             if isinstance(item[0], str):
                 return self._from_pydf(self._df.select(item))
-            if item.dtype == bool:
-                warnings.warn(
-                    "index notation '[]' is deprecated for boolean masks. Consider"
-                    " using 'filter'.",
-                    DeprecationWarning,
-                )
-                return self._from_pydf(self._df.filter(pli.Series("", item).inner()))
 
         if is_str_sequence(item, allow_str=False):
             # select multiple columns
             # df[["foo", "bar"]]
             return self._from_pydf(self._df.select(item))
-        elif is_bool_sequence(item) or is_int_sequence(item):
+        elif is_int_sequence(item):
             item = pli.Series("", item)  # fall through to next if isinstance
 
         if isinstance(item, pli.Series):
             dtype = item.dtype
             if dtype == Utf8:
                 return self._from_pydf(self._df.select(item))
-            if dtype == Boolean:
-                return self._from_pydf(self._df.filter(item.inner()))
             if dtype == UInt32:
                 return self._from_pydf(self._df.take_with_series(item.inner()))
             if dtype in {UInt8, UInt16, UInt64, Int8, Int16, Int32, Int64}:
@@ -1999,7 +1971,10 @@ class DataFrame:
             index = len(self.columns) + index
         self._df.insert_at_idx(index, series._s)
 
-    def filter(self, predicate: pli.Expr | str | pli.Series | list[bool]) -> DataFrame:
+    def filter(
+        self,
+        predicate: pli.Expr | str | pli.Series | list[bool] | np.ndarray[Any, Any],
+    ) -> DataFrame:
         """
         Filter the rows in the DataFrame based on a predicate expression.
 
@@ -2045,9 +2020,12 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
+        if _NUMPY_AVAILABLE and isinstance(predicate, np.ndarray):
+            predicate = pli.Series(predicate)
+
         return (
             self.lazy()
-            .filter(predicate)
+            .filter(predicate)  # type: ignore[arg-type]
             .collect(no_optimization=True, string_cache=False)
         )
 
@@ -2668,7 +2646,7 @@ class DataFrame:
 
         Drop a column if all values are null:
 
-        >>> df[:, [not (s.null_count() == df.height) for s in df]]
+        >>> df[[s.name for s in df if not (s.null_count() == df.height)]]
         shape: (4, 2)
         ┌──────┬──────┐
         │ b    ┆ c    │
