@@ -132,8 +132,14 @@ def test_datetime_consistency() -> None:
     df = pl.DataFrame({"date": [dt]})
 
     assert df["date"].dt[0] == dt
-    assert df.select(pl.lit(dt))["literal"].dt[0] == dt
-    assert df.filter(pl.col("date") == dt).rows() == [(dt,)]
+
+    for date_literal in (
+        dt,
+        np.datetime64(dt, "us"),
+        np.datetime64(dt, "ns"),
+    ):
+        assert df.select(pl.lit(date_literal))["literal"].dt[0] == dt
+        assert df.filter(pl.col("date") == date_literal).rows() == [(dt,)]
 
     ddf = df.select(
         [

@@ -2986,15 +2986,14 @@ class Expr:
         exponent = expr_to_lit_or_expr(exponent)
         return wrap_expr(self._pyexpr.pow(exponent._pyexpr))
 
-    def is_in(self, other: Expr | List[Any] | str) -> Expr:
+    def is_in(self, other: Expr | Sequence[Any] | str) -> Expr:
         """
-        Check if elements of this Series are in the right Series, or List values of the
-        right Series.
+        Check if elements of this expression are present in the other Series.
 
         Parameters
         ----------
         other
-            Series of primitive type or List type.
+            Series or sequence of primitive type.
 
         Returns
         -------
@@ -3020,7 +3019,7 @@ class Expr:
         └──────────┘
 
         """
-        if isinstance(other, list):
+        if isinstance(other, Sequence) and not isinstance(other, str):
             other = pli.lit(pli.Series(other))
         else:
             other = expr_to_lit_or_expr(other, str_to_lit=False)

@@ -204,7 +204,7 @@ class Series:
     def __init__(
         self,
         name: str | ArrayLike | None = None,
-        values: ArrayLike | None = None,
+        values: ArrayLike | Sequence[Any] | None = None,
         dtype: type[DataType] | DataType | None = None,
         strict: bool = True,
         nan_to_null: bool = False,
@@ -1837,10 +1837,10 @@ class Series:
         """
         return wrap_s(self._s.is_not_nan())
 
-    def is_in(self, other: Series | list[object]) -> Series:
+    def is_in(self, other: Series | Sequence[object]) -> Series:
         """
-        Check if elements of this Series are in the right Series, or List values of the
-        right Series.
+        Check if elements of this Series are in the other Series, or
+        if this Series is itself a member of the other Series.
 
         Returns
         -------
@@ -1887,7 +1887,9 @@ class Series:
         ]
 
         """
-        if isinstance(other, list):
+        if isinstance(other, str):
+            raise TypeError("'other' parameter expects non-string sequence data")
+        elif isinstance(other, Sequence):
             other = Series("", other)
         return wrap_s(self._s.is_in(other._s))
 
