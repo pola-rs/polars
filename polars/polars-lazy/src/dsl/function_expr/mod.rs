@@ -22,6 +22,8 @@ mod temporal;
 mod trigonometry;
 
 pub(super) use self::nan::NanFunction;
+
+#[cfg(feature = "strings")]
 pub(super) use self::strings::StringFunction;
 
 use super::*;
