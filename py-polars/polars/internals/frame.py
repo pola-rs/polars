@@ -1077,6 +1077,7 @@ class DataFrame:
         quote: str = '"',
         batch_size: int = 1024,
         datetime_format: str | None = None,
+        date_format: str | None = None,
     ) -> str | None:
         """
         Write to comma-separated values (CSV) file.
@@ -1094,6 +1095,10 @@ class DataFrame:
         batch_size
             Rows that will be processed per thread
         datetime_format
+            A format string, with the specifiers defined by the
+            `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>_
+            Rust crate.
+        date_format
             A format string, with the specifiers defined by the
             `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>_
             Rust crate.
@@ -1119,13 +1124,29 @@ class DataFrame:
             raise ValueError("only single byte quote char is allowed")
         if file is None:
             buffer = BytesIO()
-            self._df.write_csv(buffer, has_header, ord(sep), ord(quote), batch_size, datetime_format)
+            self._df.write_csv(
+                buffer,
+                has_header,
+                ord(sep),
+                ord(quote),
+                batch_size,
+                datetime_format,
+                date_format,
+            )
             return str(buffer.getvalue(), encoding="utf-8")
 
         if isinstance(file, (str, Path)):
             file = format_path(file)
 
-        self._df.write_csv(file, has_header, ord(sep), ord(quote), batch_size, datetime_format)
+        self._df.write_csv(
+            file,
+            has_header,
+            ord(sep),
+            ord(quote),
+            batch_size,
+            datetime_format,
+            date_format,
+        )
         return None
 
     def write_avro(

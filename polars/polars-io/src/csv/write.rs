@@ -71,7 +71,9 @@ where
 
     /// Set the CSV file's time format
     pub fn with_time_format(mut self, format: Option<String>) -> Self {
-        self.options.time_format = format;
+        if format.is_some() {
+            self.options.time_format = format;
+        }
         self
     }
 
