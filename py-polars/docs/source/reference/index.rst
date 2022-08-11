@@ -19,3 +19,4 @@ methods. All classes and functions exposed in ``polars.*`` namespace are public.
    config
    exceptions
    testing
+   utils
