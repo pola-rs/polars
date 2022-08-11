@@ -1,4 +1,4 @@
-use crate::{map_without_args, map_owned_without_args};
+use crate::{map_owned_without_args, map_without_args};
 
 use super::*;
 
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub enum NanFunction {
     IsNan,
     IsNotNan,
-    DropNans
+    DropNans,
 }
 
 pub(super) fn is_nan(s: &Series) -> Result<Series> {

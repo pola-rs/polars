@@ -9,7 +9,7 @@ use crate::dsl::function_expr::FunctionExpr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use super::string::{StringNameSpace, StringExpr};
+use super::string::{StringExpr, StringNameSpace};
 
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> Result<Series>`
 pub trait SeriesUdf: Send + Sync {

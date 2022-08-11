@@ -108,5 +108,4 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> Result<Series> 
 pub(super) fn concat(s: &Series, delimiter: &str) -> Result<Series> {
     let ca = s.utf8()?;
     Ok(ca.str_concat(&delimiter).into_series())
-
 }
