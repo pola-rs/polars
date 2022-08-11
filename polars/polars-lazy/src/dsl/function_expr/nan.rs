@@ -63,6 +63,7 @@ impl From<NanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
         }
     }
 }
+
 impl From<NanFunction> for FunctionExpr {
     fn from(nan_function: NanFunction) -> Self {
         FunctionExpr::Nan(nan_function)

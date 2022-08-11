@@ -16,7 +16,7 @@ impl StringNameSpace {
     pub fn contains_literal<S: AsRef<str>>(self, pat: S) -> Expr {
         let pat = pat.as_ref().into();
         self.0.map_private(
-            FunctionExpr::StringExpr(StringFunction::Contains { pat, literal: true }),
+            StringFunction::Contains { pat, literal: true }.into(),
             "str.contains_literal",
         )
     }
@@ -25,10 +25,10 @@ impl StringNameSpace {
     pub fn contains<S: AsRef<str>>(self, pat: S) -> Expr {
         let pat = pat.as_ref().into();
         self.0.map_private(
-            FunctionExpr::StringExpr(StringFunction::Contains {
+            StringFunction::Contains {
                 pat,
                 literal: false,
-            }),
+            }.into(),
             "str.contains",
         )
     }
@@ -37,7 +37,7 @@ impl StringNameSpace {
     pub fn ends_with<S: AsRef<str>>(self, sub: S) -> Expr {
         let sub = sub.as_ref().into();
         self.0.map_private(
-            FunctionExpr::StringExpr(StringFunction::EndsWith(sub)),
+            StringFunction::EndsWith(sub).into(),
             "str.ends_with",
         )
     }
@@ -46,7 +46,7 @@ impl StringNameSpace {
     pub fn starts_with<S: AsRef<str>>(self, sub: S) -> Expr {
         let sub = sub.as_ref().into();
         self.0.map_private(
-            FunctionExpr::StringExpr(StringFunction::StartsWith(sub)),
+            StringFunction::StartsWith(sub).into(),
             "str.starts_with",
         )
     }
@@ -55,7 +55,7 @@ impl StringNameSpace {
     pub fn extract(self, pat: &str, group_index: usize) -> Expr {
         let pat = pat.to_string();
         self.0.map_private(
-            FunctionExpr::StringExpr(StringFunction::Extract { pat, group_index }),
+            StringFunction::Extract { pat, group_index }.into(),
             "str.extract",
         )
     }
@@ -68,7 +68,7 @@ impl StringNameSpace {
     #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     pub fn zfill(self, alignment: usize) -> Expr {
         self.0.map_private(
-            FunctionExpr::StringExpr(StringFunction::Zfill(alignment)),
+            StringFunction::Zfill(alignment).into(),
             "str.zfill",
         )
     }
@@ -80,7 +80,7 @@ impl StringNameSpace {
     #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     pub fn ljust(self, width: usize, fillchar: char) -> Expr {
         self.0.map_private(
-            FunctionExpr::StringExpr(StringFunction::LJust { width, fillchar }),
+            StringFunction::LJust { width, fillchar }.into(),
             "str.ljust",
         )
     }
@@ -92,7 +92,7 @@ impl StringNameSpace {
     #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     pub fn rjust(self, width: usize, fillchar: char) -> Expr {
         self.0.map_private(
-            FunctionExpr::StringExpr(StringFunction::RJust { width, fillchar }),
+            StringFunction::RJust { width, fillchar }.into(),
             "str.rjust",
         )
     }
@@ -101,7 +101,7 @@ impl StringNameSpace {
     pub fn extract_all(self, pat: &str) -> Expr {
         let pat = pat.to_string();
         self.0.map_private(
-            FunctionExpr::StringExpr(StringFunction::ExtractAll(pat)),
+            StringFunction::ExtractAll(pat).into(),
             "str.extract_all",
         )
     }
@@ -110,7 +110,7 @@ impl StringNameSpace {
     pub fn count_match(self, pat: &str) -> Expr {
         let pat = pat.to_string();
         self.0.map_private(
-            FunctionExpr::StringExpr(StringFunction::CountMatch(pat)),
+            StringFunction::CountMatch(pat).into(),
             "str.count_match",
         )
     }
@@ -118,7 +118,7 @@ impl StringNameSpace {
     #[cfg(feature = "temporal")]
     pub fn strptime(self, options: StrpTimeOptions) -> Expr {
         self.0.map_private(
-            FunctionExpr::StringExpr(StringFunction::Strptime(options)),
+            StringFunction::Strptime(options).into(),
             "str.strptime",
         )
     }
@@ -133,7 +133,7 @@ impl StringNameSpace {
 
         Expr::Function {
             input: vec![self.0],
-            function: FunctionExpr::StringExpr(StringFunction::Concat(delimiter)),
+            function: StringFunction::Concat(delimiter).into(),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
                 input_wildcard_expansion: false,
@@ -297,41 +297,4 @@ impl StringNameSpace {
             )
             .with_fmt("str.split_inclusive")
     }
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub enum StringExpr {
-    Contains {
-        expr: Box<Expr>,
-        pat: String,
-        literal: bool,
-    },
-    StartsWith(Box<Expr>, String),
-    EndsWith(Box<Expr>, String),
-    Extract {
-        expr: Box<Expr>,
-        pat: String,
-        group_index: usize,
-    },
-    #[cfg(feature = "string_justify")]
-    Zfill(Box<Expr>, usize),
-    #[cfg(feature = "string_justify")]
-    LJust {
-        expr: Box<Expr>,
-        width: usize,
-        fillchar: char,
-    },
-    #[cfg(feature = "string_justify")]
-    RJust {
-        expr: Box<Expr>,
-        width: usize,
-        fillchar: char,
-    },
-    ExtractAll(Box<Expr>, String),
-    CountMatch(Box<Expr>, String),
-    #[cfg(feature = "temporal")]
-    Strptime(Box<Expr>, StrpTimeOptions),
-    #[cfg(feature = "concat_str")]
-    Concat(Box<Expr>, String),
 }

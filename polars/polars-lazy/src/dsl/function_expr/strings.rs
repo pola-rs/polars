@@ -1,4 +1,39 @@
 use super::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, PartialEq, Debug, Eq, Hash)]
+pub enum StringFunction {
+    Contains {
+        pat: String,
+        literal: bool,
+    },
+    StartsWith(String),
+    EndsWith(String),
+    Extract {
+        pat: String,
+        group_index: usize,
+    },
+    #[cfg(feature = "string_justify")]
+    Zfill(usize),
+    #[cfg(feature = "string_justify")]
+    LJust {
+        width: usize,
+        fillchar: char,
+    },
+    #[cfg(feature = "string_justify")]
+    RJust {
+        width: usize,
+        fillchar: char,
+    },
+    ExtractAll(String),
+    CountMatch(String),
+    #[cfg(feature = "temporal")]
+    Strptime(StrpTimeOptions),
+    #[cfg(feature = "concat_str")]
+    Concat(String),
+}
 
 pub(super) fn contains(s: &Series, pat: &str, literal: bool) -> Result<Series> {
     let ca = s.utf8()?;
@@ -108,4 +143,12 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> Result<Series> 
 pub(super) fn concat(s: &Series, delimiter: &str) -> Result<Series> {
     let ca = s.utf8()?;
     Ok(ca.str_concat(&delimiter).into_series())
+}
+
+
+
+impl From<StringFunction> for FunctionExpr {
+    fn from(str: StringFunction) -> Self {
+        FunctionExpr::StringExpr(str)
+    }
 }

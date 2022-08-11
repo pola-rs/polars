@@ -1,4 +1,3 @@
-use crate::dsl::string::StringExpr;
 use crate::prelude::*;
 macro_rules! push_expr {
     ($current_expr:expr, $push:ident, $iter:ident) => {{

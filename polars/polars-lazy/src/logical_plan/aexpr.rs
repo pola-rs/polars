@@ -164,13 +164,6 @@ impl AExpr {
         arena: &Arena<AExpr>,
     ) -> Result<Field> {
         use AExpr::*;
-        let with_dtype = |node: Node, dtype: DataType| -> Result<Field> {
-            let field = arena.get(node).to_field(schema, ctxt, arena)?;
-
-            Ok(Field::new(field.name(), dtype))
-        };
-        let same_type = |node: Node| arena.get(node).to_field(schema, ctxt, arena);
-
         match self {
             Count => Ok(Field::new("count", DataType::UInt32)),
             Window { function, .. } => {

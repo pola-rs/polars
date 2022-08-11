@@ -1,4 +1,3 @@
-use crate::prelude::string::StringExpr;
 use crate::prelude::*;
 use std::borrow::Cow;
 use std::fmt;
