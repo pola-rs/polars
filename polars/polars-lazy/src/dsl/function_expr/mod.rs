@@ -139,7 +139,7 @@ impl FunctionExpr {
                     #[cfg(feature = "temporal")]
                     Strptime(options) => with_dtype(options.date_dtype.clone()),
                     #[cfg(feature = "concat_str")]
-                    Concat(_) => same_type(),
+                    Concat(_) => with_dtype(DataType::Utf8),
                 }
             }
 
