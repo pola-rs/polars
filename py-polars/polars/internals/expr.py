@@ -4,7 +4,7 @@ import copy
 import math
 import random
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable, List, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -385,7 +385,7 @@ class Expr:
         self,
         columns: (
             str
-            | List[str]
+            | list[str]
             | DataType
             | type[DataType]
             | DataType
@@ -1696,8 +1696,8 @@ class Expr:
 
     def sort_by(
         self,
-        by: Expr | str | List[Expr | str],
-        reverse: bool | List[bool] = False,
+        by: Expr | str | list[Expr | str],
+        reverse: bool | list[bool] = False,
     ) -> Expr:
         """
         Sort this column by the ordering of another column, or multiple other columns.
@@ -1756,7 +1756,7 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    def take(self, index: List[int] | Expr | pli.Series | np.ndarray[Any, Any]) -> Expr:
+    def take(self, index: list[int] | Expr | pli.Series | np.ndarray[Any, Any]) -> Expr:
         """
         Take values by index.
 
@@ -2243,7 +2243,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.product())
 
-    def n_unique(self) -> "Expr":
+    def n_unique(self) -> Expr:
         """
         Count unique values.
 
@@ -2263,7 +2263,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.n_unique())
 
-    def null_count(self) -> "Expr":
+    def null_count(self) -> Expr:
         """
         Count null values.
 
@@ -2398,7 +2398,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.last())
 
-    def over(self, expr: str | Expr | List[Expr | str]) -> Expr:
+    def over(self, expr: str | Expr | list[Expr | str]) -> Expr:
         """
         Apply window function over a subgroup.
 
@@ -3225,7 +3225,7 @@ class Expr:
     def rolling_min(
         self,
         window_size: int | str,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -3325,7 +3325,7 @@ class Expr:
     def rolling_max(
         self,
         window_size: int | str,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -3424,7 +3424,7 @@ class Expr:
     def rolling_mean(
         self,
         window_size: int | str,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -3521,7 +3521,7 @@ class Expr:
     def rolling_sum(
         self,
         window_size: int | str,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -3620,7 +3620,7 @@ class Expr:
     def rolling_std(
         self,
         window_size: int | str,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -3690,7 +3690,7 @@ class Expr:
     def rolling_var(
         self,
         window_size: int | str,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -3760,7 +3760,7 @@ class Expr:
     def rolling_median(
         self,
         window_size: int | str,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -3828,7 +3828,7 @@ class Expr:
         quantile: float,
         interpolation: InterpolationMethod = "nearest",
         window_size: int | str = 2,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -3906,7 +3906,7 @@ class Expr:
         self,
         function: Callable[[pli.Series], Any],
         window_size: int,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
     ) -> Expr:
@@ -5125,7 +5125,7 @@ class ExprStructNameSpace:
         """
         return wrap_expr(self._pyexpr.struct_field_by_name(name))
 
-    def rename_fields(self, names: List[str]) -> Expr:
+    def rename_fields(self, names: list[str]) -> Expr:
         """
         Rename the fields of the struct
 
@@ -5273,7 +5273,7 @@ class ExprListNameSpace:
         return wrap_expr(self._pyexpr.lst_unique())
 
     def concat(
-        self, other: List[Expr | str] | Expr | str | pli.Series | List[Any]
+        self, other: list[Expr | str] | Expr | str | pli.Series | list[Any]
     ) -> Expr:
         """
         Concat the arrays in a Series dtype List in linear time.
@@ -5309,7 +5309,7 @@ class ExprListNameSpace:
         ):
             return self.concat(pli.Series([other]))
 
-        other_list: List[Expr | str | pli.Series]
+        other_list: list[Expr | str | pli.Series]
         if not isinstance(other, list):
             other_list = [other]
         else:

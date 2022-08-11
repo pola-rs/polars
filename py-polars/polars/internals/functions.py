@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Optional, Sequence, overload
+from typing import TYPE_CHECKING, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import Categorical, Date, Float64
@@ -273,7 +273,7 @@ def date_range(
 def cut(
     s: pli.Series,
     bins: list[float],
-    labels: Optional[list[str]] = None,
+    labels: list[str] | None = None,
     break_point_label: str = "break_point",
     category_label: str = "category",
 ) -> pli.DataFrame:

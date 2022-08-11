@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 import typing
-from builtins import range
 from datetime import datetime, timedelta
 from io import BytesIO
 from typing import Any, Iterator
@@ -594,7 +593,7 @@ def test_read_missing_file() -> None:
         pl.read_csv("fake_csv_file")
 
     with pytest.raises(FileNotFoundError, match="fake_csv_file"):
-        with open("fake_csv_file", "r") as f:
+        with open("fake_csv_file") as f:
             pl.read_csv(f)
 
 

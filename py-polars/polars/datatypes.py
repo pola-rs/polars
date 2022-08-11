@@ -23,7 +23,7 @@ except ImportError:
     _DOCUMENTING = True
 
 
-def get_idx_type() -> Type[DataType]:
+def get_idx_type() -> type[DataType]:
     """
     Get the datatype used for polars Indexing
 
