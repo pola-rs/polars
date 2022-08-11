@@ -1,7 +1,7 @@
 use crate::logical_plan::Context;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_arrow::export::arrow::Either;
+
 use polars_core::frame::groupby::{GroupBy, GroupsProxy};
 use polars_core::frame::hash_join::{
     default_join_ids, private_left_join_multiple_keys, JoinOptIds,
@@ -513,6 +513,8 @@ impl PhysicalExpr for WindowExpr {
 fn materialize_column(join_opt_ids: &JoinOptIds, out_column: &Series) -> Series {
     #[cfg(feature = "chunked_ids")]
     {
+        use polars_arrow::export::arrow::Either;
+
         match join_opt_ids {
             Either::Left(ids) => unsafe {
                 out_column.take_opt_iter_unchecked(

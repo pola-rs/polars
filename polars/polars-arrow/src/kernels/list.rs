@@ -97,7 +97,6 @@ mod test {
     use arrow::array::{Array, Int32Array, PrimitiveArray};
     use arrow::buffer::Buffer;
     use arrow::datatypes::DataType;
-    use std::sync::Arc;
 
     fn get_array() -> ListArray<i64> {
         let values = Int32Array::from_slice(&[1, 2, 3, 4, 5, 6]);

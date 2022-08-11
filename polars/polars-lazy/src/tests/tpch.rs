@@ -49,13 +49,13 @@ fn partsupp() -> LazyFrame {
 
 #[test]
 fn test_q2() -> Result<()> {
-    let q1 = (part()
+    let q1 = part()
         .inner_join(partsupp(), "p_partkey", "ps_partkey")
         .inner_join(supplier(), "ps_suppkey", "s_suppkey")
         .inner_join(nation(), "s_nationkey", "n_nationkey")
         .inner_join(region(), "n_regionkey", "r_regionkey")
         .filter(col("p_size").eq(15))
-        .filter(col("p_type").str().ends_with("BRASS")));
+        .filter(col("p_type").str().ends_with("BRASS"));
 
     let q = q1
         .clone()

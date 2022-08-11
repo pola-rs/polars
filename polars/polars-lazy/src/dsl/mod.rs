@@ -18,6 +18,8 @@ mod options;
 pub mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
+
+#[cfg(feature = "rolling_window")]
 use polars_time::series::SeriesOpsTime;
 
 use crate::prelude::*;
@@ -1564,6 +1566,7 @@ impl Expr {
             .with_fmt("interpolate")
     }
 
+    #[cfg(feature = "rolling_window")]
     #[allow(clippy::type_complexity)]
     fn finish_rolling(
         self,

@@ -1,4 +1,6 @@
+#[cfg(feature = "list_eval")]
 use crate::dsl::eval::prepare_eval_expr;
+
 use crate::dsl::function_expr::FunctionExpr;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
