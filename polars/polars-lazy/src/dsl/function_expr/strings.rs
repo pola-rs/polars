@@ -145,8 +145,6 @@ pub(super) fn concat(s: &Series, delimiter: &str) -> Result<Series> {
     Ok(ca.str_concat(&delimiter).into_series())
 }
 
-
-
 impl From<StringFunction> for FunctionExpr {
     fn from(str: StringFunction) -> Self {
         FunctionExpr::StringExpr(str)

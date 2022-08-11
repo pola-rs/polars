@@ -28,7 +28,8 @@ impl StringNameSpace {
             StringFunction::Contains {
                 pat,
                 literal: false,
-            }.into(),
+            }
+            .into(),
             "str.contains",
         )
     }
@@ -36,19 +37,15 @@ impl StringNameSpace {
     /// Check if a string value ends with the `sub` string.
     pub fn ends_with<S: AsRef<str>>(self, sub: S) -> Expr {
         let sub = sub.as_ref().into();
-        self.0.map_private(
-            StringFunction::EndsWith(sub).into(),
-            "str.ends_with",
-        )
+        self.0
+            .map_private(StringFunction::EndsWith(sub).into(), "str.ends_with")
     }
 
     /// Check if a string value starts with the `sub` string.
     pub fn starts_with<S: AsRef<str>>(self, sub: S) -> Expr {
         let sub = sub.as_ref().into();
-        self.0.map_private(
-            StringFunction::StartsWith(sub).into(),
-            "str.starts_with",
-        )
+        self.0
+            .map_private(StringFunction::StartsWith(sub).into(), "str.starts_with")
     }
 
     /// Extract a regex pattern from the a string value.
@@ -67,10 +64,8 @@ impl StringNameSpace {
     #[cfg(feature = "string_justify")]
     #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     pub fn zfill(self, alignment: usize) -> Expr {
-        self.0.map_private(
-            StringFunction::Zfill(alignment).into(),
-            "str.zfill",
-        )
+        self.0
+            .map_private(StringFunction::Zfill(alignment).into(), "str.zfill")
     }
 
     /// Return the string left justified in a string of length width.
@@ -100,27 +95,21 @@ impl StringNameSpace {
     /// Extract each successive non-overlapping match in an individual string as an array
     pub fn extract_all(self, pat: &str) -> Expr {
         let pat = pat.to_string();
-        self.0.map_private(
-            StringFunction::ExtractAll(pat).into(),
-            "str.extract_all",
-        )
+        self.0
+            .map_private(StringFunction::ExtractAll(pat).into(), "str.extract_all")
     }
 
     /// Count all successive non-overlapping regex matches.
     pub fn count_match(self, pat: &str) -> Expr {
         let pat = pat.to_string();
-        self.0.map_private(
-            StringFunction::CountMatch(pat).into(),
-            "str.count_match",
-        )
+        self.0
+            .map_private(StringFunction::CountMatch(pat).into(), "str.count_match")
     }
 
     #[cfg(feature = "temporal")]
     pub fn strptime(self, options: StrpTimeOptions) -> Expr {
-        self.0.map_private(
-            StringFunction::Strptime(options).into(),
-            "str.strptime",
-        )
+        self.0
+            .map_private(StringFunction::Strptime(options).into(), "str.strptime")
     }
 
     #[cfg(feature = "concat_str")]

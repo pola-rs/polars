@@ -65,7 +65,6 @@ pub enum FunctionExpr {
     Nan(NanFunction),
 }
 
-
 #[cfg(feature = "trigonometry")]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
