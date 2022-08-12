@@ -2557,7 +2557,7 @@ class Series:
         self._s = f(idx_array, value)
         return self
 
-    def cleared(self) -> "Series":
+    def cleared(self) -> Series:
         """
         Create an empty copy of the current Series, with identical name/dtype but no
         data.
@@ -2578,7 +2578,7 @@ class Series:
         """
         return self.limit(0) if len(self) > 0 else self.clone()
 
-    def clone(self) -> "Series":
+    def clone(self) -> Series:
         """
         Very cheap deepcopy/clone.
 
