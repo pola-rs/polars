@@ -1,19 +1,19 @@
+use crate::csv::parser::*;
+use crate::csv::utils::*;
+use crate::mmap::ReaderBytes;
+use crate::ndjson_core::buffer::*;
+use crate::prelude::*;
+
+pub use arrow::{array::StructArray, io::ndjson};
+
+use crate::mmap::MmapBytesReader;
+use polars_core::{prelude::*, utils::accumulate_dataframes_vertical, POOL};
+use rayon::prelude::*;
+use serde_json::{Deserializer, Value};
 use std::borrow::Cow;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::PathBuf;
-
-pub use arrow::{array::StructArray, io::ndjson};
-use polars_core::{prelude::*, utils::accumulate_dataframes_vertical, POOL};
-use rayon::prelude::*;
-use serde_json::{Deserializer, Value};
-
-use crate::csv::parser::*;
-use crate::csv::utils::*;
-use crate::mmap::MmapBytesReader;
-use crate::mmap::ReaderBytes;
-use crate::ndjson_core::buffer::*;
-use crate::prelude::*;
 const QUOTE_CHAR: u8 = "\"".as_bytes()[0];
 const SEP: u8 = ",".as_bytes()[0];
 
@@ -49,6 +49,7 @@ where
         self.rechunk = rechunk;
         self
     }
+
     pub fn infer_schema_len(mut self, infer_schema_len: Option<usize>) -> Self {
         self.infer_schema_len = infer_schema_len;
         self
@@ -262,10 +263,13 @@ impl<'a> CoreJsonReader<'a> {
 }
 
 fn parse_lines<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -> Result<usize> {
-    let mut stream = Deserializer::from_slice(bytes).into_iter::<Value>();
-    for value in stream.by_ref() {
-        let v = value.unwrap_or(Value::Null);
-        match v {
+    let lines: SplitLines = SplitLines::new(bytes, NEWLINE);
+
+    for mut line in lines {
+        let value = json_deserializer::parse(&mut line).map_err(|e| {
+            PolarsError::ComputeError(format!("unable to parse line: {}", e).into())
+        })?;
+        match value {
             Value::Object(value) => {
                 buffers
                     .iter_mut()
@@ -277,10 +281,9 @@ fn parse_lines<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -
             _ => {
                 buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
             }
-        };
+        }
     }
+    let bytes_read = bytes.len();
 
-    let byte_offset = stream.byte_offset();
-
-    Ok(byte_offset)
+    Ok(bytes_read)
 }

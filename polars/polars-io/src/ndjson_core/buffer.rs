@@ -1,10 +1,10 @@
 use arrow::types::NativeType;
-use num::traits::NumCast;
+use json_deserializer::Number;
+use json_deserializer::Value;
 use polars_core::prelude::*;
 use polars_time::prelude::utf8::infer::infer_pattern_single;
 use polars_time::prelude::utf8::infer::DatetimeInfer;
 use polars_time::prelude::utf8::Pattern;
-use serde_json::Value;
 pub(crate) fn init_buffers(schema: &Schema, capacity: usize) -> Result<PlIndexMap<String, Buffer>> {
     schema
         .iter()
@@ -136,7 +136,7 @@ impl<'a> Buffer<'a> {
                 Ok(())
             }
             Float32(buf) => {
-                let n = deserialize_number::<f32>(value);
+                let n = deserialize_float::<f32>(value);
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
@@ -180,18 +180,22 @@ impl<'a> Buffer<'a> {
     }
 }
 
-fn deserialize_float<T: NativeType + NumCast>(value: &Value) -> Option<T> {
+fn deserialize_float<T: NativeType + lexical_core::FromLexical + Powi10>(
+    value: &Value,
+) -> Option<T> {
     match value {
-        Value::Number(number) => number.as_f64().and_then(num::traits::cast::<f64, T>),
-        Value::Bool(number) => num::traits::cast::<i32, T>(*number as i32),
+        Value::Number(number) => Some(deserialize_float_single(number)),
+        Value::Bool(number) => Some(if *number { T::one() } else { T::default() }),
         _ => None,
     }
 }
 
-fn deserialize_number<T: NativeType + NumCast>(value: &Value) -> Option<T> {
+fn deserialize_number<T: NativeType + lexical_core::FromLexical + Pow10>(
+    value: &Value,
+) -> Option<T> {
     match value {
-        Value::Number(v) => v.as_i64().and_then(num::traits::cast::<i64, T>),
-        Value::Bool(number) => num::traits::cast::<i32, T>(*number as i32),
+        Value::Number(number) => Some(deserialize_int_single(*number)),
+        Value::Bool(number) => Some(if *number { T::one() } else { T::default() }),
         _ => None,
     }
 }
@@ -248,15 +252,8 @@ fn value_to_dtype(val: &Value) -> DataType {
 fn deserialize_all<'a, 'b>(json: &'b Value) -> AnyValue<'a> {
     match json {
         Value::Bool(b) => AnyValue::Boolean(*b),
-        Value::Number(n) => {
-            if n.is_i64() {
-                AnyValue::Int64(n.as_i64().unwrap())
-            } else if n.is_u64() {
-                AnyValue::UInt64(n.as_u64().unwrap())
-            } else {
-                AnyValue::Float64(n.as_f64().unwrap())
-            }
-        }
+        Value::Number(n @ Number::Integer(..)) => AnyValue::Int64(deserialize_int_single(*n)),
+        Value::Number(n @ Number::Float(..)) => AnyValue::Float64(deserialize_float_single(n)),
         Value::Array(arr) => {
             let vals: Vec<AnyValue> = arr.iter().map(deserialize_all).collect();
 
@@ -278,5 +275,95 @@ fn deserialize_all<'a, 'b>(json: &'b Value) -> AnyValue<'a> {
             AnyValue::StructOwned(Box::new(vals))
         }
         val => AnyValue::Utf8Owned(format!("{:#?}", val)),
+    }
+}
+
+trait Powi10: NativeType + num::traits::One + std::ops::Add {
+    fn powi10(self, exp: i32) -> Self;
+}
+
+impl Powi10 for f32 {
+    #[inline]
+    fn powi10(self, exp: i32) -> Self {
+        self * 10.0f32.powi(exp)
+    }
+}
+
+impl Powi10 for f64 {
+    #[inline]
+    fn powi10(self, exp: i32) -> Self {
+        self * 10.0f64.powi(exp)
+    }
+}
+
+trait Pow10: NativeType + num::traits::One + std::ops::Add {
+    fn pow10(self, exp: u32) -> Self;
+}
+
+macro_rules! impl_pow10 {
+    ($ty:ty) => {
+        impl Pow10 for $ty {
+            #[inline]
+            fn pow10(self, exp: u32) -> Self {
+                self * (10 as $ty).pow(exp)
+            }
+        }
+    };
+}
+impl_pow10!(u8);
+impl_pow10!(u16);
+impl_pow10!(u32);
+impl_pow10!(u64);
+impl_pow10!(i8);
+impl_pow10!(i16);
+impl_pow10!(i32);
+impl_pow10!(i64);
+
+fn deserialize_int_single<T>(number: Number) -> T
+where
+    T: NativeType + lexical_core::FromLexical + Pow10,
+{
+    match number {
+        Number::Float(fraction, exponent) => {
+            let integer = fraction.split(|x| *x == b'.').next().unwrap();
+            let mut integer: T = lexical_core::parse(integer).unwrap();
+            if !exponent.is_empty() {
+                let exponent: u32 = lexical_core::parse(exponent).unwrap();
+                integer = integer.pow10(exponent);
+            }
+            integer
+        }
+        Number::Integer(integer, exponent) => {
+            let mut integer: T = lexical_core::parse(integer).unwrap();
+            if !exponent.is_empty() {
+                let exponent: u32 = lexical_core::parse(exponent).unwrap();
+                integer = integer.pow10(exponent);
+            }
+            integer
+        }
+    }
+}
+
+fn deserialize_float_single<T>(number: &Number) -> T
+where
+    T: NativeType + lexical_core::FromLexical + Powi10,
+{
+    match number {
+        Number::Float(float, exponent) => {
+            let mut float: T = lexical_core::parse(float).unwrap();
+            if !exponent.is_empty() {
+                let exponent: i32 = lexical_core::parse(exponent).unwrap();
+                float = float.powi10(exponent);
+            }
+            float
+        }
+        Number::Integer(integer, exponent) => {
+            let mut float: T = lexical_core::parse(integer).unwrap();
+            if !exponent.is_empty() {
+                let exponent: i32 = lexical_core::parse(exponent).unwrap();
+                float = float.powi10(exponent);
+            }
+            float
+        }
     }
 }
