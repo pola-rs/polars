@@ -148,6 +148,22 @@ def test_split_exact() -> None:
     assert df["x"].str.split_exact("_", 1, inclusive=False).dtype == pl.Struct
 
 
+def test_splitn() -> None:
+    df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c"]})
+    out = df.select([pl.col("x").str.splitn("_", 2)])
+
+    expected = pl.DataFrame(
+        [
+            {"x": ["a", "a"]},
+            {"x": None},
+            {"x": ["b"]},
+            {"x": ["c", "c_c"]},
+        ]
+    )
+
+    assert out.frame_equal(expected)
+
+
 def test_unique_and_drop_stability() -> None:
     # see: 2898
     # the original cause was that we wrote:

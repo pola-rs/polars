@@ -4783,7 +4783,8 @@ class StringNameSpace:
 
     def split_exact(self, by: str, n: int, inclusive: bool = False) -> Series:
         """
-        Split the string by a substring into a struct of ``n`` fields.
+        Split the string by a substring into a struct of ``n+1`` fields using
+        ``n`` splits.
 
         If it cannot make ``n`` splits, the remaining field elements will be null.
 
@@ -4856,6 +4857,46 @@ class StringNameSpace:
             .select(pli.col(s.name).str.split_exact(by, n, inclusive))
             .to_series()
         )
+
+    def splitn(self, by: str, n: int) -> Series:
+        """
+        Split the string by a substring, restricted to returning at most ``n`` items.
+
+        If ``n`` substrings are returned, the last substring (the ``n``th substring)
+        will contain the remainder of the string.
+
+
+        Parameters
+        ----------
+        by
+            Substring to split by.
+        n
+            Max number of items to return.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"s": ["foo bar", "foo-bar", "foo bar baz"]})
+        >>> df.select(pl.col("s").str.splitn(" ", 2))
+        shape: (3, 1)
+        ┌────────────────────┐
+        │ s                  │
+        │ ---                │
+        │ list[str]          │
+        ╞════════════════════╡
+        │ ["foo", "bar"]     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ ["foo-bar"]        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ ["foo", "bar baz"] │
+        └────────────────────┘
+
+        Returns
+        -------
+        List of Utf8 type
+
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.splitn(by, n)).to_series()
 
     def replace(self, pattern: str, value: str, literal: bool = False) -> Series:
         r"""

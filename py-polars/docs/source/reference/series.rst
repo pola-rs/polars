@@ -277,6 +277,7 @@ The following methods are available under the `Series.str` attribute.
     StringNameSpace.slice
     StringNameSpace.split
     StringNameSpace.split_exact
+    StringNameSpace.splitn
     StringNameSpace.starts_with
     StringNameSpace.strip
     StringNameSpace.strptime

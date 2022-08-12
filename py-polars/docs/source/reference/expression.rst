@@ -323,6 +323,7 @@ The following methods are available under the `Expr.str` attribute.
     ExprStringNameSpace.slice
     ExprStringNameSpace.split
     ExprStringNameSpace.split_exact
+    ExprStringNameSpace.splitn
     ExprStringNameSpace.starts_with
     ExprStringNameSpace.strip
     ExprStringNameSpace.strptime
