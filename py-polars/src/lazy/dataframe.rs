@@ -135,6 +135,40 @@ impl PyLazyFrame {
     }
 
     #[staticmethod]
+    #[cfg(feature = "json")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_from_json(
+        path: String,
+        infer_schema_length: Option<usize>,
+        batch_size: Option<usize>,
+        n_rows: Option<usize>,
+        skip_rows: Option<usize>,
+        low_memory: bool,
+        rechunk: bool,
+        row_count: Option<(String, IdxSize)>,
+    ) -> PyResult<Self> {
+        let scan_func = JsonScan {
+            path,
+            batch_size,
+            low_memory,
+            rechunk,
+        };
+        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
+
+        let options = ScanArgsAnonymous {
+            name: "JSON SCAN",
+            infer_schema_length,
+            n_rows,
+            skip_rows,
+            row_count,
+            ..ScanArgsAnonymous::default()
+        };
+        let lf = LazyFrame::anonymous_scan(std::sync::Arc::new(scan_func), options)
+            .map_err(PyPolarsErr::from)?;
+        Ok(lf.into())
+    }
+
+    #[staticmethod]
     #[allow(clippy::too_many_arguments)]
     pub fn new_from_csv(
         path: String,
@@ -728,5 +762,37 @@ impl PyLazyFrame {
 
     pub fn unnest(&self, cols: Vec<String>) -> PyLazyFrame {
         self.ldf.clone().unnest(cols).into()
+    }
+}
+
+struct JsonScan {
+    path: String,
+    batch_size: Option<usize>,
+    low_memory: bool,
+    rechunk: bool,
+}
+
+impl AnonymousScan for JsonScan {
+    fn scan(&self, scan_opts: AnonymousScanOptions) -> polars::prelude::Result<DataFrame> {
+        let schema = scan_opts.output_schema.unwrap_or(scan_opts.schema);
+        JsonLineReader::from_path(&self.path)
+            .expect("unable to read file")
+            .with_schema(&schema)
+            .with_rechunk(self.rechunk)
+            .with_chunk_size(self.batch_size)
+            .low_memory(self.low_memory)
+            .with_n_rows(scan_opts.n_rows)
+            .finish()
+    }
+
+    fn schema(&self, infer_schema_length: Option<usize>) -> polars::prelude::Result<Schema> {
+        let f = std::fs::File::open(&self.path)?;
+        let mut reader = std::io::BufReader::new(f);
+
+        let data_type = ndjson::read::infer(&mut reader, infer_schema_length)
+            .map_err(|err| PolarsError::ComputeError(format!("{:#?}", err).into()))?;
+        let schema: polars_core::prelude::Schema = StructArray::get_fields(&data_type).into();
+
+        Ok(schema)
     }
 }

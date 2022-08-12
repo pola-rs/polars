@@ -126,6 +126,7 @@ from polars.io import (
     scan_ds,
     scan_ipc,
     scan_parquet,
+    scan_json
 )
 from polars.show_versions import show_versions
 from polars.string_cache import StringCache, toggle_string_cache
@@ -181,6 +182,7 @@ __all__ = [
     "scan_ipc",
     "scan_ds",
     "scan_parquet",
+    "scan_json",
     "read_ipc_schema",
     "read_parquet_schema",
     "read_avro",

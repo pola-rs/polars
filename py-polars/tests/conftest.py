@@ -33,6 +33,11 @@ FOODS_IPC = os.path.join(
     "foods1.ipc",
 )
 
+FOODS_NDJSON = os.path.join(
+    EXAMPLES_DIR,
+    "foods1.ndjson",
+)
+
 
 @pytest.fixture
 def io_test_dir() -> str:
@@ -55,6 +60,9 @@ if not os.path.isfile(FOODS_PARQUET):
 if not os.path.isfile(FOODS_IPC):
     pl.read_csv(FOODS_CSV).write_ipc(FOODS_IPC)
 
+if not os.path.isfile(FOODS_NDJSON):
+    pl.read_csv(FOODS_CSV).write_json(FOODS_NDJSON, json_lines=True)
+
 
 @pytest.fixture
 def foods_ipc() -> str:
@@ -64,6 +72,11 @@ def foods_ipc() -> str:
 @pytest.fixture
 def foods_parquet() -> str:
     return FOODS_PARQUET
+
+
+@pytest.fixture
+def foods_ndjson() -> str:
+    return FOODS_NDJSON
 
 
 @pytest.fixture

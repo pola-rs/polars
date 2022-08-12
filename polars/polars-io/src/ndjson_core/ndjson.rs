@@ -70,7 +70,7 @@ where
         if let Some(chunk_size) = chunk_size {
             self.chunk_size = chunk_size;
         };
-
+        
         self
     }
     /// Reduce memory consumption at the expense of performance
