@@ -439,6 +439,7 @@ impl PyDataFrame {
         datetime_format: Option<String>,
         date_format: Option<String>,
         time_format: Option<String>,
+        float_precision: Option<usize>,
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
@@ -451,6 +452,7 @@ impl PyDataFrame {
                 .with_datetime_format(datetime_format)
                 .with_date_format(date_format)
                 .with_time_format(time_format)
+                .with_float_precision(float_precision)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         } else {
@@ -463,6 +465,7 @@ impl PyDataFrame {
                 .with_datetime_format(datetime_format)
                 .with_date_format(date_format)
                 .with_time_format(time_format)
+                .with_float_precision(float_precision)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }
