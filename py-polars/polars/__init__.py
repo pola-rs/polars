@@ -125,8 +125,8 @@ from polars.io import (
     scan_csv,
     scan_ds,
     scan_ipc,
+    scan_json,
     scan_parquet,
-    scan_json
 )
 from polars.show_versions import show_versions
 from polars.string_cache import StringCache, toggle_string_cache
