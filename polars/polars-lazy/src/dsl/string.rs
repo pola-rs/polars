@@ -206,8 +206,7 @@ impl StringNameSpace {
         }
     }
 
-    /// Split the string by a substring.
-    // Split exactly `n` times by a given substring. The resulting dtype is `List<Utf8>`.
+    /// Split the string by a substring. The resulting dtype is `List<Utf8>`.
     pub fn split(self, by: &str) -> Expr {
         let by = by.to_string();
 
@@ -230,6 +229,31 @@ impl StringNameSpace {
                 GetOutput::from_type(DataType::List(Box::new(DataType::Utf8))),
             )
             .with_fmt("str.split")
+    }
+
+    /// Split the string by a substring and keep the substring. The resulting dtype is `List<Utf8>`.
+    pub fn split_inclusive(self, by: &str) -> Expr {
+        let by = by.to_string();
+
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+
+            let mut builder = ListUtf8ChunkedBuilder::new(s.name(), s.len(), ca.get_values_size());
+            ca.into_iter().for_each(|opt_s| match opt_s {
+                None => builder.append_null(),
+                Some(s) => {
+                    let iter = s.split_inclusive(&by);
+                    builder.append_values_iter(iter);
+                }
+            });
+            Ok(builder.finish().into_series())
+        };
+        self.0
+            .map(
+                function,
+                GetOutput::from_type(DataType::List(Box::new(DataType::Utf8))),
+            )
+            .with_fmt("str.split_inclusive")
     }
 
     #[cfg(feature = "dtype-struct")]
@@ -333,31 +357,5 @@ impl StringNameSpace {
                 )),
             )
             .with_fmt("str.split_exact")
-    }
-
-    /// Split the string by a substring and keep the substring.
-    // Split exactly `n` times by a given substring. The resulting dtype is `List<Utf8>`.
-    pub fn split_inclusive(self, by: &str) -> Expr {
-        let by = by.to_string();
-
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-
-            let mut builder = ListUtf8ChunkedBuilder::new(s.name(), s.len(), ca.get_values_size());
-            ca.into_iter().for_each(|opt_s| match opt_s {
-                None => builder.append_null(),
-                Some(s) => {
-                    let iter = s.split_inclusive(&by);
-                    builder.append_values_iter(iter);
-                }
-            });
-            Ok(builder.finish().into_series())
-        };
-        self.0
-            .map(
-                function,
-                GetOutput::from_type(DataType::List(Box::new(DataType::Utf8))),
-            )
-            .with_fmt("str.split_inclusive")
     }
 }
