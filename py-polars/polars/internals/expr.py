@@ -6469,7 +6469,7 @@ class ExprStringNameSpace:
         """
         Split the string by a substring, restricted to returning at most ``n`` items.
 
-        If ``n`` substrings are returned, the last substring (the ``n``th substring)
+        If ``n`` substrings are returned, the last substring (the nth substring)
         will contain the remainder of the string.
 
         Parameters
