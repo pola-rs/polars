@@ -1,5 +1,4 @@
 use numpy::IntoPyArray;
-use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyDict, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::io::BufWriter;
@@ -453,30 +452,23 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "ipc")]
-    pub fn write_ipc(&mut self, py: Python, py_f: PyObject, compression: &str) -> PyResult<()> {
-        let compression = match compression {
-            "uncompressed" => None,
-            "lz4" => Some(IpcCompression::LZ4),
-            "zstd" => Some(IpcCompression::ZSTD),
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "compression must be one of {{'uncompressed', 'lz4', 'zstd'}}, got {}",
-                    e
-                )))
-            }
-        };
-
+    pub fn write_ipc(
+        &mut self,
+        py: Python,
+        py_f: PyObject,
+        compression: Wrap<Option<IpcCompression>>,
+    ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
             IpcWriter::new(f)
-                .with_compression(compression)
+                .with_compression(compression.0)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         } else {
             let mut buf = get_file_like(py_f, true)?;
 
             IpcWriter::new(&mut buf)
-                .with_compression(compression)
+                .with_compression(compression.0)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }

@@ -22,6 +22,8 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
+#[cfg(feature = "ipc")]
+use polars::io::ipc::IpcCompression;
 
 pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
     // Safety:
@@ -804,6 +806,24 @@ impl FromPyObject<'_> for Wrap<CsvEncoding> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "encoding must be one of {{'utf8', 'utf8-lossy'}}, got {}",
+                    v
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+#[cfg(feature = "ipc")]
+impl FromPyObject<'_> for Wrap<Option<IpcCompression>> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "uncompressed" => None,
+            "lz4" => Some(IpcCompression::LZ4),
+            "zstd" => Some(IpcCompression::ZSTD),
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "compression must be one of {{'uncompressed', 'lz4', 'zstd'}}, got {}",
                     v
                 )))
             }
