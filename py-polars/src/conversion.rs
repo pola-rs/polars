@@ -760,6 +760,22 @@ impl FromPyObject<'_> for Wrap<AsofStrategy> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<CategoricalOrdering> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "physical" => CategoricalOrdering::Physical,
+            "lexical" => CategoricalOrdering::Lexical,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "ordering must be one of {{'physical', 'lexical'}}, got {}",
+                    v
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 impl FromPyObject<'_> for Wrap<ClosedWindow> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {
