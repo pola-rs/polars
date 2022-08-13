@@ -743,34 +743,16 @@ pub(crate) fn parse_strategy(strat: &str, limit: FillNullLimit) -> PyResult<Fill
     Ok(strat)
 }
 
-impl FromPyObject<'_> for Wrap<NullStrategy> {
+impl FromPyObject<'_> for Wrap<ClosedWindow> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {
-            "ignore" => NullStrategy::Ignore,
-            "propagate" => NullStrategy::Propagate,
+            "left" => ClosedWindow::Left,
+            "right" => ClosedWindow::Right,
+            "both" => ClosedWindow::Both,
+            "none" => ClosedWindow::None,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "null strategy must be one of {{'ignore', 'propagate'}}, got {}",
-                    v
-                )))
-            }
-        };
-        Ok(Wrap(parsed))
-    }
-}
-
-impl FromPyObject<'_> for Wrap<RankMethod> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
-        let parsed = match ob.extract::<&str>()? {
-            "min" => RankMethod::Min,
-            "max" => RankMethod::Max,
-            "average" => RankMethod::Average,
-            "dense" => RankMethod::Dense,
-            "ordinal" => RankMethod::Ordinal,
-            "random" => RankMethod::Random,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "method must be one of {{'min', 'max', 'average', 'dense', 'ordinal', 'random'}}, got {}",
+                    "closed must be one of {{'left', 'right', 'both', 'none'}}, got {}",
                     v
                 )))
             }
@@ -795,16 +777,14 @@ impl FromPyObject<'_> for Wrap<NullBehavior> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<ClosedWindow> {
+impl FromPyObject<'_> for Wrap<NullStrategy> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {
-            "left" => ClosedWindow::Left,
-            "right" => ClosedWindow::Right,
-            "both" => ClosedWindow::Both,
-            "none" => ClosedWindow::None,
+            "ignore" => NullStrategy::Ignore,
+            "propagate" => NullStrategy::Propagate,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "closed must be one of {{'left', 'right', 'both', 'none'}}, got {}",
+                    "null strategy must be one of {{'ignore', 'propagate'}}, got {}",
                     v
                 )))
             }
@@ -813,15 +793,17 @@ impl FromPyObject<'_> for Wrap<ClosedWindow> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<TimeUnit> {
+#[cfg(feature = "parquet")]
+impl FromPyObject<'_> for Wrap<ParallelStrategy> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {
-            "ns" => TimeUnit::Nanoseconds,
-            "us" => TimeUnit::Microseconds,
-            "ms" => TimeUnit::Milliseconds,
+            "auto" => ParallelStrategy::Auto,
+            "columns" => ParallelStrategy::Columns,
+            "row_groups" => ParallelStrategy::RowGroups,
+            "none" => ParallelStrategy::None,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "time unit must be one of {{'ns', 'us', 'ms'}}, got {}",
+                    "parallel must be one of {{'auto', 'columns', 'row_groups', 'none'}}, got {}",
                     v
                 )))
             }
@@ -871,14 +853,18 @@ impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<UniqueKeepStrategy> {
+impl FromPyObject<'_> for Wrap<RankMethod> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {
-            "first" => UniqueKeepStrategy::First,
-            "last" => UniqueKeepStrategy::Last,
+            "min" => RankMethod::Min,
+            "max" => RankMethod::Max,
+            "average" => RankMethod::Average,
+            "dense" => RankMethod::Dense,
+            "ordinal" => RankMethod::Ordinal,
+            "random" => RankMethod::Random,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "keep must be one of {{'first', 'last'}}, got {}",
+                    "method must be one of {{'min', 'max', 'average', 'dense', 'ordinal', 'random'}}, got {}",
                     v
                 )))
             }
@@ -887,17 +873,31 @@ impl FromPyObject<'_> for Wrap<UniqueKeepStrategy> {
     }
 }
 
-#[cfg(feature = "parquet")]
-impl FromPyObject<'_> for Wrap<ParallelStrategy> {
+impl FromPyObject<'_> for Wrap<TimeUnit> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {
-            "auto" => ParallelStrategy::Auto,
-            "columns" => ParallelStrategy::Columns,
-            "row_groups" => ParallelStrategy::RowGroups,
-            "none" => ParallelStrategy::None,
+            "ns" => TimeUnit::Nanoseconds,
+            "us" => TimeUnit::Microseconds,
+            "ms" => TimeUnit::Milliseconds,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "parallel must be one of {{'auto', 'columns', 'row_groups', 'none'}}, got {}",
+                    "time unit must be one of {{'ns', 'us', 'ms'}}, got {}",
+                    v
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl FromPyObject<'_> for Wrap<UniqueKeepStrategy> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "first" => UniqueKeepStrategy::First,
+            "last" => UniqueKeepStrategy::Last,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "keep must be one of {{'first', 'last'}}, got {}",
                     v
                 )))
             }
