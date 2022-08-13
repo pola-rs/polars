@@ -743,6 +743,23 @@ pub(crate) fn parse_strategy(strat: &str, limit: FillNullLimit) -> PyResult<Fill
     Ok(strat)
 }
 
+#[cfg(feature = "asof_join")]
+impl FromPyObject<'_> for Wrap<AsofStrategy> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "backward" => AsofStrategy::Backward,
+            "forward" => AsofStrategy::Forward,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "strategy must be one of {{'backward', 'forward'}}, got {}",
+                    v
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 impl FromPyObject<'_> for Wrap<ClosedWindow> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {

@@ -459,21 +459,10 @@ impl PyLazyFrame {
         allow_parallel: bool,
         force_parallel: bool,
         suffix: String,
-        strategy: &str,
+        strategy: Wrap<AsofStrategy>,
         tolerance: Option<Wrap<AnyValue<'_>>>,
         tolerance_str: Option<String>,
     ) -> PyResult<Self> {
-        let strategy = match strategy {
-            "backward" => AsofStrategy::Backward,
-            "forward" => AsofStrategy::Forward,
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "strategy must be one of {{'backward', 'forward'}}, got {}",
-                    e,
-                )))
-            }
-        };
-
         let ldf = self.ldf.clone();
         let other = other.ldf;
         let left_on = left_on.inner;
@@ -486,7 +475,7 @@ impl PyLazyFrame {
             .allow_parallel(allow_parallel)
             .force_parallel(force_parallel)
             .how(JoinType::AsOf(AsOfOptions {
-                strategy,
+                strategy: strategy.0,
                 left_by,
                 right_by,
                 tolerance: tolerance.map(|t| t.0.into_static().unwrap()),
