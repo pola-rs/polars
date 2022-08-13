@@ -34,6 +34,9 @@ use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use polars_core::utils::get_supertype;
 
+#[cfg(feature = "parquet")]
+use crate::conversion::parse_parquet_compression;
+
 #[pyclass]
 #[repr(transparent)]
 #[derive(Clone)]
@@ -584,42 +587,7 @@ impl PyDataFrame {
         statistics: bool,
         row_group_size: Option<usize>,
     ) -> PyResult<()> {
-        let compression = match compression {
-            "uncompressed" => ParquetCompression::Uncompressed,
-            "snappy" => ParquetCompression::Snappy,
-            "gzip" => ParquetCompression::Gzip(
-                compression_level
-                    .map(|lvl| {
-                        GzipLevel::try_new(lvl as u8)
-                            .map_err(|e| PyValueError::new_err(format!("{:?}", e)))
-                    })
-                    .transpose()?,
-            ),
-            "lzo" => ParquetCompression::Lzo,
-            "brotli" => ParquetCompression::Brotli(
-                compression_level
-                    .map(|lvl| {
-                        BrotliLevel::try_new(lvl as u32)
-                            .map_err(|e| PyValueError::new_err(format!("{:?}", e)))
-                    })
-                    .transpose()?,
-            ),
-            "lz4" => ParquetCompression::Lz4Raw,
-            "zstd" => ParquetCompression::Zstd(
-                compression_level
-                    .map(|lvl| {
-                        ZstdLevel::try_new(lvl as i32)
-                            .map_err(|e| PyValueError::new_err(format!("{:?}", e)))
-                    })
-                    .transpose()?,
-            ),
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "compression must be one of {{'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'lz4', 'zstd'}}, got {}",
-                    e
-                )))
-            }
-        };
+        let compression = parse_parquet_compression(compression, compression_level)?;
 
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();

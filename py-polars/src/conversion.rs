@@ -994,3 +994,47 @@ pub(crate) fn parse_fill_null_strategy(
     };
     Ok(parsed)
 }
+
+#[cfg(feature = "parquet")]
+pub(crate) fn parse_parquet_compression(
+    compression: &str,
+    compression_level: Option<i32>,
+) -> PyResult<ParquetCompression> {
+    let parsed = match compression {
+        "uncompressed" => ParquetCompression::Uncompressed,
+        "snappy" => ParquetCompression::Snappy,
+        "gzip" => ParquetCompression::Gzip(
+            compression_level
+                .map(|lvl| {
+                    GzipLevel::try_new(lvl as u8)
+                        .map_err(|e| PyValueError::new_err(format!("{:?}", e)))
+                })
+                .transpose()?,
+        ),
+        "lzo" => ParquetCompression::Lzo,
+        "brotli" => ParquetCompression::Brotli(
+            compression_level
+                .map(|lvl| {
+                    BrotliLevel::try_new(lvl as u32)
+                        .map_err(|e| PyValueError::new_err(format!("{:?}", e)))
+                })
+                .transpose()?,
+        ),
+        "lz4" => ParquetCompression::Lz4Raw,
+        "zstd" => ParquetCompression::Zstd(
+            compression_level
+                .map(|lvl| {
+                    ZstdLevel::try_new(lvl as i32)
+                        .map_err(|e| PyValueError::new_err(format!("{:?}", e)))
+                })
+                .transpose()?,
+        ),
+        e => {
+            return Err(PyValueError::new_err(format!(
+                "compression must be one of {{'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'lz4', 'zstd'}}, got {}",
+                e
+            )))
+        }
+    };
+    Ok(parsed)
+}
