@@ -718,7 +718,6 @@ def scan_json(
     """
     Lazily read from a JSON file.
 
-
     This allows the query optimizer to push down predicates and projections to the scan
     level, thereby potentially reducing memory overhead.
     Note: `scan_json` currently only supports newline-delimited JSON files.
@@ -746,7 +745,6 @@ def scan_json(
         Offset to start the row_count column (only use if the name is set)
 
     """
-
     if isinstance(file, (str, Path)):
         file = format_path(file)
 
