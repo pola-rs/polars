@@ -724,25 +724,6 @@ pub(crate) fn dicts_to_rows(records: &PyAny) -> PyResult<(Vec<Row>, Vec<String>)
     Ok((rows, keys_first))
 }
 
-pub(crate) fn parse_strategy(strat: &str, limit: FillNullLimit) -> PyResult<FillNullStrategy> {
-    let strat = match strat {
-        "forward" => FillNullStrategy::Forward(limit),
-        "backward" => FillNullStrategy::Backward(limit),
-        "min" => FillNullStrategy::Min,
-        "max" => FillNullStrategy::Max,
-        "mean" => FillNullStrategy::Mean,
-        "zero" => FillNullStrategy::Zero,
-        "one" => FillNullStrategy::One,
-        e => {
-            return Err(PyValueError::new_err(format!(
-                "strategy must be one of {{'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}}, got {}",
-                e,
-            )))
-        }
-    };
-    Ok(strat)
-}
-
 #[cfg(feature = "asof_join")]
 impl FromPyObject<'_> for Wrap<AsofStrategy> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
@@ -990,4 +971,26 @@ impl FromPyObject<'_> for Wrap<UniqueKeepStrategy> {
         };
         Ok(Wrap(parsed))
     }
+}
+
+pub(crate) fn parse_fill_null_strategy(
+    strategy: &str,
+    limit: FillNullLimit,
+) -> PyResult<FillNullStrategy> {
+    let parsed = match strategy {
+        "forward" => FillNullStrategy::Forward(limit),
+        "backward" => FillNullStrategy::Backward(limit),
+        "min" => FillNullStrategy::Min,
+        "max" => FillNullStrategy::Max,
+        "mean" => FillNullStrategy::Mean,
+        "zero" => FillNullStrategy::Zero,
+        "one" => FillNullStrategy::One,
+        e => {
+            return Err(PyValueError::new_err(format!(
+                "strategy must be one of {{'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}}, got {}",
+                e,
+            )))
+        }
+    };
+    Ok(parsed)
 }

@@ -1,8 +1,8 @@
 use super::apply::*;
+use crate::conversion::parse_fill_null_strategy;
 use crate::conversion::Wrap;
 use crate::lazy::map_single;
 use crate::lazy::utils::py_exprs_to_exprs;
-use crate::prelude::parse_strategy;
 use crate::series::PySeries;
 use crate::utils::reinterpret;
 use polars::lazy::dsl;
@@ -266,7 +266,7 @@ impl PyExpr {
         strategy: &str,
         limit: FillNullLimit,
     ) -> PyResult<PyExpr> {
-        let strat = parse_strategy(strategy, limit)?;
+        let strat = parse_fill_null_strategy(strategy, limit)?;
         Ok(self
             .inner
             .clone()
