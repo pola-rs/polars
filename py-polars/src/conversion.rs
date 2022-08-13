@@ -761,6 +761,22 @@ impl FromPyObject<'_> for Wrap<ClosedWindow> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<CsvEncoding> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "utf8" => CsvEncoding::Utf8,
+            "utf8-lossy" => CsvEncoding::LossyUtf8,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "encoding must be one of {{'utf8', 'utf8-lossy'}}, got {}",
+                    v
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 impl FromPyObject<'_> for Wrap<NullBehavior> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {

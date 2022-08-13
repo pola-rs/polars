@@ -118,7 +118,7 @@ impl PyDataFrame {
         sep: &str,
         rechunk: bool,
         columns: Option<Vec<String>>,
-        encoding: &str,
+        encoding: Wrap<CsvEncoding>,
         n_threads: Option<usize>,
         path: Option<String>,
         overwrite_dtype: Option<Vec<(&str, Wrap<DataType>)>>,
@@ -148,16 +148,6 @@ impl PyDataFrame {
         } else {
             None
         };
-        let encoding = match encoding {
-            "utf8" => CsvEncoding::Utf8,
-            "utf8-lossy" => CsvEncoding::LossyUtf8,
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "encoding must be one of {{'utf8', 'utf8-lossy'}}, got {}",
-                    e
-                )))
-            }
-        };
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             let fields = overwrite_dtype.iter().map(|(name, dtype)| {
@@ -185,7 +175,7 @@ impl PyDataFrame {
             .with_projection(projection)
             .with_rechunk(rechunk)
             .with_chunk_size(chunk_size)
-            .with_encoding(encoding)
+            .with_encoding(encoding.0)
             .with_columns(columns)
             .with_n_threads(n_threads)
             .with_path(path)
