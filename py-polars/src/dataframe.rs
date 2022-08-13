@@ -791,31 +791,12 @@ impl PyDataFrame {
         other: &PyDataFrame,
         left_on: Vec<&str>,
         right_on: Vec<&str>,
-        how: &str,
+        how: Wrap<JoinType>,
         suffix: String,
     ) -> PyResult<Self> {
-        let how = match how {
-            "left" => JoinType::Left,
-            "inner" => JoinType::Inner,
-            "outer" => JoinType::Outer,
-            "semi" => JoinType::Semi,
-            "anti" => JoinType::Anti,
-            #[cfg(feature = "asof_join")]
-            "asof" => JoinType::AsOf(AsOfOptions {
-                strategy: AsofStrategy::Backward,
-                left_by: None,
-                right_by: None,
-                tolerance: None,
-                tolerance_str: None,
-            }),
-            #[cfg(feature = "cross_join")]
-            "cross" => JoinType::Cross,
-            _ => panic!("not supported"),
-        };
-
         let df = self
             .df
-            .join(&other.df, left_on, right_on, how, Some(suffix))
+            .join(&other.df, left_on, right_on, how.0, Some(suffix))
             .map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }

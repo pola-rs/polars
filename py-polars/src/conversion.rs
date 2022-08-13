@@ -777,6 +777,27 @@ impl FromPyObject<'_> for Wrap<CsvEncoding> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<JoinType> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "inner" => JoinType::Inner,
+            "left" => JoinType::Left,
+            "outer" => JoinType::Outer,
+            "semi" => JoinType::Semi,
+            "anti" => JoinType::Anti,
+            #[cfg(feature = "cross_join")]
+            "cross" => JoinType::Cross,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                "how must be one of {{'inner', 'left', 'outer', 'semi', 'anti', 'cross'}}, got {}",
+                v
+            )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 impl FromPyObject<'_> for Wrap<NullBehavior> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {

@@ -505,24 +505,9 @@ impl PyLazyFrame {
         right_on: Vec<PyExpr>,
         allow_parallel: bool,
         force_parallel: bool,
-        how: &str,
+        how: Wrap<JoinType>,
         suffix: String,
     ) -> PyResult<Self> {
-        let how = match how {
-            "left" => JoinType::Left,
-            "inner" => JoinType::Inner,
-            "outer" => JoinType::Outer,
-            "semi" => JoinType::Semi,
-            "anti" => JoinType::Anti,
-            "cross" => JoinType::Cross,
-            e => {
-                return Err(PyValueError::new_err(format!(
-                "how must be one of {{'left', 'inner', 'outer', 'semi', 'anti', 'cross'}}, got {}",
-                e,
-            )))
-            }
-        };
-
         let ldf = self.ldf.clone();
         let other = other.ldf;
         let left_on = left_on
@@ -541,7 +526,7 @@ impl PyLazyFrame {
             .right_on(right_on)
             .allow_parallel(allow_parallel)
             .force_parallel(force_parallel)
-            .how(how)
+            .how(how.0)
             .suffix(suffix)
             .finish()
             .into())
