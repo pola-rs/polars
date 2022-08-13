@@ -757,21 +757,24 @@ pub(crate) fn str_to_null_strategy(strategy: &str) -> PyResult<NullStrategy> {
     Ok(strategy)
 }
 
-pub(crate) fn str_to_rankmethod(method: &str) -> PyResult<RankMethod> {
-    let method = match method {
-        "min" => RankMethod::Min,
-        "max" => RankMethod::Max,
-        "average" => RankMethod::Average,
-        "dense" => RankMethod::Dense,
-        "ordinal" => RankMethod::Ordinal,
-        "random" => RankMethod::Random,
-        _ => {
-            return Err(PyValueError::new_err(
-                "use one of 'avg, min, max, dense, ordinal'".to_string(),
-            ))
-        }
-    };
-    Ok(method)
+impl FromPyObject<'_> for Wrap<RankMethod> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "min" => RankMethod::Min,
+            "max" => RankMethod::Max,
+            "average" => RankMethod::Average,
+            "dense" => RankMethod::Dense,
+            "ordinal" => RankMethod::Ordinal,
+            "random" => RankMethod::Random,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "method must be one of {{'min', 'max', 'average', 'dense', 'ordinal', 'random'}}, got {}",
+                    v
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
 }
 
 impl FromPyObject<'_> for Wrap<NullBehavior> {

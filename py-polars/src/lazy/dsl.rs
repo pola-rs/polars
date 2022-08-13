@@ -2,7 +2,7 @@ use super::apply::*;
 use crate::conversion::Wrap;
 use crate::lazy::map_single;
 use crate::lazy::utils::py_exprs_to_exprs;
-use crate::prelude::{parse_strategy, str_to_rankmethod};
+use crate::prelude::parse_strategy;
 use crate::series::PySeries;
 use crate::utils::reinterpret;
 use polars::lazy::dsl;
@@ -1384,10 +1384,9 @@ impl PyExpr {
             .into())
     }
 
-    fn rank(&self, method: &str, reverse: bool) -> Self {
-        let method = str_to_rankmethod(method).unwrap();
+    fn rank(&self, method: Wrap<RankMethod>, reverse: bool) -> Self {
         let options = RankOptions {
-            method,
+            method: method.0,
             descending: reverse,
         };
         self.inner.clone().rank(options).into()
