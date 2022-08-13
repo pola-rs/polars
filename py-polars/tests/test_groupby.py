@@ -113,3 +113,23 @@ def test_groupby_signed_transmutes() -> None:
             "foo": [-1, -2, -3, -4, -5],
             "bar": [500.0, 600.0, 700.0, 800.0, 900.0],
         }
+
+
+def test_argsort_sort_by_groups_update__4360() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a"] * 3 + ["b"] * 3,
+            "col1": [1, 2, 3, 300, 200, 100],
+            "col2": [1, 2, 3, 300, 200, 100],
+        }
+    )
+    assert (
+        df.select(
+            [
+                pl.col("col1")
+                .sort_by(pl.col("col2").arg_sort())
+                .over("group")
+                .alias("1_argsort_2"),
+            ]
+        )
+    )["1_argsort_2"].to_list() == [1, 2, 3, 300, 200, 100]

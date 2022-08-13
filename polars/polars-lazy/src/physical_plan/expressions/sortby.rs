@@ -84,11 +84,17 @@ impl PhysicalExpr for SortByExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac_in = self.input.evaluate_on_groups(df, groups, state)?;
+
         let reverse = prepare_reverse(&self.reverse, self.by.len());
 
-        let groups = if self.by.len() == 1 {
+        let (groups, ordered_by_group_operation) = if self.by.len() == 1 {
             let mut ac_sort_by = self.by[0].evaluate_on_groups(df, groups, state)?;
             let sort_by_s = ac_sort_by.flat_naive().into_owned();
+
+            let ordered_by_group_operation = matches!(
+                ac_sort_by.update_groups,
+                UpdateGroups::WithSeriesLen | UpdateGroups::WithGroupsLen
+            );
             let groups = ac_sort_by.groups();
 
             let groups = groups
@@ -122,7 +128,7 @@ impl PhysicalExpr for SortByExpr {
                 })
                 .collect();
 
-            GroupsProxy::Idx(groups)
+            (GroupsProxy::Idx(groups), ordered_by_group_operation)
         } else {
             let mut ac_sort_by = self
                 .by
@@ -133,6 +139,11 @@ impl PhysicalExpr for SortByExpr {
                 .iter()
                 .map(|s| s.flat_naive().into_owned())
                 .collect::<Vec<_>>();
+
+            let ordered_by_group_operation = matches!(
+                ac_sort_by[0].update_groups,
+                UpdateGroups::WithSeriesLen | UpdateGroups::WithGroupsLen
+            );
             let groups = ac_sort_by[0].groups();
 
             let groups = groups
@@ -168,8 +179,16 @@ impl PhysicalExpr for SortByExpr {
                 })
                 .collect();
 
-            GroupsProxy::Idx(groups)
+            (GroupsProxy::Idx(groups), ordered_by_group_operation)
         };
+
+        // if the rhs is already aggregated once,
+        // it is reordered by the groupby operation
+        // we must ensure that we are as well.
+        if ordered_by_group_operation {
+            let s = ac_in.aggregated();
+            ac_in.with_series(s.explode().unwrap(), false);
+        }
 
         ac_in.with_groups(groups);
         Ok(ac_in)
