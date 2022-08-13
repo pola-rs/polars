@@ -807,7 +807,7 @@ impl FromPyObject<'_> for Wrap<ClosedWindow> {
 
 impl FromPyObject<'_> for Wrap<TimeUnit> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
-        let unit = match ob.str()?.to_str()? {
+        let unit = match ob.extract::<&str>()? {
             "ns" => TimeUnit::Nanoseconds,
             "us" => TimeUnit::Microseconds,
             "ms" => TimeUnit::Milliseconds,
@@ -865,7 +865,7 @@ impl FromPyObject<'_> for Wrap<UniqueKeepStrategy> {
 #[cfg(feature = "parquet")]
 impl FromPyObject<'_> for Wrap<ParallelStrategy> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
-        let unit = match ob.str()?.to_str()? {
+        let unit = match ob.extract::<&str>()? {
             "auto" => ParallelStrategy::Auto,
             "columns" => ParallelStrategy::Columns,
             "row_groups" => ParallelStrategy::RowGroups,
