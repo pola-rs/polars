@@ -24,7 +24,7 @@ except ImportError:
     _DOCUMENTING = True
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import ClosedWindow, TimeUnit
+    from polars.internals.type_aliases import ClosedWindow, ConcatMethod, TimeUnit
 
 
 def get_dummies(df: pli.DataFrame) -> pli.DataFrame:
@@ -44,7 +44,7 @@ def get_dummies(df: pli.DataFrame) -> pli.DataFrame:
 def concat(
     items: Sequence[pli.DataFrame],
     rechunk: bool = True,
-    how: str = "vertical",
+    how: ConcatMethod = "vertical",
 ) -> pli.DataFrame:
     ...
 
@@ -53,7 +53,7 @@ def concat(
 def concat(
     items: Sequence[pli.Series],
     rechunk: bool = True,
-    how: str = "vertical",
+    how: ConcatMethod = "vertical",
 ) -> pli.Series:
     ...
 
@@ -62,7 +62,7 @@ def concat(
 def concat(
     items: Sequence[pli.LazyFrame],
     rechunk: bool = True,
-    how: str = "vertical",
+    how: ConcatMethod = "vertical",
 ) -> pli.LazyFrame:
     ...
 
@@ -71,7 +71,7 @@ def concat(
 def concat(
     items: Sequence[pli.Expr],
     rechunk: bool = True,
-    how: str = "vertical",
+    how: ConcatMethod = "vertical",
 ) -> pli.Expr:
     ...
 
@@ -84,7 +84,7 @@ def concat(
         | Sequence[pli.Expr]
     ),
     rechunk: bool = True,
-    how: str = "vertical",
+    how: ConcatMethod = "vertical",
 ) -> pli.DataFrame | pli.Series | pli.LazyFrame | pli.Expr:
     """
     Aggregate multiple Dataframes/Series to a single DataFrame/Series.
@@ -95,10 +95,8 @@ def concat(
         DataFrames/Series/LazyFrames to concatenate.
     rechunk
         rechunk the final DataFrame/Series.
-    how
+    how : {'vertical', 'diagonal', 'horizontal'}
         Only used if the items are DataFrames.
-
-        One of {"vertical", "diagonal", "horizontal"}.
 
         - Vertical: Applies multiple `vstack` operations.
         - Diagonal: Finds a union between the column schemas and fills missing column
@@ -137,7 +135,7 @@ def concat(
             out = pli.wrap_df(_hor_concat_df(items))
         else:
             raise ValueError(
-                f"how should be one of {'vertical', 'diagonal'}, got {how}"
+                f"how must be one of {{'vertical', 'diagonal'}}, got {how}"
             )
     elif isinstance(first, pli.LazyFrame):
         return pli.wrap_ldf(_concat_lf(items, rechunk))

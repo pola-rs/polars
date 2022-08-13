@@ -693,7 +693,7 @@ def test_concat() -> None:
         _ = pl.concat([])
 
     with pytest.raises(ValueError):
-        pl.concat([df, df], how="rubbish")
+        pl.concat([df, df], how="rubbish")  # type: ignore[call-overload]
 
 
 def test_arg_where() -> None:
