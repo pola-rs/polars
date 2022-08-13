@@ -595,7 +595,6 @@ pub(crate) fn prepare_argsort(
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use crate::series::ops::NullBehavior;
 
     #[test]
     fn test_argsort() {

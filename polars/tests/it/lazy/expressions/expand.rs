@@ -1,5 +1,5 @@
 use super::*;
-use polars::export::chrono::{NaiveDate, NaiveDateTime};
+use polars::export::chrono::NaiveDate;
 
 #[test]
 fn test_expand_datetimes_3042() -> Result<()> {

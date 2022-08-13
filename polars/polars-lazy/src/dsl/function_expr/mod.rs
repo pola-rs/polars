@@ -3,7 +3,9 @@ mod arg_where;
 mod fill_null;
 #[cfg(feature = "is_in")]
 mod is_in;
+#[cfg(feature = "is_in")]
 mod list;
+
 mod pow;
 #[cfg(all(feature = "rolling_window", feature = "moment"))]
 mod rolling;
@@ -96,7 +98,7 @@ impl FunctionExpr {
             let dtype = func(fields[0].data_type());
             Ok(Field::new(fields[0].name(), dtype))
         };
-
+        #[cfg(any(feature = "rolling_window", feature = "trigonometry"))]
         let float_dtype = || {
             map_dtype(&|dtype| match dtype {
                 DataType::Float32 => DataType::Float32,

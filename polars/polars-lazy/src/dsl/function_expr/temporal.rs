@@ -1,5 +1,6 @@
 use super::*;
 
+#[cfg(feature = "date_offset")]
 pub(super) fn date_offset(s: Series, offset: Duration) -> Result<Series> {
     match s.dtype().clone() {
         DataType::Date => {

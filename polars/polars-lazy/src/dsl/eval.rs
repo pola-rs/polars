@@ -2,6 +2,7 @@ use super::*;
 use crate::physical_plan::state::ExecutionState;
 use rayon::prelude::*;
 
+#[cfg(feature = "list_eval")]
 pub(super) fn prepare_eval_expr(mut expr: Expr) -> Expr {
     expr.mutate().apply(|e| match e {
         Expr::Column(name) => {
