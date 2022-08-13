@@ -473,6 +473,7 @@ where
                 .map(|len| {
                     // safety:
                     // within bounds
+                    debug_assert!((offset + len) <= array.len());
                     let out = unsafe { array.slice_unchecked(offset, len) };
                     offset += len;
                     out

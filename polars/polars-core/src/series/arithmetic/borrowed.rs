@@ -490,7 +490,7 @@ where
             }};
         }
 
-        let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, sub);
+        let out = downcast_as_macro_arg_physical!(s, sub);
         finish_cast(self, out)
     }
 }
@@ -519,7 +519,7 @@ where
                 $ca.add(rhs).into_series()
             }};
         }
-        let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, add);
+        let out = downcast_as_macro_arg_physical!(s, add);
         finish_cast(self, out)
     }
 }
@@ -549,7 +549,7 @@ where
             }};
         }
 
-        let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, div);
+        let out = downcast_as_macro_arg_physical!(s, div);
         finish_cast(self, out)
     }
 }
@@ -578,7 +578,7 @@ where
                 $ca.mul(rhs).into_series()
             }};
         }
-        let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, mul);
+        let out = downcast_as_macro_arg_physical!(s, mul);
         finish_cast(self, out)
     }
 }
@@ -607,7 +607,7 @@ where
                 $ca.rem(rhs).into_series()
             }};
         }
-        let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, rem);
+        let out = downcast_as_macro_arg_physical!(s, rem);
         finish_cast(self, out)
     }
 }
@@ -680,7 +680,7 @@ where
                 $rhs.lhs_sub(self).into_series()
             }};
         }
-        let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, sub);
+        let out = downcast_as_macro_arg_physical!(s, sub);
 
         finish_cast(rhs, out)
     }
@@ -691,7 +691,7 @@ where
                 $rhs.lhs_div(self).into_series()
             }};
         }
-        let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, div);
+        let out = downcast_as_macro_arg_physical!(s, div);
 
         finish_cast(rhs, out)
     }
@@ -707,7 +707,7 @@ where
             }};
         }
 
-        let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, rem);
+        let out = downcast_as_macro_arg_physical!(s, rem);
 
         finish_cast(rhs, out)
     }

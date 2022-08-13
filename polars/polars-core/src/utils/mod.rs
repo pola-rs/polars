@@ -301,7 +301,7 @@ macro_rules! match_arrow_data_type_apply_macro_ca {
 /// Apply a macro on the Downcasted ChunkedArray's of DataTypes that are logical numerics.
 /// So no logical.
 #[macro_export]
-macro_rules! match_arrow_data_type_apply_macro_ca_logical_num {
+macro_rules! downcast_as_macro_arg_physical {
     ($self:expr, $macro:ident $(, $opt_args:expr)*) => {{
         match $self.dtype() {
             #[cfg(feature = "dtype-u8")]
@@ -838,6 +838,8 @@ where
     B: PolarsDataType,
     C: PolarsDataType,
 {
+    debug_assert_eq!(a.len(), b.len());
+    debug_assert_eq!(b.len(), c.len());
     match (a.chunks.len(), b.chunks.len(), c.chunks.len()) {
         (1, 1, 1) => (Cow::Borrowed(a), Cow::Borrowed(b), Cow::Borrowed(c)),
         (_, 1, 1) => (
