@@ -714,7 +714,6 @@ def scan_json(
     rechunk: bool = True,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
-    **kwargs: Any,
 ) -> LazyFrame:
     """
     Lazily read from a JSON file.
@@ -747,8 +746,6 @@ def scan_json(
         Offset to start the row_count column (only use if the name is set)
 
     """
-    # Map legacy arguments to current ones and remove them from kwargs.
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
     if isinstance(file, (str, Path)):
         file = format_path(file)
