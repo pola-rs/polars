@@ -77,32 +77,6 @@ pub(crate) fn get_series(obj: &PyAny) -> PyResult<Series> {
     Ok(pydf.extract::<PySeries>()?.series)
 }
 
-impl<'a> FromPyObject<'a> for Wrap<PivotAgg> {
-    fn extract(ob: &'a PyAny) -> PyResult<Self> {
-        match ob.extract::<&str>()? {
-            "sum" => Ok(Wrap(PivotAgg::Sum)),
-            "min" => Ok(Wrap(PivotAgg::Min)),
-            "max" => Ok(Wrap(PivotAgg::Max)),
-            "first" => Ok(Wrap(PivotAgg::First)),
-            "mean" => Ok(Wrap(PivotAgg::Mean)),
-            "median" => Ok(Wrap(PivotAgg::Median)),
-            "count" => Ok(Wrap(PivotAgg::Count)),
-            "last" => Ok(Wrap(PivotAgg::Last)),
-            s => panic!("aggregation {} is not supported", s),
-        }
-    }
-}
-
-impl<'a> FromPyObject<'a> for Wrap<UniqueKeepStrategy> {
-    fn extract(ob: &'a PyAny) -> PyResult<Self> {
-        match ob.extract::<&str>()? {
-            "first" => Ok(Wrap(UniqueKeepStrategy::First)),
-            "last" => Ok(Wrap(UniqueKeepStrategy::Last)),
-            s => panic!("keep strategy {} is not supported", s),
-        }
-    }
-}
-
 impl<'a, T> FromPyObject<'a> for Wrap<ChunkedArray<T>>
 where
     T: PyPolarsNumericType,
@@ -300,43 +274,6 @@ impl ToPyObject for Wrap<DataType> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<ClosedWindow> {
-    fn extract(ob: &'_ PyAny) -> PyResult<Self> {
-        let s = ob.extract::<&str>()?;
-        Ok(Wrap(match s {
-            "left" => ClosedWindow::Left,
-            "right" => ClosedWindow::Right,
-            "both" => ClosedWindow::Both,
-            "none" => ClosedWindow::None,
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "closed must be one of {{'left', 'right', 'both', 'none'}}, got {}",
-                    e,
-                )))
-            }
-        }))
-    }
-}
-
-impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
-    fn extract(ob: &'_ PyAny) -> PyResult<Self> {
-        let s = ob.extract::<&str>()?;
-        Ok(Wrap(match s {
-            "lower" => QuantileInterpolOptions::Lower,
-            "higher" => QuantileInterpolOptions::Higher,
-            "nearest" => QuantileInterpolOptions::Nearest,
-            "linear" => QuantileInterpolOptions::Linear,
-            "midpoint" => QuantileInterpolOptions::Midpoint,
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "interpolation must be one of {{'lower', 'higher', 'nearest', 'linear', 'midpoint'}}, got {}",
-                    e,
-                )))
-            }
-        }))
-    }
-}
-
 impl FromPyObject<'_> for Wrap<Field> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let name = ob.getattr("name")?.str()?.to_str()?;
@@ -417,18 +354,6 @@ impl FromPyObject<'_> for Wrap<DataType> {
 impl ToPyObject for Wrap<AnyValue<'_>> {
     fn to_object(&self, py: Python) -> PyObject {
         self.clone().into_py(py)
-    }
-}
-
-impl FromPyObject<'_> for Wrap<TimeUnit> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
-        let unit = match ob.str()?.to_str()? {
-            "ns" => TimeUnit::Nanoseconds,
-            "us" => TimeUnit::Microseconds,
-            "ms" => TimeUnit::Milliseconds,
-            _ => return Err(PyValueError::new_err("expected one of {'ns', 'us', 'ms'}")),
-        };
-        Ok(Wrap(unit))
     }
 }
 
@@ -768,50 +693,6 @@ impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
     }
 }
 
-pub(crate) fn str_to_null_behavior(null_behavior: &str) -> PyResult<NullBehavior> {
-    let null_behavior = match null_behavior {
-        "drop" => NullBehavior::Drop,
-        "ignore" => NullBehavior::Ignore,
-        _ => {
-            return Err(PyValueError::new_err(
-                "use one of 'drop', 'ignore'".to_string(),
-            ))
-        }
-    };
-    Ok(null_behavior)
-}
-
-pub(crate) fn str_to_rankmethod(method: &str) -> PyResult<RankMethod> {
-    let method = match method {
-        "min" => RankMethod::Min,
-        "max" => RankMethod::Max,
-        "average" => RankMethod::Average,
-        "dense" => RankMethod::Dense,
-        "ordinal" => RankMethod::Ordinal,
-        "random" => RankMethod::Random,
-        _ => {
-            return Err(PyValueError::new_err(
-                "use one of 'avg, min, max, dense, ordinal'".to_string(),
-            ))
-        }
-    };
-    Ok(method)
-}
-
-pub(crate) fn str_to_null_strategy(strategy: &str) -> PyResult<NullStrategy> {
-    let strategy = match strategy {
-        "ignore" => NullStrategy::Ignore,
-        "propagate" => NullStrategy::Propagate,
-        e => {
-            return Err(PyValueError::new_err(format!(
-                "null_strategy must be one of {{'ignore', 'propagate'}}, got {}",
-                e,
-            )))
-        }
-    };
-    Ok(strategy)
-}
-
 pub(crate) fn dicts_to_rows(records: &PyAny) -> PyResult<(Vec<Row>, Vec<String>)> {
     let (dicts, len) = get_pyseq(records)?;
     let mut rows = Vec::with_capacity(len);
@@ -860,6 +741,125 @@ pub(crate) fn parse_strategy(strat: &str, limit: FillNullLimit) -> PyResult<Fill
         }
     };
     Ok(strat)
+}
+
+pub(crate) fn str_to_null_strategy(strategy: &str) -> PyResult<NullStrategy> {
+    let strategy = match strategy {
+        "ignore" => NullStrategy::Ignore,
+        "propagate" => NullStrategy::Propagate,
+        e => {
+            return Err(PyValueError::new_err(format!(
+                "null_strategy must be one of {{'ignore', 'propagate'}}, got {}",
+                e,
+            )))
+        }
+    };
+    Ok(strategy)
+}
+
+pub(crate) fn str_to_rankmethod(method: &str) -> PyResult<RankMethod> {
+    let method = match method {
+        "min" => RankMethod::Min,
+        "max" => RankMethod::Max,
+        "average" => RankMethod::Average,
+        "dense" => RankMethod::Dense,
+        "ordinal" => RankMethod::Ordinal,
+        "random" => RankMethod::Random,
+        _ => {
+            return Err(PyValueError::new_err(
+                "use one of 'avg, min, max, dense, ordinal'".to_string(),
+            ))
+        }
+    };
+    Ok(method)
+}
+
+pub(crate) fn str_to_null_behavior(null_behavior: &str) -> PyResult<NullBehavior> {
+    let null_behavior = match null_behavior {
+        "drop" => NullBehavior::Drop,
+        "ignore" => NullBehavior::Ignore,
+        _ => {
+            return Err(PyValueError::new_err(
+                "use one of 'drop', 'ignore'".to_string(),
+            ))
+        }
+    };
+    Ok(null_behavior)
+}
+
+impl FromPyObject<'_> for Wrap<ClosedWindow> {
+    fn extract(ob: &'_ PyAny) -> PyResult<Self> {
+        let s = ob.extract::<&str>()?;
+        Ok(Wrap(match s {
+            "left" => ClosedWindow::Left,
+            "right" => ClosedWindow::Right,
+            "both" => ClosedWindow::Both,
+            "none" => ClosedWindow::None,
+            e => {
+                return Err(PyValueError::new_err(format!(
+                    "closed must be one of {{'left', 'right', 'both', 'none'}}, got {}",
+                    e,
+                )))
+            }
+        }))
+    }
+}
+
+impl FromPyObject<'_> for Wrap<TimeUnit> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let unit = match ob.str()?.to_str()? {
+            "ns" => TimeUnit::Nanoseconds,
+            "us" => TimeUnit::Microseconds,
+            "ms" => TimeUnit::Milliseconds,
+            _ => return Err(PyValueError::new_err("expected one of {'ns', 'us', 'ms'}")),
+        };
+        Ok(Wrap(unit))
+    }
+}
+
+impl<'a> FromPyObject<'a> for Wrap<PivotAgg> {
+    fn extract(ob: &'a PyAny) -> PyResult<Self> {
+        match ob.extract::<&str>()? {
+            "sum" => Ok(Wrap(PivotAgg::Sum)),
+            "min" => Ok(Wrap(PivotAgg::Min)),
+            "max" => Ok(Wrap(PivotAgg::Max)),
+            "first" => Ok(Wrap(PivotAgg::First)),
+            "mean" => Ok(Wrap(PivotAgg::Mean)),
+            "median" => Ok(Wrap(PivotAgg::Median)),
+            "count" => Ok(Wrap(PivotAgg::Count)),
+            "last" => Ok(Wrap(PivotAgg::Last)),
+            s => panic!("aggregation {} is not supported", s),
+        }
+    }
+}
+
+impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
+    fn extract(ob: &'_ PyAny) -> PyResult<Self> {
+        let s = ob.extract::<&str>()?;
+        Ok(Wrap(match s {
+            "lower" => QuantileInterpolOptions::Lower,
+            "higher" => QuantileInterpolOptions::Higher,
+            "nearest" => QuantileInterpolOptions::Nearest,
+            "linear" => QuantileInterpolOptions::Linear,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            e => {
+                return Err(PyValueError::new_err(format!(
+                    "interpolation must be one of {{'lower', 'higher', 'nearest', 'linear', 'midpoint'}}, got {}",
+                    e,
+                )))
+            }
+        }))
+    }
+}
+
+impl<'a> FromPyObject<'a> for Wrap<UniqueKeepStrategy> {
+    fn extract(ob: &'a PyAny) -> PyResult<Self> {
+        match ob.extract::<&str>()? {
+            "first" => Ok(Wrap(UniqueKeepStrategy::First)),
+            "last" => Ok(Wrap(UniqueKeepStrategy::Last)),
+            s => panic!("keep strategy {} is not supported", s),
+        }
+    }
 }
 
 #[cfg(feature = "parquet")]
