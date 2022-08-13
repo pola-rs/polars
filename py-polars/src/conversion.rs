@@ -20,6 +20,9 @@ use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
+#[cfg(feature = "avro")]
+use polars::io::avro::AvroCompression;
+
 pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
     // Safety:
     // Wrap is transparent.
@@ -733,6 +736,24 @@ impl FromPyObject<'_> for Wrap<AsofStrategy> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "strategy must be one of {{'backward', 'forward'}}, got {}",
+                    v
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+#[cfg(feature = "avro")]
+impl FromPyObject<'_> for Wrap<Option<AvroCompression>> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "uncompressed" => None,
+            "snappy" => Some(AvroCompression::Snappy),
+            "deflate" => Some(AvroCompression::Deflate),
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "compression must be one of {{'uncompressed', 'snappy', 'deflate'}}, got {}",
                     v
                 )))
             }

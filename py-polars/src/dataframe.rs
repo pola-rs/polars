@@ -36,6 +36,10 @@ use polars_core::utils::get_supertype;
 
 #[cfg(feature = "parquet")]
 use crate::conversion::parse_parquet_compression;
+#[cfg(feature = "avro")]
+use polars::io::avro::AvroCompression;
+#[cfg(feature = "ipc")]
+use polars::io::ipc::IpcCompression;
 
 #[pyclass]
 #[repr(transparent)]
@@ -280,30 +284,24 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "avro")]
-    pub fn write_avro(&mut self, py: Python, py_f: PyObject, compression: &str) -> PyResult<()> {
-        use polars::io::avro::{AvroCompression, AvroWriter};
-        let compression = match compression {
-            "uncompressed" => None,
-            "snappy" => Some(AvroCompression::Snappy),
-            "deflate" => Some(AvroCompression::Deflate),
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "compression must be one of {{'uncompressed', 'snappy', 'deflate'}}, got {}",
-                    e
-                )))
-            }
-        };
+    pub fn write_avro(
+        &mut self,
+        py: Python,
+        py_f: PyObject,
+        compression: Wrap<Option<AvroCompression>>,
+    ) -> PyResult<()> {
+        use polars::io::avro::AvroWriter;
 
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
             AvroWriter::new(f)
-                .with_compression(compression)
+                .with_compression(compression.0)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         } else {
             let mut buf = get_file_like(py_f, true)?;
             AvroWriter::new(&mut buf)
-                .with_compression(compression)
+                .with_compression(compression.0)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }
