@@ -815,6 +815,22 @@ impl FromPyObject<'_> for Wrap<JoinType> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<ListToStructWidthStrategy> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "first_non_null" => ListToStructWidthStrategy::FirstNonNull,
+            "max_width" => ListToStructWidthStrategy::MaxWidth,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "n_field_strategy must be one of {{'first_non_null', 'max_width'}}, got {}",
+                    v
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 impl FromPyObject<'_> for Wrap<NullBehavior> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {

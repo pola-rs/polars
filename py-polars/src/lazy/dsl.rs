@@ -11,7 +11,6 @@ use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_core::prelude::QuantileInterpolOptions;
 use pyo3::class::basic::CompareOp;
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 use std::borrow::Cow;
@@ -1341,18 +1340,11 @@ impl PyExpr {
             .into()
     }
 
-    fn lst_to_struct(&self, width_strat: &str, name_gen: Option<PyObject>) -> PyResult<Self> {
-        let n_fields = match width_strat {
-            "first_non_null" => ListToStructWidthStrategy::FirstNonNull,
-            "max_width" => ListToStructWidthStrategy::MaxWidth,
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "n_field_strategy must be one of {{'first_non_null', 'max_width'}}, got {}",
-                    e,
-                )))
-            }
-        };
-
+    fn lst_to_struct(
+        &self,
+        width_strat: Wrap<ListToStructWidthStrategy>,
+        name_gen: Option<PyObject>,
+    ) -> PyResult<Self> {
         let name_gen = name_gen.map(|lambda| {
             Arc::new(move |idx: usize| {
                 Python::with_gil(|py| {
@@ -1366,7 +1358,7 @@ impl PyExpr {
             .inner
             .clone()
             .arr()
-            .to_struct(n_fields, name_gen)
+            .to_struct(width_strat.0, name_gen)
             .into())
     }
 
