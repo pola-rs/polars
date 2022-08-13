@@ -1048,22 +1048,19 @@ impl PyDataFrame {
         by: Vec<String>,
         pivot_column: Vec<String>,
         values_column: Vec<String>,
-        agg: &str,
+        agg: Wrap<PivotAgg>,
     ) -> PyResult<Self> {
         let mut gb = self.df.groupby(&by).map_err(PyPolarsErr::from)?;
         let pivot = gb.pivot(pivot_column, values_column);
-        let df = match agg {
-            "first" => pivot.first(),
-            "min" => pivot.min(),
-            "max" => pivot.max(),
-            "mean" => pivot.mean(),
-            "median" => pivot.median(),
-            "sum" => pivot.sum(),
-            "count" => pivot.count(),
-            "last" => pivot.last(),
-            a => Err(PolarsError::ComputeError(
-                format!("agg fn {} does not exists", a).into(),
-            )),
+        let df = match agg.0 {
+            PivotAgg::First => pivot.first(),
+            PivotAgg::Min => pivot.min(),
+            PivotAgg::Max => pivot.max(),
+            PivotAgg::Mean => pivot.mean(),
+            PivotAgg::Median => pivot.median(),
+            PivotAgg::Sum => pivot.sum(),
+            PivotAgg::Count => pivot.count(),
+            PivotAgg::Last => pivot.last(),
         };
         let df = df.map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
