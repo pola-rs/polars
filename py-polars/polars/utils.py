@@ -255,7 +255,12 @@ def _to_python_datetime(
         else:
             raise ValueError(f"time unit: {tu} not expected")
         if tz is not None and len(tz) > 0:
-            import pytz
+            try:
+                import pytz
+            except ImportError:
+                raise ImportError(
+                    "pytz is not installed. Please run `pip install pytz`."
+                ) from None
 
             return pytz.timezone(tz).localize(dt)
         return dt
