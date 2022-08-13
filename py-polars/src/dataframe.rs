@@ -1,5 +1,4 @@
 use numpy::IntoPyArray;
-use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyDict, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::io::BufWriter;
@@ -33,6 +32,13 @@ use polars_core::frame::ArrowChunk;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use polars_core::utils::get_supertype;
+
+#[cfg(feature = "parquet")]
+use crate::conversion::parse_parquet_compression;
+#[cfg(feature = "avro")]
+use polars::io::avro::AvroCompression;
+#[cfg(feature = "ipc")]
+use polars::io::ipc::IpcCompression;
 
 #[pyclass]
 #[repr(transparent)]
@@ -118,7 +124,7 @@ impl PyDataFrame {
         sep: &str,
         rechunk: bool,
         columns: Option<Vec<String>>,
-        encoding: &str,
+        encoding: Wrap<CsvEncoding>,
         n_threads: Option<usize>,
         path: Option<String>,
         overwrite_dtype: Option<Vec<(&str, Wrap<DataType>)>>,
@@ -148,16 +154,6 @@ impl PyDataFrame {
         } else {
             None
         };
-        let encoding = match encoding {
-            "utf8" => CsvEncoding::Utf8,
-            "utf8-lossy" => CsvEncoding::LossyUtf8,
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "encoding must be one of {{'utf8', 'utf8-lossy'}}, got {}",
-                    e
-                )))
-            }
-        };
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             let fields = overwrite_dtype.iter().map(|(name, dtype)| {
@@ -185,7 +181,7 @@ impl PyDataFrame {
             .with_projection(projection)
             .with_rechunk(rechunk)
             .with_chunk_size(chunk_size)
-            .with_encoding(encoding)
+            .with_encoding(encoding.0)
             .with_columns(columns)
             .with_n_threads(n_threads)
             .with_path(path)
@@ -287,30 +283,24 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "avro")]
-    pub fn write_avro(&mut self, py: Python, py_f: PyObject, compression: &str) -> PyResult<()> {
-        use polars::io::avro::{AvroCompression, AvroWriter};
-        let compression = match compression {
-            "uncompressed" => None,
-            "snappy" => Some(AvroCompression::Snappy),
-            "deflate" => Some(AvroCompression::Deflate),
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "compression must be one of {{'uncompressed', 'snappy', 'deflate'}}, got {}",
-                    e
-                )))
-            }
-        };
+    pub fn write_avro(
+        &mut self,
+        py: Python,
+        py_f: PyObject,
+        compression: Wrap<Option<AvroCompression>>,
+    ) -> PyResult<()> {
+        use polars::io::avro::AvroWriter;
 
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
             AvroWriter::new(f)
-                .with_compression(compression)
+                .with_compression(compression.0)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         } else {
             let mut buf = get_file_like(py_f, true)?;
             AvroWriter::new(&mut buf)
-                .with_compression(compression)
+                .with_compression(compression.0)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }
@@ -462,30 +452,23 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "ipc")]
-    pub fn write_ipc(&mut self, py: Python, py_f: PyObject, compression: &str) -> PyResult<()> {
-        let compression = match compression {
-            "uncompressed" => None,
-            "lz4" => Some(IpcCompression::LZ4),
-            "zstd" => Some(IpcCompression::ZSTD),
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "compression must be one of {{'uncompressed', 'lz4', 'zstd'}}, got {}",
-                    e
-                )))
-            }
-        };
-
+    pub fn write_ipc(
+        &mut self,
+        py: Python,
+        py_f: PyObject,
+        compression: Wrap<Option<IpcCompression>>,
+    ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
             IpcWriter::new(f)
-                .with_compression(compression)
+                .with_compression(compression.0)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         } else {
             let mut buf = get_file_like(py_f, true)?;
 
             IpcWriter::new(&mut buf)
-                .with_compression(compression)
+                .with_compression(compression.0)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }
@@ -594,42 +577,7 @@ impl PyDataFrame {
         statistics: bool,
         row_group_size: Option<usize>,
     ) -> PyResult<()> {
-        let compression = match compression {
-            "uncompressed" => ParquetCompression::Uncompressed,
-            "snappy" => ParquetCompression::Snappy,
-            "gzip" => ParquetCompression::Gzip(
-                compression_level
-                    .map(|lvl| {
-                        GzipLevel::try_new(lvl as u8)
-                            .map_err(|e| PyValueError::new_err(format!("{:?}", e)))
-                    })
-                    .transpose()?,
-            ),
-            "lzo" => ParquetCompression::Lzo,
-            "brotli" => ParquetCompression::Brotli(
-                compression_level
-                    .map(|lvl| {
-                        BrotliLevel::try_new(lvl as u32)
-                            .map_err(|e| PyValueError::new_err(format!("{:?}", e)))
-                    })
-                    .transpose()?,
-            ),
-            "lz4" => ParquetCompression::Lz4Raw,
-            "zstd" => ParquetCompression::Zstd(
-                compression_level
-                    .map(|lvl| {
-                        ZstdLevel::try_new(lvl as i32)
-                            .map_err(|e| PyValueError::new_err(format!("{:?}", e)))
-                    })
-                    .transpose()?,
-            ),
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "compression must be one of {{'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'lz4', 'zstd'}}, got {}",
-                    e
-                )))
-            }
-        };
+        let compression = parse_parquet_compression(compression, compression_level)?;
 
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
@@ -801,31 +749,12 @@ impl PyDataFrame {
         other: &PyDataFrame,
         left_on: Vec<&str>,
         right_on: Vec<&str>,
-        how: &str,
+        how: Wrap<JoinType>,
         suffix: String,
     ) -> PyResult<Self> {
-        let how = match how {
-            "left" => JoinType::Left,
-            "inner" => JoinType::Inner,
-            "outer" => JoinType::Outer,
-            "semi" => JoinType::Semi,
-            "anti" => JoinType::Anti,
-            #[cfg(feature = "asof_join")]
-            "asof" => JoinType::AsOf(AsOfOptions {
-                strategy: AsofStrategy::Backward,
-                left_by: None,
-                right_by: None,
-                tolerance: None,
-                tolerance_str: None,
-            }),
-            #[cfg(feature = "cross_join")]
-            "cross" => JoinType::Cross,
-            _ => panic!("not supported"),
-        };
-
         let df = self
             .df
-            .join(&other.df, left_on, right_on, how, Some(suffix))
+            .join(&other.df, left_on, right_on, how.0, Some(suffix))
             .map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
@@ -1119,22 +1048,19 @@ impl PyDataFrame {
         by: Vec<String>,
         pivot_column: Vec<String>,
         values_column: Vec<String>,
-        agg: &str,
+        agg: Wrap<PivotAgg>,
     ) -> PyResult<Self> {
         let mut gb = self.df.groupby(&by).map_err(PyPolarsErr::from)?;
         let pivot = gb.pivot(pivot_column, values_column);
-        let df = match agg {
-            "first" => pivot.first(),
-            "min" => pivot.min(),
-            "max" => pivot.max(),
-            "mean" => pivot.mean(),
-            "median" => pivot.median(),
-            "sum" => pivot.sum(),
-            "count" => pivot.count(),
-            "last" => pivot.last(),
-            a => Err(PolarsError::ComputeError(
-                format!("agg fn {} does not exists", a).into(),
-            )),
+        let df = match agg.0 {
+            PivotAgg::First => pivot.first(),
+            PivotAgg::Min => pivot.min(),
+            PivotAgg::Max => pivot.max(),
+            PivotAgg::Mean => pivot.mean(),
+            PivotAgg::Median => pivot.median(),
+            PivotAgg::Sum => pivot.sum(),
+            PivotAgg::Count => pivot.count(),
+            PivotAgg::Last => pivot.last(),
         };
         let df = df.map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))

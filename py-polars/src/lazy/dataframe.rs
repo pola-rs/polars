@@ -150,7 +150,7 @@ impl PyLazyFrame {
         with_schema_modify: Option<PyObject>,
         rechunk: bool,
         skip_rows_after_header: usize,
-        encoding: &str,
+        encoding: Wrap<CsvEncoding>,
         row_count: Option<(String, IdxSize)>,
         parse_dates: bool,
         eol_char: &str,
@@ -162,17 +162,6 @@ impl PyLazyFrame {
         let eol_char = eol_char.as_bytes()[0];
 
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
-
-        let encoding = match encoding {
-            "utf8" => CsvEncoding::Utf8,
-            "utf8-lossy" => CsvEncoding::LossyUtf8,
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "encoding must be one of {{'utf8', 'utf8-lossy'}}, got {}",
-                    e
-                )))
-            }
-        };
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             let fields = overwrite_dtype
@@ -195,7 +184,7 @@ impl PyLazyFrame {
             .with_end_of_line_char(eol_char)
             .with_rechunk(rechunk)
             .with_skip_rows_after_header(skip_rows_after_header)
-            .with_encoding(encoding)
+            .with_encoding(encoding.0)
             .with_row_count(row_count)
             .with_parse_dates(parse_dates)
             .with_null_values(null_values);
@@ -470,21 +459,10 @@ impl PyLazyFrame {
         allow_parallel: bool,
         force_parallel: bool,
         suffix: String,
-        strategy: &str,
+        strategy: Wrap<AsofStrategy>,
         tolerance: Option<Wrap<AnyValue<'_>>>,
         tolerance_str: Option<String>,
     ) -> PyResult<Self> {
-        let strategy = match strategy {
-            "backward" => AsofStrategy::Backward,
-            "forward" => AsofStrategy::Forward,
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "strategy must be one of {{'backward', 'forward'}}, got {}",
-                    e,
-                )))
-            }
-        };
-
         let ldf = self.ldf.clone();
         let other = other.ldf;
         let left_on = left_on.inner;
@@ -497,7 +475,7 @@ impl PyLazyFrame {
             .allow_parallel(allow_parallel)
             .force_parallel(force_parallel)
             .how(JoinType::AsOf(AsOfOptions {
-                strategy,
+                strategy: strategy.0,
                 left_by,
                 right_by,
                 tolerance: tolerance.map(|t| t.0.into_static().unwrap()),
@@ -516,24 +494,9 @@ impl PyLazyFrame {
         right_on: Vec<PyExpr>,
         allow_parallel: bool,
         force_parallel: bool,
-        how: &str,
+        how: Wrap<JoinType>,
         suffix: String,
     ) -> PyResult<Self> {
-        let how = match how {
-            "left" => JoinType::Left,
-            "inner" => JoinType::Inner,
-            "outer" => JoinType::Outer,
-            "semi" => JoinType::Semi,
-            "anti" => JoinType::Anti,
-            "cross" => JoinType::Cross,
-            e => {
-                return Err(PyValueError::new_err(format!(
-                "how must be one of {{'left', 'inner', 'outer', 'semi', 'anti', 'cross'}}, got {}",
-                e,
-            )))
-            }
-        };
-
         let ldf = self.ldf.clone();
         let other = other.ldf;
         let left_on = left_on
@@ -552,7 +515,7 @@ impl PyLazyFrame {
             .right_on(right_on)
             .allow_parallel(allow_parallel)
             .force_parallel(force_parallel)
-            .how(how)
+            .how(how.0)
             .suffix(suffix)
             .finish()
             .into())
