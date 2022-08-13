@@ -179,16 +179,11 @@ impl PyExpr {
     pub fn list(&self) -> PyExpr {
         self.clone().inner.list().into()
     }
-    pub fn quantile(&self, quantile: f64, interpolation: &str) -> PyExpr {
-        let interpol = match interpolation {
-            "nearest" => QuantileInterpolOptions::Nearest,
-            "lower" => QuantileInterpolOptions::Lower,
-            "higher" => QuantileInterpolOptions::Higher,
-            "midpoint" => QuantileInterpolOptions::Midpoint,
-            "linear" => QuantileInterpolOptions::Linear,
-            _ => panic!("not supported"),
-        };
-        self.clone().inner.quantile(quantile, interpol).into()
+    pub fn quantile(&self, quantile: f64, interpolation: Wrap<QuantileInterpolOptions>) -> PyExpr {
+        self.clone()
+            .inner
+            .quantile(quantile, interpolation.0)
+            .into()
     }
     pub fn agg_groups(&self) -> PyExpr {
         self.clone().inner.agg_groups().into()
@@ -1224,7 +1219,7 @@ impl PyExpr {
     pub fn rolling_quantile(
         &self,
         quantile: f64,
-        interpolation: &str,
+        interpolation: Wrap<QuantileInterpolOptions>,
         window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
@@ -1232,15 +1227,6 @@ impl PyExpr {
         by: Option<String>,
         closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
-        let interpol = match interpolation {
-            "nearest" => QuantileInterpolOptions::Nearest,
-            "lower" => QuantileInterpolOptions::Lower,
-            "higher" => QuantileInterpolOptions::Higher,
-            "midpoint" => QuantileInterpolOptions::Midpoint,
-            "linear" => QuantileInterpolOptions::Linear,
-            _ => panic!("not supported"),
-        };
-
         let options = RollingOptions {
             window_size: Duration::parse(window_size),
             weights,
@@ -1252,7 +1238,7 @@ impl PyExpr {
 
         self.inner
             .clone()
-            .rolling_quantile(quantile, interpol, options)
+            .rolling_quantile(quantile, interpolation.0, options)
             .into()
     }
 
