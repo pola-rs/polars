@@ -20,6 +20,7 @@ ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq
 # User-facing string literal types
 # The following all have an equivalent Rust enum with the same name
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
+CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
 ClosedWindow: TypeAlias = Literal["left", "right", "both", "none"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 FillNullStrategy: TypeAlias = Literal[
