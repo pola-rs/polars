@@ -788,7 +788,7 @@ pub(crate) fn str_to_null_behavior(null_behavior: &str) -> PyResult<NullBehavior
 }
 
 impl FromPyObject<'_> for Wrap<ClosedWindow> {
-    fn extract(ob: &'_ PyAny) -> PyResult<Self> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
         let s = ob.extract::<&str>()?;
         Ok(Wrap(match s {
             "left" => ClosedWindow::Left,
@@ -817,8 +817,8 @@ impl FromPyObject<'_> for Wrap<TimeUnit> {
     }
 }
 
-impl<'a> FromPyObject<'a> for Wrap<PivotAgg> {
-    fn extract(ob: &'a PyAny) -> PyResult<Self> {
+impl FromPyObject<'_> for Wrap<PivotAgg> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
         match ob.extract::<&str>()? {
             "sum" => Ok(Wrap(PivotAgg::Sum)),
             "min" => Ok(Wrap(PivotAgg::Min)),
@@ -834,7 +834,7 @@ impl<'a> FromPyObject<'a> for Wrap<PivotAgg> {
 }
 
 impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
-    fn extract(ob: &'_ PyAny) -> PyResult<Self> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
         let s = ob.extract::<&str>()?;
         Ok(Wrap(match s {
             "lower" => QuantileInterpolOptions::Lower,
@@ -852,8 +852,8 @@ impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
     }
 }
 
-impl<'a> FromPyObject<'a> for Wrap<UniqueKeepStrategy> {
-    fn extract(ob: &'a PyAny) -> PyResult<Self> {
+impl FromPyObject<'_> for Wrap<UniqueKeepStrategy> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
         match ob.extract::<&str>()? {
             "first" => Ok(Wrap(UniqueKeepStrategy::First)),
             "last" => Ok(Wrap(UniqueKeepStrategy::Last)),
