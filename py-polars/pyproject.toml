@@ -18,6 +18,7 @@ numpy = ["numpy >= 1.16.0"]
 fsspec = ["fsspec"]
 connectorx = ["connectorx"]
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
+pytz = ["pytz"]
 
 [tool.isort]
 profile = "black"
