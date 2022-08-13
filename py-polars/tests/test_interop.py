@@ -388,7 +388,7 @@ def test_from_pandas_ns_resolution() -> None:
         [pd.Timestamp(year=2021, month=1, day=1, hour=1, second=1, nanosecond=1)],
         columns=["date"],
     )
-    assert pl.from_pandas(df)[0, 0] == datetime(2021, 1, 1, 1, 0, 1)
+    assert cast(datetime, pl.from_pandas(df)[0, 0]) == datetime(2021, 1, 1, 1, 0, 1)
 
 
 @no_type_check

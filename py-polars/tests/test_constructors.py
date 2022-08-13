@@ -29,7 +29,8 @@ def test_init_dict() -> None:
 
     # List of empty list/tuple
     df = pl.DataFrame({"a": [[]], "b": [()]})
-    assert df.schema == {"a": pl.List(pl.Float64), "b": pl.List(pl.Float64)}
+    expected = {"a": pl.List(pl.Float64), "b": pl.List(pl.Float64)}
+    assert df.schema == expected  # type: ignore[comparison-overlap]
     assert df.rows() == [([], [])]
 
     # Mixed dtypes

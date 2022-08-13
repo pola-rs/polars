@@ -90,7 +90,7 @@ def test_selection() -> None:
 
     # select columns by mask
     assert df[:2, :1].shape == (2, 1)
-    assert df[:2, "a"].shape == (2, 1)
+    assert df[:2, "a"].shape == (2, 1)  # type: ignore[comparison-overlap]
 
     # column selection by string(s) in first dimension
     assert df["a"].to_list() == [1, 2, 3]
@@ -117,11 +117,11 @@ def test_selection() -> None:
     assert df[[1, 2], [1, 2]].frame_equal(
         pl.DataFrame({"b": [2.0, 3.0], "c": ["b", "c"]})
     )
-    assert df[1, 2] == "b"
-    assert df[1, 1] == 2.0
-    assert df[2, 0] == 3
+    assert typing.cast(str, df[1, 2]) == "b"
+    assert typing.cast(float, df[1, 1]) == 2.0
+    assert typing.cast(int, df[2, 0]) == 3
 
-    assert df[[0, 1], "b"].shape == (2, 1)
+    assert df[[0, 1], "b"].shape == (2, 1)  # type: ignore[comparison-overlap]
     assert df[[2], ["a", "b"]].shape == (1, 2)
     assert df.to_series(0).name == "a"
     assert (df["a"] == df["a"]).sum() == 3
@@ -132,10 +132,10 @@ def test_selection() -> None:
     assert df[1, [2]].frame_equal(expect)
     expect = pl.DataFrame({"b": [1.0, 3.0]})
     assert df[[0, 2], [1]].frame_equal(expect)
-    assert df[0, "c"] == "a"
-    assert df[1, "c"] == "b"
-    assert df[2, "c"] == "c"
-    assert df[0, "a"] == 1
+    assert typing.cast(str, df[0, "c"]) == "a"
+    assert typing.cast(str, df[1, "c"]) == "b"
+    assert typing.cast(str, df[2, "c"]) == "c"
+    assert typing.cast(int, df[0, "a"]) == 1
 
     # more slicing
     expect = pl.DataFrame({"a": [3, 2, 1], "b": [3.0, 2.0, 1.0], "c": ["c", "b", "a"]})
@@ -766,9 +766,9 @@ def test_df_fold() -> None:
 
 def test_row_tuple() -> None:
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
-    assert df.row(0) == ("foo", 1, 1.0)
-    assert df.row(1) == ("bar", 2, 2.0)
-    assert df.row(-1) == ("2", 3, 3.0)
+    assert df.row(0) == ("foo", 1, 1.0)  # type: ignore[comparison-overlap]
+    assert df.row(1) == ("bar", 2, 2.0)  # type: ignore[comparison-overlap]
+    assert df.row(-1) == ("2", 3, 3.0)  # type: ignore[comparison-overlap]
 
 
 def test_df_apply() -> None:
@@ -1058,7 +1058,7 @@ def dot_product() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 2, 2, 2]})
 
     assert df["a"].dot(df["b"]) == 20
-    assert df.select([pl.col("a").dot("b")])[0, "a"] == 20
+    assert typing.cast(int, df.select([pl.col("a").dot("b")])[0, "a"]) == 20
 
 
 def test_hash_rows() -> None:

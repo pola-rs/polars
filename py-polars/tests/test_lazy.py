@@ -472,7 +472,7 @@ def test_is_finite_is_infinite() -> None:
 
 def test_len() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3]})
-    assert df.select(col("nrs").len())[0, 0] == 3
+    assert cast(int, df.select(col("nrs").len())[0, 0]) == 3
 
 
 def test_cum_agg() -> None:
@@ -505,7 +505,7 @@ def test_round() -> None:
 
 def test_dot() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0], "b": [3.2, 1, 2]})
-    assert df.select(pl.col("a").dot(pl.col("b")))[0, 0] == 12.96
+    assert cast(float, df.select(pl.col("a").dot(pl.col("b")))[0, 0]) == 12.96
 
 
 def test_sort() -> None:
@@ -696,8 +696,8 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
         ]
     )
 
-    assert out_single_val_variance[0, "std"] == 0.0
-    assert out_single_val_variance[0, "var"] == 0.0
+    assert cast(float, out_single_val_variance[0, "std"]) == 0.0
+    assert cast(float, out_single_val_variance[0, "var"]) == 0.0
 
 
 def test_rolling_apply() -> None:
@@ -993,7 +993,7 @@ def test_join_suffix() -> None:
 def test_str_concat() -> None:
     df = pl.DataFrame({"foo": [1, None, 2]})
     df = df.select(pl.col("foo").str.concat("-"))
-    assert df[0, 0] == "1-null-2"
+    assert cast(str, df[0, 0]) == "1-null-2"
 
 
 @pytest.mark.parametrize("no_optimization", [False, True])
@@ -1001,8 +1001,8 @@ def test_collect_all(df: pl.DataFrame, no_optimization: bool) -> None:
     lf1 = df.lazy().select(pl.col("int").sum())
     lf2 = df.lazy().select((pl.col("floats") * 2).sum())
     out = pl.collect_all([lf1, lf2], no_optimization=no_optimization)
-    assert out[0][0, 0] == 6
-    assert out[1][0, 0] == 12.0
+    assert cast(int, out[0][0, 0]) == 6
+    assert cast(float, out[1][0, 0]) == 12.0
 
 
 def test_spearman_corr() -> None:
@@ -1058,8 +1058,10 @@ def test_pearson_corr() -> None:
 
 
 def test_cov(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.select(pl.cov("A", "B"))[0, 0] == -2.5
-    assert fruits_cars.select(pl.cov(pl.col("A"), pl.col("B")))[0, 0] == -2.5
+    assert cast(float, fruits_cars.select(pl.cov("A", "B"))[0, 0]) == -2.5
+    assert (
+        cast(float, fruits_cars.select(pl.cov(pl.col("A"), pl.col("B")))[0, 0]) == -2.5
+    )
 
 
 def test_std(fruits_cars: pl.DataFrame) -> None:
