@@ -11,12 +11,12 @@ use crate::{
     prelude::*,
 };
 use numpy::PyArray1;
+use polars::series::ops::NullBehavior;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::CustomIterTools;
 use pyo3::types::{PyBytes, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
-
 #[pyclass]
 #[repr(transparent)]
 #[derive(Clone)]
@@ -1387,9 +1387,8 @@ impl PySeries {
         Ok(self.series.rank(options).into())
     }
 
-    pub fn diff(&self, n: usize, null_behavior: &str) -> PyResult<Self> {
-        let null_behavior = str_to_null_behavior(null_behavior)?;
-        Ok(self.series.diff(n, null_behavior).into())
+    pub fn diff(&self, n: usize, null_behavior: Wrap<NullBehavior>) -> PyResult<Self> {
+        Ok(self.series.diff(n, null_behavior.0).into())
     }
 
     pub fn skew(&self, bias: bool) -> PyResult<Option<f64>> {

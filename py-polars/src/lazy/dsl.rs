@@ -1,5 +1,5 @@
 use super::apply::*;
-use crate::conversion::{str_to_null_behavior, Wrap};
+use crate::conversion::Wrap;
 use crate::lazy::map_single;
 use crate::lazy::utils::py_exprs_to_exprs;
 use crate::prelude::{parse_strategy, str_to_rankmethod};
@@ -8,6 +8,7 @@ use crate::utils::reinterpret;
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
+use polars::series::ops::NullBehavior;
 use polars_core::prelude::QuantileInterpolOptions;
 use pyo3::class::basic::CompareOp;
 use pyo3::exceptions::PyValueError;
@@ -1331,9 +1332,8 @@ impl PyExpr {
         self.inner.clone().arr().arg_max().into()
     }
 
-    fn lst_diff(&self, n: usize, null_behavior: &str) -> PyResult<Self> {
-        let null_behavior = str_to_null_behavior(null_behavior)?;
-        Ok(self.inner.clone().arr().diff(n, null_behavior).into())
+    fn lst_diff(&self, n: usize, null_behavior: Wrap<NullBehavior>) -> PyResult<Self> {
+        Ok(self.inner.clone().arr().diff(n, null_behavior.0).into())
     }
 
     fn lst_shift(&self, periods: i64) -> Self {
@@ -1393,9 +1393,8 @@ impl PyExpr {
         self.inner.clone().rank(options).into()
     }
 
-    fn diff(&self, n: usize, null_behavior: &str) -> Self {
-        let null_behavior = str_to_null_behavior(null_behavior).unwrap();
-        self.inner.clone().diff(n, null_behavior).into()
+    fn diff(&self, n: usize, null_behavior: Wrap<NullBehavior>) -> Self {
+        self.inner.clone().diff(n, null_behavior.0).into()
     }
 
     #[cfg(feature = "pct_change")]

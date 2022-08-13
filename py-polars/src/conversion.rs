@@ -774,17 +774,20 @@ pub(crate) fn str_to_rankmethod(method: &str) -> PyResult<RankMethod> {
     Ok(method)
 }
 
-pub(crate) fn str_to_null_behavior(null_behavior: &str) -> PyResult<NullBehavior> {
-    let null_behavior = match null_behavior {
-        "drop" => NullBehavior::Drop,
-        "ignore" => NullBehavior::Ignore,
-        _ => {
-            return Err(PyValueError::new_err(
-                "use one of 'drop', 'ignore'".to_string(),
-            ))
-        }
-    };
-    Ok(null_behavior)
+impl FromPyObject<'_> for Wrap<NullBehavior> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "drop" => NullBehavior::Drop,
+            "ignore" => NullBehavior::Ignore,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "null behavior must be one of {{'drop', 'ignore'}}, got {}",
+                    v
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
 }
 
 impl FromPyObject<'_> for Wrap<ClosedWindow> {
