@@ -743,18 +743,20 @@ pub(crate) fn parse_strategy(strat: &str, limit: FillNullLimit) -> PyResult<Fill
     Ok(strat)
 }
 
-pub(crate) fn str_to_null_strategy(strategy: &str) -> PyResult<NullStrategy> {
-    let strategy = match strategy {
-        "ignore" => NullStrategy::Ignore,
-        "propagate" => NullStrategy::Propagate,
-        e => {
-            return Err(PyValueError::new_err(format!(
-                "null_strategy must be one of {{'ignore', 'propagate'}}, got {}",
-                e,
-            )))
-        }
-    };
-    Ok(strategy)
+impl FromPyObject<'_> for Wrap<NullStrategy> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "ignore" => NullStrategy::Ignore,
+            "propagate" => NullStrategy::Propagate,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "null strategy must be one of {{'ignore', 'propagate'}}, got {}",
+                    v
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
 }
 
 impl FromPyObject<'_> for Wrap<RankMethod> {
