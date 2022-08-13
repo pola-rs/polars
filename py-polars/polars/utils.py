@@ -256,7 +256,7 @@ def _to_python_datetime(
             raise ValueError(f"time unit: {tu} not expected")
         if tz is not None and len(tz) > 0:
             try:
-                import pytz  # type: ignore[import]
+                import pytz
             except ImportError:
                 raise ImportError(
                     "pytz is not installed. Please run `pip install pytz`."
