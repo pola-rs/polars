@@ -304,7 +304,7 @@ impl Expr {
 
     /// Drop NaN values
     pub fn drop_nans(self) -> Self {
-        self.map_private(NanFunction::DropNans.into(), "drop_nans")
+        self.apply_private(NanFunction::DropNans.into(), "drop_nans")
     }
 
     /// Reduce groups to minimal value.
