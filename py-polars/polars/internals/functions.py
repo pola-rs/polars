@@ -24,7 +24,7 @@ except ImportError:
     _DOCUMENTING = True
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import ClosedWindow
+    from polars.internals.type_aliases import ClosedWindow, TimeUnit
 
 
 def get_dummies(df: pli.DataFrame) -> pli.DataFrame:
@@ -173,7 +173,7 @@ def date_range(
     interval: str | timedelta,
     closed: ClosedWindow = "both",
     name: str | None = None,
-    time_unit: str | None = None,
+    time_unit: TimeUnit | None = None,
 ) -> pli.Series:
     """
     Create a range of type `Datetime` (or `Date`).
@@ -192,7 +192,7 @@ def date_range(
         Define whether the temporal window interval is closed or not.
     name
         Name of the output Series.
-    time_unit : {'ns', 'us', 'ms'}
+    time_unit : {None, 'ns', 'us', 'ms'}
         Set the time unit.
 
     Notes
@@ -247,6 +247,7 @@ def date_range(
     low, low_is_date = _ensure_datetime(low)
     high, high_is_date = _ensure_datetime(high)
 
+    tu: TimeUnit
     if in_nanoseconds_window(low) and in_nanoseconds_window(high) and time_unit is None:
         tu = "ns"
     elif time_unit is not None:

@@ -56,6 +56,7 @@ if TYPE_CHECKING:
         FillNullStrategy,
         InterpolationMethod,
         ParallelStrategy,
+        UniqueKeepStrategy,
     )
 
 
@@ -2086,7 +2087,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         self: LDF,
         maintain_order: bool = True,
         subset: str | list[str] | None = None,
-        keep: str = "first",
+        keep: UniqueKeepStrategy = "first",
     ) -> LDF:
         """
         Drop duplicate rows from this DataFrame.
@@ -2099,9 +2100,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Keep the same order as the original DataFrame. This requires more work to
             compute.
         subset
-            Subset to use to compare rows
-        keep
-            any of {"first", "last"}
+            Subset to use to compare rows.
+        keep : {'first', 'last'}
+            Which of the duplicate rows to keep.
 
         Returns
         -------

@@ -37,8 +37,12 @@ except ImportError:
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
         ClosedWindow,
+        EpochTimeUnit,
         FillNullStrategy,
         InterpolationMethod,
+        NullBehavior,
+        RankMethod,
+        TimeUnit,
         ToStructStrategy,
         TransferEncoding,
     )
@@ -3999,13 +4003,13 @@ class Expr:
         """Alias for `arg_sort`."""
         return self.arg_sort(reverse)
 
-    def rank(self, method: str = "average", reverse: bool = False) -> Expr:
+    def rank(self, method: RankMethod = "average", reverse: bool = False) -> Expr:
         """
         Assign ranks to data, dealing with ties appropriately.
 
         Parameters
         ----------
-        method : {'average', 'min', 'max', 'dense', 'ordinal', 'random'}, optional
+        method : {'average', 'min', 'max', 'dense', 'ordinal', 'random'}
             The method used to assign ranks to tied elements.
             The following methods are available (default is 'average'):
 
@@ -4073,7 +4077,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.rank(method, reverse))
 
-    def diff(self, n: int = 1, null_behavior: str = "ignore") -> Expr:
+    def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Expr:
         """
         Calculate the n-th discrete difference.
 
@@ -4081,8 +4085,8 @@ class Expr:
         ----------
         n
             number of slots to shift
-        null_behavior
-            {'ignore', 'drop'}
+        null_behavior : {'ignore', 'drop'}
+            How to handle null values.
 
         Examples
         --------
@@ -5487,16 +5491,16 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_arg_max())
 
-    def diff(self, n: int = 1, null_behavior: str = "ignore") -> Expr:
+    def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Expr:
         """
         Calculate the n-th discrete difference of every sublist.
 
         Parameters
         ----------
         n
-            number of slots to shift
-        null_behavior
-            {'ignore', 'drop'}
+            Number of slots to shift.
+        null_behavior : {'ignore', 'drop'}
+            How to handle null values.
 
         Examples
         --------
@@ -6898,60 +6902,62 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.nanosecond())
 
-    def epoch(self, tu: str = "us") -> Expr:
+    def epoch(self, tu: EpochTimeUnit = "us") -> Expr:
         """
         Get the time passed since the Unix EPOCH in the give time unit
 
         Parameters
         ----------
-        tu
-            One of {'ns', 'us', 'ms', 's', 'd'}
+        tu : {'us', 'ns', 'ms', 's', 'd'}
+            Time unit.
 
         """
         if tu in DTYPE_TEMPORAL_UNITS:
-            return self.timestamp(tu)
-        if tu == "s":
+            return self.timestamp(tu)  # type: ignore[arg-type]
+        elif tu == "s":
             return wrap_expr(self._pyexpr.dt_epoch_seconds())
-        if tu == "d":
+        elif tu == "d":
             return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
         else:
-            raise ValueError(f"time unit {tu} not understood")
+            raise ValueError(
+                f"tu must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {tu}"
+            )
 
-    def timestamp(self, tu: str = "us") -> Expr:
+    def timestamp(self, tu: TimeUnit = "us") -> Expr:
         """
         Return a timestamp in the given time unit.
 
         Parameters
         ----------
-        tu
-            One of {'ns', 'us', 'ms'}
+        tu : {'us', 'ns', 'ms'}
+            Time unit.
 
         """
         return wrap_expr(self._pyexpr.timestamp(tu))
 
-    def with_time_unit(self, tu: str) -> Expr:
+    def with_time_unit(self, tu: TimeUnit) -> Expr:
         """
-        Set time unit a Series of dtype Datetime or Duration.
+        Set time unit of a Series of dtype Datetime or Duration.
 
         This does not modify underlying data, and should be used to fix an incorrect
         time unit.
 
         Parameters
         ----------
-        tu
-            Time unit for the `Datetime` Series: one of {"ns", "us", "ms"}
+        tu : {'ns', 'us', 'ms'}
+            Time unit for the ``Datetime`` Series.
 
         """
         return wrap_expr(self._pyexpr.dt_with_time_unit(tu))
 
-    def cast_time_unit(self, tu: str) -> Expr:
+    def cast_time_unit(self, tu: TimeUnit) -> Expr:
         """
         Cast the underlying data to another time unit. This may lose precision.
 
         Parameters
         ----------
-        tu
-            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
+        tu : {'ns', 'us', 'ms'}
+            Time unit for the ``Datetime`` Series.
 
         """
         return wrap_expr(self._pyexpr.dt_cast_time_unit(tu))

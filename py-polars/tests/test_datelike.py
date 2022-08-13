@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import typing
 from datetime import date, datetime, time, timedelta
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,9 @@ import pytz
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.testing import verify_series_and_expr_api
+
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import TimeUnit
 
 
 def test_fill_null() -> None:
@@ -1275,7 +1279,8 @@ def test_weekday() -> None:
     # monday
     s = pl.Series([datetime(2020, 1, 6)])
 
-    for tu in ["ns", "us", "ms"]:
+    time_units: list[TimeUnit] = ["ns", "us", "ms"]
+    for tu in time_units:
         assert s.dt.cast_time_unit(tu).dt.weekday()[0] == 0
 
     assert s.cast(pl.Date).dt.weekday()[0] == 0

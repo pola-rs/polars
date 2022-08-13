@@ -89,8 +89,12 @@ else:
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
         ComparisonOperator,
+        EpochTimeUnit,
         FillNullStrategy,
         InterpolationMethod,
+        NullBehavior,
+        RankMethod,
+        TimeUnit,
         TransferEncoding,
     )
 
@@ -3774,13 +3778,13 @@ class Series:
         """Compute absolute values."""
         return wrap_s(self._s.abs())
 
-    def rank(self, method: str = "average", reverse: bool = False) -> Series:
+    def rank(self, method: RankMethod = "average", reverse: bool = False) -> Series:
         """
         Assign ranks to data, dealing with ties appropriately.
 
         Parameters
         ----------
-        method : {'average', 'min', 'max', 'dense', 'ordinal', 'random'}, optional
+        method : {'average', 'min', 'max', 'dense', 'ordinal', 'random'}
             The method used to assign ranks to tied elements.
             The following methods are available (default is 'average'):
 
@@ -3834,16 +3838,16 @@ class Series:
         """
         return wrap_s(self._s.rank(method, reverse))
 
-    def diff(self, n: int = 1, null_behavior: str = "ignore") -> Series:
+    def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
         """
         Calculate the n-th discrete difference.
 
         Parameters
         ----------
         n
-            number of slots to shift
-        null_behavior
-            {'ignore', 'drop'}
+            Number of slots to shift.
+        null_behavior : {'ignore', 'drop'}
+            How to handle null values.
 
         """
         return wrap_s(self._s.diff(n, null_behavior))
@@ -4249,7 +4253,7 @@ class Series:
         return wrap_s(self._s.set_sorted(reverse))
 
     @property
-    def time_unit(self) -> str | None:
+    def time_unit(self) -> TimeUnit | None:
         """Get the time unit of underlying Datetime Series as {"ns", "us", "ms"}."""
         return self._s.time_unit()
 
@@ -5227,16 +5231,16 @@ class ListNameSpace:
         """
         return pli.select(pli.lit(wrap_s(self._s)).arr.arg_max()).to_series()
 
-    def diff(self, n: int = 1, null_behavior: str = "ignore") -> Series:
+    def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
         """
         Calculate the n-th discrete difference of every sublist.
 
         Parameters
         ----------
         n
-            number of slots to shift
-        null_behavior
-            {'ignore', 'drop'}
+            Number of slots to shift.
+        null_behavior : {'ignore', 'drop'}
+            How to handle null values.
 
         Examples
         --------
@@ -5685,14 +5689,14 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.nanosecond())
 
-    def timestamp(self, tu: str = "us") -> Series:
+    def timestamp(self, tu: TimeUnit = "us") -> Series:
         """
         Return a timestamp in the given time unit.
 
         Parameters
         ----------
-        tu
-            One of {'ns', 'us', 'ms'}
+        tu : {'us', 'ns', 'ms'}
+            Time unit.
 
         """
         return wrap_s(self._s.timestamp(tu))
@@ -5718,46 +5722,48 @@ class DateTimeNameSpace:
         out = int(s.mean())
         return _to_python_datetime(out, s.dtype, s.time_unit)
 
-    def epoch(self, tu: str = "us") -> Series:
+    def epoch(self, tu: EpochTimeUnit = "us") -> Series:
         """
         Get the time passed since the Unix EPOCH in the give time unit
 
         Parameters
         ----------
-        tu
-            One of {'ns', 'us', 'ms', 's', 'd'}
+        tu : {'us', 'ns', 'ms', 's', 'd'}
+            Time unit.
 
         """
         if tu in DTYPE_TEMPORAL_UNITS:
-            return self.timestamp(tu)
-        if tu == "s":
+            return self.timestamp(tu)  # type: ignore[arg-type]
+        elif tu == "s":
             return wrap_s(self._s.dt_epoch_seconds())
-        if tu == "d":
+        elif tu == "d":
             return wrap_s(self._s).cast(Date).cast(Int32)
         else:
-            raise ValueError(f"time unit {tu} not understood")
+            raise ValueError(
+                f"tu must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {tu}"
+            )
 
-    def with_time_unit(self, tu: str) -> Series:
+    def with_time_unit(self, tu: TimeUnit) -> Series:
         """
         Set time unit a Series of dtype Datetime or Duration. This does not modify
         underlying data, and should be used to fix an incorrect time unit.
 
         Parameters
         ----------
-        tu
-            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
+        tu : {'ns', 'us', 'ms'}
+            Time unit for the ``Datetime`` Series.
 
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.with_time_unit(tu)).to_series()
 
-    def cast_time_unit(self, tu: str) -> Series:
+    def cast_time_unit(self, tu: TimeUnit) -> Series:
         """
         Cast the underlying data to another time unit. This may lose precision.
 
         Parameters
         ----------
-        tu
-            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
+        tu : {'ns', 'us', 'ms'}
+            Time unit for the ``Datetime`` Series.
 
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.cast_time_unit(tu)).to_series()
