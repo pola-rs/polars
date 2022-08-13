@@ -63,6 +63,54 @@ def ensure_list_of_pyexpr(exprs: object) -> list[PyExpr]:
     raise TypeError(f"unexpected type '{type(exprs)}'")
 
 
+def expr_to_lit_or_expr(
+    expr: (
+        Expr
+        | bool
+        | int
+        | float
+        | str
+        | pli.Series
+        | None
+        | date
+        | datetime
+        | Sequence[(int | float | str | None)]
+    ),
+    str_to_lit: bool = True,
+) -> Expr:
+    """
+    Convert args to expressions.
+
+    Parameters
+    ----------
+    expr
+        Any argument.
+    str_to_lit
+        If True string argument `"foo"` will be converted to `lit("foo")`,
+        If False it will be converted to `col("foo")`
+
+    Returns
+    -------
+    Expr
+
+    """
+    if isinstance(expr, str) and not str_to_lit:
+        return pli.col(expr)
+    elif (
+        isinstance(expr, (int, float, str, pli.Series, datetime, date)) or expr is None
+    ):
+        return pli.lit(expr)
+    elif isinstance(expr, Expr):
+        return expr
+    elif isinstance(expr, list):
+        return pli.lit(pli.Series("", [expr]))
+    else:
+        raise ValueError(
+            f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with"
+            " pl.lit or pl.col"
+        )
+
+
 def wrap_expr(pyexpr: PyExpr) -> Expr:
     return Expr._from_pyexpr(pyexpr)
 
@@ -5075,54 +5123,6 @@ class Expr:
     def struct(self) -> ExprStructNameSpace:
         """Create an object namespace of all struct related methods."""
         return ExprStructNameSpace(self)
-
-
-def expr_to_lit_or_expr(
-    expr: (
-        Expr
-        | bool
-        | int
-        | float
-        | str
-        | pli.Series
-        | None
-        | date
-        | datetime
-        | Sequence[(int | float | str | None)]
-    ),
-    str_to_lit: bool = True,
-) -> Expr:
-    """
-    Convert args to expressions.
-
-    Parameters
-    ----------
-    expr
-        Any argument.
-    str_to_lit
-        If True string argument `"foo"` will be converted to `lit("foo")`,
-        If False it will be converted to `col("foo")`
-
-    Returns
-    -------
-    Expr
-
-    """
-    if isinstance(expr, str) and not str_to_lit:
-        return pli.col(expr)
-    elif (
-        isinstance(expr, (int, float, str, pli.Series, datetime, date)) or expr is None
-    ):
-        return pli.lit(expr)
-    elif isinstance(expr, Expr):
-        return expr
-    elif isinstance(expr, list):
-        return pli.lit(pli.Series("", [expr]))
-    else:
-        raise ValueError(
-            f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with"
-            " pl.lit or pl.col"
-        )
 
 
 def _prepare_alpha(
