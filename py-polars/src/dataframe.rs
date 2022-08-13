@@ -15,7 +15,7 @@ use crate::apply::dataframe::{
 use crate::conversion::{ObjectValue, Wrap};
 use crate::file::get_mmap_bytes_reader;
 use crate::lazy::dataframe::PyLazyFrame;
-use crate::prelude::{dicts_to_rows, str_to_null_strategy};
+use crate::prelude::dicts_to_rows;
 use crate::{
     arrow_interop,
     error::PyPolarsErr,
@@ -1105,19 +1105,11 @@ impl PyDataFrame {
         by: Vec<&str>,
         select: Vec<String>,
         quantile: f64,
-        interpolation: &str,
+        interpolation: Wrap<QuantileInterpolOptions>,
     ) -> PyResult<Self> {
-        let interpol = match interpolation {
-            "nearest" => QuantileInterpolOptions::Nearest,
-            "lower" => QuantileInterpolOptions::Lower,
-            "higher" => QuantileInterpolOptions::Higher,
-            "midpoint" => QuantileInterpolOptions::Midpoint,
-            "linear" => QuantileInterpolOptions::Linear,
-            _ => panic!("not supported"),
-        };
         let gb = self.df.groupby(&by).map_err(PyPolarsErr::from)?;
         let selection = gb.select(&select);
-        let df = selection.quantile(quantile, interpol);
+        let df = selection.quantile(quantile, interpolation.0);
         let df = df.map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
@@ -1261,9 +1253,8 @@ impl PyDataFrame {
         self.df.median().into()
     }
 
-    pub fn hmean(&self, null_strategy: &str) -> PyResult<Option<PySeries>> {
-        let strategy = str_to_null_strategy(null_strategy)?;
-        let s = self.df.hmean(strategy).map_err(PyPolarsErr::from)?;
+    pub fn hmean(&self, null_strategy: Wrap<NullStrategy>) -> PyResult<Option<PySeries>> {
+        let s = self.df.hmean(null_strategy.0).map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
     }
 
@@ -1277,24 +1268,19 @@ impl PyDataFrame {
         Ok(s.map(|s| s.into()))
     }
 
-    pub fn hsum(&self, null_strategy: &str) -> PyResult<Option<PySeries>> {
-        let strategy = str_to_null_strategy(null_strategy)?;
-        let s = self.df.hsum(strategy).map_err(PyPolarsErr::from)?;
+    pub fn hsum(&self, null_strategy: Wrap<NullStrategy>) -> PyResult<Option<PySeries>> {
+        let s = self.df.hsum(null_strategy.0).map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
     }
 
-    pub fn quantile(&self, quantile: f64, interpolation: &str) -> PyResult<Self> {
-        let interpol = match interpolation {
-            "nearest" => QuantileInterpolOptions::Nearest,
-            "lower" => QuantileInterpolOptions::Lower,
-            "higher" => QuantileInterpolOptions::Higher,
-            "midpoint" => QuantileInterpolOptions::Midpoint,
-            "linear" => QuantileInterpolOptions::Linear,
-            _ => panic!("not supported"),
-        };
+    pub fn quantile(
+        &self,
+        quantile: f64,
+        interpolation: Wrap<QuantileInterpolOptions>,
+    ) -> PyResult<Self> {
         let df = self
             .df
-            .quantile(quantile, interpol)
+            .quantile(quantile, interpolation.0)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }

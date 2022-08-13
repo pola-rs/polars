@@ -11,12 +11,12 @@ use crate::{
     prelude::*,
 };
 use numpy::PyArray1;
+use polars::series::ops::NullBehavior;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::CustomIterTools;
 use pyo3::types::{PyBytes, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
-
 #[pyclass]
 #[repr(transparent)]
 #[derive(Clone)]
@@ -830,22 +830,17 @@ impl PySeries {
         }
     }
 
-    pub fn quantile(&self, quantile: f64, interpolation: &str) -> PyObject {
+    pub fn quantile(
+        &self,
+        quantile: f64,
+        interpolation: Wrap<QuantileInterpolOptions>,
+    ) -> PyObject {
         let gil = Python::acquire_gil();
         let py = gil.python();
 
-        let interpol = match interpolation {
-            "nearest" => QuantileInterpolOptions::Nearest,
-            "lower" => QuantileInterpolOptions::Lower,
-            "higher" => QuantileInterpolOptions::Higher,
-            "midpoint" => QuantileInterpolOptions::Midpoint,
-            "linear" => QuantileInterpolOptions::Linear,
-            _ => panic!("not supported"),
-        };
-
         Wrap(
             self.series
-                .quantile_as_series(quantile, interpol)
+                .quantile_as_series(quantile, interpolation.0)
                 .expect("invalid quantile")
                 .get(0),
         )
@@ -1378,18 +1373,16 @@ impl PySeries {
         }
     }
 
-    pub fn rank(&self, method: &str, reverse: bool) -> PyResult<Self> {
-        let method = str_to_rankmethod(method).unwrap();
+    pub fn rank(&self, method: Wrap<RankMethod>, reverse: bool) -> PyResult<Self> {
         let options = RankOptions {
-            method,
+            method: method.0,
             descending: reverse,
         };
         Ok(self.series.rank(options).into())
     }
 
-    pub fn diff(&self, n: usize, null_behavior: &str) -> PyResult<Self> {
-        let null_behavior = str_to_null_behavior(null_behavior)?;
-        Ok(self.series.diff(n, null_behavior).into())
+    pub fn diff(&self, n: usize, null_behavior: Wrap<NullBehavior>) -> PyResult<Self> {
+        Ok(self.series.diff(n, null_behavior.0).into())
     }
 
     pub fn skew(&self, bias: bool) -> PyResult<Option<f64>> {

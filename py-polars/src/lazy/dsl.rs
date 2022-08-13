@@ -1,13 +1,14 @@
 use super::apply::*;
-use crate::conversion::{str_to_null_behavior, Wrap};
+use crate::conversion::Wrap;
 use crate::lazy::map_single;
 use crate::lazy::utils::py_exprs_to_exprs;
-use crate::prelude::{parse_strategy, str_to_rankmethod};
+use crate::prelude::parse_strategy;
 use crate::series::PySeries;
 use crate::utils::reinterpret;
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
+use polars::series::ops::NullBehavior;
 use polars_core::prelude::QuantileInterpolOptions;
 use pyo3::class::basic::CompareOp;
 use pyo3::exceptions::PyValueError;
@@ -178,16 +179,11 @@ impl PyExpr {
     pub fn list(&self) -> PyExpr {
         self.clone().inner.list().into()
     }
-    pub fn quantile(&self, quantile: f64, interpolation: &str) -> PyExpr {
-        let interpol = match interpolation {
-            "nearest" => QuantileInterpolOptions::Nearest,
-            "lower" => QuantileInterpolOptions::Lower,
-            "higher" => QuantileInterpolOptions::Higher,
-            "midpoint" => QuantileInterpolOptions::Midpoint,
-            "linear" => QuantileInterpolOptions::Linear,
-            _ => panic!("not supported"),
-        };
-        self.clone().inner.quantile(quantile, interpol).into()
+    pub fn quantile(&self, quantile: f64, interpolation: Wrap<QuantileInterpolOptions>) -> PyExpr {
+        self.clone()
+            .inner
+            .quantile(quantile, interpolation.0)
+            .into()
     }
     pub fn agg_groups(&self) -> PyExpr {
         self.clone().inner.agg_groups().into()
@@ -1223,7 +1219,7 @@ impl PyExpr {
     pub fn rolling_quantile(
         &self,
         quantile: f64,
-        interpolation: &str,
+        interpolation: Wrap<QuantileInterpolOptions>,
         window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
@@ -1231,15 +1227,6 @@ impl PyExpr {
         by: Option<String>,
         closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
-        let interpol = match interpolation {
-            "nearest" => QuantileInterpolOptions::Nearest,
-            "lower" => QuantileInterpolOptions::Lower,
-            "higher" => QuantileInterpolOptions::Higher,
-            "midpoint" => QuantileInterpolOptions::Midpoint,
-            "linear" => QuantileInterpolOptions::Linear,
-            _ => panic!("not supported"),
-        };
-
         let options = RollingOptions {
             window_size: Duration::parse(window_size),
             weights,
@@ -1251,7 +1238,7 @@ impl PyExpr {
 
         self.inner
             .clone()
-            .rolling_quantile(quantile, interpol, options)
+            .rolling_quantile(quantile, interpolation.0, options)
             .into()
     }
 
@@ -1331,9 +1318,8 @@ impl PyExpr {
         self.inner.clone().arr().arg_max().into()
     }
 
-    fn lst_diff(&self, n: usize, null_behavior: &str) -> PyResult<Self> {
-        let null_behavior = str_to_null_behavior(null_behavior)?;
-        Ok(self.inner.clone().arr().diff(n, null_behavior).into())
+    fn lst_diff(&self, n: usize, null_behavior: Wrap<NullBehavior>) -> PyResult<Self> {
+        Ok(self.inner.clone().arr().diff(n, null_behavior.0).into())
     }
 
     fn lst_shift(&self, periods: i64) -> Self {
@@ -1384,18 +1370,16 @@ impl PyExpr {
             .into())
     }
 
-    fn rank(&self, method: &str, reverse: bool) -> Self {
-        let method = str_to_rankmethod(method).unwrap();
+    fn rank(&self, method: Wrap<RankMethod>, reverse: bool) -> Self {
         let options = RankOptions {
-            method,
+            method: method.0,
             descending: reverse,
         };
         self.inner.clone().rank(options).into()
     }
 
-    fn diff(&self, n: usize, null_behavior: &str) -> Self {
-        let null_behavior = str_to_null_behavior(null_behavior).unwrap();
-        self.inner.clone().diff(n, null_behavior).into()
+    fn diff(&self, n: usize, null_behavior: Wrap<NullBehavior>) -> Self {
+        self.inner.clone().diff(n, null_behavior.0).into()
     }
 
     #[cfg(feature = "pct_change")]
