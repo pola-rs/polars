@@ -1,9 +1,8 @@
+use super::function_expr::StringFunction;
 use super::*;
 use polars_arrow::array::ValueSize;
+#[cfg(feature = "dtype-struct")]
 use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
-use polars_ops::prelude::Utf8NameSpaceImpl;
-use polars_time::prelude::*;
-
 /// Specialized expressions for [`Series`] of [`DataType::Utf8`].
 pub struct StringNameSpace(pub(crate) Expr);
 
@@ -12,7 +11,7 @@ impl StringNameSpace {
     pub fn contains_literal<S: AsRef<str>>(self, pat: S) -> Expr {
         let pat = pat.as_ref().into();
         self.0.map_private(
-            FunctionExpr::StringContains { pat, literal: true },
+            StringFunction::Contains { pat, literal: true }.into(),
             "str.contains_literal",
         )
     }
@@ -21,10 +20,11 @@ impl StringNameSpace {
     pub fn contains<S: AsRef<str>>(self, pat: S) -> Expr {
         let pat = pat.as_ref().into();
         self.0.map_private(
-            FunctionExpr::StringContains {
+            StringFunction::Contains {
                 pat,
                 literal: false,
-            },
+            }
+            .into(),
             "str.contains",
         )
     }
@@ -33,26 +33,23 @@ impl StringNameSpace {
     pub fn ends_with<S: AsRef<str>>(self, sub: S) -> Expr {
         let sub = sub.as_ref().into();
         self.0
-            .map_private(FunctionExpr::StringEndsWith(sub), "str.ends_with")
+            .map_private(StringFunction::EndsWith(sub).into(), "str.ends_with")
     }
 
     /// Check if a string value starts with the `sub` string.
     pub fn starts_with<S: AsRef<str>>(self, sub: S) -> Expr {
         let sub = sub.as_ref().into();
         self.0
-            .map_private(FunctionExpr::StringStartsWith(sub), "str.starts_with")
+            .map_private(StringFunction::StartsWith(sub).into(), "str.starts_with")
     }
 
     /// Extract a regex pattern from the a string value.
     pub fn extract(self, pat: &str, group_index: usize) -> Expr {
         let pat = pat.to_string();
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            ca.extract(&pat, group_index).map(|ca| ca.into_series())
-        };
-        self.0
-            .map(function, GetOutput::from_type(DataType::Utf8))
-            .with_fmt("str.extract")
+        self.0.map_private(
+            StringFunction::Extract { pat, group_index }.into(),
+            "str.extract",
+        )
     }
 
     /// Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
@@ -62,13 +59,8 @@ impl StringNameSpace {
     #[cfg(feature = "string_justify")]
     #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     pub fn zfill(self, alignment: usize) -> Expr {
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            Ok(ca.zfill(alignment).into_series())
-        };
         self.0
-            .map(function, GetOutput::from_type(DataType::Utf8))
-            .with_fmt("str.zfill")
+            .map_private(StringFunction::Zfill(alignment).into(), "str.zfill")
     }
 
     /// Return the string left justified in a string of length width.
@@ -77,13 +69,10 @@ impl StringNameSpace {
     #[cfg(feature = "string_justify")]
     #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     pub fn ljust(self, width: usize, fillchar: char) -> Expr {
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            Ok(ca.ljust(width, fillchar).into_series())
-        };
-        self.0
-            .map(function, GetOutput::from_type(DataType::Utf8))
-            .with_fmt("str.ljust")
+        self.0.map_private(
+            StringFunction::LJust { width, fillchar }.into(),
+            "str.ljust",
+        )
     }
 
     /// Return the string right justified in a string of length width.
@@ -92,111 +81,43 @@ impl StringNameSpace {
     #[cfg(feature = "string_justify")]
     #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     pub fn rjust(self, width: usize, fillchar: char) -> Expr {
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            Ok(ca.rjust(width, fillchar).into_series())
-        };
-        self.0
-            .map(function, GetOutput::from_type(DataType::Utf8))
-            .with_fmt("str.rjust")
+        self.0.map_private(
+            StringFunction::RJust { width, fillchar }.into(),
+            "str.rjust",
+        )
     }
 
     /// Extract each successive non-overlapping match in an individual string as an array
     pub fn extract_all(self, pat: &str) -> Expr {
         let pat = pat.to_string();
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            ca.extract_all(&pat).map(|ca| ca.into_series())
-        };
         self.0
-            .map(
-                function,
-                GetOutput::from_type(DataType::List(Box::new(DataType::Utf8))),
-            )
-            .with_fmt("str.extract_all")
+            .map_private(StringFunction::ExtractAll(pat).into(), "str.extract_all")
     }
 
     /// Count all successive non-overlapping regex matches.
     pub fn count_match(self, pat: &str) -> Expr {
         let pat = pat.to_string();
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            ca.count_match(&pat).map(|ca| ca.into_series())
-        };
         self.0
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("str.extract_all")
+            .map_private(StringFunction::CountMatch(pat).into(), "str.count_match")
     }
 
     #[cfg(feature = "temporal")]
     pub fn strptime(self, options: StrpTimeOptions) -> Expr {
-        let out_type = options.date_dtype.clone();
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-
-            let out = match &options.date_dtype {
-                DataType::Date => {
-                    if options.exact {
-                        ca.as_date(options.fmt.as_deref())?.into_series()
-                    } else {
-                        ca.as_date_not_exact(options.fmt.as_deref())?.into_series()
-                    }
-                }
-                DataType::Datetime(tu, _) => {
-                    if options.exact {
-                        ca.as_datetime(options.fmt.as_deref(), *tu)?.into_series()
-                    } else {
-                        ca.as_datetime_not_exact(options.fmt.as_deref(), *tu)?
-                            .into_series()
-                    }
-                }
-                DataType::Time => {
-                    if options.exact {
-                        ca.as_time(options.fmt.as_deref())?.into_series()
-                    } else {
-                        return Err(PolarsError::ComputeError(
-                            format!("non-exact not implemented for dtype {:?}", DataType::Time)
-                                .into(),
-                        ));
-                    }
-                }
-                dt => {
-                    return Err(PolarsError::ComputeError(
-                        format!("not implemented for dtype {:?}", dt).into(),
-                    ))
-                }
-            };
-            if options.strict {
-                if out.null_count() != ca.null_count() {
-                    Err(PolarsError::ComputeError(
-                        "strict conversion to dates failed, maybe set strict=False".into(),
-                    ))
-                } else {
-                    Ok(out.into_series())
-                }
-            } else {
-                Ok(out.into_series())
-            }
-        };
         self.0
-            .map(function, GetOutput::from_type(out_type))
-            .with_fmt("str.strptime")
+            .map_private(StringFunction::Strptime(options).into(), "str.strptime")
     }
 
-    #[cfg(feature = "concat_str")]
     /// Concat the values into a string array.
     /// # Arguments
     ///
     /// * `delimiter` - A string that will act as delimiter between values.
+    #[cfg(feature = "concat_str")]
     pub fn concat(self, delimiter: &str) -> Expr {
         let delimiter = delimiter.to_owned();
-        let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-            Ok(s[0].str_concat(&delimiter).into_series())
-        }) as Arc<dyn SeriesUdf>);
-        Expr::AnonymousFunction {
+
+        Expr::Function {
             input: vec![self.0],
-            function,
-            output_type: GetOutput::from_type(DataType::Utf8),
+            function: StringFunction::Concat(delimiter).into(),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
                 input_wildcard_expansion: false,

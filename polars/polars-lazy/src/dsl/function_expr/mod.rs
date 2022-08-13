@@ -5,7 +5,7 @@ mod fill_null;
 mod is_in;
 #[cfg(feature = "is_in")]
 mod list;
-
+mod nan;
 mod pow;
 #[cfg(all(feature = "rolling_window", feature = "moment"))]
 mod rolling;
@@ -20,6 +20,11 @@ mod strings;
 mod temporal;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
+
+pub(super) use self::nan::NanFunction;
+
+#[cfg(feature = "strings")]
+pub(super) use self::strings::StringFunction;
 
 use super::*;
 use polars_core::prelude::*;
@@ -38,14 +43,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "arg_where")]
     ArgWhere,
     #[cfg(feature = "strings")]
-    StringContains {
-        pat: String,
-        literal: bool,
-    },
-    #[cfg(feature = "strings")]
-    StringStartsWith(String),
-    #[cfg(feature = "strings")]
-    StringEndsWith(String),
+    StringExpr(StringFunction),
     #[cfg(feature = "date_offset")]
     DateOffset(Duration),
     #[cfg(feature = "trigonometry")]
@@ -66,6 +64,7 @@ pub enum FunctionExpr {
     ShiftAndFill {
         periods: i64,
     },
+    Nan(NanFunction),
 }
 
 #[cfg(feature = "trigonometry")]
@@ -128,9 +127,22 @@ impl FunctionExpr {
             #[cfg(feature = "arg_where")]
             ArgWhere => with_dtype(IDX_DTYPE),
             #[cfg(feature = "strings")]
-            StringContains { .. } | StringEndsWith(_) | StringStartsWith(_) => {
-                with_dtype(DataType::Boolean)
+            StringExpr(s) => {
+                use StringFunction::*;
+                match s {
+                    Contains { .. } | EndsWith(_) | StartsWith(_) => with_dtype(DataType::Boolean),
+                    Extract { .. } => same_type(),
+                    ExtractAll(_) => with_dtype(DataType::List(Box::new(DataType::Utf8))),
+                    CountMatch(_) => with_dtype(DataType::UInt32),
+                    #[cfg(feature = "string_justify")]
+                    Zfill { .. } | LJust { .. } | RJust { .. } => same_type(),
+                    #[cfg(feature = "temporal")]
+                    Strptime(options) => with_dtype(options.date_dtype.clone()),
+                    #[cfg(feature = "concat_str")]
+                    Concat(_) => with_dtype(DataType::Utf8),
+                }
             }
+
             #[cfg(feature = "date_offset")]
             DateOffset(_) => same_type(),
             #[cfg(feature = "trigonometry")]
@@ -143,6 +155,7 @@ impl FunctionExpr {
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { .. } => float_dtype(),
             ShiftAndFill { .. } => same_type(),
+            Nan(n) => n.get_field(fields),
         }
     }
 }
@@ -167,10 +180,24 @@ macro_rules! map_as_slice {
 }
 
 // Fn(&Series)
+#[macro_export(super)]
 macro_rules! map_without_args {
     ($func:path) => {{
         let f = move |s: &mut [Series]| {
             let s = &s[0];
+            $func(s)
+        };
+
+        SpecialEq::new(Arc::new(f))
+    }};
+}
+
+// FnOnce(Series)
+#[macro_export(super)]
+macro_rules! map_owned_without_args {
+    ($func:path) => {{
+        let f = move |s: &mut [Series]| {
+            let s = std::mem::take(&mut s[0]);
             $func(s)
         };
 
@@ -191,6 +218,7 @@ macro_rules! map_with_args {
 }
 
 // FnOnce(Series, args)
+#[macro_export(super)]
 macro_rules! map_owned_with_args {
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
@@ -229,17 +257,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 wrap!(arg_where::arg_where)
             }
             #[cfg(feature = "strings")]
-            StringContains { pat, literal } => {
-                map_with_args!(strings::contains, &pat, literal)
-            }
-            #[cfg(feature = "strings")]
-            StringEndsWith(sub) => {
-                map_with_args!(strings::ends_with, &sub)
-            }
-            #[cfg(feature = "strings")]
-            StringStartsWith(sub) => {
-                map_with_args!(strings::starts_with, &sub)
-            }
+            StringExpr(s) => s.into(),
+
             #[cfg(feature = "date_offset")]
             DateOffset(offset) => {
                 map_owned_with_args!(temporal::date_offset, offset)
@@ -255,6 +274,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             FillNull { super_type } => {
                 map_as_slice!(fill_null::fill_null, &super_type)
             }
+
             #[cfg(feature = "is_in")]
             ListContains => {
                 wrap!(list::contains)
@@ -266,6 +286,52 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             ShiftAndFill { periods } => {
                 map_as_slice!(shift_and_fill::shift_and_fill, periods)
             }
+            Nan(n) => n.into(),
+        }
+    }
+}
+
+#[cfg(feature = "strings")]
+impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+    fn from(func: StringFunction) -> Self {
+        use StringFunction::*;
+        match func {
+            Contains { pat, literal } => {
+                map_with_args!(strings::contains, &pat, literal)
+            }
+            EndsWith(sub) => {
+                map_with_args!(strings::ends_with, &sub)
+            }
+            StartsWith(sub) => {
+                map_with_args!(strings::starts_with, &sub)
+            }
+            Extract { pat, group_index } => {
+                map_with_args!(strings::extract, &pat, group_index)
+            }
+            ExtractAll(pat) => {
+                map_with_args!(strings::extract_all, &pat)
+            }
+            CountMatch(pat) => {
+                map_with_args!(strings::count_match, &pat)
+            }
+            #[cfg(feature = "string_justify")]
+            Zfill(alignment) => {
+                map_with_args!(strings::zfill, alignment)
+            }
+            #[cfg(feature = "string_justify")]
+            LJust { width, fillchar } => {
+                map_with_args!(strings::ljust, width, fillchar)
+            }
+            #[cfg(feature = "string_justify")]
+            RJust { width, fillchar } => {
+                map_with_args!(strings::rjust, width, fillchar)
+            }
+            #[cfg(feature = "temporal")]
+            Strptime(options) => {
+                map_with_args!(strings::strptime, &options)
+            }
+            #[cfg(feature = "concat_str")]
+            Concat(delimiter) => map_with_args!(strings::concat, &delimiter),
         }
     }
 }

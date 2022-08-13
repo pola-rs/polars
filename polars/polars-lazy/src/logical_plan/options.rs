@@ -160,6 +160,7 @@ pub struct FunctionOptions {
     /// sum(x) -> {4}
     pub(crate) auto_explode: bool,
     // used for formatting
+    #[cfg_attr(feature = "serde", serde(skip_deserializing))]
     pub(crate) fmt_str: &'static str,
 }
 

@@ -1,5 +1,4 @@
 use crate::prelude::*;
-
 macro_rules! push_expr {
     ($current_expr:expr, $push:ident, $iter:ident) => {{
         use Expr::*;
