@@ -789,8 +789,7 @@ pub(crate) fn str_to_null_behavior(null_behavior: &str) -> PyResult<NullBehavior
 
 impl FromPyObject<'_> for Wrap<ClosedWindow> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
-        let s = ob.extract::<&str>()?;
-        Ok(Wrap(match s {
+        let parsed = match ob.extract::<&str>()? {
             "left" => ClosedWindow::Left,
             "right" => ClosedWindow::Right,
             "both" => ClosedWindow::Both,
@@ -801,42 +800,43 @@ impl FromPyObject<'_> for Wrap<ClosedWindow> {
                     e,
                 )))
             }
-        }))
+        };
+        Ok(Wrap(parsed))
     }
 }
 
 impl FromPyObject<'_> for Wrap<TimeUnit> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
-        let unit = match ob.extract::<&str>()? {
+        let parsed = match ob.extract::<&str>()? {
             "ns" => TimeUnit::Nanoseconds,
             "us" => TimeUnit::Microseconds,
             "ms" => TimeUnit::Milliseconds,
             _ => return Err(PyValueError::new_err("expected one of {'ns', 'us', 'ms'}")),
         };
-        Ok(Wrap(unit))
+        Ok(Wrap(parsed))
     }
 }
 
 impl FromPyObject<'_> for Wrap<PivotAgg> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
-        match ob.extract::<&str>()? {
-            "sum" => Ok(Wrap(PivotAgg::Sum)),
-            "min" => Ok(Wrap(PivotAgg::Min)),
-            "max" => Ok(Wrap(PivotAgg::Max)),
-            "first" => Ok(Wrap(PivotAgg::First)),
-            "mean" => Ok(Wrap(PivotAgg::Mean)),
-            "median" => Ok(Wrap(PivotAgg::Median)),
-            "count" => Ok(Wrap(PivotAgg::Count)),
-            "last" => Ok(Wrap(PivotAgg::Last)),
+        let parsed = match ob.extract::<&str>()? {
+            "sum" => PivotAgg::Sum,
+            "min" => PivotAgg::Min,
+            "max" => PivotAgg::Max,
+            "first" => PivotAgg::First,
+            "mean" => PivotAgg::Mean,
+            "median" => PivotAgg::Median,
+            "count" => PivotAgg::Count,
+            "last" => PivotAgg::Last,
             s => panic!("aggregation {} is not supported", s),
-        }
+        };
+        Ok(Wrap(parsed))
     }
 }
 
 impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
-        let s = ob.extract::<&str>()?;
-        Ok(Wrap(match s {
+        let parsed = match ob.extract::<&str>()? {
             "lower" => QuantileInterpolOptions::Lower,
             "higher" => QuantileInterpolOptions::Higher,
             "nearest" => QuantileInterpolOptions::Nearest,
@@ -848,24 +848,26 @@ impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
                     e,
                 )))
             }
-        }))
+        };
+        Ok(Wrap(parsed))
     }
 }
 
 impl FromPyObject<'_> for Wrap<UniqueKeepStrategy> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
-        match ob.extract::<&str>()? {
-            "first" => Ok(Wrap(UniqueKeepStrategy::First)),
-            "last" => Ok(Wrap(UniqueKeepStrategy::Last)),
+        let parsed = match ob.extract::<&str>()? {
+            "first" => UniqueKeepStrategy::First,
+            "last" => UniqueKeepStrategy::Last,
             s => panic!("keep strategy {} is not supported", s),
-        }
+        };
+        Ok(Wrap(parsed))
     }
 }
 
 #[cfg(feature = "parquet")]
 impl FromPyObject<'_> for Wrap<ParallelStrategy> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
-        let unit = match ob.extract::<&str>()? {
+        let parsed = match ob.extract::<&str>()? {
             "auto" => ParallelStrategy::Auto,
             "columns" => ParallelStrategy::Columns,
             "row_groups" => ParallelStrategy::RowGroups,
@@ -877,6 +879,6 @@ impl FromPyObject<'_> for Wrap<ParallelStrategy> {
                 )))
             }
         };
-        Ok(Wrap(unit))
+        Ok(Wrap(parsed))
     }
 }
