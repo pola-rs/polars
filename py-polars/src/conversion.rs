@@ -794,10 +794,10 @@ impl FromPyObject<'_> for Wrap<ClosedWindow> {
             "right" => ClosedWindow::Right,
             "both" => ClosedWindow::Both,
             "none" => ClosedWindow::None,
-            e => {
+            v => {
                 return Err(PyValueError::new_err(format!(
                     "closed must be one of {{'left', 'right', 'both', 'none'}}, got {}",
-                    e,
+                    v
                 )))
             }
         };
@@ -811,7 +811,12 @@ impl FromPyObject<'_> for Wrap<TimeUnit> {
             "ns" => TimeUnit::Nanoseconds,
             "us" => TimeUnit::Microseconds,
             "ms" => TimeUnit::Milliseconds,
-            _ => return Err(PyValueError::new_err("expected one of {'ns', 'us', 'ms'}")),
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "time unit must be one of {{'ns', 'us', 'ms'}}, got {}",
+                    v
+                )))
+            }
         };
         Ok(Wrap(parsed))
     }
@@ -828,7 +833,12 @@ impl FromPyObject<'_> for Wrap<PivotAgg> {
             "median" => PivotAgg::Median,
             "count" => PivotAgg::Count,
             "last" => PivotAgg::Last,
-            s => panic!("aggregation {} is not supported", s),
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "aggregate_fn must be one of {{'sum', 'min', 'max', 'first', 'mean', 'median', 'count', 'last'}}, got {}",
+                    v
+                )))
+            }
         };
         Ok(Wrap(parsed))
     }
@@ -842,10 +852,10 @@ impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
             "nearest" => QuantileInterpolOptions::Nearest,
             "linear" => QuantileInterpolOptions::Linear,
             "midpoint" => QuantileInterpolOptions::Midpoint,
-            e => {
+            v => {
                 return Err(PyValueError::new_err(format!(
                     "interpolation must be one of {{'lower', 'higher', 'nearest', 'linear', 'midpoint'}}, got {}",
-                    e,
+                    v
                 )))
             }
         };
@@ -858,7 +868,12 @@ impl FromPyObject<'_> for Wrap<UniqueKeepStrategy> {
         let parsed = match ob.extract::<&str>()? {
             "first" => UniqueKeepStrategy::First,
             "last" => UniqueKeepStrategy::Last,
-            s => panic!("keep strategy {} is not supported", s),
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "keep must be one of {{'first', 'last'}}, got {}",
+                    v
+                )))
+            }
         };
         Ok(Wrap(parsed))
     }
@@ -872,10 +887,10 @@ impl FromPyObject<'_> for Wrap<ParallelStrategy> {
             "columns" => ParallelStrategy::Columns,
             "row_groups" => ParallelStrategy::RowGroups,
             "none" => ParallelStrategy::None,
-            e => {
+            v => {
                 return Err(PyValueError::new_err(format!(
                     "parallel must be one of {{'auto', 'columns', 'row_groups', 'none'}}, got {}",
-                    e,
+                    v
                 )))
             }
         };
