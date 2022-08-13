@@ -4,7 +4,7 @@ import sys
 import typing
 from datetime import datetime, timedelta
 from io import BytesIO
-from typing import Any, Iterator
+from typing import TYPE_CHECKING, Any, Iterator
 
 import numpy as np
 import pyarrow as pa
@@ -12,6 +12,9 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal, columns
+
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import JoinStrategy
 
 
 def test_version() -> None:
@@ -1753,7 +1756,8 @@ def test_join_suffixes() -> None:
     df_a = pl.DataFrame({"A": [1], "B": [1]})
     df_b = pl.DataFrame({"A": [1], "B": [1]})
 
-    for how in ["left", "inner", "outer", "cross"]:
+    join_strategies: list[JoinStrategy] = ["left", "inner", "outer", "cross"]
+    for how in join_strategies:
         # no need for an assert, we error if wrong
         df_a.join(df_b, on="A", suffix="_y", how=how)["B_y"]
 

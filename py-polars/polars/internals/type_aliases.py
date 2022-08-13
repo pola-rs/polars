@@ -44,6 +44,9 @@ AsofJoinStrategy: TypeAlias = Literal["backward", "forward"]  # AsofStrategy
 InterpolationMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear"
 ]  # QuantileInterpolOptions
+JoinStrategy: TypeAlias = Literal[
+    "inner", "left", "outer", "semi", "anti", "cross"
+]  # JoinType
 ToStructStrategy: TypeAlias = Literal[
     "first_non_null", "max_width"
 ]  # ListToStructWidthStrategy

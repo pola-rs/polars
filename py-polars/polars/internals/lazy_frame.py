@@ -55,6 +55,7 @@ if TYPE_CHECKING:
         CsvEncoding,
         FillNullStrategy,
         InterpolationMethod,
+        JoinStrategy,
         ParallelStrategy,
         UniqueKeepStrategy,
     )
@@ -1342,7 +1343,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         left_on: str | pli.Expr | list[str | pli.Expr] | None = None,
         right_on: str | pli.Expr | list[str | pli.Expr] | None = None,
         on: str | pli.Expr | list[str | pli.Expr] | None = None,
-        how: str = "inner",
+        how: JoinStrategy = "inner",
         suffix: str = "_right",
         allow_parallel: bool = True,
         force_parallel: bool = False,
