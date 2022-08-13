@@ -177,6 +177,10 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     fn unique(&self) -> Result<Self> {
+        // prevent stackoverflow repeated sorted.unique call
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
         match self.is_sorted2() {
             IsSorted::Ascending | IsSorted::Descending => {
                 let mask = self.not_equal(&self.shift(1));

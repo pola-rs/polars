@@ -313,3 +313,9 @@ def test_rank_so_4109() -> None:
             [1.0, 2.0, 3.0, 4.0],
         ],
     }
+
+
+def test_unique_empty() -> None:
+    for dt in [pl.Utf8, pl.Boolean, pl.Int32, pl.UInt32]:
+        s = pl.Series([], dtype=dt)
+        assert s.unique().series_equal(s)
