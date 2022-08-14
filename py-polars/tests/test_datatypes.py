@@ -14,7 +14,7 @@ def test_dtype_init_equivalence() -> None:
         if inspect.isclass(dtype) and issubclass(dtype, datatypes.DataType)
     }
     for dtype in all_datatypes:
-        assert dtype == dtype()
+        assert dtype == dtype()  # type: ignore[comparison-overlap]
 
 
 def test_dtype_temporal_units() -> None:

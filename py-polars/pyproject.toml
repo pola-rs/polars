@@ -41,7 +41,7 @@ disallow_untyped_calls = true
 warn_redundant_casts = true
 # warn_return_any = true
 no_implicit_reexport = true
-# strict_equality = true
+strict_equality = true
 # TODO: When all flags are enabled, replace by strict = true
 enable_error_code = [
   "redundant-expr",

@@ -7,6 +7,7 @@ import textwrap
 import zlib
 from datetime import date, datetime, time
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -402,8 +403,8 @@ def test_csv_globbing(examples_dir: str) -> None:
 
     df = pl.read_csv(path, columns=["category", "sugars_g"])
     assert df.shape == (135, 2)
-    assert df.row(-1) == ("seafood", 1)
-    assert df.row(0) == ("vegetables", 2)
+    assert df.row(-1) == ("seafood", 1)  # type: ignore[comparison-overlap]
+    assert df.row(0) == ("vegetables", 2)  # type: ignore[comparison-overlap]
 
     with pytest.raises(ValueError):
         _ = pl.read_csv(path, dtypes=[pl.Utf8, pl.Int64, pl.Int64, pl.Int64])
@@ -509,7 +510,10 @@ def test_fallback_chrono_parser() -> None:
     2021-10-10,2021-10-10
     """
     )
-    assert pl.read_csv(data.encode(), parse_dates=True).null_count().row(0) == (0, 0)
+    assert cast(
+        tuple[int, int],
+        pl.read_csv(data.encode(), parse_dates=True).null_count().row(0),
+    ) == (0, 0)
 
 
 def test_csv_string_escaping() -> None:

@@ -316,7 +316,7 @@ def test_when_then_edge_cases_3994() -> None:
         .groupby(["id"])
         .agg(pl.col("type"))
         .with_column(
-            pl.when(pl.col("type").arr.lengths == 0)
+            pl.when(pl.col("type").arr.lengths() == 0)
             .then(pl.lit(None))
             .otherwise(pl.col("type"))
             .keep_name()

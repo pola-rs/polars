@@ -78,7 +78,7 @@ def test_dtype() -> None:
             ("dtm", pl.List(pl.Datetime)),
         ],
     )
-    assert df.schema == {
+    assert df.schema == {  # type: ignore[comparison-overlap]
         "i": pl.List(pl.Int8),
         "tm": pl.List(pl.Time),
         "dt": pl.List(pl.Date),
