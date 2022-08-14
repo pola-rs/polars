@@ -132,18 +132,6 @@ def wrap_df(df: PyDataFrame) -> DataFrame:
     return DataFrame._from_pydf(df)
 
 
-def _prepare_other_arg(other: Any) -> pli.Series:
-    # if not a series create singleton series such that it will broadcast
-    if not isinstance(other, pli.Series):
-        if isinstance(other, str):
-            pass
-        elif isinstance(other, Sequence):
-            raise ValueError("Operation not supported.")
-
-        other = pli.Series("", [other])
-    return other
-
-
 class DataFrame:
     """
     A DataFrame is a two-dimensional data structure that represents data as a table
@@ -5872,3 +5860,15 @@ class DataFrame:
         if isinstance(names, str):
             names = [names]
         return self._from_pydf(self._df.unnest(names))
+
+
+def _prepare_other_arg(other: Any) -> pli.Series:
+    # if not a series create singleton series such that it will broadcast
+    if not isinstance(other, pli.Series):
+        if isinstance(other, str):
+            pass
+        elif isinstance(other, Sequence):
+            raise ValueError("Operation not supported.")
+
+        other = pli.Series("", [other])
+    return other
