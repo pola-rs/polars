@@ -210,7 +210,7 @@ impl PredicatePushDown {
                 schema,
             } => {
                 let variable_name = args.variable_name.as_deref().unwrap_or("variable");
-                let value_name = args.value_name.as_deref().unwrap_or("value_name");
+                let value_name = args.value_name.as_deref().unwrap_or("value");
 
                 // predicates that will be done at this level
                 let condition = |name: Arc<str>| {
