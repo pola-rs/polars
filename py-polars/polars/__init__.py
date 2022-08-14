@@ -64,7 +64,6 @@ from polars.internals.frame import wrap_df  # noqa: F401
 from polars.internals.frame import DataFrame
 from polars.internals.functions import concat, cut, date_range, get_dummies
 from polars.internals.io import read_ipc_schema, read_parquet_schema
-from polars.internals.lazy_frame import LazyFrame
 from polars.internals.lazy_functions import _date as date
 from polars.internals.lazy_functions import _datetime as datetime
 from polars.internals.lazy_functions import (
@@ -109,6 +108,7 @@ from polars.internals.lazy_functions import (
 )
 from polars.internals.lazy_functions import to_list as list
 from polars.internals.lazy_functions import var
+from polars.internals.lazyframe import LazyFrame
 
 # TODO: remove need for wrap_s
 from polars.internals.series import wrap_s  # noqa: F401
