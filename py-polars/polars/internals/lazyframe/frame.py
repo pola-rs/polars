@@ -546,7 +546,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...     .inspect()  # print the node before the filter
         ...     .filter(pl.col("bar") == pl.col("foo"))
         ... )  # doctest: +ELLIPSIS
-        <polars.internals.lazy_frame.LazyFrame object at ...>
+        <polars.internals.lazyframe.frame.LazyFrame object at ...>
 
         """
 
