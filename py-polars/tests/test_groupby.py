@@ -133,3 +133,15 @@ def test_argsort_sort_by_groups_update__4360() -> None:
             ]
         )
     )["1_argsort_2"].to_list() == [1, 2, 3, 300, 200, 100]
+
+
+def test_unique_order() -> None:
+    df = pl.DataFrame({"a": [1, 2, 1]}).with_row_count()
+    assert df.unique(keep="last", subset="a", maintain_order=True).to_dict(False) == {
+        "row_nr": [1, 2],
+        "a": [2, 1],
+    }
+    assert df.unique(keep="first", subset="a", maintain_order=True).to_dict(False) == {
+        "row_nr": [0, 1],
+        "a": [1, 2],
+    }

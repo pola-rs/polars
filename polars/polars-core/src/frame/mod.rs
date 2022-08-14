@@ -40,6 +40,7 @@ use crate::POOL;
 use serde::{Deserialize, Serialize};
 use std::hash::{BuildHasher, Hash, Hasher};
 
+use crate::frame::groupby::GroupsIndicator;
 use crate::series::IsSorted;
 pub use chunks::*;
 
@@ -2968,9 +2969,20 @@ impl DataFrame {
                 self.apply_columns_par(&|s| unsafe { s.agg_first(groups) })
             }
             (Last, true) => {
-                let gb = self.groupby_stable(names)?;
+                // maintain order by last values, so the sorted groups are not correct as they
+                // are sorted by the first value
+                let gb = self.groupby(names)?;
                 let groups = gb.get_groups();
-                self.apply_columns_par(&|s| unsafe { s.agg_last(groups) })
+                let last_idx: NoNull<IdxCa> = groups
+                    .iter()
+                    .map(|g| match g {
+                        GroupsIndicator::Idx((_first, idx)) => idx[idx.len() - 1],
+                        GroupsIndicator::Slice([first, len]) => first + len,
+                    })
+                    .collect();
+
+                let last_idx = last_idx.sort(false);
+                return Ok(unsafe { self.take_unchecked(&last_idx) });
             }
             (First, false) => {
                 let gb = self.groupby(names)?;
