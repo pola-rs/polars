@@ -264,7 +264,7 @@ TimeSeries
 ----------
 The following methods are available under the `expr.dt` attribute.
 
-.. currentmodule:: polars.internals.expr
+.. currentmodule:: polars.internals.expr.datetime
 
 .. autosummary::
    :toctree: api/
@@ -299,7 +299,7 @@ Strings
 
 The following methods are available under the `Expr.str` attribute.
 
-.. currentmodule:: polars.internals.expr
+.. currentmodule:: polars.internals.expr.string
 
 .. autosummary::
    :toctree: api/
@@ -334,7 +334,7 @@ Lists
 -----
 The following methods are available under the `expr.arr` attribute.
 
-.. currentmodule:: polars.internals.expr
+.. currentmodule:: polars.internals.expr.list
 
 .. autosummary::
    :toctree: api/
@@ -367,7 +367,7 @@ Categories
 ----------
 The following methods are available under the `expr.cat` attribute.
 
-.. currentmodule:: polars.internals.expr
+.. currentmodule:: polars.internals.expr.categorical
 
 .. autosummary::
    :toctree: api/
@@ -378,7 +378,7 @@ Struct
 ------
 The following methods are available under the `expr.struct` attribute.
 
-.. currentmodule:: polars.internals.expr
+.. currentmodule:: polars.internals.expr.struct
 
 .. autosummary::
    :toctree: api/
