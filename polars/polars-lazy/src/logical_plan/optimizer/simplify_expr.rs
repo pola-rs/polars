@@ -348,6 +348,7 @@ impl OptimizationRule for SimplifyExprRule {
                         }
                         None
                     }
+                    Operator::FloorDivide => None,
                     Operator::Modulus => eval_binary_same_type!(left_aexpr, %, right_aexpr),
                     Operator::Lt => eval_binary_bool_type!(left_aexpr, <, right_aexpr),
                     Operator::Gt => eval_binary_bool_type!(left_aexpr, >, right_aexpr),

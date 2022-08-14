@@ -408,6 +408,7 @@ pub enum Operator {
     Multiply,
     Divide,
     TrueDivide,
+    FloorDivide,
     Modulus,
     And,
     Or,

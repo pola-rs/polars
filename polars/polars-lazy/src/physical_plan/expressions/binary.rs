@@ -46,13 +46,8 @@ fn apply_operator_owned(left: Series, right: Series, op: Operator) -> Result<Ser
         Operator::Minus => Ok(left - right),
         Operator::Multiply => Ok(left * right),
         Operator::Divide => Ok(&left / &right),
-        Operator::TrueDivide => {
-            use DataType::*;
-            match left.dtype() {
-                Date | Datetime(_, _) | Float32 | Float64 => Ok(&left / &right),
-                _ => Ok(&left.cast(&Float64)? / &right.cast(&Float64)?),
-            }
-        }
+        Operator::TrueDivide => apply_operator(&left, &right, op),
+        Operator::FloorDivide => apply_operator(&left, &right, op),
         Operator::And => left.bitand(&right),
         Operator::Or => left.bitor(&right),
         Operator::Xor => left.bitxor(&right),
@@ -79,6 +74,14 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> Result<Ser
             match left.dtype() {
                 Date | Datetime(_, _) | Float32 | Float64 => Ok(left / right),
                 _ => Ok(&left.cast(&Float64)? / &right.cast(&Float64)?),
+            }
+        }
+        Operator::FloorDivide => {
+            use DataType::*;
+            match left.dtype() {
+                #[cfg(feature = "round_series")]
+                Float32 | Float64 => (left / right).floor(),
+                _ => Ok(left / right),
             }
         }
         Operator::And => left.bitand(right),

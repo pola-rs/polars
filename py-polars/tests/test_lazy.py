@@ -860,6 +860,12 @@ def test_arithmetic() -> None:
     )
     assert out.frame_equal(expected)
 
+    # floating point floor divide
+    x = 10.4
+    step = 0.5
+    df = pl.DataFrame({"x": [x]})
+    assert df.with_columns(pl.col("x") // step)[0, 0] == x // step
+
 
 def test_ufunc() -> None:
     df = pl.DataFrame({"a": [1, 2]})
