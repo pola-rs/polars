@@ -28,21 +28,7 @@ profile = "black"
 files = ["polars", "tests"]
 namespace_packages = true
 show_error_codes = true
-
-warn_unused_configs = true
-disallow_subclassing_any = true
-disallow_untyped_defs = true
-no_implicit_optional = true
-warn_unused_ignores = true
-strict_concatenate = true
-# TODO: Uncomment flags below and fix mypy errors
-disallow_any_generics = true
-disallow_untyped_calls = true
-warn_redundant_casts = true
-# warn_return_any = true
-no_implicit_reexport = true
-strict_equality = true
-# TODO: When all flags are enabled, replace by strict = true
+strict = true
 enable_error_code = [
   "redundant-expr",
   "truthy-bool",
@@ -50,8 +36,13 @@ enable_error_code = [
 ]
 
 [[tool.mypy.overrides]]
-module = ["pyarrow.*", "polars.polars", "matplotlib.*", "fsspec.*", "connectorx", "IPython.*"]
-ignore_missing_imports = true
+module = ["polars.*", "fsspec.*", "pyarrow.*", "matplotlib.*", "connectorx", "IPython.*"]
+# We exclude the polars module from warn_return_any, because the PyO3 api does not have Python
+# type annotations. See https://github.com/PyO3/pyo3/issues/1112 for a discussion on adding 
+# this capability. We could add a stub file for polars.polars (the PyO3 api), but that
+# amounts to duplicating almost all type annotations on our api, as the Python api itself is a 
+# thin wrapper around the PyO3 api to start with.
+warn_return_any = false
 
 [tool.coverage.report]
 exclude_lines = [
