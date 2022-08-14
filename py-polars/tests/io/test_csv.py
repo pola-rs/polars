@@ -7,7 +7,6 @@ import textwrap
 import zlib
 from datetime import date, datetime, time
 from pathlib import Path
-from typing import cast
 
 import pytest
 
@@ -510,10 +509,8 @@ def test_fallback_chrono_parser() -> None:
     2021-10-10,2021-10-10
     """
     )
-    assert cast(
-        tuple[int, int],
-        pl.read_csv(data.encode(), parse_dates=True).null_count().row(0),
-    ) == (0, 0)
+    df = pl.read_csv(data.encode(), parse_dates=True)
+    assert df.null_count().row(0) == (0, 0)  # type: ignore[comparison-overlap]
 
 
 def test_csv_string_escaping() -> None:
