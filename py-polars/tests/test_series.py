@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 from datetime import date, datetime
 from typing import Any, cast
-from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -61,11 +60,6 @@ def test_init_inputs(monkeypatch: Any) -> None:
     # pandas
     assert pl.Series(pd.Series([1, 2])).dtype == pl.Int64
 
-    # numpy not available
-    with patch("polars.internals.series._NUMPY_AVAILABLE", False):
-        with pytest.raises(ValueError):
-            pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
-
     # Bad inputs
     with pytest.raises(ValueError):
         pl.Series([1, 2, 3], [1, 2, 3])
@@ -73,6 +67,11 @@ def test_init_inputs(monkeypatch: Any) -> None:
         pl.Series({"a": [1, 2, 3]})
     with pytest.raises(OverflowError):
         pl.Series("bigint", [2**64])
+
+    # numpy not available
+    monkeypatch.setattr(pl.internals.series.series, "_NUMPY_AVAILABLE", False)
+    with pytest.raises(ValueError):
+        pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
 
 
 def test_concat() -> None:
@@ -702,8 +701,10 @@ def test_shape() -> None:
 
 
 @pytest.mark.parametrize("arrow_available", [True, False])
-def test_create_list_series(arrow_available: bool) -> None:
-    pl.internals.series._PYARROW_AVAILABLE = arrow_available
+def test_create_list_series(arrow_available: bool, monkeypatch: Any) -> None:
+    monkeypatch.setattr(
+        pl.internals.series.series, "_PYARROW_AVAILABLE", arrow_available
+    )
     a = [[1, 2], None, [None, 3]]
     s = pl.Series("", a)
     assert s.to_list() == a
@@ -1071,15 +1072,15 @@ def test_bitwise() -> None:
     assert_series_equal(out["xor"], pl.Series("xor", [2, 6, 6]))
 
 
-def test_to_numpy() -> None:
-    pl.internals.series._PYARROW_AVAILABLE = False
+def test_to_numpy(monkeypatch: Any) -> None:
+    monkeypatch.setattr(pl.internals.series.series, "_PYARROW_AVAILABLE", False)
     a = pl.Series("a", [1, 2, 3])
     assert np.all(a.to_numpy() == np.array([1, 2, 3]))
     a = pl.Series("a", [1, 2, None])
     np.testing.assert_array_equal(a.to_numpy(), np.array([1.0, 2.0, np.nan]))
 
 
-def test_from_sequences() -> None:
+def test_from_sequences(monkeypatch: Any) -> None:
     # test int, str, bool, flt
     values = [
         [[1], [None, 3]],
@@ -1089,9 +1090,9 @@ def test_from_sequences() -> None:
     ]
 
     for vals in values:
-        pl.internals.series._PYARROW_AVAILABLE = False
+        monkeypatch.setattr(pl.internals.series.series, "_PYARROW_AVAILABLE", False)
         a = pl.Series("a", vals)
-        pl.internals.series._PYARROW_AVAILABLE = True
+        monkeypatch.setattr(pl.internals.series.series, "_PYARROW_AVAILABLE", True)
         b = pl.Series("a", vals)
         assert a.series_equal(b, null_equal=True)
         assert a.to_list() == vals
