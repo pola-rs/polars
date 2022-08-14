@@ -222,3 +222,13 @@ def test_nested_dictionary() -> None:
 
         read_df = pl.read_parquet(f)
         assert df.frame_equal(read_df)
+
+
+def test_row_group_size_saturation() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    f = io.BytesIO()
+
+    # request larger chunk than rows in df
+    df.write_parquet(f, row_group_size=1024)
+    f.seek(0)
+    assert pl.read_parquet(f).frame_equal(df)

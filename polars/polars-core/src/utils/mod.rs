@@ -158,6 +158,9 @@ fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
 #[cfg(feature = "private")]
 #[doc(hidden)]
 pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
+    if n == 0 {
+        return Ok(vec![df.clone()]);
+    }
     let total_len = df.height();
     let chunk_size = total_len / n;
 

@@ -1333,7 +1333,8 @@ class DataFrame:
         statistics
             Write statistics to the parquet headers. This requires extra compute.
         row_group_size
-            Size of the row groups. If None (default), the chunks of the `DataFrame` are
+            Size of the row groups in number of rows.
+            If None (default), the chunks of the `DataFrame` are
             used. Writing in smaller chunks may reduce memory pressure and improve
             writing speeds. This argument has no effect if 'pyarrow' is used.
         use_pyarrow
