@@ -149,7 +149,7 @@ GroupBy
 -------
 This namespace comes available by calling `DataFrame.groupby(..)`.
 
-.. currentmodule:: polars.internals.dataframe.groupy
+.. currentmodule:: polars.internals.dataframe.groupby
 
 .. autosummary::
    :toctree: api/
