@@ -68,24 +68,6 @@ def wrap_ldf(ldf: PyLazyFrame) -> LazyFrame:
     return LazyFrame._from_pyldf(ldf)
 
 
-def _prepare_groupby_inputs(
-    by: str | list[str] | pli.Expr | list[pli.Expr] | None,
-) -> list[PyExpr]:
-    if isinstance(by, list):
-        new_by = []
-        for e in by:
-            if isinstance(e, str):
-                e = pli.col(e)
-            new_by.append(e._pyexpr)
-    elif isinstance(by, str):
-        new_by = [pli.col(by)._pyexpr]
-    elif isinstance(by, pli.Expr):
-        new_by = [by._pyexpr]
-    elif by is None:
-        return []
-    return new_by
-
-
 class LazyFrame:
     """Representation of a Lazy computation graph/query."""
 
@@ -2385,3 +2367,21 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         if isinstance(names, str):
             names = [names]
         return self._from_pyldf(self._ldf.unnest(names))
+
+
+def _prepare_groupby_inputs(
+    by: str | list[str] | pli.Expr | list[pli.Expr] | None,
+) -> list[PyExpr]:
+    if isinstance(by, list):
+        new_by = []
+        for e in by:
+            if isinstance(e, str):
+                e = pli.col(e)
+            new_by.append(e._pyexpr)
+    elif isinstance(by, str):
+        new_by = [pli.col(by)._pyexpr]
+    elif isinstance(by, pli.Expr):
+        new_by = [by._pyexpr]
+    elif by is None:
+        return []
+    return new_by
