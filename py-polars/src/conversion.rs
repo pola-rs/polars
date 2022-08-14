@@ -182,9 +182,8 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             }
             AnyValue::Date(v) => {
                 let pl = PyModule::import(py, "polars").unwrap();
-                let pli = pl.getattr("internals").unwrap();
-                let m_series = pli.getattr("series").unwrap();
-                let convert = m_series.getattr("_to_python_datetime").unwrap();
+                let utils = pl.getattr("utils").unwrap();
+                let convert = utils.getattr("_to_python_datetime").unwrap();
                 let py_date_dtype = pl.getattr("Date").unwrap();
                 convert.call1((v, py_date_dtype)).unwrap().into_py(py)
             }
@@ -417,9 +416,8 @@ impl ToPyObject for Wrap<&DurationChunked> {
 impl ToPyObject for Wrap<&DatetimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let pl = PyModule::import(py, "polars").unwrap();
-        let pli = pl.getattr("internals").unwrap();
-        let m_series = pli.getattr("series").unwrap();
-        let convert = m_series.getattr("_to_python_datetime").unwrap();
+        let utils = pl.getattr("utils").unwrap();
+        let convert = utils.getattr("_to_python_datetime").unwrap();
         let py_date_dtype = pl.getattr("Datetime").unwrap();
 
         let tu = Wrap(self.0.time_unit()).to_object(py);
@@ -448,9 +446,8 @@ impl ToPyObject for Wrap<&TimeChunked> {
 impl ToPyObject for Wrap<&DateChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let pl = PyModule::import(py, "polars").unwrap();
-        let pli = pl.getattr("internals").unwrap();
-        let m_series = pli.getattr("series").unwrap();
-        let convert = m_series.getattr("_to_python_datetime").unwrap();
+        let utils = pl.getattr("utils").unwrap();
+        let convert = utils.getattr("_to_python_datetime").unwrap();
         let py_date_dtype = pl.getattr("Date").unwrap();
 
         let iter = self
