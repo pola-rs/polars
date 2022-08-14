@@ -114,6 +114,7 @@ if TYPE_CHECKING:
         FillNullStrategy,
         InterpolationMethod,
         IpcCompression,
+        JoinStrategy,
         NullStrategy,
         Orientation,
         ParallelStrategy,
@@ -3504,7 +3505,7 @@ class DataFrame:
         left_on: str | pli.Expr | list[str | pli.Expr] | None = None,
         right_on: str | pli.Expr | list[str | pli.Expr] | None = None,
         on: str | pli.Expr | list[str | pli.Expr] | None = None,
-        how: str = "inner",
+        how: JoinStrategy = "inner",
         suffix: str = "_right",
     ) -> DataFrame:
         """

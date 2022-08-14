@@ -88,6 +88,7 @@ else:
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
+        CategoricalOrdering,
         ComparisonOperator,
         EpochTimeUnit,
         FillNullStrategy,
@@ -5885,17 +5886,18 @@ class CatNameSpace:
     def __init__(self, s: Series):
         self._s = s
 
-    def set_ordering(self, ordering: str) -> Series:
+    def set_ordering(self, ordering: CategoricalOrdering) -> Series:
         """
         Determine how this categorical series should be sorted.
 
         Parameters
         ----------
-        ordering
-            One of:
-                - 'physical' -> use the physical representation of the categories to
-                    determine the order (default)
-                - 'lexical' -. use the string values to determine the ordering
+        ordering : {'physical', 'lexical'}
+            Ordering type:
+
+            - 'physical' -> Use the physical representation of the categories to
+                determine the order (default).
+            - 'lexical' -> Use the string values to determine the ordering.
 
         Examples
         --------

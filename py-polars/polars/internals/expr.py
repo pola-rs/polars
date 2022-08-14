@@ -36,6 +36,7 @@ except ImportError:
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
+        CategoricalOrdering,
         ClosedWindow,
         EpochTimeUnit,
         FillNullStrategy,
@@ -7129,17 +7130,18 @@ class ExprCatNameSpace:
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
-    def set_ordering(self, ordering: str) -> Expr:
+    def set_ordering(self, ordering: CategoricalOrdering) -> Expr:
         """
         Determine how this categorical series should be sorted.
 
         Parameters
         ----------
-        ordering
-            One of:
-                - 'physical' -> use the physical representation of the categories to
-                    determine the order (default)
-                - 'lexical' -. use the string values to determine the ordering
+        ordering : {'physical', 'lexical'}
+            Ordering type:
+
+            - 'physical' -> Use the physical representation of the categories to
+                determine the order (default).
+            - 'lexical' -> Use the string values to determine the ordering.
 
         Examples
         --------

@@ -20,6 +20,7 @@ ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq
 # User-facing string literal types
 # The following all have an equivalent Rust enum with the same name
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
+CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
 ClosedWindow: TypeAlias = Literal["left", "right", "both", "none"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 FillNullStrategy: TypeAlias = Literal[
@@ -44,11 +45,15 @@ AsofJoinStrategy: TypeAlias = Literal["backward", "forward"]  # AsofStrategy
 InterpolationMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear"
 ]  # QuantileInterpolOptions
+JoinStrategy: TypeAlias = Literal[
+    "inner", "left", "outer", "semi", "anti", "cross"
+]  # JoinType
 ToStructStrategy: TypeAlias = Literal[
     "first_non_null", "max_width"
 ]  # ListToStructWidthStrategy
 
 # The following have no equivalent on the Rust side
+ConcatMethod = Literal["vertical", "diagonal", "horizontal"]
 EpochTimeUnit = Literal["ns", "us", "ms", "s", "d"]
 Orientation: TypeAlias = Literal["col", "row"]
 TransferEncoding: TypeAlias = Literal["hex", "base64"]
