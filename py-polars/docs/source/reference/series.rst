@@ -213,7 +213,7 @@ TimeSeries
 ----------
 The following methods are available under the `Series.dt` attribute.
 
-.. currentmodule:: polars.internals.series
+.. currentmodule:: polars.internals.series.datetime
 
 .. autosummary::
    :toctree: api/
@@ -253,7 +253,7 @@ Strings
 
 The following methods are available under the `Series.str` attribute.
 
-.. currentmodule:: polars.internals.series
+.. currentmodule:: polars.internals.series.string
 
 .. autosummary::
    :toctree: api/
@@ -289,7 +289,7 @@ Lists
 
 The following methods are available under the `Series.arr` attribute.
 
-.. currentmodule:: polars.internals.series
+.. currentmodule:: polars.internals.series.list
 
 .. autosummary::
    :toctree: api/
@@ -321,7 +321,7 @@ Categories
 ----------
 The following methods are available under the `Series.cat` attribute.
 
-.. currentmodule:: polars.internals.series
+.. currentmodule:: polars.internals.series.categorical
 
 .. autosummary::
    :toctree: api/
@@ -332,7 +332,7 @@ Struct
 ------
 The following methods are available under the `Series.struct` attribute.
 
-.. currentmodule:: polars.internals.series
+.. currentmodule:: polars.internals.series.struct
 
 .. autosummary::
    :toctree: api/
