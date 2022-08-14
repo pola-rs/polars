@@ -272,7 +272,7 @@ impl AExpr {
                     }
                     Mean(expr) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        field.coerce(DataType::Float64);
+                        coerce_numeric_aggregation(&mut field);
                         Ok(field)
                     }
                     List(expr) => {
@@ -284,12 +284,12 @@ impl AExpr {
                     }
                     Std(expr, _) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        field.coerce(DataType::Float64);
+                        coerce_numeric_aggregation(&mut field);
                         Ok(field)
                     }
                     Var(expr, _) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        field.coerce(DataType::Float64);
+                        coerce_numeric_aggregation(&mut field);
                         Ok(field)
                     }
                     NUnique(expr) => {
@@ -309,7 +309,7 @@ impl AExpr {
                     }
                     Quantile { expr, .. } => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        field.coerce(DataType::Float64);
+                        coerce_numeric_aggregation(&mut field);
                         Ok(field)
                     }
                 }
@@ -356,6 +356,20 @@ impl AExpr {
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
             Nth(_) => panic!("should be no nth at this point"),
+        }
+    }
+}
+
+fn coerce_numeric_aggregation(field: &mut Field) {
+    match field.dtype {
+        DataType::Duration(_) => {
+            // pass
+        }
+        DataType::Float32 => {
+            // pass
+        }
+        _ => {
+            field.coerce(DataType::Float64);
         }
     }
 }
