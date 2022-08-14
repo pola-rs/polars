@@ -469,7 +469,6 @@ impl DataFrame {
     /// Ensure all the chunks in the DataFrame are aligned.
     pub fn rechunk(&mut self) -> &mut Self {
         if self.should_rechunk() {
-            debug_assert!(!self.columns.iter().map(|s| s.n_chunks()).all_equal());
             self.as_single_chunk_par()
         } else {
             self

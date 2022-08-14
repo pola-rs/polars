@@ -2,13 +2,11 @@ use crate::prelude::*;
 
 impl Series {
     pub fn full_null(name: &str, size: usize, dtype: &DataType) -> Self {
-        if let DataType::List(dtype) = dtype {
-            let val = Series::full_null("", 0, dtype);
-            let avs = [AnyValue::List(val)];
-            return Series::new(name, avs.as_ref());
-        }
         // match the logical types and create them
         match dtype {
+            DataType::List(inner_dtype) => {
+                ListChunked::full_null_with_dtype(name, size, inner_dtype).into_series()
+            }
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => CategoricalChunked::full_null(name, size).into_series(),
             #[cfg(feature = "dtype-date")]
