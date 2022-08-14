@@ -1,10 +1,5 @@
-use super::apply::*;
-use crate::conversion::parse_fill_null_strategy;
-use crate::conversion::Wrap;
-use crate::lazy::map_single;
-use crate::lazy::utils::py_exprs_to_exprs;
-use crate::series::PySeries;
-use crate::utils::reinterpret;
+use std::borrow::Cow;
+
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
@@ -13,7 +8,14 @@ use polars_core::prelude::QuantileInterpolOptions;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
-use std::borrow::Cow;
+
+use super::apply::*;
+use crate::conversion::parse_fill_null_strategy;
+use crate::conversion::Wrap;
+use crate::lazy::map_single;
+use crate::lazy::utils::py_exprs_to_exprs;
+use crate::series::PySeries;
+use crate::utils::reinterpret;
 
 #[pyclass]
 #[repr(transparent)]

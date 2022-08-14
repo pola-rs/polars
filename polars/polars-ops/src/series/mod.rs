@@ -2,10 +2,12 @@ mod _trait;
 mod implementations;
 mod ops;
 
-pub use self::_trait::*;
+use std::sync::Arc;
+
 use polars_core::prelude::*;
 use polars_core::utils::Wrap;
-use std::sync::Arc;
+
+pub use self::_trait::*;
 
 type SeriesOpsRef = Arc<dyn SeriesOps>;
 

@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use polars_core::prelude::*;
+
+use crate::prelude::*;
 
 fn to_aexprs(input: Vec<Expr>, arena: &mut Arena<AExpr>) -> Vec<Node> {
     input.into_iter().map(|e| to_aexpr(e, arena)).collect()

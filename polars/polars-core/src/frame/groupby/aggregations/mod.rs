@@ -1,20 +1,22 @@
 mod agg_list;
 
-use crate::POOL;
 pub use agg_list::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use num::{Bounded, Num, NumCast, ToPrimitive, Zero};
-use rayon::prelude::*;
-
-use crate::apply_method_physical_integer;
 use arrow::types::{simd::Simd, NativeType};
+use num::{Bounded, Num, NumCast, ToPrimitive, Zero};
 use polars_arrow::data_types::IsFloat;
+use polars_arrow::kernels::rolling;
 use polars_arrow::kernels::rolling::no_nulls::{
     is_reverse_sorted_max, is_sorted_min, MaxWindow, MeanWindow, MinWindow,
     RollingAggWindowNoNulls, StdWindow, SumWindow, VarWindow,
 };
 use polars_arrow::kernels::rolling::nulls::RollingAggWindowNulls;
+use polars_arrow::kernels::take_agg::*;
+use polars_arrow::prelude::QuantileInterpolOptions;
+use polars_arrow::trusted_len::PushUnchecked;
+use rayon::prelude::*;
 
+use crate::apply_method_physical_integer;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
 use crate::frame::groupby::GroupsIdx;
@@ -23,10 +25,7 @@ use crate::frame::groupby::GroupsIndicator;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
-use polars_arrow::kernels::rolling;
-use polars_arrow::kernels::take_agg::*;
-use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_arrow::trusted_len::PushUnchecked;
+use crate::POOL;
 
 // if the windows overlap, we can use the rolling_<agg> kernels
 // they maintain state, which saves a lot of compute by not naively traversing all elements every

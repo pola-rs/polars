@@ -1,8 +1,9 @@
-use super::*;
 use num::pow::Pow;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::export::num;
 use polars_core::export::num::ToPrimitive;
+
+use super::*;
 
 fn pow_on_floats<T>(base: &ChunkedArray<T>, exponent: &Series) -> Result<Series>
 where

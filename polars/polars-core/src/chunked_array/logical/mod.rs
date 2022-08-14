@@ -17,18 +17,17 @@ mod struct_;
 #[cfg(feature = "dtype-time")]
 mod time;
 
+use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
+
 #[cfg(feature = "dtype-categorical")]
 pub use categorical::*;
-
+#[cfg(feature = "dtype-struct")]
+pub use struct_::*;
 #[cfg(feature = "dtype-time")]
 pub use time::*;
 
-#[cfg(feature = "dtype-struct")]
-pub use struct_::*;
-
 use crate::prelude::*;
-use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
 
 /// Maps a logical type to a a chunked array implementation of the physical type.
 /// This saves a lot of compiler bloat and allows us to reuse functionality.

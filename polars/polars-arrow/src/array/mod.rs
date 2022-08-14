@@ -1,9 +1,9 @@
-use crate::prelude::*;
 use arrow::array::{Array, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
 
+use crate::prelude::*;
 use crate::utils::CustomIterTools;
 
 pub mod default_arrays;

@@ -1,14 +1,15 @@
 pub mod dataframe;
 pub mod series;
 
-use crate::prelude::ObjectValue;
-use crate::{PyPolarsErr, PySeries, Wrap};
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
 use polars_core::utils::CustomIterTools;
 use polars_core::{export::rayon::prelude::*, POOL};
 use pyo3::types::PyDict;
 use pyo3::{PyAny, PyResult};
+
+use crate::prelude::ObjectValue;
+use crate::{PyPolarsErr, PySeries, Wrap};
 
 pub trait PyArrowPrimitiveType: PolarsNumericType {}
 

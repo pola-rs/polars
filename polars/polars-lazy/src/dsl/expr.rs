@@ -1,13 +1,14 @@
-use crate::prelude::*;
-use polars_core::prelude::*;
-use polars_core::utils::get_supertype;
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
-use crate::dsl::function_expr::FunctionExpr;
+use polars_core::prelude::*;
+use polars_core::utils::get_supertype;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use crate::dsl::function_expr::FunctionExpr;
+use crate::prelude::*;
 
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> Result<Series>`
 pub trait SeriesUdf: Send + Sync {

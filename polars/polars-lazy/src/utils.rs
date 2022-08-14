@@ -1,9 +1,11 @@
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use polars_core::prelude::*;
+
 use crate::logical_plan::iterator::{ArenaExprIter, ArenaLpIter};
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use polars_core::prelude::*;
-use std::path::PathBuf;
-use std::sync::Arc;
 
 pub(crate) trait PushNode {
     fn push_node(&mut self, value: Node);
@@ -339,9 +341,10 @@ where
 
 #[cfg(test)]
 pub(crate) mod test {
+    use polars_core::prelude::*;
+
     use crate::prelude::stack_opt::{OptimizationRule, StackOptimizer};
     use crate::prelude::*;
-    use polars_core::prelude::*;
 
     pub fn optimize_lp(lp: LogicalPlan, rules: &mut [Box<dyn OptimizationRule>]) -> LogicalPlan {
         // initialize arena's

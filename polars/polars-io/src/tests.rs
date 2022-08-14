@@ -1,9 +1,10 @@
 //! tests that require parsing a csv
 //!
 
+use polars_core::prelude::*;
+
 use crate::csv::CsvReader;
 use crate::SerReader;
-use polars_core::prelude::*;
 
 #[test]
 fn test_filter() -> Result<()> {

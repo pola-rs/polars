@@ -1,5 +1,6 @@
-use super::*;
 use polars_core::series::ops::NullBehavior;
+
+use super::*;
 
 #[test]
 fn test_filter_sort_diff_2984() -> Result<()> {

@@ -1,19 +1,20 @@
 pub(crate) mod series;
 
-use crate::prelude::*;
-use crate::POOL;
+use std::borrow::Cow;
+use std::ops::{Deref, DerefMut};
+
 pub use arrow;
 use arrow::bitmap::Bitmap;
 pub use polars_arrow::utils::TrustMyLength;
 pub use polars_arrow::utils::*;
 pub use rayon;
 use rayon::prelude::*;
-use std::borrow::Cow;
-use std::ops::{Deref, DerefMut};
+pub use series::*;
 
 #[cfg(feature = "private")]
 pub use crate::chunked_array::ops::sort::argsort_no_nulls;
-pub use series::*;
+use crate::prelude::*;
+use crate::POOL;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);

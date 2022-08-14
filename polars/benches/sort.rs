@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate criterion;
 use criterion::Criterion;
-
 use polars::prelude::*;
 
 fn bench_sort(s: &Int32Chunked) {

@@ -1,11 +1,12 @@
-use super::*;
+use std::borrow::Cow;
 
 use polars_arrow::{
     export::arrow::{self, compute::substring::substring},
     kernels::string::*,
 };
 use polars_core::export::regex::{escape, Regex};
-use std::borrow::Cow;
+
+use super::*;
 
 fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Option<Cow<'a, str>> {
     reg.captures(input)

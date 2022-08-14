@@ -1,3 +1,9 @@
+use std::path::{Path, PathBuf};
+
+use dirs::home_dir;
+use polars_core::frame::DataFrame;
+use polars_core::prelude::*;
+
 #[cfg(any(
     feature = "ipc",
     feature = "ipc_streaming",
@@ -5,10 +11,6 @@
     feature = "avro"
 ))]
 use crate::ArrowSchema;
-use dirs::home_dir;
-use polars_core::frame::DataFrame;
-use polars_core::prelude::*;
-use std::path::{Path, PathBuf};
 
 // used by python polars
 pub fn resolve_homedir(path: &Path) -> PathBuf {
@@ -97,8 +99,9 @@ pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)]) {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_homedir;
     use std::path::PathBuf;
+
+    use super::resolve_homedir;
 
     #[cfg(not(target_os = "windows"))]
     #[test]

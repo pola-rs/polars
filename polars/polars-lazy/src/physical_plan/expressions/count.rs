@@ -1,7 +1,9 @@
+use std::borrow::Cow;
+
+use polars_core::prelude::*;
+
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::prelude::*;
-use std::borrow::Cow;
 
 const COUNT_NAME: &str = "count";
 

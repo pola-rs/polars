@@ -1,9 +1,10 @@
-use crate::prelude::*;
-use indexmap::IndexMap;
 use std::fmt::{Debug, Formatter};
 
+use indexmap::IndexMap;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
+
+use crate::prelude::*;
 
 #[derive(PartialEq, Eq, Clone, Default)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]

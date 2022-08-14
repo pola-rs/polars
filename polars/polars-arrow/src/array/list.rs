@@ -1,9 +1,10 @@
-use crate::prelude::*;
 use arrow::array::{Array, ListArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::compute::concatenate;
 use arrow::datatypes::DataType;
 use arrow::error::Result;
+
+use crate::prelude::*;
 
 pub struct AnonymousBuilder<'a> {
     arrays: Vec<&'a dyn Array>,

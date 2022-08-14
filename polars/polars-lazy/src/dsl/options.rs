@@ -1,6 +1,5 @@
 use polars_core::datatypes::DataType;
 use polars_core::prelude::TimeUnit;
-
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

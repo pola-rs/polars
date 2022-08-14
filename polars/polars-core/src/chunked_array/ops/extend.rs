@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use arrow::{compute::concatenate::concatenate, Either};
+
+use crate::prelude::*;
 
 fn extend_immutable(immutable: &dyn Array, chunks: &mut Vec<ArrayRef>, other_chunks: &[ArrayRef]) {
     let out = if chunks.len() == 1 {

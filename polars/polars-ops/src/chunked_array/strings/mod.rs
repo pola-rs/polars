@@ -4,7 +4,6 @@ mod namespace;
 
 #[cfg(feature = "strings")]
 pub use namespace::*;
-
 use polars_core::prelude::*;
 
 pub trait AsUtf8 {

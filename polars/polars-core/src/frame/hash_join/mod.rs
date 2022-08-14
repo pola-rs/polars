@@ -9,51 +9,47 @@ mod single_keys_semi_anti;
 pub(super) mod sort_merge;
 
 #[cfg(feature = "chunked_ids")]
-use arrow::Either;
-#[cfg(feature = "chunked_ids")]
 use std::borrow::Cow;
+use std::fmt::Debug;
+use std::hash::{BuildHasher, Hash, Hasher};
 
+use ahash::RandomState;
+#[cfg(feature = "chunked_ids")]
+use arrow::Either;
+use hashbrown::hash_map::{Entry, RawEntryMut};
+use hashbrown::HashMap;
+use polars_arrow::utils::CustomIterTools;
+use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "asof_join")]
+pub(crate) use single_keys::create_probe_table;
 use single_keys::*;
+#[cfg(feature = "asof_join")]
+pub(crate) use single_keys_dispatch::prepare_strs;
 use single_keys_inner::*;
 use single_keys_left::*;
 use single_keys_outer::*;
 #[cfg(feature = "semi_anti_join")]
 use single_keys_semi_anti::*;
+use sort_merge::*;
 
-use polars_arrow::utils::CustomIterTools;
-
+#[cfg(feature = "private")]
+pub use self::multiple_keys::private_left_join_multiple_keys;
+use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 use crate::frame::hash_join::multiple_keys::{
     inner_join_multiple_keys, left_join_multiple_keys, outer_join_multiple_keys,
 };
-use sort_merge::*;
-
 #[cfg(feature = "semi_anti_join")]
 use crate::frame::hash_join::multiple_keys::{left_anti_multiple_keys, left_semi_multiple_keys};
-
 use crate::prelude::*;
+use crate::utils::series::to_physical_and_bit_repr;
 use crate::utils::{set_partition_size, slice_slice, split_ca};
 use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded, this_partition,
     AsU64, StrHash,
 };
 use crate::{datatypes::PlHashMap, POOL};
-use ahash::RandomState;
-use hashbrown::hash_map::{Entry, RawEntryMut};
-use hashbrown::HashMap;
-use rayon::prelude::*;
-use std::fmt::Debug;
-use std::hash::{BuildHasher, Hash, Hasher};
-
-#[cfg(feature = "private")]
-pub use self::multiple_keys::private_left_join_multiple_keys;
-use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
-use crate::utils::series::to_physical_and_bit_repr;
-#[cfg(feature = "asof_join")]
-pub(crate) use single_keys::create_probe_table;
-#[cfg(feature = "asof_join")]
-pub(crate) use single_keys_dispatch::prepare_strs;
 
 pub type LeftJoinIds = (JoinIds, JoinOptIds);
 
@@ -99,8 +95,9 @@ macro_rules! det_hash_prone_order {
     }};
 }
 
-use crate::series::IsSorted;
 pub(super) use det_hash_prone_order;
+
+use crate::series::IsSorted;
 
 /// If Categorical types are created without a global string cache or under
 /// a different global string cache the mapping will be incorrect.

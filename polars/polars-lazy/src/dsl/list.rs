@@ -1,15 +1,15 @@
-#[cfg(feature = "list_eval")]
-use crate::dsl::eval::prepare_eval_expr;
-
-use crate::dsl::function_expr::FunctionExpr;
-use crate::physical_plan::state::ExecutionState;
-use crate::prelude::*;
 use parking_lot::Mutex;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::series::ops::NullBehavior;
 use polars_ops::prelude::*;
 use rayon::prelude::*;
+
+#[cfg(feature = "list_eval")]
+use crate::dsl::eval::prepare_eval_expr;
+use crate::dsl::function_expr::FunctionExpr;
+use crate::physical_plan::state::ExecutionState;
+use crate::prelude::*;
 
 /// Specialized expressions for [`Series`] of [`DataType::List`].
 pub struct ListNameSpace(pub(crate) Expr);

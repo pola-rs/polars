@@ -1,9 +1,8 @@
-use crate::{map_owned_without_args, map_without_args};
-
-use super::*;
-
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use super::*;
+use crate::{map_owned_without_args, map_without_args};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]

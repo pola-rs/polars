@@ -315,9 +315,10 @@ impl<'a> Iterator for AlpIter<'a> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use polars_core::df;
     use polars_core::prelude::*;
+
+    use super::*;
 
     #[test]
     fn test_lp_iter() -> Result<()> {

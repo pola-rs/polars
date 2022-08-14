@@ -1,9 +1,11 @@
+use std::convert::TryFrom;
+
+use arrow::array::*;
+use polars_arrow::is_valid::IsValid;
+
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
-use arrow::array::*;
-use polars_arrow::is_valid::IsValid;
-use std::convert::TryFrom;
 
 macro_rules! impl_take_random_get {
     ($self:ident, $index:ident, $array_type:ty) => {{

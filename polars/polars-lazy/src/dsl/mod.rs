@@ -19,41 +19,37 @@ pub mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
 
-#[cfg(feature = "rolling_window")]
-use polars_time::series::SeriesOpsTime;
-
-use crate::prelude::*;
-use crate::utils::has_expr;
-
-#[cfg(feature = "is_in")]
-use crate::utils::has_root_literal_expr;
-use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
-use polars_core::prelude::*;
-
 use std::fmt::Debug;
 use std::{
     ops::{Add, Div, Mul, Rem, Sub},
     sync::Arc,
 };
-// reexport the lazy method
-pub use crate::frame::IntoLazy;
-pub use crate::logical_plan::lit;
+
 pub use expr::*;
 pub use functions::*;
 pub use options::*;
-
-use crate::dsl::function_expr::FunctionExpr;
-use crate::dsl::function_expr::NanFunction;
-
-#[cfg(feature = "trigonometry")]
-use crate::dsl::function_expr::TrigonometricFunction;
-
+use polars_arrow::prelude::QuantileInterpolOptions;
+use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
+use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
 use polars_core::utils::{get_supertype, NoNull};
 use polars_ops::prelude::SeriesOps;
+#[cfg(feature = "rolling_window")]
+use polars_time::series::SeriesOpsTime;
+
+use crate::dsl::function_expr::FunctionExpr;
+use crate::dsl::function_expr::NanFunction;
+#[cfg(feature = "trigonometry")]
+use crate::dsl::function_expr::TrigonometricFunction;
+// reexport the lazy method
+pub use crate::frame::IntoLazy;
+pub use crate::logical_plan::lit;
+use crate::prelude::*;
+use crate::utils::has_expr;
+#[cfg(feature = "is_in")]
+use crate::utils::has_root_literal_expr;
 
 pub fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
     Expr::BinaryExpr {

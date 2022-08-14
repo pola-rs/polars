@@ -1,5 +1,6 @@
-use crate::series::ops::SeriesSealed;
 use polars_core::prelude::*;
+
+use crate::series::ops::SeriesSealed;
 
 fn log<T: PolarsNumericType>(ca: &ChunkedArray<T>, base: f64) -> Float64Chunked {
     ca.cast_and_apply_in_place(|v: f64| v.log(base))

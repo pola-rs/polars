@@ -1,6 +1,7 @@
-use super::*;
 use polars_core::export::num;
 use DataType::*;
+
+use super::*;
 
 pub(super) fn sign(s: &Series) -> Result<Series> {
     match s.dtype() {

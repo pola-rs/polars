@@ -1,7 +1,8 @@
-use super::mean::MeanWindow;
-use super::*;
 use no_nulls::{rolling_apply_agg_window, RollingAggWindowNoNulls};
 use num::pow::Pow;
+
+use super::mean::MeanWindow;
+use super::*;
 
 pub(super) struct SumSquaredWindow<'a, T> {
     slice: &'a [T],

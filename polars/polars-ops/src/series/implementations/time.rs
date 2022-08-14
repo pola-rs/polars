@@ -1,6 +1,7 @@
-use super::*;
 #[cfg(feature = "to_dummies")]
 use std::ops::Deref;
+
+use super::*;
 
 impl SeriesOps for Wrap<TimeChunked> {
     fn dtype(&self) -> &DataType {

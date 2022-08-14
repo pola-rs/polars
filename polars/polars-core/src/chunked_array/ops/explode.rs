@@ -1,11 +1,13 @@
-use crate::chunked_array::builder::AnonymousOwnedListBuilder;
-use crate::prelude::*;
+use std::convert::TryFrom;
+
 use arrow::bitmap::Bitmap;
 use arrow::{array::*, bitmap::MutableBitmap, buffer::Buffer};
 use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::prelude::{FromDataUtf8, ValueSize};
-use std::convert::TryFrom;
+
+use crate::chunked_array::builder::AnonymousOwnedListBuilder;
+use crate::prelude::*;
 
 pub(crate) trait ExplodeByOffsets {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series;

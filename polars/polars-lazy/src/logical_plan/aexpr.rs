@@ -1,11 +1,13 @@
-use crate::dsl::function_expr::FunctionExpr;
-use crate::logical_plan::Context;
-use crate::prelude::*;
+use std::sync::Arc;
+
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_time_units};
 use polars_utils::arena::{Arena, Node};
-use std::sync::Arc;
+
+use crate::dsl::function_expr::FunctionExpr;
+use crate::logical_plan::Context;
+use crate::prelude::*;
 
 #[derive(Clone, Debug)]
 pub enum AAggExpr {

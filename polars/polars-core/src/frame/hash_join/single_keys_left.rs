@@ -1,5 +1,6 @@
-use super::*;
 use polars_utils::flatten;
+
+use super::*;
 
 #[cfg(feature = "chunked_ids")]
 unsafe fn apply_mapping(idx: Vec<IdxSize>, chunk_mapping: &[ChunkId]) -> Vec<ChunkId> {

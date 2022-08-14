@@ -1,3 +1,16 @@
+use std::borrow::Cow;
+use std::convert::TryFrom;
+use std::ops::Deref;
+use std::sync::Arc;
+
+use arrow::array::new_empty_array;
+use arrow::io::parquet::read;
+use arrow::io::parquet::read::{ArrayIter, FileMetaData, RowGroupMetaData};
+use polars_core::prelude::*;
+use polars_core::utils::accumulate_dataframes_vertical;
+use polars_core::POOL;
+use rayon::prelude::*;
+
 use crate::aggregations::{apply_aggregations, ScanAggregation};
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::mmap::mmap_columns;
@@ -6,17 +19,6 @@ use crate::parquet::{mmap, ParallelStrategy};
 use crate::predicates::{apply_predicate, arrow_schema_to_empty_df, PhysicalIoExpr};
 use crate::utils::apply_projection;
 use crate::RowCount;
-use arrow::array::new_empty_array;
-use arrow::io::parquet::read;
-use arrow::io::parquet::read::{ArrayIter, FileMetaData, RowGroupMetaData};
-use polars_core::prelude::*;
-use polars_core::utils::accumulate_dataframes_vertical;
-use polars_core::POOL;
-use rayon::prelude::*;
-use std::borrow::Cow;
-use std::convert::TryFrom;
-use std::ops::Deref;
-use std::sync::Arc;
 
 fn column_idx_to_series(
     column_i: usize,

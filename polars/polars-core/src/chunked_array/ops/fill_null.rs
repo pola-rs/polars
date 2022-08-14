@@ -1,10 +1,12 @@
-use crate::prelude::*;
+use std::ops::Add;
+
 use arrow::compute;
 use arrow::types::simd::Simd;
 use num::{Bounded, NumCast, One, Zero};
 use polars_arrow::kernels::set::set_at_nulls;
 use polars_arrow::utils::CustomIterTools;
-use std::ops::Add;
+
+use crate::prelude::*;
 
 fn fill_forward_limit<T>(ca: &ChunkedArray<T>, limit: IdxSize) -> ChunkedArray<T>
 where

@@ -2,12 +2,14 @@ mod boolean;
 mod push_unchecked;
 mod rev;
 
-use crate::utils::TrustMyLength;
+use std::iter::Scan;
+use std::slice::Iter;
+
 use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 pub use push_unchecked::*;
 pub use rev::FromIteratorReversed;
-use std::iter::Scan;
-use std::slice::Iter;
+
+use crate::utils::TrustMyLength;
 
 /// An iterator of known, fixed size.
 /// A trait denoting Rusts' unstable [TrustedLen](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).

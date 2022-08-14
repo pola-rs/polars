@@ -1,3 +1,8 @@
+use std::any::Any;
+use std::borrow::Cow;
+
+use ahash::RandomState;
+
 use crate::chunked_array::object::compare_inner::{IntoPartialEqInner, PartialEqInner};
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::fmt::FmtList;
@@ -6,9 +11,6 @@ use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 use crate::series::IsSorted;
-use ahash::RandomState;
-use std::any::Any;
-use std::borrow::Cow;
 
 impl<T: PolarsObject> PrivateSeriesNumeric for SeriesWrap<ObjectChunked<T>> {}
 

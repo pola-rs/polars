@@ -21,15 +21,14 @@ mod temporal;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
 
-pub(super) use self::nan::NanFunction;
-
-#[cfg(feature = "strings")]
-pub(super) use self::strings::StringFunction;
-
-use super::*;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+pub(super) use self::nan::NanFunction;
+#[cfg(feature = "strings")]
+pub(super) use self::strings::StringFunction;
+use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]

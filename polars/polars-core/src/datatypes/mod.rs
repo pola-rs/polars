@@ -9,11 +9,11 @@
 #[cfg(feature = "serde")]
 mod _serde;
 
-pub use crate::chunked_array::logical::*;
-#[cfg(feature = "object")]
-use crate::chunked_array::object::PolarsObjectSafe;
-use crate::prelude::*;
-use crate::utils::Wrap;
+use std::cmp::Ordering;
+use std::fmt::{Display, Formatter};
+use std::hash::{Hash, Hasher};
+use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
+
 use ahash::RandomState;
 use arrow::compute::arithmetics::basic::NativeArithmetics;
 use arrow::compute::comparison::Simd8;
@@ -26,10 +26,12 @@ use num::{Bounded, FromPrimitive, Num, NumCast, Zero};
 use polars_arrow::data_types::IsFloat;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
-use std::fmt::{Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
+
+pub use crate::chunked_array::logical::*;
+#[cfg(feature = "object")]
+use crate::chunked_array::object::PolarsObjectSafe;
+use crate::prelude::*;
+use crate::utils::Wrap;
 
 pub struct Utf8Type {}
 

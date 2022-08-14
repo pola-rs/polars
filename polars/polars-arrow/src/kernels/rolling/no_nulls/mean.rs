@@ -1,6 +1,7 @@
+use no_nulls::{rolling_apply_agg_window, RollingAggWindowNoNulls};
+
 use super::sum::SumWindow;
 use super::*;
-use no_nulls::{rolling_apply_agg_window, RollingAggWindowNoNulls};
 
 pub struct MeanWindow<'a, T> {
     sum: SumWindow<'a, T>,

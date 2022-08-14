@@ -1,10 +1,12 @@
+use std::cmp::Ordering;
+
+use arrow::array::Utf8Array;
+
 use crate::prelude::compare_inner::PartialOrdInner;
 use crate::prelude::{
     CategoricalChunked, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont,
     NumTakeRandomSingleChunk, PlHashMap, RevMapping, TakeRandBranch3, TakeRandom,
 };
-use arrow::array::Utf8Array;
-use std::cmp::Ordering;
 
 type TakeCats<'a> = TakeRandBranch3<
     NumTakeRandomCont<'a, u32>,

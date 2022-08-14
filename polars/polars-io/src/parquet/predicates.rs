@@ -1,10 +1,11 @@
-use crate::predicates::PhysicalIoExpr;
-use crate::ArrowResult;
 use arrow::array::Array;
 use arrow::compute::concatenate::concatenate;
 use arrow::io::parquet::read::statistics::{self, deserialize, Statistics};
 use arrow::io::parquet::read::RowGroupMetaData;
 use polars_core::prelude::*;
+
+use crate::predicates::PhysicalIoExpr;
+use crate::ArrowResult;
 
 /// The statistics for a column in a Parquet file
 /// they typically hold

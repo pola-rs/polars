@@ -2,6 +2,8 @@
 //! Used to speed up PartialEq and PartialOrd of elements within an array
 //!
 
+use std::cmp::{Ordering, PartialEq};
+
 use crate::chunked_array::ops::take::take_random::{
     BoolTakeRandom, BoolTakeRandomSingleChunk, NumTakeRandomChunked, NumTakeRandomCont,
     NumTakeRandomSingleChunk, Utf8TakeRandom, Utf8TakeRandomSingleChunk,
@@ -9,7 +11,6 @@ use crate::chunked_array::ops::take::take_random::{
 #[cfg(feature = "object")]
 use crate::chunked_array::ops::take::take_random::{ObjectTakeRandom, ObjectTakeRandomSingleChunk};
 use crate::prelude::*;
-use std::cmp::{Ordering, PartialEq};
 
 pub trait PartialEqInner: Send + Sync {
     /// Safety:

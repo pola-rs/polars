@@ -1,11 +1,13 @@
-use super::*;
+use std::hash::Hash;
+
 use polars_core::export::{
     _boost_hash_combine,
     ahash::{self, CallHasher},
     rayon::prelude::*,
 };
 use polars_core::utils::NoNull;
-use std::hash::Hash;
+
+use super::*;
 
 fn hash_agg<T>(ca: &ChunkedArray<T>, random_state: &ahash::RandomState) -> u64
 where

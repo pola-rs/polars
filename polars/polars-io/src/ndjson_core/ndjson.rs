@@ -1,19 +1,19 @@
-use crate::csv::parser::*;
-use crate::csv::utils::*;
-use crate::mmap::ReaderBytes;
-use crate::ndjson_core::buffer::*;
-use crate::prelude::*;
-
-pub use arrow::{array::StructArray, io::ndjson};
-
-use crate::mmap::MmapBytesReader;
-use polars_core::{prelude::*, utils::accumulate_dataframes_vertical, POOL};
-use rayon::prelude::*;
-use serde_json::{Deserializer, Value};
 use std::borrow::Cow;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::PathBuf;
+
+pub use arrow::{array::StructArray, io::ndjson};
+use polars_core::{prelude::*, utils::accumulate_dataframes_vertical, POOL};
+use rayon::prelude::*;
+use serde_json::{Deserializer, Value};
+
+use crate::csv::parser::*;
+use crate::csv::utils::*;
+use crate::mmap::MmapBytesReader;
+use crate::mmap::ReaderBytes;
+use crate::ndjson_core::buffer::*;
+use crate::prelude::*;
 const QUOTE_CHAR: u8 = "\"".as_bytes()[0];
 const SEP: u8 = ",".as_bytes()[0];
 

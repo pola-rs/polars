@@ -1,21 +1,22 @@
-use super::*;
-use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
-use crate::utils::{split_ca, split_df};
-use crate::vector_hasher::{df_rows_to_hashes_threaded, AsU64};
-use crate::POOL;
-use ahash::RandomState;
-use arrow::types::NativeType;
-use num::Zero;
-use rayon::prelude::*;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::ops::Sub;
 
+use ahash::RandomState;
+use arrow::types::NativeType;
+use num::Zero;
+use rayon::prelude::*;
+
+use super::*;
+use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 #[cfg(feature = "dtype-categorical")]
 use crate::frame::hash_join::check_categorical_src;
 use crate::frame::hash_join::{
     create_probe_table, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk, prepare_strs,
 };
+use crate::utils::{split_ca, split_df};
+use crate::vector_hasher::{df_rows_to_hashes_threaded, AsU64};
+use crate::POOL;
 
 pub(super) unsafe fn join_asof_backward_with_indirection_and_tolerance<
     T: PartialOrd + Copy + Sub<Output = T> + Debug,

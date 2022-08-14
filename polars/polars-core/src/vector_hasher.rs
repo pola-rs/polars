@@ -1,14 +1,16 @@
-use crate::datatypes::UInt64Chunked;
-use crate::prelude::*;
-use crate::utils::arrow::array::Array;
-use crate::POOL;
+use std::convert::TryInto;
+use std::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
+
 use ahash::{CallHasher, RandomState};
 use arrow::bitmap::utils::get_bit_unchecked;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use polars_arrow::utils::CustomIterTools;
 use rayon::prelude::*;
-use std::convert::TryInto;
-use std::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
+
+use crate::datatypes::UInt64Chunked;
+use crate::prelude::*;
+use crate::utils::arrow::array::Array;
+use crate::POOL;
 
 // Read more:
 //  https://www.cockroachlabs.com/blog/vectorized-hash-joiner/

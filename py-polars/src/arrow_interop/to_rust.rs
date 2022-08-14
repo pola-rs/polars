@@ -1,4 +1,3 @@
-use crate::error::PyPolarsErr;
 use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
@@ -7,6 +6,8 @@ use polars_core::POOL;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
+
+use crate::error::PyPolarsErr;
 
 pub fn field_to_rust(obj: &PyAny) -> PyResult<Field> {
     let schema = Box::new(ffi::ArrowSchema::empty());

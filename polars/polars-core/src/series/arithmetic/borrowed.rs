@@ -103,9 +103,10 @@ impl NumOpsDispatch for Utf8Chunked {
 
 #[cfg(feature = "checked_arithmetic")]
 pub mod checked {
+    use num::{CheckedDiv, ToPrimitive, Zero};
+
     use super::*;
     use crate::utils::align_chunks_binary;
-    use num::{CheckedDiv, ToPrimitive, Zero};
 
     pub trait NumOpsDispatchChecked: Debug {
         /// Checked integer division. Computes self / rhs, returning None if rhs == 0 or the division results in overflow.

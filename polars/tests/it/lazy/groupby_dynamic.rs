@@ -1,5 +1,6 @@
-use super::*;
 use polars::export::chrono::prelude::*;
+
+use super::*;
 
 #[test]
 #[cfg(all(

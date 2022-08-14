@@ -1,6 +1,5 @@
-use crate::logical_plan::Context;
-use crate::physical_plan::state::ExecutionState;
-use crate::prelude::*;
+use std::fmt::Write;
+use std::sync::Arc;
 
 use polars_core::frame::groupby::{GroupBy, GroupsProxy};
 use polars_core::frame::hash_join::{
@@ -10,8 +9,10 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::POOL;
 use polars_utils::sort::perfect_sort;
-use std::fmt::Write;
-use std::sync::Arc;
+
+use crate::logical_plan::Context;
+use crate::physical_plan::state::ExecutionState;
+use crate::prelude::*;
 
 pub struct WindowExpr {
     /// the root column that the Function will be applied on.

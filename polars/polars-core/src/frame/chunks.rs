@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use arrow::chunk::Chunk;
+
+use crate::prelude::*;
 
 pub type ArrowChunk = Chunk<ArrayRef>;
 

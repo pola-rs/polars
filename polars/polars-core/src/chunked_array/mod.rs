@@ -1,10 +1,12 @@
 //! The typed heart of every Series column.
-use crate::prelude::*;
-use arrow::{array::*, bitmap::Bitmap};
-use polars_arrow::prelude::ValueSize;
 use std::iter::Map;
 use std::marker::PhantomData;
 use std::sync::Arc;
+
+use arrow::{array::*, bitmap::Bitmap};
+use polars_arrow::prelude::ValueSize;
+
+use crate::prelude::*;
 
 pub mod ops;
 #[macro_use]
@@ -41,15 +43,16 @@ pub mod temporal;
 mod trusted_len;
 pub mod upstream_traits;
 
+use std::mem;
+use std::slice::Iter;
+
+use bitflags::bitflags;
 use polars_arrow::prelude::*;
 
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::categorical::RevMapping;
 use crate::series::IsSorted;
 use crate::utils::{first_non_null, last_non_null, CustomIterTools};
-use bitflags::bitflags;
-use std::mem;
-use std::slice::Iter;
 
 #[cfg(not(feature = "dtype-categorical"))]
 pub struct RevMapping {}

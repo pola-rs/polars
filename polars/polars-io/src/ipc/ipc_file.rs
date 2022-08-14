@@ -32,17 +32,17 @@
 //! let df_read = IpcReader::new(buf).finish().unwrap();
 //! assert!(df.frame_equal(&df_read));
 //! ```
-use super::{finish_reader, ArrowReader, ArrowResult};
-use crate::predicates::PhysicalIoExpr;
-use crate::{prelude::*, WriterFactory};
+use std::io::{Read, Seek, Write};
+use std::path::PathBuf;
+use std::sync::Arc;
+
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
 
-use std::io::{Read, Seek, Write};
-
-use std::path::PathBuf;
-use std::sync::Arc;
+use super::{finish_reader, ArrowReader, ArrowResult};
+use crate::predicates::PhysicalIoExpr;
+use crate::{prelude::*, WriterFactory};
 
 /// Read Arrows IPC format into a DataFrame
 ///
@@ -264,11 +264,12 @@ pub struct IpcWriter<W> {
     compression: Option<write::Compression>,
 }
 
+use polars_core::frame::ArrowChunk;
+pub use write::Compression as IpcCompression;
+
 use crate::aggregations::ScanAggregation;
 use crate::mmap::MmapBytesReader;
 use crate::RowCount;
-use polars_core::frame::ArrowChunk;
-pub use write::Compression as IpcCompression;
 
 impl<W> IpcWriter<W> {
     /// Set the compression used. Defaults to None.
@@ -353,11 +354,13 @@ impl WriterFactory for IpcWriterOption {
 
 #[cfg(test)]
 mod test {
-    use crate::prelude::*;
+    use std::io::Cursor;
+
     use arrow::io::ipc::write;
     use polars_core::df;
     use polars_core::prelude::*;
-    use std::io::Cursor;
+
+    use crate::prelude::*;
 
     #[test]
     fn write_and_read_ipc() {

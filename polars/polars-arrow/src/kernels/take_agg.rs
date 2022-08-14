@@ -1,9 +1,10 @@
 //! kernels that combine take and aggregations.
-use crate::array::PolarsArray;
-use crate::index::IdxSize;
 use arrow::array::PrimitiveArray;
 use arrow::types::NativeType;
 use num::{NumCast, ToPrimitive};
+
+use crate::array::PolarsArray;
+use crate::index::IdxSize;
 
 /// Take kernel for single chunk without nulls and an iterator as index.
 /// # Safety

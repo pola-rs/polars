@@ -1,13 +1,14 @@
-use super::*;
-use crate::conversion::Wrap;
-use crate::error::PyPolarsErr;
-use crate::series::PySeries;
-use crate::PyDataFrame;
 use polars::prelude::*;
 use polars_core::frame::row::{rows_to_schema, Row};
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString, PyTuple};
+
+use super::*;
+use crate::conversion::Wrap;
+use crate::error::PyPolarsErr;
+use crate::series::PySeries;
+use crate::PyDataFrame;
 
 // the return type is Union[PySeries, PyDataFrame] and a boolean indicating if it is a dataframe or not
 pub fn apply_lambda_unknown<'a>(

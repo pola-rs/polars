@@ -1,5 +1,6 @@
-use super::*;
 use polars_core::prelude::*;
+
+use super::*;
 
 #[test]
 fn test_slice_args() -> Result<()> {

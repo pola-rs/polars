@@ -1,6 +1,7 @@
+use polars_utils::arena::{Arena, Node};
+
 use crate::prelude::stack_opt::OptimizationRule;
 use crate::prelude::*;
-use polars_utils::arena::{Arena, Node};
 
 pub(crate) struct DelayRechunk {}
 

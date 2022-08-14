@@ -1,6 +1,7 @@
-use super::*;
 use polars_core::frame::groupby::IntoGroupsProxy;
 use polars_core::utils::Wrap;
+
+use super::*;
 
 pub trait ToDummies<T> {
     fn to_dummies(&self) -> Result<DataFrame> {

@@ -1,5 +1,6 @@
-use super::*;
 use polars_core::export::rayon::prelude::*;
+
+use super::*;
 
 #[derive(Copy, Clone, Debug)]
 pub enum ListToStructWidthStrategy {

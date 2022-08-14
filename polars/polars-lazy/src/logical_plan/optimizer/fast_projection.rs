@@ -1,7 +1,8 @@
+use polars_core::prelude::*;
+
 use crate::logical_plan::alp::ALogicalPlan;
 use crate::prelude::stack_opt::OptimizationRule;
 use crate::prelude::*;
-use polars_core::prelude::*;
 
 /// Projection in the physical plan is done by selecting an expression per thread.
 /// In case of many projections and columns this can be expensive when the expressions are simple

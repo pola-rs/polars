@@ -61,15 +61,17 @@
 //! +-----+--------+-------+--------+
 //! ```
 //!
-use crate::mmap::{MmapBytesReader, ReaderBytes};
-use crate::prelude::*;
+use std::convert::TryFrom;
+use std::io::Write;
+use std::ops::Deref;
+
 use arrow::array::StructArray;
 pub use arrow::{error::Result as ArrowResult, io::json};
 use polars_arrow::conversion::chunk_to_struct;
 use polars_core::prelude::*;
-use std::convert::TryFrom;
-use std::io::Write;
-use std::ops::Deref;
+
+use crate::mmap::{MmapBytesReader, ReaderBytes};
+use crate::prelude::*;
 
 pub enum JsonFormat {
     Json,
@@ -240,8 +242,9 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::prelude::*;
     use std::io::Cursor;
+
+    use crate::prelude::*;
 
     #[test]
     fn read_json() {

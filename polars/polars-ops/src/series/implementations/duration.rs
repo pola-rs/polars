@@ -1,5 +1,6 @@
-use super::*;
 use std::ops::Deref;
+
+use super::*;
 
 impl SeriesOps for Wrap<DurationChunked> {
     fn dtype(&self) -> &DataType {

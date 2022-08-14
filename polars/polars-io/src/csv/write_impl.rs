@@ -1,10 +1,11 @@
+use std::io::Write;
+
 use arrow::temporal_conversions;
 use lexical_core::{FormattedSize, ToLexical};
 use memchr::{memchr, memchr2};
 use polars_core::{prelude::*, series::SeriesIter, POOL};
 use polars_utils::contention_pool::LowContentionPool;
 use rayon::prelude::*;
-use std::io::Write;
 
 fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> std::io::Result<()> {
     if v.is_empty() {

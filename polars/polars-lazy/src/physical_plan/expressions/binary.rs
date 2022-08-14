@@ -1,10 +1,12 @@
-use crate::physical_plan::state::{ExecutionState, StateFlags};
-use crate::prelude::*;
+use std::convert::TryFrom;
+use std::sync::Arc;
+
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::series::unstable::UnstableSeries;
 use polars_core::{prelude::*, POOL};
-use std::convert::TryFrom;
-use std::sync::Arc;
+
+use crate::physical_plan::state::{ExecutionState, StateFlags};
+use crate::prelude::*;
 
 pub struct BinaryExpr {
     pub(crate) left: Arc<dyn PhysicalExpr>,
@@ -404,9 +406,10 @@ impl PhysicalExpr for BinaryExpr {
 
 #[cfg(feature = "parquet")]
 mod stats {
-    use super::*;
     use polars_io::parquet::predicates::BatchStats;
     use polars_io::predicates::StatsEvaluator;
+
+    use super::*;
 
     fn apply_operator_stats_rhs_lit(min_max: &Series, literal: &Series, op: Operator) -> bool {
         match op {

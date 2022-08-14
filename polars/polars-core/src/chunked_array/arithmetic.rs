@@ -1,11 +1,13 @@
 //! Implementations of arithmetic operations on ChunkedArray's.
-use crate::prelude::*;
-use crate::utils::{align_chunks_binary, align_chunks_binary_owned};
+use std::borrow::Cow;
+use std::ops::{Add, Div, Mul, Rem, Sub};
+
 use arrow::array::PrimitiveArray;
 use arrow::compute::{arithmetics::basic, arity_assign};
 use num::{Num, NumCast, ToPrimitive};
-use std::borrow::Cow;
-use std::ops::{Add, Div, Mul, Rem, Sub};
+
+use crate::prelude::*;
+use crate::utils::{align_chunks_binary, align_chunks_binary_owned};
 
 macro_rules! apply_operand_on_chunkedarray_by_iter {
 

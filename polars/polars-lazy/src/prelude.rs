@@ -1,10 +1,8 @@
-pub(crate) use polars_utils::arena::{Arena, Node};
-
 #[cfg(feature = "temporal")]
 pub(crate) use polars_time::in_nanoseconds_window;
 #[cfg(feature = "dynamic_groupby")]
 pub(crate) use polars_time::{DynamicGroupOptions, PolarsTemporalGroupby, RollingGroupOptions};
-
+pub(crate) use polars_utils::arena::{Arena, Node};
 #[cfg(not(feature = "dynamic_groupby"))]
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -37,7 +35,6 @@ pub use crate::{
     },
     physical_plan::{expressions::*, planner::DefaultPlanner, Executor, PhysicalPlanner},
 };
-
 pub(crate) use crate::{
     logical_plan::{aexpr::*, alp::*, conversion::*, iterator::*},
     utils::*,

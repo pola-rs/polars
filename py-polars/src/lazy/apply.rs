@@ -1,9 +1,10 @@
-use crate::lazy::dsl::PyExpr;
-use crate::prelude::PyDataType;
-use crate::series::PySeries;
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
+
+use crate::lazy::dsl::PyExpr;
+use crate::prelude::PyDataType;
+use crate::series::PySeries;
 
 trait ToSeries {
     fn to_series(&self, py: Python, py_polars_module: &PyObject, name: &str) -> Series;

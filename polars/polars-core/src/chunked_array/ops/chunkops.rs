@@ -1,10 +1,11 @@
+#[cfg(feature = "object")]
+use arrow::array::Array;
+use arrow::compute::concatenate;
+
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::utils::slice_offsets;
-#[cfg(feature = "object")]
-use arrow::array::Array;
-use arrow::compute::concatenate;
 
 #[inline]
 fn slice(
