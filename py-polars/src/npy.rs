@@ -1,3 +1,5 @@
+use std::{mem, ptr};
+
 use ndarray::IntoDimension;
 use numpy::{
     npyffi::{self, flags, types::npy_intp},
@@ -6,7 +8,6 @@ use numpy::{
 use numpy::{Element, PyArray1};
 use polars_core::utils::arrow::types::NativeType;
 use pyo3::prelude::*;
-use std::{mem, ptr};
 
 /// Create an empty numpy array arrows 64 byte alignment
 ///

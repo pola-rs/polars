@@ -1,12 +1,14 @@
-use crate::{utils::resolve_homedir, WriterFactory};
-use polars_core::prelude::*;
-use polars_core::POOL;
-use rayon::prelude::*;
 use std::{
     fs::File,
     io::BufWriter,
     path::{Path, PathBuf},
 };
+
+use polars_core::prelude::*;
+use polars_core::POOL;
+use rayon::prelude::*;
+
+use crate::{utils::resolve_homedir, WriterFactory};
 
 /// partition_df must be created by the same way of partition_by
 fn resolve_partition_dir<I, S>(rootdir: &Path, by: I, partition_df: &DataFrame) -> PathBuf
@@ -128,13 +130,13 @@ mod test {
     #[test]
     #[cfg(feature = "ipc")]
     fn test_ipc_partition() -> Result<()> {
-        use crate::ipc::IpcReader;
-        use crate::SerReader;
         use std::{io::BufReader, path::PathBuf};
 
         use tempdir::TempDir;
 
+        use crate::ipc::IpcReader;
         use crate::prelude::IpcWriterOption;
+        use crate::SerReader;
 
         let tempdir = TempDir::new("ipc-partition")?;
 

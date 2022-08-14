@@ -1,8 +1,10 @@
-use crate::prelude::*;
-use crate::utils::expr_to_root_column_names;
+use std::fmt::Write;
+
 use polars_core::prelude::*;
 use polars_utils::arena::Arena;
-use std::fmt::Write;
+
+use crate::prelude::*;
+use crate::utils::expr_to_root_column_names;
 
 impl LazyFrame {
     /// Get a dot language representation of the LogicalPlan.

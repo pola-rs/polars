@@ -20,16 +20,19 @@ mod read;
 mod read_impl;
 mod write;
 
-use super::*;
 pub use read::*;
 pub use write::*;
 
+use super::*;
+
 #[cfg(test)]
 mod test {
-    use crate::prelude::*;
-    use polars_core::{df, prelude::*};
     use std::fs::File;
     use std::io::Cursor;
+
+    use polars_core::{df, prelude::*};
+
+    use crate::prelude::*;
 
     #[test]
     fn test_parquet() {

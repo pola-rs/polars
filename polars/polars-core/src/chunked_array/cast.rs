@@ -1,10 +1,12 @@
 //! Implementations of the ChunkCast Trait.
+use std::convert::TryFrom;
+
+use arrow::compute::cast::CastOptions;
+use polars_arrow::compute::cast;
+
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::categorical::CategoricalChunkedBuilder;
 use crate::prelude::*;
-use arrow::compute::cast::CastOptions;
-use polars_arrow::compute::cast;
-use std::convert::TryFrom;
 
 pub(crate) fn cast_chunks(
     chunks: &[ArrayRef],

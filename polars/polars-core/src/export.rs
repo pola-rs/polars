@@ -1,9 +1,8 @@
+#[cfg(feature = "private")]
+pub use ahash;
 pub use arrow;
 #[cfg(feature = "temporal")]
 pub use chrono;
-
-#[cfg(feature = "private")]
-pub use ahash;
 #[cfg(feature = "private")]
 pub use num;
 #[cfg(feature = "private")]

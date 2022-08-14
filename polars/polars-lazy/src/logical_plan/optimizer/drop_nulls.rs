@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
+use polars_core::prelude::*;
+
 use crate::logical_plan::iterator::*;
 use crate::prelude::stack_opt::OptimizationRule;
 use crate::prelude::*;
 use crate::utils::aexpr_to_root_names;
-use polars_core::prelude::*;
-use std::sync::Arc;
 
 /// If we realize that a predicate drops nulls on a subset
 /// we replace it with an explicit df.drop_nulls call, as this

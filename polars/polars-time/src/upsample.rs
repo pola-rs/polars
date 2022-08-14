@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use polars_core::prelude::*;
+
+use crate::prelude::*;
 
 pub trait PolarsUpsample {
     /// Upsample a DataFrame at a regular frequency.

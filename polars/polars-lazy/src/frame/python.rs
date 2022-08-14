@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use polars_core::prelude::*;
+
+use crate::prelude::*;
 
 impl LazyFrame {
     pub fn scan_from_python_function(schema: Schema, scan_fn: Vec<u8>) -> Self {

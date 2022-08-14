@@ -1,11 +1,12 @@
-use crate::prelude::*;
-use crate::utils::get_supertype;
-use crate::POOL;
+use std::borrow::Borrow;
+use std::fmt::Debug;
 
 use arrow::bitmap::Bitmap;
 use rayon::prelude::*;
-use std::borrow::Borrow;
-use std::fmt::Debug;
+
+use crate::prelude::*;
+use crate::utils::get_supertype;
+use crate::POOL;
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Row<'a>(pub Vec<AnyValue<'a>>);
 

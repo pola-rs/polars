@@ -2,13 +2,15 @@ use super::*;
 
 #[cfg(test)]
 mod test {
-    use crate::io::create_df;
+    use std::io::Cursor;
+
     use polars::export::arrow::io::ipc::write;
     use polars_core::df;
     use polars_core::prelude::*;
     use polars_io::ipc::*;
     use polars_io::{SerReader, SerWriter};
-    use std::io::Cursor;
+
+    use crate::io::create_df;
 
     #[test]
     fn write_and_read_ipc_stream() {

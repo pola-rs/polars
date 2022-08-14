@@ -1,6 +1,7 @@
-use crate::prelude::*;
 use chrono::{Datelike, NaiveDateTime};
 use polars_core::prelude::*;
+
+use crate::prelude::*;
 
 pub fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
     // ~584 year around 1970

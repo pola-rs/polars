@@ -1,7 +1,8 @@
-use crate::conversion::get_pyseq;
 use polars::prelude::*;
 use polars_core::utils::CustomIterTools;
 use pyo3::{PyAny, PyResult};
+
+use crate::conversion::get_pyseq;
 
 pub fn py_seq_to_list(name: &str, seq: &PyAny, dtype: &DataType) -> PyResult<Series> {
     let (seq, len) = get_pyseq(seq)?;

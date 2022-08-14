@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use rayon::prelude::*;
+
+use crate::prelude::*;
 
 unsafe fn idx_to_array(idx: usize, arr: &ListArray<i64>, dtype: &DataType) -> Option<Series> {
     if arr.is_valid(idx) {

@@ -1,6 +1,7 @@
+use polars_core::prelude::*;
+
 use crate::prelude::*;
 use crate::utils::aexpr_is_simple_projection;
-use polars_core::prelude::*;
 
 pub(crate) struct SlicePushDown {}
 

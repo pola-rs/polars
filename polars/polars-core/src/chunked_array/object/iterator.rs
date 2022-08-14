@@ -1,6 +1,7 @@
-use crate::chunked_array::object::{ObjectArray, PolarsObject};
 use arrow::array::Array;
 use polars_arrow::trusted_len::TrustedLen;
+
+use crate::chunked_array::object::{ObjectArray, PolarsObject};
 
 /// An iterator that returns Some(T) or None, that can be used on any ObjectArray
 // Note: This implementation is based on std's [Vec]s' [IntoIter].

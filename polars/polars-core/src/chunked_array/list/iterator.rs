@@ -1,8 +1,9 @@
+use std::marker::PhantomData;
+use std::ptr::NonNull;
+
 use crate::prelude::*;
 use crate::series::unstable::{ArrayBox, UnstableSeries};
 use crate::utils::CustomIterTools;
-use std::marker::PhantomData;
-use std::ptr::NonNull;
 
 #[cfg(feature = "private")]
 pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {

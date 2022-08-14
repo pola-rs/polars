@@ -24,13 +24,12 @@ pub mod testing;
 mod tests;
 pub(crate) mod vector_hasher;
 
-use once_cell::sync::Lazy;
-
+use std::sync::Mutex;
 #[cfg(feature = "object")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use std::sync::Mutex;
 
 #[cfg(feature = "dtype-categorical")]
 pub use crate::chunked_array::logical::categorical::stringcache::*;

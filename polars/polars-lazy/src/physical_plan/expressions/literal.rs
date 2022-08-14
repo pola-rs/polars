@@ -1,10 +1,12 @@
-use crate::physical_plan::state::ExecutionState;
-use crate::prelude::*;
+use std::borrow::Cow;
+use std::ops::Deref;
+
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
-use std::borrow::Cow;
-use std::ops::Deref;
+
+use crate::physical_plan::state::ExecutionState;
+use crate::prelude::*;
 
 pub struct LiteralExpr(pub LiteralValue, Expr);
 

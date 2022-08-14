@@ -1,12 +1,13 @@
+use chrono::{NaiveDate, NaiveDateTime};
+use polars_arrow::export::arrow::array::PrimitiveArray;
+use polars_core::prelude::*;
+use polars_core::utils::arrow::types::NativeType;
+
 use super::patterns;
 #[cfg(feature = "dtype-date")]
 use crate::chunkedarray::date::naive_date_to_date;
 use crate::chunkedarray::utf8::patterns::Pattern;
 use crate::chunkedarray::utf8::strptime;
-use chrono::{NaiveDate, NaiveDateTime};
-use polars_arrow::export::arrow::array::PrimitiveArray;
-use polars_core::prelude::*;
-use polars_core::utils::arrow::types::NativeType;
 
 #[derive(Clone)]
 pub struct DatetimeInfer<T> {

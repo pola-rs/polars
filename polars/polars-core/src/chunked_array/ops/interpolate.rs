@@ -1,7 +1,9 @@
-use crate::prelude::*;
+use std::ops::{Add, Div, Mul, Sub};
+
 use arrow::bitmap::MutableBitmap;
 use num::{FromPrimitive, Zero};
-use std::ops::{Add, Div, Mul, Sub};
+
+use crate::prelude::*;
 
 fn linear_itp<T>(low: T, step: T, diff: T, steps_n: T) -> T
 where

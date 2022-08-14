@@ -1,6 +1,7 @@
 //! Testing utilities.
-use crate::prelude::*;
 use std::ops::Deref;
+
+use crate::prelude::*;
 
 impl Series {
     /// Check if series are equal. Note that `None == None` evaluates to `false`

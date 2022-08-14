@@ -1,3 +1,11 @@
+use numpy::PyArray1;
+use polars::series::ops::NullBehavior;
+use polars_core::prelude::QuantileInterpolOptions;
+use polars_core::series::IsSorted;
+use polars_core::utils::CustomIterTools;
+use pyo3::types::{PyBytes, PyList, PyTuple};
+use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
+
 use crate::apply::series::{call_lambda_and_extract, ApplyLambda};
 use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
@@ -10,13 +18,6 @@ use crate::{
     npy::{aligned_array, get_refcnt},
     prelude::*,
 };
-use numpy::PyArray1;
-use polars::series::ops::NullBehavior;
-use polars_core::prelude::QuantileInterpolOptions;
-use polars_core::series::IsSorted;
-use polars_core::utils::CustomIterTools;
-use pyo3::types::{PyBytes, PyList, PyTuple};
-use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
 #[pyclass]
 #[repr(transparent)]
 #[derive(Clone)]

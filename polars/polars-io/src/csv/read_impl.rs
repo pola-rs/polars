@@ -1,3 +1,17 @@
+use std::borrow::Cow;
+use std::fmt;
+use std::sync::atomic::Ordering;
+use std::sync::{atomic::AtomicUsize, Arc};
+
+use polars_arrow::array::*;
+use polars_core::utils::accumulate_dataframes_vertical;
+use polars_core::{prelude::*, POOL};
+#[cfg(feature = "polars-time")]
+use polars_time::prelude::*;
+use polars_utils::flatten;
+use rayon::prelude::*;
+use rayon::ThreadPoolBuilder;
+
 use crate::aggregations::ScanAggregation;
 use crate::csv::read::NullValuesCompiled;
 use crate::csv::utils::*;
@@ -7,18 +21,6 @@ use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::update_row_counts;
 use crate::RowCount;
-use polars_arrow::array::*;
-use polars_core::utils::accumulate_dataframes_vertical;
-use polars_core::{prelude::*, POOL};
-#[cfg(feature = "polars-time")]
-use polars_time::prelude::*;
-use polars_utils::flatten;
-use rayon::prelude::*;
-use rayon::ThreadPoolBuilder;
-use std::borrow::Cow;
-use std::fmt;
-use std::sync::atomic::Ordering;
-use std::sync::{atomic::AtomicUsize, Arc};
 
 pub(crate) fn cast_columns(df: &mut DataFrame, to_cast: &[Field], parallel: bool) -> Result<()> {
     use DataType::*;

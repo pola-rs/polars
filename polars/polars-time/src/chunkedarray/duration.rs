@@ -1,7 +1,8 @@
-use super::*;
 use polars_arrow::export::arrow::temporal_conversions::{
     MICROSECONDS, MILLISECONDS, MILLISECONDS_IN_DAY, NANOSECONDS, SECONDS_IN_DAY,
 };
+
+use super::*;
 
 const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
 const SECONDS_IN_HOUR: i64 = 3600;

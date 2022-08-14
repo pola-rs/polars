@@ -1,6 +1,7 @@
-use crate::prelude::*;
 use ndarray::prelude::*;
 use rayon::prelude::*;
+
+use crate::prelude::*;
 
 impl<T> ChunkedArray<T>
 where

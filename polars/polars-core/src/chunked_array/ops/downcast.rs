@@ -1,9 +1,11 @@
+use std::marker::PhantomData;
+
+use arrow::array::*;
+
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
 use crate::utils::index_to_chunked_index;
-use arrow::array::*;
-use std::marker::PhantomData;
 
 pub struct Chunks<'a, T> {
     chunks: &'a [ArrayRef],

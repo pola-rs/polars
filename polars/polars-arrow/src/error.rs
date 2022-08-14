@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+
 use thiserror::Error as ThisError;
 
 type ErrString = Cow<'static, str>;

@@ -1,5 +1,6 @@
-use super::*;
 use std::ops::Deref;
+
+use super::*;
 
 #[cfg(feature = "to_dummies")]
 macro_rules! invalid_operation {

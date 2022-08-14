@@ -1,9 +1,10 @@
-use crate::prelude::*;
-use crate::utils::{CustomIterTools, NoNull};
 use num::{Float, NumCast};
 use rand::distributions::Bernoulli;
 use rand::prelude::*;
 use rand_distr::{Distribution, Normal, Standard, StandardNormal, Uniform};
+
+use crate::prelude::*;
+use crate::utils::{CustomIterTools, NoNull};
 
 fn get_random_seed() -> u64 {
     let mut rng = SmallRng::from_entropy();

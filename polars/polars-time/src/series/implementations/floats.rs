@@ -1,6 +1,8 @@
-use super::*;
-use polars_arrow::data_types::IsFloat;
 use std::ops::SubAssign;
+
+use polars_arrow::data_types::IsFloat;
+
+use super::*;
 
 impl<T: PolarsFloatType> SeriesOpsTime for WrapFloat<ChunkedArray<T>>
 where

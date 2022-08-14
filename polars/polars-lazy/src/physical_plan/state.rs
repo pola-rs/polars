@@ -1,12 +1,13 @@
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-use super::file_cache::FileCache;
-#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
-use crate::prelude::file_caching::FileFingerPrint;
 use bitflags::bitflags;
 use parking_lot::Mutex;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::frame::hash_join::JoinOptIds;
 use polars_core::prelude::*;
+
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+use super::file_cache::FileCache;
+#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+use crate::prelude::file_caching::FileFingerPrint;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, JoinOptIds>>>;
 pub type GroupsProxyCache = Arc<Mutex<PlHashMap<String, GroupsProxy>>>;

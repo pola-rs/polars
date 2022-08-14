@@ -4,10 +4,11 @@ mod merge;
 mod ops;
 pub mod stringcache;
 
-use super::*;
-use crate::prelude::*;
 pub use builder::*;
 pub(crate) use ops::{CategoricalTakeRandomGlobal, CategoricalTakeRandomLocal};
+
+use super::*;
+use crate::prelude::*;
 
 #[derive(Clone)]
 pub struct CategoricalChunked {
@@ -206,9 +207,10 @@ impl<'a> ExactSizeIterator for CatIter<'a> {}
 
 #[cfg(test)]
 mod test {
+    use std::convert::TryFrom;
+
     use super::*;
     use crate::{reset_string_cache, toggle_string_cache, SINGLE_LOCK};
-    use std::convert::TryFrom;
 
     #[test]
     fn test_categorical_round_trip() -> Result<()> {

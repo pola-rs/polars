@@ -1,7 +1,8 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
+use polars_arrow::index::IndexToUsize;
+
 use super::*;
 use crate::utils::has_nth;
-use polars_arrow::index::IndexToUsize;
 
 /// This replace the wildcard Expr with a Column Expr. It also removes the Exclude Expr from the
 /// expression chain.

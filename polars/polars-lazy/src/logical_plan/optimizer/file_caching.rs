@@ -1,10 +1,12 @@
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use polars_core::datatypes::PlHashMap;
+use polars_core::prelude::*;
+
 use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::ALogicalPlanBuilder;
 use crate::prelude::*;
-use polars_core::datatypes::PlHashMap;
-use polars_core::prelude::*;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub(crate) struct FileFingerPrint {

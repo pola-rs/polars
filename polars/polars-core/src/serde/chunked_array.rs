@@ -1,8 +1,10 @@
-use super::DeDataType;
-use crate::prelude::*;
+use std::cell::RefCell;
+
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
-use std::cell::RefCell;
+
+use super::DeDataType;
+use crate::prelude::*;
 
 pub struct IterSer<I>
 where

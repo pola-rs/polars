@@ -1,6 +1,7 @@
-use super::*;
 use num::{pow::Pow, Float};
 use polars_core::export::num;
+
+use super::*;
 
 #[cfg(not(feature = "rolling_window"))]
 impl<T> RollingAgg for WrapFloat<ChunkedArray<T>>

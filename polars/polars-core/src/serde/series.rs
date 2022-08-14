@@ -1,9 +1,11 @@
-use crate::prelude::*;
-use crate::serde::DeDataType;
-use serde::de::{MapAccess, Visitor};
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
 use std::fmt::Formatter;
+
+use serde::de::{MapAccess, Visitor};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+
+use crate::prelude::*;
+use crate::serde::DeDataType;
 
 impl Serialize for Series {
     fn serialize<S>(

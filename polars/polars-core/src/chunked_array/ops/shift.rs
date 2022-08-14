@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use num::{abs, clamp};
+
+use crate::prelude::*;
 
 macro_rules! impl_shift_fill {
     ($self:ident, $periods:expr, $fill_value:expr) => {{

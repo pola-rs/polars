@@ -1,12 +1,13 @@
-use crate::dataframe::PyDataFrame;
-use crate::error::PyPolarsErr;
-use crate::lazy::dataframe::PyLazyFrame;
-use crate::prelude::*;
-use crate::py_modules::POLARS;
-use crate::series::PySeries;
+use std::fmt::{Display, Formatter};
+use std::hash::{Hash, Hasher};
+
 use polars::chunked_array::object::PolarsObjectSafe;
 use polars::frame::row::Row;
 use polars::frame::{groupby::PivotAgg, NullStrategy};
+#[cfg(feature = "avro")]
+use polars::io::avro::AvroCompression;
+#[cfg(feature = "ipc")]
+use polars::io::ipc::IpcCompression;
 use polars::prelude::AnyValue;
 use polars::series::ops::NullBehavior;
 use polars_core::prelude::QuantileInterpolOptions;
@@ -17,13 +18,13 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList, PySequence};
 use pyo3::{PyAny, PyResult};
-use std::fmt::{Display, Formatter};
-use std::hash::{Hash, Hasher};
 
-#[cfg(feature = "avro")]
-use polars::io::avro::AvroCompression;
-#[cfg(feature = "ipc")]
-use polars::io::ipc::IpcCompression;
+use crate::dataframe::PyDataFrame;
+use crate::error::PyPolarsErr;
+use crate::lazy::dataframe::PyLazyFrame;
+use crate::prelude::*;
+use crate::py_modules::POLARS;
+use crate::series::PySeries;
 
 pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
     // Safety:

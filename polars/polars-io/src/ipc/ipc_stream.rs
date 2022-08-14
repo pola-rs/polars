@@ -33,14 +33,16 @@
 //! let df_read = IpcStreamReader::new(buf).finish().unwrap();
 //! assert!(df.frame_equal(&df_read));
 //! ```
-use crate::{finish_reader, ArrowReader, ArrowResult};
-use crate::{prelude::*, WriterFactory};
+use std::io::{Read, Seek, Write};
+use std::path::PathBuf;
+
 use arrow::io::ipc::read::{StreamMetadata, StreamState};
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
-use std::io::{Read, Seek, Write};
-use std::path::PathBuf;
+
+use crate::{finish_reader, ArrowReader, ArrowResult};
+use crate::{prelude::*, WriterFactory};
 
 /// Read Arrows Stream IPC format into a DataFrame
 ///
@@ -239,9 +241,10 @@ pub struct IpcStreamWriter<W> {
     compression: Option<write::Compression>,
 }
 
-use crate::RowCount;
 use polars_core::frame::ArrowChunk;
 pub use write::Compression as IpcCompression;
+
+use crate::RowCount;
 
 impl<W> IpcStreamWriter<W> {
     /// Set the compression used. Defaults to None.

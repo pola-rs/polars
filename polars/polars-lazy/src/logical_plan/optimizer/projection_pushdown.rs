@@ -1,3 +1,5 @@
+use polars_core::{datatypes::PlHashSet, prelude::*};
+
 use crate::logical_plan::Context;
 use crate::prelude::iterator::ArenaExprIter;
 use crate::prelude::*;
@@ -5,7 +7,6 @@ use crate::utils::{
     aexpr_assign_renamed_root, aexpr_to_root_names, aexpr_to_root_nodes, check_input_node,
     has_aexpr,
 };
-use polars_core::{datatypes::PlHashSet, prelude::*};
 
 fn init_vec() -> Vec<Node> {
     Vec::with_capacity(100)

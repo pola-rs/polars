@@ -1,7 +1,9 @@
+use std::mem::ManuallyDrop;
+
+use arrow::array::FixedSizeBinaryArray;
+
 use super::*;
 use crate::prelude::*;
-use arrow::array::FixedSizeBinaryArray;
-use std::mem::ManuallyDrop;
 
 pub struct PolarsExtension {
     array: Option<FixedSizeBinaryArray>,

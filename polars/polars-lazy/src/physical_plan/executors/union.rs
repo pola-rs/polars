@@ -1,9 +1,10 @@
-use crate::physical_plan::state::ExecutionState;
-use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_core::utils::concat_df;
 use polars_core::POOL;
 use rayon::prelude::*;
+
+use crate::physical_plan::state::ExecutionState;
+use crate::prelude::*;
 
 pub(crate) struct UnionExec {
     pub(crate) inputs: Vec<Box<dyn Executor>>,

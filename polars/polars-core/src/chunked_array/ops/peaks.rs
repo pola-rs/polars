@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use num::Zero;
+
+use crate::prelude::*;
 
 impl<T> ChunkPeaks for ChunkedArray<T>
 where

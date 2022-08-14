@@ -1,10 +1,12 @@
-use crate::chunked_array::upstream_traits::PolarsAsRef;
-use crate::prelude::*;
-use crate::utils::{CustomIterTools, FromTrustedLenIterator, NoNull};
+use std::borrow::Borrow;
+
 use arrow::bitmap::MutableBitmap;
 use polars_arrow::bit_util::{set_bit_raw, unset_bit_raw};
 use polars_arrow::trusted_len::{FromIteratorReversed, PushUnchecked};
-use std::borrow::Borrow;
+
+use crate::chunked_array::upstream_traits::PolarsAsRef;
+use crate::prelude::*;
+use crate::utils::{CustomIterTools, FromTrustedLenIterator, NoNull};
 
 impl<T> FromTrustedLenIterator<Option<T::Native>> for ChunkedArray<T>
 where

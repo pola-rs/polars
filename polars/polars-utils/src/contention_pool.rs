@@ -1,5 +1,6 @@
-use parking_lot::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+use parking_lot::Mutex;
 
 pub struct LowContentionPool<T> {
     stack: Vec<Mutex<T>>,

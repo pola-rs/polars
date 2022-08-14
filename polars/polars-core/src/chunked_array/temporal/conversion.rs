@@ -1,8 +1,7 @@
-use crate::prelude::*;
-
 use arrow::temporal_conversions::*;
-
 use chrono::*;
+
+use crate::prelude::*;
 
 /// Number of seconds in a day
 pub(crate) const SECONDS_IN_DAY: i64 = 86_400;

@@ -1,5 +1,6 @@
-use super::*;
 use polars_core::downcast_as_macro_arg_physical;
+
+use super::*;
 
 fn shift_and_fill_numeric<T>(
     ca: &ChunkedArray<T>,

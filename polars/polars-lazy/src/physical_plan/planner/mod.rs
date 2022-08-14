@@ -1,10 +1,11 @@
 mod expr;
 mod lp;
 
-use crate::prelude::*;
 pub use expr::*;
 pub use lp::*;
 use polars_core::prelude::*;
+
+use crate::prelude::*;
 
 impl PhysicalPlanner for DefaultPlanner {
     fn create_physical_plan(

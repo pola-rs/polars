@@ -10,10 +10,9 @@ use rayon::prelude::*;
 
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
-use crate::utils::{get_supertype, split_ca, split_df, NoNull};
-
 #[cfg(feature = "describe")]
 use crate::utils::concat_df_unchecked;
+use crate::utils::{get_supertype, split_ca, split_df, NoNull};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -30,19 +29,20 @@ pub mod hash_join;
 pub mod row;
 mod upstream_traits;
 
+use std::hash::{BuildHasher, Hash, Hasher};
+
+pub use chunks::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+use crate::frame::groupby::GroupsIndicator;
 #[cfg(feature = "sort_multiple")]
 use crate::prelude::sort::prepare_argsort;
+use crate::series::IsSorted;
 use crate::vector_hasher::_boost_hash_combine;
 #[cfg(feature = "row_hash")]
 use crate::vector_hasher::df_rows_to_hashes_threaded;
 use crate::POOL;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-use std::hash::{BuildHasher, Hash, Hasher};
-
-use crate::frame::groupby::GroupsIndicator;
-use crate::series::IsSorted;
-pub use chunks::*;
 
 #[derive(Copy, Clone, Debug)]
 pub enum NullStrategy {

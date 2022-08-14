@@ -1,6 +1,7 @@
-use crate::Wrap;
 use polars::prelude::*;
 use pyo3::{FromPyObject, PyAny, PyResult};
+
+use crate::Wrap;
 
 // Don't change the order of these!
 #[repr(u8)]

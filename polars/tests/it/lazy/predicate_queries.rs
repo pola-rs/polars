@@ -1,5 +1,6 @@
-use super::*;
 use polars_core::{with_string_cache, SINGLE_LOCK};
+
+use super::*;
 
 #[test]
 fn test_predicate_after_renaming() -> Result<()> {

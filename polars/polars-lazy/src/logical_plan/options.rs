@@ -1,9 +1,10 @@
-use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_io::csv::{CsvEncoding, NullValues};
 use polars_io::RowCount;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use crate::prelude::*;
 
 pub type FileCount = u32;
 

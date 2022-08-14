@@ -1,10 +1,12 @@
+use std::ops::BitOr;
+
+use arrow::array::*;
+use arrow::{datatypes::DataType, types::NativeType};
+
 use crate::array::default_arrays::FromData;
 use crate::error::{PolarsError, Result};
 use crate::kernels::BinaryMaskedSliceIterator;
 use crate::trusted_len::PushUnchecked;
-use arrow::array::*;
-use arrow::{datatypes::DataType, types::NativeType};
-use std::ops::BitOr;
 
 /// Set values in a primitive array where the primitive array has null values.
 /// this is faster because we don't have to invert and combine bitmaps
@@ -96,9 +98,11 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use arrow::array::UInt32Array;
     use std::iter::FromIterator;
+
+    use arrow::array::UInt32Array;
+
+    use super::*;
 
     #[test]
     fn test_set_mask() {

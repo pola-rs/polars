@@ -1,3 +1,8 @@
+use std::borrow::Cow;
+
+use ahash::RandomState;
+use polars_arrow::prelude::QuantileInterpolOptions;
+
 use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
@@ -15,9 +20,6 @@ use crate::frame::groupby::*;
 use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
-use ahash::RandomState;
-use polars_arrow::prelude::QuantileInterpolOptions;
-use std::borrow::Cow;
 
 impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
     fn compute_len(&mut self) {

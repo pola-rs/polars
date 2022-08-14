@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use polars_core::{datatypes::PlHashMap, prelude::*};
+
+use crate::prelude::*;
 
 pub(crate) mod aggregate_pushdown;
 pub(crate) mod delay_rechunk;
@@ -15,9 +16,9 @@ pub mod slice_pushdown_lp;
 pub(crate) mod stack_opt;
 pub(crate) mod type_coercion;
 
-use crate::prelude::stack_opt::OptimizationRule;
-
 pub(crate) use slice_pushdown_lp::SlicePushDown;
+
+use crate::prelude::stack_opt::OptimizationRule;
 
 pub trait Optimize {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan>;

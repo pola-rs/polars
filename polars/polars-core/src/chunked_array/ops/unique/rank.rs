@@ -1,10 +1,10 @@
-use crate::prelude::*;
-
 use polars_arrow::prelude::FromData;
 #[cfg(feature = "random")]
 use rand::prelude::SliceRandom;
 #[cfg(feature = "random")]
 use rand::{rngs::SmallRng, thread_rng, SeedableRng};
+
+use crate::prelude::*;
 
 #[derive(Copy, Clone)]
 pub enum RankMethod {

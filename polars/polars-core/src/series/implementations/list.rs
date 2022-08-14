@@ -1,3 +1,8 @@
+use std::any::Any;
+use std::borrow::Cow;
+
+use polars_arrow::prelude::QuantileInterpolOptions;
+
 use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
@@ -8,9 +13,6 @@ use crate::frame::groupby::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
-use polars_arrow::prelude::QuantileInterpolOptions;
-use std::any::Any;
-use std::borrow::Cow;
 
 impl private::PrivateSeries for SeriesWrap<ListChunked> {
     fn compute_len(&mut self) {

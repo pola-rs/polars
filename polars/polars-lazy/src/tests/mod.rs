@@ -25,24 +25,24 @@ fn load_df() -> DataFrame {
     .unwrap()
 }
 
-use optimization_checks::*;
+use std::io::Cursor;
+use std::iter::FromIterator;
 use std::sync::Mutex;
 
+use optimization_checks::*;
+use polars_core::chunked_array::builder::get_list_builder;
+use polars_core::df;
+#[cfg(feature = "temporal")]
+use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use polars_core::prelude::*;
+pub(crate) use polars_core::SINGLE_LOCK;
 use polars_io::prelude::*;
-use std::io::Cursor;
 
 use crate::dsl::{argsort_by, pearson_corr};
 use crate::logical_plan::iterator::ArenaLpIter;
 use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
 use crate::prelude::*;
-use polars_core::chunked_array::builder::get_list_builder;
-use polars_core::df;
-#[cfg(feature = "temporal")]
-use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-pub(crate) use polars_core::SINGLE_LOCK;
-use std::iter::FromIterator;
 
 static GLOB_PARQUET: &str = "../../examples/datasets/*.parquet";
 static GLOB_CSV: &str = "../../examples/datasets/*.csv";

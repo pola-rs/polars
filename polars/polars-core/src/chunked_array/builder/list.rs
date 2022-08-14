@@ -1,5 +1,6 @@
-use super::*;
 use polars_arrow::{array::list::AnonymousBuilder, prelude::*};
+
+use super::*;
 
 pub trait ListBuilderTrait {
     fn append_opt_series(&mut self, opt_s: Option<&Series>) {

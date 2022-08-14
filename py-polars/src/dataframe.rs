@@ -1,16 +1,32 @@
-use numpy::IntoPyArray;
-use pyo3::types::{PyDict, PyList, PyTuple};
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::io::BufWriter;
 use std::ops::Deref;
 
+use numpy::IntoPyArray;
 use polars::frame::groupby::GroupBy;
+use polars::frame::row::{rows_to_schema, Row};
+#[cfg(feature = "avro")]
+use polars::io::avro::AvroCompression;
+#[cfg(feature = "ipc")]
+use polars::io::ipc::IpcCompression;
+use polars::io::mmap::ReaderBytes;
+use polars::io::RowCount;
 use polars::prelude::*;
+use polars_core::export::arrow::datatypes::IntegerType;
+use polars_core::frame::explode::MeltArgs;
+use polars_core::frame::groupby::PivotAgg;
+use polars_core::frame::ArrowChunk;
+use polars_core::prelude::QuantileInterpolOptions;
+use polars_core::utils::arrow::compute::cast::CastOptions;
+use polars_core::utils::get_supertype;
+use pyo3::types::{PyDict, PyList, PyTuple};
+use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
 use crate::apply::dataframe::{
     apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
     apply_lambda_with_utf8_out_type,
 };
+#[cfg(feature = "parquet")]
+use crate::conversion::parse_parquet_compression;
 use crate::conversion::{ObjectValue, Wrap};
 use crate::file::get_mmap_bytes_reader;
 use crate::lazy::dataframe::PyLazyFrame;
@@ -22,23 +38,6 @@ use crate::{
     py_modules,
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
-use polars::frame::row::{rows_to_schema, Row};
-use polars::io::mmap::ReaderBytes;
-use polars::io::RowCount;
-use polars_core::export::arrow::datatypes::IntegerType;
-use polars_core::frame::explode::MeltArgs;
-use polars_core::frame::groupby::PivotAgg;
-use polars_core::frame::ArrowChunk;
-use polars_core::prelude::QuantileInterpolOptions;
-use polars_core::utils::arrow::compute::cast::CastOptions;
-use polars_core::utils::get_supertype;
-
-#[cfg(feature = "parquet")]
-use crate::conversion::parse_parquet_compression;
-#[cfg(feature = "avro")]
-use polars::io::avro::AvroCompression;
-#[cfg(feature = "ipc")]
-use polars::io::ipc::IpcCompression;
 
 #[pyclass]
 #[repr(transparent)]

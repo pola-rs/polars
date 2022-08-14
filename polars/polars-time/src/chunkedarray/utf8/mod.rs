@@ -2,13 +2,14 @@ pub mod infer;
 mod patterns;
 mod strptime;
 
+use chrono::ParseError;
+pub use patterns::Pattern;
+
 use super::*;
 #[cfg(feature = "dtype-date")]
 use crate::chunkedarray::date::naive_date_to_date;
 #[cfg(feature = "dtype-time")]
 use crate::chunkedarray::time::time_to_time64ns;
-use chrono::ParseError;
-pub use patterns::Pattern;
 
 #[cfg(feature = "dtype-time")]
 fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>

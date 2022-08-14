@@ -1,11 +1,12 @@
-use super::*;
-use crate::mmap::MmapBytesReader;
-use crate::utils::apply_projection;
 use arrow::chunk::Chunk;
 use arrow::io::ipc::read;
 use arrow::io::ipc::read::{Dictionaries, FileMetadata};
 use arrow::mmap::{mmap_dictionaries_unchecked, mmap_unchecked};
 use memmap::Mmap;
+
+use super::*;
+use crate::mmap::MmapBytesReader;
+use crate::utils::apply_projection;
 
 struct MMapChunkIter<'a> {
     dictionaries: Dictionaries,

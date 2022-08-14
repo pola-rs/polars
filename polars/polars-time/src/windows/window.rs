@@ -1,8 +1,9 @@
-use crate::prelude::*;
 use polars_arrow::export::arrow::temporal_conversions::{MILLISECONDS, NANOSECONDS};
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
+
+use crate::prelude::*;
 
 /// Represents a window in time
 #[derive(Copy, Clone)]

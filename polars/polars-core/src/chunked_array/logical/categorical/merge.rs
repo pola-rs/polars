@@ -1,6 +1,8 @@
-use super::*;
-use arrow::bitmap::MutableBitmap;
 use std::sync::Arc;
+
+use arrow::bitmap::MutableBitmap;
+
+use super::*;
 
 impl CategoricalChunked {
     pub(crate) fn merge_categorical_map(&self, other: &Self) -> Result<Arc<RevMapping>> {

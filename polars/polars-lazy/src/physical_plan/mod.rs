@@ -5,10 +5,11 @@ mod file_cache;
 pub mod planner;
 pub(crate) mod state;
 
-use crate::physical_plan::state::ExecutionState;
-use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
+
+use crate::physical_plan::state::ExecutionState;
+use crate::prelude::*;
 
 /// A type that implements this transforms a LogicalPlan to a physical plan.
 ///

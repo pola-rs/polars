@@ -1,8 +1,10 @@
-use crate::prelude::*;
-use crate::utils::CustomIterTools;
-use num::Bounded;
 use std::iter::FromIterator;
 use std::ops::{Add, AddAssign, Mul};
+
+use num::Bounded;
+
+use crate::prelude::*;
+use crate::utils::CustomIterTools;
 
 fn det_max<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where

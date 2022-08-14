@@ -19,6 +19,14 @@ mod take;
 mod ternary;
 mod window;
 
+use std::borrow::Cow;
+
+use polars_arrow::export::arrow::array::ListArray;
+use polars_arrow::trusted_len::PushUnchecked;
+use polars_arrow::utils::CustomIterTools;
+use polars_core::frame::groupby::GroupsProxy;
+use polars_core::prelude::*;
+use polars_io::predicates::PhysicalIoExpr;
 pub(crate) use {
     aggregation::*, alias::*, apply::*, binary::*, cast::*, column::*, count::*, filter::*,
     is_not_null::*, is_null::*, literal::*, not::*, shift::*, slice::*, sort::*, sortby::*,
@@ -27,13 +35,6 @@ pub(crate) use {
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_arrow::export::arrow::array::ListArray;
-use polars_arrow::trusted_len::PushUnchecked;
-use polars_arrow::utils::CustomIterTools;
-use polars_core::frame::groupby::GroupsProxy;
-use polars_core::prelude::*;
-use polars_io::predicates::PhysicalIoExpr;
-use std::borrow::Cow;
 
 #[derive(Clone, Debug)]
 pub(crate) enum AggState {

@@ -4,12 +4,13 @@ mod quantile;
 mod sum;
 mod variance;
 
-use super::*;
 pub use mean::*;
 pub use min_max::*;
 pub use quantile::*;
 pub use sum::*;
 pub use variance::*;
+
+use super::*;
 
 pub trait RollingAggWindowNulls<'a, T: NativeType> {
     /// # Safety
@@ -85,10 +86,11 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use crate::kernels::rolling::nulls::mean::rolling_mean;
     use arrow::buffer::Buffer;
     use arrow::datatypes::DataType;
+
+    use super::*;
+    use crate::kernels::rolling::nulls::mean::rolling_mean;
 
     fn get_null_arr() -> PrimitiveArray<f64> {
         // 1, None, -1, 4

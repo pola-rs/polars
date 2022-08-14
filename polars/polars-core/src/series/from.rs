@@ -1,7 +1,5 @@
-use crate::chunked_array::cast::cast_chunks;
-#[cfg(feature = "object")]
-use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
-use crate::prelude::*;
+use std::convert::TryFrom;
+
 use arrow::compute::cast::utf8_to_large_utf8;
 #[cfg(any(
     feature = "dtype-date",
@@ -12,7 +10,11 @@ use arrow::temporal_conversions::*;
 use polars_arrow::compute::cast::cast;
 #[cfg(feature = "dtype-struct")]
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
-use std::convert::TryFrom;
+
+use crate::chunked_array::cast::cast_chunks;
+#[cfg(feature = "object")]
+use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
+use crate::prelude::*;
 
 impl Series {
     /// Takes chunks and a polars datatype and constructs the Series

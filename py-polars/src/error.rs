@@ -1,3 +1,5 @@
+use std::fmt::{Debug, Formatter};
+
 use polars::prelude::PolarsError;
 use polars_core::error::ArrowError;
 use pyo3::exceptions::{PyIOError, PyValueError};
@@ -6,7 +8,6 @@ use pyo3::{
     exceptions::{PyException, PyRuntimeError},
     prelude::*,
 };
-use std::fmt::{Debug, Formatter};
 use thiserror::Error;
 
 #[derive(Error)]

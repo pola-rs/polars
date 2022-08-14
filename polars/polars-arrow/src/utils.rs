@@ -1,8 +1,10 @@
-use crate::trusted_len::{FromIteratorReversed, PushUnchecked, TrustedLen};
+use std::ops::BitAnd;
+
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
-use std::ops::BitAnd;
+
+use crate::trusted_len::{FromIteratorReversed, PushUnchecked, TrustedLen};
 
 #[derive(Clone)]
 pub struct TrustMyLength<I: Iterator<Item = J>, J> {

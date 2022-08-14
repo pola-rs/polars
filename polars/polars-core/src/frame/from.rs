@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use arrow::array::StructArray;
+
+use crate::prelude::*;
 
 impl TryFrom<StructArray> for DataFrame {
     type Error = PolarsError;

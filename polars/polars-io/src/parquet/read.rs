@@ -1,15 +1,17 @@
+use std::io::{Read, Seek};
+use std::sync::Arc;
+
+use arrow::io::parquet::read;
+use polars_core::prelude::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use crate::aggregations::ScanAggregation;
 use crate::mmap::MmapBytesReader;
 use crate::parquet::read_impl::read_parquet;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowCount;
-use arrow::io::parquet::read;
-use polars_core::prelude::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-use std::io::{Read, Seek};
-use std::sync::Arc;
 
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

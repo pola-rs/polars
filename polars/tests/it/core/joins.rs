@@ -1,5 +1,6 @@
-use super::*;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
+
+use super::*;
 
 #[test]
 fn test_chunked_left_join() -> Result<()> {

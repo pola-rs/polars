@@ -1,9 +1,10 @@
-use crate::prelude::*;
-use crate::utils::{align_chunks_binary, CustomIterTools};
 use arrow::bitmap::MutableBitmap;
 use polars_arrow::array::ValueSize;
 use polars_arrow::kernels::set::{set_at_idx_no_null, set_with_mask};
 use polars_arrow::prelude::FromData;
+
+use crate::prelude::*;
+use crate::utils::{align_chunks_binary, CustomIterTools};
 
 macro_rules! impl_set_at_idx_with {
     ($self:ident, $builder:ident, $idx:ident, $f:ident) => {{

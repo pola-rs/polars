@@ -19,21 +19,21 @@ mod stack;
 mod udf;
 mod union;
 
+use std::path::PathBuf;
+
+use polars_core::POOL;
+use rayon::prelude::*;
+
 #[cfg(feature = "python")]
 pub(super) use self::python_scan::*;
-
 pub(super) use self::{
     cache::*, drop_duplicates::*, explode::*, ext_context::*, filter::*, groupby::*,
     groupby_dynamic::*, groupby_partitioned::*, groupby_rolling::*, join::*, melt::*,
     projection::*, scan::*, slice::*, sort::*, stack::*, udf::*, union::*,
 };
-
 use super::*;
 use crate::logical_plan::FETCH_ROWS;
 use crate::physical_plan::state::StateFlags;
-use polars_core::POOL;
-use rayon::prelude::*;
-use std::path::PathBuf;
 
 fn set_n_rows(n_rows: Option<usize>) -> Option<usize> {
     let fetch_rows = FETCH_ROWS.with(|fetch_rows| fetch_rows.get());

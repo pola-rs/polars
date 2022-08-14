@@ -1,6 +1,7 @@
-use crate::prelude::*;
 use arrow::array::growable::make_growable;
 use arrow::error::{Error as ArrowError, Result};
+
+use crate::prelude::*;
 
 /// Concatenate multiple [Array] of the same type into a single [`Array`].
 /// This does not check the arrays types.

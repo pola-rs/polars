@@ -1,10 +1,5 @@
-use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
-use crate::conversion::Wrap;
-use crate::dataframe::PyDataFrame;
-use crate::error::PyPolarsErr;
-use crate::file::get_file_like;
-use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
-use crate::prelude::*;
+use std::io::BufWriter;
+
 use polars::io::RowCount;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
@@ -16,7 +11,14 @@ use polars_core::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use std::io::BufWriter;
+
+use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
+use crate::conversion::Wrap;
+use crate::dataframe::PyDataFrame;
+use crate::error::PyPolarsErr;
+use crate::file::get_file_like;
+use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
+use crate::prelude::*;
 
 #[pyclass]
 #[repr(transparent)]

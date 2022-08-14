@@ -1,8 +1,9 @@
-use super::*;
-use crate::use_string_cache;
 use arrow::array::DictionaryArray;
 use arrow::datatypes::IntegerType;
 use polars_arrow::compute::cast::cast;
+
+use super::*;
+use crate::use_string_cache;
 
 impl From<&CategoricalChunked> for DictionaryArray<u32> {
     fn from(ca: &CategoricalChunked) -> Self {

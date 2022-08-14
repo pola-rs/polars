@@ -14,6 +14,20 @@ mod series_trait;
 #[cfg(feature = "private")]
 pub mod unstable;
 
+use std::borrow::Cow;
+use std::hash::{Hash, Hasher};
+use std::ops::Deref;
+use std::sync::Arc;
+
+use ahash::RandomState;
+use arrow::compute::aggregate::estimated_bytes_size;
+pub use from::*;
+pub use iterator::SeriesIter;
+use num::NumCast;
+use rayon::prelude::*;
+pub use series_trait::IsSorted;
+pub use series_trait::*;
+
 #[cfg(feature = "rank")]
 use crate::prelude::unique::rank::rank;
 #[cfg(feature = "zip_with")]
@@ -21,19 +35,6 @@ use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::{split_ca, split_series};
 use crate::utils::{split_offsets, Wrap};
 use crate::POOL;
-use ahash::RandomState;
-use arrow::compute::aggregate::estimated_bytes_size;
-pub use from::*;
-use num::NumCast;
-use rayon::prelude::*;
-pub use series_trait::*;
-use std::borrow::Cow;
-use std::hash::{Hash, Hasher};
-use std::ops::Deref;
-use std::sync::Arc;
-
-pub use iterator::SeriesIter;
-pub use series_trait::IsSorted;
 
 /// # Series
 /// The columnar data type for a DataFrame.
@@ -973,9 +974,10 @@ where
 
 #[cfg(test)]
 mod test {
+    use std::convert::TryFrom;
+
     use crate::prelude::*;
     use crate::series::*;
-    use std::convert::TryFrom;
 
     #[test]
     fn cast() {

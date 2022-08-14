@@ -1,5 +1,6 @@
-use super::*;
 use polars_arrow::trusted_len::PushUnchecked;
+
+use super::*;
 
 pub(super) fn arg_where(s: &mut [Series]) -> Result<Series> {
     let predicate = s[0].bool()?;
