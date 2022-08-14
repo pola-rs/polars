@@ -9,13 +9,13 @@ from polars.internals.anonymous_scan import (
     _scan_ipc_fsspec,
     _scan_parquet_fsspec,
 )
+from polars.internals.dataframe import DataFrame, wrap_df
 from polars.internals.expr import (
     Expr,
     expr_to_lit_or_expr,
     selection_to_pyexpr_list,
     wrap_expr,
 )
-from polars.internals.frame import DataFrame, wrap_df
 from polars.internals.functions import concat, date_range
 from polars.internals.io import (
     _is_local_file,

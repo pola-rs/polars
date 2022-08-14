@@ -8,7 +8,6 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.internals.frame import DataFrame
 
 
 def test_struct_various() -> None:
@@ -179,7 +178,7 @@ def test_struct_logical_types_to_pandas() -> None:
 def test_struct_cols() -> None:
     """Test that struct columns can be imported and work as expected."""
 
-    def build_struct_df(data: list[dict[str, object]]) -> DataFrame:
+    def build_struct_df(data: list[dict[str, object]]) -> pl.DataFrame:
         """
         Build Polars df from list of dicts.
 
@@ -188,7 +187,7 @@ def test_struct_cols() -> None:
         """
         arrow_df = pa.Table.from_pylist(data)
         polars_df = pl.from_arrow(arrow_df)
-        assert isinstance(polars_df, DataFrame)
+        assert isinstance(polars_df, pl.DataFrame)
         return polars_df
 
     # struct column
