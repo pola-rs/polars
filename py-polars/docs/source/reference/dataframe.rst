@@ -149,7 +149,7 @@ GroupBy
 -------
 This namespace comes available by calling `DataFrame.groupby(..)`.
 
-.. currentmodule:: polars.internals.frame
+.. currentmodule:: polars.internals.dataframe.groupy
 
 .. autosummary::
    :toctree: api/
@@ -177,7 +177,7 @@ This namespace comes available by calling `DataFrame.groupby(..).pivot`
 
 *Note that this API is deprecated in favor of `DataFrame.pivot`*
 
-.. currentmodule:: polars.internals.frame
+.. currentmodule:: polars.internals.dataframe.pivot
 
 .. autosummary::
    :toctree: api/
