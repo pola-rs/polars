@@ -66,7 +66,7 @@ impl PyExpr {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::Modulus, rhs.inner).into())
     }
     fn __floordiv__(&self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(self.inner.clone(), Operator::Divide, rhs.inner).into())
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::FloorDivide, rhs.inner).into())
     }
 
     pub fn to_str(&self) -> String {
