@@ -1133,20 +1133,10 @@ impl PySeries {
         Ok(PySeries::new(s))
     }
 
-    pub fn strftime(&self, fmt: &str) -> PyResult<Self> {
-        let s = self.series.strftime(fmt).map_err(PyPolarsErr::from)?;
-        Ok(s.into())
-    }
-
     pub fn arr_lengths(&self) -> PyResult<Self> {
         let ca = self.series.list().map_err(PyPolarsErr::from)?;
         let s = ca.lst_lengths().into_series();
         Ok(PySeries::new(s))
-    }
-
-    pub fn timestamp(&self, tu: Wrap<TimeUnit>) -> PyResult<Self> {
-        let ca = self.series.timestamp(tu.0).map_err(PyPolarsErr::from)?;
-        Ok(ca.into_series().into())
     }
 
     pub fn to_dummies(&self) -> PyResult<PyDataFrame> {
@@ -1161,64 +1151,6 @@ impl PySeries {
         } else {
             None
         }
-    }
-
-    pub fn year(&self) -> PyResult<Self> {
-        let s = self.series.year().map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
-    }
-
-    pub fn month(&self) -> PyResult<Self> {
-        let s = self.series.month().map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
-    }
-
-    pub fn weekday(&self) -> PyResult<Self> {
-        let s = self.series.weekday().map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
-    }
-
-    pub fn week(&self) -> PyResult<Self> {
-        let s = self.series.week().map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
-    }
-
-    pub fn day(&self) -> PyResult<Self> {
-        let s = self.series.day().map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
-    }
-
-    pub fn ordinal_day(&self) -> PyResult<Self> {
-        let s = self.series.ordinal_day().map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
-    }
-
-    pub fn hour(&self) -> PyResult<Self> {
-        let s = self.series.hour().map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
-    }
-
-    pub fn minute(&self) -> PyResult<Self> {
-        let s = self.series.minute().map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
-    }
-
-    pub fn second(&self) -> PyResult<Self> {
-        let s = self.series.second().map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
-    }
-
-    pub fn nanosecond(&self) -> PyResult<Self> {
-        let s = self.series.nanosecond().map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
-    }
-
-    pub fn dt_epoch_seconds(&self) -> PyResult<Self> {
-        let ms = self
-            .series
-            .timestamp(TimeUnit::Milliseconds)
-            .map_err(PyPolarsErr::from)?;
-        Ok((ms / 1000).into_series().into())
     }
 
     pub fn peak_max(&self) -> Self {
