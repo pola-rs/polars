@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     P = ParamSpec("P")
 
 
-def expr(
+def call_expr(
     namespace: Namespace | None = None,
 ) -> Callable[[Callable[P, pli.Series]], Callable[P, pli.Series]]:
     """

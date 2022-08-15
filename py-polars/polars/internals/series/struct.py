@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
-from polars.internals.series.utils import expr
+from polars.internals.series.utils import call_expr
 
 if TYPE_CHECKING:
     from polars.polars import PySeries
@@ -24,7 +24,7 @@ class StructNameSpace:
         """Get the names of the fields."""
         return self._s.struct_fields()
 
-    @expr(namespace="struct")
+    @call_expr(namespace="struct")
     def field(self, name: str) -> pli.Series:
         """
         Retrieve one of the fields of this `Struct` as a new Series.
@@ -37,7 +37,7 @@ class StructNameSpace:
         """
         ...
 
-    @expr(namespace="struct")
+    @call_expr(namespace="struct")
     def rename_fields(self, names: list[str]) -> pli.Series:
         """
         Rename the fields of the struct
