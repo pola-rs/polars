@@ -268,7 +268,6 @@ mod test {
             .with_batch_size(3)
             .finish()
             .unwrap();
-        println!("{:?}", df);
         assert_eq!("a", df.get_columns()[0].name());
         assert_eq!("d", df.get_columns()[3].name());
         assert_eq!((12, 4), df.shape());
@@ -297,8 +296,6 @@ mod test {
             .with_batch_size(3)
             .finish()
             .unwrap();
-        std::env::set_var("POLARS_FMT_MAX_ROWS", OsStr::new("100"));
-        println!("{:?}", df);
         assert_eq!("a", df.get_columns()[0].name());
         assert_eq!("d", df.get_columns()[3].name());
         assert_eq!((12, 4), df.shape());
@@ -325,8 +322,6 @@ mod test {
             .with_batch_size(3)
             .finish()
             .unwrap();
-        std::env::set_var("POLARS_FMT_MAX_ROWS", OsStr::new("100"));
-        println!("{:?}", df);
         assert_eq!("a", df.get_columns()[0].name());
         assert_eq!("d", df.get_columns()[3].name());
         assert_eq!((12, 4), df.shape());
