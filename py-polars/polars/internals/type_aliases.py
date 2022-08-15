@@ -16,6 +16,7 @@ else:
 
 IntoExpr: TypeAlias = "int | float | str | pli.Expr | pli.Series"
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
+Namespace: TypeAlias = Literal["arr", "cat", "dt", "str", "struct"]
 
 # User-facing string literal types
 # The following all have an equivalent Rust enum with the same name
