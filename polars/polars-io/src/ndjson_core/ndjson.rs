@@ -6,6 +6,7 @@ use std::path::PathBuf;
 pub use arrow::{array::StructArray, io::ndjson};
 use polars_core::{prelude::*, utils::accumulate_dataframes_vertical, POOL};
 use rayon::prelude::*;
+use simd_json::KnownKey;
 
 use crate::csv::parser::*;
 use crate::csv::utils::*;
@@ -256,7 +257,7 @@ impl<'a> CoreJsonReader<'a> {
 
 fn parse_impl<'a>(
     bytes: &[u8],
-    buffers: &mut PlIndexMap<String, Buffer<'a>>,
+    buffers: &mut PlIndexMap<BufferKey, Buffer<'a>>,
     line: &mut Vec<u8>,
 ) -> Result<usize> {
     line.clear();
@@ -290,12 +291,12 @@ fn parse_impl<'a>(
 
             match value {
                 simd_json::BorrowedValue::Object(value) => {
-                    buffers.iter_mut().for_each(|(s, inner)| {
-                        match value.get(&Cow::Borrowed(s.as_str())) {
+                    buffers
+                        .iter_mut()
+                        .for_each(|(s, inner)| match s.0.map_lookup(&value) {
                             Some(v) => inner.add(v).expect("inner.add(v)"),
                             None => inner.add_null(),
-                        }
-                    });
+                        });
                 }
                 _ => {
                     buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
@@ -306,7 +307,7 @@ fn parse_impl<'a>(
     }
 }
 
-fn parse_lines<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -> Result<()> {
+fn parse_lines<'a>(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer<'a>>) -> Result<()> {
     let mut buf = vec![];
 
     let total_bytes = bytes.len();

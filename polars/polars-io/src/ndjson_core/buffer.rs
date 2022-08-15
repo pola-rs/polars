@@ -1,12 +1,28 @@
+use std::hash::Hash;
+use std::hash::Hasher;
+
 use arrow::types::NativeType;
 use num::traits::NumCast;
 use polars_core::prelude::*;
 use polars_time::prelude::utf8::infer::infer_pattern_single;
 use polars_time::prelude::utf8::infer::DatetimeInfer;
 use polars_time::prelude::utf8::Pattern;
-use simd_json::BorrowedValue as Value;
-use simd_json::StaticNode;
-pub(crate) fn init_buffers(schema: &Schema, capacity: usize) -> Result<PlIndexMap<String, Buffer>> {
+use simd_json::{BorrowedValue as Value, KnownKey, StaticNode};
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct BufferKey<'a>(pub(crate) KnownKey<'a>);
+impl<'a> Eq for BufferKey<'a> {}
+
+impl<'a> Hash for BufferKey<'a> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.key().hash(state)
+    }
+}
+
+pub(crate) fn init_buffers(
+    schema: &Schema,
+    capacity: usize,
+) -> Result<PlIndexMap<BufferKey, Buffer>> {
     schema
         .iter()
         .map(|(name, dtype)| {
@@ -29,7 +45,9 @@ pub(crate) fn init_buffers(schema: &Schema, capacity: usize) -> Result<PlIndexMa
                 &DataType::Date => Buffer::Date(PrimitiveChunkedBuilder::new(name, capacity)),
                 _ => Buffer::All((Vec::with_capacity(capacity), name)),
             };
-            Ok((name.clone(), builder))
+            let key = KnownKey::from(name);
+
+            Ok((BufferKey(key), builder))
         })
         .collect()
 }
