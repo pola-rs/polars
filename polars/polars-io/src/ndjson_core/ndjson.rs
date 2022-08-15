@@ -256,8 +256,7 @@ impl<'a> CoreJsonReader<'a> {
 }
 
 fn parse_impl<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -> Result<usize> {
-    let u: UnsafeCell<&[u8]> = bytes.into();
-    let line: &mut [u8] = unsafe { std::mem::transmute(u) };
+    let mut line = bytes.to_vec();
     match line.len() {
         0 => Ok(0),
         1 => {
@@ -280,7 +279,7 @@ fn parse_impl<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) ->
         }
         n => {
             let value: simd_json::BorrowedValue =
-                simd_json::to_borrowed_value(line).map_err(|e| {
+                simd_json::to_borrowed_value(&mut line).map_err(|e| {
                     PolarsError::ComputeError(format!("Error parsing line: {}", e).into())
                 })?;
 
