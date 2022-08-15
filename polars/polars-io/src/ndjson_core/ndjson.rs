@@ -262,20 +262,20 @@ fn parse_impl<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) ->
         0 => Ok(0),
         1 => {
             if line[0] == NEWLINE {
-                return Ok(1);
+                Ok(1)
             } else {
-                return Err(PolarsError::ComputeError(
+                Err(PolarsError::ComputeError(
                     "Invalid JSON: unexpected end of file".into(),
-                ));
+                ))
             }
         }
         2 => {
             if line[0] == NEWLINE && line[1] == RETURN {
-                return Ok(2);
+                Ok(2)
             } else {
-                return Err(PolarsError::ComputeError(
+                Err(PolarsError::ComputeError(
                     "Invalid JSON: unexpected end of file".into(),
-                ));
+                ))
             }
         }
         n => {
