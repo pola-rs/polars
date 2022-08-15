@@ -2825,7 +2825,7 @@ class Expr:
         ...             pl.col("b").filter(pl.col("b") >= 2).sum().alias("gte"),
         ...         ]
         ...     )
-        ... )
+        ... ).sort("a")
         shape: (2, 3)
         ┌─────┬──────┬─────┐
         │ a   ┆ lt   ┆ gte │
@@ -3554,7 +3554,7 @@ class Expr:
         ...         "grid_points": [1, 3, 10],
         ...         "values": [2.0, 6.0, 20.0],
         ...     }
-        ... ) # Interpolate from this to the new grid
+        ... )  # Interpolate from this to the new grid
         >>> df_new_grid = pl.DataFrame({"grid_points": range(1, 11)})
         >>> (
         ...     df_new_grid.join(
@@ -5219,18 +5219,18 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").shuffle())
+        >>> df.select(pl.col("a").shuffle(seed=1))
         shape: (3, 1)
         ┌─────┐
         │ a   │
         │ --- │
         │ i64 │
         ╞═════╡
+        │ 2   │
+        ├╌╌╌╌╌┤
         │ 1   │
         ├╌╌╌╌╌┤
         │ 3   │
-        ├╌╌╌╌╌┤
-        │ 2   │
         └─────┘
 
         """
@@ -5262,18 +5262,18 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").sample())
+        >>> df.select(pl.col("a").sample(seed=1))
         shape: (3, 1)
         ┌─────┐
         │ a   │
         │ --- │
         │ i64 │
         ╞═════╡
-        │ 2   │
+        │ 3   │
         ├╌╌╌╌╌┤
         │ 1   │
         ├╌╌╌╌╌┤
-        │ 2   │
+        │ 1   │
         └─────┘
 
         """
@@ -5817,7 +5817,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"values": [["a", "b"]]})
+        >>> df = pl.DataFrame({"values": [["a", "b"]],})
         ... df.select(
         ...     [
         ...         pl.col("values").arr.get(0).alias("first"),
@@ -7996,7 +7996,7 @@ class ExprDateTimeNameSpace:
         >>> stop = datetime(2001, 1, 9)
         >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=3))})
         >>> df
-        shape: (4, 1)
+        shape: (3, 1)
         ┌─────────────────────┐
         │ date                │
         │ ---                 │
@@ -8007,8 +8007,6 @@ class ExprDateTimeNameSpace:
         │ 2001-01-04 00:00:00 │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2001-01-07 00:00:00 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2001-01-10 00:00:00 │
         └─────────────────────┘
         >>> df.select(
         ...     [
@@ -8017,21 +8015,18 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").dt.ordinal_day().alias("day_of_year"),
         ...     ]
         ... )
-        shape: (4, 3)
+        shape: (3, 3)
         ┌─────────┬──────────────┬─────────────┐
         │ weekday ┆ day_of_month ┆ day_of_year │
         │ ---     ┆ ---          ┆ ---         │
         │ u32     ┆ u32          ┆ u32         │
         ╞═════════╪══════════════╪═════════════╡
-        │ 1       ┆ 1            ┆ 1           │
+        │ 0       ┆ 1            ┆ 1           │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 4       ┆ 4            ┆ 4           │
+        │ 3       ┆ 4            ┆ 4           │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 7       ┆ 7            ┆ 7           │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 3       ┆ 10           ┆ 10          │
+        │ 6       ┆ 7            ┆ 7           │
         └─────────┴──────────────┴─────────────┘
-
         """
         return wrap_expr(self._pyexpr.weekday())
 
