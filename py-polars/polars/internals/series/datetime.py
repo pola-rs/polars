@@ -15,10 +15,12 @@ if TYPE_CHECKING:
 class DateTimeNameSpace:
     """Series.dt namespace."""
 
-    _s: PySeries
-
     def __init__(self, series: pli.Series):
-        self._s = series._s
+        self._s: PySeries = series._s
+
+    @property
+    def namespace(self) -> str:
+        return "dt"
 
     def __getitem__(self, item: int) -> date | datetime:
         s = pli.wrap_s(self._s)
@@ -45,7 +47,7 @@ class DateTimeNameSpace:
         out = int(s.mean())
         return _to_python_datetime(out, s.dtype, s.time_unit)
 
-    @call_expr(namespace="dt")
+    @call_expr
     def strftime(self, fmt: str) -> pli.Series:
         """
         Format Date/datetime with a formatting rule:
@@ -60,7 +62,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def year(self) -> pli.Series:
         """
         Extract the year from the underlying date representation.
@@ -75,7 +77,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def quarter(self) -> pli.Series:
         """
         Extract quarter from underlying Date representation.
@@ -90,7 +92,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def month(self) -> pli.Series:
         """
         Extract the month from the underlying date representation.
@@ -106,7 +108,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def week(self) -> pli.Series:
         """
         Extract the week from the underlying date representation.
@@ -122,7 +124,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def weekday(self) -> pli.Series:
         """
         Extract the week day from the underlying date representation.
@@ -137,7 +139,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def day(self) -> pli.Series:
         """
         Extract the day from the underlying date representation.
@@ -153,7 +155,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def ordinal_day(self) -> pli.Series:
         """
         Extract ordinal day from underlying date representation.
@@ -169,7 +171,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def hour(self) -> pli.Series:
         """
         Extract the hour from the underlying DateTime representation.
@@ -184,7 +186,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def minute(self) -> pli.Series:
         """
         Extract the minutes from the underlying DateTime representation.
@@ -199,7 +201,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def second(self) -> pli.Series:
         """
         Extract the seconds the from underlying DateTime representation.
@@ -214,7 +216,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def nanosecond(self) -> pli.Series:
         """
         Extract the nanoseconds from the underlying DateTime representation.
@@ -230,7 +232,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def timestamp(self, tu: TimeUnit = "us") -> pli.Series:
         """
         Return a timestamp in the given time unit.
@@ -243,7 +245,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def epoch(self, tu: EpochTimeUnit = "us") -> pli.Series:
         """
         Get the time passed since the Unix EPOCH in the give time unit
@@ -256,7 +258,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def with_time_unit(self, tu: TimeUnit) -> pli.Series:
         """
         Set time unit a Series of dtype Datetime or Duration. This does not modify
@@ -270,7 +272,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def cast_time_unit(self, tu: TimeUnit) -> pli.Series:
         """
         Cast the underlying data to another time unit. This may lose precision.
@@ -296,7 +298,7 @@ class DateTimeNameSpace:
         """
         return pli.wrap_s(self._s.with_time_zone(tz))
 
-    @call_expr(namespace="dt")
+    @call_expr
     def days(self) -> pli.Series:
         """
         Extract the days from a Duration type.
@@ -308,7 +310,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def hours(self) -> pli.Series:
         """
         Extract the hours from a Duration type.
@@ -320,7 +322,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def minutes(self) -> pli.Series:
         """
         Extract the minutes from a Duration type.
@@ -332,7 +334,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def seconds(self) -> pli.Series:
         """
         Extract the seconds from a Duration type.
@@ -344,7 +346,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def milliseconds(self) -> pli.Series:
         """
         Extract the milliseconds from a Duration type.
@@ -356,7 +358,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def nanoseconds(self) -> pli.Series:
         """
         Extract the nanoseconds from a Duration type.
@@ -368,7 +370,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def offset_by(self, by: str) -> pli.Series:
         """
         Offset this date by a relative time offset.
@@ -401,7 +403,7 @@ class DateTimeNameSpace:
         """
         ...
 
-    @call_expr(namespace="dt")
+    @call_expr
     def truncate(
         self,
         every: str | timedelta,

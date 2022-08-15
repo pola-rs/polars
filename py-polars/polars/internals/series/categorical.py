@@ -13,12 +13,14 @@ if TYPE_CHECKING:
 class CatNameSpace:
     """Namespace for categorical related series."""
 
-    _s: PySeries
-
     def __init__(self, series: pli.Series):
-        self._s = series._s
+        self._s: PySeries = series._s
 
-    @call_expr(namespace="cat")
+    @property
+    def namespace(self) -> str:
+        return "cat"
+
+    @call_expr
     def set_ordering(self, ordering: CategoricalOrdering) -> pli.Series:
         """
         Determine how this categorical series should be sorted.

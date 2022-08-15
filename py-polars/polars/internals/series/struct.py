@@ -10,10 +10,14 @@ if TYPE_CHECKING:
 
 
 class StructNameSpace:
-    _s: PySeries
+    """Series.struct namespace."""
 
     def __init__(self, series: pli.Series):
-        self._s = series._s
+        self._s: PySeries = series._s
+
+    @property
+    def namespace(self) -> str:
+        return "struct"
 
     def to_frame(self) -> pli.DataFrame:
         """Convert this Struct Series to a DataFrame."""
@@ -24,7 +28,7 @@ class StructNameSpace:
         """Get the names of the fields."""
         return self._s.struct_fields()
 
-    @call_expr(namespace="struct")
+    @call_expr
     def field(self, name: str) -> pli.Series:
         """
         Retrieve one of the fields of this `Struct` as a new Series.
@@ -37,7 +41,7 @@ class StructNameSpace:
         """
         ...
 
-    @call_expr(namespace="struct")
+    @call_expr
     def rename_fields(self, names: list[str]) -> pli.Series:
         """
         Rename the fields of the struct

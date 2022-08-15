@@ -14,12 +14,14 @@ if TYPE_CHECKING:
 class ListNameSpace:
     """Series.arr namespace."""
 
-    _s: PySeries
-
     def __init__(self, series: pli.Series):
-        self._s = series._s
+        self._s: PySeries = series._s
 
-    @call_expr(namespace="arr")
+    @property
+    def namespace(self) -> str:
+        return "arr"
+
+    @call_expr
     def lengths(self) -> pli.Series:
         """
         Get the length of the arrays as UInt32.
@@ -38,42 +40,42 @@ class ListNameSpace:
         """
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def sum(self) -> pli.Series:
         """Sum all the arrays in the list."""
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def max(self) -> pli.Series:
         """Compute the max value of the arrays in the list."""
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def min(self) -> pli.Series:
         """Compute the min value of the arrays in the list."""
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def mean(self) -> pli.Series:
         """Compute the mean value of the arrays in the list."""
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def sort(self, reverse: bool = False) -> pli.Series:
         """Sort the arrays in the list."""
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def reverse(self) -> pli.Series:
         """Reverse the arrays in the list."""
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def unique(self) -> pli.Series:
         """Get the unique/distinct values in the list."""
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def concat(self, other: list[pli.Series] | pli.Series | list[Any]) -> pli.Series:
         """
         Concat the arrays in a Series dtype List in linear time.
@@ -86,7 +88,7 @@ class ListNameSpace:
         """
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def get(self, index: int) -> pli.Series:
         """
         Get the value by index in the sublists.
@@ -102,7 +104,7 @@ class ListNameSpace:
         """
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def join(self, separator: str) -> pli.Series:
         """
         Join all string items in a sublist and place a separator between them.
@@ -131,17 +133,17 @@ class ListNameSpace:
         """
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def first(self) -> pli.Series:
         """Get the first value of the sublists."""
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def last(self) -> pli.Series:
         """Get the last value of the sublists."""
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def contains(self, item: float | str | bool | int | date | datetime) -> pli.Series:
         """
         Check if sublists contain the given item.
@@ -158,7 +160,7 @@ class ListNameSpace:
         """
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def arg_min(self) -> pli.Series:
         """
         Retrieve the index of the minimal value in every sublist
@@ -170,7 +172,7 @@ class ListNameSpace:
         """
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def arg_max(self) -> pli.Series:
         """
         Retrieve the index of the maximum value in every sublist
@@ -182,7 +184,7 @@ class ListNameSpace:
         """
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> pli.Series:
         """
         Calculate the n-th discrete difference of every sublist.
@@ -208,7 +210,7 @@ class ListNameSpace:
         """
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def shift(self, periods: int = 1) -> pli.Series:
         """
         Shift the values by a given period and fill the parts that will be empty due to
@@ -233,7 +235,7 @@ class ListNameSpace:
         """
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def slice(self, offset: int, length: int) -> pli.Series:
         """
         Slice every sublist
@@ -259,7 +261,7 @@ class ListNameSpace:
         """
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def head(self, n: int = 5) -> pli.Series:
         """
         Slice the head of every sublist
@@ -283,7 +285,7 @@ class ListNameSpace:
         """
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def tail(self, n: int = 5) -> pli.Series:
         """
         Slice the tail of every sublist
@@ -307,7 +309,7 @@ class ListNameSpace:
         """
         ...
 
-    @call_expr(namespace="arr")
+    @call_expr
     def eval(self, expr: pli.Expr, parallel: bool = False) -> pli.Series:
         """
         Run any polars expression against the lists' elements

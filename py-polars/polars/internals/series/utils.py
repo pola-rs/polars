@@ -7,7 +7,6 @@ import polars.internals as pli
 from polars.datatypes import DataType, dtype_to_ffiname
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import Namespace
     from polars.polars import PySeries
 
     if sys.version_info >= (3, 10):
@@ -18,33 +17,19 @@ if TYPE_CHECKING:
     P = ParamSpec("P")
 
 
-def call_expr(
-    namespace: Namespace | None = None,
-) -> Callable[[Callable[P, pli.Series]], Callable[P, pli.Series]]:
-    """
-    Dispatch Series method to an expression implementation.
+def call_expr(func: Callable[P, pli.Series]) -> Callable[P, pli.Series]:
+    """Dispatch Series method to an expression implementation."""
 
-    Decorator.
+    def wrapper(self: Any, *args: P.args, **kwargs: P.kwargs) -> pli.Series:
+        s = pli.wrap_s(self._s)
+        expr = pli.col(s.name)
+        namespace = getattr(self, "namespace", None)
+        if namespace is not None:
+            expr = getattr(expr, namespace)
+        f = getattr(expr, func.__name__)
+        return s.to_frame().select(f(*args, **kwargs)).to_series()
 
-    Parameters
-    ----------
-    namespace : {'arr', 'cat', 'dt', 'str', 'struct'}
-        Expression namespace.
-
-    """
-
-    def decorator(func: Callable[P, pli.Series]) -> Callable[P, pli.Series]:
-        def wrapper(self: Any, *args: P.args, **kwargs: P.kwargs) -> pli.Series:
-            s = pli.wrap_s(self._s)
-            expr = pli.col(s.name)
-            if namespace is not None:
-                expr = getattr(expr, namespace)
-            f = getattr(expr, func.__name__)
-            return s.to_frame().select(f(*args, **kwargs)).to_series()
-
-        return wrapper  # type: ignore[return-value]
-
-    return decorator
+    return wrapper  # type: ignore[return-value]
 
 
 def get_ffi_func(
