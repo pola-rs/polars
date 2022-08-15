@@ -28,7 +28,6 @@ from polars.datatypes import (
     UInt64,
     Utf8,
     dtype_to_ctype,
-    dtype_to_ffiname,
     get_idx_type,
     maybe_cast,
     numpy_char_code_to_dtype,
@@ -47,6 +46,7 @@ from polars.internals.series.datetime import DateTimeNameSpace
 from polars.internals.series.list import ListNameSpace
 from polars.internals.series.string import StringNameSpace
 from polars.internals.series.struct import StructNameSpace
+from polars.internals.series.utils import get_ffi_func
 from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _date_to_pl_date,
@@ -101,50 +101,6 @@ if TYPE_CHECKING:
         SizeUnit,
         TimeUnit,
     )
-
-
-def _resolve_datetime_dtype(
-    dtype: PolarsDataType | None, ndtype: np.datetime64
-) -> PolarsDataType | None:
-    """Given polars/numpy datetime dtypes, resolve to an explicit unit"""
-    if dtype is None or (dtype == Datetime and not getattr(dtype, "tu", None)):
-        tu = getattr(dtype, "tu", np.datetime_data(ndtype)[0])
-        # explicit formulation is verbose, but keeps mypy happy
-        # (and avoids unsupported timeunits such as "s")
-        if tu == "ns":
-            dtype = Datetime("ns")
-        elif tu == "us":
-            dtype = Datetime("us")
-        elif tu == "ms":
-            dtype = Datetime("ms")
-    return dtype
-
-
-def get_ffi_func(
-    name: str, dtype: type[DataType], obj: PySeries
-) -> Callable[..., Any] | None:
-    """
-    Dynamically obtain the proper ffi function/ method.
-
-    Parameters
-    ----------
-    name
-        function or method name where dtype is replaced by <>
-        for example
-            "call_foo_<>"
-    dtype
-        polars dtype.
-    obj
-        Object to find the method for.
-
-    Returns
-    -------
-    ffi function, or None if not found
-
-    """
-    ffi_name = dtype_to_ffiname(dtype)
-    fname = name.replace("<>", ffi_name)
-    return getattr(obj, fname, None)
 
 
 def wrap_s(s: PySeries) -> Series:
@@ -4408,3 +4364,20 @@ class SeriesIter:
             return self.s[i]
         else:
             raise StopIteration
+
+
+def _resolve_datetime_dtype(
+    dtype: PolarsDataType | None, ndtype: np.datetime64
+) -> PolarsDataType | None:
+    """Given polars/numpy datetime dtypes, resolve to an explicit unit"""
+    if dtype is None or (dtype == Datetime and not getattr(dtype, "tu", None)):
+        tu = getattr(dtype, "tu", np.datetime_data(ndtype)[0])
+        # explicit formulation is verbose, but keeps mypy happy
+        # (and avoids unsupported timeunits such as "s")
+        if tu == "ns":
+            dtype = Datetime("ns")
+        elif tu == "us":
+            dtype = Datetime("us")
+        elif tu == "ms":
+            dtype = Datetime("ms")
+    return dtype
