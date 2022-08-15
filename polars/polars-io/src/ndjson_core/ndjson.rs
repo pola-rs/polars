@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::UnsafeCell;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -15,6 +16,8 @@ use crate::ndjson_core::buffer::*;
 use crate::prelude::*;
 const QUOTE_CHAR: u8 = b'"';
 const SEP: u8 = b',';
+const NEWLINE: u8 = b'\n';
+const RETURN: u8 = b'\r';
 
 #[must_use]
 pub struct JsonLineReader<'a, R>
@@ -176,7 +179,7 @@ impl<'a> CoreJsonReader<'a> {
         let mut bytes = bytes;
         let mut total_rows = 128;
 
-        if let Some((mean, std)) = get_line_stats(bytes, self.sample_size, b'\n') {
+        if let Some((mean, std)) = get_line_stats(bytes, self.sample_size, NEWLINE) {
             let line_length_upper_bound = mean + 1.1 * std;
 
             total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
@@ -186,7 +189,7 @@ impl<'a> CoreJsonReader<'a> {
                 let n_bytes = (line_length_upper_bound * (n_rows as f32)) as usize;
 
                 if n_bytes < bytes.len() {
-                    if let Some(pos) = next_line_position_naive(&bytes[n_bytes..], b'\n') {
+                    if let Some(pos) = next_line_position_naive(&bytes[n_bytes..], NEWLINE) {
                         bytes = &bytes[..n_bytes + pos]
                     }
                 }
@@ -214,7 +217,7 @@ impl<'a> CoreJsonReader<'a> {
             *expected_fields + 1,
             SEP,
             Some(QUOTE_CHAR),
-            b'\n',
+            NEWLINE,
         );
         let dfs = POOL.install(|| {
             file_chunks
@@ -252,26 +255,73 @@ impl<'a> CoreJsonReader<'a> {
     }
 }
 
-fn parse_lines<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -> Result<()> {
-    for line in SplitLines::new(bytes, b'\n') {
-        let mut line = line.to_vec();
-        let value: simd_json::BorrowedValue = simd_json::to_borrowed_value(&mut line)
-            .map_err(|e| PolarsError::ComputeError(format!("Error parsing line: {}", e).into()))?;
+fn parse_impl<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -> Result<usize> {
+    let u: UnsafeCell<&[u8]> = bytes.into();
+    let line: &mut [u8] = unsafe { std::mem::transmute(u) };
+    match line.len() {
+        0 => Ok(0),
+        1 => {
+            if line[0] == NEWLINE {
+                return Ok(1);
+            } else {
+                return Err(PolarsError::ComputeError(
+                    "Invalid JSON: unexpected end of file".into(),
+                ));
+            }
+        }
+        2 => {
+            if line[0] == NEWLINE && line[1] == RETURN {
+                return Ok(2);
+            } else {
+                return Err(PolarsError::ComputeError(
+                    "Invalid JSON: unexpected end of file".into(),
+                ));
+            }
+        }
+        n => {
+            let value: simd_json::BorrowedValue =
+                simd_json::to_borrowed_value(line).map_err(|e| {
+                    PolarsError::ComputeError(format!("Error parsing line: {}", e).into())
+                })?;
 
-        match value {
-            simd_json::BorrowedValue::Object(value) => {
-                buffers.iter_mut().for_each(|(s, inner)| {
-                    match value.get(&Cow::Borrowed(s.as_str())) {
-                        Some(v) => inner.add(v).expect("inner.add(v)"),
-                        None => inner.add_null(),
-                    }
-                });
-            }
-            _ => {
-                buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
-            }
-        };
+            match value {
+                simd_json::BorrowedValue::Object(value) => {
+                    buffers.iter_mut().for_each(|(s, inner)| {
+                        match value.get(&Cow::Borrowed(s.as_str())) {
+                            Some(v) => inner.add(v).expect("inner.add(v)"),
+                            None => inner.add_null(),
+                        }
+                    });
+                }
+                _ => {
+                    buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
+                }
+            };
+            Ok(n)
+        }
     }
+}
+
+fn parse_lines<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -> Result<()> {
+    let total_bytes = bytes.len();
+    let mut offset = 0;
+    for line in SplitLines::new(bytes, NEWLINE) {
+        offset += 1; // the newline
+        offset += parse_impl(line, buffers)?;
+    }
+
+    // if file doesn't end with a newline, parse the last line
+    if offset < total_bytes {
+        let rem = &bytes[offset..];
+        offset += rem.len();
+        parse_impl(rem, buffers)?;
+    }
+
+    if offset != total_bytes {
+        return Err(PolarsError::ComputeError(
+            format!("Expected {} bytes, but only parsed {}", total_bytes, offset).into(),
+        ));
+    };
 
     Ok(())
 }

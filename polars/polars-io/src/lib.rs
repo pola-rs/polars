@@ -8,7 +8,7 @@ pub(crate) mod aggregations;
 #[cfg(feature = "avro")]
 #[cfg_attr(docsrs, doc(cfg(feature = "avro")))]
 pub mod avro;
-#[cfg(feature = "csv-file")]
+#[cfg(any(feature = "csv-file", feature = "json"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "csv-file")))]
 pub mod csv;
 #[cfg(feature = "parquet")]
