@@ -260,7 +260,7 @@ fn parse_impl<'a>(
     line: &mut Vec<u8>,
 ) -> Result<usize> {
     line.clear();
-    line.extend_from_slice(&bytes);
+    line.extend_from_slice(bytes);
 
     match line.len() {
         0 => Ok(0),
