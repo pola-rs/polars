@@ -1,9 +1,9 @@
-use parking_lot::Mutex;
 use std::borrow::Cow;
 #[cfg(any(feature = "ipc", feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
 use std::{cell::Cell, fmt::Debug, sync::Arc};
 
+use parking_lot::Mutex;
 use polars_core::prelude::*;
 
 use crate::logical_plan::LogicalPlan::DataFrameScan;
@@ -29,7 +29,6 @@ pub(crate) use apply::*;
 pub(crate) use builder::*;
 pub use lit::*;
 use polars_core::frame::explode::MeltArgs;
-
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

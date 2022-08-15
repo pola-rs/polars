@@ -1,6 +1,7 @@
-use crate::prelude::*;
 use polars_arrow::export::arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
 use polars_core::prelude::*;
+
+use crate::prelude::*;
 
 pub trait PolarsTruncate {
     #[must_use]

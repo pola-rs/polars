@@ -1,11 +1,11 @@
 use std::io::{Read, Seek};
 
-use super::{finish_reader, ArrowChunk, ArrowReader, ArrowResult};
-use crate::prelude::*;
+use arrow::io::avro::{self, read};
 use polars_core::prelude::*;
 
+use super::{finish_reader, ArrowChunk, ArrowReader, ArrowResult};
 use crate::avro::convert_err;
-use arrow::io::avro::{self, read};
+use crate::prelude::*;
 
 /// Read Apache Avro format into a DataFrame
 ///

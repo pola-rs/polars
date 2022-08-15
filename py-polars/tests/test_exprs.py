@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import polars as pl
 from polars.testing import assert_series_equal, verify_series_and_expr_api
 
@@ -82,7 +84,7 @@ def test_count_expr() -> None:
 
     out = df.select(pl.count())
     assert out.shape == (1, 1)
-    assert out[0, 0] == 5
+    assert cast(int, out[0, 0]) == 5
 
     out = df.groupby("b", maintain_order=True).agg(pl.count())
     assert out["b"].to_list() == ["a", "b"]
@@ -274,9 +276,11 @@ def test_regex_in_filter() -> None:
         }
     )
 
-    assert df.filter(
+    res = df.filter(
         pl.fold(acc=False, f=lambda acc, s: acc | s, exprs=(pl.col("^nrs|flt*$") < 3))
-    ).row(0) == (1, "foo", 1.0)
+    ).row(0)
+    expected = (1, "foo", 1.0)
+    assert res == expected  # type: ignore[comparison-overlap]
 
 
 def test_arr_contains() -> None:
@@ -313,3 +317,9 @@ def test_rank_so_4109() -> None:
             [1.0, 2.0, 3.0, 4.0],
         ],
     }
+
+
+def test_unique_empty() -> None:
+    for dt in [pl.Utf8, pl.Boolean, pl.Int32, pl.UInt32]:
+        s = pl.Series([], dtype=dt)
+        assert s.unique().series_equal(s)

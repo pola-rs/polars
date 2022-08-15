@@ -1,11 +1,12 @@
 mod utils;
 
-use crate::logical_plan::{optimizer, Context};
-use crate::prelude::*;
-use crate::utils::{aexpr_to_root_names, aexprs_to_schema, check_input_node, has_aexpr};
 use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 use utils::*;
+
+use crate::logical_plan::{optimizer, Context};
+use crate::prelude::*;
+use crate::utils::{aexpr_to_root_names, aexprs_to_schema, check_input_node, has_aexpr};
 
 #[derive(Default)]
 pub(crate) struct PredicatePushDown {}
@@ -210,7 +211,7 @@ impl PredicatePushDown {
                 schema,
             } => {
                 let variable_name = args.variable_name.as_deref().unwrap_or("variable");
-                let value_name = args.value_name.as_deref().unwrap_or("value_name");
+                let value_name = args.value_name.as_deref().unwrap_or("value");
 
                 // predicates that will be done at this level
                 let condition = |name: Arc<str>| {

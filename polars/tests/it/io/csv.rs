@@ -1,6 +1,8 @@
-use super::*;
-use polars::io::RowCount;
 use std::io::Cursor;
+
+use polars::io::RowCount;
+
+use super::*;
 
 const FOODS_CSV: &str = "../examples/datasets/foods1.csv";
 

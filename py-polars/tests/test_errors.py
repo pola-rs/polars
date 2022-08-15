@@ -79,7 +79,7 @@ def test_join_lazy_on_df() -> None:
         ValueError,
         match=(
             "Expected a `LazyFrame` as join table, got"
-            " <class 'polars.internals.frame.DataFrame'>"
+            " <class 'polars.internals.dataframe.frame.DataFrame'>"
         ),
     ):
         df_left.lazy().join(df_right, on="Id")
@@ -88,7 +88,7 @@ def test_join_lazy_on_df() -> None:
         ValueError,
         match=(
             "Expected a `LazyFrame` as join table, got"
-            " <class 'polars.internals.frame.DataFrame'>"
+            " <class 'polars.internals.dataframe.frame.DataFrame'>"
         ),
     ):
         df_left.lazy().join_asof(df_right, on="Id")

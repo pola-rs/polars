@@ -1,31 +1,16 @@
-use numpy::IntoPyArray;
-use pyo3::exceptions::PyValueError;
-use pyo3::types::{PyDict, PyList, PyTuple};
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::io::BufWriter;
 use std::ops::Deref;
 
+use numpy::IntoPyArray;
 use polars::frame::groupby::GroupBy;
-use polars::prelude::*;
-
-use crate::apply::dataframe::{
-    apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
-    apply_lambda_with_utf8_out_type,
-};
-use crate::conversion::{ObjectValue, Wrap};
-use crate::file::get_mmap_bytes_reader;
-use crate::lazy::dataframe::PyLazyFrame;
-use crate::prelude::{dicts_to_rows, str_to_null_strategy};
-use crate::{
-    arrow_interop,
-    error::PyPolarsErr,
-    file::{get_either_file, get_file_like, EitherRustPythonFile},
-    py_modules,
-    series::{to_pyseries_collection, to_series_collection, PySeries},
-};
 use polars::frame::row::{rows_to_schema, Row};
+#[cfg(feature = "avro")]
+use polars::io::avro::AvroCompression;
+#[cfg(feature = "ipc")]
+use polars::io::ipc::IpcCompression;
 use polars::io::mmap::ReaderBytes;
 use polars::io::RowCount;
+use polars::prelude::*;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::groupby::PivotAgg;
@@ -33,6 +18,26 @@ use polars_core::frame::ArrowChunk;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use polars_core::utils::get_supertype;
+use pyo3::types::{PyDict, PyList, PyTuple};
+use pyo3::{exceptions::PyRuntimeError, prelude::*};
+
+use crate::apply::dataframe::{
+    apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
+    apply_lambda_with_utf8_out_type,
+};
+#[cfg(feature = "parquet")]
+use crate::conversion::parse_parquet_compression;
+use crate::conversion::{ObjectValue, Wrap};
+use crate::file::get_mmap_bytes_reader;
+use crate::lazy::dataframe::PyLazyFrame;
+use crate::prelude::dicts_to_rows;
+use crate::{
+    arrow_interop,
+    error::PyPolarsErr,
+    file::{get_either_file, get_file_like, EitherRustPythonFile},
+    py_modules,
+    series::{to_pyseries_collection, to_series_collection, PySeries},
+};
 
 #[pyclass]
 #[repr(transparent)]
@@ -118,7 +123,7 @@ impl PyDataFrame {
         sep: &str,
         rechunk: bool,
         columns: Option<Vec<String>>,
-        encoding: &str,
+        encoding: Wrap<CsvEncoding>,
         n_threads: Option<usize>,
         path: Option<String>,
         overwrite_dtype: Option<Vec<(&str, Wrap<DataType>)>>,
@@ -148,16 +153,6 @@ impl PyDataFrame {
         } else {
             None
         };
-        let encoding = match encoding {
-            "utf8" => CsvEncoding::Utf8,
-            "utf8-lossy" => CsvEncoding::LossyUtf8,
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "encoding must be one of {{'utf8', 'utf8-lossy'}}, got {}",
-                    e
-                )))
-            }
-        };
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             let fields = overwrite_dtype.iter().map(|(name, dtype)| {
@@ -185,7 +180,7 @@ impl PyDataFrame {
             .with_projection(projection)
             .with_rechunk(rechunk)
             .with_chunk_size(chunk_size)
-            .with_encoding(encoding)
+            .with_encoding(encoding.0)
             .with_columns(columns)
             .with_n_threads(n_threads)
             .with_path(path)
@@ -287,30 +282,24 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "avro")]
-    pub fn write_avro(&mut self, py: Python, py_f: PyObject, compression: &str) -> PyResult<()> {
-        use polars::io::avro::{AvroCompression, AvroWriter};
-        let compression = match compression {
-            "uncompressed" => None,
-            "snappy" => Some(AvroCompression::Snappy),
-            "deflate" => Some(AvroCompression::Deflate),
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "compression must be one of {{'uncompressed', 'snappy', 'deflate'}}, got {}",
-                    e
-                )))
-            }
-        };
+    pub fn write_avro(
+        &mut self,
+        py: Python,
+        py_f: PyObject,
+        compression: Wrap<Option<AvroCompression>>,
+    ) -> PyResult<()> {
+        use polars::io::avro::AvroWriter;
 
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
             AvroWriter::new(f)
-                .with_compression(compression)
+                .with_compression(compression.0)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         } else {
             let mut buf = get_file_like(py_f, true)?;
             AvroWriter::new(&mut buf)
-                .with_compression(compression)
+                .with_compression(compression.0)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }
@@ -436,6 +425,9 @@ impl PyDataFrame {
         sep: u8,
         quote: u8,
         batch_size: usize,
+        datetime_format: Option<String>,
+        date_format: Option<String>,
+        time_format: Option<String>,
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
@@ -445,6 +437,9 @@ impl PyDataFrame {
                 .with_delimiter(sep)
                 .with_quoting_char(quote)
                 .with_batch_size(batch_size)
+                .with_datetime_format(datetime_format)
+                .with_date_format(date_format)
+                .with_time_format(time_format)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         } else {
@@ -454,6 +449,9 @@ impl PyDataFrame {
                 .with_delimiter(sep)
                 .with_quoting_char(quote)
                 .with_batch_size(batch_size)
+                .with_datetime_format(datetime_format)
+                .with_date_format(date_format)
+                .with_time_format(time_format)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }
@@ -462,30 +460,23 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "ipc")]
-    pub fn write_ipc(&mut self, py: Python, py_f: PyObject, compression: &str) -> PyResult<()> {
-        let compression = match compression {
-            "uncompressed" => None,
-            "lz4" => Some(IpcCompression::LZ4),
-            "zstd" => Some(IpcCompression::ZSTD),
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "compression must be one of {{'uncompressed', 'lz4', 'zstd'}}, got {}",
-                    e
-                )))
-            }
-        };
-
+    pub fn write_ipc(
+        &mut self,
+        py: Python,
+        py_f: PyObject,
+        compression: Wrap<Option<IpcCompression>>,
+    ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
             IpcWriter::new(f)
-                .with_compression(compression)
+                .with_compression(compression.0)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         } else {
             let mut buf = get_file_like(py_f, true)?;
 
             IpcWriter::new(&mut buf)
-                .with_compression(compression)
+                .with_compression(compression.0)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }
@@ -594,42 +585,7 @@ impl PyDataFrame {
         statistics: bool,
         row_group_size: Option<usize>,
     ) -> PyResult<()> {
-        let compression = match compression {
-            "uncompressed" => ParquetCompression::Uncompressed,
-            "snappy" => ParquetCompression::Snappy,
-            "gzip" => ParquetCompression::Gzip(
-                compression_level
-                    .map(|lvl| {
-                        GzipLevel::try_new(lvl as u8)
-                            .map_err(|e| PyValueError::new_err(format!("{:?}", e)))
-                    })
-                    .transpose()?,
-            ),
-            "lzo" => ParquetCompression::Lzo,
-            "brotli" => ParquetCompression::Brotli(
-                compression_level
-                    .map(|lvl| {
-                        BrotliLevel::try_new(lvl as u32)
-                            .map_err(|e| PyValueError::new_err(format!("{:?}", e)))
-                    })
-                    .transpose()?,
-            ),
-            "lz4" => ParquetCompression::Lz4Raw,
-            "zstd" => ParquetCompression::Zstd(
-                compression_level
-                    .map(|lvl| {
-                        ZstdLevel::try_new(lvl as i32)
-                            .map_err(|e| PyValueError::new_err(format!("{:?}", e)))
-                    })
-                    .transpose()?,
-            ),
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "compression must be one of {{'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'lz4', 'zstd'}}, got {}",
-                    e
-                )))
-            }
-        };
+        let compression = parse_parquet_compression(compression, compression_level)?;
 
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
@@ -801,31 +757,12 @@ impl PyDataFrame {
         other: &PyDataFrame,
         left_on: Vec<&str>,
         right_on: Vec<&str>,
-        how: &str,
+        how: Wrap<JoinType>,
         suffix: String,
     ) -> PyResult<Self> {
-        let how = match how {
-            "left" => JoinType::Left,
-            "inner" => JoinType::Inner,
-            "outer" => JoinType::Outer,
-            "semi" => JoinType::Semi,
-            "anti" => JoinType::Anti,
-            #[cfg(feature = "asof_join")]
-            "asof" => JoinType::AsOf(AsOfOptions {
-                strategy: AsofStrategy::Backward,
-                left_by: None,
-                right_by: None,
-                tolerance: None,
-                tolerance_str: None,
-            }),
-            #[cfg(feature = "cross_join")]
-            "cross" => JoinType::Cross,
-            _ => panic!("not supported"),
-        };
-
         let df = self
             .df
-            .join(&other.df, left_on, right_on, how, Some(suffix))
+            .join(&other.df, left_on, right_on, how.0, Some(suffix))
             .map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
@@ -1105,19 +1042,11 @@ impl PyDataFrame {
         by: Vec<&str>,
         select: Vec<String>,
         quantile: f64,
-        interpolation: &str,
+        interpolation: Wrap<QuantileInterpolOptions>,
     ) -> PyResult<Self> {
-        let interpol = match interpolation {
-            "nearest" => QuantileInterpolOptions::Nearest,
-            "lower" => QuantileInterpolOptions::Lower,
-            "higher" => QuantileInterpolOptions::Higher,
-            "midpoint" => QuantileInterpolOptions::Midpoint,
-            "linear" => QuantileInterpolOptions::Linear,
-            _ => panic!("not supported"),
-        };
         let gb = self.df.groupby(&by).map_err(PyPolarsErr::from)?;
         let selection = gb.select(&select);
-        let df = selection.quantile(quantile, interpol);
+        let df = selection.quantile(quantile, interpolation.0);
         let df = df.map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
@@ -1127,22 +1056,19 @@ impl PyDataFrame {
         by: Vec<String>,
         pivot_column: Vec<String>,
         values_column: Vec<String>,
-        agg: &str,
+        agg: Wrap<PivotAgg>,
     ) -> PyResult<Self> {
         let mut gb = self.df.groupby(&by).map_err(PyPolarsErr::from)?;
         let pivot = gb.pivot(pivot_column, values_column);
-        let df = match agg {
-            "first" => pivot.first(),
-            "min" => pivot.min(),
-            "max" => pivot.max(),
-            "mean" => pivot.mean(),
-            "median" => pivot.median(),
-            "sum" => pivot.sum(),
-            "count" => pivot.count(),
-            "last" => pivot.last(),
-            a => Err(PolarsError::ComputeError(
-                format!("agg fn {} does not exists", a).into(),
-            )),
+        let df = match agg.0 {
+            PivotAgg::First => pivot.first(),
+            PivotAgg::Min => pivot.min(),
+            PivotAgg::Max => pivot.max(),
+            PivotAgg::Mean => pivot.mean(),
+            PivotAgg::Median => pivot.median(),
+            PivotAgg::Sum => pivot.sum(),
+            PivotAgg::Count => pivot.count(),
+            PivotAgg::Last => pivot.last(),
         };
         let df = df.map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
@@ -1261,9 +1187,8 @@ impl PyDataFrame {
         self.df.median().into()
     }
 
-    pub fn hmean(&self, null_strategy: &str) -> PyResult<Option<PySeries>> {
-        let strategy = str_to_null_strategy(null_strategy)?;
-        let s = self.df.hmean(strategy).map_err(PyPolarsErr::from)?;
+    pub fn hmean(&self, null_strategy: Wrap<NullStrategy>) -> PyResult<Option<PySeries>> {
+        let s = self.df.hmean(null_strategy.0).map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
     }
 
@@ -1277,24 +1202,19 @@ impl PyDataFrame {
         Ok(s.map(|s| s.into()))
     }
 
-    pub fn hsum(&self, null_strategy: &str) -> PyResult<Option<PySeries>> {
-        let strategy = str_to_null_strategy(null_strategy)?;
-        let s = self.df.hsum(strategy).map_err(PyPolarsErr::from)?;
+    pub fn hsum(&self, null_strategy: Wrap<NullStrategy>) -> PyResult<Option<PySeries>> {
+        let s = self.df.hsum(null_strategy.0).map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
     }
 
-    pub fn quantile(&self, quantile: f64, interpolation: &str) -> PyResult<Self> {
-        let interpol = match interpolation {
-            "nearest" => QuantileInterpolOptions::Nearest,
-            "lower" => QuantileInterpolOptions::Lower,
-            "higher" => QuantileInterpolOptions::Higher,
-            "midpoint" => QuantileInterpolOptions::Midpoint,
-            "linear" => QuantileInterpolOptions::Linear,
-            _ => panic!("not supported"),
-        };
+    pub fn quantile(
+        &self,
+        quantile: f64,
+        interpolation: Wrap<QuantileInterpolOptions>,
+    ) -> PyResult<Self> {
         let df = self
             .df
-            .quantile(quantile, interpol)
+            .quantile(quantile, interpolation.0)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }

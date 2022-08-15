@@ -1,7 +1,8 @@
 //! Traits that indicate the allowed arguments in a ChunkedArray::take operation.
+use polars_arrow::array::PolarsArray;
+
 use crate::frame::groupby::GroupsProxyIter;
 use crate::prelude::*;
-use polars_arrow::array::PolarsArray;
 
 // Utility traits
 pub trait TakeIterator: Iterator<Item = usize> + TrustedLen {

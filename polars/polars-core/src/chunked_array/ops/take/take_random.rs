@@ -1,12 +1,14 @@
-#[cfg(feature = "object")]
-use crate::chunked_array::object::ObjectArray;
-use crate::prelude::downcast::Chunks;
-use crate::prelude::*;
+use std::convert::TryFrom;
+
 use arrow::array::{Array, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::utils::get_bit_unchecked;
 use arrow::bitmap::Bitmap;
 use polars_arrow::is_valid::*;
-use std::convert::TryFrom;
+
+#[cfg(feature = "object")]
+use crate::chunked_array::object::ObjectArray;
+use crate::prelude::downcast::Chunks;
+use crate::prelude::*;
 
 macro_rules! take_random_get {
     ($self:ident, $index:ident) => {{

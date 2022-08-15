@@ -1,5 +1,5 @@
-use crate::utils::align_chunks_binary;
-use crate::{prelude::*, utils::NoNull};
+use std::ops::Not;
+
 use arrow::scalar::{PrimitiveScalar, Scalar, Utf8Scalar};
 use arrow::{
     array::{BooleanArray, PrimitiveArray, Utf8Array},
@@ -8,7 +8,9 @@ use arrow::{
 };
 use num::{NumCast, ToPrimitive};
 use polars_arrow::prelude::FromData;
-use std::ops::Not;
+
+use crate::utils::align_chunks_binary;
+use crate::{prelude::*, utils::NoNull};
 
 impl<T> ChunkedArray<T>
 where
@@ -954,9 +956,10 @@ impl ChunkCompare<&StructChunked> for StructChunked {
 
 #[cfg(test)]
 mod test {
+    use std::iter::repeat;
+
     use super::super::{arithmetic::test::create_two_chunked, test::get_chunked_array};
     use crate::prelude::*;
-    use std::iter::repeat;
 
     #[test]
     fn test_bitwise_ops() {

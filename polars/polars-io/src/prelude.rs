@@ -1,4 +1,5 @@
-pub use crate::{SerReader, SerWriter};
+#[cfg(test)]
+use polars_core::prelude::*;
 
 #[cfg(feature = "csv-file")]
 pub use crate::csv::*;
@@ -10,11 +11,8 @@ pub use crate::json::*;
 pub use crate::ndjson_core::ndjson::*;
 #[cfg(feature = "parquet")]
 pub use crate::parquet::*;
-
 pub use crate::utils::*;
-
-#[cfg(test)]
-use polars_core::prelude::*;
+pub use crate::{SerReader, SerWriter};
 #[cfg(test)]
 pub(crate) fn create_df() -> DataFrame {
     let s0 = Series::new("days", [0, 1, 2, 3, 4].as_ref());

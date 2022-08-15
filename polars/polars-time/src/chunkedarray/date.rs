@@ -1,5 +1,6 @@
-use super::*;
 use polars_arrow::export::arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
+
+use super::*;
 
 pub(crate) fn naive_date_to_date(nd: NaiveDate) -> i32 {
     let nt = NaiveTime::from_hms(0, 0, 0);

@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 import os
-import sys
 from os import path
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
 import polars as pl
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import ParallelStrategy
 
 
 def test_scan_parquet() -> None:
@@ -65,7 +63,7 @@ def test_categorical_parquet_statistics(io_test_dir: str) -> None:
         .write_parquet(file, statistics=True)
     )
 
-    parallel_options: list[Literal["auto", "columns", "row_groups", "none"]] = [
+    parallel_options: list[ParallelStrategy] = [
         "auto",
         "columns",
         "row_groups",

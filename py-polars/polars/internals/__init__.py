@@ -9,14 +9,13 @@ from polars.internals.anonymous_scan import (
     _scan_ipc_fsspec,
     _scan_parquet_fsspec,
 )
-from polars.internals.datatypes import IntoExpr
+from polars.internals.dataframe import DataFrame, wrap_df
 from polars.internals.expr import (
     Expr,
     expr_to_lit_or_expr,
     selection_to_pyexpr_list,
     wrap_expr,
 )
-from polars.internals.frame import DataFrame, wrap_df
 from polars.internals.functions import concat, date_range
 from polars.internals.io import (
     _is_local_file,
@@ -24,7 +23,6 @@ from polars.internals.io import (
     read_ipc_schema,
     read_parquet_schema,
 )
-from polars.internals.lazy_frame import LazyFrame, wrap_ldf
 from polars.internals.lazy_functions import (
     all,
     arg_where,
@@ -36,13 +34,13 @@ from polars.internals.lazy_functions import (
     lit,
     select,
 )
+from polars.internals.lazyframe import LazyFrame, wrap_ldf
 from polars.internals.series import Series, wrap_s
 from polars.internals.whenthen import when  # used in expr.clip()
 
 __all__ = [
     "DataFrame",
     "Expr",
-    "IntoExpr",
     "LazyFrame",
     "Series",
     "all",

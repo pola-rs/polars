@@ -1,5 +1,6 @@
-use super::*;
 use polars_io::RowCount;
+
+use super::*;
 
 #[test]
 fn test_parquet_exec() -> Result<()> {

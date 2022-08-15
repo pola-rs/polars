@@ -78,7 +78,7 @@ def test_dtype() -> None:
             ("dtm", pl.List(pl.Datetime)),
         ],
     )
-    assert df.schema == {
+    assert df.schema == {  # type: ignore[comparison-overlap]
         "i": pl.List(pl.Int8),
         "tm": pl.List(pl.Time),
         "dt": pl.List(pl.Date),
@@ -402,3 +402,14 @@ def test_arr_contains_categorical() -> None:
     assert df_groups.filter(pl.col("str_list").arr.contains("C")).collect().to_dict(
         False
     ) == {"group": [2], "str_list": [["A", "C"]]}
+
+
+def test_list_diagonal_concat() -> None:
+    df1 = pl.DataFrame({"a": [1, 2]})
+
+    df2 = pl.DataFrame({"b": [[1]]})
+
+    assert pl.concat([df1, df2], how="diagonal").to_dict(False) == {
+        "a": [1, 2, None],
+        "b": [None, None, [1]],
+    }

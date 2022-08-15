@@ -206,7 +206,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 AExpr::Literal(LiteralValue::Boolean(true))
             ) =>
             {
-                Some(AExpr::Literal(LiteralValue::Boolean(false)))
+                Some(AExpr::Literal(LiteralValue::Boolean(true)))
             }
 
             // x OR true => true
@@ -219,7 +219,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 AExpr::Literal(LiteralValue::Boolean(true))
             ) =>
             {
-                Some(AExpr::Literal(LiteralValue::Boolean(false)))
+                Some(AExpr::Literal(LiteralValue::Boolean(true)))
             }
             AExpr::Ternary {
                 truthy, predicate, ..
@@ -348,6 +348,7 @@ impl OptimizationRule for SimplifyExprRule {
                         }
                         None
                     }
+                    Operator::FloorDivide => None,
                     Operator::Modulus => eval_binary_same_type!(left_aexpr, %, right_aexpr),
                     Operator::Lt => eval_binary_bool_type!(left_aexpr, <, right_aexpr),
                     Operator::Gt => eval_binary_bool_type!(left_aexpr, >, right_aexpr),

@@ -1,11 +1,13 @@
-use super::*;
+use std::convert::TryFrom;
+use std::fmt::Write;
+
 use polars_arrow::kernels::list::sublist_get;
 use polars_arrow::prelude::ValueSize;
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::series::ops::NullBehavior;
 use polars_core::utils::{get_supertype, CustomIterTools};
-use std::convert::TryFrom;
-use std::fmt::Write;
+
+use super::*;
 
 fn cast_rhs(
     other: &mut [Series],

@@ -1,9 +1,5 @@
 //! Comparison operations on Series.
 
-use super::Series;
-use crate::apply_method_physical_numeric;
-use crate::prelude::*;
-use crate::series::arithmetic::coerce_lhs_rhs;
 #[cfg(any(
     feature = "dtype-duration",
     feature = "dtype-datetime",
@@ -12,6 +8,11 @@ use crate::series::arithmetic::coerce_lhs_rhs;
     feature = "dtype-struct"
 ))]
 use std::ops::Deref;
+
+use super::Series;
+use crate::apply_method_physical_numeric;
+use crate::prelude::*;
+use crate::series::arithmetic::coerce_lhs_rhs;
 
 macro_rules! impl_compare {
     ($self:expr, $rhs:expr, $method:ident) => {{

@@ -3,7 +3,17 @@ from __future__ import annotations
 import ctypes
 import sys
 from datetime import date, datetime, time, timedelta
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple, Type, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+)
 
 try:
     import pyarrow as pa
@@ -22,8 +32,11 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import TimeUnit
 
-def get_idx_type() -> Type[DataType]:
+
+def get_idx_type() -> type[DataType]:
     """
     Get the datatype used for polars Indexing
 
@@ -157,16 +170,16 @@ class Date(DataType):
 class Datetime(DataType):
     """Calendar date and time type."""
 
-    def __init__(self, time_unit: str = "us", time_zone: str | None = None):
+    def __init__(self, time_unit: TimeUnit = "us", time_zone: str | None = None):
         """
         Calendar date and time type.
 
         Parameters
         ----------
-        time_unit
-            Any of {'ns', 'us', 'ms'}
+        time_unit : {'us', 'ns', 'ms'}
+            Time unit.
         time_zone
-            Timezone string as defined in pytz
+            Timezone string as defined in pytz.
 
         """
         self.tu = time_unit
@@ -188,14 +201,14 @@ class Datetime(DataType):
 class Duration(DataType):
     """Time duration/delta type."""
 
-    def __init__(self, time_unit: str = "us"):
+    def __init__(self, time_unit: TimeUnit = "us"):
         """
         Time duration/delta type.
 
         Parameters
         ----------
-        time_unit
-            Any of {'ns', 'us', 'ms'}
+        time_unit : {'us', 'ns', 'ms'}
+            Time unit.
 
         """
         self.tu = time_unit
@@ -285,7 +298,7 @@ class Struct(DataType):
         return hash(Struct)
 
 
-DTYPE_TEMPORAL_UNITS = frozenset(["ms", "us", "ns"])
+DTYPE_TEMPORAL_UNITS: frozenset[TimeUnit] = frozenset(["ns", "us", "ms"])
 
 
 _DTYPE_TO_FFINAME: dict[PolarsDataType, str] = {
@@ -513,7 +526,7 @@ def numpy_char_code_to_dtype(dtype: str) -> type[DataType]:
 
 
 def maybe_cast(
-    el: type[DataType], dtype: type, time_unit: str | None = None
+    el: type[DataType], dtype: type, time_unit: TimeUnit | None = None
 ) -> type[DataType]:
     # cast el if it doesn't match
     from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_timedelta

@@ -319,16 +319,14 @@ pub mod docs;
 pub mod export;
 pub mod prelude;
 
+pub use polars_core::apply_method_all_arrow_series;
+pub use polars_core::df;
 #[cfg(feature = "dtype-categorical")]
 pub use polars_core::toggle_string_cache;
 pub use polars_core::{chunked_array, datatypes, doc, error, frame, functions, series, testing};
-#[cfg(feature = "temporal")]
-pub use polars_time as time;
-
-pub use polars_core::apply_method_all_arrow_series;
-pub use polars_core::df;
-
 #[cfg(feature = "polars-io")]
 pub use polars_io as io;
 #[cfg(feature = "lazy")]
 pub use polars_lazy as lazy;
+#[cfg(feature = "temporal")]
+pub use polars_time as time;

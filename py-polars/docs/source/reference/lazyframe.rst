@@ -4,7 +4,7 @@ LazyFrame
 .. currentmodule:: polars
 
 .. py:class:: LazyFrame
-    :canonical: polars.internals.lazy_frame.LazyFrame
+    :canonical: polars.internals.lazyframe.frame.LazyFrame
 
     Representation of a Lazy computation graph/ query.
 
@@ -112,7 +112,7 @@ GroupBy
 -------
 This namespace comes available by calling `LazyFrame.groupby(..)`.
 
-.. currentmodule:: polars.internals.lazy_frame
+.. currentmodule:: polars.internals.lazyframe.groupby
 
 .. autosummary::
    :toctree: api/

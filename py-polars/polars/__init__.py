@@ -57,14 +57,13 @@ from polars.exceptions import (
     SchemaError,
     ShapeError,
 )
-from polars.internals.expr import Expr
 
 # TODO remove need for wrap_df
-from polars.internals.frame import wrap_df  # noqa: F401
-from polars.internals.frame import DataFrame
+from polars.internals.dataframe import wrap_df  # noqa: F401
+from polars.internals.dataframe import DataFrame
+from polars.internals.expr import Expr
 from polars.internals.functions import concat, cut, date_range, get_dummies
 from polars.internals.io import read_ipc_schema, read_parquet_schema
-from polars.internals.lazy_frame import LazyFrame
 from polars.internals.lazy_functions import _date as date
 from polars.internals.lazy_functions import _datetime as datetime
 from polars.internals.lazy_functions import (
@@ -109,6 +108,7 @@ from polars.internals.lazy_functions import (
 )
 from polars.internals.lazy_functions import to_list as list
 from polars.internals.lazy_functions import var
+from polars.internals.lazyframe import LazyFrame
 
 # TODO: remove need for wrap_s
 from polars.internals.series import wrap_s  # noqa: F401
@@ -127,6 +127,7 @@ from polars.io import (
     scan_ipc,
     scan_parquet,
 )
+from polars.show_versions import show_versions
 from polars.string_cache import StringCache, toggle_string_cache
 from polars.utils import threadpool_size
 
@@ -251,6 +252,8 @@ __all__ = [
     # testing
     "testing",
     "threadpool_size",
+    # version
+    "show_versions",
 ]
 
 __version__ = version()

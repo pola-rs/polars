@@ -1,5 +1,5 @@
-use crate::chunked_array::builder::{get_list_builder, AnonymousListBuilder};
-use crate::prelude::*;
+use std::borrow::Cow;
+
 #[cfg(feature = "dtype-duration")]
 use chrono::Duration as ChronoDuration;
 #[cfg(feature = "dtype-date")]
@@ -8,7 +8,9 @@ use chrono::NaiveDate;
 use chrono::NaiveDateTime;
 #[cfg(feature = "dtype-time")]
 use chrono::NaiveTime;
-use std::borrow::Cow;
+
+use crate::chunked_array::builder::{get_list_builder, AnonymousListBuilder};
+use crate::prelude::*;
 
 pub trait NamedFrom<T, Phantom: ?Sized> {
     /// Initialize by name and values.

@@ -1,8 +1,9 @@
+use polars_core::{prelude::*, POOL};
+use rayon::prelude::*;
+
 use crate::physical_plan::executors::execute_projection_cached_window_fns;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::{prelude::*, POOL};
-use rayon::prelude::*;
 
 pub struct StackExec {
     pub(crate) input: Box<dyn Executor>,

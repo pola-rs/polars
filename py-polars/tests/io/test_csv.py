@@ -5,7 +5,7 @@ import io
 import os
 import textwrap
 import zlib
-from datetime import date
+from datetime import date, datetime, time
 from pathlib import Path
 
 import pytest
@@ -402,8 +402,8 @@ def test_csv_globbing(examples_dir: str) -> None:
 
     df = pl.read_csv(path, columns=["category", "sugars_g"])
     assert df.shape == (135, 2)
-    assert df.row(-1) == ("seafood", 1)
-    assert df.row(0) == ("vegetables", 2)
+    assert df.row(-1) == ("seafood", 1)  # type: ignore[comparison-overlap]
+    assert df.row(0) == ("vegetables", 2)  # type: ignore[comparison-overlap]
 
     with pytest.raises(ValueError):
         _ = pl.read_csv(path, dtypes=[pl.Utf8, pl.Int64, pl.Int64, pl.Int64])
@@ -482,7 +482,7 @@ def test_escaped_null_values() -> None:
     assert df[0, "c"] is None
 
 
-def quoting_round_trip() -> None:
+def test_quoting_round_trip() -> None:
     f = io.BytesIO()
     df = pl.DataFrame(
         {
@@ -500,7 +500,7 @@ def quoting_round_trip() -> None:
     assert read_df.frame_equal(df)
 
 
-def fallback_chrono_parser() -> None:
+def test_fallback_chrono_parser() -> None:
     data = textwrap.dedent(
         """\
     date_1,date_2
@@ -509,7 +509,8 @@ def fallback_chrono_parser() -> None:
     2021-10-10,2021-10-10
     """
     )
-    assert pl.read_csv(data.encode(), parse_dates=True).null_count().row(0) == (0, 0)
+    df = pl.read_csv(data.encode(), parse_dates=True)
+    assert df.null_count().row(0) == (0, 0)  # type: ignore[comparison-overlap]
 
 
 def test_csv_string_escaping() -> None:
@@ -616,3 +617,47 @@ def test_csv_dtype_overwrite_bool() -> None:
         dtypes={"a": pl.Boolean, "b": pl.Boolean},
     )
     assert df.dtypes == [pl.Boolean, pl.Boolean]
+
+
+@pytest.mark.parametrize(
+    "fmt,expected",
+    [
+        (None, "dt\n2022-01-02T00:00:00.000000000\n"),
+        ("%Y", "dt\n2022\n"),
+        ("%m", "dt\n01\n"),
+        ("%m$%d", "dt\n01$02\n"),
+        ("%R", "dt\n00:00\n"),
+    ],
+)
+def test_datetime_format(fmt: str, expected: str) -> None:
+    df = pl.DataFrame({"dt": [datetime(2022, 1, 2)]})
+    csv = df.write_csv(datetime_format=fmt)
+    assert csv == expected
+
+
+@pytest.mark.parametrize(
+    "fmt,expected",
+    [
+        (None, "dt\n2022-01-02\n"),
+        ("%Y", "dt\n2022\n"),
+        ("%m", "dt\n01\n"),
+        ("%m$%d", "dt\n01$02\n"),
+    ],
+)
+def test_date_format(fmt: str, expected: str) -> None:
+    df = pl.DataFrame({"dt": [date(2022, 1, 2)]})
+    csv = df.write_csv(date_format=fmt)
+    assert csv == expected
+
+
+@pytest.mark.parametrize(
+    "fmt,expected",
+    [
+        (None, "dt\n16:15:30.000000000\n"),
+        ("%R", "dt\n16:15\n"),
+    ],
+)
+def test_time_format(fmt: str, expected: str) -> None:
+    df = pl.DataFrame({"dt": [time(16, 15, 30)]})
+    csv = df.write_csv(time_format=fmt)
+    assert csv == expected

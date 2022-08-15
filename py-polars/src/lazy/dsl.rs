@@ -1,19 +1,21 @@
-use super::apply::*;
-use crate::conversion::{str_to_null_behavior, Wrap};
-use crate::lazy::map_single;
-use crate::lazy::utils::py_exprs_to_exprs;
-use crate::prelude::{parse_strategy, str_to_rankmethod};
-use crate::series::PySeries;
-use crate::utils::reinterpret;
+use std::borrow::Cow;
+
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
+use polars::series::ops::NullBehavior;
 use polars_core::prelude::QuantileInterpolOptions;
 use pyo3::class::basic::CompareOp;
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
-use std::borrow::Cow;
+
+use super::apply::*;
+use crate::conversion::parse_fill_null_strategy;
+use crate::conversion::Wrap;
+use crate::lazy::map_single;
+use crate::lazy::utils::py_exprs_to_exprs;
+use crate::series::PySeries;
+use crate::utils::reinterpret;
 
 #[pyclass]
 #[repr(transparent)]
@@ -64,7 +66,7 @@ impl PyExpr {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::Modulus, rhs.inner).into())
     }
     fn __floordiv__(&self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(self.inner.clone(), Operator::Divide, rhs.inner).into())
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::FloorDivide, rhs.inner).into())
     }
 
     pub fn to_str(&self) -> String {
@@ -178,16 +180,11 @@ impl PyExpr {
     pub fn list(&self) -> PyExpr {
         self.clone().inner.list().into()
     }
-    pub fn quantile(&self, quantile: f64, interpolation: &str) -> PyExpr {
-        let interpol = match interpolation {
-            "nearest" => QuantileInterpolOptions::Nearest,
-            "lower" => QuantileInterpolOptions::Lower,
-            "higher" => QuantileInterpolOptions::Higher,
-            "midpoint" => QuantileInterpolOptions::Midpoint,
-            "linear" => QuantileInterpolOptions::Linear,
-            _ => panic!("not supported"),
-        };
-        self.clone().inner.quantile(quantile, interpol).into()
+    pub fn quantile(&self, quantile: f64, interpolation: Wrap<QuantileInterpolOptions>) -> PyExpr {
+        self.clone()
+            .inner
+            .quantile(quantile, interpolation.0)
+            .into()
     }
     pub fn agg_groups(&self) -> PyExpr {
         self.clone().inner.agg_groups().into()
@@ -271,7 +268,7 @@ impl PyExpr {
         strategy: &str,
         limit: FillNullLimit,
     ) -> PyResult<PyExpr> {
-        let strat = parse_strategy(strategy, limit)?;
+        let strat = parse_fill_null_strategy(strategy, limit)?;
         Ok(self
             .inner
             .clone()
@@ -1223,7 +1220,7 @@ impl PyExpr {
     pub fn rolling_quantile(
         &self,
         quantile: f64,
-        interpolation: &str,
+        interpolation: Wrap<QuantileInterpolOptions>,
         window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
@@ -1231,15 +1228,6 @@ impl PyExpr {
         by: Option<String>,
         closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
-        let interpol = match interpolation {
-            "nearest" => QuantileInterpolOptions::Nearest,
-            "lower" => QuantileInterpolOptions::Lower,
-            "higher" => QuantileInterpolOptions::Higher,
-            "midpoint" => QuantileInterpolOptions::Midpoint,
-            "linear" => QuantileInterpolOptions::Linear,
-            _ => panic!("not supported"),
-        };
-
         let options = RollingOptions {
             window_size: Duration::parse(window_size),
             weights,
@@ -1251,7 +1239,7 @@ impl PyExpr {
 
         self.inner
             .clone()
-            .rolling_quantile(quantile, interpol, options)
+            .rolling_quantile(quantile, interpolation.0, options)
             .into()
     }
 
@@ -1331,9 +1319,8 @@ impl PyExpr {
         self.inner.clone().arr().arg_max().into()
     }
 
-    fn lst_diff(&self, n: usize, null_behavior: &str) -> PyResult<Self> {
-        let null_behavior = str_to_null_behavior(null_behavior)?;
-        Ok(self.inner.clone().arr().diff(n, null_behavior).into())
+    fn lst_diff(&self, n: usize, null_behavior: Wrap<NullBehavior>) -> PyResult<Self> {
+        Ok(self.inner.clone().arr().diff(n, null_behavior.0).into())
     }
 
     fn lst_shift(&self, periods: i64) -> Self {
@@ -1355,18 +1342,11 @@ impl PyExpr {
             .into()
     }
 
-    fn lst_to_struct(&self, width_strat: &str, name_gen: Option<PyObject>) -> PyResult<Self> {
-        let n_fields = match width_strat {
-            "first_non_null" => ListToStructWidthStrategy::FirstNonNull,
-            "max_width" => ListToStructWidthStrategy::MaxWidth,
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "n_field_strategy must be one of {{'first_non_null', 'max_width'}}, got {}",
-                    e,
-                )))
-            }
-        };
-
+    fn lst_to_struct(
+        &self,
+        width_strat: Wrap<ListToStructWidthStrategy>,
+        name_gen: Option<PyObject>,
+    ) -> PyResult<Self> {
         let name_gen = name_gen.map(|lambda| {
             Arc::new(move |idx: usize| {
                 Python::with_gil(|py| {
@@ -1380,22 +1360,20 @@ impl PyExpr {
             .inner
             .clone()
             .arr()
-            .to_struct(n_fields, name_gen)
+            .to_struct(width_strat.0, name_gen)
             .into())
     }
 
-    fn rank(&self, method: &str, reverse: bool) -> Self {
-        let method = str_to_rankmethod(method).unwrap();
+    fn rank(&self, method: Wrap<RankMethod>, reverse: bool) -> Self {
         let options = RankOptions {
-            method,
+            method: method.0,
             descending: reverse,
         };
         self.inner.clone().rank(options).into()
     }
 
-    fn diff(&self, n: usize, null_behavior: &str) -> Self {
-        let null_behavior = str_to_null_behavior(null_behavior).unwrap();
-        self.inner.clone().diff(n, null_behavior).into()
+    fn diff(&self, n: usize, null_behavior: Wrap<NullBehavior>) -> Self {
+        self.inner.clone().diff(n, null_behavior.0).into()
     }
 
     #[cfg(feature = "pct_change")]
@@ -1413,14 +1391,8 @@ impl PyExpr {
         self.inner.clone().str().concat(delimiter).into()
     }
 
-    fn cat_set_ordering(&self, ordering: &str) -> Self {
-        let ordering = match ordering {
-            "physical" => CategoricalOrdering::Physical,
-            "lexical" => CategoricalOrdering::Lexical,
-            _ => panic!("expected one of {{'physical', 'lexical'}}"),
-        };
-
-        self.inner.clone().cat().set_ordering(ordering).into()
+    fn cat_set_ordering(&self, ordering: Wrap<CategoricalOrdering>) -> Self {
+        self.inner.clone().cat().set_ordering(ordering.0).into()
     }
 
     fn date_truncate(&self, every: &str, offset: &str) -> Self {

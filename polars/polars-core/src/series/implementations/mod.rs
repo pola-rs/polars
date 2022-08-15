@@ -21,6 +21,12 @@ mod utf8;
 
 #[cfg(feature = "object")]
 use std::any::Any;
+use std::borrow::Cow;
+use std::ops::Deref;
+use std::ops::{BitAnd, BitOr, BitXor};
+
+use ahash::RandomState;
+use polars_arrow::prelude::QuantileInterpolOptions;
 
 use super::private;
 use super::IntoSeries;
@@ -41,11 +47,6 @@ use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 #[cfg(feature = "checked_arithmetic")]
 use crate::series::arithmetic::checked::NumOpsDispatchChecked;
-use ahash::RandomState;
-use polars_arrow::prelude::QuantileInterpolOptions;
-use std::borrow::Cow;
-use std::ops::Deref;
-use std::ops::{BitAnd, BitOr, BitXor};
 
 // Utility wrapper struct
 pub(crate) struct SeriesWrap<T>(pub T);

@@ -1,9 +1,10 @@
-use super::*;
 use arrow::datatypes::Field;
 use arrow::io::parquet::read::{
     column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
     PageReader,
 };
+
+use super::*;
 
 /// memory maps all columns that are part of the parquet field `field_name`
 pub(super) fn mmap_columns<'a>(

@@ -1,10 +1,11 @@
-use super::*;
-#[cfg(feature = "performant")]
-use crate::utils::split_offsets;
 #[cfg(feature = "performant")]
 use polars_arrow::kernels::sorted_join;
 #[cfg(feature = "performant")]
 use polars_utils::flatten;
+
+use super::*;
+#[cfg(feature = "performant")]
+use crate::utils::split_offsets;
 
 pub(super) fn use_sort_merge(s_left: &Series, s_right: &Series) -> bool {
     // only use for numeric data for now

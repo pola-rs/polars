@@ -288,11 +288,6 @@ total_time = time.time() - t00
 print("total took:", total_time, "s")
 assert out.shape == (9999995, 8)
 
-if not ON_STRINGS:
-    if total_time > 11:
-        print("query took longer than 11s, may be noise")
-        exit(1)
-
 # Additional tests
 # the code below, does not belong to the db-benchmark
 # but it triggers other code paths so the checksums assertion
@@ -315,3 +310,8 @@ print(out)
 
 assert out["id6"] == 2137755425
 assert np.isclose(out["v3"], 4.7040828499563754e8)
+
+if not ON_STRINGS:
+    if total_time > 12:
+        print("query took longer than 12s, may be noise")
+        exit(1)

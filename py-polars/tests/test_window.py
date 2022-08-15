@@ -200,18 +200,24 @@ def test_window_functions_list_types() -> None:
             "col_list": [[1], [1], [2], [2]],
         }
     )
+    assert (df.select(pl.col("col_list").shift(1).alias("list_shifted")))[
+        "list_shifted"
+    ].to_list() == [None, [1], [1], [2]]
+
+    # filling with None is allowed, but does not make any sense
+    # as it is the same as shift.
+    # that's why we don't add it to the allowed types.
     assert (
-        df.with_column(
+        df.select(
             pl.col("col_list")
-            .shift_and_fill(1, [])
-            .over("col_int")
+            .shift_and_fill(1, None)  # type: ignore[arg-type]
             .alias("list_shifted")
         )
-    ).to_dict(False) == {
-        "col_int": [1, 1, 2, 2],
-        "col_list": [[1], [1], [2], [2]],
-        "list_shifted": [[[], [1]], [[], [1]], [[], [2]], [[], [2]]],
-    }
+    )["list_shifted"].to_list() == [None, [1], [1], [2]]
+
+    assert (df.select(pl.col("col_list").shift_and_fill(1, []).alias("list_shifted")))[
+        "list_shifted"
+    ].to_list() == [[], [1], [1], [2]]
 
 
 def test_sorted_window_expression() -> None:

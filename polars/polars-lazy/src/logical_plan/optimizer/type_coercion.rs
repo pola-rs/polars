@@ -1,8 +1,9 @@
-use crate::dsl::function_expr::FunctionExpr;
-use polars_core::prelude::*;
-use polars_core::utils::get_supertype;
 use std::borrow::Cow;
 
+use polars_core::prelude::*;
+use polars_core::utils::get_supertype;
+
+use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::Context;
 use crate::prelude::*;
@@ -477,14 +478,15 @@ fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
 }
 
 #[cfg(test)]
+#[cfg(feature = "dtype-categorical")]
 mod test {
+    use polars_core::prelude::*;
+
     use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
     use crate::prelude::*;
     use crate::utils::test::optimize_expr;
-    use polars_core::prelude::*;
 
     #[test]
-    #[cfg(feature = "dtype-categorical")]
     fn test_categorical_utf8() {
         let mut rules: Vec<Box<dyn OptimizationRule>> = vec![Box::new(TypeCoercionRule {})];
         let schema = Schema::from(vec![Field::new("fruits", DataType::Categorical(None))]);

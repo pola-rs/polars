@@ -1,8 +1,9 @@
-use super::*;
-use crate::utils::{copy_from_slice_unchecked, split_offsets};
 use polars_arrow::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
 use polars_arrow::prelude::*;
 use polars_utils::flatten;
+
+use super::*;
+use crate::utils::{copy_from_slice_unchecked, split_offsets};
 
 /// Used to create the tuples for a groupby operation.
 pub trait IntoGroupsProxy {

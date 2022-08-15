@@ -4,20 +4,22 @@ mod argsort_multiple;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
 
-use crate::prelude::compare_inner::PartialOrdInner;
-#[cfg(feature = "sort_multiple")]
-use crate::prelude::sort::argsort_multiple::{args_validate, argsort_multiple_impl};
-use crate::prelude::*;
-use crate::utils::{CustomIterTools, NoNull};
+use std::cmp::Ordering;
+use std::hint::unreachable_unchecked;
+use std::iter::FromIterator;
+
 use arrow::{bitmap::MutableBitmap, buffer::Buffer};
 use num::Float;
 use polars_arrow::array::default_arrays::FromDataUtf8;
 use polars_arrow::prelude::{FromData, ValueSize};
 use polars_arrow::trusted_len::PushUnchecked;
 use rayon::prelude::*;
-use std::cmp::Ordering;
-use std::hint::unreachable_unchecked;
-use std::iter::FromIterator;
+
+use crate::prelude::compare_inner::PartialOrdInner;
+#[cfg(feature = "sort_multiple")]
+use crate::prelude::sort::argsort_multiple::{args_validate, argsort_multiple_impl};
+use crate::prelude::*;
+use crate::utils::{CustomIterTools, NoNull};
 
 #[inline]
 fn sort_cmp<T: PartialOrd + IsFloat>(a: &T, b: &T) -> Ordering {
@@ -595,7 +597,6 @@ pub(crate) fn prepare_argsort(
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use crate::series::ops::NullBehavior;
 
     #[test]
     fn test_argsort() {

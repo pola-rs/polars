@@ -1,4 +1,5 @@
-use crate::prelude::*;
+use std::convert::TryFrom;
+
 use arrow::bitmap::MutableBitmap;
 use arrow::types::NativeType;
 pub use polars_arrow::kernels::ewm::EWMOptions;
@@ -7,7 +8,8 @@ use polars_arrow::kernels::ewm::{
 };
 use polars_arrow::prelude::FromData;
 use polars_utils::mem::to_mutable_slice;
-use std::convert::TryFrom;
+
+use crate::prelude::*;
 
 fn prepare_primitive_array<T: NativeType>(
     vals: Vec<T>,

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import io
-import typing
 from datetime import date, datetime, time, timedelta
+from typing import TYPE_CHECKING, no_type_check
 
 import numpy as np
 import pandas as pd
@@ -13,6 +13,9 @@ import pytz
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.testing import verify_series_and_expr_api
+
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import TimeUnit
 
 
 def test_fill_null() -> None:
@@ -150,7 +153,7 @@ def test_datetime_consistency() -> None:
             pl.lit(dt).cast(pl.Datetime("ns")).alias("dt_ns"),
         ]
     )
-    assert ddf.schema == {
+    assert ddf.schema == {  # type: ignore[comparison-overlap]
         "date": pl.Datetime("us"),
         "dt": pl.Datetime("us"),
         "dt_ms": pl.Datetime("ms"),
@@ -882,7 +885,7 @@ def test_agg_logical() -> None:
     assert s.min() == dates[0]
 
 
-@typing.no_type_check
+@no_type_check
 def test_from_time_arrow() -> None:
     times = pa.array([10, 20, 30], type=pa.time32("s"))
     times_table = pa.table([times], names=["times"])
@@ -1023,7 +1026,8 @@ def test_datetime_instance_selection() -> None:
         ],
     )
     for tu in DTYPE_TEMPORAL_UNITS:
-        assert df.select(pl.col([pl.Datetime(tu)])).dtypes == [pl.Datetime(tu)]
+        res = df.select(pl.col([pl.Datetime(tu)])).dtypes
+        assert res == [pl.Datetime(tu)]  # type: ignore[comparison-overlap]
         assert len(df.filter(pl.col(tu) == test_data[tu][0])) == 1
 
 
@@ -1275,7 +1279,8 @@ def test_weekday() -> None:
     # monday
     s = pl.Series([datetime(2020, 1, 6)])
 
-    for tu in ["ns", "us", "ms"]:
+    time_units: list[TimeUnit] = ["ns", "us", "ms"]
+    for tu in time_units:
         assert s.dt.cast_time_unit(tu).dt.weekday()[0] == 0
 
     assert s.cast(pl.Date).dt.weekday()[0] == 0

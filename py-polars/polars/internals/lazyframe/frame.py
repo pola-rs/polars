@@ -12,34 +12,26 @@ import tempfile
 import typing
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Generic, Sequence, TypeVar, overload
-
-from polars.internals.expr import ensure_list_of_pyexpr
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
-
-try:
-    from polars.polars import PyExpr, PyLazyFrame, PyLazyGroupBy
-
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
-
+from typing import TYPE_CHECKING, Any, Callable, Sequence, TypeVar, overload
 
 from polars import internals as pli
 from polars.cfg import Config
 from polars.datatypes import DataType, py_type_to_dtype
+from polars.internals.lazyframe.groupby import LazyGroupBy
 from polars.internals.slice import LazyPolarsSlice
 from polars.utils import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
     format_path,
-    is_expr_sequence,
 )
+
+try:
+    from polars.polars import PyExpr, PyLazyFrame
+
+    _DOCUMENTING = False
+except ImportError:
+    _DOCUMENTING = True
 
 try:
     import pyarrow as pa
@@ -48,11 +40,21 @@ try:
 except ImportError:
     _PYARROW_AVAILABLE = False
 
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
+
 if TYPE_CHECKING:
-    from polars.internals.datatypes import (
+    from polars.internals.type_aliases import (
+        AsofJoinStrategy,
         ClosedWindow,
-        FillStrategy,
+        CsvEncoding,
+        FillNullStrategy,
         InterpolationMethod,
+        JoinStrategy,
+        ParallelStrategy,
+        UniqueKeepStrategy,
     )
 
 
@@ -64,24 +66,6 @@ LDF = TypeVar("LDF", bound="LazyFrame")
 
 def wrap_ldf(ldf: PyLazyFrame) -> LazyFrame:
     return LazyFrame._from_pyldf(ldf)
-
-
-def _prepare_groupby_inputs(
-    by: str | list[str] | pli.Expr | list[pli.Expr] | None,
-) -> list[PyExpr]:
-    if isinstance(by, list):
-        new_by = []
-        for e in by:
-            if isinstance(e, str):
-                e = pli.col(e)
-            new_by.append(e._pyexpr)
-    elif isinstance(by, str):
-        new_by = [pli.col(by)._pyexpr]
-    elif isinstance(by, pli.Expr):
-        new_by = [by._pyexpr]
-    elif by is None:
-        return []
-    return new_by
 
 
 class LazyFrame:
@@ -111,7 +95,7 @@ class LazyFrame:
         with_column_names: Callable[[list[str]], list[str]] | None = None,
         infer_schema_length: int | None = 100,
         n_rows: int | None = None,
-        encoding: Literal["utf8", "utf8-lossy"] = "utf8",
+        encoding: CsvEncoding = "utf8",
         low_memory: bool = False,
         rechunk: bool = True,
         skip_rows_after_header: int = 0,
@@ -168,7 +152,7 @@ class LazyFrame:
         file: str,
         n_rows: int | None = None,
         cache: bool = True,
-        parallel: Literal["auto", "columns", "row_groups", "none"] = "auto",
+        parallel: ParallelStrategy = "auto",
         rechunk: bool = True,
         row_count_name: str | None = None,
         row_count_offset: int = 0,
@@ -541,7 +525,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         ...     .inspect()  # print the node before the filter
         ...     .filter(pl.col("bar") == pl.col("foo"))
         ... )  # doctest: +ELLIPSIS
-        <polars.internals.lazy_frame.LazyFrame object at ...>
+        <polars.internals.lazyframe.frame.LazyFrame object at ...>
 
         """
 
@@ -1208,7 +1192,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         by_left: str | list[str] | None = None,
         by_right: str | list[str] | None = None,
         by: str | list[str] | None = None,
-        strategy: Literal["backward", "forward"] = "backward",
+        strategy: AsofJoinStrategy = "backward",
         suffix: str = "_right",
         tolerance: str | int | float | None = None,
         allow_parallel: bool = True,
@@ -1338,7 +1322,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         left_on: str | pli.Expr | list[str | pli.Expr] | None = None,
         right_on: str | pli.Expr | list[str | pli.Expr] | None = None,
         on: str | pli.Expr | list[str | pli.Expr] | None = None,
-        how: str = "inner",
+        how: JoinStrategy = "inner",
         suffix: str = "_right",
         allow_parallel: bool = True,
         force_parallel: bool = False,
@@ -1934,7 +1918,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def fill_null(
         self: LDF,
         value: Any | None = None,
-        strategy: FillStrategy | None = None,
+        strategy: FillNullStrategy | None = None,
         limit: int | None = None,
     ) -> LDF:
         """
@@ -2083,7 +2067,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         self: LDF,
         maintain_order: bool = True,
         subset: str | list[str] | None = None,
-        keep: str = "first",
+        keep: UniqueKeepStrategy = "first",
     ) -> LDF:
         """
         Drop duplicate rows from this DataFrame.
@@ -2096,9 +2080,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Keep the same order as the original DataFrame. This requires more work to
             compute.
         subset
-            Subset to use to compare rows
-        keep
-            any of {"first", "last"}
+            Subset to use to compare rows.
+        keep : {'first', 'last'}
+            Which of the duplicate rows to keep.
 
         Returns
         -------
@@ -2385,217 +2369,19 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         return self._from_pyldf(self._ldf.unnest(names))
 
 
-class LazyGroupBy(Generic[LDF]):
-    """Created by `df.lazy().groupby("foo)"`."""
-
-    def __init__(self, lgb: PyLazyGroupBy, lazyframe_class: type[LDF]) -> None:
-        self.lgb = lgb
-        self._lazyframe_class = lazyframe_class
-
-    def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> LDF:
-        """
-        Describe the aggregation that need to be done on a group.
-
-        Parameters
-        ----------
-        aggs
-            Single / multiple aggregation expression(s).
-
-        Examples
-        --------
-        >>> (
-        ...     pl.scan_csv("data.csv")
-        ...     .groupby("groups")
-        ...     .agg(
-        ...         [
-        ...             pl.col("name").n_unique().alias("unique_names"),
-        ...             pl.max("values"),
-        ...         ]
-        ...     )
-        ... )  # doctest: +SKIP
-
-        """
-        if not (isinstance(aggs, pli.Expr) or is_expr_sequence(aggs)):
-            msg = f"expected 'Expr | Sequence[Expr]', got '{type(aggs)}'"
-            raise TypeError(msg)
-
-        pyexprs = ensure_list_of_pyexpr(aggs)
-        return self._lazyframe_class._from_pyldf(self.lgb.agg(pyexprs))
-
-    def head(self, n: int = 5) -> LDF:
-        """
-        Return first n rows of each group.
-
-        Parameters
-        ----------
-        n
-            Number of values of the group to select
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "letters": ["c", "c", "a", "c", "a", "b"],
-        ...         "nrs": [1, 2, 3, 4, 5, 6],
-        ...     }
-        ... )
-        >>> df
-        shape: (6, 2)
-        ┌─────────┬─────┐
-        │ letters ┆ nrs │
-        │ ---     ┆ --- │
-        │ str     ┆ i64 │
-        ╞═════════╪═════╡
-        │ c       ┆ 1   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c       ┆ 2   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ a       ┆ 3   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c       ┆ 4   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ a       ┆ 5   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b       ┆ 6   │
-        └─────────┴─────┘
-        >>> df.groupby("letters").head(2).sort("letters")
-        shape: (5, 2)
-        ┌─────────┬─────┐
-        │ letters ┆ nrs │
-        │ ---     ┆ --- │
-        │ str     ┆ i64 │
-        ╞═════════╪═════╡
-        │ a       ┆ 3   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ a       ┆ 5   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b       ┆ 6   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c       ┆ 1   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c       ┆ 2   │
-        └─────────┴─────┘
-
-        """
-        return self._lazyframe_class._from_pyldf(self.lgb.head(n))
-
-    def tail(self, n: int = 5) -> LDF:
-        """
-        Return last n rows of each group.
-
-        Parameters
-        ----------
-        n
-            Number of values of the group to select
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "letters": ["c", "c", "a", "c", "a", "b"],
-        ...         "nrs": [1, 2, 3, 4, 5, 6],
-        ...     }
-        ... )
-        >>> df
-        shape: (6, 2)
-        ┌─────────┬─────┐
-        │ letters ┆ nrs │
-        │ ---     ┆ --- │
-        │ str     ┆ i64 │
-        ╞═════════╪═════╡
-        │ c       ┆ 1   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c       ┆ 2   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ a       ┆ 3   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c       ┆ 4   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ a       ┆ 5   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b       ┆ 6   │
-        └─────────┴─────┘
-        >>> df.groupby("letters").tail(2).sort("letters")
-         shape: (5, 2)
-        ┌─────────┬─────┐
-        │ letters ┆ nrs │
-        │ ---     ┆ --- │
-        │ str     ┆ i64 │
-        ╞═════════╪═════╡
-        │ a       ┆ 3   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ a       ┆ 5   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b       ┆ 6   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c       ┆ 2   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c       ┆ 4   │
-        └─────────┴─────┘
-
-        """
-        return self._lazyframe_class._from_pyldf(self.lgb.tail(n))
-
-    def apply(self, f: Callable[[pli.DataFrame], pli.DataFrame]) -> LDF:
-        """
-        Apply a function over the groups as a new `DataFrame`.
-
-        Implementing logic using this .apply method is generally slower and more memory
-        intensive than implementing the same logic using the expression API because:
-
-        - with .apply the logic is implemented in Python but with an expression the
-          logic is implemented in Rust
-        - with .apply the DataFrame is materialized in memory
-        - expressions can be parallelised
-        - expressions can be optimised
-
-        If possible use the expression API for best performance.
-
-        Parameters
-        ----------
-        f
-            Function to apply over each group of the `LazyFrame`.
-
-        Examples
-        --------
-        The function is applied by group.
-
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": [1, 2, 3, 1],
-        ...         "bar": ["a", "b", "c", "c"],
-        ...     }
-        ... )
-        >>> (
-        ...     df.lazy()
-        ...     .groupby("bar", maintain_order=True)
-        ...     .agg(
-        ...         [
-        ...             pl.col("foo").apply(lambda x: x.sum()),
-        ...         ]
-        ...     )
-        ...     .collect()
-        ... )
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ bar ┆ foo │
-        │ --- ┆ --- │
-        │ str ┆ i64 │
-        ╞═════╪═════╡
-        │ a   ┆ 1   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b   ┆ 2   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c   ┆ 4   │
-        └─────┴─────┘
-
-        It is better to implement this with an expression:
-
-        >>> (
-        ...     df.groupby("bar", maintain_order=True).agg(
-        ...         pl.col("foo").sum(),
-        ...     )
-        ... )  # doctest: +IGNORE_RESULT
-
-        """
-        return self._lazyframe_class._from_pyldf(self.lgb.apply(f))
+def _prepare_groupby_inputs(
+    by: str | list[str] | pli.Expr | list[pli.Expr] | None,
+) -> list[PyExpr]:
+    if isinstance(by, list):
+        new_by = []
+        for e in by:
+            if isinstance(e, str):
+                e = pli.col(e)
+            new_by.append(e._pyexpr)
+    elif isinstance(by, str):
+        new_by = [pli.col(by)._pyexpr]
+    elif isinstance(by, pli.Expr):
+        new_by = [by._pyexpr]
+    elif by is None:
+        return []
+    return new_by

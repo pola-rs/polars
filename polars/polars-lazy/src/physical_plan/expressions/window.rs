@@ -1,7 +1,6 @@
-use crate::logical_plan::Context;
-use crate::physical_plan::state::ExecutionState;
-use crate::prelude::*;
-use polars_arrow::export::arrow::Either;
+use std::fmt::Write;
+use std::sync::Arc;
+
 use polars_core::frame::groupby::{GroupBy, GroupsProxy};
 use polars_core::frame::hash_join::{
     default_join_ids, private_left_join_multiple_keys, JoinOptIds,
@@ -10,8 +9,10 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::POOL;
 use polars_utils::sort::perfect_sort;
-use std::fmt::Write;
-use std::sync::Arc;
+
+use crate::logical_plan::Context;
+use crate::physical_plan::state::ExecutionState;
+use crate::prelude::*;
 
 pub struct WindowExpr {
     /// the root column that the Function will be applied on.
@@ -26,7 +27,7 @@ pub struct WindowExpr {
     pub(crate) expr: Expr,
 }
 
-#[derive(Debug)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 enum MapStrategy {
     Join,
     // explode now
@@ -150,22 +151,6 @@ impl WindowExpr {
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
             (false, false, AggState::AggregatedList(_)) => {
-                // if the output of a window expression is a list type, but not an explicit list
-                // e.g. due to a `col().shift()` we join back as the flattening and exploding makes
-                // my brain hurt atm.
-
-                // only select the aggregation columns to save allocations in computing the schema
-                if !self.phys_function.is_literal(){
-                    // 'literal' would fail, but also 'count()' would fail
-                    // so on failure ignore and continue.
-                    if let Ok(df) = gb.df.select(&self.apply_columns) {
-                        let schema = df.schema();
-                        if matches!(self.phys_function.to_field(&schema).map(|fld| fld.dtype), Ok(DataType::List(_))) {
-                            return Ok(MapStrategy::Join)
-                        }
-                    }
-                }
-
                 if sorted_keys  {
                     if let GroupsProxy::Idx(g) = gb.get_groups() {
                         debug_assert!(g.is_sorted())
@@ -229,7 +214,8 @@ impl PhysicalExpr for WindowExpr {
         //
         //      - 3.3. MAP to original locations
         //          This will be done for list aggregations that are not explicitly aggregated as list
-        //              `(col("x").sum() * col("y")).over("groups")`
+        //              `(col("x").sum() * col("y")).over("groups")
+        //          This can be used to reverse, sort, shuffle etc. the values in a group
 
         // 4. select the final column and return
         let groupby_columns = self
@@ -369,21 +355,6 @@ impl PhysicalExpr for WindowExpr {
                 // TODO!
                 // investigate if sorted arrays can be return directly
                 let out_column = ac.aggregated();
-                let mut original_idx = Vec::with_capacity(out_column.len());
-                match gb.get_groups() {
-                    GroupsProxy::Idx(groups) => {
-                        for g in groups.all() {
-                            original_idx.extend_from_slice(g)
-                        }
-                    }
-                    GroupsProxy::Slice { groups, .. } => {
-                        for g in groups {
-                            original_idx.extend(g[0]..g[0] + g[1])
-                        }
-                    }
-                };
-
-                let mut original_idx = original_idx.into_iter();
                 let flattened = out_column.explode()?;
                 if flattened.len() != df.height() {
                     return Err(PolarsError::ComputeError(
@@ -395,8 +366,12 @@ impl PhysicalExpr for WindowExpr {
                 // idx (new-idx, original-idx)
                 let mut idx_mapping = Vec::with_capacity(out_column.len());
 
+                // we already set this buffer so we can reuse the `original_idx` buffer
+                // that saves an allocation
+                let mut take_idx = vec![];
+
                 // groups are not changed, we can map by doing a standard argsort.
-                if std::ptr::eq(ac.groups.as_ref(), gb.get_groups()) {
+                if std::ptr::eq(ac.groups().as_ref(), gb.get_groups()) {
                     let mut iter = 0..flattened.len() as IdxSize;
                     match ac.groups().as_ref() {
                         GroupsProxy::Idx(groups) => {
@@ -405,8 +380,8 @@ impl PhysicalExpr for WindowExpr {
                             }
                         }
                         GroupsProxy::Slice { groups, .. } => {
-                            for g in groups {
-                                idx_mapping.extend((g[0]..g[0] + g[1]).zip(&mut original_idx));
+                            for &[first, len] in groups {
+                                idx_mapping.extend((first..first + len).zip(&mut iter));
                             }
                         }
                     }
@@ -414,24 +389,43 @@ impl PhysicalExpr for WindowExpr {
                 // groups are changed, we use the new group indexes as arguments of the argsort
                 // and sort by the old indexes
                 else {
-                    match ac.groups().as_ref() {
+                    let mut original_idx = Vec::with_capacity(out_column.len());
+                    match gb.get_groups() {
                         GroupsProxy::Idx(groups) => {
                             for g in groups.all() {
-                                idx_mapping.extend(g.iter().copied().zip(&mut original_idx));
+                                original_idx.extend_from_slice(g)
                             }
                         }
                         GroupsProxy::Slice { groups, .. } => {
-                            for g in groups {
-                                idx_mapping.extend((g[0]..g[0] + g[1]).zip(&mut original_idx));
+                            for &[first, len] in groups {
+                                original_idx.extend(first..first + len)
+                            }
+                        }
+                    };
+
+                    let mut original_idx_iter = original_idx.iter().copied();
+
+                    match ac.groups().as_ref() {
+                        GroupsProxy::Idx(groups) => {
+                            for g in groups.all() {
+                                idx_mapping.extend(g.iter().copied().zip(&mut original_idx_iter));
+                            }
+                        }
+                        GroupsProxy::Slice { groups, .. } => {
+                            for &[first, len] in groups {
+                                idx_mapping
+                                    .extend((first..first + len).zip(&mut original_idx_iter));
                             }
                         }
                     }
+                    original_idx.clear();
+                    take_idx = original_idx;
                 }
                 cache_gb(gb);
                 // Safety:
                 // we only have unique indices ranging from 0..len
-                let idx = unsafe { perfect_sort(&POOL, &idx_mapping) };
-                let idx = IdxCa::from_vec("", idx);
+                unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
+                let idx = IdxCa::from_vec("", take_idx);
 
                 // Safety:
                 // groups should always be in bounds.
@@ -513,6 +507,8 @@ impl PhysicalExpr for WindowExpr {
 fn materialize_column(join_opt_ids: &JoinOptIds, out_column: &Series) -> Series {
     #[cfg(feature = "chunked_ids")]
     {
+        use polars_arrow::export::arrow::Either;
+
         match join_opt_ids {
             Either::Left(ids) => unsafe {
                 out_column.take_opt_iter_unchecked(

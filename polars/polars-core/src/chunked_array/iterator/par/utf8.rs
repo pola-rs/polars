@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use rayon::prelude::*;
+
+use crate::prelude::*;
 
 unsafe fn idx_to_str(idx: usize, arr: &Utf8Array<i64>) -> Option<&str> {
     if arr.is_valid(idx) {

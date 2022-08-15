@@ -1,7 +1,8 @@
+use std::fmt::Debug;
+
 use super::*;
 use crate::index::IdxSize;
 use crate::trusted_len::TrustedLen;
-use std::fmt::Debug;
 
 // used by agg_quantile
 pub fn rolling_quantile_by_iter<T, O>(

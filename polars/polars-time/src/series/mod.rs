@@ -1,14 +1,14 @@
 mod _trait;
 mod implementations;
-use crate::chunkedarray::*;
-use polars_core::prelude::*;
 use std::ops::Deref;
-
-pub use self::_trait::*;
-use polars_core::utils::Wrap;
 use std::sync::Arc;
 
+use polars_core::prelude::*;
+use polars_core::utils::Wrap;
 pub use SeriesOpsTime;
+
+pub use self::_trait::*;
+use crate::chunkedarray::*;
 
 type SeriesOpsRef = Arc<dyn SeriesOpsTime>;
 

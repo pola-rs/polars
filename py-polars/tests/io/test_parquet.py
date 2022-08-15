@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import os
-import sys
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -11,24 +11,17 @@ import pytest
 import polars as pl
 from polars.testing import assert_frame_equal_local_categoricals
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
-
-
-CompressionMethod = Literal[
-    "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
-]
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import ParquetCompression
 
 
 @pytest.fixture
-def compressions() -> list[CompressionMethod]:
+def compressions() -> list[ParquetCompression]:
     return ["lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"]
 
 
 def test_to_from_buffer(
-    df: pl.DataFrame, compressions: list[CompressionMethod]
+    df: pl.DataFrame, compressions: list[ParquetCompression]
 ) -> None:
     for compression in compressions:
         if compression == "lzo":
@@ -60,7 +53,7 @@ def test_to_from_buffer(
 
 
 def test_to_from_file(
-    io_test_dir: str, df: pl.DataFrame, compressions: list[CompressionMethod]
+    io_test_dir: str, df: pl.DataFrame, compressions: list[ParquetCompression]
 ) -> None:
     f = os.path.join(io_test_dir, "small.parquet")
     for compression in compressions:
@@ -229,3 +222,13 @@ def test_nested_dictionary() -> None:
 
         read_df = pl.read_parquet(f)
         assert df.frame_equal(read_df)
+
+
+def test_row_group_size_saturation() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    f = io.BytesIO()
+
+    # request larger chunk than rows in df
+    df.write_parquet(f, row_group_size=1024)
+    f.seek(0)
+    assert pl.read_parquet(f).frame_equal(df)

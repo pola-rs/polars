@@ -1,8 +1,9 @@
+use arrow::bitmap::MutableBitmap;
+use polars_arrow::array::default_arrays::FromData;
+
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 use crate::utils::NoNull;
-use arrow::bitmap::MutableBitmap;
-use polars_arrow::array::default_arrays::FromData;
 
 impl<T> ChunkFull<T::Native> for ChunkedArray<T>
 where

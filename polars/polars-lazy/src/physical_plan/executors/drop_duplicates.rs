@@ -1,6 +1,7 @@
+use polars_core::prelude::*;
+
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::prelude::*;
 
 pub(crate) struct DropDuplicatesExec {
     pub(crate) input: Box<dyn Executor>,

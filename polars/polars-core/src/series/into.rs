@@ -1,4 +1,3 @@
-use crate::prelude::*;
 #[cfg(any(
     feature = "dtype-datetime",
     feature = "dtype-date",
@@ -6,6 +5,8 @@ use crate::prelude::*;
     feature = "dtype-time"
 ))]
 use polars_arrow::compute::cast::cast;
+
+use crate::prelude::*;
 
 impl Series {
     /// Returns a reference to the Arrow ArrayRef

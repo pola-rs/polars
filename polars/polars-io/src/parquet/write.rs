@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use arrow::array::Array;
 use arrow::chunk::Chunk;
 use arrow::datatypes::DataType as ArrowDataType;
@@ -7,10 +9,8 @@ use arrow::io::parquet::read::ParquetError;
 use arrow::io::parquet::write::{self, FileWriter, *};
 use arrow::io::parquet::write::{DynIter, DynStreamingIterator, Encoding};
 use polars_core::prelude::*;
-use rayon::prelude::*;
-use std::io::Write;
-
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df};
+use rayon::prelude::*;
 pub use write::{BrotliLevel, CompressionOptions as ParquetCompression, GzipLevel, ZstdLevel};
 
 /// Write a DataFrame to parquet format
@@ -55,7 +55,7 @@ where
         self
     }
 
-    /// Set the row group size during writing. This can reduce memory pressure and improve
+    /// Set the row group size (in number of rows) during writing. This can reduce memory pressure and improve
     /// writing performance.
     pub fn with_row_group_size(mut self, size: Option<usize>) -> Self {
         self.row_group_size = size;
@@ -68,7 +68,10 @@ where
         df.rechunk();
 
         if let Some(n) = self.row_group_size {
-            *df = accumulate_dataframes_vertical_unchecked(split_df(df, df.height() / n)?);
+            let n_splits = df.height() / n;
+            if n_splits > 0 {
+                *df = accumulate_dataframes_vertical_unchecked(split_df(df, n_splits)?);
+            }
         };
 
         let fields = df.schema().to_arrow().fields;

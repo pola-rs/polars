@@ -1,8 +1,8 @@
-use crate::series::ops::SeriesSealed;
-use polars_core::prelude::*;
-
 #[cfg(feature = "hash")]
 use polars_core::export::ahash;
+use polars_core::prelude::*;
+
+use crate::series::ops::SeriesSealed;
 
 pub trait SeriesMethods: SeriesSealed {
     /// Create a [`DataFrame`] with the unique `values` of this [`Series`] and a column `"counts"`

@@ -1,10 +1,11 @@
-use crate::chunked_array::ops::explode::offsets_to_indexes;
-use crate::prelude::*;
-use crate::utils::get_supertype;
 use arrow::buffer::Buffer;
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use crate::chunked_array::ops::explode::offsets_to_indexes;
+use crate::prelude::*;
+use crate::utils::get_supertype;
 
 fn get_exploded(series: &Series) -> Result<(Series, Buffer<i64>)> {
     match series.dtype() {

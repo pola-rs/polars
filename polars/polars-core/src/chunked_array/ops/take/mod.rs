@@ -3,17 +3,16 @@
 //! IntoTakeRandom provides structs that implement the TakeRandom trait.
 //! There are several structs that implement the fastest path for random access.
 //!
-use polars_arrow::compute::take::*;
-
-use crate::chunked_array::kernels::take::*;
-
-use crate::prelude::*;
-use crate::utils::NoNull;
+use std::borrow::Cow;
 
 use polars_arrow::array::PolarsArray;
-use std::borrow::Cow;
+use polars_arrow::compute::take::*;
 pub use take_random::*;
 pub use traits::*;
+
+use crate::chunked_array::kernels::take::*;
+use crate::prelude::*;
+use crate::utils::NoNull;
 
 mod take_chunked;
 mod take_every;

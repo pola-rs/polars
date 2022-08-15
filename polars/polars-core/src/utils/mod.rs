@@ -1,19 +1,20 @@
 pub(crate) mod series;
 
-use crate::prelude::*;
-use crate::POOL;
+use std::borrow::Cow;
+use std::ops::{Deref, DerefMut};
+
 pub use arrow;
 use arrow::bitmap::Bitmap;
 pub use polars_arrow::utils::TrustMyLength;
 pub use polars_arrow::utils::*;
 pub use rayon;
 use rayon::prelude::*;
-use std::borrow::Cow;
-use std::ops::{Deref, DerefMut};
+pub use series::*;
 
 #[cfg(feature = "private")]
 pub use crate::chunked_array::ops::sort::argsort_no_nulls;
-pub use series::*;
+use crate::prelude::*;
+use crate::POOL;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -158,6 +159,9 @@ fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
 #[cfg(feature = "private")]
 #[doc(hidden)]
 pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
+    if n == 0 {
+        return Ok(vec![df.clone()]);
+    }
     let total_len = df.height();
     let chunk_size = total_len / n;
 
@@ -301,7 +305,7 @@ macro_rules! match_arrow_data_type_apply_macro_ca {
 /// Apply a macro on the Downcasted ChunkedArray's of DataTypes that are logical numerics.
 /// So no logical.
 #[macro_export]
-macro_rules! match_arrow_data_type_apply_macro_ca_logical_num {
+macro_rules! downcast_as_macro_arg_physical {
     ($self:expr, $macro:ident $(, $opt_args:expr)*) => {{
         match $self.dtype() {
             #[cfg(feature = "dtype-u8")]
@@ -838,6 +842,8 @@ where
     B: PolarsDataType,
     C: PolarsDataType,
 {
+    debug_assert_eq!(a.len(), b.len());
+    debug_assert_eq!(b.len(), c.len());
     match (a.chunks.len(), b.chunks.len(), c.chunks.len()) {
         (1, 1, 1) => (Cow::Borrowed(a), Cow::Borrowed(b), Cow::Borrowed(c)),
         (_, 1, 1) => (

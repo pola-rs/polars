@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import sys
 import typing
-from builtins import range
 from datetime import datetime, timedelta
 from io import BytesIO
-from typing import Any, Iterator
+from typing import TYPE_CHECKING, Any, Iterator
 
 import numpy as np
 import pyarrow as pa
@@ -13,6 +12,9 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal, columns
+
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import JoinStrategy
 
 
 def test_version() -> None:
@@ -88,7 +90,7 @@ def test_selection() -> None:
 
     # select columns by mask
     assert df[:2, :1].shape == (2, 1)
-    assert df[:2, "a"].shape == (2, 1)
+    assert df[:2, "a"].shape == (2, 1)  # type: ignore[comparison-overlap]
 
     # column selection by string(s) in first dimension
     assert df["a"].to_list() == [1, 2, 3]
@@ -115,11 +117,11 @@ def test_selection() -> None:
     assert df[[1, 2], [1, 2]].frame_equal(
         pl.DataFrame({"b": [2.0, 3.0], "c": ["b", "c"]})
     )
-    assert df[1, 2] == "b"
-    assert df[1, 1] == 2.0
-    assert df[2, 0] == 3
+    assert typing.cast(str, df[1, 2]) == "b"
+    assert typing.cast(float, df[1, 1]) == 2.0
+    assert typing.cast(int, df[2, 0]) == 3
 
-    assert df[[0, 1], "b"].shape == (2, 1)
+    assert df[[0, 1], "b"].shape == (2, 1)  # type: ignore[comparison-overlap]
     assert df[[2], ["a", "b"]].shape == (1, 2)
     assert df.to_series(0).name == "a"
     assert (df["a"] == df["a"]).sum() == 3
@@ -130,10 +132,10 @@ def test_selection() -> None:
     assert df[1, [2]].frame_equal(expect)
     expect = pl.DataFrame({"b": [1.0, 3.0]})
     assert df[[0, 2], [1]].frame_equal(expect)
-    assert df[0, "c"] == "a"
-    assert df[1, "c"] == "b"
-    assert df[2, "c"] == "c"
-    assert df[0, "a"] == 1
+    assert typing.cast(str, df[0, "c"]) == "a"
+    assert typing.cast(str, df[1, "c"]) == "b"
+    assert typing.cast(str, df[2, "c"]) == "c"
+    assert typing.cast(int, df[0, "a"]) == 1
 
     # more slicing
     expect = pl.DataFrame({"a": [3, 2, 1], "b": [3.0, 2.0, 1.0], "c": ["c", "b", "a"]})
@@ -594,7 +596,7 @@ def test_read_missing_file() -> None:
         pl.read_csv("fake_csv_file")
 
     with pytest.raises(FileNotFoundError, match="fake_csv_file"):
-        with open("fake_csv_file", "r") as f:
+        with open("fake_csv_file") as f:
             pl.read_csv(f)
 
 
@@ -691,7 +693,7 @@ def test_concat() -> None:
         _ = pl.concat([])
 
     with pytest.raises(ValueError):
-        pl.concat([df, df], how="rubbish")
+        pl.concat([df, df], how="rubbish")  # type: ignore[call-overload]
 
 
 def test_arg_where() -> None:
@@ -764,9 +766,9 @@ def test_df_fold() -> None:
 
 def test_row_tuple() -> None:
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
-    assert df.row(0) == ("foo", 1, 1.0)
-    assert df.row(1) == ("bar", 2, 2.0)
-    assert df.row(-1) == ("2", 3, 3.0)
+    assert df.row(0) == ("foo", 1, 1.0)  # type: ignore[comparison-overlap]
+    assert df.row(1) == ("bar", 2, 2.0)  # type: ignore[comparison-overlap]
+    assert df.row(-1) == ("2", 3, 3.0)  # type: ignore[comparison-overlap]
 
 
 def test_df_apply() -> None:
@@ -1056,7 +1058,7 @@ def dot_product() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 2, 2, 2]})
 
     assert df["a"].dot(df["b"]) == 20
-    assert df.select([pl.col("a").dot("b")])[0, "a"] == 20
+    assert typing.cast(int, df.select([pl.col("a").dot("b")])[0, "a"]) == 20
 
 
 def test_hash_rows() -> None:
@@ -1754,7 +1756,8 @@ def test_join_suffixes() -> None:
     df_a = pl.DataFrame({"A": [1], "B": [1]})
     df_b = pl.DataFrame({"A": [1], "B": [1]})
 
-    for how in ["left", "inner", "outer", "cross"]:
+    join_strategies: list[JoinStrategy] = ["left", "inner", "outer", "cross"]
+    for how in join_strategies:
         # no need for an assert, we error if wrong
         df_a.join(df_b, on="A", suffix="_y", how=how)["B_y"]
 

@@ -1,7 +1,9 @@
+use std::ops::{BitAnd, BitOr, BitXor, Not};
+
+use arrow::compute;
+
 use super::*;
 use crate::utils::{align_chunks_binary, combine_validities, CustomIterTools};
-use arrow::compute;
-use std::ops::{BitAnd, BitOr, BitXor, Not};
 
 impl<T> BitAnd for &ChunkedArray<T>
 where

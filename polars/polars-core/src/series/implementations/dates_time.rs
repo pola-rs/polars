@@ -7,6 +7,12 @@
 //! opting for a little more run time cost. We cast to the physical type -> apply the operation and
 //! (depending on the result) cast back to the original type
 //!
+use std::borrow::Cow;
+use std::ops::{Deref, DerefMut};
+
+use ahash::RandomState;
+use polars_arrow::prelude::QuantileInterpolOptions;
+
 use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
@@ -19,10 +25,6 @@ use crate::chunked_array::{
 use crate::fmt::FmtList;
 use crate::frame::{groupby::*, hash_join::*};
 use crate::prelude::*;
-use ahash::RandomState;
-use polars_arrow::prelude::QuantileInterpolOptions;
-use std::borrow::Cow;
-use std::ops::{Deref, DerefMut};
 
 macro_rules! impl_dyn_series {
     ($ca: ident, $into_logical: ident) => {

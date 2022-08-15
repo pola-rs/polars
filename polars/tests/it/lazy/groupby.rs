@@ -1,5 +1,7 @@
-use super::*;
 use polars_core::series::ops::NullBehavior;
+use polars_core::SINGLE_LOCK;
+
+use super::*;
 
 #[test]
 fn test_filter_sort_diff_2984() -> Result<()> {
@@ -150,5 +152,32 @@ fn test_groupby_agg_list_with_not_aggregated() -> Result<()> {
         out,
         Series::new("value", &[0, 2, 1, 3, 2, 2, 7, 2, 3, 1, 2, 1])
     );
+    Ok(())
+}
+
+#[test]
+#[cfg(all(feature = "dtype-duration", feature = "dtype-struct"))]
+fn test_logical_mean_partitioned_groupby_block() -> Result<()> {
+    let guard = SINGLE_LOCK.lock();
+    let df = df![
+        "a" => [1, 1, 2],
+        "duration" => [1000, 2000, 3000]
+    ]?;
+
+    let out = df
+        .lazy()
+        .with_column(col("duration").cast(DataType::Duration(TimeUnit::Microseconds)))
+        .groupby([col("a")])
+        .agg([col("duration").mean()])
+        .sort("duration", Default::default())
+        .collect()?;
+
+    let duration = out.column("duration")?;
+
+    assert_eq!(
+        duration.get(0),
+        AnyValue::Duration(1500, TimeUnit::Microseconds)
+    );
+
     Ok(())
 }

@@ -1,6 +1,7 @@
 # may contain many things that seemed to go wrong at scale
 
 import time
+from typing import cast
 
 import numpy as np
 
@@ -50,8 +51,8 @@ for _ in range(10):
     computed = permuted.select(
         [pl.col("id").min().alias("min"), pl.col("id").max().alias("max")]
     )
-    assert computed[0, "min"] == minimum
-    assert computed[0, "max"] == maximum
+    assert cast(int, computed[0, "min"]) == minimum
+    assert cast(float, computed[0, "max"]) == maximum
 
 
 def test_windows_not_cached() -> None:

@@ -1,8 +1,9 @@
 pub mod inner;
 pub mod left;
 
-use crate::index::IdxSize;
 use std::fmt::Debug;
+
+use crate::index::IdxSize;
 
 type JoinOptIds = Vec<Option<IdxSize>>;
 type JoinIds = Vec<IdxSize>;

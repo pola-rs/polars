@@ -1,5 +1,6 @@
-use super::*;
 use polars_core::series::IsSorted;
+
+use super::*;
 
 #[test]
 fn test_with_duplicate_column_empty_df() {

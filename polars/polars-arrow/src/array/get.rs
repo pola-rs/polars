@@ -1,8 +1,9 @@
-use crate::is_valid::IsValid;
 use arrow::{
     array::{Array, BooleanArray, ListArray, PrimitiveArray, Utf8Array},
     types::NativeType,
 };
+
+use crate::is_valid::IsValid;
 
 pub trait ArrowGetItem {
     type Item;

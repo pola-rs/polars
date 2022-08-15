@@ -1,7 +1,8 @@
-use super::buffer::*;
-use crate::csv::read::NullValuesCompiled;
 use num::traits::Pow;
 use polars_core::prelude::*;
+
+use super::buffer::*;
+use crate::csv::read::NullValuesCompiled;
 
 /// Skip the utf-8 Byte Order Mark.
 /// credits to csv-core

@@ -1,9 +1,10 @@
-use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_io::csv::{CsvEncoding, NullValues};
 use polars_io::RowCount;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use crate::prelude::*;
 
 pub type FileCount = u32;
 
@@ -160,6 +161,7 @@ pub struct FunctionOptions {
     /// sum(x) -> {4}
     pub(crate) auto_explode: bool,
     // used for formatting
+    #[cfg_attr(feature = "serde", serde(skip_deserializing))]
     pub(crate) fmt_str: &'static str,
 }
 

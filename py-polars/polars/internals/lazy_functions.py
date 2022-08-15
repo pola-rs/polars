@@ -62,7 +62,7 @@ else:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
-    from polars.internals.datatypes import InterpolationMethod
+    from polars.internals.type_aliases import InterpolationMethod, IntoExpr, TimeUnit
 
 
 def col(
@@ -640,6 +640,7 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
     >>> pl.lit(pl.Series("a", [1, 2, 3]))  # doctest: +IGNORE_RESULT
 
     """
+    tu: TimeUnit
     if isinstance(value, datetime):
         tu = "us"
         return lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime(tu))
@@ -818,7 +819,7 @@ def apply(
 
 
 def fold(
-    acc: pli.IntoExpr,
+    acc: IntoExpr,
     f: Callable[[pli.Series, pli.Series], pli.Series],
     exprs: Sequence[pli.Expr | str] | pli.Expr,
 ) -> pli.Expr:

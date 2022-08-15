@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
+use polars_core::prelude::*;
+
 use crate::dsl::{BinaryUdfOutputField, SeriesBinaryUdf, SpecialEq};
 use crate::logical_plan::Context;
-use polars_core::prelude::*;
-use std::sync::Arc;
 
 impl Default for SpecialEq<Arc<dyn SeriesBinaryUdf>> {
     fn default() -> Self {

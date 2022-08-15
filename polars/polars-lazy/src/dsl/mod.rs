@@ -18,39 +18,38 @@ mod options;
 pub mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
-use polars_time::series::SeriesOpsTime;
-
-use crate::prelude::*;
-use crate::utils::has_expr;
-
-#[cfg(feature = "is_in")]
-use crate::utils::has_root_literal_expr;
-use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
-use polars_core::prelude::*;
 
 use std::fmt::Debug;
 use std::{
     ops::{Add, Div, Mul, Rem, Sub},
     sync::Arc,
 };
-// reexport the lazy method
-pub use crate::frame::IntoLazy;
-pub use crate::logical_plan::lit;
+
 pub use expr::*;
 pub use functions::*;
 pub use options::*;
-
-use crate::dsl::function_expr::FunctionExpr;
-
-#[cfg(feature = "trigonometry")]
-use crate::dsl::function_expr::TrigonometricFunction;
-
+use polars_arrow::prelude::QuantileInterpolOptions;
+use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
+use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
 use polars_core::utils::{get_supertype, NoNull};
 use polars_ops::prelude::SeriesOps;
+#[cfg(feature = "rolling_window")]
+use polars_time::series::SeriesOpsTime;
+
+use crate::dsl::function_expr::FunctionExpr;
+use crate::dsl::function_expr::NanFunction;
+#[cfg(feature = "trigonometry")]
+use crate::dsl::function_expr::TrigonometricFunction;
+// reexport the lazy method
+pub use crate::frame::IntoLazy;
+pub use crate::logical_plan::lit;
+use crate::prelude::*;
+use crate::utils::has_expr;
+#[cfg(feature = "is_in")]
+use crate::utils::has_root_literal_expr;
 
 pub fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
     Expr::BinaryExpr {
@@ -301,22 +300,7 @@ impl Expr {
 
     /// Drop NaN values
     pub fn drop_nans(self) -> Self {
-        self.apply(
-            |s| match s.dtype() {
-                DataType::Float32 => {
-                    let ca = s.f32()?;
-                    let mask = ca.is_not_nan();
-                    ca.filter(&mask).map(|ca| ca.into_series())
-                }
-                DataType::Float64 => {
-                    let ca = s.f64()?;
-                    let mask = ca.is_not_nan();
-                    ca.filter(&mask).map(|ca| ca.into_series())
-                }
-                _ => Ok(s),
-            },
-            GetOutput::same_type(),
-        )
+        self.apply_private(NanFunction::DropNans.into(), "drop_nans")
     }
 
     /// Reduce groups to minimal value.
@@ -832,23 +816,13 @@ impl Expr {
     }
 
     /// Get mask of NaN values if dtype is Float
-    #[allow(clippy::wrong_self_convention)]
     pub fn is_nan(self) -> Self {
-        self.map(
-            |s: Series| s.is_nan().map(|ca| ca.into_series()),
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_fmt("is_nan")
+        self.map_private(NanFunction::IsNan.into(), "is_nan")
     }
 
     /// Get inverse mask of NaN values if dtype is Float
-    #[allow(clippy::wrong_self_convention)]
     pub fn is_not_nan(self) -> Self {
-        self.map(
-            |s: Series| s.is_not_nan().map(|ca| ca.into_series()),
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_fmt("is_not_nan")
+        self.map_private(NanFunction::IsNotNan.into(), "is_not_nan")
     }
 
     /// Shift the values in the array by some period. See [the eager implementation](polars_core::series::SeriesTrait::shift).
@@ -1106,6 +1080,7 @@ impl Expr {
     pub fn fill_nan<E: Into<Expr>>(self, fill_value: E) -> Self {
         // we take the not branch so that self is truthy value of `when -> then -> otherwise`
         // and that ensure we keep the name of `self`
+
         when(self.clone().is_not_nan())
             .then(self)
             .otherwise(fill_value.into())
@@ -1564,6 +1539,7 @@ impl Expr {
             .with_fmt("interpolate")
     }
 
+    #[cfg(feature = "rolling_window")]
     #[allow(clippy::type_complexity)]
     fn finish_rolling(
         self,

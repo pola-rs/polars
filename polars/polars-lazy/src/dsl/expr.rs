@@ -1,13 +1,14 @@
-use crate::prelude::*;
-use polars_core::prelude::*;
-use polars_core::utils::get_supertype;
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
-use crate::dsl::function_expr::FunctionExpr;
+use polars_core::prelude::*;
+use polars_core::utils::get_supertype;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use crate::dsl::function_expr::FunctionExpr;
+use crate::prelude::*;
 
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> Result<Series>`
 pub trait SeriesUdf: Send + Sync {
@@ -306,7 +307,6 @@ pub enum Expr {
         output_type: GetOutput,
         options: FunctionOptions,
     },
-    #[cfg_attr(feature = "serde", serde(skip))]
     Function {
         /// function arguments
         input: Vec<Expr>,
@@ -342,7 +342,6 @@ pub enum Expr {
         length: Box<Expr>,
     },
     /// Can be used in a select statement to exclude a column from selection
-    #[cfg_attr(feature = "serde", serde(skip))]
     Exclude(Box<Expr>, Vec<Excluded>),
     /// Set root name as Alias
     KeepName(Box<Expr>),
@@ -378,6 +377,8 @@ impl Default for Expr {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+
 pub enum Excluded {
     Name(Arc<str>),
     Dtype(DataType),
@@ -407,6 +408,7 @@ pub enum Operator {
     Multiply,
     Divide,
     TrueDivide,
+    FloorDivide,
     Modulus,
     And,
     Or,

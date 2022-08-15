@@ -1,5 +1,6 @@
-use polars::prelude::*;
 use std::io::Cursor;
+
+use polars::prelude::*;
 
 #[test]
 fn test_vstack_empty_3220() -> Result<()> {

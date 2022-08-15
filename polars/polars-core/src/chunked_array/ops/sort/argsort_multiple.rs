@@ -1,5 +1,6 @@
-use super::*;
 use polars_arrow::data_types::IsFloat;
+
+use super::*;
 
 pub(crate) fn args_validate<T: PolarsDataType>(
     ca: &ChunkedArray<T>,

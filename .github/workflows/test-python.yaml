@@ -31,7 +31,13 @@ jobs:
           pip install -r py-polars/build.requirements.txt
       - name: Run formatting checks
         run: |
-          cd py-polars && black --check . && blackdoc --check . && isort --check . && rustup override set nightly-2022-07-24 && cargo fmt --all -- --check && cd ..
+          cd py-polars
+          black --check .
+          blackdoc --check .
+          isort --check .
+          pyupgrade --py37-plus `find . -name "*.py" -type f`
+          rustup override set nightly-2022-07-24 && cargo fmt --all -- --check
+          cd ..
       - name: Run linting
         run: |
           cd py-polars && flake8 && cd ..
@@ -76,7 +82,13 @@ jobs:
           pip install -r py-polars/build.requirements.txt
       - name: Run formatting checks
         run: |
-          cd py-polars && black --check . && blackdoc --check . && isort --check . && rustup override set nightly-2022-07-24 && cargo fmt --all -- --check && cd ..
+          cd py-polars
+          black --check .
+          blackdoc --check .
+          isort --check .
+          pyupgrade --py37-plus `find . -name "*.py" -type f`
+          rustup override set nightly-2022-07-24 && cargo fmt --all -- --check
+          cd ..
       - name: Run linting
         run: |
           cd py-polars && flake8 && cd ..

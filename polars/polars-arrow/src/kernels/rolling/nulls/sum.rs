@@ -1,6 +1,7 @@
-use super::*;
 use nulls;
 use nulls::{rolling_apply_agg_window, RollingAggWindowNulls};
+
+use super::*;
 
 pub struct SumWindow<'a, T> {
     slice: &'a [T],

@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use num::Signed;
+
+use crate::prelude::*;
 
 impl<T: PolarsNumericType> ChunkedArray<T>
 where

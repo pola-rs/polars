@@ -1,7 +1,9 @@
-use crate::trusted_len::{PushUnchecked, TrustedLen};
-use num::Float;
 use std::fmt::Debug;
 use std::ops::AddAssign;
+
+use num::Float;
+
+use crate::trusted_len::{PushUnchecked, TrustedLen};
 // See:
 // https://github.com/pola-rs/polars/issues/2148
 // https://stackoverflow.com/a/51392341/6717054

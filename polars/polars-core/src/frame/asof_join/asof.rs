@@ -1,6 +1,7 @@
-use polars_arrow::index::IdxSize;
 use std::fmt::Debug;
 use std::ops::Sub;
+
+use polars_arrow::index::IdxSize;
 
 pub(super) fn join_asof_forward_with_tolerance<T: PartialOrd + Copy + Debug + Sub<Output = T>>(
     left: &[T],

@@ -1,9 +1,10 @@
+use arrow::array::ListArray;
+use arrow::buffer::Buffer;
+
 use crate::compute::take::take_unchecked;
 use crate::prelude::*;
 use crate::trusted_len::PushUnchecked;
 use crate::utils::CustomIterTools;
-use arrow::array::ListArray;
-use arrow::buffer::Buffer;
 
 /// Get the indices that would result in a get operation on the lists values.
 /// for example, consider this list:
@@ -93,11 +94,11 @@ pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use arrow::array::{Array, Int32Array, PrimitiveArray};
     use arrow::buffer::Buffer;
     use arrow::datatypes::DataType;
-    use std::sync::Arc;
+
+    use super::*;
 
     fn get_array() -> ListArray<i64> {
         let values = Int32Array::from_slice(&[1, 2, 3, 4, 5, 6]);

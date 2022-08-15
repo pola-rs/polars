@@ -1,8 +1,10 @@
-use super::*;
-use crate::utils::get_iter_capacity;
-use arrow::bitmap::MutableBitmap;
 use std::marker::PhantomData;
 use std::sync::Arc;
+
+use arrow::bitmap::MutableBitmap;
+
+use super::*;
+use crate::utils::get_iter_capacity;
 
 pub struct ObjectChunkedBuilder<T> {
     field: Field,

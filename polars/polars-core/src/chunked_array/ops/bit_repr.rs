@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use arrow::buffer::Buffer;
+
+use crate::prelude::*;
 
 #[cfg(feature = "performant")]
 impl Int16Chunked {

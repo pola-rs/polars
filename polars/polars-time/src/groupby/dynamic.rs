@@ -1,12 +1,12 @@
-use crate::prelude::*;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::export::rayon::prelude::*;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
-
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use crate::prelude::*;
 
 #[repr(transparent)]
 struct Wrap<T>(pub T);
@@ -423,8 +423,9 @@ fn update_subgroups(
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use chrono::prelude::*;
+
+    use super::*;
 
     #[test]
     fn test_rolling_groupby_tu() -> Result<()> {

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 
 import polars as pl
+
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import JoinStrategy
 
 
 def test_semi_anti_join() -> None:
@@ -82,7 +86,8 @@ def test_sorted_merge_joins() -> None:
             df_a = df_a.select(pl.all().reverse())
             df_b = df_b.select(pl.all().reverse())
 
-        for how in ["left", "inner"]:
+        join_strategies: list[JoinStrategy] = ["left", "inner"]
+        for how in join_strategies:
             # hash join
             out_hash_join = df_a.join(df_b, on="a", how=how)
 
@@ -274,7 +279,8 @@ def test_joins_dispatch() -> None:
         [pl.col("date").str.strptime(pl.Date), pl.col("datetime").cast(pl.Datetime)]
     )
 
-    for how in ["left", "inner", "outer"]:
+    join_strategies: list[JoinStrategy] = ["left", "inner", "outer"]
+    for how in join_strategies:
         dfa.join(dfa, on=["a", "b", "date", "datetime"], how=how)
         dfa.join(dfa, on=["date", "datetime"], how=how)
         dfa.join(dfa, on=["date", "datetime", "a"], how=how)

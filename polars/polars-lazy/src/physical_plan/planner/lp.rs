@@ -1,7 +1,8 @@
-use super::super::executors;
-use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_io::aggregations::ScanAggregation;
+
+use super::super::executors;
+use crate::prelude::*;
 
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 fn aggregate_expr_to_scan_agg(
@@ -379,7 +380,12 @@ impl DefaultPlanner {
                                 match ae {
                                     // struct is needed to keep both states
                                     #[cfg(feature = "dtype-struct")]
-                                    Agg(AAggExpr::Mean(_)) => true,
+                                    Agg(AAggExpr::Mean(_)) => {
+                                        // only numeric means for now.
+                                        // logical types seem to break because of casts to float.
+                                        matches!(expr_arena.get(*agg).get_type(&input_schema, Context::Default, expr_arena).map(|dt| {
+                                        dt.is_numeric()}), Ok(true))
+                                    },
                                     // only allowed expressions
                                     Agg(agg_e) => {
                                         matches!(

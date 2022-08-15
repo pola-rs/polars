@@ -8,7 +8,7 @@ import sys
 import warnings
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable, Sequence, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, TypeVar
 
 import polars.internals as pli
 from polars.datatypes import DataType, Date, Datetime
@@ -32,6 +32,9 @@ if sys.version_info >= (3, 10):
     from typing import ParamSpec, TypeGuard
 else:
     from typing_extensions import ParamSpec, TypeGuard
+
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import TimeUnit
 
 
 def _process_null_values(
@@ -83,7 +86,7 @@ def timedelta_in_nanoseconds_window(td: timedelta) -> bool:
     return in_nanoseconds_window(datetime(1970, 1, 1) + td)
 
 
-def _datetime_to_pl_timestamp(dt: datetime, tu: str | None) -> int:
+def _datetime_to_pl_timestamp(dt: datetime, tu: TimeUnit | None) -> int:
     """Convert a python datetime to a timestamp in nanoseconds."""
     if tu == "ns":
         return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e9)
@@ -91,25 +94,25 @@ def _datetime_to_pl_timestamp(dt: datetime, tu: str | None) -> int:
         return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e6)
     elif tu == "ms":
         return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e3)
-    if tu is None:
+    elif tu is None:
         # python has us precision
         return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e6)
     else:
-        raise ValueError("expected one of {'ns', 'us', 'ms'}")
+        raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
 
 
-def _timedelta_to_pl_timedelta(td: timedelta, tu: str | None = None) -> int:
+def _timedelta_to_pl_timedelta(td: timedelta, tu: TimeUnit | None = None) -> int:
     if tu == "ns":
         return int(td.total_seconds() * 1e9)
     elif tu == "us":
         return int(td.total_seconds() * 1e6)
     elif tu == "ms":
         return int(td.total_seconds() * 1e3)
-    if tu is None:
+    elif tu is None:
         # python has us precision
         return int(td.total_seconds() * 1e6)
     else:
-        raise ValueError("expected one of {'ns', 'us, 'ms'}")
+        raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
 
 
 def _date_to_pl_date(d: date) -> int:
@@ -206,7 +209,7 @@ def _to_python_time(value: int) -> time:
     return time(hour=hours, minute=minutes, second=seconds, microsecond=microsecond)
 
 
-def _to_python_timedelta(value: int | float, tu: str | None = "ns") -> timedelta:
+def _to_python_timedelta(value: int | float, tu: TimeUnit = "ns") -> timedelta:
     if tu == "ns":
         return timedelta(microseconds=value // 1e3)
     elif tu == "us":
@@ -214,7 +217,7 @@ def _to_python_timedelta(value: int | float, tu: str | None = "ns") -> timedelta
     elif tu == "ms":
         return timedelta(milliseconds=value)
     else:
-        raise ValueError(f"time unit: {tu} not expected")
+        raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
 
 
 def _prepare_row_count_args(
@@ -233,7 +236,7 @@ EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 def _to_python_datetime(
     value: int | float,
     dtype: type[DataType],
-    tu: str | None = "ns",
+    tu: TimeUnit | None = "ns",
     tz: str | None = None,
 ) -> date | datetime:
     if dtype == Date:
@@ -253,9 +256,14 @@ def _to_python_datetime(
             # milliseconds to seconds
             dt = datetime.utcfromtimestamp(value / 1000)
         else:
-            raise ValueError(f"time unit: {tu} not expected")
+            raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
         if tz is not None and len(tz) > 0:
-            import pytz
+            try:
+                import pytz
+            except ImportError:
+                raise ImportError(
+                    "pytz is not installed. Please run `pip install pytz`."
+                ) from None
 
             return pytz.timezone(tz).localize(dt)
         return dt

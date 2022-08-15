@@ -1,7 +1,9 @@
+use std::fmt::{Display, Write};
+
+use polars_arrow::array::default_arrays::FromDataUtf8;
+
 use super::StrConcat;
 use crate::prelude::*;
-use polars_arrow::array::default_arrays::FromDataUtf8;
-use std::fmt::{Display, Write};
 
 fn fmt_and_write<T: Display>(value: Option<T>, buf: &mut String) {
     match value {

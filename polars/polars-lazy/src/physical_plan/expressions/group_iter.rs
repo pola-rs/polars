@@ -1,6 +1,8 @@
-use super::*;
-use polars_core::series::unstable::UnstableSeries;
 use std::pin::Pin;
+
+use polars_core::series::unstable::UnstableSeries;
+
+use super::*;
 
 impl<'a> AggregationContext<'a> {
     pub(super) fn iter_groups(

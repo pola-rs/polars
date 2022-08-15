@@ -1,7 +1,9 @@
-use crate::prelude::*;
+use std::borrow::Cow;
+
 use jsonpath_lib::PathCompiled;
 use serde_json::Value;
-use std::borrow::Cow;
+
+use crate::prelude::*;
 
 #[cfg(feature = "extract_jsonpath")]
 fn extract_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a, str>> {

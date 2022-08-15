@@ -1,5 +1,6 @@
-use anyhow::Error;
 use std::borrow::Cow;
+
+use anyhow::Error;
 use thiserror::Error as ThisError;
 
 type ErrString = Cow<'static, str>;

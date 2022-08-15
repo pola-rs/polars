@@ -1,10 +1,11 @@
 #[cfg(feature = "object")]
+use arrow::array::Array;
+use arrow::compute::filter::filter as filter_fn;
+
+#[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
 use crate::utils::align_chunks_binary;
-#[cfg(feature = "object")]
-use arrow::array::Array;
-use arrow::compute::filter::filter as filter_fn;
 
 macro_rules! check_filter_len {
     ($self:expr, $filter:expr) => {{

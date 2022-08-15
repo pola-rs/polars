@@ -1,10 +1,11 @@
 mod read;
 mod write;
 
-use super::*;
 use arrow::io::avro::avro_schema::error::Error as AvroError;
 pub use read::*;
 pub use write::*;
+
+use super::*;
 
 // we cannot implement the From trait because of the orphan rule
 fn convert_err(e: AvroError) -> PolarsError {
@@ -13,11 +14,13 @@ fn convert_err(e: AvroError) -> PolarsError {
 
 #[cfg(test)]
 mod test {
-    use super::{write, AvroReader, AvroWriter};
-    use crate::prelude::*;
+    use std::io::Cursor;
+
     use polars_core::df;
     use polars_core::prelude::*;
-    use std::io::Cursor;
+
+    use super::{write, AvroReader, AvroWriter};
+    use crate::prelude::*;
 
     #[test]
     fn test_write_and_read_with_compression() -> Result<()> {

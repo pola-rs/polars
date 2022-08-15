@@ -1,7 +1,8 @@
-use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_io::parquet::ParallelStrategy;
 use polars_io::RowCount;
+
+use crate::prelude::*;
 
 #[derive(Clone)]
 pub struct ScanArgsParquet {

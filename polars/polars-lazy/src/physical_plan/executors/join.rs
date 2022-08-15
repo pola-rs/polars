@@ -1,9 +1,11 @@
+use std::borrow::Cow;
+
+use polars_core::prelude::*;
+use polars_core::POOL;
+
 use crate::logical_plan::FETCH_ROWS;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::prelude::*;
-use polars_core::POOL;
-use std::borrow::Cow;
 
 pub struct JoinExec {
     input_left: Option<Box<dyn Executor>>,

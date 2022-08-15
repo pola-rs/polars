@@ -1,3 +1,8 @@
+use std::borrow::Cow;
+use std::ops::{Deref, DerefMut};
+
+use ahash::RandomState;
+
 use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
@@ -7,9 +12,6 @@ use crate::chunked_array::{ops::explode::ExplodeByOffsets, AsSinglePtr};
 use crate::fmt::FmtList;
 use crate::frame::{groupby::*, hash_join::*};
 use crate::prelude::*;
-use ahash::RandomState;
-use std::borrow::Cow;
-use std::ops::{Deref, DerefMut};
 
 impl IntoSeries for DatetimeChunked {
     fn into_series(self) -> Series {

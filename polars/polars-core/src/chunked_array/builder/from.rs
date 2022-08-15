@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
+
+use crate::prelude::*;
 
 impl<T: PolarsNumericType> From<(&str, PrimitiveArray<T::Native>)> for ChunkedArray<T> {
     fn from(tpl: (&str, PrimitiveArray<T::Native>)) -> Self {

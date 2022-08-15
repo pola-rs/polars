@@ -1,7 +1,8 @@
-use super::*;
 use arrow::bitmap::utils::{count_zeros, zip_validity};
 use nulls;
 use nulls::{rolling_apply_agg_window, RollingAggWindowNulls};
+
+use super::*;
 
 pub fn is_reverse_sorted_max_nulls<T: NativeType + PartialOrd + IsFloat>(
     values: &[T],
