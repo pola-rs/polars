@@ -176,7 +176,12 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_contains(pattern, literal))
+        s = pli.wrap_s(self._s)
+        return (
+            s.to_frame()
+            .select(pli.col(s.name).str.contains(pattern, literal))
+            .to_series()
+        )
 
     def ends_with(self, sub: str) -> pli.Series:
         """
@@ -265,14 +270,12 @@ class StringNameSpace:
         ]
 
         """
-        if encoding == "hex":
-            return pli.wrap_s(self._s.str_hex_decode(strict))
-        elif encoding == "base64":
-            return pli.wrap_s(self._s.str_base64_decode(strict))
-        else:
-            raise ValueError(
-                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
-            )
+        s = pli.wrap_s(self._s)
+        return (
+            s.to_frame()
+            .select(pli.col(s.name).str.decode(encoding, strict))
+            .to_series()
+        )
 
     def encode(self, encoding: TransferEncoding) -> pli.Series:
         """
@@ -300,14 +303,8 @@ class StringNameSpace:
         ]
 
         """
-        if encoding == "hex":
-            return pli.wrap_s(self._s.str_hex_encode())
-        elif encoding == "base64":
-            return pli.wrap_s(self._s.str_base64_encode())
-        else:
-            raise ValueError(
-                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
-            )
+        s = pli.wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.encode(encoding)).to_series()
 
     def json_path_match(self, json_path: str) -> pli.Series:
         """
@@ -345,7 +342,12 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_json_path_match(json_path))
+        s = pli.wrap_s(self._s)
+        return (
+            s.to_frame()
+            .select(pli.col(s.name).str.json_path_match(json_path))
+            .to_series()
+        )
 
     def extract(self, pattern: str, group_index: int = 1) -> pli.Series:
         r"""
@@ -390,7 +392,12 @@ class StringNameSpace:
         └─────────┘
 
         """
-        return pli.wrap_s(self._s.str_extract(pattern, group_index))
+        s = pli.wrap_s(self._s)
+        return (
+            s.to_frame()
+            .select(pli.col(s.name).str.extract(pattern, group_index))
+            .to_series()
+        )
 
     def extract_all(self, pattern: str) -> pli.Series:
         r"""
@@ -575,7 +582,12 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_replace(pattern, value, literal))
+        s = pli.wrap_s(self._s)
+        return (
+            s.to_frame()
+            .select(pli.col(s.name).str.replace(pattern, value, literal))
+            .to_series()
+        )
 
     def replace_all(
         self, pattern: str, value: str, literal: bool = False
@@ -608,7 +620,12 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_replace_all(pattern, value, literal))
+        s = pli.wrap_s(self._s)
+        return (
+            s.to_frame()
+            .select(pli.col(s.name).str.replace_all(pattern, value, literal))
+            .to_series()
+        )
 
     def strip(self) -> pli.Series:
         """Remove leading and trailing whitespace."""
@@ -709,11 +726,13 @@ class StringNameSpace:
 
     def to_lowercase(self) -> pli.Series:
         """Modify the strings to their lowercase equivalent."""
-        return pli.wrap_s(self._s.str_to_lowercase())
+        s = pli.wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.to_lowercase()).to_series()
 
     def to_uppercase(self) -> pli.Series:
         """Modify the strings to their uppercase equivalent."""
-        return pli.wrap_s(self._s.str_to_uppercase())
+        s = pli.wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.to_uppercase()).to_series()
 
     def slice(self, start: int, length: int | None = None) -> pli.Series:
         """
@@ -758,4 +777,5 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_slice(start, length))
+        s = pli.wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.slice(start, length)).to_series()
