@@ -343,7 +343,7 @@ class Expr:
         └──────────┘
 
         """
-        return self ** 0.5
+        return self**0.5
 
     def log10(self) -> Expr:
         """
@@ -2825,17 +2825,17 @@ class Expr:
         ...             pl.col("b").filter(pl.col("b") >= 2).sum().alias("gte"),
         ...         ]
         ...     )
-        ... ).sort("a")
+        ... ).sort("group_col")
         shape: (2, 3)
-        ┌─────┬──────┬─────┐
-        │ a   ┆ lt   ┆ gte │
-        │ --- ┆ ---  ┆ --- │
-        │ str ┆ i64  ┆ i64 │
-        ╞═════╪══════╪═════╡
-        │ g1  ┆ 1    ┆ 2   │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ g2  ┆ null ┆ 3   │
-        └─────┴──────┴─────┘
+        ┌───────────┬──────┬─────┐
+        │ group_col ┆ lt   ┆ gte │
+        │ ---       ┆ ---  ┆ --- │
+        │ str       ┆ i64  ┆ i64 │
+        ╞═══════════╪══════╪═════╡
+        │ g1        ┆ 1    ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ g2        ┆ null ┆ 3   │
+        └───────────┴──────┴─────┘
 
         """
         return wrap_expr(self._pyexpr.filter(predicate._pyexpr))
@@ -2864,17 +2864,17 @@ class Expr:
         ...             pl.col("b").where(pl.col("b") >= 2).sum().alias("gte"),
         ...         ]
         ...     )
-        ... )
+        ... ).sort("group_col")
         shape: (2, 3)
-        ┌─────┬──────┬─────┐
-        │ a   ┆ lt   ┆ gte │
-        │ --- ┆ ---  ┆ --- │
-        │ str ┆ i64  ┆ i64 │
-        ╞═════╪══════╪═════╡
-        │ g2  ┆ null ┆ 3   │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ g1  ┆ 1    ┆ 2   │
-        └─────┴──────┴─────┘
+        ┌───────────┬──────┬─────┐
+        │ group_col ┆ lt   ┆ gte │
+        │ ---       ┆ ---  ┆ --- │
+        │ str       ┆ i64  ┆ i64 │
+        ╞═══════════╪══════╪═════╡
+        │ g1        ┆ 1    ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ g2        ┆ null ┆ 3   │
+        └───────────┴──────┴─────┘
 
         """
         return self.filter(predicate)
@@ -5812,26 +5812,7 @@ class Expr:
     def arr(self) -> ExprListNameSpace:
         """
         Create an object namespace of all list related methods.
-
         See the individual method pages for full details
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"values": [["a", "b"]],})
-        ... df.select(
-        ...     [
-        ...         pl.col("values").arr.get(0).alias("first"),
-        ...         pl.col("values").arr.get(1).alias("second"),
-        ...     ]
-        ... )
-        shape: (1, 2)
-        ┌───────┬────────┐
-        │ first ┆ second │
-        │ ---   ┆ ---    │
-        │ str   ┆ str    │
-        ╞═══════╪════════╡
-        │ a     ┆ b      │
-        └───────┴────────┘
 
         """
         return ExprListNameSpace(self)
@@ -7874,7 +7855,7 @@ class ExprDateTimeNameSpace:
         │ 2001-12-27 00:00:00 │
         └─────────────────────┘
         >>> df.select(pl.col("date").dt.quarter())
-        shape: (4, 1)
+        shape: (3, 1)
         ┌──────┐
         │ date │
         │ ---  │
@@ -7885,8 +7866,6 @@ class ExprDateTimeNameSpace:
         │ 2    │
         ├╌╌╌╌╌╌┤
         │ 4    │
-        ├╌╌╌╌╌╌┤
-        │ 2    │
         └──────┘
 
         """
@@ -7925,6 +7904,18 @@ class ExprDateTimeNameSpace:
         │ 2001-03-04 00:00:00 │
         └─────────────────────┘
         >>> df.select(pl.col("date").dt.month())
+        shape: (3, 1)
+        ┌──────┐
+        │ date │
+        │ ---  │
+        │ u32  │
+        ╞══════╡
+        │ 1    │
+        ├╌╌╌╌╌╌┤
+        │ 2    │
+        ├╌╌╌╌╌╌┤
+        │ 3    │
+        └──────┘
 
         """
         return wrap_expr(self._pyexpr.month())
@@ -7962,6 +7953,7 @@ class ExprDateTimeNameSpace:
         │ 2001-03-04 00:00:00 │
         └─────────────────────┘
         >>> df.select(pl.col("date").dt.week())
+        shape: (3, 1)
         ┌──────┐
         │ date │
         │ ---  │
@@ -8027,6 +8019,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 6       ┆ 7            ┆ 7           │
         └─────────┴──────────────┴─────────────┘
+
         """
         return wrap_expr(self._pyexpr.weekday())
 
@@ -8049,7 +8042,7 @@ class ExprDateTimeNameSpace:
         >>> stop = datetime(2001, 1, 9)
         >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=3))})
         >>> df
-        shape: (4, 1)
+        shape: (3, 1)
         ┌─────────────────────┐
         │ date                │
         │ ---                 │
@@ -8060,8 +8053,6 @@ class ExprDateTimeNameSpace:
         │ 2001-01-04 00:00:00 │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2001-01-07 00:00:00 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2001-01-10 00:00:00 │
         └─────────────────────┘
         >>> df.select(
         ...     [
@@ -8070,19 +8061,17 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").dt.ordinal_day().alias("day_of_year"),
         ...     ]
         ... )
-        shape: (4, 3)
+        shape: (3, 3)
         ┌─────────┬──────────────┬─────────────┐
         │ weekday ┆ day_of_month ┆ day_of_year │
         │ ---     ┆ ---          ┆ ---         │
         │ u32     ┆ u32          ┆ u32         │
         ╞═════════╪══════════════╪═════════════╡
-        │ 1       ┆ 1            ┆ 1           │
+        │ 0       ┆ 1            ┆ 1           │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 4       ┆ 4            ┆ 4           │
+        │ 3       ┆ 4            ┆ 4           │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 7       ┆ 7            ┆ 7           │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 3       ┆ 10           ┆ 10          │
+        │ 6       ┆ 7            ┆ 7           │
         └─────────┴──────────────┴─────────────┘
 
         """
@@ -8108,7 +8097,7 @@ class ExprDateTimeNameSpace:
         >>> stop = datetime(2001, 1, 9)
         >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=3))})
         >>> df
-        shape: (4, 1)
+        shape: (3, 1)
         ┌─────────────────────┐
         │ date                │
         │ ---                 │
@@ -8119,8 +8108,6 @@ class ExprDateTimeNameSpace:
         │ 2001-01-04 00:00:00 │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2001-01-07 00:00:00 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2001-01-10 00:00:00 │
         └─────────────────────┘
         >>> df.select(
         ...     [
@@ -8129,19 +8116,17 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").dt.ordinal_day().alias("day_of_year"),
         ...     ]
         ... )
-        shape: (4, 3)
+        shape: (3, 3)
         ┌─────────┬──────────────┬─────────────┐
         │ weekday ┆ day_of_month ┆ day_of_year │
         │ ---     ┆ ---          ┆ ---         │
         │ u32     ┆ u32          ┆ u32         │
         ╞═════════╪══════════════╪═════════════╡
-        │ 1       ┆ 1            ┆ 1           │
+        │ 0       ┆ 1            ┆ 1           │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 4       ┆ 4            ┆ 4           │
+        │ 3       ┆ 4            ┆ 4           │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 7       ┆ 7            ┆ 7           │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 3       ┆ 10           ┆ 10          │
+        │ 6       ┆ 7            ┆ 7           │
         └─────────┴──────────────┴─────────────┘
 
         """
@@ -8265,6 +8250,7 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {"date": pl.date_range(start, stop, timedelta(seconds=2))}
         ... )
+        >>> df
         shape: (3, 1)
         ┌─────────────────────┐
         │ date                │
