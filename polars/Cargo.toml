@@ -139,6 +139,7 @@ test = [
   "parquet",
   "ipc",
   "ipc_streaming",
+  "json",
 ]
 
 # don't use this

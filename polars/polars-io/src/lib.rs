@@ -24,7 +24,7 @@ pub mod json;
 #[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 pub mod ndjson_core;
 
-#[cfg(any(feature = "csv-file", feature = "parquet", feature = "ipc"))]
+#[cfg(any(feature = "csv-file", feature = "parquet", feature = "ipc", feature = "json"))]
 pub mod mmap;
 mod options;
 #[cfg(feature = "parquet")]
