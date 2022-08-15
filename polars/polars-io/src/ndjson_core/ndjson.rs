@@ -254,6 +254,7 @@ impl<'a> CoreJsonReader<'a> {
     }
 }
 
+#[inline(always)]
 fn parse_impl<'a>(
     bytes: &[u8],
     buffers: &mut PlIndexMap<BufferKey, Buffer<'a>>,
