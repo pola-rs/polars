@@ -366,6 +366,10 @@ impl PhysicalExpr for WindowExpr {
                 // idx (new-idx, original-idx)
                 let mut idx_mapping = Vec::with_capacity(out_column.len());
 
+                // we already set this buffer so we can reuse the `original_idx` buffer
+                // that saves an allocation
+                let mut take_idx = vec![];
+
                 // groups are not changed, we can map by doing a standard argsort.
                 if std::ptr::eq(ac.groups().as_ref(), gb.get_groups()) {
                     let mut iter = 0..flattened.len() as IdxSize;
@@ -399,26 +403,29 @@ impl PhysicalExpr for WindowExpr {
                         }
                     };
 
-                    let mut original_idx = original_idx.into_iter();
+                    let mut original_idx_iter = original_idx.iter().copied();
 
                     match ac.groups().as_ref() {
                         GroupsProxy::Idx(groups) => {
                             for g in groups.all() {
-                                idx_mapping.extend(g.iter().copied().zip(&mut original_idx));
+                                idx_mapping.extend(g.iter().copied().zip(&mut original_idx_iter));
                             }
                         }
                         GroupsProxy::Slice { groups, .. } => {
                             for &[first, len] in groups {
-                                idx_mapping.extend((first..first + len).zip(&mut original_idx));
+                                idx_mapping
+                                    .extend((first..first + len).zip(&mut original_idx_iter));
                             }
                         }
                     }
+                    original_idx.clear();
+                    take_idx = original_idx;
                 }
                 cache_gb(gb);
                 // Safety:
                 // we only have unique indices ranging from 0..len
-                let idx = unsafe { perfect_sort(&POOL, &idx_mapping) };
-                let idx = IdxCa::from_vec("", idx);
+                unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
+                let idx = IdxCa::from_vec("", take_idx);
 
                 // Safety:
                 // groups should always be in bounds.

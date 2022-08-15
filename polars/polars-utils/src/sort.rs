@@ -15,13 +15,13 @@ use crate::IdxSize;
 ///
 /// # Safety
 /// The caller must ensure that the right indexes fo `&[(_, IdxSize)]` are integers ranging from `0..idx.len`
-pub unsafe fn perfect_sort(pool: &ThreadPool, idx: &[(IdxSize, IdxSize)]) -> Vec<IdxSize> {
+pub unsafe fn perfect_sort(pool: &ThreadPool, idx: &[(IdxSize, IdxSize)], out: &mut Vec<IdxSize>) {
     let chunk_size = std::cmp::max(
         idx.len() / pool.current_num_threads(),
         pool.current_num_threads(),
     );
 
-    let mut out: Vec<IdxSize> = Vec::with_capacity(idx.len());
+    out.reserve(idx.len());
     let ptr = out.as_mut_ptr() as *const IdxSize as usize;
 
     pool.install(|| {
@@ -38,5 +38,4 @@ pub unsafe fn perfect_sort(pool: &ThreadPool, idx: &[(IdxSize, IdxSize)]) -> Vec
     // Safety:
     // all elements are written
     out.set_len(idx.len());
-    out
 }
