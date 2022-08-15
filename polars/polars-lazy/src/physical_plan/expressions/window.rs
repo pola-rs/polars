@@ -355,21 +355,6 @@ impl PhysicalExpr for WindowExpr {
                 // TODO!
                 // investigate if sorted arrays can be return directly
                 let out_column = ac.aggregated();
-                let mut original_idx = Vec::with_capacity(out_column.len());
-                match gb.get_groups() {
-                    GroupsProxy::Idx(groups) => {
-                        for g in groups.all() {
-                            original_idx.extend_from_slice(g)
-                        }
-                    }
-                    GroupsProxy::Slice { groups, .. } => {
-                        for &[first, len] in groups {
-                            original_idx.extend(first..first + len)
-                        }
-                    }
-                };
-
-                let mut original_idx = original_idx.into_iter();
                 let flattened = out_column.explode()?;
                 if flattened.len() != df.height() {
                     return Err(PolarsError::ComputeError(
@@ -382,7 +367,7 @@ impl PhysicalExpr for WindowExpr {
                 let mut idx_mapping = Vec::with_capacity(out_column.len());
 
                 // groups are not changed, we can map by doing a standard argsort.
-                if std::ptr::eq(ac.groups.as_ref(), gb.get_groups()) {
+                if std::ptr::eq(ac.groups().as_ref(), gb.get_groups()) {
                     let mut iter = 0..flattened.len() as IdxSize;
                     match ac.groups().as_ref() {
                         GroupsProxy::Idx(groups) => {
@@ -392,7 +377,7 @@ impl PhysicalExpr for WindowExpr {
                         }
                         GroupsProxy::Slice { groups, .. } => {
                             for &[first, len] in groups {
-                                idx_mapping.extend((first..first + len).zip(&mut original_idx));
+                                idx_mapping.extend((first..first + len).zip(&mut iter));
                             }
                         }
                     }
@@ -400,6 +385,22 @@ impl PhysicalExpr for WindowExpr {
                 // groups are changed, we use the new group indexes as arguments of the argsort
                 // and sort by the old indexes
                 else {
+                    let mut original_idx = Vec::with_capacity(out_column.len());
+                    match gb.get_groups() {
+                        GroupsProxy::Idx(groups) => {
+                            for g in groups.all() {
+                                original_idx.extend_from_slice(g)
+                            }
+                        }
+                        GroupsProxy::Slice { groups, .. } => {
+                            for &[first, len] in groups {
+                                original_idx.extend(first..first + len)
+                            }
+                        }
+                    };
+
+                    let mut original_idx = original_idx.into_iter();
+
                     match ac.groups().as_ref() {
                         GroupsProxy::Idx(groups) => {
                             for g in groups.all() {
