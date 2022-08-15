@@ -1,13 +1,11 @@
-use crate::csv::parser::*;
-use crate::csv::utils::*;
-use crate::mmap::ReaderBytes;
-use crate::ndjson_core::buffer::*;
-use crate::prelude::*;
+use std::borrow::Cow;
+use std::fs::File;
+use std::io::Cursor;
+use std::path::PathBuf;
 
 pub use arrow::{array::StructArray, io::ndjson};
 
 use crate::mmap::MmapBytesReader;
-use json_deserializer::Value;
 use polars_core::{prelude::*, utils::accumulate_dataframes_vertical, POOL};
 use rayon::prelude::*;
 use std::borrow::Cow;
@@ -208,34 +206,23 @@ impl<'a> CoreJsonReader<'a> {
         };
 
         let expected_fields = &self.schema.len();
+
         let file_chunks = get_file_chunks(
             bytes,
             n_threads,
-            *expected_fields,
+            *expected_fields + 1,
             SEP,
             Some(QUOTE_CHAR),
             b'\n',
         );
-
         let dfs = POOL.install(|| {
             file_chunks
                 .into_par_iter()
                 .map(|(bytes_offset_thread, stop_at_nbytes)| {
-                    let mut read = bytes_offset_thread;
-
-                    let mut last_read = usize::MAX;
-
                     let mut buffers = init_buffers(&self.schema, capacity)?;
+                    let _bytes_read =
+                        parse_lines(&bytes[bytes_offset_thread..stop_at_nbytes], &mut buffers);
 
-                    loop {
-                        if read >= stop_at_nbytes || read == last_read {
-                            break;
-                        }
-                        let local_bytes = &bytes[read..stop_at_nbytes];
-
-                        last_read = read;
-                        read += parse_lines(local_bytes, &mut buffers)?;
-                    }
                     DataFrame::new(
                         buffers
                             .into_values()
@@ -266,29 +253,29 @@ impl<'a> CoreJsonReader<'a> {
 }
 
 fn parse_lines<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -> Result<usize> {
-    let mut stream = Deserializer::from_slice(bytes).into_iter::<Box<RawValue>>();
+    let mut stream = Deserializer::from_slice(bytes).into_iter::<&RawValue>();
     for value in stream.by_ref() {
-        let obj = value.unwrap();
-        let mut obj_bytes = obj.get().as_bytes();
+        let mut v = value.unwrap().to_string();
+        let bytes = unsafe { v.as_bytes_mut() };
 
-        let value = json_deserializer::parse(&mut obj_bytes).unwrap();
+        let value: simd_json::BorrowedValue = simd_json::to_borrowed_value(bytes).unwrap();
 
         match value {
-            Value::Object(value) => {
-                buffers
-                    .iter_mut()
-                    .for_each(|(s, inner)| match value.get(s) {
+            simd_json::BorrowedValue::Object(value) => {
+                buffers.iter_mut().for_each(|(s, inner)| {
+                    match value.get(&Cow::Borrowed(s.as_str())) {
                         Some(v) => inner.add(v).expect("inner.add(v)"),
                         None => inner.add_null(),
-                    });
+                    }
+                });
             }
             _ => {
                 buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
             }
         };
     }
-
     let byte_offset = stream.byte_offset();
 
     Ok(byte_offset)
 }
+
