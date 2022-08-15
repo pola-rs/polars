@@ -1,6 +1,5 @@
 from datetime import date, datetime
 from typing import Any
-from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -92,7 +91,7 @@ def test_init_dict() -> None:
     assert (df.schema == dfe.schema) and (len(dfe) == 0)
 
 
-def test_init_ndarray() -> None:
+def test_init_ndarray(monkeypatch: Any) -> None:
     # Empty array
     df = pl.DataFrame(np.array([]))
     assert df.frame_equal(pl.DataFrame())
@@ -168,9 +167,9 @@ def test_init_ndarray() -> None:
         _ = pl.DataFrame(np.array([[1, 2], [3, 4]]), columns=["a"])
 
     # NumPy not available
-    with patch("polars.internals.frame._NUMPY_AVAILABLE", False):
-        with pytest.raises(ValueError):
-            pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
+    monkeypatch.setattr(pl.internals.dataframe.frame, "_NUMPY_AVAILABLE", False)
+    with pytest.raises(ValueError):
+        pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
 
 
 def test_init_arrow() -> None:
@@ -297,26 +296,24 @@ def test_init_1d_sequence() -> None:
         pl.DataFrame("abc")
 
 
-def test_init_pandas() -> None:
+def test_init_pandas(monkeypatch: Any) -> None:
     pandas_df = pd.DataFrame([[1, 2], [3, 4]], columns=[1, 2])
 
-    # pandas is available
-    with patch("polars.internals.frame._PANDAS_AVAILABLE", True):
-        # integer column names
-        df = pl.DataFrame(pandas_df)
-        truth = pl.DataFrame({"1": [1, 3], "2": [2, 4]})
-        assert df.frame_equal(truth)
-        assert df.schema == {"1": pl.Int64, "2": pl.Int64}
+    # integer column names
+    df = pl.DataFrame(pandas_df)
+    truth = pl.DataFrame({"1": [1, 3], "2": [2, 4]})
+    assert df.frame_equal(truth)
+    assert df.schema == {"1": pl.Int64, "2": pl.Int64}
 
-        # override column names, types
-        df = pl.DataFrame(pandas_df, columns=[("x", pl.Float64), ("y", pl.Float64)])
-        assert df.schema == {"x": pl.Float64, "y": pl.Float64}
-        assert df.rows() == [(1.0, 2.0), (3.0, 4.0)]
+    # override column names, types
+    df = pl.DataFrame(pandas_df, columns=[("x", pl.Float64), ("y", pl.Float64)])
+    assert df.schema == {"x": pl.Float64, "y": pl.Float64}
+    assert df.rows() == [(1.0, 2.0), (3.0, 4.0)]
 
     # pandas is not available
-    with patch("polars.internals.frame._PANDAS_AVAILABLE", False):
-        with pytest.raises(ValueError):
-            pl.DataFrame(pandas_df)
+    monkeypatch.setattr(pl.internals.dataframe.frame, "_PANDAS_AVAILABLE", False)
+    with pytest.raises(ValueError):
+        pl.DataFrame(pandas_df)
 
 
 def test_init_errors() -> None:

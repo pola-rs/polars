@@ -737,7 +737,7 @@ class Series:
         └─────┘
 
         >>> type(df)
-        <class 'polars.internals.frame.DataFrame'>
+        <class 'polars.internals.dataframe.frame.DataFrame'>
 
         """
         return pli.wrap_df(PyDataFrame([self._s]))

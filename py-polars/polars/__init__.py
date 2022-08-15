@@ -57,11 +57,11 @@ from polars.exceptions import (
     SchemaError,
     ShapeError,
 )
-from polars.internals.expr import Expr
 
 # TODO remove need for wrap_df
-from polars.internals.frame import wrap_df  # noqa: F401
-from polars.internals.frame import DataFrame
+from polars.internals.dataframe import wrap_df  # noqa: F401
+from polars.internals.dataframe import DataFrame
+from polars.internals.expr import Expr
 from polars.internals.functions import concat, cut, date_range, get_dummies
 from polars.internals.io import read_ipc_schema, read_parquet_schema
 from polars.internals.lazy_functions import _date as date
