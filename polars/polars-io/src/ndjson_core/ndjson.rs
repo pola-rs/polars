@@ -6,7 +6,6 @@ use std::path::PathBuf;
 pub use arrow::{array::StructArray, io::ndjson};
 use polars_core::{prelude::*, utils::accumulate_dataframes_vertical, POOL};
 use rayon::prelude::*;
-use simd_json::KnownKey;
 
 use crate::csv::parser::*;
 use crate::csv::utils::*;
