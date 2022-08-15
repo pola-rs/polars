@@ -322,15 +322,75 @@ class Expr:
         return wrap_expr(self._pyexpr.all())
 
     def sqrt(self) -> Expr:
-        """Compute the square root of the elements."""
-        return self ** 0.5
+        """Compute the square root of the elements.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"values": [1.0,2.0,4.0]}
+        ... )
+        >>> df.select(pl.col("values").sqrt())
+        shape: (3, 1)
+        ┌──────────┐
+        │ values   │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.414214 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 2.0      │
+        └──────────┘
+        """
+        return self**0.5
 
     def log10(self) -> Expr:
-        """Compute the base 10 logarithm of the input array, element-wise."""
+        """Compute the base 10 logarithm of the input array, element-wise.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"values": [1.0,2.0,4.0]}
+        ... )
+        >>> df.select(pl.col("values").log10())
+        shape: (3, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ f64    │
+        ╞════════╡
+        │ 0.0    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 0.301  │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 0.602  │
+        └────────┘
+        """
         return self.log(10.0)
 
     def exp(self) -> Expr:
-        """Compute the exponential, element-wise."""
+        """Compute the exponential, element-wise.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"values": [1.0,2.0,4.0]}
+        ... )
+        >>> df.select(pl.col("values").exp())
+        shape: (3, 1)
+        ┌──────────┐
+        │ values   │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 2.718282 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 7.389056 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 54.5981  │
+        └──────────┘
+        """
         return wrap_expr(self._pyexpr.exp())
 
     def alias(self, name: str) -> Expr:
@@ -7305,6 +7365,10 @@ class ExprStringNameSpace:
         inclusive
             If True, include the split character/string in the results.
 
+        Returns
+        -------
+        List of Utf8 type
+
         Examples
         --------
         >>> df = pl.DataFrame({"s": ["foo bar", "foo-bar", "foo bar baz"]})
@@ -7321,10 +7385,6 @@ class ExprStringNameSpace:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ ["foo", "bar", "baz"] │
         └───────────────────────┘
-
-        Returns
-        -------
-        List of Utf8 type
 
         """
         if inclusive:
@@ -8262,7 +8322,7 @@ class ExprDateTimeNameSpace:
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 3)
-        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=1)),})
+        >>> df = pl.DataFrame(
         >>> df.select(
         ...     [
         ...         pl.col("date"),
@@ -8302,7 +8362,7 @@ class ExprDateTimeNameSpace:
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 3)
-        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=1)),})
+        >>> df = pl.DataFrame(
         >>> df.select(
         ...     [
         ...         pl.col("date"),
