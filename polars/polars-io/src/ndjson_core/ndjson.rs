@@ -7,16 +7,16 @@ use crate::prelude::*;
 pub use arrow::{array::StructArray, io::ndjson};
 
 use crate::mmap::MmapBytesReader;
+use json_deserializer::Value;
 use polars_core::{prelude::*, utils::accumulate_dataframes_vertical, POOL};
 use rayon::prelude::*;
-use serde_json::{Deserializer, Value};
 use std::borrow::Cow;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::PathBuf;
 const QUOTE_CHAR: u8 = "\"".as_bytes()[0];
 const SEP: u8 = ",".as_bytes()[0];
-
+const NEWLINE: u8 = b'\n';
 #[must_use]
 pub struct JsonLineReader<'a, R>
 where
@@ -65,8 +65,11 @@ where
         self
     }
     /// Sets the chunk size used by the parser. This influences performance
-    pub fn with_chunk_size(mut self, chunk_size: usize) -> Self {
-        self.chunk_size = chunk_size;
+    pub fn with_chunk_size(mut self, chunk_size: Option<usize>) -> Self {
+        if let Some(chunk_size) = chunk_size {
+            self.chunk_size = chunk_size;
+        };
+
         self
     }
     /// Reduce memory consumption at the expense of performance
@@ -263,12 +266,13 @@ impl<'a> CoreJsonReader<'a> {
 }
 
 fn parse_lines<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -> Result<usize> {
-    let lines: SplitLines = SplitLines::new(bytes, NEWLINE);
+    let mut stream = Deserializer::from_slice(bytes).into_iter::<Box<RawValue>>();
+    for value in stream.by_ref() {
+        let obj = value.unwrap();
+        let mut obj_bytes = obj.get().as_bytes();
 
-    for mut line in lines {
-        let value = json_deserializer::parse(&mut line).map_err(|e| {
-            PolarsError::ComputeError(format!("unable to parse line: {}", e).into())
-        })?;
+        let value = json_deserializer::parse(&mut obj_bytes).unwrap();
+
         match value {
             Value::Object(value) => {
                 buffers
@@ -281,9 +285,10 @@ fn parse_lines<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -
             _ => {
                 buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
             }
-        }
+        };
     }
-    let bytes_read = bytes.len();
 
-    Ok(bytes_read)
+    let byte_offset = stream.byte_offset();
+
+    Ok(byte_offset)
 }
