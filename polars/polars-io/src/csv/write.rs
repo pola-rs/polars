@@ -79,10 +79,18 @@ where
         self
     }
 
-    /// Set the CSV file's timestamp format array
+    /// Set the CSV file's datetime format
     pub fn with_datetime_format(mut self, format: Option<String>) -> Self {
         if format.is_some() {
             self.options.datetime_format = format;
+        }
+        self
+    }
+
+    /// Set the CSV file's float precision
+    pub fn with_float_precision(mut self, precision: Option<usize>) -> Self {
+        if precision.is_some() {
+            self.options.float_precision = precision;
         }
         self
     }

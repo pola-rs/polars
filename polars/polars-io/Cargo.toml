@@ -45,7 +45,7 @@ arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", 
 csv-core = { version = "0.1.10", optional = true }
 dirs = "4.0"
 flate2 = { version = "1", optional = true, default-features = false }
-lexical = { version = "6", optional = true, default-features = false, features = ["std", "parse-floats", "parse-integers"] }
+lexical = { version = "6", optional = true, default-features = false, features = ["std", "parse-floats", "parse-integers", "write-floats"] }
 lexical-core = { version = "0.8", optional = true }
 memchr = "2.4"
 memmap = { package = "memmap2", version = "0.5.2", optional = true }
@@ -55,6 +55,7 @@ polars-arrow = { version = "0.23.0", path = "../polars-arrow" }
 polars-core = { version = "0.23.0", path = "../polars-core", features = ["private"], default-features = false }
 polars-time = { version = "0.23.0", path = "../polars-time", features = ["private"], default-features = false, optional = true }
 polars-utils = { version = "0.23.0", path = "../polars-utils" }
+rand = "0.8.5"
 rayon = "1.5"
 regex = "1.5"
 serde = { version = "1", features = ["derive"], optional = true }

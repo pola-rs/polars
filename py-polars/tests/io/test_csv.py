@@ -730,3 +730,14 @@ def test_time_format(fmt: str, expected: str) -> None:
     df = pl.DataFrame({"dt": [time(16, 15, 30)]})
     csv = df.write_csv(time_format=fmt)
     assert csv == expected
+
+
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_float_precision(dtype: pl.Float32 | pl.Float64) -> None:
+    df = pl.Series("col", [1.0, 2.2, 3.33], dtype=dtype).to_frame()
+
+    assert df.write_csv(float_precision=None) == "col\n1.0\n2.2\n3.33\n"
+    assert df.write_csv(float_precision=0) == "col\n1\n2\n3\n"
+    assert df.write_csv(float_precision=1) == "col\n1.0\n2.2\n3.3\n"
+    assert df.write_csv(float_precision=2) == "col\n1.00\n2.20\n3.33\n"
+    assert df.write_csv(float_precision=3) == "col\n1.000\n2.200\n3.330\n"

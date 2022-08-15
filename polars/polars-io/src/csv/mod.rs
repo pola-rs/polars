@@ -74,3 +74,34 @@ use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::resolve_homedir;
 use crate::{RowCount, SerReader, SerWriter};
+
+#[cfg(test)]
+mod tests {
+    extern crate test;
+
+    use polars_core::prelude::*;
+    use rand::prelude::*;
+    use test::Bencher;
+
+    use crate::csv::CsvWriter;
+    use crate::SerWriter;
+
+    #[bench]
+    fn benchmark_write_csv_f32(b: &mut Bencher) -> Result<()> {
+        // NOTE: This benchmark can be run by executing ``$ cargo bench -p polars-io``
+        // from within /polars/polars/
+        const N: usize = 10_000_000;
+
+        let vec: Vec<f32> = (0..N).map(|_| thread_rng().next_u32() as f32).collect();
+
+        let mut df = df![
+            "random" => vec.as_slice(),
+        ]?;
+
+        let mut buffer: Vec<u8> = Vec::new();
+
+        b.iter(|| CsvWriter::new(&mut buffer).finish(&mut df));
+
+        Ok(())
+    }
+}
