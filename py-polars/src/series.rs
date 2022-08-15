@@ -1133,12 +1133,6 @@ impl PySeries {
         Ok(PySeries::new(s))
     }
 
-    pub fn arr_lengths(&self) -> PyResult<Self> {
-        let ca = self.series.list().map_err(PyPolarsErr::from)?;
-        let s = ca.lst_lengths().into_series();
-        Ok(PySeries::new(s))
-    }
-
     pub fn to_dummies(&self) -> PyResult<PyDataFrame> {
         let df = self.series.to_dummies().map_err(PyPolarsErr::from)?;
         Ok(df.into())
