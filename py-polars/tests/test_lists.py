@@ -413,3 +413,20 @@ def test_list_diagonal_concat() -> None:
         "a": [1, 2, None],
         "b": [None, None, [1]],
     }
+
+
+def test_list_eval_type_coercion() -> None:
+    last_non_null_value = pl.element().fill_null(3).last()
+    df = pl.DataFrame(
+        {
+            "array_cols": [[1, None]],
+        }
+    )
+
+    assert df.select(
+        [
+            pl.col("array_cols")
+            .arr.eval(last_non_null_value, parallel=False)
+            .alias("col_last")
+        ]
+    ).to_dict(False) == {"col_last": [[3]]}

@@ -618,7 +618,9 @@ impl LazyFrame {
         }
 
         // make sure its before slice pushdown.
-        rules.push(Box::new(FastProjection {}));
+        if projection_pushdown {
+            rules.push(Box::new(FastProjection {}));
+        }
         rules.push(Box::new(DelayRechunk {}));
 
         if slice_pushdown {
