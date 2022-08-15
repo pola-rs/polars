@@ -214,7 +214,8 @@ impl PhysicalExpr for WindowExpr {
         //
         //      - 3.3. MAP to original locations
         //          This will be done for list aggregations that are not explicitly aggregated as list
-        //              `(col("x").sum() * col("y")).over("groups")`
+        //              `(col("x").sum() * col("y")).over("groups")
+        //          This can be used to reverse, sort, shuffle etc. the values in a group
 
         // 4. select the final column and return
         let groupby_columns = self
@@ -362,8 +363,8 @@ impl PhysicalExpr for WindowExpr {
                         }
                     }
                     GroupsProxy::Slice { groups, .. } => {
-                        for g in groups {
-                            original_idx.extend(g[0]..g[0] + g[1])
+                        for &[first, len] in groups {
+                            original_idx.extend(first..first + len)
                         }
                     }
                 };
@@ -390,8 +391,8 @@ impl PhysicalExpr for WindowExpr {
                             }
                         }
                         GroupsProxy::Slice { groups, .. } => {
-                            for g in groups {
-                                idx_mapping.extend((g[0]..g[0] + g[1]).zip(&mut original_idx));
+                            for &[first, len] in groups {
+                                idx_mapping.extend((first..first + len).zip(&mut original_idx));
                             }
                         }
                     }
@@ -406,8 +407,8 @@ impl PhysicalExpr for WindowExpr {
                             }
                         }
                         GroupsProxy::Slice { groups, .. } => {
-                            for g in groups {
-                                idx_mapping.extend((g[0]..g[0] + g[1]).zip(&mut original_idx));
+                            for &[first, len] in groups {
+                                idx_mapping.extend((first..first + len).zip(&mut original_idx));
                             }
                         }
                     }

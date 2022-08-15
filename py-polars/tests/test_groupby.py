@@ -118,21 +118,29 @@ def test_groupby_signed_transmutes() -> None:
 def test_argsort_sort_by_groups_update__4360() -> None:
     df = pl.DataFrame(
         {
-            "group": ["a"] * 3 + ["b"] * 3,
-            "col1": [1, 2, 3, 300, 200, 100],
-            "col2": [1, 2, 3, 300, 200, 100],
+            "group": ["a"] * 3 + ["b"] * 3 + ["c"] * 3,
+            "col1": [1, 2, 3] * 3,
+            "col2": [1, 2, 3, 3, 2, 1, 2, 3, 1],
         }
     )
-    assert (
-        df.select(
-            [
-                pl.col("col1")
-                .sort_by(pl.col("col2").arg_sort())
-                .over("group")
-                .alias("1_argsort_2"),
-            ]
-        )
-    )["1_argsort_2"].to_list() == [1, 2, 3, 300, 200, 100]
+
+    out = df.with_column(
+        pl.col("col2").arg_sort().over("group").alias("col2_argsort")
+    ).with_columns(
+        [
+            pl.col("col1")
+            .sort_by(pl.col("col2_argsort"))
+            .over("group")
+            .alias("result_a"),
+            pl.col("col1")
+            .sort_by(pl.col("col2").arg_sort())
+            .over("group")
+            .alias("result_b"),
+        ]
+    )
+
+    pl.testing.assert_series_equal(out["result_a"], out["result_b"], check_names=False)
+    assert out["result_a"].to_list() == [1, 2, 3, 3, 2, 1, 2, 3, 1]
 
 
 def test_unique_order() -> None:
