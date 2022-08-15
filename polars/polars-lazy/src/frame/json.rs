@@ -13,7 +13,6 @@ pub struct LazyJsonReader {
     schema: Option<Schema>,
     row_count: Option<RowCount>,
     infer_schema_length: Option<usize>,
-    skip_rows: Option<usize>,
     n_rows: Option<usize>,
 }
 
@@ -27,7 +26,6 @@ impl LazyJsonReader {
             schema: None,
             row_count: None,
             infer_schema_length: Some(100),
-            skip_rows: None,
             n_rows: None,
         }
     }
@@ -59,12 +57,6 @@ impl LazyJsonReader {
         self
     }
 
-    /// Skip the first `n` rows during parsing. The header will be parsed at row `n`.
-    #[must_use]
-    pub fn with_skip_rows(mut self, skip_rows: Option<usize>) -> Self {
-        self.skip_rows = skip_rows;
-        self
-    }
     /// Reduce memory usage in expensive of performance
     #[must_use]
     pub fn low_memory(mut self, toggle: bool) -> Self {
@@ -91,7 +83,6 @@ impl LazyJsonReader {
             infer_schema_length: self.infer_schema_length,
             n_rows: self.n_rows,
             row_count: self.row_count.clone(),
-            skip_rows: self.skip_rows.clone(),
             schema: self.schema.clone(),
             ..ScanArgsAnonymous::default()
         };

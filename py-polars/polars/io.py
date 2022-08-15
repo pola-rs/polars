@@ -709,7 +709,6 @@ def scan_json(
     infer_schema_length: int | None = 100,
     batch_size: int | None = 1024,
     n_rows: int | None = None,
-    skip_rows: int | None = None,
     low_memory: bool = False,
     rechunk: bool = True,
     row_count_name: str | None = None,
@@ -732,8 +731,6 @@ def scan_json(
         Number of rows to read in each batch.
     n_rows
         Stop reading from JSON file after reading ``n_rows``.
-    skip_rows
-        Skip the first ``skip_rows`` rows.
     low_memory
         Reduce memory pressure at the expense of performance.
     rechunk
@@ -753,7 +750,6 @@ def scan_json(
         infer_schema_length=infer_schema_length,
         batch_size=batch_size,
         n_rows=n_rows,
-        skip_rows=skip_rows,
         low_memory=low_memory,
         rechunk=rechunk,
         row_count_name=row_count_name,

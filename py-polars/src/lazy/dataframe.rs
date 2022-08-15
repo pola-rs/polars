@@ -144,7 +144,6 @@ impl PyLazyFrame {
         infer_schema_length: Option<usize>,
         batch_size: Option<usize>,
         n_rows: Option<usize>,
-        skip_rows: Option<usize>,
         low_memory: bool,
         rechunk: bool,
         row_count: Option<(String, IdxSize)>,
@@ -155,7 +154,6 @@ impl PyLazyFrame {
             .with_infer_schema_length(infer_schema_length)
             .with_batch_size(batch_size)
             .with_n_rows(n_rows)
-            .with_skip_rows(skip_rows)
             .low_memory(low_memory)
             .with_rechunk(rechunk)
             .with_row_count(row_count)
