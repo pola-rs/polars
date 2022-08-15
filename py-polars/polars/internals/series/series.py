@@ -228,7 +228,6 @@ class Series:
             else:
                 raise ValueError("Series name must be a string.")
 
-        # TODO: Remove if-statement below once Series name is allowed to be None
         if name is None:
             name = ""
 
