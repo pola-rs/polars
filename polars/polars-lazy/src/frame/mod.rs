@@ -18,6 +18,8 @@ pub use anonymous_scan::*;
 pub use csv::*;
 #[cfg(feature = "ipc")]
 pub use ipc::*;
+#[cfg(feature = "json")]
+pub use json::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
 use polars_arrow::prelude::QuantileInterpolOptions;

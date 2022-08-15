@@ -40,7 +40,7 @@ strings = ["polars-core/strings", "polars-lazy/strings", "polars-ops/strings"]
 object = ["polars-core/object", "polars-lazy/object"]
 
 # support for arrows json parsing
-json = ["polars-io", "polars-io/json"]
+json = ["polars-io", "polars-io/json", "polars-lazy/json"]
 
 # support for arrows ipc file parsing
 ipc = ["polars-io", "polars-io/ipc", "polars-lazy/ipc"]
