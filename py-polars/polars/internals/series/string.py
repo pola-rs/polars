@@ -113,7 +113,8 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_lengths())
+        s = pli.wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.lengths()).to_series()
 
     def concat(self, delimiter: str = "-") -> pli.Series:
         """

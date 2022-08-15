@@ -1133,12 +1133,6 @@ impl PySeries {
         Ok(PySeries::new(s))
     }
 
-    pub fn str_lengths(&self) -> PyResult<Self> {
-        let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
-        let s = ca.str_lengths().into_series();
-        Ok(PySeries::new(s))
-    }
-
     pub fn str_contains(&self, pat: &str, literal: Option<bool>) -> PyResult<Self> {
         let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
         let s = match literal {
