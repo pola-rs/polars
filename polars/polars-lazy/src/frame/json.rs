@@ -1,9 +1,9 @@
-use crate::prelude::{AnonymousScan, AnonymousScanOptions};
 use polars_core::prelude::*;
 use polars_io::prelude::{ndjson, JsonLineReader, StructArray};
 use polars_io::{RowCount, SerReader};
 
 use super::{LazyFrame, ScanArgsAnonymous};
+use crate::prelude::{AnonymousScan, AnonymousScanOptions};
 
 pub struct LazyJsonReader {
     path: String,

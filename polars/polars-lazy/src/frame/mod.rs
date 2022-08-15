@@ -3,12 +3,12 @@
 mod csv;
 #[cfg(feature = "ipc")]
 mod ipc;
+#[cfg(feature = "json")]
+mod json;
 #[cfg(feature = "parquet")]
 mod parquet;
 #[cfg(feature = "python")]
 mod python;
-#[cfg(feature = "json")]
-mod json;
 
 mod anonymous_scan;
 
