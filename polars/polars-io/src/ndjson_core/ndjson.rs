@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::cell::UnsafeCell;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::PathBuf;
