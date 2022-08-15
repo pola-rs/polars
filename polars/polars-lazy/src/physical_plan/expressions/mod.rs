@@ -403,10 +403,8 @@ impl<'a> AggregationContext<'a> {
                 let out = unsafe { s.agg_list(&self.groups) };
                 self.state = AggState::AggregatedList(out.clone());
 
-                if !self.sorted {
-                    self.sorted = true;
-                    self.update_groups = UpdateGroups::WithGroupsLen;
-                };
+                self.sorted = true;
+                self.update_groups = UpdateGroups::WithGroupsLen;
                 out
             }
             AggState::AggregatedList(s) | AggState::AggregatedFlat(s) => s,
