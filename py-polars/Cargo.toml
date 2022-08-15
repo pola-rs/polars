@@ -39,7 +39,6 @@ thiserror = "^1.0"
 [features]
 avro = ["polars/avro"]
 parquet = ["polars/parquet"]
-json = ["polars/json"]
 ipc = ["polars/ipc"]
 is_in = ["polars/is_in"]
 json = ["polars/serde", "serde_json", "polars/json"]
@@ -58,7 +57,6 @@ all = [
   "ipc",
   "avro",
   "is_in",
-  "json",
   "repeat_by",
   "trigonometry",
   "sign",
