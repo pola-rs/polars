@@ -4,17 +4,19 @@ use std::io::Cursor;
 use std::path::PathBuf;
 
 pub use arrow::{array::StructArray, io::ndjson};
-
-use crate::mmap::MmapBytesReader;
 use polars_core::{prelude::*, utils::accumulate_dataframes_vertical, POOL};
 use rayon::prelude::*;
-use std::borrow::Cow;
-use std::fs::File;
-use std::io::Cursor;
-use std::path::PathBuf;
-const QUOTE_CHAR: u8 = "\"".as_bytes()[0];
-const SEP: u8 = ",".as_bytes()[0];
-const NEWLINE: u8 = b'\n';
+use serde_json::{value::RawValue, Deserializer};
+
+use crate::csv::parser::*;
+use crate::csv::utils::*;
+use crate::mmap::MmapBytesReader;
+use crate::mmap::ReaderBytes;
+use crate::ndjson_core::buffer::*;
+use crate::prelude::*;
+const QUOTE_CHAR: u8 = b'"';
+const SEP: u8 = b',';
+
 #[must_use]
 pub struct JsonLineReader<'a, R>
 where
@@ -218,10 +220,9 @@ impl<'a> CoreJsonReader<'a> {
         let dfs = POOL.install(|| {
             file_chunks
                 .into_par_iter()
-                .map(|(bytes_offset_thread, stop_at_nbytes)| {
+                .map(|(start_pos, stop_at_nbytes)| {
                     let mut buffers = init_buffers(&self.schema, capacity)?;
-                    let _bytes_read =
-                        parse_lines(&bytes[bytes_offset_thread..stop_at_nbytes], &mut buffers);
+                    let _ = parse_lines(&bytes[start_pos..stop_at_nbytes], &mut buffers);
 
                     DataFrame::new(
                         buffers
@@ -252,13 +253,11 @@ impl<'a> CoreJsonReader<'a> {
     }
 }
 
-fn parse_lines<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -> Result<usize> {
-    let mut stream = Deserializer::from_slice(bytes).into_iter::<&RawValue>();
-    for value in stream.by_ref() {
-        let mut v = value.unwrap().to_string();
-        let bytes = unsafe { v.as_bytes_mut() };
-
-        let value: simd_json::BorrowedValue = simd_json::to_borrowed_value(bytes).unwrap();
+fn parse_lines<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -> Result<()> {
+    for line in SplitLines::new(bytes, b'\n') {
+        let mut line = line.to_vec();
+        let value: simd_json::BorrowedValue = simd_json::to_borrowed_value(&mut line)
+            .map_err(|e| PolarsError::ComputeError(format!("Error parsing line: {}", e).into()))?;
 
         match value {
             simd_json::BorrowedValue::Object(value) => {
@@ -274,8 +273,7 @@ fn parse_lines<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -
             }
         };
     }
-    let byte_offset = stream.byte_offset();
 
-    Ok(byte_offset)
+    Ok(())
 }
 
