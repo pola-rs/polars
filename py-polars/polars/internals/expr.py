@@ -322,13 +322,12 @@ class Expr:
         return wrap_expr(self._pyexpr.all())
 
     def sqrt(self) -> Expr:
-        """Compute the square root of the elements.
+        """
+        Compute the square root of the elements.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {"values": [1.0,2.0,4.0]}
-        ... )
+        >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
         >>> df.select(pl.col("values").sqrt())
         shape: (3, 1)
         ┌──────────┐
@@ -342,17 +341,17 @@ class Expr:
         ├╌╌╌╌╌╌╌╌╌╌┤
         │ 2.0      │
         └──────────┘
+
         """
-        return self**0.5
+        return self ** 0.5
 
     def log10(self) -> Expr:
-        """Compute the base 10 logarithm of the input array, element-wise.
+        """
+        Compute the base 10 logarithm of the input array, element-wise.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {"values": [1.0,2.0,4.0]}
-        ... )
+        >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
         >>> df.select(pl.col("values").log10())
         shape: (3, 1)
         ┌────────┐
@@ -366,17 +365,17 @@ class Expr:
         ├╌╌╌╌╌╌╌╌┤
         │ 0.602  │
         └────────┘
+
         """
         return self.log(10.0)
 
     def exp(self) -> Expr:
-        """Compute the exponential, element-wise.
+        """
+        Compute the exponential, element-wise.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {"values": [1.0,2.0,4.0]}
-        ... )
+        >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
         >>> df.select(pl.col("values").exp())
         shape: (3, 1)
         ┌──────────┐
@@ -390,6 +389,7 @@ class Expr:
         ├╌╌╌╌╌╌╌╌╌╌┤
         │ 54.5981  │
         └──────────┘
+
         """
         return wrap_expr(self._pyexpr.exp())
 
@@ -1137,7 +1137,6 @@ class Expr:
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [8, 9, 10],
@@ -1161,11 +1160,11 @@ class Expr:
         return wrap_expr(self._pyexpr.append(other._pyexpr, upcast))
 
     def rechunk(self) -> Expr:
-        """Create a single chunk of memory for this Series.
+        """
+        Create a single chunk of memory for this Series.
 
         Examples
         --------
-
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
         >>> # Create a Series with 3 nulls, append column a then rechunk
         >>> (df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk()))
@@ -1187,6 +1186,7 @@ class Expr:
         ├╌╌╌╌╌╌╌╌╌┤
         │ 2       │
         └─────────┘
+
         """
         return wrap_expr(self._pyexpr.rechunk())
 
@@ -2836,6 +2836,7 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ g2  ┆ null ┆ 3   │
         └─────┴──────┴─────┘
+
         """
         return wrap_expr(self._pyexpr.filter(predicate._pyexpr))
 
@@ -3163,9 +3164,8 @@ class Expr:
         return wrap_expr(self._pyexpr.take_every(n))
 
     def head(self, n: int | Expr | None = None) -> Expr:
-        """Take the first n values.
-        if isinstance(n, Expr):
-            return self.slice(0, n)
+        """
+        Take the first n values.
 
         Examples
         --------
@@ -3183,12 +3183,14 @@ class Expr:
         ├╌╌╌╌╌┤
         │ 3   │
         └─────┘
-        """
 
+        """
         return wrap_expr(self._pyexpr.head(n))
 
     def tail(self, n: int | None = None) -> Expr:
-        """Take the last n values.
+        """
+        Take the last n values.
+
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
@@ -3205,8 +3207,8 @@ class Expr:
         ├╌╌╌╌╌┤
         │ 7   │
         └─────┘
-        """
 
+        """
         return wrap_expr(self._pyexpr.tail(n))
 
     def pow(self, exponent: int | float | pli.Series | Expr) -> Expr:
@@ -3480,6 +3482,7 @@ class Expr:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 2             ┆ 2        │
         └───────────────┴──────────┘
+
         """
         return wrap_expr(self._pyexpr.reinterpret(signed))
 
@@ -3522,9 +3525,7 @@ class Expr:
     def interpolate(self) -> Expr:
         """
         Fill nulls with linear interpolation over missing values.
-
         Can also be used to regrid data to a new grid - see examples below
-
 
         Examples
         --------
@@ -3548,14 +3549,12 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ 3   ┆ 3.0 │
         └─────┴─────┘
-
-        >>> # Re-grid data to a new grid
         >>> df_original_grid = pl.DataFrame(
         ...     {
         ...         "grid_points": [1, 3, 10],
         ...         "values": [2.0, 6.0, 20.0],
         ...     }
-        ... )
+        ... ) # Interpolate from this to the new grid
         >>> df_new_grid = pl.DataFrame({"grid_points": range(1, 11)})
         >>> (
         ...     df_new_grid.join(
@@ -3588,7 +3587,6 @@ class Expr:
         └─────────────┴────────┘
 
         """
-
         return wrap_expr(self._pyexpr.interpolate())
 
     def rolling_min(
@@ -4074,6 +4072,7 @@ class Expr:
         ├╌╌╌╌╌╌╌╌╌╌┤
         │ 2.0      │
         └──────────┘
+
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -4172,6 +4171,7 @@ class Expr:
         ├╌╌╌╌╌╌╌╌╌╌┤
         │ 4.0      │
         └──────────┘
+
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -4266,6 +4266,7 @@ class Expr:
         ├╌╌╌╌╌╌┤
         │ 6.0  │
         └──────┘
+
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -4366,6 +4367,7 @@ class Expr:
         ├╌╌╌╌╌╌┤
         │ 4.0  │
         └──────┘
+
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -4471,7 +4473,8 @@ class Expr:
         return wrap_expr(self._pyexpr.rolling_skew(window_size, bias))
 
     def abs(self) -> Expr:
-        """Compute absolute values.
+        """
+        Compute absolute values.
 
         Examples
         --------
@@ -4495,11 +4498,13 @@ class Expr:
         ├╌╌╌╌╌┤
         │ 2.0 │
         └─────┘
+
         """
         return wrap_expr(self._pyexpr.abs())
 
     def argsort(self, reverse: bool = False) -> Expr:
-        """Alias for `arg_sort`.
+        """
+        Alias for `arg_sort`.
 
         Examples
         --------
@@ -4760,6 +4765,7 @@ class Expr:
         ╞═══════════╡
         │ -1.153061 │
         └───────────┘
+
         """
         return wrap_expr(self._pyexpr.kurtosis(fisher, bias))
 
@@ -4821,6 +4827,7 @@ class Expr:
         ╞══════════════════════╡
         │ -9223372036854775808 │
         └──────────────────────┘
+
         """
         return wrap_expr(self._pyexpr.lower_bound())
 
@@ -4843,6 +4850,7 @@ class Expr:
         ╞═════════════════════╡
         │ 9223372036854775807 │
         └─────────────────────┘
+
         """
         return wrap_expr(self._pyexpr.upper_bound())
 
@@ -5224,6 +5232,7 @@ class Expr:
         ├╌╌╌╌╌┤
         │ 2   │
         └─────┘
+
         """
         if seed is None:
             seed = random.randint(0, 10000)
@@ -5266,6 +5275,7 @@ class Expr:
         ├╌╌╌╌╌┤
         │ 2   │
         └─────┘
+
         """
         return wrap_expr(
             self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
@@ -5335,6 +5345,7 @@ class Expr:
         ├╌╌╌╌╌╌╌╌╌╌┤
         │ 2.428571 │
         └──────────┘
+
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_mean(alpha, adjust, min_periods))
@@ -5403,6 +5414,7 @@ class Expr:
         ├╌╌╌╌╌╌╌╌╌╌┤
         │ 0.754615 │
         └──────────┘
+
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_std(alpha, adjust, min_periods))
@@ -5471,6 +5483,7 @@ class Expr:
         ├╌╌╌╌╌╌╌╌╌╌┤
         │ 0.569444 │
         └──────────┘
+
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_var(alpha, adjust, min_periods))
@@ -5608,6 +5621,7 @@ class Expr:
         ├╌╌╌╌╌╌╌╌╌╌┤
         │ 1.584963 │
         └──────────┘
+
         """
         return wrap_expr(self._pyexpr.log(base))
 
@@ -5622,6 +5636,7 @@ class Expr:
             Given base, defaults to `e`
         normalize
             Normalize pk if it doesn't sum to 1.
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
@@ -5643,6 +5658,7 @@ class Expr:
         ╞═══════════╡
         │ -6.754888 │
         └───────────┘
+
         """
         return wrap_expr(self._pyexpr.entropy(base, normalize))
 
@@ -5733,6 +5749,7 @@ class Expr:
         ├╌╌╌╌╌╌╌╌┤
         │ 3      │
         └────────┘
+
         """
         return self.map(lambda s: s.set_sorted(reverse))
 
@@ -5762,6 +5779,7 @@ class Expr:
         ├╌╌╌╌╌╌┤
         │ 2021 │
         └──────┘
+
         """
         return ExprDateTimeNameSpace(self)
 
@@ -5786,6 +5804,7 @@ class Expr:
         ├╌╌╌╌╌╌╌╌╌┤
         │ B       │
         └─────────┘
+
         """
         return ExprStringNameSpace(self)
 
@@ -5813,6 +5832,7 @@ class Expr:
         ╞═══════╪════════╡
         │ a     ┆ b      │
         └───────┴────────┘
+
         """
         return ExprListNameSpace(self)
 
@@ -5839,6 +5859,7 @@ class Expr:
         ├╌╌╌╌╌╌╌╌┤
         │ b      │
         └────────┘
+
         """
         return ExprCatNameSpace(self)
 
@@ -5873,6 +5894,7 @@ class Expr:
         ├╌╌╌╌╌┤
         │ b   │
         └─────┘
+
         """
         return ExprStructNameSpace(self)
 
@@ -6014,11 +6036,13 @@ class ExprListNameSpace:
         ├╌╌╌╌╌╌╌╌┤
         │ 5      │
         └────────┘
+
         """
         return wrap_expr(self._pyexpr.lst_sum())
 
     def max(self) -> Expr:
-        """Compute the max value of the arrays in the list.
+        """
+        Compute the max value of the arrays in the list.
 
         Examples
         --------
@@ -6034,11 +6058,13 @@ class ExprListNameSpace:
         ├╌╌╌╌╌╌╌╌┤
         │ 3      │
         └────────┘
+
         """
         return wrap_expr(self._pyexpr.lst_max())
 
     def min(self) -> Expr:
-        """Compute the min value of the arrays in the list.
+        """
+        Compute the min value of the arrays in the list.
 
         Examples
         --------
@@ -6059,7 +6085,8 @@ class ExprListNameSpace:
         return wrap_expr(self._pyexpr.lst_min())
 
     def mean(self) -> Expr:
-        """Compute the mean value of the arrays in the list.
+        """
+        Compute the mean value of the arrays in the list.
 
         Examples
         --------
@@ -6132,7 +6159,8 @@ class ExprListNameSpace:
         return wrap_expr(self._pyexpr.lst_reverse())
 
     def unique(self) -> Expr:
-        """Get the unique/distinct values in the list.
+        """
+        Get the unique/distinct values in the list.
 
         Examples
         --------
@@ -6150,6 +6178,7 @@ class ExprListNameSpace:
         ╞═══════════╡
         │ [1, 2]    │
         └───────────┘
+
         """
         return wrap_expr(self._pyexpr.lst_unique())
 
@@ -6370,6 +6399,7 @@ class ExprListNameSpace:
         ├╌╌╌╌╌┤
         │ 1   │
         └─────┘
+
         """
         return wrap_expr(self._pyexpr.lst_arg_min())
 
@@ -6399,6 +6429,7 @@ class ExprListNameSpace:
         ├╌╌╌╌╌┤
         │ 0   │
         └─────┘
+
         """
         return wrap_expr(self._pyexpr.lst_arg_max())
 
@@ -6739,7 +6770,8 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_concat(delimiter))
 
     def to_uppercase(self) -> Expr:
-        """Transform to uppercase variant.
+        """
+        Transform to uppercase variant.
 
         Examples
         --------
@@ -6755,11 +6787,13 @@ class ExprStringNameSpace:
         ├╌╌╌╌╌┤
         │ DOG │
         └─────┘
+
         """
         return wrap_expr(self._pyexpr.str_to_uppercase())
 
     def to_lowercase(self) -> Expr:
-        """Transform to lowercase variant.
+        """
+        Transform to lowercase variant.
 
         Examples
         --------
@@ -6775,11 +6809,13 @@ class ExprStringNameSpace:
         ├╌╌╌╌╌┤
         │ dog │
         └─────┘
+
         """
         return wrap_expr(self._pyexpr.str_to_lowercase())
 
     def strip(self) -> Expr:
-        """Remove leading and trailing whitespace.
+        """
+        Remove leading and trailing whitespace.
 
         Examples
         --------
@@ -6797,11 +6833,13 @@ class ExprStringNameSpace:
         ├╌╌╌╌╌╌╌┤
         │ both  │
         └───────┘
+
         """
         return wrap_expr(self._pyexpr.str_strip())
 
     def lstrip(self) -> Expr:
-        """Remove leading whitespace.
+        """
+        Remove leading whitespace.
 
         Examples
         --------
@@ -6819,11 +6857,13 @@ class ExprStringNameSpace:
         ├╌╌╌╌╌╌╌╌┤
         │ both   │
         └────────┘
+
         """
         return wrap_expr(self._pyexpr.str_lstrip())
 
     def rstrip(self) -> Expr:
-        """Remove trailing whitespace.
+        """
+        Remove trailing whitespace.
 
         Examples
         --------
@@ -6840,7 +6880,9 @@ class ExprStringNameSpace:
         │ trail │
         ├╌╌╌╌╌╌╌┤
         │  both │
-        └───────┘"""
+        └───────┘
+
+        """
         return wrap_expr(self._pyexpr.str_rstrip())
 
     def zfill(self, alignment: int) -> Expr:
@@ -7744,6 +7786,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2001-01-03 │
         └────────────┘
+
         """
         return wrap_expr(self._pyexpr.strftime(fmt))
 
@@ -7795,6 +7838,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌┤
         │ 2002 │
         └──────┘
+
         """
         return wrap_expr(self._pyexpr.year())
 
@@ -7844,6 +7888,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌┤
         │ 2    │
         └──────┘
+
         """
         return wrap_expr(self._pyexpr.quarter())
 
@@ -7928,6 +7973,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌┤
         │ 9    │
         └──────┘
+
         """
         return wrap_expr(self._pyexpr.week())
 
@@ -7985,6 +8031,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 3       ┆ 10           ┆ 10          │
         └─────────┴──────────────┴─────────────┘
+
         """
         return wrap_expr(self._pyexpr.weekday())
 
@@ -8042,6 +8089,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 3       ┆ 10           ┆ 10          │
         └─────────┴──────────────┴─────────────┘
+
         """
         return wrap_expr(self._pyexpr.day())
 
@@ -8148,6 +8196,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌┤
         │ 0    │
         └──────┘
+
         """
         return wrap_expr(self._pyexpr.hour())
 
@@ -8197,6 +8246,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌┤
         │ 4    │
         └──────┘
+
         """
         return wrap_expr(self._pyexpr.minute())
 
@@ -8245,6 +8295,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌┤
         │ 4    │
         └──────┘
+
         """
         return wrap_expr(self._pyexpr.second())
 
@@ -8298,6 +8349,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2001-01-03 00:00:00 ┆ 978480000000000 ┆ 978480000 │
         └─────────────────────┴─────────────────┴───────────┘
+
         """
         if tu in DTYPE_TEMPORAL_UNITS:
             return self.timestamp(tu)
@@ -8322,7 +8374,7 @@ class ExprDateTimeNameSpace:
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 3)
-        >>> df = pl.DataFrame(
+        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=1))})
         >>> df.select(
         ...     [
         ...         pl.col("date"),
@@ -8342,6 +8394,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2001-01-03 00:00:00 ┆ 978480000000000 ┆ 978480000000 │
         └─────────────────────┴─────────────────┴──────────────┘
+
         """
         return wrap_expr(self._pyexpr.timestamp(tu))
 
@@ -8359,10 +8412,14 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 3)
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": pl.date_range(
+        ...             datetime(2001, 1, 1), datetime(2001, 1, 3), "1d"
+        ...         )
+        ...     }
+        ... )
         >>> df.select(
         ...     [
         ...         pl.col("date"),
@@ -8382,6 +8439,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2001-01-03 00:00:00 ┆ 2001-01-03 00:00:00 ┆ +32976-10-18 00:00:00 │
         └─────────────────────┴─────────────────────┴───────────────────────┘
+
         """
         return wrap_expr(self._pyexpr.dt_with_time_unit(tu))
 
@@ -8422,6 +8480,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2001-01-03 00:00:00 ┆ 2001-01-03 00:00:00 ┆ 2001-01-03 00:00:00 │
         └─────────────────────┴─────────────────────┴─────────────────────┘
+
         """
         return wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
 
@@ -8464,6 +8523,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2020-05-01 00:00:00 ┆ 2020-05-01 00:00:00 BST     │
         └─────────────────────┴─────────────────────────────┘
+
         """
         return wrap_expr(self._pyexpr).map(
             lambda s: s.dt.with_time_zone(tz), return_dtype=Datetime
@@ -8504,6 +8564,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2020-05-01 00:00:00 ┆ 30        │
         └─────────────────────┴───────────┘
+
         """
         return wrap_expr(self._pyexpr.duration_days())
 
@@ -8544,6 +8605,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2020-01-04 00:00:00 ┆ 24         │
         └─────────────────────┴────────────┘
+
         """
         return wrap_expr(self._pyexpr.duration_hours())
 
@@ -8584,6 +8646,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2020-01-04 00:00:00 ┆ 1440         │
         └─────────────────────┴──────────────┘
+
         """
         return wrap_expr(self._pyexpr.duration_minutes())
 
@@ -8626,6 +8689,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2020-01-01 00:04:00 ┆ 60           │
         └─────────────────────┴──────────────┘
+
         """
         return wrap_expr(self._pyexpr.duration_seconds())
 
@@ -8676,6 +8740,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2020-01-01 00:00:01     ┆ 1                 │
         └─────────────────────────┴───────────────────┘
+
         """
         return wrap_expr(self._pyexpr.duration_milliseconds())
 
@@ -8726,6 +8791,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2020-01-01 00:00:01     ┆ 1000000          │
         └─────────────────────────┴──────────────────┘
+
         """
         return wrap_expr(self._pyexpr.duration_nanoseconds())
 
@@ -8791,6 +8857,7 @@ class ExprDateTimeNameSpace:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2006-01-01 00:00:00 ┆ 2003-11-01 00:00:00 │
         └─────────────────────┴─────────────────────┘
+
         """
         return wrap_expr(self._pyexpr.dt_offset_by(by))
 
