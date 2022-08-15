@@ -254,8 +254,14 @@ impl<'a> CoreJsonReader<'a> {
     }
 }
 
-fn parse_impl<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -> Result<usize> {
-    let mut line = bytes.to_vec();
+fn parse_impl<'a>(
+    bytes: &[u8],
+    buffers: &mut PlIndexMap<String, Buffer<'a>>,
+    line: &mut Vec<u8>,
+) -> Result<usize> {
+    line.clear();
+    line.extend_from_slice(&bytes);
+
     match line.len() {
         0 => Ok(0),
         1 => {
@@ -278,7 +284,7 @@ fn parse_impl<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) ->
         }
         n => {
             let value: simd_json::BorrowedValue =
-                simd_json::to_borrowed_value(&mut line).map_err(|e| {
+                simd_json::to_borrowed_value(line).map_err(|e| {
                     PolarsError::ComputeError(format!("Error parsing line: {}", e).into())
                 })?;
 
@@ -301,18 +307,20 @@ fn parse_impl<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) ->
 }
 
 fn parse_lines<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -> Result<()> {
+    let mut buf = vec![];
+
     let total_bytes = bytes.len();
     let mut offset = 0;
     for line in SplitLines::new(bytes, NEWLINE) {
         offset += 1; // the newline
-        offset += parse_impl(line, buffers)?;
+        offset += parse_impl(line, buffers, &mut buf)?;
     }
 
     // if file doesn't end with a newline, parse the last line
     if offset < total_bytes {
         let rem = &bytes[offset..];
         offset += rem.len();
-        parse_impl(rem, buffers)?;
+        parse_impl(rem, buffers, &mut buf)?;
     }
 
     if offset != total_bytes {
