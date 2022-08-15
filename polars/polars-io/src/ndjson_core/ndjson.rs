@@ -6,7 +6,6 @@ use std::path::PathBuf;
 pub use arrow::{array::StructArray, io::ndjson};
 use polars_core::{prelude::*, utils::accumulate_dataframes_vertical, POOL};
 use rayon::prelude::*;
-use serde_json::{value::RawValue, Deserializer};
 
 use crate::csv::parser::*;
 use crate::csv::utils::*;
@@ -276,4 +275,3 @@ fn parse_lines<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -
 
     Ok(())
 }
-
