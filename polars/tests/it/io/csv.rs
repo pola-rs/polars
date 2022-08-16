@@ -1,5 +1,6 @@
 use std::io::Cursor;
 
+use polars::export::chrono::{NaiveDate, NaiveDateTime};
 use polars::io::RowCount;
 
 use super::*;
@@ -25,6 +26,28 @@ fn write_csv() {
         .expect("csv written");
     let csv = std::str::from_utf8(&buf).unwrap();
     assert_eq!("0,22.1\n1,19.9\n2,7.0\n3,2.0\n4,3.0\n", csv);
+}
+
+#[test]
+fn write_csv_enclosed() {
+    let mut df = df! {
+        "a" => [Some("hello"), Some("world"), None],
+        "b" => [Some(2), Some(3), None],
+        "c" => [Some(4.2), None, Some(11.1)],
+        "d" => [Some(NaiveDate::from_ymd(2010, 5, 1)), Some(NaiveDate::from_ymd(2021, 1, 1)), None],
+        "e" => [Some(NaiveDateTime::from_timestamp(1660652146, 0)), None, Some(NaiveDateTime::from_timestamp(1630652146, 0))],
+    }.unwrap();
+
+    let mut buf: Vec<u8> = Vec::new();
+
+    CsvWriter::new(&mut buf)
+        .has_header(true)
+        .with_string_field_enclosed(true)
+        .finish(&mut df)
+        .expect("csv written");
+    let csv = std::str::from_utf8(&buf).unwrap();
+
+    assert_eq!("a,b,c,d,e\n\"hello\",2,4.2,\"2010-05-01\",\"2022-08-16T12:15:46.000000000\"\n\"world\",3,,\"2021-01-01\",\n,,11.1,,\"2021-09-03T06:55:46.000000000\"\n", csv);
 }
 
 #[test]

@@ -92,4 +92,10 @@ where
         self.options.quote = char;
         self
     }
+
+    /// If true, will surround UTF8, Date, Datetime and Time fields with a double quote (")
+    pub fn with_string_field_enclosed(mut self, escape_field: bool) -> Self {
+        self.options.string_field_enclosed = escape_field;
+        self
+    }
 }

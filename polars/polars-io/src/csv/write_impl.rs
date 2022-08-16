@@ -7,6 +7,16 @@ use polars_core::{prelude::*, series::SeriesIter, POOL};
 use polars_utils::contention_pool::LowContentionPool;
 use rayon::prelude::*;
 
+macro_rules! write_escaped {
+    ($dst:ident, $value:expr, $escaped:expr) => {
+        if $escaped {
+            write!($dst, "\"{}\"", $value)
+        } else {
+            write!($dst, "{}", $value)
+        }
+    };
+}
+
 fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> std::io::Result<()> {
     if v.is_empty() {
         write!(f, "\"\"")
@@ -26,7 +36,7 @@ fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> s
         }
         let surround_with_quotes = memchr2(options.delimiter, b'\n', v.as_bytes()).is_some();
 
-        if surround_with_quotes {
+        if surround_with_quotes || options.string_field_enclosed {
             write!(f, "\"{}\"", v)
         } else {
             write!(f, "{}", v)
@@ -80,8 +90,8 @@ fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) 
         AnyValue::Date(v) => {
             let date = temporal_conversions::date32_to_date(v);
             match &options.date_format {
-                None => write!(f, "{}", date),
-                Some(fmt) => write!(f, "{}", date.format(fmt)),
+                None => write_escaped!(f, date, options.string_field_enclosed),
+                Some(fmt) => write_escaped!(f, date.format(fmt), options.string_field_enclosed),
             }
         }
         #[cfg(feature = "dtype-datetime")]
@@ -94,7 +104,7 @@ fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) 
                 };
                 match &options.datetime_format {
                     None => write!(f, "{}", dt),
-                    Some(fmt) => write!(f, "{}", dt.format(fmt)),
+                    Some(fmt) => write_escaped!(f, dt.format(fmt), options.string_field_enclosed),
                 }
             }
             Some(tz) => {
@@ -103,7 +113,7 @@ fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) 
                 let dt = temporal_conversions::timestamp_to_datetime(v, tu.to_arrow(), &tz);
                 match &options.datetime_format {
                     None => write!(f, "{}", dt),
-                    Some(fmt) => write!(f, "{}", dt.format(fmt)),
+                    Some(fmt) => write_escaped!(f, dt.format(fmt), options.string_field_enclosed),
                 }
             }
         },
@@ -112,7 +122,7 @@ fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) 
             let date = temporal_conversions::time64ns_to_time(v);
             match &options.time_format {
                 None => write!(f, "{}", date),
-                Some(fmt) => write!(f, "{}", date.format(fmt)),
+                Some(fmt) => write_escaped!(f, date.format(fmt), options.string_field_enclosed),
             }
         }
         dt => panic!("DataType: {} not supported in writing to csv", dt),
@@ -134,6 +144,8 @@ pub struct SerializeOptions {
     pub delimiter: u8,
     /// quoting character
     pub quote: u8,
+    /// If true, will surround UTF8, Date, Datetime and Time fields with a double quote (")
+    pub string_field_enclosed: bool,
 }
 
 impl Default for SerializeOptions {
@@ -144,6 +156,7 @@ impl Default for SerializeOptions {
             datetime_format: None,
             delimiter: b',',
             quote: b'"',
+            string_field_enclosed: false,
         }
     }
 }
