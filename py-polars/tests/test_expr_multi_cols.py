@@ -40,3 +40,22 @@ def test_expanding_sum() -> None:
     assert df.with_column(pl.sum(pl.col(r"^y_.*$")).alias("y_sum"))[
         "y_sum"
     ].to_list() == [2.1, 4.7, 6.8]
+
+
+def test_argsort_argument_expansion() -> None:
+    df = pl.DataFrame(
+        {
+            "col1": [1, 2, 3],
+            "col2": [4, 5, 6],
+            "sort_order": [9, 8, 7],
+        }
+    )
+    assert df.select(
+        pl.col("col1").sort_by(pl.col("sort_order").arg_sort()).suffix("_suffix")
+    ).to_dict(False) == {"col1_suffix": [3, 2, 1]}
+    assert df.select(
+        pl.col("^col.*$").sort_by(pl.col("sort_order")).arg_sort()
+    ).to_dict(False) == {"col1": [2, 1, 0], "col2": [2, 1, 0]}
+    assert df.select(
+        pl.all().exclude("sort_order").sort_by(pl.col("sort_order")).arg_sort()
+    ).to_dict(False) == {"col1": [2, 1, 0], "col2": [2, 1, 0]}
