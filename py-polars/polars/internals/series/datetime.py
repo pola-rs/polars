@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -11,16 +12,19 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import EpochTimeUnit, TimeUnit
     from polars.polars import PySeries
 
+    if sys.version_info >= (3, 8):
+        from typing import Final
+    else:
+        from typing_extensions import Final
+
 
 class DateTimeNameSpace:
     """Series.dt namespace."""
 
+    _accessor: Final = "dt"
+
     def __init__(self, series: pli.Series):
         self._s: PySeries = series._s
-
-    @property
-    def namespace(self) -> str:
-        return "dt"
 
     def __getitem__(self, item: int) -> date | datetime:
         s = pli.wrap_s(self._s)

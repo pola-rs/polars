@@ -23,9 +23,9 @@ def call_expr(func: Callable[P, pli.Series]) -> Callable[P, pli.Series]:
     def wrapper(self: Any, *args: P.args, **kwargs: P.kwargs) -> pli.Series:
         s = pli.wrap_s(self._s)
         expr = pli.col(s.name)
-        namespace = getattr(self, "namespace", None)
-        if namespace is not None:
-            expr = getattr(expr, namespace)
+        namespace_accessor = getattr(self, "_accessor", None)
+        if namespace_accessor is not None:
+            expr = getattr(expr, namespace_accessor)
         f = getattr(expr, func.__name__)
         return s.to_frame().select(f(*args, **kwargs)).to_series()
 

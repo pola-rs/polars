@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -10,16 +11,19 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import NullBehavior
     from polars.polars import PySeries
 
+    if sys.version_info >= (3, 8):
+        from typing import Final
+    else:
+        from typing_extensions import Final
+
 
 class ListNameSpace:
     """Series.arr namespace."""
 
+    _accessor: Final = "arr"
+
     def __init__(self, series: pli.Series):
         self._s: PySeries = series._s
-
-    @property
-    def namespace(self) -> str:
-        return "arr"
 
     @call_expr
     def lengths(self) -> pli.Series:

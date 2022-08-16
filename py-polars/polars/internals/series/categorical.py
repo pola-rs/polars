@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
@@ -9,16 +10,19 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import CategoricalOrdering
     from polars.polars import PySeries
 
+    if sys.version_info >= (3, 8):
+        from typing import Final
+    else:
+        from typing_extensions import Final
+
 
 class CatNameSpace:
     """Namespace for categorical related series."""
 
+    _accessor: Final = "cat"
+
     def __init__(self, series: pli.Series):
         self._s: PySeries = series._s
-
-    @property
-    def namespace(self) -> str:
-        return "cat"
 
     @call_expr
     def set_ordering(self, ordering: CategoricalOrdering) -> pli.Series:
