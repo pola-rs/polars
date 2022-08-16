@@ -806,6 +806,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
@@ -891,6 +892,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
@@ -930,6 +932,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
@@ -971,6 +974,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
@@ -1012,6 +1016,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
@@ -1055,6 +1060,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
@@ -1106,6 +1112,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
@@ -1178,6 +1185,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
         ...         "dates": pl.date_range(
