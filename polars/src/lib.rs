@@ -50,7 +50,7 @@
 //! * [Performance](#performance-and-string-data)
 //!     - [Custom allocator](#custom-allocator)
 //! * [Config](#config-with-env-vars)
-//! * [WASM target](#compile-for-wasm)
+//! * [User Guide](#user-guide)
 //!
 //! ## Cookbooks
 //! See examples in the cookbooks:
