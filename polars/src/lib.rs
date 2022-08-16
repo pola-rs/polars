@@ -90,6 +90,9 @@
 //! more verbose and less capable of building elegant composite queries. We recommend to use the Lazy API
 //! whenever you can.
 //!
+//! As neither API is async they should be wrapped in `spawn_blocking` when used in an async context
+//! to avoid blocking the async thread pool of the runtime.
+//!
 //! ## Expressions
 //! Polars has a powerful concept called expressions.
 //! Polars expressions can be used in various contexts and are a functional mapping of
