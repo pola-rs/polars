@@ -1,7 +1,6 @@
 pub mod array;
 pub mod bit_util;
 mod bitmap;
-#[cfg(feature = "compute")]
 pub mod compute;
 pub mod conversion;
 pub mod data_types;
