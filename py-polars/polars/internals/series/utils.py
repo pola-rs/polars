@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars.internals as pli
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 def call_expr(func: Callable[P, pli.Series]) -> Callable[P, pli.Series]:
     """Dispatch Series method to an expression implementation."""
 
+    @wraps(func)
     def wrapper(self: Any, *args: P.args, **kwargs: P.kwargs) -> pli.Series:
         s = pli.wrap_s(self._s)
         expr = pli.col(s.name)
