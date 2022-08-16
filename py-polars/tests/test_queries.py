@@ -336,3 +336,33 @@ def test_edge_cast_string_duplicates_4259() -> None:
 
     mask = df.select(["a", "b"]).is_duplicated()
     assert df.filter(pl.lit(mask)).shape == (0, 2)
+
+
+def test_query_4438() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 1, 1]})
+
+    q = (
+        df.lazy()
+        .with_column(pl.col("x").rolling_max(window_size=3).alias("rolling_max"))
+        .fill_null(strategy="backward")
+        .with_column(
+            pl.col("rolling_max").rolling_max(window_size=3).alias("rolling_max_2")
+        )
+    )
+    assert q.collect()["rolling_max_2"].to_list() == [
+        None,
+        None,
+        3,
+        10,
+        10,
+        10,
+        10,
+        10,
+        9,
+        8,
+        7,
+        6,
+        5,
+        4,
+        3,
+    ]
