@@ -50,7 +50,7 @@
 //! * [Performance](#performance-and-string-data)
 //!     - [Custom allocator](#custom-allocator)
 //! * [Config](#config-with-env-vars)
-//! * [WASM target](#compile-for-wasm)
+//! * [User Guide](#user-guide)
 //!
 //! ## Cookbooks
 //! See examples in the cookbooks:
@@ -89,6 +89,9 @@
 //! Polars supports an eager and a lazy API. The eager API directly yields results, but is overall
 //! more verbose and less capable of building elegant composite queries. We recommend to use the Lazy API
 //! whenever you can.
+//!
+//! As neither API is async they should be wrapped in `spawn_blocking` when used in an async context
+//! to avoid blocking the async thread pool of the runtime.
 //!
 //! ## Expressions
 //! Polars has a powerful concept called expressions.
@@ -286,6 +289,16 @@
 //! #[global_allocator]
 //! static GLOBAL: MiMalloc = MiMalloc;
 //! ```
+//! ```ignore
+//! use jemallocator::Jemalloc;
+//!
+//! #[global_allocator]
+//! static GLOBAL: Jemalloc = Jemalloc;
+//! ```
+//!
+//! #### Notes
+//! [Benchmarks](https://github.com/pola-rs/polars/pull/3108) have shown that on Linux JeMalloc
+//! outperforms Mimalloc on all tasks and is therefor the default Linux allocator used for the Python bindings.
 //!
 //! #### Cargo.toml
 //! ```ignore
