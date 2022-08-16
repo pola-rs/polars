@@ -241,11 +241,22 @@ pub fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
     get_supertype(lhs, rhs).unwrap_or(Utf8)
 }
 
+fn is_nested_null(av: &AnyValue) -> bool {
+    match av {
+        AnyValue::Null => true,
+        AnyValue::List(s) => s.null_count() == s.len(),
+        #[cfg(feature = "dtype-struct")]
+        AnyValue::Struct(avs, _) => avs.iter().all(is_nested_null),
+        _ => false,
+    }
+}
+
 /// Infer schema from rows.
 pub fn rows_to_schema(rows: &[Row], infer_schema_length: Option<usize>) -> Schema {
     // no of rows to use to infer dtype
     let max_infer = infer_schema_length.unwrap_or(rows.len());
     let mut schema: Schema = (&rows[0]).into();
+
     // the first row that has no nulls will be used to infer the schema.
     // if there is a null, we check the next row and see if we can update the schema
 
@@ -255,10 +266,13 @@ pub fn rows_to_schema(rows: &[Row], infer_schema_length: Option<usize>) -> Schem
             .iter_dtypes()
             .enumerate()
             .filter_map(|(i, dtype)| {
-                if matches!(dtype, DataType::Null) {
-                    Some(i)
-                } else {
-                    None
+                // double check struct and list types types
+                // nested null values can be wrongly inferred by front ends
+                match dtype {
+                    DataType::Null | DataType::List(_) => Some(i),
+                    #[cfg(feature = "dtype-struct")]
+                    DataType::Struct(_) => Some(i),
+                    _ => None,
                 }
             })
             .collect();
@@ -266,8 +280,12 @@ pub fn rows_to_schema(rows: &[Row], infer_schema_length: Option<usize>) -> Schem
             break;
         } else {
             for i in nulls {
-                let dtype = (&row.0[i]).into();
-                schema.coerce_by_index(i, dtype).unwrap();
+                let val = &row.0[i];
+
+                if !is_nested_null(val) {
+                    let dtype = val.into();
+                    schema.coerce_by_index(i, dtype).unwrap();
+                }
             }
         }
     }
