@@ -223,3 +223,13 @@ def test_apply_type_propagation() -> None:
             ]
         )
     ).to_dict(False) == {"a": [1, 2, 3], "b": [1.0, 2.0, None]}
+
+
+def test_empty_list_in_apply() -> None:
+    df = pl.DataFrame(
+        {"a": [[1], [1, 2], [3, 4], [5, 6]], "b": [[3], [1, 2], [1, 2], [4, 5]]}
+    )
+
+    assert df.select(
+        pl.struct(["a", "b"]).apply(lambda row: list(set(row["a"]) & set(row["b"])))
+    ).to_dict(False) == {"a": [[], [1, 2], [], [5]]}
