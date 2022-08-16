@@ -3,19 +3,14 @@ use polars_arrow::array::default_arrays::FromData;
 
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
-use crate::utils::NoNull;
 
 impl<T> ChunkFull<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
     fn full(name: &str, value: T::Native, length: usize) -> Self {
-        let mut ca = (0..length)
-            .map(|_| value)
-            .collect::<NoNull<ChunkedArray<T>>>()
-            .into_inner();
-        ca.rename(name);
-        ca
+        let data = vec![value; length];
+        ChunkedArray::from_vec(name, data)
     }
 }
 
