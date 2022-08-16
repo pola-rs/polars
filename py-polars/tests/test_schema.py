@@ -85,3 +85,9 @@ def test_with_context() -> None:
 
     with pytest.raises(pl.ComputeError):
         (df_a.with_context(df_b.lazy()).select(["a", "c"])).collect()
+
+
+def test_from_dicst_nested_nulls() -> None:
+    assert pl.from_dicts([{"a": [None, None]}, {"a": [1, 2]}]).to_dict(False) == {
+        "a": [[None, None], [1, 2]]
+    }
