@@ -238,8 +238,8 @@ where
         check_input(options.window_size, options.min_periods)?;
         let ca = ca.rechunk();
 
-        match ca.has_validity() {
-            false => rolling_agg_fn(
+        match ca.null_count() {
+            0 => rolling_agg_fn(
                 arr.values().as_slice(),
                 options.window_size,
                 options.min_periods,
