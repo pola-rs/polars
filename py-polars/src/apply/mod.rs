@@ -237,7 +237,16 @@ fn iterator_to_list(
     }
     builder.append_opt_series(first_value);
     for opt_val in it {
-        builder.append_opt_series(opt_val.as_ref())
+        match opt_val {
+            None => builder.append_null(),
+            Some(s) => {
+                if s.len() == 0 && s.dtype() != dt {
+                    builder.append_series(&Series::full_null("", 0, dt))
+                } else {
+                    builder.append_series(&s)
+                }
+            }
+        }
     }
     Ok(builder.finish())
 }
