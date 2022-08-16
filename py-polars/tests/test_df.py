@@ -1465,6 +1465,7 @@ def test_fill_null() -> None:
 def test_fill_nan() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3.0, float("nan")]})
     assert df.fill_nan(4).frame_equal(pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
+    assert df.fill_nan(None).frame_equal(pl.DataFrame({"a": [1, 2], "b": [3, None]}))
     assert df["b"].fill_nan(5.0).to_list() == [3.0, 5.0]
     df = pl.DataFrame(
         {

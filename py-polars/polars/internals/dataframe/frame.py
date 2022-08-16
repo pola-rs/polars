@@ -4239,7 +4239,7 @@ class DataFrame:
         """
         return self.select(pli.all().fill_null(value, strategy, limit))
 
-    def fill_nan(self, fill_value: pli.Expr | int | float) -> DataFrame:
+    def fill_nan(self, fill_value: pli.Expr | int | float | None) -> DataFrame:
         """
         Fill floating point NaN values by an Expression evaluation.
 
