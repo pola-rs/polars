@@ -1,19 +1,17 @@
 use polars_core::prelude::*;
-use polars_io::prelude::{ndjson, JsonLineReader, StructArray};
-use polars_io::{RowCount, SerReader};
+use polars_io::RowCount;
 
 use super::{LazyFrame, ScanArgsAnonymous};
-use crate::prelude::{AnonymousScan, AnonymousScanOptions};
 
 pub struct LazyJsonReader {
-    path: String,
-    batch_size: Option<usize>,
-    low_memory: bool,
-    rechunk: bool,
-    schema: Option<Schema>,
-    row_count: Option<RowCount>,
-    infer_schema_length: Option<usize>,
-    n_rows: Option<usize>,
+    pub(crate) path: String,
+    pub(crate) batch_size: Option<usize>,
+    pub(crate) low_memory: bool,
+    pub(crate) rechunk: bool,
+    pub(crate) schema: Option<Schema>,
+    pub(crate) row_count: Option<RowCount>,
+    pub(crate) infer_schema_length: Option<usize>,
+    pub(crate) n_rows: Option<usize>,
 }
 
 impl LazyJsonReader {
@@ -88,33 +86,5 @@ impl LazyJsonReader {
         };
 
         LazyFrame::anonymous_scan(std::sync::Arc::new(self), options)
-    }
-}
-
-impl AnonymousScan for LazyJsonReader {
-    fn scan(&self, scan_opts: AnonymousScanOptions) -> Result<DataFrame> {
-        let schema = scan_opts.output_schema.unwrap_or(scan_opts.schema);
-        JsonLineReader::from_path(&self.path)?
-            .with_schema(&schema)
-            .with_rechunk(self.rechunk)
-            .with_chunk_size(self.batch_size)
-            .low_memory(self.low_memory)
-            .with_n_rows(scan_opts.n_rows)
-            .with_chunk_size(self.batch_size)
-            .finish()
-    }
-
-    fn schema(&self, infer_schema_length: Option<usize>) -> Result<Schema> {
-        let f = std::fs::File::open(&self.path)?;
-        let mut reader = std::io::BufReader::new(f);
-
-        let data_type = ndjson::read::infer(&mut reader, infer_schema_length)
-            .map_err(|err| PolarsError::ComputeError(format!("{:#?}", err).into()))?;
-        let schema: Schema = StructArray::get_fields(&data_type).into();
-
-        Ok(schema)
-    }
-    fn allows_projection_pushdown(&self) -> bool {
-        true
     }
 }
