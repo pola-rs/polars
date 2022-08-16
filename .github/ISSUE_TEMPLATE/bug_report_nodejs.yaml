@@ -1,6 +1,5 @@
 name: Bug Report - NodeJS
 description: An issue with NodeJS polars
-title: ""
 labels: [bug, nodejs]
 
 body:

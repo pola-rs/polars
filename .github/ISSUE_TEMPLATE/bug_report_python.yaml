@@ -1,6 +1,5 @@
 name: Bug Report - Python
 description: An issue with python polars
-title: ""
 labels: [bug, python]
 
 body:

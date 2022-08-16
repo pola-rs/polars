@@ -1,6 +1,5 @@
 name: Bug Report - Rust
 description: An issue with Rust polars
-title: ""
 labels: [bug, rust]
 
 body:

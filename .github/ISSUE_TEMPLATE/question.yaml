@@ -1,6 +1,5 @@
 name: Question
 description: Ask a question about the polars library
-title: ""
 labels: [question]
 
 body:
