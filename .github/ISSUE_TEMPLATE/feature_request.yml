@@ -13,7 +13,7 @@ body:
         examples of how polars would be used if your feature request were added.
 
         If you're not sure what to write here, then try imagining what the ideal
-        documentation of your new feature would look like Then try to write it.
+        documentation of your new feature would look like. Then try to write it.
       placeholder: >
         I wish I could use polars to ...
     validations:

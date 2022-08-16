@@ -54,9 +54,7 @@ body:
       value: >
         <details>
 
-
         Replace this line with a list of feature gates
-
 
         </details>
     validations:

@@ -34,13 +34,16 @@ body:
         provide a minimal, copy-pastable example. Include the (wrong) output if applicable.
       placeholder: >
         import polars as pl
+
         import numpy as np
 
         # Create a simple dataset on which we can reproduce the bug.
+
         pl.DataFrame({
             "foo": [None, 1, 2],
             "bar": np.arange(3)
         })
+
         ...
       render: python
     validations:
@@ -64,9 +67,7 @@ body:
       value: >
         <details>
 
-
         Replace this line with the output of pl.show_versions()
-
 
         </details>
     validations:
