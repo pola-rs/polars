@@ -59,3 +59,23 @@ def test_argsort_argument_expansion() -> None:
     assert df.select(
         pl.all().exclude("sort_order").sort_by(pl.col("sort_order")).arg_sort()
     ).to_dict(False) == {"col1": [2, 1, 0], "col2": [2, 1, 0]}
+
+
+def test_append_root_columns() -> None:
+    df = pl.DataFrame(
+        {
+            "col1": [1, 2],
+            "col2": [10, 20],
+            "other": [100, 200],
+        }
+    )
+    assert (
+        df.select(
+            [
+                pl.col("col2").append(pl.col("other")),
+                pl.col("col1").append(pl.col("other")).keep_name(),
+                pl.col("col1").append(pl.col("other")).prefix("prefix_"),
+                pl.col("col1").append(pl.col("other")).suffix("_suffix"),
+            ]
+        )
+    ).columns == ["col2", "col1", "prefix_col1", "col1_suffix"]

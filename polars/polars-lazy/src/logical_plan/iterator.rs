@@ -56,8 +56,10 @@ macro_rules! push_expr {
                 $push(falsy);
                 $push(predicate)
             }
-            AnonymousFunction { input, .. } => input.$iter().for_each(|e| $push(e)),
-            Function { input, .. } => input.$iter().for_each(|e| $push(e)),
+            // we iterate in reverse order, so that the lhs is popped first and will be found
+            // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
+            AnonymousFunction { input, .. } => input.$iter().rev().for_each(|e| $push(e)),
+            Function { input, .. } => input.$iter().rev().for_each(|e| $push(e)),
             Shift { input, .. } => $push(input),
             Reverse(e) => $push(e),
             Duplicated(e) => $push(e),
@@ -216,7 +218,12 @@ impl AExpr {
                 push(falsy);
                 push(predicate)
             }
-            AnonymousFunction { input, .. } | Function { input, .. } => input.iter().for_each(push),
+            AnonymousFunction { input, .. } | Function { input, .. } =>
+            // we iterate in reverse order, so that the lhs is popped first and will be found
+            // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
+            {
+                input.iter().rev().for_each(push)
+            }
             Shift { input, .. } => push(input),
             Reverse(e) => push(e),
             Duplicated(e) => push(e),
