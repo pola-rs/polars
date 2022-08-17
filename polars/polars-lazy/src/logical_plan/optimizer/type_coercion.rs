@@ -363,30 +363,45 @@ impl OptimizationRule for TypeCoercionRule {
 
                 early_escape(&type_left, &type_other)?;
 
-                match (&type_left, type_other) {
+                let casted_expr = match (&type_left, &type_other) {
                     // cast both local and global string cache
                     // note that there might not yet be a rev
                     #[cfg(feature = "dtype-categorical")]
                     (DataType::Categorical(_), DataType::Utf8) => {
-                        let mut input = input.clone();
-
-                        let casted_expr = AExpr::Cast {
+                        AExpr::Cast {
                             expr: other_node,
                             data_type: DataType::Categorical(None),
                             // does not matter
                             strict: false,
-                        };
-                        let other_input = expr_arena.add(casted_expr);
-                        input[1] = other_input;
-
-                        Some(AExpr::Function {
-                            function: FunctionExpr::IsIn,
-                            input,
-                            options,
-                        })
+                        }
                     }
-                    _ => None,
-                }
+                    (DataType::List(_), _) | (_, DataType::List(_)) => return None,
+                    #[cfg(feature = "dtype-struct")]
+                    (DataType::Struct(_), _) | (_, DataType::Struct(_)) => return None,
+                    // if right is another type, we cast it to left
+                    // we do not use super-type as an `is_in` operation should not
+                    // cast the whole column implicitly.
+                    (a, b) if a != b => {
+                        AExpr::Cast {
+                            expr: other_node,
+                            data_type: type_left,
+                            // does not matter
+                            strict: false,
+                        }
+                    }
+                    // types are equal, do nothing
+                    _ => return None,
+                };
+
+                let mut input = input.clone();
+                let other_input = expr_arena.add(casted_expr);
+                input[1] = other_input;
+
+                Some(AExpr::Function {
+                    function: FunctionExpr::IsIn,
+                    input,
+                    options,
+                })
             }
             AExpr::Function {
                 // only for `DataType::Unknown` as it still has to be set.

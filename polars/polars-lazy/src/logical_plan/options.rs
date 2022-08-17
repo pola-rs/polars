@@ -163,6 +163,9 @@ pub struct FunctionOptions {
     // used for formatting
     #[cfg_attr(feature = "serde", serde(skip_deserializing))]
     pub(crate) fmt_str: &'static str,
+
+    // if the expression and its inputs should be cast to supertypes
+    pub(crate) cast_to_supertypes: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

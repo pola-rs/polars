@@ -13,6 +13,9 @@ pub(crate) mod function_expr;
 pub mod functions;
 #[cfg(feature = "list")]
 mod list;
+#[cfg(feature = "meta")]
+mod meta;
+pub(crate) mod names;
 mod options;
 #[cfg(feature = "strings")]
 pub mod string;
@@ -474,6 +477,7 @@ impl Expr {
             input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "arg_min",
+            cast_to_supertypes: false,
         };
 
         self.function_with_options(
@@ -490,6 +494,7 @@ impl Expr {
             input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "arg_max",
+            cast_to_supertypes: false,
         };
 
         self.function_with_options(
@@ -506,6 +511,7 @@ impl Expr {
             input_wildcard_expansion: false,
             auto_explode: false,
             fmt_str: "arg_sort",
+            cast_to_supertypes: false,
         };
 
         self.function_with_options(
@@ -533,6 +539,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: true,
                 fmt_str: "search_sorted",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -612,6 +619,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "map",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -625,6 +633,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str,
+                cast_to_supertypes: false,
             },
         }
     }
@@ -648,6 +657,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -674,6 +684,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "map_list",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -722,6 +733,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -735,6 +747,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str,
+                cast_to_supertypes: false,
             },
         }
     }
@@ -758,6 +771,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: true,
                 fmt_str: "",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -768,6 +782,7 @@ impl Expr {
         arguments: &[Expr],
         fmt_str: &'static str,
         auto_explode: bool,
+        cast_to_supertypes: bool,
     ) -> Self {
         let mut input = Vec::with_capacity(arguments.len() + 1);
         input.push(self);
@@ -781,6 +796,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode,
                 fmt_str,
+                cast_to_supertypes,
             },
         }
     }
@@ -790,6 +806,7 @@ impl Expr {
         function_expr: FunctionExpr,
         arguments: &[Expr],
         fmt_str: &'static str,
+        cast_to_supertypes: bool,
     ) -> Self {
         let mut input = Vec::with_capacity(arguments.len() + 1);
         input.push(self);
@@ -803,6 +820,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: true,
                 fmt_str,
+                cast_to_supertypes,
             },
         }
     }
@@ -852,6 +870,7 @@ impl Expr {
             &[fill_value.into()],
             "shift_and_fill",
             false,
+            true,
         )
     }
 
@@ -917,6 +936,7 @@ impl Expr {
             input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "product",
+            cast_to_supertypes: false,
         };
 
         self.function_with_options(
@@ -1079,6 +1099,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "fill_null",
+                cast_to_supertypes: true,
             },
         }
     }
@@ -1151,6 +1172,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "pow",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1166,6 +1188,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "sin",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1181,6 +1204,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "cos",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1196,6 +1220,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "tan",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1211,6 +1236,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "arcsin",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1226,6 +1252,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "arccos",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1241,6 +1268,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "arctan",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1256,6 +1284,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "sinh",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1271,6 +1300,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "cosh",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1286,6 +1316,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "tanh",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1301,6 +1332,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "arcsinh",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1316,6 +1348,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "arccosh",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1331,6 +1364,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "arctanh",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1346,6 +1380,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "sign",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1381,9 +1416,9 @@ impl Expr {
         let arguments = &[other];
         // we don't have to apply on groups, so this is faster
         if has_literal {
-            self.map_many_private(FunctionExpr::IsIn, arguments, "is_in_map")
+            self.map_many_private(FunctionExpr::IsIn, arguments, "is_in_map", true)
         } else {
-            self.apply_many_private(FunctionExpr::IsIn, arguments, "is_in_apply", true)
+            self.apply_many_private(FunctionExpr::IsIn, arguments, "is_in_apply", true, true)
         }
     }
 
@@ -2237,6 +2272,10 @@ impl Expr {
     pub fn struct_(self) -> struct_::StructNameSpace {
         struct_::StructNameSpace(self)
     }
+    #[cfg(feature = "meta")]
+    pub fn meta(self) -> meta::MetaNameSpace {
+        meta::MetaNameSpace(self)
+    }
 }
 
 // Arithmetic ops
@@ -2305,6 +2344,7 @@ where
             input_wildcard_expansion: false,
             auto_explode: false,
             fmt_str: "",
+            cast_to_supertypes: false,
         },
     }
 }
@@ -2332,6 +2372,7 @@ where
             input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "",
+            cast_to_supertypes: false,
         },
     }
 }
@@ -2361,6 +2402,7 @@ where
             input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "",
+            cast_to_supertypes: false,
         },
     }
 }

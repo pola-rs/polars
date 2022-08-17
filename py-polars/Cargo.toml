@@ -49,6 +49,7 @@ cross_join = ["polars/cross_join"]
 pct_change = ["polars/pct_change"]
 repeat_by = ["polars/repeat_by"]
 simd = ["polars/simd"]
+meta = ["polars/meta"]
 
 all = [
   "json",
@@ -64,6 +65,7 @@ all = [
   "cross_join",
   "pct_change",
   "polars/search_sorted",
+  "meta",
 ]
 
 # we cannot conditionaly activate simd
