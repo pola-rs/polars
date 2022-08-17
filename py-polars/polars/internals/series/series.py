@@ -244,7 +244,7 @@ class Series:
                     dtype == Datetime and not getattr(dtype, "tu", None)
                 ):
                     tu = getattr(dtype, "tu", np.datetime_data(values.dtype)[0])
-                    dtype = Datetime(tu)  # type: ignore[arg-type]
+                    dtype = Datetime(tu)
             if dtype is not None:
                 self._s = self.cast(dtype, strict=True)._s
         elif isinstance(values, Sequence):
