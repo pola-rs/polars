@@ -91,6 +91,7 @@ if _NUMPY_AVAILABLE and not _DOCUMENTING:
         np.uint64: PySeries.new_u64,
         np.str_: PySeries.new_str,
         np.bool_: PySeries.new_bool,
+        np.datetime64: PySeries.new_i64,
     }
 
 

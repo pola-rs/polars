@@ -159,10 +159,10 @@ class Series:
     dtype : DataType, default None
         Polars dtype of the Series data. If not specified, the dtype is inferred.
     strict
-        Throw error on numeric overflow
+        Throw error on numeric overflow.
     nan_to_null
-        In case a numpy arrow is used to create this Series, indicate how to deal with
-        np.nan
+        In case a numpy array is used to create this Series, indicate how to deal
+        with np.nan values.
 
     Examples
     --------
@@ -239,6 +239,29 @@ class Series:
             self._s = arrow_to_pyseries(name, values)
         elif _NUMPY_AVAILABLE and isinstance(values, np.ndarray):
             self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
+            if values.dtype.type == np.datetime64:
+                # detect/assign timeunit
+                if dtype is None or (
+                    dtype == Datetime and not getattr(dtype, "tu", None)
+                ):
+                    tu = getattr(dtype, "tu", np.datetime_data(values.dtype)[0])
+                    dtype = Datetime(tu)
+
+                # handle NaT values
+                if np.isnan(values).any(0):
+                    nat = np.datetime64("NaT").astype(np.int64)
+                    scol = pli.col(self.name)
+                    self._s = (
+                        self.to_frame()
+                        .with_column(
+                            pli.when(scol == nat).then(None).otherwise(scol).keep_name()
+                        )
+                        .to_series()
+                        .cast(dtype, strict=True)
+                        ._s
+                    )
+                    return
+
             if dtype is not None:
                 self._s = self.cast(dtype, strict=True)._s
         elif isinstance(values, Sequence):
