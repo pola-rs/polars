@@ -1619,6 +1619,14 @@ def test_ewm_mean() -> None:
     )
 
 
+def test_ewm_mean_leading_nulls() -> None:
+    for min_periods in [1, 2, 3]:
+        assert (
+            pl.Series([1, 2, 3, 4]).ewm_mean(3, min_periods=min_periods).null_count()
+            == min_periods - 1
+        )
+
+
 def test_ewm_std_var() -> None:
     a = pl.Series("a", [2, 5, 3])
 
