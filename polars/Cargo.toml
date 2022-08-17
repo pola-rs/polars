@@ -196,7 +196,12 @@ dtype-categorical = [
   "polars-lazy/dtype-categorical",
   "polars-ops/dtype-categorical",
 ]
-dtype-struct = ["polars-core/dtype-struct", "polars-lazy/dtype-struct", "polars-ops/dtype-struct"]
+dtype-struct = [
+  "polars-core/dtype-struct",
+  "polars-lazy/dtype-struct",
+  "polars-ops/dtype-struct",
+  "polars-io/dtype-struct",
+]
 
 docs-selection = [
   "csv-file",
