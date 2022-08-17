@@ -245,11 +245,11 @@ class Series:
                     dtype == Datetime and not getattr(dtype, "tu", None)
                 ):
                     tu = getattr(dtype, "tu", np.datetime_data(values.dtype)[0])
-                    dtype = Datetime(tu)
+                    dtype = Datetime(tu)  # type: ignore[arg-type]
 
                 # handle NaT values
                 if np.isnan(values).any(0):
-                    nat = np.datetime64("NaT").astype(np.int64)
+                    nat: int = np.datetime64("NaT").astype(int)
                     scol = pli.col(self.name)
                     self._s = (
                         self.to_frame()
