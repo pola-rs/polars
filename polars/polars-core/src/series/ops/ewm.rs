@@ -19,8 +19,8 @@ fn prepare_primitive_array<T: NativeType>(
     let leading = std::cmp::max(min_periods, leading_nulls);
     if leading > 1 {
         let mut validity = MutableBitmap::with_capacity(vals.len());
-        validity.extend_constant(min_periods, false);
-        validity.extend_constant(vals.len() - min_periods, true);
+        validity.extend_constant(min_periods - 1, false);
+        validity.extend_constant(vals.len() - (min_periods - 1), true);
 
         PrimitiveArray::from_data_default(vals.into(), Some(validity.into()))
     } else {
