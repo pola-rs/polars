@@ -80,7 +80,7 @@ def read_csv(
     infer_schema_length: int | None = 100,
     batch_size: int = 8192,
     n_rows: int | None = None,
-    encoding: CsvEncoding = "utf8",
+    encoding: CsvEncoding | str = "utf8",
     low_memory: bool = False,
     rechunk: bool = True,
     use_pyarrow: bool = False,
@@ -142,6 +142,7 @@ def read_csv(
     parse_dates
         Try to automatically parse dates. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
+        If ``use_pyarrow=True``, dates will always be parsed.
     n_threads
         Number of threads to use in csv parsing.
         Defaults to the number of physical cpu's of your system.
@@ -156,16 +157,19 @@ def read_csv(
         Stop reading from CSV file after reading ``n_rows``.
         During multi-threaded parsing, an upper bound of ``n_rows``
         rows cannot be guaranteed.
-    encoding : {'utf8', 'utf8-lossy'}
+    encoding : {'utf8', 'utf8-lossy', ...}
         Lossy means that invalid utf8 values are replaced with ``�``
-        characters. Defaults to "utf8".
+        characters. When using other encodings than ``utf8`` or
+        ``utf8-lossy``, the input is first decoded im memory with
+        python. Defaults to ``utf8``.
     low_memory
         Reduce memory usage at expense of performance.
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
     use_pyarrow
-        Try to use pyarrow's native CSV parser.
+        Try to use pyarrow's native CSV parser. This will always
+        parse dates, even if ``parse_dates=False``.
         This is not always possible. The set of arguments given to
         this function determines if it is possible to use pyarrow's
         native parser. Note that pyarrow and polars may have a
@@ -185,7 +189,7 @@ def read_csv(
         Set the sample size. This is used to sample statistics to estimate the
         allocation needed.
     eol_char
-        Single byte end of line character
+        Single byte end of line character.
 
     Returns
     -------
@@ -207,6 +211,7 @@ def read_csv(
     _check_arg_is_1byte("sep", sep, False)
     _check_arg_is_1byte("comment_char", comment_char, False)
     _check_arg_is_1byte("quote_char", quote_char, True)
+    _check_arg_is_1byte("eol_char", eol_char, False)
 
     projection, columns = handle_projection_columns(columns)
 
@@ -233,10 +238,8 @@ def read_csv(
         and dtypes is None
         and n_rows is None
         and n_threads is None
-        and encoding == "utf8"
         and not low_memory
         and null_values is None
-        and parse_dates
     ):
         include_columns = None
 
@@ -253,13 +256,21 @@ def read_csv(
             # for pyarrow.
             include_columns = [f"f{column_idx}" for column_idx in projection]
 
-        with _prepare_file_arg(file, **storage_options) as data:
+        with _prepare_file_arg(
+            file, encoding=None, use_pyarrow=True, **storage_options
+        ) as data:
             tbl = pa.csv.read_csv(
                 data,
                 pa.csv.ReadOptions(
-                    skip_rows=skip_rows, autogenerate_column_names=not has_header
+                    skip_rows=skip_rows,
+                    autogenerate_column_names=not has_header,
+                    encoding=encoding,
                 ),
-                pa.csv.ParseOptions(delimiter=sep),
+                pa.csv.ParseOptions(
+                    delimiter=sep,
+                    quote_char=quote_char if quote_char else False,
+                    double_quote=quote_char is not None and quote_char == '"',
+                ),
                 pa.csv.ConvertOptions(
                     column_types=None,
                     include_columns=include_columns,
@@ -370,7 +381,9 @@ def read_csv(
                 for column_name, column_dtype in dtypes.items()
             }
 
-    with _prepare_file_arg(file, **storage_options) as data:
+    with _prepare_file_arg(
+        file, encoding=encoding, use_pyarrow=False, **storage_options
+    ) as data:
         df = DataFrame._read_csv(
             file=data,
             has_header=has_header,
@@ -387,7 +400,7 @@ def read_csv(
             infer_schema_length=infer_schema_length,
             batch_size=batch_size,
             n_rows=n_rows,
-            encoding=encoding,
+            encoding=encoding if encoding == "utf8-lossy" else "utf8",
             low_memory=low_memory,
             rechunk=rechunk,
             skip_rows_after_header=skip_rows_after_header,
@@ -799,7 +812,7 @@ def read_ipc(
             )
 
     storage_options = storage_options or {}
-    with _prepare_file_arg(file, **storage_options) as data:
+    with _prepare_file_arg(file, use_pyarrow=use_pyarrow, **storage_options) as data:
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
                 raise ImportError(
@@ -893,7 +906,9 @@ def read_parquet(
             raise ValueError("``n_rows`` cannot be used with ``use_pyarrow=True``.")
 
     storage_options = storage_options or {}
-    with _prepare_file_arg(source, **storage_options) as source_prep:
+    with _prepare_file_arg(
+        source, use_pyarrow=use_pyarrow, **storage_options
+    ) as source_prep:
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
                 raise ImportError(
