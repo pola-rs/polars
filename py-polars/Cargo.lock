@@ -1376,7 +1376,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.14.1"
+version = "0.14.2"
 dependencies = [
  "ahash",
  "bincode",
