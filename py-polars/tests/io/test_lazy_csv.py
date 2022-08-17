@@ -28,8 +28,8 @@ def test_invalid_utf8() -> None:
     with open(file, "wb") as f:
         f.write(bts)
 
-    a = pl.read_csv(file, has_headers=False, encoding="utf8-lossy")
-    b = pl.scan_csv(file, has_headers=False, encoding="utf8-lossy").collect()
+    a = pl.read_csv(file, has_header=False, encoding="utf8-lossy")
+    b = pl.scan_csv(file, has_header=False, encoding="utf8-lossy").collect()
     assert a.frame_equal(b, null_equal=True)
 
 
