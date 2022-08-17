@@ -129,9 +129,10 @@ macro_rules! sort_with_fast_path {
             return $ca.clone();
         }
 
-        if $options.descending && $ca.is_sorted_reverse() || $ca.is_sorted() {
+        // we can clone if we sort in same order
+        if $options.descending && $ca.is_sorted_reverse() || ($ca.is_sorted() && !$options.descending) {
             // there are nulls
-            if $ca.has_validity() {
+            if $ca.null_count() > 0 {
                 // if the nulls are already last we can clone
                 if $options.nulls_last && $ca.get($ca.len() - 1).is_none()  ||
                 // if the nulls are already first we can clone
@@ -146,6 +147,10 @@ macro_rules! sort_with_fast_path {
                 return $ca.clone();
             }
         }
+        // we can reverse if we sort in other order
+        else if ($options.descending && $ca.is_sorted() || $ca.is_sorted_reverse()) && $ca.null_count() == 0 {
+            return $ca.reverse()
+        };
 
 
     }}
