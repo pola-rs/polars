@@ -1,5 +1,5 @@
 use super::*;
-use crate::prelude::{AnonymousScan, AnonymousScanOptions, LazyJsonReader};
+use crate::prelude::{AnonymousScan, AnonymousScanOptions, LazyJsonLineReader};
 
 impl AnonymousScan for LazyJsonLineReader {
     fn scan(&self, scan_opts: AnonymousScanOptions) -> Result<DataFrame> {
@@ -18,7 +18,7 @@ impl AnonymousScan for LazyJsonLineReader {
         let f = std::fs::File::open(&self.path)?;
         let mut reader = std::io::BufReader::new(f);
 
-        let data_type = ndjson::read::infer(&mut reader, infer_schema_length)
+        let data_type = arrow_ndjson::read::infer(&mut reader, infer_schema_length)
             .map_err(|err| PolarsError::ComputeError(format!("{:#?}", err).into()))?;
         let schema: Schema = StructArray::get_fields(&data_type).into();
 

@@ -2,7 +2,7 @@ use std::io::BufWriter;
 
 use polars::io::RowCount;
 use polars::lazy::frame::{
-    AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy, LazyJsonReader,
+    AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy, LazyJsonLineReader,
 };
 use polars::lazy::prelude::col;
 use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Schema};
@@ -150,7 +150,7 @@ impl PyLazyFrame {
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
 
-        let lf = LazyJsonReader::new(path)
+        let lf = LazyJsonLineReader::new(path)
             .with_infer_schema_length(infer_schema_length)
             .with_batch_size(batch_size)
             .with_n_rows(n_rows)
