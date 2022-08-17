@@ -251,15 +251,16 @@ class Series:
 
                 # handle NaT values
                 if dtype is not None and np.isnan(values).any(0):
-                    nat = np.datetime64("NaT").astype(int)
+                    nat: int = np.datetime64("NaT").astype(int)
                     scol = pli.col(self.name)
                     self._s = (
                         self.to_frame()
                         .with_column(
-                            pli.when(scol == nat).then(None).otherwise(scol).keep_name()
+                            (pli.when(scol == nat).then(None).otherwise(scol))
+                            .cast(dtype)
+                            .keep_name()
                         )
                         .to_series()
-                        .cast(dtype, strict=True)
                         ._s
                     )
                     return
