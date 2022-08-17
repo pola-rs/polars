@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence, Union, overload
 
 from polars import internals as pli
 from polars.datatypes import (
+    DTYPE_TEMPORAL_UNITS,
     Boolean,
     DataType,
     Date,
@@ -245,11 +246,12 @@ class Series:
                     dtype == Datetime and not getattr(dtype, "tu", None)
                 ):
                     tu = getattr(dtype, "tu", np.datetime_data(values.dtype)[0])
-                    dtype = Datetime(tu)  # type: ignore[arg-type]
+                    if tu in DTYPE_TEMPORAL_UNITS:
+                        dtype = Datetime(tu)
 
                 # handle NaT values
-                if np.isnan(values).any(0):
-                    nat: int = np.datetime64("NaT").astype(int)
+                if dtype is not None and np.isnan(values).any(0):
+                    nat = np.datetime64("NaT").astype(int)
                     scol = pli.col(self.name)
                     self._s = (
                         self.to_frame()
