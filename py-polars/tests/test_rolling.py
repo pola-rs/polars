@@ -82,3 +82,52 @@ def test_rolling_skew() -> None:
             0.16923763134384154,
         ]
     )
+
+
+def test_rolling_extrema() -> None:
+    # sorted data and nulls flags trigger different kernels
+    df = (
+        pl.DataFrame(
+            {
+                "col1": pl.arange(0, 7, eager=True),
+                "col2": pl.arange(0, 7, eager=True).reverse(),
+            }
+        )
+    ).with_columns(
+        [
+            pl.when(pl.arange(0, pl.count(), eager=False) < 2)
+            .then(None)
+            .otherwise(pl.all())
+            .suffix("_nulls")
+        ]
+    )
+
+    assert df.select([pl.all().rolling_min(3)]).to_dict(False) == {
+        "col1": [None, None, 0, 1, 2, 3, 4],
+        "col2": [None, None, 4, 3, 2, 1, 0],
+        "col1_nulls": [None, None, None, None, 2, 3, 4],
+        "col2_nulls": [None, None, None, None, 2, 1, 0],
+    }
+
+    assert df.select([pl.all().rolling_max(3)]).to_dict(False) == {
+        "col1": [None, None, 2, 3, 4, 5, 6],
+        "col2": [None, None, 6, 5, 4, 3, 2],
+        "col1_nulls": [None, None, None, None, 4, 5, 6],
+        "col2_nulls": [None, None, None, None, 4, 3, 2],
+    }
+
+    # shuffled data triggers other kernels
+    df = df.select([pl.all().shuffle(0)])
+    assert df.select([pl.all().rolling_min(3)]).to_dict(False) == {
+        "col1": [None, None, 0, 0, 1, 2, 2],
+        "col2": [None, None, 0, 2, 1, 1, 1],
+        "col1_nulls": [None, None, None, None, None, 2, 2],
+        "col2_nulls": [None, None, None, None, None, 1, 1],
+    }
+
+    assert df.select([pl.all().rolling_max(3)]).to_dict(False) == {
+        "col1": [None, None, 6, 4, 5, 5, 5],
+        "col2": [None, None, 6, 6, 5, 4, 4],
+        "col1_nulls": [None, None, None, None, None, 5, 5],
+        "col2_nulls": [None, None, None, None, None, 4, 4],
+    }
