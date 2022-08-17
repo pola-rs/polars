@@ -10,7 +10,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import Date, Float64, Int32, Int64, UInt32, UInt64
+from polars.datatypes import Date, Datetime, Float64, Int32, Int64, UInt32, UInt64
 from polars.testing import assert_series_equal, verify_series_and_expr_api
 
 
@@ -45,6 +45,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
             == pl.List
         )
         assert pl.Series("a", [10000, 20000, 30000], dtype=pl.Time).dtype == pl.Time
+
         # 2d numpy array
         res = pl.Series(name="a", values=np.array([[1, 2], [3, 4]]))
         assert all(res[0] == np.array([1, 2]))
@@ -56,6 +57,18 @@ def test_init_inputs(monkeypatch: Any) -> None:
 
         # lists
         assert pl.Series("a", [[1, 2], [3, 4]]).dtype == pl.List
+
+    # datetime64
+    values = pd.date_range(date(2021, 8, 1), date(2021, 8, 3)).values
+    for dtype in (None, Datetime, Datetime("ns")):
+        s = pl.Series("dates", values, dtype)
+        assert s.to_list() == [
+            datetime(2021, 8, 1, 0),
+            datetime(2021, 8, 2, 0),
+            datetime(2021, 8, 3, 0),
+        ]
+        assert Datetime == s.dtype
+        assert s.dtype.tu == "ns"  # type: ignore[attr-defined]
 
     # pandas
     assert pl.Series(pd.Series([1, 2])).dtype == pl.Int64
