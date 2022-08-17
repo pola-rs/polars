@@ -20,6 +20,7 @@ from polars.datatypes import (
     Int64,
     List,
     Object,
+    PolarsDataType,
     Time,
     UInt8,
     UInt16,
@@ -100,6 +101,22 @@ if TYPE_CHECKING:
     )
 
 
+def _datetime_values_dtype(
+    dtype: PolarsDataType | None, ndtype: np.datetime64
+) -> PolarsDataType | None:
+    if dtype is None or (dtype == Datetime and not getattr(dtype, "tu", None)):
+        tu = getattr(dtype, "tu", np.datetime_data(ndtype)[0])
+        # explicit formulation is verbose, but keeps mypy happy
+        # (and avoids unsupported timeunits such as "s")
+        if tu == "ns":
+            dtype = Datetime("ns")
+        elif tu == "us":
+            dtype = Datetime("us")
+        elif tu == "ms":
+            dtype = Datetime("ms")
+    return dtype
+
+
 def get_ffi_func(
     name: str,
     dtype: type[DataType],
@@ -159,10 +176,10 @@ class Series:
     dtype : DataType, default None
         Polars dtype of the Series data. If not specified, the dtype is inferred.
     strict
-        Throw error on numeric overflow
+        Throw error on numeric overflow.
     nan_to_null
-        In case a numpy arrow is used to create this Series, indicate how to deal with
-        np.nan
+        In case a numpy array is used to create this Series, indicate how to deal
+        with np.nan values.
 
     Examples
     --------
@@ -239,6 +256,26 @@ class Series:
             self._s = arrow_to_pyseries(name, values)
         elif _NUMPY_AVAILABLE and isinstance(values, np.ndarray):
             self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
+            if values.dtype.type == np.datetime64:
+                # detect/assign dtype timeunit
+                dtype = _datetime_values_dtype(dtype, values.dtype)
+
+                # handle NaT values
+                if dtype is not None and np.isnan(values).any(0):
+                    nat: int = np.datetime64("NaT").astype(int)
+                    scol = pli.col(self.name)
+                    self._s = (
+                        self.to_frame()
+                        .with_column(
+                            (pli.when(scol == nat).then(None).otherwise(scol))
+                            .cast(dtype)
+                            .keep_name()
+                        )
+                        .to_series()
+                        ._s
+                    )
+                    return
+
             if dtype is not None:
                 self._s = self.cast(dtype, strict=True)._s
         elif isinstance(values, Sequence):
