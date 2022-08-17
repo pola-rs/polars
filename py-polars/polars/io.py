@@ -5,7 +5,7 @@ from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, TextIO
 
-from polars.utils import format_path, handle_projection_columns
+from polars.utils import deprecated_alias, format_path, handle_projection_columns
 
 try:
     import pyarrow as pa
@@ -63,6 +63,7 @@ def _update_columns(df: DataFrame, new_columns: list[str]) -> DataFrame:
     return df
 
 
+@deprecated_alias(has_headers="has_header", dtypes="dtype", stop_after_n_rows="n_rows")
 def read_csv(
     file: str | TextIO | BytesIO | Path | BinaryIO | bytes,
     has_header: bool = True,
@@ -200,11 +201,6 @@ def read_csv(
     scan_csv : Lazily read from a CSV file or multiple files via glob patterns.
 
     """
-    # Map legacy arguments to current ones and remove them from kwargs.
-    has_header = kwargs.pop("has_headers", has_header)
-    dtypes = kwargs.pop("dtype", dtypes)
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
     if columns is None:
         columns = kwargs.pop("projection", None)
 
@@ -415,6 +411,7 @@ def read_csv(
     return df
 
 
+@deprecated_alias(has_headers="has_header", dtypes="dtype", stop_after_n_rows="n_rows")
 def scan_csv(
     file: str | Path,
     has_header: bool = True,
@@ -437,7 +434,6 @@ def scan_csv(
     row_count_offset: int = 0,
     parse_dates: bool = False,
     eol_char: str = "\n",
-    **kwargs: Any,
 ) -> LazyFrame:
     """
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -560,11 +556,6 @@ def scan_csv(
     └─────────┴──────────┘
 
     """
-    # Map legacy arguments to current ones and remove them from kwargs.
-    has_header = kwargs.pop("has_headers", has_header)
-    dtypes = kwargs.pop("dtype", dtypes)
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
     _check_arg_is_1byte("sep", sep, False)
     _check_arg_is_1byte("comment_char", comment_char, False)
     _check_arg_is_1byte("quote_char", quote_char, True)
@@ -597,6 +588,7 @@ def scan_csv(
     )
 
 
+@deprecated_alias(stop_after_n_rows="n_rows")
 def scan_ipc(
     file: str | Path,
     n_rows: int | None = None,
@@ -606,7 +598,6 @@ def scan_ipc(
     row_count_offset: int = 0,
     storage_options: dict[str, object] | None = None,
     memory_map: bool = True,
-    **kwargs: Any,
 ) -> LazyFrame:
     """
     Lazily read from an Arrow IPC (Feather v2) file or multiple files via glob patterns.
@@ -639,9 +630,6 @@ def scan_ipc(
         Only uncompressed IPC files can be memory mapped.
 
     """
-    # Map legacy arguments to current ones and remove them from kwargs.
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
     return LazyFrame.scan_ipc(
         file=file,
         n_rows=n_rows,
@@ -654,6 +642,7 @@ def scan_ipc(
     )
 
 
+@deprecated_alias(stop_after_n_rows="n_rows")
 def scan_parquet(
     file: str | Path,
     n_rows: int | None = None,
@@ -664,7 +653,6 @@ def scan_parquet(
     row_count_offset: int = 0,
     storage_options: dict[str, object] | None = None,
     low_memory: bool = False,
-    **kwargs: Any,
 ) -> LazyFrame:
     """
     Lazily read from a parquet file or multiple files via glob patterns.
@@ -699,9 +687,6 @@ def scan_parquet(
         Reduce memory pressure at the expense of performance.
 
     """
-    # Map legacy arguments to current ones and remove them from kwargs.
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
     if isinstance(file, (str, Path)):
         file = format_path(file)
 
@@ -750,6 +735,7 @@ def read_avro(
     return DataFrame._read_avro(file, n_rows=n_rows, columns=columns)
 
 
+@deprecated_alias(stop_after_n_rows="n_rows")
 def read_ipc(
     file: str | BinaryIO | BytesIO | Path | bytes,
     columns: list[int] | list[str] | None = None,
@@ -798,9 +784,6 @@ def read_ipc(
     DataFrame
 
     """
-    # Map legacy arguments to current ones and remove them from kwargs.
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
     if columns is None:
         columns = kwargs.pop("projection", None)
 
@@ -839,6 +822,7 @@ def read_ipc(
         )
 
 
+@deprecated_alias(stop_after_n_rows="n_rows")
 def read_parquet(
     source: str | Path | BinaryIO | BytesIO | bytes,
     columns: list[int] | list[str] | None = None,
@@ -895,9 +879,6 @@ def read_parquet(
     DataFrame
 
     """  # noqa: E501
-    # Map legacy arguments to current ones and remove them from kwargs.
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
     if columns is None:
         columns = kwargs.pop("projection", None)
 
