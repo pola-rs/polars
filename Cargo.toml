@@ -13,4 +13,6 @@ members = [
 ]
 
 [patch.crates-io]
+parquet-format-safe = { git = "https://github.com/ritchie46/parquet-format-safe", branch = "patch-1" }
+parquet2 = { git = "https://github.com/ritchie46/parquet2", branch = "tmp" }
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
