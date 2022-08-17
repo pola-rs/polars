@@ -125,7 +125,7 @@ from polars.io import (
     scan_csv,
     scan_ds,
     scan_ipc,
-    scan_json,
+    scan_ndjson,
     scan_parquet,
 )
 from polars.show_versions import show_versions
@@ -182,7 +182,7 @@ __all__ = [
     "scan_ipc",
     "scan_ds",
     "scan_parquet",
-    "scan_json",
+    "scan_ndjson",
     "read_ipc_schema",
     "read_parquet_schema",
     "read_avro",

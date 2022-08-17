@@ -139,7 +139,7 @@ impl PyLazyFrame {
     #[staticmethod]
     #[cfg(feature = "json")]
     #[allow(clippy::too_many_arguments)]
-    pub fn new_from_json(
+    pub fn new_from_ndjson(
         path: String,
         infer_schema_length: Option<usize>,
         batch_size: Option<usize>,

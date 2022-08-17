@@ -4,7 +4,7 @@ mod csv;
 #[cfg(feature = "ipc")]
 mod ipc;
 #[cfg(feature = "json")]
-mod json;
+mod ndjson;
 #[cfg(feature = "parquet")]
 mod parquet;
 #[cfg(feature = "python")]
@@ -21,7 +21,7 @@ pub use csv::*;
 #[cfg(feature = "ipc")]
 pub use ipc::*;
 #[cfg(feature = "json")]
-pub use json::*;
+pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
 use polars_arrow::prelude::QuantileInterpolOptions;

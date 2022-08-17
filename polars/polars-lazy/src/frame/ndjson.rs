@@ -3,7 +3,7 @@ use polars_io::RowCount;
 
 use super::{LazyFrame, ScanArgsAnonymous};
 
-pub struct LazyJsonReader {
+pub struct LazyJsonLineReader {
     pub(crate) path: String,
     pub(crate) batch_size: Option<usize>,
     pub(crate) low_memory: bool,
@@ -14,9 +14,9 @@ pub struct LazyJsonReader {
     pub(crate) n_rows: Option<usize>,
 }
 
-impl LazyJsonReader {
+impl LazyJsonLineReader {
     pub fn new(path: String) -> Self {
-        LazyJsonReader {
+        LazyJsonLineReader {
             path,
             batch_size: None,
             low_memory: false,

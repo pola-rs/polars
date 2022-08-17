@@ -704,7 +704,7 @@ def scan_parquet(
     )
 
 
-def scan_json(
+def scan_ndjson(
     file: str | Path,
     infer_schema_length: int | None = 100,
     batch_size: int | None = 1024,
@@ -715,11 +715,10 @@ def scan_json(
     row_count_offset: int = 0,
 ) -> LazyFrame:
     """
-    Lazily read from a JSON file.
+    Lazily read from a newline delimited JSON file.
 
     This allows the query optimizer to push down predicates and projections to the scan
     level, thereby potentially reducing memory overhead.
-    Note: `scan_json` currently only supports newline-delimited JSON files.
 
     Parameters
     ----------
@@ -745,7 +744,7 @@ def scan_json(
     if isinstance(file, (str, Path)):
         file = format_path(file)
 
-    return LazyFrame.scan_json(
+    return LazyFrame.scan_ndjson(
         file=file,
         infer_schema_length=infer_schema_length,
         batch_size=batch_size,

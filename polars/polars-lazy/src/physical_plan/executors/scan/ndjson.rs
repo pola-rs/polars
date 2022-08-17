@@ -1,7 +1,7 @@
 use super::*;
 use crate::prelude::{AnonymousScan, AnonymousScanOptions, LazyJsonReader};
 
-impl AnonymousScan for LazyJsonReader {
+impl AnonymousScan for LazyJsonLineReader {
     fn scan(&self, scan_opts: AnonymousScanOptions) -> Result<DataFrame> {
         let schema = scan_opts.output_schema.unwrap_or(scan_opts.schema);
         JsonLineReader::from_path(&self.path)?
