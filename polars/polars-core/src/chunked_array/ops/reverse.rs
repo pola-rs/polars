@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::series::IsSorted;
 use crate::utils::{CustomIterTools, NoNull};
 
 impl<T> ChunkReverse<T> for ChunkedArray<T>
@@ -6,14 +7,21 @@ where
     T: PolarsNumericType,
 {
     fn reverse(&self) -> ChunkedArray<T> {
-        if let Ok(slice) = self.cont_slice() {
+        let mut out = if let Ok(slice) = self.cont_slice() {
             let ca: NoNull<ChunkedArray<T>> = slice.iter().rev().copied().collect_trusted();
-            let mut ca = ca.into_inner();
-            ca.rename(self.name());
-            ca
+            ca.into_inner()
         } else {
             self.into_iter().rev().collect_trusted()
+        };
+        out.rename(self.name());
+
+        match self.is_sorted2() {
+            IsSorted::Ascending => out.set_sorted2(IsSorted::Descending),
+            IsSorted::Descending => out.set_sorted2(IsSorted::Ascending),
+            _ => {}
         }
+
+        out
     }
 }
 

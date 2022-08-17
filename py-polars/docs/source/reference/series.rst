@@ -25,6 +25,7 @@ Attributes
    Series.shape
    Series.str
    Series.time_unit
+   Series.flags
 
 Conversion
 ----------

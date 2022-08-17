@@ -131,3 +131,131 @@ def test_rolling_extrema() -> None:
         "col1_nulls": [None, None, None, None, None, 5, 5],
         "col2_nulls": [None, None, None, None, None, 4, 4],
     }
+
+
+def test_rolling_groupby_extrema() -> None:
+    # ensure we hit different branches so create
+    # two dfs, but ensure that one does not have a sorted flag
+
+    # descending order
+    not_sorted_flag = pl.DataFrame({"col1": [6, 5, 4, 3, 2, 1, 0]}).with_column(
+        pl.col("col1").reverse().alias("row_nr")
+    )
+    assert not not_sorted_flag["col1"].flags["SORTED_DESC"]
+
+    sorted_flag = pl.DataFrame(
+        {
+            "col1": pl.arange(0, 7, eager=True).reverse(),
+        }
+    ).with_column(pl.col("col1").reverse().alias("row_nr"))
+
+    for df in [sorted_flag, not_sorted_flag]:
+        assert (
+            df.groupby_rolling(
+                index_column="row_nr",
+                period="3i",
+            )
+            .agg(
+                [
+                    pl.col("col1").suffix("_list"),
+                    pl.col("col1").min().suffix("_min"),
+                    pl.col("col1").max().suffix("_max"),
+                    pl.col("col1").first().alias("col1_first"),
+                    pl.col("col1").last().alias("col1_last"),
+                ]
+            )
+            .select(["col1_list", "col1_min", "col1_max", "col1_first", "col1_last"])
+        ).to_dict(False) == {
+            "col1_list": [
+                [6],
+                [6, 5],
+                [6, 5, 4],
+                [5, 4, 3],
+                [4, 3, 2],
+                [3, 2, 1],
+                [2, 1, 0],
+            ],
+            "col1_min": [6, 5, 4, 3, 2, 1, 0],
+            "col1_max": [6, 6, 6, 5, 4, 3, 2],
+            "col1_first": [6, 6, 6, 5, 4, 3, 2],
+            "col1_last": [6, 5, 4, 3, 2, 1, 0],
+        }
+
+    # ascending order
+
+    sorted_df = pl.DataFrame(
+        {
+            "col1": pl.arange(0, 7, eager=True),
+        }
+    ).with_column(pl.col("col1").alias("row_nr"))
+
+    not_sorted_df = pl.DataFrame({"col1": [0, 1, 2, 3, 4, 5, 6]}).with_column(
+        pl.col("col1").alias("row_nr")
+    )
+
+    for df in [sorted_df, not_sorted_df]:
+
+        assert (
+            df.groupby_rolling(
+                index_column="row_nr",
+                period="3i",
+            )
+            .agg(
+                [
+                    pl.col("col1").suffix("_list"),
+                    pl.col("col1").min().suffix("_min"),
+                    pl.col("col1").max().suffix("_max"),
+                    pl.col("col1").first().alias("col1_first"),
+                    pl.col("col1").last().alias("col1_last"),
+                ]
+            )
+            .select(["col1_list", "col1_min", "col1_max", "col1_first", "col1_last"])
+        ).to_dict(False) == {
+            "col1_list": [
+                [0],
+                [0, 1],
+                [0, 1, 2],
+                [1, 2, 3],
+                [2, 3, 4],
+                [3, 4, 5],
+                [4, 5, 6],
+            ],
+            "col1_min": [0, 0, 0, 1, 2, 3, 4],
+            "col1_max": [0, 1, 2, 3, 4, 5, 6],
+            "col1_first": [0, 0, 0, 1, 2, 3, 4],
+            "col1_last": [0, 1, 2, 3, 4, 5, 6],
+        }
+
+    # shuffled data.
+    df = pl.DataFrame(
+        {
+            "col1": pl.arange(0, 7, eager=True).shuffle(1),
+        }
+    ).with_column(pl.col("col1").sort().alias("row_nr"))
+
+    assert (
+        df.groupby_rolling(
+            index_column="row_nr",
+            period="3i",
+        )
+        .agg(
+            [
+                pl.col("col1").min().suffix("_min"),
+                pl.col("col1").max().suffix("_max"),
+                pl.col("col1").suffix("_list"),
+            ]
+        )
+        .select(["col1_list", "col1_min", "col1_max"])
+    ).to_dict(False) == {
+        "col1_list": [
+            [3],
+            [3, 4],
+            [3, 4, 5],
+            [4, 5, 6],
+            [5, 6, 2],
+            [6, 2, 1],
+            [2, 1, 0],
+        ],
+        "col1_min": [3, 3, 3, 4, 2, 1, 0],
+        "col1_max": [3, 4, 5, 6, 6, 6, 2],
+    }

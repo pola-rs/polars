@@ -189,3 +189,9 @@ def test_sorted_join_and_dtypes() -> None:
         "row_nr": [0, 1, 2, 3, 4, 5],
         "a": [-5, -2, 3, 3, 9, 10],
     }
+
+
+def test_sorted_flag_reverse() -> None:
+    s = pl.arange(0, 7, eager=True)
+    assert s.flags["SORTED_ASC"]
+    assert s.reverse().flags["SORTED_DESC"]

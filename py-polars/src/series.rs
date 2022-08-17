@@ -115,6 +115,13 @@ impl PySeries {
 
 #[pymethods]
 impl PySeries {
+    pub fn is_sorted_flag(&self) -> bool {
+        matches!(self.series.is_sorted(), IsSorted::Ascending)
+    }
+    pub fn is_sorted_reverse_flag(&self) -> bool {
+        matches!(self.series.is_sorted(), IsSorted::Descending)
+    }
+
     #[staticmethod]
     pub fn new_opt_bool(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {
         let (seq, len) = get_pyseq(obj)?;

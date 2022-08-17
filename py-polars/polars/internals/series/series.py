@@ -636,6 +636,21 @@ class Series:
         else:
             raise ValueError(f'cannot use "{key}" for indexing')
 
+    @property
+    def flags(self) -> dict[str, bool]:
+        """
+        Get flags that are set on the Series
+
+        Returns
+        -------
+        Dictionary containing the flag name and the value
+
+        """
+        return {
+            "SORTED_ASC": self._s.is_sorted_flag(),
+            "SORTED_DESC": self._s.is_sorted_reverse_flag(),
+        }
+
     def estimated_size(self) -> int:
         """
         Return an estimation of the total (heap) allocated size of the `Series` in
