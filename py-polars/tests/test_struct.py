@@ -136,6 +136,16 @@ def test_value_counts_expr() -> None:
     ]
 
 
+def test_value_counts_logical_type() -> None:
+    # test logical type
+    df = pl.DataFrame({"a": ["b", "c"]}).with_column(
+        pl.col("a").cast(pl.Categorical).alias("ac")
+    )
+    out = df.select([pl.all().value_counts()])
+    assert out["ac"].struct.field("ac").dtype == pl.Categorical
+    assert out["a"].struct.field("a").dtype == pl.Utf8
+
+
 def test_nested_struct() -> None:
     df = pl.DataFrame({"d": [1, 2, 3], "e": ["foo", "bar", "biz"]})
     # Nest the datafame
