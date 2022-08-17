@@ -232,6 +232,10 @@ impl PyExpr {
     pub fn arg_min(&self) -> PyExpr {
         self.clone().inner.arg_min().into()
     }
+
+    pub fn search_sorted(&self, element: PyExpr) -> PyExpr {
+        self.inner.clone().search_sorted(element.inner).into()
+    }
     pub fn take(&self, idx: PyExpr) -> PyExpr {
         self.clone().inner.take(idx.inner).into()
     }

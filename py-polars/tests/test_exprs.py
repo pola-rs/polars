@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import cast
 
+import numpy as np
+
 import polars as pl
 from polars.testing import assert_series_equal, verify_series_and_expr_api
 
@@ -323,3 +325,13 @@ def test_unique_empty() -> None:
     for dt in [pl.Utf8, pl.Boolean, pl.Int32, pl.UInt32]:
         s = pl.Series([], dtype=dt)
         assert s.unique().series_equal(s)
+
+
+def test_search_sorted() -> None:
+    for seed in [1, 2, 3]:
+        np.random.seed(seed)
+        a = np.sort(np.random.randn(10) * 100)
+        s = pl.Series(a)
+
+        for v in range(int(np.min(a)), int(np.max(a)), 20):
+            assert np.searchsorted(a, v) == s.search_sorted(v)

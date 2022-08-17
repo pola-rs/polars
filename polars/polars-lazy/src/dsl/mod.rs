@@ -521,6 +521,22 @@ impl Expr {
         )
     }
 
+    #[cfg(feature = "search_sorted")]
+    /// Find indices where elements should be inserted to maintain order.
+    pub fn search_sorted<E: Into<Expr>>(self, element: E) -> Expr {
+        let element = element.into();
+        Expr::Function {
+            input: vec![self, element],
+            function: FunctionExpr::SearchSorted,
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyGroups,
+                input_wildcard_expansion: false,
+                auto_explode: true,
+                fmt_str: "search_sorted",
+            },
+        }
+    }
+
     /// Cast expression to another data type.
     /// Throws an error if conversion had overflows
     pub fn strict_cast(self, data_type: DataType) -> Self {

@@ -22,7 +22,7 @@ type Idx = usize;
 type WindowSize = usize;
 type Len = usize;
 
-fn compare_fn_nan_min<T>(a: &T, b: &T) -> Ordering
+pub fn compare_fn_nan_min<T>(a: &T, b: &T) -> Ordering
 where
     T: PartialOrd + IsFloat + NativeType,
 {

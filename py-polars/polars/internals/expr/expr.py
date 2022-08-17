@@ -1844,6 +1844,21 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.arg_min())
 
+    def search_sorted(self, element: Expr | int | float) -> Expr:
+        """
+        Find indices where elements should be inserted to maintain order.
+
+        .. math:: a[i-1] < v <= a[i]
+
+        Parameters
+        ----------
+        element
+            Expression or scalar value.
+
+        """
+        element = expr_to_lit_or_expr(element, str_to_lit=False)
+        return wrap_expr(self._pyexpr.search_sorted(element._pyexpr))
+
     def sort_by(
         self,
         by: Expr | str | list[Expr | str],

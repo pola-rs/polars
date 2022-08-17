@@ -163,6 +163,7 @@ Computations
     Expr.rolling_std
     Expr.rolling_sum
     Expr.rolling_var
+    Expr.search_sorted
     Expr.sign
     Expr.sin
     Expr.sinh
