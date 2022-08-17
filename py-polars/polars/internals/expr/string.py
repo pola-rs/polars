@@ -144,23 +144,119 @@ class ExprStringNameSpace:
         return pli.wrap_expr(self._pyexpr.str_concat(delimiter))
 
     def to_uppercase(self) -> pli.Expr:
-        """Transform to uppercase variant."""
+        """
+        Transform to uppercase variant.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": ["cat", "dog"]})
+        >>> df.select(pl.col("foo").str.to_uppercase())
+        shape: (2, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ CAT │
+        ├╌╌╌╌╌┤
+        │ DOG │
+        └─────┘
+
+        """
         return pli.wrap_expr(self._pyexpr.str_to_uppercase())
 
     def to_lowercase(self) -> pli.Expr:
-        """Transform to lowercase variant."""
+        """
+        Transform to lowercase variant.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": ["CAT", "DOG"]})
+        >>> df.select(pl.col("foo").str.to_lowercase())
+        shape: (2, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ cat │
+        ├╌╌╌╌╌┤
+        │ dog │
+        └─────┘
+
+        """
         return pli.wrap_expr(self._pyexpr.str_to_lowercase())
 
     def strip(self) -> pli.Expr:
-        """Remove leading and trailing whitespace."""
+        """
+        Remove leading and trailing whitespace.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [" lead", "trail ", " both "]})
+        >>> df.select(pl.col("foo").str.strip())
+        shape: (3, 1)
+        ┌───────┐
+        │ foo   │
+        │ ---   │
+        │ str   │
+        ╞═══════╡
+        │ lead  │
+        ├╌╌╌╌╌╌╌┤
+        │ trail │
+        ├╌╌╌╌╌╌╌┤
+        │ both  │
+        └───────┘
+
+        """
         return pli.wrap_expr(self._pyexpr.str_strip())
 
     def lstrip(self) -> pli.Expr:
-        """Remove leading whitespace."""
+        """
+        Remove leading whitespace.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [" lead", "trail ", " both "]})
+        >>> df.select(pl.col("foo").str.lstrip())
+        shape: (3, 1)
+        ┌────────┐
+        │ foo    │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │ lead   │
+        ├╌╌╌╌╌╌╌╌┤
+        │ trail  │
+        ├╌╌╌╌╌╌╌╌┤
+        │ both   │
+        └────────┘
+
+        """
         return pli.wrap_expr(self._pyexpr.str_lstrip())
 
     def rstrip(self) -> pli.Expr:
-        """Remove trailing whitespace."""
+        """
+        Remove trailing whitespace.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [" lead", "trail ", " both "]})
+        >>> df.select(pl.col("foo").str.rstrip())
+        shape: (3, 1)
+        ┌───────┐
+        │ foo   │
+        │ ---   │
+        │ str   │
+        ╞═══════╡
+        │  lead │
+        ├╌╌╌╌╌╌╌┤
+        │ trail │
+        ├╌╌╌╌╌╌╌┤
+        │  both │
+        └───────┘
+
+        """
         return pli.wrap_expr(self._pyexpr.str_rstrip())
 
     def zfill(self, alignment: int) -> pli.Expr:

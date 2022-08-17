@@ -151,6 +151,43 @@ class ExprDateTimeNameSpace:
         -------
         Year as Int32
 
+        Examples
+        --------
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2002, 7, 1)
+        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=180))})
+        >>> df
+        shape: (4, 1)
+        ┌─────────────────────┐
+        │ date                │
+        │ ---                 │
+        │ datetime[ns]        │
+        ╞═════════════════════╡
+        │ 2001-01-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-06-30 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-12-27 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2002-06-25 00:00:00 │
+        └─────────────────────┘
+        >>> df.select(pl.col("date").dt.year())
+        shape: (4, 1)
+        ┌──────┐
+        │ date │
+        │ ---  │
+        │ i32  │
+        ╞══════╡
+        │ 2001 │
+        ├╌╌╌╌╌╌┤
+        │ 2001 │
+        ├╌╌╌╌╌╌┤
+        │ 2001 │
+        ├╌╌╌╌╌╌┤
+        │ 2002 │
+        └──────┘
+
         """
         return pli.wrap_expr(self._pyexpr.year())
 
@@ -165,6 +202,39 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Quarter as UInt32
+
+        Examples
+        --------
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2002, 6, 1)
+        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=180))})
+        >>> df
+        shape: (3, 1)
+        ┌─────────────────────┐
+        │ date                │
+        │ ---                 │
+        │ datetime[ns]        │
+        ╞═════════════════════╡
+        │ 2001-01-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-06-30 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-12-27 00:00:00 │
+        └─────────────────────┘
+        >>> df.select(pl.col("date").dt.quarter())
+        shape: (3, 1)
+        ┌──────┐
+        │ date │
+        │ ---  │
+        │ u32  │
+        ╞══════╡
+        │ 1    │
+        ├╌╌╌╌╌╌┤
+        │ 2    │
+        ├╌╌╌╌╌╌┤
+        │ 4    │
+        └──────┘
 
         """
         return pli.wrap_expr(self._pyexpr.quarter())
@@ -182,6 +252,39 @@ class ExprDateTimeNameSpace:
         -------
         Month as UInt32
 
+        Examples
+        --------
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 4, 1)
+        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=31))})
+        >>> df
+        shape: (3, 1)
+        ┌─────────────────────┐
+        │ date                │
+        │ ---                 │
+        │ datetime[ns]        │
+        ╞═════════════════════╡
+        │ 2001-01-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-02-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-03-04 00:00:00 │
+        └─────────────────────┘
+        >>> df.select(pl.col("date").dt.month())
+        shape: (3, 1)
+        ┌──────┐
+        │ date │
+        │ ---  │
+        │ u32  │
+        ╞══════╡
+        │ 1    │
+        ├╌╌╌╌╌╌┤
+        │ 2    │
+        ├╌╌╌╌╌╌┤
+        │ 3    │
+        └──────┘
+
         """
         return pli.wrap_expr(self._pyexpr.month())
 
@@ -198,6 +301,39 @@ class ExprDateTimeNameSpace:
         -------
         Week number as UInt32
 
+        Examples
+        --------
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 4, 1)
+        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=31))})
+        >>> df
+        shape: (3, 1)
+        ┌─────────────────────┐
+        │ date                │
+        │ ---                 │
+        │ datetime[ns]        │
+        ╞═════════════════════╡
+        │ 2001-01-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-02-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-03-04 00:00:00 │
+        └─────────────────────┘
+        >>> df.select(pl.col("date").dt.week())
+        shape: (3, 1)
+        ┌──────┐
+        │ date │
+        │ ---  │
+        │ u32  │
+        ╞══════╡
+        │ 1    │
+        ├╌╌╌╌╌╌┤
+        │ 5    │
+        ├╌╌╌╌╌╌┤
+        │ 9    │
+        └──────┘
+
         """
         return pli.wrap_expr(self._pyexpr.week())
 
@@ -212,6 +348,45 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Week day as UInt32
+
+        Examples
+        --------
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 9)
+        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=3))})
+        >>> df
+        shape: (3, 1)
+        ┌─────────────────────┐
+        │ date                │
+        │ ---                 │
+        │ datetime[ns]        │
+        ╞═════════════════════╡
+        │ 2001-01-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-04 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-07 00:00:00 │
+        └─────────────────────┘
+        >>> df.select(
+        ...     [
+        ...         pl.col("date").dt.weekday().alias("weekday"),
+        ...         pl.col("date").dt.day().alias("day_of_month"),
+        ...         pl.col("date").dt.ordinal_day().alias("day_of_year"),
+        ...     ]
+        ... )
+        shape: (3, 3)
+        ┌─────────┬──────────────┬─────────────┐
+        │ weekday ┆ day_of_month ┆ day_of_year │
+        │ ---     ┆ ---          ┆ ---         │
+        │ u32     ┆ u32          ┆ u32         │
+        ╞═════════╪══════════════╪═════════════╡
+        │ 0       ┆ 1            ┆ 1           │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3       ┆ 4            ┆ 4           │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 6       ┆ 7            ┆ 7           │
+        └─────────┴──────────────┴─────────────┘
 
         """
         return pli.wrap_expr(self._pyexpr.weekday())
@@ -229,6 +404,45 @@ class ExprDateTimeNameSpace:
         -------
         Day as UInt32
 
+        Examples
+        --------
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 9)
+        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=3))})
+        >>> df
+        shape: (3, 1)
+        ┌─────────────────────┐
+        │ date                │
+        │ ---                 │
+        │ datetime[ns]        │
+        ╞═════════════════════╡
+        │ 2001-01-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-04 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-07 00:00:00 │
+        └─────────────────────┘
+        >>> df.select(
+        ...     [
+        ...         pl.col("date").dt.weekday().alias("weekday"),
+        ...         pl.col("date").dt.day().alias("day_of_month"),
+        ...         pl.col("date").dt.ordinal_day().alias("day_of_year"),
+        ...     ]
+        ... )
+        shape: (3, 3)
+        ┌─────────┬──────────────┬─────────────┐
+        │ weekday ┆ day_of_month ┆ day_of_year │
+        │ ---     ┆ ---          ┆ ---         │
+        │ u32     ┆ u32          ┆ u32         │
+        ╞═════════╪══════════════╪═════════════╡
+        │ 0       ┆ 1            ┆ 1           │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3       ┆ 4            ┆ 4           │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 6       ┆ 7            ┆ 7           │
+        └─────────┴──────────────┴─────────────┘
+
         """
         return pli.wrap_expr(self._pyexpr.day())
 
@@ -245,6 +459,45 @@ class ExprDateTimeNameSpace:
         -------
         Day as UInt32
 
+        Examples
+        --------
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 9)
+        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=3))})
+        >>> df
+        shape: (3, 1)
+        ┌─────────────────────┐
+        │ date                │
+        │ ---                 │
+        │ datetime[ns]        │
+        ╞═════════════════════╡
+        │ 2001-01-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-04 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-07 00:00:00 │
+        └─────────────────────┘
+        >>> df.select(
+        ...     [
+        ...         pl.col("date").dt.weekday().alias("weekday"),
+        ...         pl.col("date").dt.day().alias("day_of_month"),
+        ...         pl.col("date").dt.ordinal_day().alias("day_of_year"),
+        ...     ]
+        ... )
+        shape: (3, 3)
+        ┌─────────┬──────────────┬─────────────┐
+        │ weekday ┆ day_of_month ┆ day_of_year │
+        │ ---     ┆ ---          ┆ ---         │
+        │ u32     ┆ u32          ┆ u32         │
+        ╞═════════╪══════════════╪═════════════╡
+        │ 0       ┆ 1            ┆ 1           │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3       ┆ 4            ┆ 4           │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 6       ┆ 7            ┆ 7           │
+        └─────────┴──────────────┴─────────────┘
+
         """
         return pli.wrap_expr(self._pyexpr.ordinal_day())
 
@@ -259,6 +512,39 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Hour as UInt32
+
+        Examples
+        --------
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(hours=12))})
+        >>> df
+        shape: (3, 1)
+        ┌─────────────────────┐
+        │ date                │
+        │ ---                 │
+        │ datetime[ns]        │
+        ╞═════════════════════╡
+        │ 2001-01-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-01 12:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-02 00:00:00 │
+        └─────────────────────┘
+        >>> df.select(pl.col("date").dt.hour())
+        shape: (3, 1)
+        ┌──────┐
+        │ date │
+        │ ---  │
+        │ u32  │
+        ╞══════╡
+        │ 0    │
+        ├╌╌╌╌╌╌┤
+        │ 12   │
+        ├╌╌╌╌╌╌┤
+        │ 0    │
+        └──────┘
 
         """
         return pli.wrap_expr(self._pyexpr.hour())
@@ -275,6 +561,41 @@ class ExprDateTimeNameSpace:
         -------
         Minute as UInt32
 
+        Examples
+        --------
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 1, 0, 4, 0)
+        >>> df = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, timedelta(minutes=2))}
+        ... )
+        >>> df
+        shape: (3, 1)
+        ┌─────────────────────┐
+        │ date                │
+        │ ---                 │
+        │ datetime[ns]        │
+        ╞═════════════════════╡
+        │ 2001-01-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-01 00:02:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-01 00:04:00 │
+        └─────────────────────┘
+        >>> df.select(pl.col("date").dt.minute())
+        shape: (3, 1)
+        ┌──────┐
+        │ date │
+        │ ---  │
+        │ u32  │
+        ╞══════╡
+        │ 0    │
+        ├╌╌╌╌╌╌┤
+        │ 2    │
+        ├╌╌╌╌╌╌┤
+        │ 4    │
+        └──────┘
+
         """
         return pli.wrap_expr(self._pyexpr.minute())
 
@@ -289,6 +610,41 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Second as UInt32
+
+        Examples
+        --------
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 1, 0, 0, 4)
+        >>> df = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, timedelta(seconds=2))}
+        ... )
+        >>> df
+        shape: (3, 1)
+        ┌─────────────────────┐
+        │ date                │
+        │ ---                 │
+        │ datetime[ns]        │
+        ╞═════════════════════╡
+        │ 2001-01-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-01 00:00:02 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-01 00:00:04 │
+        └─────────────────────┘
+        >>> df.select(pl.col("date").dt.second())
+        shape: (3, 1)
+        ┌──────┐
+        │ date │
+        │ ---  │
+        │ u32  │
+        ╞══════╡
+        │ 0    │
+        ├╌╌╌╌╌╌┤
+        │ 2    │
+        ├╌╌╌╌╌╌┤
+        │ 4    │
+        └──────┘
 
         """
         return pli.wrap_expr(self._pyexpr.second())
@@ -318,6 +674,32 @@ class ExprDateTimeNameSpace:
         tu : {'us', 'ns', 'ms', 's', 'd'}
             Time unit.
 
+        Examples
+        --------
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 3)
+        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=1))})
+        >>> df.select(
+        ...     [
+        ...         pl.col("date"),
+        ...         pl.col("date").dt.epoch().alias("epoch_ns"),
+        ...         pl.col("date").dt.epoch(tu="s").alias("epoch_s"),
+        ...     ]
+        ... )
+        shape: (3, 3)
+        ┌─────────────────────┬─────────────────┬───────────┐
+        │ date                ┆ epoch_ns        ┆ epoch_s   │
+        │ ---                 ┆ ---             ┆ ---       │
+        │ datetime[ns]        ┆ i64             ┆ i64       │
+        ╞═════════════════════╪═════════════════╪═══════════╡
+        │ 2001-01-01 00:00:00 ┆ 978307200000000 ┆ 978307200 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-02 00:00:00 ┆ 978393600000000 ┆ 978393600 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-03 00:00:00 ┆ 978480000000000 ┆ 978480000 │
+        └─────────────────────┴─────────────────┴───────────┘
+
         """
         if tu in DTYPE_TEMPORAL_UNITS:
             return self.timestamp(tu)  # type: ignore[arg-type]
@@ -339,6 +721,32 @@ class ExprDateTimeNameSpace:
         tu : {'us', 'ns', 'ms'}
             Time unit.
 
+        Examples
+        --------
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 3)
+        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=1))})
+        >>> df.select(
+        ...     [
+        ...         pl.col("date"),
+        ...         pl.col("date").dt.timestamp().alias("timestamp_ns"),
+        ...         pl.col("date").dt.timestamp(tu="ms").alias("timestamp_ms"),
+        ...     ]
+        ... )
+        shape: (3, 3)
+        ┌─────────────────────┬─────────────────┬──────────────┐
+        │ date                ┆ timestamp_ns    ┆ timestamp_ms │
+        │ ---                 ┆ ---             ┆ ---          │
+        │ datetime[ns]        ┆ i64             ┆ i64          │
+        ╞═════════════════════╪═════════════════╪══════════════╡
+        │ 2001-01-01 00:00:00 ┆ 978307200000000 ┆ 978307200000 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-02 00:00:00 ┆ 978393600000000 ┆ 978393600000 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-03 00:00:00 ┆ 978480000000000 ┆ 978480000000 │
+        └─────────────────────┴─────────────────┴──────────────┘
+
         """
         return pli.wrap_expr(self._pyexpr.timestamp(tu))
 
@@ -354,6 +762,36 @@ class ExprDateTimeNameSpace:
         tu : {'ns', 'us', 'ms'}
             Time unit for the ``Datetime`` Series.
 
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": pl.date_range(
+        ...             datetime(2001, 1, 1), datetime(2001, 1, 3), "1d"
+        ...         )
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("date"),
+        ...         pl.col("date").dt.with_time_unit(tu="ns").alias("tu_ns"),
+        ...         pl.col("date").dt.with_time_unit(tu="us").alias("tu_us"),
+        ...     ]
+        ... )
+        shape: (3, 3)
+        ┌─────────────────────┬─────────────────────┬───────────────────────┐
+        │ date                ┆ tu_ns               ┆ tu_us                 │
+        │ ---                 ┆ ---                 ┆ ---                   │
+        │ datetime[ns]        ┆ datetime[ns]        ┆ datetime[μs]          │
+        ╞═════════════════════╪═════════════════════╪═══════════════════════╡
+        │ 2001-01-01 00:00:00 ┆ 2001-01-01 00:00:00 ┆ +32971-04-28 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-02 00:00:00 ┆ 2001-01-02 00:00:00 ┆ +32974-01-22 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-03 00:00:00 ┆ 2001-01-03 00:00:00 ┆ +32976-10-18 00:00:00 │
+        └─────────────────────┴─────────────────────┴───────────────────────┘
+
         """
         return pli.wrap_expr(self._pyexpr.dt_with_time_unit(tu))
 
@@ -366,6 +804,36 @@ class ExprDateTimeNameSpace:
         tu : {'ns', 'us', 'ms'}
             Time unit for the ``Datetime`` Series.
 
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": pl.date_range(
+        ...             datetime(2001, 1, 1), datetime(2001, 1, 3), "1d"
+        ...         )
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("date"),
+        ...         pl.col("date").dt.cast_time_unit(tu="ns").alias("tu_ns"),
+        ...         pl.col("date").dt.cast_time_unit(tu="us").alias("tu_us"),
+        ...     ]
+        ... )
+        shape: (3, 3)
+        ┌─────────────────────┬─────────────────────┬─────────────────────┐
+        │ date                ┆ tu_ns               ┆ tu_us               │
+        │ ---                 ┆ ---                 ┆ ---                 │
+        │ datetime[ns]        ┆ datetime[ns]        ┆ datetime[μs]        │
+        ╞═════════════════════╪═════════════════════╪═════════════════════╡
+        │ 2001-01-01 00:00:00 ┆ 2001-01-01 00:00:00 ┆ 2001-01-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-02 00:00:00 ┆ 2001-01-02 00:00:00 ┆ 2001-01-02 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-03 00:00:00 ┆ 2001-01-03 00:00:00 ┆ 2001-01-03 00:00:00 │
+        └─────────────────────┴─────────────────────┴─────────────────────┘
+
         """
         return pli.wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
 
@@ -377,6 +845,37 @@ class ExprDateTimeNameSpace:
         ----------
         tz
             Time zone for the `Datetime` Series.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": pl.date_range(
+        ...             datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo"
+        ...         ),
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("date"),
+        ...         pl.col("date")
+        ...         .dt.with_time_zone(tz="Europe/London")
+        ...         .alias("London"),
+        ...     ]
+        ... )
+        shape: (3, 2)
+        ┌─────────────────────┬─────────────────────────────┐
+        │ date                ┆ London                      │
+        │ ---                 ┆ ---                         │
+        │ datetime[ns]        ┆ datetime[ns, Europe/London] │
+        ╞═════════════════════╪═════════════════════════════╡
+        │ 2020-03-01 00:00:00 ┆ 2020-03-01 00:00:00 GMT     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-04-01 00:00:00 ┆ 2020-04-01 00:00:00 BST     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-05-01 00:00:00 ┆ 2020-05-01 00:00:00 BST     │
+        └─────────────────────┴─────────────────────────────┘
 
         """
         return pli.wrap_expr(self._pyexpr).map(
@@ -391,6 +890,35 @@ class ExprDateTimeNameSpace:
         -------
         A series of dtype Int64
 
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": pl.date_range(
+        ...             datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo"
+        ...         ),
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("date"),
+        ...         pl.col("date").diff().dt.days().alias("days_diff"),
+        ...     ]
+        ... )
+        shape: (3, 2)
+        ┌─────────────────────┬───────────┐
+        │ date                ┆ days_diff │
+        │ ---                 ┆ ---       │
+        │ datetime[ns]        ┆ i64       │
+        ╞═════════════════════╪═══════════╡
+        │ 2020-03-01 00:00:00 ┆ null      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-04-01 00:00:00 ┆ 31        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-05-01 00:00:00 ┆ 30        │
+        └─────────────────────┴───────────┘
+
         """
         return pli.wrap_expr(self._pyexpr.duration_days())
 
@@ -401,6 +929,37 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         A series of dtype Int64
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": pl.date_range(
+        ...             datetime(2020, 1, 1), datetime(2020, 1, 4), "1d"
+        ...         ),
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("date"),
+        ...         pl.col("date").diff().dt.hours().alias("hours_diff"),
+        ...     ]
+        ... )
+        shape: (4, 2)
+        ┌─────────────────────┬────────────┐
+        │ date                ┆ hours_diff │
+        │ ---                 ┆ ---        │
+        │ datetime[ns]        ┆ i64        │
+        ╞═════════════════════╪════════════╡
+        │ 2020-01-01 00:00:00 ┆ null       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-02 00:00:00 ┆ 24         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-03 00:00:00 ┆ 24         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-04 00:00:00 ┆ 24         │
+        └─────────────────────┴────────────┘
 
         """
         return pli.wrap_expr(self._pyexpr.duration_hours())
@@ -413,6 +972,37 @@ class ExprDateTimeNameSpace:
         -------
         A series of dtype Int64
 
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": pl.date_range(
+        ...             datetime(2020, 1, 1), datetime(2020, 1, 4), "1d"
+        ...         ),
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("date"),
+        ...         pl.col("date").diff().dt.minutes().alias("minutes_diff"),
+        ...     ]
+        ... )
+        shape: (4, 2)
+        ┌─────────────────────┬──────────────┐
+        │ date                ┆ minutes_diff │
+        │ ---                 ┆ ---          │
+        │ datetime[ns]        ┆ i64          │
+        ╞═════════════════════╪══════════════╡
+        │ 2020-01-01 00:00:00 ┆ null         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-02 00:00:00 ┆ 1440         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-03 00:00:00 ┆ 1440         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-04 00:00:00 ┆ 1440         │
+        └─────────────────────┴──────────────┘
+
         """
         return pli.wrap_expr(self._pyexpr.duration_minutes())
 
@@ -423,6 +1013,39 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         A series of dtype Int64
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": pl.date_range(
+        ...             datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 4, 0), "1m"
+        ...         ),
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("date"),
+        ...         pl.col("date").diff().dt.seconds().alias("seconds_diff"),
+        ...     ]
+        ... )
+        shape: (5, 2)
+        ┌─────────────────────┬──────────────┐
+        │ date                ┆ seconds_diff │
+        │ ---                 ┆ ---          │
+        │ datetime[ns]        ┆ i64          │
+        ╞═════════════════════╪══════════════╡
+        │ 2020-01-01 00:00:00 ┆ null         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:01:00 ┆ 60           │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:02:00 ┆ 60           │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:03:00 ┆ 60           │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:04:00 ┆ 60           │
+        └─────────────────────┴──────────────┘
 
         """
         return pli.wrap_expr(self._pyexpr.duration_seconds())
@@ -435,6 +1058,47 @@ class ExprDateTimeNameSpace:
         -------
         A series of dtype Int64
 
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": pl.date_range(
+        ...             datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 0, 1, 0), "1ms"
+        ...         ),
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("date"),
+        ...         pl.col("date").diff().dt.milliseconds().alias("milliseconds_diff"),
+        ...     ]
+        ... )
+        shape: (1001, 2)
+        ┌─────────────────────────┬───────────────────┐
+        │ date                    ┆ milliseconds_diff │
+        │ ---                     ┆ ---               │
+        │ datetime[ns]            ┆ i64               │
+        ╞═════════════════════════╪═══════════════════╡
+        │ 2020-01-01 00:00:00     ┆ null              │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:00:00.001 ┆ 1                 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:00:00.002 ┆ 1                 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:00:00.003 ┆ 1                 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ ...                     ┆ ...               │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:00:00.997 ┆ 1                 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:00:00.998 ┆ 1                 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:00:00.999 ┆ 1                 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:00:01     ┆ 1                 │
+        └─────────────────────────┴───────────────────┘
+
         """
         return pli.wrap_expr(self._pyexpr.duration_milliseconds())
 
@@ -445,6 +1109,47 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         A series of dtype Int64
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": pl.date_range(
+        ...             datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 0, 1, 0), "1ms"
+        ...         ),
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("date"),
+        ...         pl.col("date").diff().dt.nanoseconds().alias("nanoseconds_diff"),
+        ...     ]
+        ... )
+        shape: (1001, 2)
+        ┌─────────────────────────┬──────────────────┐
+        │ date                    ┆ nanoseconds_diff │
+        │ ---                     ┆ ---              │
+        │ datetime[ns]            ┆ i64              │
+        ╞═════════════════════════╪══════════════════╡
+        │ 2020-01-01 00:00:00     ┆ null             │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:00:00.001 ┆ 1000000          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:00:00.002 ┆ 1000000          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:00:00.003 ┆ 1000000          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ ...                     ┆ ...              │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:00:00.997 ┆ 1000000          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:00:00.998 ┆ 1000000          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:00:00.999 ┆ 1000000          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2020-01-01 00:00:01     ┆ 1000000          │
+        └─────────────────────────┴──────────────────┘
 
         """
         return pli.wrap_expr(self._pyexpr.duration_nanoseconds())
@@ -477,6 +1182,41 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Date/Datetime expression
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "dates": pl.date_range(
+        ...             datetime(2000, 1, 1), datetime(2005, 1, 1), "1y"
+        ...         )
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("dates").dt.offset_by("1y").alias("date_plus_1y"),
+        ...         pl.col("dates").dt.offset_by("-1y2mo").alias("date_min"),
+        ...     ]
+        ... )
+        shape: (6, 2)
+        ┌─────────────────────┬─────────────────────┐
+        │ date_plus_1y        ┆ date_min            │
+        │ ---                 ┆ ---                 │
+        │ datetime[ns]        ┆ datetime[ns]        │
+        ╞═════════════════════╪═════════════════════╡
+        │ 2001-01-01 00:00:00 ┆ 1998-11-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2002-01-01 00:00:00 ┆ 1999-11-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2003-01-01 00:00:00 ┆ 2000-11-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2004-01-01 00:00:00 ┆ 2001-11-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2005-01-01 00:00:00 ┆ 2002-11-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2006-01-01 00:00:00 ┆ 2003-11-01 00:00:00 │
+        └─────────────────────┴─────────────────────┘
 
         """
         return pli.wrap_expr(self._pyexpr.dt_offset_by(by))

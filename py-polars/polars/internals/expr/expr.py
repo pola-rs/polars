@@ -360,15 +360,75 @@ class Expr:
         return wrap_expr(self._pyexpr.all())
 
     def sqrt(self) -> Expr:
-        """Compute the square root of the elements."""
+        """
+        Compute the square root of the elements.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
+        >>> df.select(pl.col("values").sqrt())
+        shape: (3, 1)
+        ┌──────────┐
+        │ values   │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.414214 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 2.0      │
+        └──────────┘
+
+        """
         return self**0.5
 
     def log10(self) -> Expr:
-        """Compute the base 10 logarithm of the input array, element-wise."""
+        """
+        Compute the base 10 logarithm of the input array, element-wise.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
+        >>> df.select(pl.col("values").log10())
+        shape: (3, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ f64    │
+        ╞════════╡
+        │ 0.0    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 0.301  │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 0.602  │
+        └────────┘
+
+        """
         return self.log(10.0)
 
     def exp(self) -> Expr:
-        """Compute the exponential, element-wise."""
+        """
+        Compute the exponential, element-wise.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
+        >>> df.select(pl.col("values").exp())
+        shape: (3, 1)
+        ┌──────────┐
+        │ values   │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 2.718282 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 7.389056 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 54.5981  │
+        └──────────┘
+
+        """
         return wrap_expr(self._pyexpr.exp())
 
     def alias(self, name: str) -> Expr:
@@ -1076,7 +1136,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [8, 9, 10],
+        ...         "b": [None, 4, 4],
+        ...     }
+        ... )
         >>> df.select(pl.all().slice(1, 2))
         shape: (2, 2)
         ┌─────┬─────┐
@@ -1110,7 +1175,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [8, 9, 10],
+        ...         "b": [None, 4, 4],
+        ...     }
+        ... )
         >>> df.select(pl.all().head(1).append(pl.all().tail(1)))
         shape: (2, 2)
         ┌─────┬──────┐
@@ -1128,7 +1198,34 @@ class Expr:
         return wrap_expr(self._pyexpr.append(other._pyexpr, upcast))
 
     def rechunk(self) -> Expr:
-        """Create a single chunk of memory for this Series."""
+        """
+        Create a single chunk of memory for this Series.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> # Create a Series with 3 nulls, append column a then rechunk
+        >>> (df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk()))
+        shape: (6, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ i64     │
+        ╞═════════╡
+        │ null    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ null    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ null    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 1       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 1       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 2       │
+        └─────────┘
+
+        """
         return wrap_expr(self._pyexpr.rechunk())
 
     def drop_nulls(self) -> Expr:
@@ -1142,7 +1239,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"a": [8, 9, 10, 11], "b": [None, 4.0, 4.0, float("nan")]}
+        ...     {
+        ...         "a": [8, 9, 10, 11],
+        ...         "b": [None, 4.0, 4.0, float("nan")],
+        ...     }
         ... )
         >>> df.select(pl.col("b").drop_nulls())
         shape: (3, 1)
@@ -1172,7 +1272,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"a": [8, 9, 10, 11], "b": [None, 4.0, 4.0, float("nan")]}
+        ...     {
+        ...         "a": [8, 9, 10, 11],
+        ...         "b": [None, 4.0, 4.0, float("nan")],
+        ...     }
         ... )
         >>> df.select(pl.col("b").drop_nans())
         shape: (3, 1)
@@ -1544,7 +1647,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": ["4", "5", "6"]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": ["4", "5", "6"],
+        ...     }
+        ... )
         >>> df.with_columns(
         ...     [
         ...         pl.col("a").cast(pl.Float64),
@@ -1929,6 +2037,7 @@ class Expr:
     ) -> Expr:
         """
         Fill null values using the specified value or strategy.
+        To interpolate over null values see interpolate
 
         Parameters
         ----------
@@ -1942,7 +2051,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, None],
+        ...         "b": [4, None, 6],
+        ...     }
+        ... )
         >>> df.fill_null(strategy="zero")
         shape: (3, 2)
         ┌─────┬─────┐
@@ -1994,7 +2108,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"a": [1.0, None, float("nan")], "b": [4.0, float("nan"), 6]}
+        ...     {
+        ...         "a": [1.0, None, float("nan")],
+        ...         "b": [4.0, float("nan"), 6],
+        ...     }
         ... )
         >>> df.fill_nan("zero")
         shape: (3, 2)
@@ -2025,7 +2142,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, None],
+        ...         "b": [4, None, 6],
+        ...     }
+        ... )
         >>> df.select(pl.all().forward_fill())
         shape: (3, 2)
         ┌─────┬─────┐
@@ -2054,7 +2176,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, None],
+        ...         "b": [4, None, 6],
+        ...     }
+        ... )
         >>> df.select(pl.all().backward_fill())
         shape: (3, 2)
         ┌──────┬─────┐
@@ -2313,7 +2440,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [None, 1, None], "b": [1, 2, 3]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [None, 1, None],
+        ...         "b": [1, 2, 3],
+        ...     }
+        ... )
         >>> df.select(pl.all().null_count())
         shape: (1, 2)
         ┌─────┬─────┐
@@ -2333,7 +2465,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [8, 9, 10],
+        ...         "b": [None, 4, 4],
+        ...     }
+        ... )
         >>> df.select(pl.col("a").arg_unique())
         shape: (3, 1)
         ┌─────┐
@@ -2459,6 +2596,29 @@ class Expr:
         --------
         >>> df = pl.DataFrame(
         ...     {
+        ...         "groups": ["g1", "g1", "g2"],
+        ...         "values": [1, 2, 3],
+        ...     }
+        ... )
+        >>> (
+        ...     df.with_column(
+        ...         pl.col("values").max().over("groups").alias("max_by_group")
+        ...     )
+        ... )
+        shape: (3, 3)
+        ┌────────┬────────┬──────────────┐
+        │ groups ┆ values ┆ max_by_group │
+        │ ---    ┆ ---    ┆ ---          │
+        │ str    ┆ i64    ┆ i64          │
+        ╞════════╪════════╪══════════════╡
+        │ g1     ┆ 1      ┆ 2            │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ g1     ┆ 2      ┆ 2            │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ g2     ┆ 3      ┆ 3            │
+        └────────┴────────┴──────────────┘
+        >>> df = pl.DataFrame(
+        ...     {
         ...         "groups": [1, 1, 2, 2, 1, 2, 3, 3, 1],
         ...         "values": [1, 2, 3, 4, 5, 6, 7, 8, 8],
         ...     }
@@ -2509,7 +2669,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> df.select(pl.col("a").is_unique())
+        >>> (df.select(pl.col("a").is_unique()))
         shape: (3, 1)
         ┌───────┐
         │ a     │
@@ -2541,7 +2701,7 @@ class Expr:
         ...         "num": [1, 2, 3, 1, 5],
         ...     }
         ... )
-        >>> df.with_column(pl.col("num").is_first().alias("is_first"))
+        >>> (df.with_column(pl.col("num").is_first().alias("is_first")))
         shape: (5, 2)
         ┌─────┬──────────┐
         │ num ┆ is_first │
@@ -2569,7 +2729,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> df.select(pl.col("a").is_duplicated())
+        >>> (df.select(pl.col("a").is_duplicated()))
         shape: (3, 1)
         ┌───────┐
         │ a     │
@@ -2605,7 +2765,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [0, 1, 2, 3, 4, 5]})
-        >>> df.select(pl.col("a").quantile(0.3))
+        >>> (df.select(pl.col("a").quantile(0.3)))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2614,7 +2774,7 @@ class Expr:
         ╞═════╡
         │ 1.0 │
         └─────┘
-        >>> df.select(pl.col("a").quantile(0.3, interpolation="higher"))
+        >>> (df.select(pl.col("a").quantile(0.3, interpolation="higher")))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2623,7 +2783,7 @@ class Expr:
         ╞═════╡
         │ 2.0 │
         └─────┘
-        >>> df.select(pl.col("a").quantile(0.3, interpolation="lower"))
+        >>> (df.select(pl.col("a").quantile(0.3, interpolation="lower")))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2632,7 +2792,7 @@ class Expr:
         ╞═════╡
         │ 1.0 │
         └─────┘
-        >>> df.select(pl.col("a").quantile(0.3, interpolation="midpoint"))
+        >>> (df.select(pl.col("a").quantile(0.3, interpolation="midpoint")))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2641,7 +2801,7 @@ class Expr:
         ╞═════╡
         │ 1.5 │
         └─────┘
-        >>> df.select(pl.col("a").quantile(0.3, interpolation="linear"))
+        >>> (df.select(pl.col("a").quantile(0.3, interpolation="linear")))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2665,6 +2825,33 @@ class Expr:
         predicate
             Boolean expression.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "group_col": ["g1", "g1", "g2"],
+        ...         "b": [1, 2, 3],
+        ...     }
+        ... )
+        >>> (
+        ...     df.groupby("group_col").agg(
+        ...         [
+        ...             pl.col("b").filter(pl.col("b") < 2).sum().alias("lt"),
+        ...             pl.col("b").filter(pl.col("b") >= 2).sum().alias("gte"),
+        ...         ]
+        ...     )
+        ... ).sort("group_col")
+        shape: (2, 3)
+        ┌───────────┬──────┬─────┐
+        │ group_col ┆ lt   ┆ gte │
+        │ ---       ┆ ---  ┆ --- │
+        │ str       ┆ i64  ┆ i64 │
+        ╞═══════════╪══════╪═════╡
+        │ g1        ┆ 1    ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ g2        ┆ null ┆ 3   │
+        └───────────┴──────┴─────┘
+
         """
         return wrap_expr(self._pyexpr.filter(predicate._pyexpr))
 
@@ -2676,6 +2863,33 @@ class Expr:
         ----------
         predicate
             Boolean expression.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "group_col": ["g1", "g1", "g2"],
+        ...         "b": [1, 2, 3],
+        ...     }
+        ... )
+        >>> (
+        ...     df.groupby("group_col").agg(
+        ...         [
+        ...             pl.col("b").where(pl.col("b") < 2).sum().alias("lt"),
+        ...             pl.col("b").where(pl.col("b") >= 2).sum().alias("gte"),
+        ...         ]
+        ...     )
+        ... ).sort("group_col")
+        shape: (2, 3)
+        ┌───────────┬──────┬─────┐
+        │ group_col ┆ lt   ┆ gte │
+        │ ---       ┆ ---  ┆ --- │
+        │ str       ┆ i64  ┆ i64 │
+        ╞═══════════╪══════╪═════╡
+        │ g1        ┆ 1    ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ g2        ┆ null ┆ 3   │
+        └───────────┴──────┴─────┘
 
         """
         return self.filter(predicate)
@@ -2860,7 +3074,7 @@ class Expr:
         The following example turns each character into a separate row:
 
         >>> df = pl.DataFrame({"foo": ["hello", "world"]})
-        >>> df.select(pl.col("foo").flatten())
+        >>> (df.select(pl.col("foo").flatten()))
         shape: (10, 1)
         ┌─────┐
         │ foo │
@@ -2889,7 +3103,7 @@ class Expr:
         This example turns each word into a separate row:
 
         >>> df = pl.DataFrame({"foo": ["hello world"]})
-        >>> df.select(pl.col("foo").str.split(by=" ").flatten())
+        >>> (df.select(pl.col("foo").str.split(by=" ").flatten()))
         shape: (2, 1)
         ┌───────┐
         │ foo   │
@@ -2965,13 +3179,51 @@ class Expr:
         return wrap_expr(self._pyexpr.take_every(n))
 
     def head(self, n: int | Expr | None = None) -> Expr:
-        """Take the first n values."""
-        if isinstance(n, Expr):
-            return self.slice(0, n)
+        """
+        Take the first n values.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
+        >>> df.head(3)
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        ├╌╌╌╌╌┤
+        │ 3   │
+        └─────┘
+
+        """
         return wrap_expr(self._pyexpr.head(n))
 
     def tail(self, n: int | None = None) -> Expr:
-        """Take the last n values."""
+        """
+        Take the last n values.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
+        >>> df.tail(3)
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 5   │
+        ├╌╌╌╌╌┤
+        │ 6   │
+        ├╌╌╌╌╌┤
+        │ 7   │
+        └─────┘
+
+        """
         return wrap_expr(self._pyexpr.tail(n))
 
     def pow(self, exponent: int | float | pli.Series | Expr) -> Expr:
@@ -3019,7 +3271,7 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {"sets": [[1, 2, 3], [1, 2], [9, 10]], "optional_members": [1, 2, 3]}
         ... )
-        >>> df.select([pl.col("optional_members").is_in("sets").alias("contains")])
+        >>> (df.select([pl.col("optional_members").is_in("sets").alias("contains")]))
         shape: (3, 1)
         ┌──────────┐
         │ contains │
@@ -3223,6 +3475,29 @@ class Expr:
         signed
             If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 1, 2], dtype=pl.UInt64)
+        >>> df = pl.DataFrame([s])
+        >>> df.select(
+        ...     [
+        ...         pl.col("a").reinterpret(signed=True).alias("reinterpreted"),
+        ...         pl.col("a").alias("original"),
+        ...     ]
+        ... )
+        shape: (3, 2)
+        ┌───────────────┬──────────┐
+        │ reinterpreted ┆ original │
+        │ ---           ┆ ---      │
+        │ i64           ┆ u64      │
+        ╞═══════════════╪══════════╡
+        │ 1             ┆ 1        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 1             ┆ 1        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 2             ┆ 2        │
+        └───────────────┴──────────┘
+
         """
         return wrap_expr(self._pyexpr.reinterpret(signed))
 
@@ -3263,7 +3538,70 @@ class Expr:
         return self.map(inspect, return_dtype=None, agg_list=True)
 
     def interpolate(self) -> Expr:
-        """Linearly interpolate intermediate values."""
+        """
+        Fill nulls with linear interpolation over missing values.
+        Can also be used to regrid data to a new grid - see examples below
+
+        Examples
+        --------
+        >>> # Fill nulls with linear interpolation
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, None, 3],
+        ...         "b": [1.0, float("nan"), 3.0],
+        ...     }
+        ... )
+        >>> df.select(pl.all().interpolate())
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ f64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 1.0 │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ NaN │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 3.0 │
+        └─────┴─────┘
+        >>> df_original_grid = pl.DataFrame(
+        ...     {
+        ...         "grid_points": [1, 3, 10],
+        ...         "values": [2.0, 6.0, 20.0],
+        ...     }
+        ... )  # Interpolate from this to the new grid
+        >>> df_new_grid = pl.DataFrame({"grid_points": range(1, 11)})
+        >>> (
+        ...     df_new_grid.join(
+        ...         df_original_grid, on="grid_points", how="left"
+        ...     ).with_column(pl.col("values").interpolate())
+        ... )
+        shape: (10, 2)
+        ┌─────────────┬────────┐
+        │ grid_points ┆ values │
+        │ ---         ┆ ---    │
+        │ i64         ┆ f64    │
+        ╞═════════════╪════════╡
+        │ 1           ┆ 2.0    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2           ┆ 4.0    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 3           ┆ 6.0    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 4           ┆ 8.0    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ ...         ┆ ...    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 7           ┆ 14.0   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 8           ┆ 16.0   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 9           ┆ 18.0   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 10          ┆ 20.0   │
+        └─────────────┴────────┘
+
+        """
         return wrap_expr(self._pyexpr.interpolate())
 
     def rolling_min(
@@ -3721,6 +4059,35 @@ class Expr:
             window, consider using `groupby_rolling` this method can cache the window
             size computation.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_std(window_size=3),
+        ...         ]
+        ...     )
+        ... )
+        shape: (6, 1)
+        ┌──────────┐
+        │ A        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ null     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ null     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.527525 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 2.0      │
+        └──────────┘
+
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -3791,6 +4158,35 @@ class Expr:
             window, consider using `groupby_rolling` this method can cache the window
             size computation.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_var(window_size=3),
+        ...         ]
+        ...     )
+        ... )
+        shape: (6, 1)
+        ┌──────────┐
+        │ A        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ null     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ null     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 2.333333 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 4.0      │
+        └──────────┘
+
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -3856,6 +4252,35 @@ class Expr:
             If you want to compute multiple aggregation statistics over the same dynamic
             window, consider using `groupby_rolling` this method can cache the window
             size computation.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_median(window_size=3),
+        ...         ]
+        ...     )
+        ... )
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 2.0  │
+        ├╌╌╌╌╌╌┤
+        │ 3.0  │
+        ├╌╌╌╌╌╌┤
+        │ 4.0  │
+        ├╌╌╌╌╌╌┤
+        │ 6.0  │
+        └──────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -3928,6 +4353,35 @@ class Expr:
             If you want to compute multiple aggregation statistics over the same dynamic
             window, consider using `groupby_rolling` this method can cache the window
             size computation.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_quantile(quantile=0.33, window_size=3),
+        ...         ]
+        ...     )
+        ... )
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 1.0  │
+        ├╌╌╌╌╌╌┤
+        │ 2.0  │
+        ├╌╌╌╌╌╌┤
+        │ 3.0  │
+        ├╌╌╌╌╌╌┤
+        │ 4.0  │
+        └──────┘
 
         """
         window_size, min_periods = _prepare_rolling_window_args(
@@ -4034,11 +4488,61 @@ class Expr:
         return wrap_expr(self._pyexpr.rolling_skew(window_size, bias))
 
     def abs(self) -> Expr:
-        """Compute absolute values."""
+        """
+        Compute absolute values.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "A": [-1.0, 0.0, 1.0, 2.0],
+        ...     }
+        ... )
+        >>> df.select(pl.col("A").abs())
+        shape: (4, 1)
+        ┌─────┐
+        │ A   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 1.0 │
+        ├╌╌╌╌╌┤
+        │ 0.0 │
+        ├╌╌╌╌╌┤
+        │ 1.0 │
+        ├╌╌╌╌╌┤
+        │ 2.0 │
+        └─────┘
+
+        """
         return wrap_expr(self._pyexpr.abs())
 
     def argsort(self, reverse: bool = False) -> Expr:
-        """Alias for `arg_sort`."""
+        """
+        Alias for `arg_sort`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [20, 10, 30],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").argsort())
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 0   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        └─────┘
+
+        """
         return self.arg_sort(reverse)
 
     def rank(self, method: RankMethod = "average", reverse: bool = False) -> Expr:
@@ -4228,6 +4732,19 @@ class Expr:
         .. math::
             G_1 = \frac{k_3}{k_2^{3/2}} = \frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 2, 1]})
+        >>> df.select(pl.col("a").skew())
+        shape: (1, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.343622 │
+        └──────────┘
+
         """
         return wrap_expr(self._pyexpr.skew(bias))
 
@@ -4250,6 +4767,19 @@ class Expr:
             Pearson's definition is used (normal ==> 3.0).
         bias : bool, optional
             If False, then the calculations are corrected for statistical bias.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 2, 1]})
+        >>> df.select(pl.col("a").kurtosis())
+        shape: (1, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ f64       │
+        ╞═══════════╡
+        │ -1.153061 │
+        └───────────┘
 
         """
         return wrap_expr(self._pyexpr.kurtosis(fisher, bias))
@@ -4300,6 +4830,19 @@ class Expr:
         Returns a unit Series with the lowest value possible for the dtype of this
         expression.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 2, 1]})
+        >>> df.select(pl.col("a").lower_bound())
+        shape: (1, 1)
+        ┌──────────────────────┐
+        │ a                    │
+        │ ---                  │
+        │ i64                  │
+        ╞══════════════════════╡
+        │ -9223372036854775808 │
+        └──────────────────────┘
+
         """
         return wrap_expr(self._pyexpr.lower_bound())
 
@@ -4309,6 +4852,19 @@ class Expr:
 
         Returns a unit Series with the highest value possible for the dtype of this
         expression.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 2, 1]})
+        >>> df.select(pl.col("a").upper_bound())
+        shape: (1, 1)
+        ┌─────────────────────┐
+        │ a                   │
+        │ ---                 │
+        │ i64                 │
+        ╞═════════════════════╡
+        │ 9223372036854775807 │
+        └─────────────────────┘
 
         """
         return wrap_expr(self._pyexpr.upper_bound())
@@ -4675,6 +5231,23 @@ class Expr:
             Seed initialization. If None given, the `random` module is used to generate
             a random seed.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").shuffle(seed=1))
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 2   │
+        ├╌╌╌╌╌┤
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 3   │
+        └─────┘
+
         """
         if seed is None:
             seed = random.randint(0, 10000)
@@ -4700,6 +5273,23 @@ class Expr:
             Seed initialization. If None given a random seed is used.
         shuffle
             Shuffle the order of sampled data points.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").sample(seed=1))
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 3   │
+        ├╌╌╌╌╌┤
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 1   │
+        └─────┘
 
         """
         return wrap_expr(
@@ -4754,6 +5344,23 @@ class Expr:
             Minimum number of observations in window required to have a value
             (otherwise result is null).
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").ewm_mean(com=1))
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.666667 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 2.428571 │
+        └──────────┘
+
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_mean(alpha, adjust, min_periods))
@@ -4806,6 +5413,23 @@ class Expr:
             Minimum number of observations in window required to have a value
             (otherwise result is null).
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").ewm_std(com=1))
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 0.5      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 0.754615 │
+        └──────────┘
+
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_std(alpha, adjust, min_periods))
@@ -4857,6 +5481,23 @@ class Expr:
         min_periods
             Minimum number of observations in window required to have a value
             (otherwise result is null).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").ewm_var(com=1))
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 0.25     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 0.569444 │
+        └──────────┘
 
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
@@ -4979,6 +5620,23 @@ class Expr:
         base
             Given base, defaults to `e`
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").log(base=2))
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.584963 │
+        └──────────┘
+
         """
         return wrap_expr(self._pyexpr.log(base))
 
@@ -4993,6 +5651,28 @@ class Expr:
             Given base, defaults to `e`
         normalize
             Normalize pk if it doesn't sum to 1.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").entropy(base=2))
+        shape: (1, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.459148 │
+        └──────────┘
+        >>> df.select(pl.col("a").entropy(base=2, normalize=False))
+        shape: (1, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ f64       │
+        ╞═══════════╡
+        │ -6.754888 │
+        └───────────┘
 
         """
         return wrap_expr(self._pyexpr.entropy(base, normalize))
@@ -5068,6 +5748,23 @@ class Expr:
         reverse
             If the `Series` order is reversed, e.g. descending.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [1, 3, 2]})
+        >>> df.select(pl.col("values").sort().set_sorted())
+        shape: (3, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ i64    │
+        ╞════════╡
+        │ 1      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 2      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 3      │
+        └────────┘
+
         """
         return self.map(lambda s: s.set_sorted(reverse))
 
@@ -5101,7 +5798,27 @@ class Expr:
 
     @property
     def str(self) -> ExprStringNameSpace:
-        """Create an object namespace of all string related methods."""
+        """
+        Create an object namespace of all string related methods.
+
+        See the individual method pages for full details
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"letters": ["a", "b"]})
+        >>> df.select(pl.col("letters").str.to_uppercase())
+        shape: (2, 1)
+        ┌─────────┐
+        │ letters │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ A       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ B       │
+        └─────────┘
+
+        """
         return ExprStringNameSpace(self)
 
     @property
@@ -5111,17 +5828,73 @@ class Expr:
 
     @property
     def arr(self) -> ExprListNameSpace:
-        """Create an object namespace of all list related methods."""
+        """
+        Create an object namespace of all list related methods.
+        See the individual method pages for full details
+
+        """
         return ExprListNameSpace(self)
 
     @property
     def cat(self) -> ExprCatNameSpace:
-        """Create an object namespace of all categorical related methods."""
+        """
+        Create an object namespace of all categorical related methods.
+
+        See the individual method pages for full details
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": ["a", "b"]}).select(
+        ...     pl.col("values").cast(pl.Categorical)
+        ... )
+        >>> df.select(pl.col("values").cat.set_ordering(ordering="physical"))
+        shape: (2, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ cat    │
+        ╞════════╡
+        │ a      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ b      │
+        └────────┘
+
+        """
         return ExprCatNameSpace(self)
 
     @property
     def struct(self) -> ExprStructNameSpace:
-        """Create an object namespace of all struct related methods."""
+        """
+        Create an object namespace of all struct related methods.
+        See the individual method pages for full details
+
+        Examples
+        --------
+        >>> df = (
+        ...     pl.DataFrame(
+        ...         {
+        ...             "int": [1, 2],
+        ...             "str": ["a", "b"],
+        ...             "bool": [True, None],
+        ...             "list": [[1, 2], [3]],
+        ...         }
+        ...     )
+        ...     .to_struct("my_struct")
+        ...     .to_frame()
+        ... )
+        >>> df.select(pl.col("my_struct").struct.field("str"))
+        shape: (2, 1)
+        ┌─────┐
+        │ str │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ a   │
+        ├╌╌╌╌╌┤
+        │ b   │
+        └─────┘
+
+        """
         return ExprStructNameSpace(self)
 
 

@@ -39,19 +39,91 @@ class ExprListNameSpace:
         return pli.wrap_expr(self._pyexpr.arr_lengths())
 
     def sum(self) -> pli.Expr:
-        """Sum all the arrays in the list."""
+        """
+        Sum all the lists in the array.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
+        >>> df.select(pl.col("values").arr.sum())
+        shape: (2, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ i64    │
+        ╞════════╡
+        │ 1      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 5      │
+        └────────┘
+
+        """
         return pli.wrap_expr(self._pyexpr.lst_sum())
 
     def max(self) -> pli.Expr:
-        """Compute the max value of the arrays in the list."""
+        """
+        Compute the max value of the lists in the array.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
+        >>> df.select(pl.col("values").arr.max())
+        shape: (2, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ i64    │
+        ╞════════╡
+        │ 1      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 3      │
+        └────────┘
+
+        """
         return pli.wrap_expr(self._pyexpr.lst_max())
 
     def min(self) -> pli.Expr:
-        """Compute the min value of the arrays in the list."""
+        """
+        Compute the min value of the lists in the array.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
+        >>> df.select(pl.col("values").arr.min())
+        shape: (2, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ i64    │
+        ╞════════╡
+        │ 1      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 2      │
+        └────────┘
+
+        """
         return pli.wrap_expr(self._pyexpr.lst_min())
 
     def mean(self) -> pli.Expr:
-        """Compute the mean value of the arrays in the list."""
+        """
+        Compute the mean value of the lists in the array.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
+        >>> df.select(pl.col("values").arr.mean())
+        shape: (2, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ f64    │
+        ╞════════╡
+        │ 1.0    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 2.5    │
+        └────────┘
+
+        """
         return pli.wrap_expr(self._pyexpr.lst_mean())
 
     def sort(self, reverse: bool = False) -> pli.Expr:
@@ -107,7 +179,27 @@ class ExprListNameSpace:
         return pli.wrap_expr(self._pyexpr.lst_reverse())
 
     def unique(self) -> pli.Expr:
-        """Get the unique/distinct values in the list."""
+        """
+        Get the unique/distinct values in the list.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 1, 2]],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").arr.unique())
+        shape: (1, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [1, 2]    │
+        └───────────┘
+
+        """
         return pli.wrap_expr(self._pyexpr.lst_unique())
 
     def concat(
@@ -313,6 +405,25 @@ class ExprListNameSpace:
         -------
         Series of dtype UInt32/UInt64 (depending on compilation)
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2], [2, 1]],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").arr.arg_min())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 0   │
+        ├╌╌╌╌╌┤
+        │ 1   │
+        └─────┘
+
         """
         return pli.wrap_expr(self._pyexpr.lst_arg_min())
 
@@ -323,6 +434,25 @@ class ExprListNameSpace:
         Returns
         -------
         Series of dtype UInt32/UInt64 (depending on compilation)
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 2], [2, 1]],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").arr.arg_max())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 0   │
+        └─────┘
 
         """
         return pli.wrap_expr(self._pyexpr.lst_arg_max())
