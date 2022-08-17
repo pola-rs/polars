@@ -159,7 +159,7 @@ pub(crate) fn groupby_values_iter_full_lookbehind(
         .enumerate()
         .map(move |(mut i, lower)| {
             if *lower < last {
-                panic!("index column of 'groupby_rolling' must be sorted!")
+                panic!("index column of 'groupby_rolling' must be sorted in ascending order!")
             }
             last = *lower;
             i += start_offset;
