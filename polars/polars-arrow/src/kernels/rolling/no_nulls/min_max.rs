@@ -79,7 +79,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
             .iter()
             .min_by(|a, b| compare_fn_nan_min(*a, *b))
             .unwrap_or(
-                &self.slice[std::cmp::max(self.last_start, self.last_end.saturating_sub(1))],
+                &self.slice[std::cmp::min(self.last_start, self.last_end.saturating_sub(1))],
             );
 
         if recompute_min {
@@ -425,12 +425,12 @@ where
         }
         (false, None) => {
             // will be O(n2)
-            if is_reverse_sorted_max(values) {
+            if is_sorted_min(values) {
                 rolling_apply_agg_window::<SortedMinMax<_>, _, _>(
                     values,
                     window_size,
                     min_periods,
-                    det_offsets_center,
+                    det_offsets,
                 )
             } else {
                 rolling_apply_agg_window::<MinWindow<_>, _, _>(
