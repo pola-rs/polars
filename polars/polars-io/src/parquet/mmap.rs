@@ -45,6 +45,7 @@ pub(super) fn to_deserializer<'a>(
                 column_meta,
                 std::sync::Arc::new(|_, _| true),
                 vec![],
+                usize::MAX,
             );
             (
                 BasicDecompressor::new(pages, vec![]),

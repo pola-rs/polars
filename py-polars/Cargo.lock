@@ -74,7 +74,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.13.0"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=6abd0c4164676f7b17865c8def875401b5bbd5fc#6abd0c4164676f7b17865c8def875401b5bbd5fc"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=0b345ae310e99729b2b48c56a2cb0a99027d1ac2#0b345ae310e99729b2b48c56a2cb0a99027d1ac2"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -683,16 +683,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adab1eaa3408fb7f0c777a73e7465fd5656136fc93b670eb6df3c88c2c1344e3"
 
 [[package]]
-name = "integer-encoding"
-version = "3.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bb03732005da905c88227371639bf1ad885cc712789c011c31c5fb3ab3ccf02"
-dependencies = [
- "async-trait",
- "futures-util",
-]
-
-[[package]]
 name = "inventory"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1145,21 +1135,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "parquet-format-async-temp"
-version = "0.3.1"
+name = "parquet-format-safe"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1a672c84c3e5b5eb6530286b2d22cc1ea8e1e3560e4c314218d6ab749c6db99"
+checksum = "a03a826e7d8ca57df1dbfd16b3a08c38110b3f23f76cfc2045e255e87af30b89"
 dependencies = [
  "async-trait",
  "futures",
- "integer-encoding",
 ]
 
 [[package]]
 name = "parquet2"
-version = "0.14.2"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3eb21c37048a08693214d1f0d34eea97a8d90322e15c4a5e2017d56420e1195"
+checksum = "f2f03a6f84e35cb84862a95f13e31466c834576502e3e3793178a531f62b8621"
 dependencies = [
  "async-stream",
  "bitpacking",
@@ -1167,7 +1156,7 @@ dependencies = [
  "flate2",
  "futures",
  "lz4",
- "parquet-format-async-temp",
+ "parquet-format-safe",
  "snap",
  "streaming-decompression",
  "zstd",

@@ -235,7 +235,6 @@ fn value_to_dtype(val: &Value) -> DataType {
         Value::Static(StaticNode::U64(_)) => DataType::UInt64,
         Value::Static(StaticNode::F64(_)) => DataType::Float64,
         Value::Static(StaticNode::Null) => DataType::Null,
-        Value::String(_) => DataType::Utf8,
         Value::Array(arr) => {
             let dtype = value_to_dtype(&arr[0]);
 
@@ -270,7 +269,7 @@ fn deserialize_all<'a, 'b>(json: &'b Value) -> AnyValue<'a> {
         #[cfg(feature = "dtype-struct")]
         Value::Object(doc) => {
             let vals: (Vec<AnyValue>, Vec<Field>) = doc
-                .into_iter()
+                .iter()
                 .map(|(key, value)| {
                     let dt = value_to_dtype(value);
                     let fld = Field::new(key, dt);
@@ -280,6 +279,7 @@ fn deserialize_all<'a, 'b>(json: &'b Value) -> AnyValue<'a> {
                 .unzip();
             AnyValue::StructOwned(Box::new(vals))
         }
+        #[cfg(not(feature = "dtype-struct"))]
         val => AnyValue::Utf8Owned(format!("{:#?}", val)),
     }
 }
