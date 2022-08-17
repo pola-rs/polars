@@ -234,7 +234,8 @@
 //!     - `list_to_struct` - Convert `List` to `Struct` dtypes.
 //!     - `list_eval` - Apply expressions over list elements.
 //!     - `cumulative_eval` - Apply expressions over cumulatively increasing windows.
-//!     - `argwhere` Get indices where condition holds.
+//!     - `arg_where` - Get indices where condition holds.
+//!     - `search_sorted` - Find indices where elements should be inserted to maintain order.
 //!     - `date_offset` Add an offset to dates that take months and leap years into account.
 //!     - `trigonometry` Trigonometric functions.
 //!     - `sign` Compute the element-wise sign of a Series.

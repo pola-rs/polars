@@ -143,6 +143,7 @@ Computations
     Series.rolling_std
     Series.rolling_sum
     Series.rolling_var
+    Series.search_sorted
     Series.sign
     Series.sin
     Series.sinh

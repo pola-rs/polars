@@ -11,6 +11,8 @@ mod pow;
 mod rolling;
 #[cfg(feature = "row_hash")]
 mod row_hash;
+#[cfg(feature = "search_sorted")]
+mod search_sorted;
 mod shift_and_fill;
 #[cfg(feature = "sign")]
 mod sign;
@@ -41,6 +43,8 @@ pub enum FunctionExpr {
     IsIn,
     #[cfg(feature = "arg_where")]
     ArgWhere,
+    #[cfg(feature = "search_sorted")]
+    SearchSorted,
     #[cfg(feature = "strings")]
     StringExpr(StringFunction),
     #[cfg(feature = "date_offset")]
@@ -125,6 +129,8 @@ impl FunctionExpr {
             IsIn => with_dtype(DataType::Boolean),
             #[cfg(feature = "arg_where")]
             ArgWhere => with_dtype(IDX_DTYPE),
+            #[cfg(feature = "search_sorted")]
+            SearchSorted => with_dtype(IDX_DTYPE),
             #[cfg(feature = "strings")]
             StringExpr(s) => {
                 use StringFunction::*;
@@ -254,6 +260,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "arg_where")]
             ArgWhere => {
                 wrap!(arg_where::arg_where)
+            }
+            #[cfg(feature = "search_sorted")]
+            SearchSorted => {
+                wrap!(search_sorted::search_sorted_impl)
             }
             #[cfg(feature = "strings")]
             StringExpr(s) => s.into(),

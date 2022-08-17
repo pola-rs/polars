@@ -1635,6 +1635,20 @@ class Series:
         """Get the index of the maximal value."""
         return self._s.arg_max()
 
+    def search_sorted(self, element: int | float) -> int:
+        """
+        Find indices where elements should be inserted to maintain order.
+
+        .. math:: a[i-1] < v <= a[i]
+
+        Parameters
+        ----------
+        element
+            Expression or scalar value.
+
+        """
+        return pli.select(pli.lit(self).search_sorted(element))[0, 0]
+
     def unique(self, maintain_order: bool = False) -> Series:
         """
         Get unique elements in series.

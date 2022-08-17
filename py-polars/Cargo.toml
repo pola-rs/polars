@@ -63,6 +63,7 @@ all = [
   "asof_join",
   "cross_join",
   "pct_change",
+  "polars/search_sorted",
 ]
 
 # we cannot conditionaly activate simd
