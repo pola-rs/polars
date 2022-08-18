@@ -570,6 +570,13 @@ def test_fill_null() -> None:
     )
 
 
+def test_fill_nan() -> None:
+    a = pl.Series("a", [1.0, 2.1, float("nan")])
+    assert a.fill_nan(None).series_equal(
+        pl.Series("a", [1.0, 2.1, None]), null_equal=True
+    )
+
+
 def test_apply() -> None:
     a = pl.Series("a", [1, 2, None])
     b = a.apply(lambda x: x**2)

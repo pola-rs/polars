@@ -2629,7 +2629,9 @@ class Series:
     def __deepcopy__(self, memo: None = None) -> Series:
         return self.clone()
 
-    def fill_nan(self, fill_value: str | int | float | bool | pli.Expr) -> Series:
+    def fill_nan(
+        self, fill_value: str | int | float | bool | pli.Expr | None
+    ) -> Series:
         """Fill floating point NaN value with a fill value."""
         return (
             self.to_frame().select(pli.col(self.name).fill_nan(fill_value)).to_series()

@@ -2116,7 +2116,7 @@ class Expr:
         else:
             return wrap_expr(self._pyexpr.fill_null_with_strategy(strategy, limit))
 
-    def fill_nan(self, fill_value: str | int | float | bool | Expr) -> Expr:
+    def fill_nan(self, fill_value: str | int | float | bool | Expr | None) -> Expr:
         """
         Fill floating point NaN value with a fill value
 

@@ -589,6 +589,12 @@ def test_fill_nan() -> None:
         .collect()["a"]
         .series_equal(pl.Series("a", [1.0, 2.0, 3.0]))
     )
+    assert (
+        df.lazy()
+        .fill_nan(None)
+        .collect()["a"]
+        .series_equal(pl.Series("a", [1.0, None, 3.0]), null_equal=True)
+    )
     assert df.select(pl.col("a").fill_nan(2))["a"].series_equal(
         pl.Series("a", [1.0, 2.0, 3.0])
     )
