@@ -10,7 +10,7 @@ mod expr;
 mod from;
 pub(crate) mod function_expr;
 #[cfg(feature = "compile")]
-mod functions;
+pub mod functions;
 #[cfg(feature = "list")]
 mod list;
 mod options;
