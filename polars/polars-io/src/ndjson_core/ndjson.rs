@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::Cursor;
 use std::path::PathBuf;
 
-pub use arrow::{array::StructArray, io::ndjson};
+pub use arrow::{array::StructArray, io::ndjson as arrow_ndjson};
 use polars_core::{prelude::*, utils::accumulate_dataframes_vertical, POOL};
 use rayon::prelude::*;
 
@@ -157,7 +157,7 @@ impl<'a> CoreJsonReader<'a> {
                 let bytes: &[u8] = &reader_bytes;
                 let mut cursor = Cursor::new(bytes);
 
-                let data_type = ndjson::read::infer(&mut cursor, infer_schema_len).unwrap();
+                let data_type = arrow_ndjson::read::infer(&mut cursor, infer_schema_len).unwrap();
                 let schema: polars_core::prelude::Schema =
                     StructArray::get_fields(&data_type).into();
 

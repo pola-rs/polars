@@ -2,6 +2,8 @@
 mod csv;
 #[cfg(feature = "ipc")]
 mod ipc;
+#[cfg(feature = "json")]
+mod ndjson;
 #[cfg(feature = "parquet")]
 mod parquet;
 

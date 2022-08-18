@@ -1,7 +1,9 @@
 use std::io::BufWriter;
 
 use polars::io::RowCount;
-use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
+use polars::lazy::frame::{
+    AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy, LazyJsonLineReader,
+};
 use polars::lazy::prelude::col;
 use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Schema};
 use polars::time::*;
@@ -132,6 +134,32 @@ impl PyLazyFrame {
         let lp = serde_json::from_str::<LogicalPlan>(json)
             .map_err(|err| PyValueError::new_err(format!("{:?}", err)))?;
         Ok(LazyFrame::from(lp).into())
+    }
+
+    #[staticmethod]
+    #[cfg(feature = "json")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_from_ndjson(
+        path: String,
+        infer_schema_length: Option<usize>,
+        batch_size: Option<usize>,
+        n_rows: Option<usize>,
+        low_memory: bool,
+        rechunk: bool,
+        row_count: Option<(String, IdxSize)>,
+    ) -> PyResult<Self> {
+        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
+
+        let lf = LazyJsonLineReader::new(path)
+            .with_infer_schema_length(infer_schema_length)
+            .with_batch_size(batch_size)
+            .with_n_rows(n_rows)
+            .low_memory(low_memory)
+            .with_rechunk(rechunk)
+            .with_row_count(row_count)
+            .finish()
+            .map_err(PyPolarsErr::from)?;
+        Ok(lf.into())
     }
 
     #[staticmethod]

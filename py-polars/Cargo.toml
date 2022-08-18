@@ -41,7 +41,7 @@ avro = ["polars/avro"]
 parquet = ["polars/parquet"]
 ipc = ["polars/ipc"]
 is_in = ["polars/is_in"]
-json = ["polars/serde", "serde_json"]
+json = ["polars/serde", "serde_json", "polars/json"]
 trigonometry = ["polars/trigonometry"]
 sign = ["polars/sign"]
 asof_join = ["polars/asof_join"]
@@ -57,7 +57,6 @@ all = [
   "ipc",
   "avro",
   "is_in",
-  "json",
   "repeat_by",
   "trigonometry",
   "sign",

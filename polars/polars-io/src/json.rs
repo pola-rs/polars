@@ -113,8 +113,8 @@ where
 
         match self.json_format {
             JsonFormat::JsonLines => {
-                let serializer = ndjson::write::Serializer::new(batches, vec![]);
-                let writer = ndjson::write::FileWriter::new(&mut self.buffer, serializer);
+                let serializer = arrow_ndjson::write::Serializer::new(batches, vec![]);
+                let writer = arrow_ndjson::write::FileWriter::new(&mut self.buffer, serializer);
                 writer.collect::<ArrowResult<()>>()?;
             }
             JsonFormat::Json => {
