@@ -34,9 +34,9 @@ pub mod series;
 mod set;
 pub mod utils;
 
-use dsl::ToExprs;
 #[cfg(target_os = "linux")]
 use jemallocator::Jemalloc;
+use lazy::ToExprs;
 #[cfg(not(target_os = "linux"))]
 use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};

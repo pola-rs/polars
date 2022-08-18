@@ -386,3 +386,18 @@ The following methods are available under the `expr.struct` attribute.
 
     ExprStructNameSpace.field
     ExprStructNameSpace.rename_fields
+
+
+Meta
+----
+The following methods are available under the `expr.meta` attribute.
+
+.. currentmodule:: polars.internals.expr.meta
+
+.. autosummary::
+   :toctree: api/
+
+    ExprMetaNameSpace.output_name
+    ExprMetaNameSpace.pop
+    ExprMetaNameSpace.root_names
+    ExprMetaNameSpace.undo_aliases

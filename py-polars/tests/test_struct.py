@@ -547,7 +547,6 @@ def test_is_in_struct() -> None:
             ],
         }
     )
-    df
 
     assert df.filter(pl.col("struct_elem").is_in("struct_list")).to_dict(False) == {
         "struct_elem": [{"a": 1, "b": 11}],

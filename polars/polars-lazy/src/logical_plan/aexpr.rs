@@ -7,6 +7,7 @@ use polars_utils::arena::{Arena, Node};
 
 use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::Context;
+use crate::prelude::names::COUNT;
 use crate::prelude::*;
 
 #[derive(Clone, Debug)]
@@ -167,7 +168,7 @@ impl AExpr {
     ) -> Result<Field> {
         use AExpr::*;
         match self {
-            Count => Ok(Field::new("count", DataType::UInt32)),
+            Count => Ok(Field::new(COUNT, DataType::UInt32)),
             Window { function, .. } => {
                 let e = arena.get(*function);
                 e.to_field(schema, ctxt, arena)

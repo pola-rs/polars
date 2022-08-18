@@ -10,6 +10,7 @@ from polars.datatypes import DataType, Datetime, Float64, UInt32, py_type_to_dty
 from polars.internals.expr.categorical import ExprCatNameSpace
 from polars.internals.expr.datetime import ExprDateTimeNameSpace
 from polars.internals.expr.list import ExprListNameSpace
+from polars.internals.expr.meta import ExprMetaNameSpace
 from polars.internals.expr.string import ExprStringNameSpace
 from polars.internals.expr.struct import ExprStructNameSpace
 from polars.utils import is_expr_sequence, is_pyexpr_sequence
@@ -5911,6 +5912,15 @@ class Expr:
 
         """
         return ExprStructNameSpace(self)
+
+    @property
+    def meta(self) -> ExprMetaNameSpace:
+        """
+        Create an object namespace of all meta related expression methods.
+        This can be used to modify and traverse existing expressions
+
+        """
+        return ExprMetaNameSpace(self)
 
 
 def _prepare_alpha(
