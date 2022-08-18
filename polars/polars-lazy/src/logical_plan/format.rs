@@ -28,7 +28,7 @@ impl fmt::Debug for LogicalPlan {
                 )
             }
             Union { inputs, .. } => write!(f, "UNION {:?}", inputs),
-            Cache { input } => write!(f, "CACHE {:?}", input),
+            Cache { input, .. } => write!(f, "CACHE {:?}", input),
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,

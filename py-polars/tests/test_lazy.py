@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any, cast
 
 import numpy as np
@@ -1426,3 +1427,26 @@ def test_all_any_accept_expr() -> None:
         "null_in_row": [False, True, True],
         "all_null_in_row": [False, False, False],
     }
+
+
+def test_lazy_cache_same_key() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": ["x", "y", "z"]}).lazy()
+
+    # these have the same schema, but should not be used by cache as they are different
+    add_node = df.select([(pl.col("a") + pl.col("b")).alias("a"), pl.col("c")]).cache()
+    mult_node = df.select([(pl.col("a") * pl.col("b")).alias("a"), pl.col("c")]).cache()
+
+    assert mult_node.join(add_node, on="c", suffix="_mult").select(
+        [(pl.col("a") - pl.col("a_mult")).alias("a"), pl.col("c")]
+    ).collect().to_dict(False) == {"a": [-1, 2, 7], "c": ["x", "y", "z"]}
+
+
+def test_lazy_cache_hit(capfd: Any) -> None:
+    os.environ["POLARS_VERBOSE"] = "1"
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": ["x", "y", "z"]}).lazy()
+    add_node = df.select([(pl.col("a") + pl.col("b")).alias("a"), pl.col("c")]).cache()
+    assert add_node.join(add_node, on="c", suffix="_mult").select(
+        [(pl.col("a") - pl.col("a_mult")).alias("a"), pl.col("c")]
+    ).collect().to_dict(False) == {"a": [0, 0, 0], "c": ["x", "y", "z"]}
+    (out, _) = capfd.readouterr()
+    assert "CACHE HIT" in out

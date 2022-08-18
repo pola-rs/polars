@@ -104,6 +104,7 @@ pub enum ALogicalPlan {
     },
     Cache {
         input: Node,
+        id: usize,
     },
     Aggregate {
         input: Node,
@@ -185,7 +186,7 @@ impl ALogicalPlan {
             #[cfg(feature = "python")]
             PythonScan { options } => &options.schema,
             Union { inputs, .. } => return arena.get(inputs[0]).schema(arena),
-            Cache { input } => return arena.get(*input).schema(arena),
+            Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),
             Explode { schema, .. } => schema,
             #[cfg(feature = "parquet")]
@@ -319,7 +320,10 @@ impl ALogicalPlan {
                 columns: columns.clone(),
                 schema: schema.clone(),
             },
-            Cache { .. } => Cache { input: inputs[0] },
+            Cache { id, .. } => Cache {
+                input: inputs[0],
+                id: *id,
+            },
             Distinct { options, .. } => Distinct {
                 input: inputs[0],
                 options: options.clone(),

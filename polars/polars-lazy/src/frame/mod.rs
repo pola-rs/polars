@@ -717,7 +717,7 @@ impl LazyFrame {
             None
         };
 
-        let planner = DefaultPlanner::default();
+        let planner = PhysicalPlanner::default();
         let mut physical_plan =
             planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
