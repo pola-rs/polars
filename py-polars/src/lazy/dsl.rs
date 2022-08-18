@@ -1205,6 +1205,7 @@ impl PyExpr {
         self.inner.clone().rolling_median(options).into()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn rolling_quantile(
         &self,
         quantile: f64,

@@ -417,6 +417,7 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn write_csv(
         &mut self,
         py: Python,
@@ -534,7 +535,7 @@ impl PyDataFrame {
             match st {
                 None => st = Some(dt_i.clone()),
                 Some(ref mut st) => {
-                    *st = get_supertype(&st, dt_i).ok()?;
+                    *st = get_supertype(st, dt_i).ok()?;
                 }
             }
         }
@@ -950,7 +951,7 @@ impl PyDataFrame {
     pub fn slice(&self, offset: usize, length: Option<usize>) -> Self {
         let df = self
             .df
-            .slice(offset as i64, length.unwrap_or(self.df.height()));
+            .slice(offset as i64, length.unwrap_or_else(|| self.df.height()));
         df.into()
     }
 
