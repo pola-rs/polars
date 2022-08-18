@@ -251,7 +251,6 @@ def test_append_extend() -> None:
     a.append(b, append_chunks=False)
     expected = pl.Series("a", [1, 2, 8, 9, None])
     assert a.series_equal(expected, null_equal=True)
-    print(a.chunk_lengths())
     assert a.n_chunks() == 1
 
 
@@ -1638,6 +1637,34 @@ def test_ewm_mean_leading_nulls() -> None:
     assert pl.Series([None, 1.0, 1.0, 1.0]).ewm_mean(
         alpha=0.5, min_periods=2
     ).to_list() == [None, None, 1.0, 1.0]
+
+
+def test_ewm_mean_min_periods() -> None:
+    series = pl.Series([1.0, None, None, None])
+
+    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=1)
+    assert ewm_mean.to_list() == [1.0, 1.0, 1.0, 1.0]
+    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=2)
+    assert ewm_mean.to_list() == [None, None, None, None]
+
+    series = pl.Series([1.0, None, 2.0, None, 3.0])
+
+    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=1)
+    assert ewm_mean.to_list() == [
+        1.0,
+        1.0,
+        1.6666666666666667,
+        1.6666666666666667,
+        2.4285714285714284,
+    ]
+    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=2)
+    assert ewm_mean.to_list() == [
+        None,
+        None,
+        1.6666666666666667,
+        1.6666666666666667,
+        2.4285714285714284,
+    ]
 
 
 def test_ewm_std_var() -> None:
