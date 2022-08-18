@@ -484,47 +484,47 @@ impl PyDataFrame {
     }
 
     pub fn row_tuple(&self, idx: i64) -> PyObject {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let idx = if idx < 0 {
-            (self.df.height() as i64 + idx) as usize
-        } else {
-            idx as usize
-        };
-        PyTuple::new(
-            py,
-            self.df.get_columns().iter().map(|s| match s.dtype() {
-                DataType::Object(_) => {
-                    let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
-                    obj.to_object(py)
-                }
-                _ => Wrap(s.get(idx)).into_py(py),
-            }),
-        )
-        .into_py(py)
+        Python::with_gil(|py| {
+            let idx = if idx < 0 {
+                (self.df.height() as i64 + idx) as usize
+            } else {
+                idx as usize
+            };
+            PyTuple::new(
+                py,
+                self.df.get_columns().iter().map(|s| match s.dtype() {
+                    DataType::Object(_) => {
+                        let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
+                        obj.to_object(py)
+                    }
+                    _ => Wrap(s.get(idx)).into_py(py),
+                }),
+            )
+            .into_py(py)
+        })
     }
 
     pub fn row_tuples(&self) -> PyObject {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
-        let df = &self.df;
-        PyList::new(
-            py,
-            (0..df.height()).map(|idx| {
-                PyTuple::new(
-                    py,
-                    self.df.get_columns().iter().map(|s| match s.dtype() {
-                        DataType::Object(_) => {
-                            let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
-                            obj.to_object(py)
-                        }
-                        _ => Wrap(s.get(idx)).into_py(py),
-                    }),
-                )
-            }),
-        )
-        .into_py(py)
+        Python::with_gil(|py| {
+            let df = &self.df;
+            PyList::new(
+                py,
+                (0..df.height()).map(|idx| {
+                    PyTuple::new(
+                        py,
+                        self.df.get_columns().iter().map(|s| match s.dtype() {
+                            DataType::Object(_) => {
+                                let obj: Option<&ObjectValue> =
+                                    s.get_object(idx).map(|any| any.into());
+                                obj.to_object(py)
+                            }
+                            _ => Wrap(s.get(idx)).into_py(py),
+                        }),
+                    )
+                }),
+            )
+            .into_py(py)
+        })
     }
 
     pub fn to_numpy(&self, py: Python) -> Option<PyObject> {
@@ -610,59 +610,59 @@ impl PyDataFrame {
 
     pub fn to_arrow(&mut self) -> PyResult<Vec<PyObject>> {
         self.df.rechunk();
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let pyarrow = py.import("pyarrow")?;
-        let names = self.df.get_column_names();
+        Python::with_gil(|py| {
+            let pyarrow = py.import("pyarrow")?;
+            let names = self.df.get_column_names();
 
-        let rbs = self
-            .df
-            .iter_chunks()
-            .map(|rb| arrow_interop::to_py::to_py_rb(&rb, &names, py, pyarrow))
-            .collect::<PyResult<_>>()?;
-        Ok(rbs)
+            let rbs = self
+                .df
+                .iter_chunks()
+                .map(|rb| arrow_interop::to_py::to_py_rb(&rb, &names, py, pyarrow))
+                .collect::<PyResult<_>>()?;
+            Ok(rbs)
+        })
     }
 
     pub fn to_pandas(&mut self) -> PyResult<Vec<PyObject>> {
         self.df.rechunk();
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let pyarrow = py.import("pyarrow")?;
-        let names = self.df.get_column_names();
-        let cat_columns = self
-            .df
-            .get_columns()
-            .iter()
-            .enumerate()
-            .filter(|(_i, s)| matches!(s.dtype(), DataType::Categorical(_)))
-            .map(|(i, _)| i)
-            .collect::<Vec<_>>();
+        Python::with_gil(|py| {
+            let pyarrow = py.import("pyarrow")?;
+            let names = self.df.get_column_names();
+            let cat_columns = self
+                .df
+                .get_columns()
+                .iter()
+                .enumerate()
+                .filter(|(_i, s)| matches!(s.dtype(), DataType::Categorical(_)))
+                .map(|(i, _)| i)
+                .collect::<Vec<_>>();
 
-        let rbs = self
-            .df
-            .iter_chunks()
-            .map(|rb| {
-                let mut rb = rb.into_arrays();
-                for i in &cat_columns {
-                    let arr = rb.get_mut(*i).unwrap();
-                    let out = polars_core::export::arrow::compute::cast::cast(
-                        &**arr,
-                        &ArrowDataType::Dictionary(
-                            IntegerType::Int64,
-                            Box::new(ArrowDataType::LargeUtf8),
-                            false,
-                        ),
-                        CastOptions::default(),
-                    )
-                    .unwrap();
-                    *arr = out;
-                }
-                let rb = ArrowChunk::new(rb);
+            let rbs = self
+                .df
+                .iter_chunks()
+                .map(|rb| {
+                    let mut rb = rb.into_arrays();
+                    for i in &cat_columns {
+                        let arr = rb.get_mut(*i).unwrap();
+                        let out = polars_core::export::arrow::compute::cast::cast(
+                            &**arr,
+                            &ArrowDataType::Dictionary(
+                                IntegerType::Int64,
+                                Box::new(ArrowDataType::LargeUtf8),
+                                false,
+                            ),
+                            CastOptions::default(),
+                        )
+                        .unwrap();
+                        *arr = out;
+                    }
+                    let rb = ArrowChunk::new(rb);
 
-                arrow_interop::to_py::to_py_rb(&rb, &names, py, pyarrow)
-            })
-            .collect::<PyResult<_>>()?;
-        Ok(rbs)
+                    arrow_interop::to_py::to_py_rb(&rb, &names, py, pyarrow)
+                })
+                .collect::<PyResult<_>>()?;
+            Ok(rbs)
+        })
     }
 
     pub fn add(&self, s: &PySeries) -> PyResult<Self> {
@@ -1003,30 +1003,31 @@ impl PyDataFrame {
     pub fn groupby_apply(&self, by: Vec<&str>, lambda: PyObject) -> PyResult<Self> {
         let gb = self.df.groupby(&by).map_err(PyPolarsErr::from)?;
         let function = move |df: DataFrame| {
-            let gil = Python::acquire_gil();
-            let py = gil.python();
-            // get the pypolars module
-            let pypolars = PyModule::import(py, "polars").unwrap();
+            Python::with_gil(|py| {
+                // get the pypolars module
+                let pypolars = PyModule::import(py, "polars").unwrap();
 
-            // create a PyDataFrame struct/object for Python
-            let pydf = PyDataFrame::new(df);
+                // create a PyDataFrame struct/object for Python
+                let pydf = PyDataFrame::new(df);
 
-            // Wrap this PySeries object in the python side DataFrame wrapper
-            let python_df_wrapper = pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
+                // Wrap this PySeries object in the python side DataFrame wrapper
+                let python_df_wrapper =
+                    pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
 
-            // call the lambda and get a python side DataFrame wrapper
-            let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
-                Ok(pyobj) => pyobj,
-                Err(e) => panic!("UDF failed: {}", e.value(py)),
-            };
-            // unpack the wrapper in a PyDataFrame
-            let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
+                // call the lambda and get a python side DataFrame wrapper
+                let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
+                    Ok(pyobj) => pyobj,
+                    Err(e) => panic!("UDF failed: {}", e.value(py)),
+                };
+                // unpack the wrapper in a PyDataFrame
+                let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
                 "Could net get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
             );
-            // Downcast to Rust
-            let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
-            // Finally get the actual DataFrame
-            Ok(pydf.df)
+                // Downcast to Rust
+                let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
+                // Finally get the actual DataFrame
+                Ok(pydf.df)
+            })
         };
         // We don't use `py.allow_threads(|| gb.par_apply(..)` because that segfaulted
         // due to code related to Pyo3 or rayon, cannot reproduce it in native polars
@@ -1235,56 +1236,56 @@ impl PyDataFrame {
         output_type: Option<Wrap<DataType>>,
         inference_size: usize,
     ) -> PyResult<(PyObject, bool)> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let df = &self.df;
+        Python::with_gil(|py| {
+            let df = &self.df;
 
-        let output_type = output_type.map(|dt| dt.0);
-        let out = match output_type {
-            Some(DataType::Int32) => {
-                apply_lambda_with_primitive_out_type::<Int32Type>(df, py, lambda, 0, None)
-                    .into_series()
-            }
-            Some(DataType::Int64) => {
-                apply_lambda_with_primitive_out_type::<Int64Type>(df, py, lambda, 0, None)
-                    .into_series()
-            }
-            Some(DataType::UInt32) => {
-                apply_lambda_with_primitive_out_type::<UInt32Type>(df, py, lambda, 0, None)
-                    .into_series()
-            }
-            Some(DataType::UInt64) => {
-                apply_lambda_with_primitive_out_type::<UInt64Type>(df, py, lambda, 0, None)
-                    .into_series()
-            }
-            Some(DataType::Float32) => {
-                apply_lambda_with_primitive_out_type::<Float32Type>(df, py, lambda, 0, None)
-                    .into_series()
-            }
-            Some(DataType::Float64) => {
-                apply_lambda_with_primitive_out_type::<Float64Type>(df, py, lambda, 0, None)
-                    .into_series()
-            }
-            Some(DataType::Boolean) => {
-                apply_lambda_with_bool_out_type(df, py, lambda, 0, None).into_series()
-            }
-            Some(DataType::Date) => {
-                apply_lambda_with_primitive_out_type::<Int32Type>(df, py, lambda, 0, None)
-                    .into_date()
-                    .into_series()
-            }
-            Some(DataType::Datetime(tu, tz)) => {
-                apply_lambda_with_primitive_out_type::<Int64Type>(df, py, lambda, 0, None)
-                    .into_datetime(tu, tz)
-                    .into_series()
-            }
-            Some(DataType::Utf8) => {
-                apply_lambda_with_utf8_out_type(df, py, lambda, 0, None).into_series()
-            }
-            _ => return apply_lambda_unknown(df, py, lambda, inference_size),
-        };
+            let output_type = output_type.map(|dt| dt.0);
+            let out = match output_type {
+                Some(DataType::Int32) => {
+                    apply_lambda_with_primitive_out_type::<Int32Type>(df, py, lambda, 0, None)
+                        .into_series()
+                }
+                Some(DataType::Int64) => {
+                    apply_lambda_with_primitive_out_type::<Int64Type>(df, py, lambda, 0, None)
+                        .into_series()
+                }
+                Some(DataType::UInt32) => {
+                    apply_lambda_with_primitive_out_type::<UInt32Type>(df, py, lambda, 0, None)
+                        .into_series()
+                }
+                Some(DataType::UInt64) => {
+                    apply_lambda_with_primitive_out_type::<UInt64Type>(df, py, lambda, 0, None)
+                        .into_series()
+                }
+                Some(DataType::Float32) => {
+                    apply_lambda_with_primitive_out_type::<Float32Type>(df, py, lambda, 0, None)
+                        .into_series()
+                }
+                Some(DataType::Float64) => {
+                    apply_lambda_with_primitive_out_type::<Float64Type>(df, py, lambda, 0, None)
+                        .into_series()
+                }
+                Some(DataType::Boolean) => {
+                    apply_lambda_with_bool_out_type(df, py, lambda, 0, None).into_series()
+                }
+                Some(DataType::Date) => {
+                    apply_lambda_with_primitive_out_type::<Int32Type>(df, py, lambda, 0, None)
+                        .into_date()
+                        .into_series()
+                }
+                Some(DataType::Datetime(tu, tz)) => {
+                    apply_lambda_with_primitive_out_type::<Int64Type>(df, py, lambda, 0, None)
+                        .into_datetime(tu, tz)
+                        .into_series()
+                }
+                Some(DataType::Utf8) => {
+                    apply_lambda_with_utf8_out_type(df, py, lambda, 0, None).into_series()
+                }
+                _ => return apply_lambda_unknown(df, py, lambda, inference_size),
+            };
 
-        Ok((PySeries::from(out).into_py(py), false))
+            Ok((PySeries::from(out).into_py(py), false))
+        })
     }
 
     pub fn shrink_to_fit(&mut self) {
@@ -1348,26 +1349,25 @@ impl PyDataFrame {
 }
 
 fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {
-    let gil = Python::acquire_gil();
-    let py = gil.python();
+    Python::with_gil(|py| {
+        let df = py.allow_threads(|| match agg {
+            "min" => gb.min(),
+            "max" => gb.max(),
+            "mean" => gb.mean(),
+            "first" => gb.first(),
+            "last" => gb.last(),
+            "sum" => gb.sum(),
+            "count" => gb.count(),
+            "n_unique" => gb.n_unique(),
+            "median" => gb.median(),
+            "agg_list" => gb.agg_list(),
+            "groups" => gb.groups(),
+            a => Err(PolarsError::ComputeError(
+                format!("agg fn {} does not exists", a).into(),
+            )),
+        });
 
-    let df = py.allow_threads(|| match agg {
-        "min" => gb.min(),
-        "max" => gb.max(),
-        "mean" => gb.mean(),
-        "first" => gb.first(),
-        "last" => gb.last(),
-        "sum" => gb.sum(),
-        "count" => gb.count(),
-        "n_unique" => gb.n_unique(),
-        "median" => gb.median(),
-        "agg_list" => gb.agg_list(),
-        "groups" => gb.groups(),
-        a => Err(PolarsError::ComputeError(
-            format!("agg fn {} does not exists", a).into(),
-        )),
-    });
-
-    let df = df.map_err(PyPolarsErr::from)?;
-    Ok(PyDataFrame::new(df))
+        let df = df.map_err(PyPolarsErr::from)?;
+        Ok(PyDataFrame::new(df))
+    })
 }
