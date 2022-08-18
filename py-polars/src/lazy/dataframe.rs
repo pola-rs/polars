@@ -49,30 +49,31 @@ impl PyLazyGroupBy {
         let lgb = self.lgb.take().unwrap();
 
         let function = move |df: DataFrame| {
-            let gil = Python::acquire_gil();
-            let py = gil.python();
-            // get the pypolars module
-            let pypolars = PyModule::import(py, "polars").unwrap();
+            Python::with_gil(|py| {
+                // get the pypolars module
+                let pypolars = PyModule::import(py, "polars").unwrap();
 
-            // create a PyDataFrame struct/object for Python
-            let pydf = PyDataFrame::new(df);
+                // create a PyDataFrame struct/object for Python
+                let pydf = PyDataFrame::new(df);
 
-            // Wrap this PySeries object in the python side DataFrame wrapper
-            let python_df_wrapper = pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
+                // Wrap this PySeries object in the python side DataFrame wrapper
+                let python_df_wrapper =
+                    pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
 
-            // call the lambda and get a python side DataFrame wrapper
-            let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
-                Ok(pyobj) => pyobj,
-                Err(e) => panic!("UDF failed: {}", e.value(py)),
-            };
-            // unpack the wrapper in a PyDataFrame
-            let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
+                // call the lambda and get a python side DataFrame wrapper
+                let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
+                    Ok(pyobj) => pyobj,
+                    Err(e) => panic!("UDF failed: {}", e.value(py)),
+                };
+                // unpack the wrapper in a PyDataFrame
+                let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
                 "Could net get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
             );
-            // Downcast to Rust
-            let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
-            // Finally get the actual DataFrame
-            Ok(pydf.df)
+                // Downcast to Rust
+                let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
+                // Finally get the actual DataFrame
+                Ok(pydf.df)
+            })
         };
         lgb.apply(function).into()
     }
@@ -193,23 +194,22 @@ impl PyLazyFrame {
 
         if let Some(lambda) = with_schema_modify {
             let f = |schema: Schema| {
-                let gil = Python::acquire_gil();
-                let py = gil.python();
-
                 let iter = schema.iter_names();
-                let names = PyList::new(py, iter);
+                Python::with_gil(|py| {
+                    let names = PyList::new(py, iter);
 
-                let out = lambda.call1(py, (names,)).expect("python function failed");
-                let new_names = out
-                    .extract::<Vec<String>>(py)
-                    .expect("python function should return List[str]");
-                assert_eq!(new_names.len(), schema.len(), "The length of the new names list should be equal to the original column length");
+                    let out = lambda.call1(py, (names,)).expect("python function failed");
+                    let new_names = out
+                        .extract::<Vec<String>>(py)
+                        .expect("python function should return List[str]");
+                    assert_eq!(new_names.len(), schema.len(), "The length of the new names list should be equal to the original column length");
 
-                let fields = schema
-                    .iter_dtypes()
-                    .zip(new_names)
-                    .map(|(dtype, name)| Field::from_owned(name, dtype.clone()));
-                Ok(Schema::from(fields))
+                    let fields = schema
+                        .iter_dtypes()
+                        .zip(new_names)
+                        .map(|(dtype, name)| Field::from_owned(name, dtype.clone()));
+                    Ok(Schema::from(fields))
+                })
             };
             r = r.with_schema_modify(f).map_err(PyPolarsErr::from)?
         }
@@ -665,27 +665,28 @@ impl PyLazyFrame {
         };
 
         let function = move |s: DataFrame| {
-            let gil = Python::acquire_gil();
-            let py = gil.python();
-            // get the pypolars module
-            let pypolars = PyModule::import(py, "polars").unwrap();
-            // create a PyDataFrame struct/object for Python
-            let pydf = PyDataFrame::new(s);
-            // Wrap this PyDataFrame object in the python side DataFrame wrapper
-            let python_df_wrapper = pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
-            // call the lambda and get a python side Series wrapper
-            let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
-                Ok(pyobj) => pyobj,
-                Err(e) => panic!("UDF failed: {}", e.value(py)),
-            };
-            // unpack the wrapper in a PyDataFrame
-            let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
+            Python::with_gil(|py| {
+                // get the pypolars module
+                let pypolars = PyModule::import(py, "polars").unwrap();
+                // create a PyDataFrame struct/object for Python
+                let pydf = PyDataFrame::new(s);
+                // Wrap this PyDataFrame object in the python side DataFrame wrapper
+                let python_df_wrapper =
+                    pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
+                // call the lambda and get a python side Series wrapper
+                let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
+                    Ok(pyobj) => pyobj,
+                    Err(e) => panic!("UDF failed: {}", e.value(py)),
+                };
+                // unpack the wrapper in a PyDataFrame
+                let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
                 "Could net get DataFrame attribute '_s'. Make sure that you return a DataFrame object.",
             );
-            // Downcast to Rust
-            let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
-            // Finally get the actual Series
-            Ok(pydf.df)
+                // Downcast to Rust
+                let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
+                // Finally get the actual Series
+                Ok(pydf.df)
+            })
         };
 
         let ldf = self.ldf.clone();
