@@ -49,9 +49,9 @@ fn aggregate_expr_to_scan_agg(
 }
 
 #[derive(Default)]
-pub struct DefaultPlanner {}
+pub struct PhysicalPlanner {}
 
-impl DefaultPlanner {
+impl PhysicalPlanner {
     pub fn create_physical_expressions(
         &self,
         exprs: &[Node],
@@ -260,21 +260,9 @@ impl DefaultPlanner {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 Ok(Box::new(executors::ExplodeExec { input, columns }))
             }
-            Cache { input } => {
-                let schema = lp_arena.get(input).schema(lp_arena);
-                // todo! fix the unique constraint in the schema. Probably in projection pushdown at joins
-                let mut unique = PlHashSet::with_capacity(schema.len());
-                // assumption of 80 characters per column name
-                let mut key = String::with_capacity(schema.len() * 80);
-                for name in schema.iter_names() {
-                    if unique.insert(name) {
-                        key.push_str(name)
-                    }
-                }
-                // mutable borrow otherwise
-                drop(unique);
+            Cache { input, id } => {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
-                Ok(Box::new(executors::CacheExec { key, input }))
+                Ok(Box::new(executors::CacheExec { id, input }))
             }
             Distinct { input, options } => {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;

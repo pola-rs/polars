@@ -144,8 +144,11 @@ impl LogicalPlan {
                 }
                 Ok(())
             }
-            Cache { input } => {
-                let current_node = format!("CACHE [{:?}]", (branch, id));
+            Cache {
+                input,
+                id: cache_id,
+            } => {
+                let current_node = format!("CACHE [{:?}]", (branch, id, cache_id));
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, (branch, id + 1), &current_node)
             }

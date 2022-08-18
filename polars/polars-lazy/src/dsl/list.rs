@@ -238,7 +238,7 @@ impl ListNameSpace {
             let lp = lp_arena.get(optimized);
             let aexpr = lp.get_exprs().pop().unwrap();
 
-            let planner = DefaultPlanner::default();
+            let planner = PhysicalPlanner::default();
             let phys_expr =
                 planner.create_physical_expr(aexpr, Context::Default, &mut expr_arena)?;
 

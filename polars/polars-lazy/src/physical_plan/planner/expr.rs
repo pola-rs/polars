@@ -6,7 +6,7 @@ use polars_core::utils::parallel_op_series;
 use super::super::expressions as phys_expr;
 use crate::prelude::*;
 
-impl DefaultPlanner {
+impl PhysicalPlanner {
     pub fn create_physical_expr(
         &self,
         expression: Node,

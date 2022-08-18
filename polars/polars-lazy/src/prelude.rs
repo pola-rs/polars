@@ -33,7 +33,7 @@ pub use crate::{
         options::*,
         *,
     },
-    physical_plan::{expressions::*, planner::DefaultPlanner, Executor, PhysicalPlanner},
+    physical_plan::{expressions::*, planner::PhysicalPlanner, Executor},
 };
 pub(crate) use crate::{
     logical_plan::{aexpr::*, alp::*, conversion::*, iterator::*},

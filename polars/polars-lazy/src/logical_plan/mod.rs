@@ -63,7 +63,7 @@ pub enum LogicalPlan {
         predicate: Expr,
     },
     /// Cache the input at this point in the LP
-    Cache { input: Box<LogicalPlan> },
+    Cache { input: Box<LogicalPlan>, id: usize },
     /// Scan a CSV file
     #[cfg(feature = "csv-file")]
     CsvScan {
@@ -226,7 +226,7 @@ impl LogicalPlan {
             #[cfg(feature = "python")]
             PythonScan { options } => Ok(Cow::Borrowed(&options.schema)),
             Union { inputs, .. } => inputs[0].schema(),
-            Cache { input } => input.schema(),
+            Cache { input, .. } => input.schema(),
             Sort { input, .. } => input.schema(),
             Explode { schema, .. } => Ok(Cow::Borrowed(schema)),
             #[cfg(feature = "parquet")]
