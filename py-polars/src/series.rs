@@ -291,7 +291,7 @@ impl PySeries {
                 if fast_explode {
                     out.set_fast_explode()
                 }
-                return Ok(out.into_series().into());
+                Ok(out.into_series().into())
             }
             _ => {
                 let series: Series =
@@ -493,7 +493,7 @@ impl PySeries {
     pub fn slice(&self, offset: i64, length: Option<usize>) -> Self {
         let series = self
             .series
-            .slice(offset, length.unwrap_or(self.series.len()));
+            .slice(offset, length.unwrap_or_else(|| self.series.len()));
         series.into()
     }
 

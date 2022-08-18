@@ -1565,7 +1565,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
             let iter = self
                 .into_no_null_iter()
                 .skip(init_null_count + 1)
-                .map(|val| call_with_value(val));
+                .map(call_with_value);
             avs.extend(iter);
         }
         Ok(Series::new(self.name(), &avs))
