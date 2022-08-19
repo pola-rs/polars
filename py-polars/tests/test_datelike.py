@@ -1293,3 +1293,13 @@ def test_from_dict_tu_consistency() -> None:
     from_dicts = pl.from_dicts([{"dt": dt}])
 
     assert from_dict.dtypes == from_dicts.dtypes
+
+
+def test_date_parse_omit_day() -> None:
+    df = pl.DataFrame({"month": ["2022-01"]})
+    assert df.select(pl.col("month").str.strptime(pl.Date, fmt="%Y-%m"))[0, 0] == date(
+        2022, 1, 1
+    )
+    assert df.select(pl.col("month").str.strptime(pl.Datetime, fmt="%Y-%m"))[
+        0, 0
+    ] == datetime(2022, 1, 1)
