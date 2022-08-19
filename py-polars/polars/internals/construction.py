@@ -283,7 +283,35 @@ def sequence_to_pyseries(
                 except RuntimeError:
                     return sequence_from_anyvalue_or_object(name, values)
 
-            return constructor(name, values, strict)
+            while True:
+                try:
+                    return constructor(name, values, strict)
+                except TypeError as error:
+                    str_val = str(error)
+
+                    # from x to float
+                    # error message can be:
+                    #   - integers: "'float' object cannot be interpreted as an integer"
+                    if "'float'" in str_val:
+                        constructor = py_type_to_constructor(float)
+
+                    # from x to string
+                    # error message can be:
+                    #   - integers: "'str' object cannot be interpreted as an integer"
+                    #   - floats: "must be real number, not str"
+                    elif (
+                        "'str'" in str_val or str_val == "must be real number, not str"
+                    ):
+                        constructor = py_type_to_constructor(str)
+
+                    # from x to int
+                    # error message can be:
+                    #   - bools: "'int' object cannot be converted to 'PyBool'"
+                    elif str_val == "'int' object cannot be converted to 'PyBool'":
+                        constructor = py_type_to_constructor(int)
+
+                    else:
+                        raise error
 
 
 def _pandas_series_to_arrow(
