@@ -413,3 +413,16 @@ def test_from_dicts_list_struct_without_inner_dtype() -> None:
         ],
         "days_of_week": [1, 2],
     }
+
+
+def test_upcast_primitive_and_strings() -> None:
+    assert pl.Series([1, 1.0, 1]).dtype == pl.Float64
+    assert pl.Series([1, 1, "1.0"]).dtype == pl.Utf8
+    assert pl.Series([1, 1.0, "1.0"]).dtype == pl.Utf8
+    assert pl.Series([True, 1]).dtype == pl.Int64
+    assert pl.Series([True, 1.0]).dtype == pl.Float64
+    assert pl.Series([True, "1.0"]).dtype == pl.Utf8
+    assert pl.from_dict({"a": [1, 2.1, 3], "b": [4, 5, 6.4]}).dtypes == [
+        pl.Float64,
+        pl.Float64,
+    ]

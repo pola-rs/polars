@@ -150,6 +150,38 @@ impl PySeries {
     }
 }
 
+fn new_primitive<'a, T>(name: &str, obj: &'a PyAny, strict: bool) -> PyResult<PySeries>
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>: IntoSeries,
+    T::Native: FromPyObject<'a>,
+{
+    let (seq, len) = get_pyseq(obj)?;
+    let mut builder = PrimitiveChunkedBuilder::<T>::new(name, len);
+
+    for res in seq.iter()? {
+        let item = res?;
+
+        if item.is_none() {
+            builder.append_null()
+        } else {
+            match item.extract::<T::Native>() {
+                Ok(val) => builder.append_value(val),
+                Err(e) => {
+                    if strict {
+                        return Err(e);
+                    }
+                    builder.append_null()
+                }
+            }
+        }
+    }
+    let ca = builder.finish();
+
+    let s = ca.into_series();
+    Ok(PySeries { series: s })
+}
+
 // Init with lists that can contain Nones
 macro_rules! init_method_opt {
     ($name:ident, $type:ty, $native: ty) => {
@@ -157,30 +189,7 @@ macro_rules! init_method_opt {
         impl PySeries {
             #[staticmethod]
             pub fn $name(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {
-                let (seq, len) = get_pyseq(obj)?;
-                let mut builder = PrimitiveChunkedBuilder::<$type>::new(name, len);
-
-                for res in seq.iter()? {
-                    let item = res?;
-
-                    if item.is_none() {
-                        builder.append_null()
-                    } else {
-                        match item.extract::<$native>() {
-                            Ok(val) => builder.append_value(val),
-                            Err(e) => {
-                                if strict {
-                                    return Err(e);
-                                }
-                                builder.append_null()
-                            }
-                        }
-                    }
-                }
-                let ca = builder.finish();
-
-                let s = ca.into_series();
-                Ok(PySeries { series: s })
+                new_primitive::<$type>(name, obj, strict)
             }
         }
     };
