@@ -253,7 +253,12 @@ impl LogicalPlan {
                     None => Ok(input_schema),
                 }
             }
-            Error { input, .. } => input.schema(),
+            Error { err, .. } => {
+                // We just take the error. The LogicalPlan should not be used anymore once this
+                // is taken.
+                let mut err = err.lock();
+                Err(err.take().unwrap())
+            }
             ExtContext { schema, .. } => Ok(Cow::Borrowed(schema)),
         }
     }

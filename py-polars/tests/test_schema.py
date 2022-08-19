@@ -91,3 +91,9 @@ def test_from_dicst_nested_nulls() -> None:
     assert pl.from_dicts([{"a": [None, None]}, {"a": [1, 2]}]).to_dict(False) == {
         "a": [[None, None], [1, 2]]
     }
+
+
+def test_schema_err() -> None:
+    df = pl.DataFrame({"foo": [None, 1, 2], "bar": [1, 2, 3]}).lazy()
+    with pytest.raises(pl.NotFoundError):
+        df.groupby("not-existent").agg(pl.col("bar").max().alias("max_bar")).schema
