@@ -127,6 +127,7 @@ def test_wildcard_expansion() -> None:
         pl.concat_str(pl.all()).str.to_lowercase()
     ).to_series().to_list() == ["xs", "yo", "zs"]
 
+
 def test_split() -> None:
     df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c"]})
     out = df.select([pl.col("x").str.split("_")])
@@ -156,6 +157,7 @@ def test_split() -> None:
 
     assert out.frame_equal(expected)
     assert out["x"].series_equal(expected["x"], null_equal=True)
+
 
 def test_split_exact() -> None:
     df = pl.DataFrame({"x": ["a_a", None, "b", "c_c"]})

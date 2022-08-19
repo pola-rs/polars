@@ -549,7 +549,7 @@ class StringNameSpace:
     def splitn(self, by: str, n: int) -> Series:
         """
         Split the string by a substring, restricted to returning at most ``n`` items.
-        
+
         If ``n`` substrings are returned, the last substring (the nth substring)
         will contain the remainder of the string.
 
