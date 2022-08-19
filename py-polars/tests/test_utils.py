@@ -53,7 +53,7 @@ def test_timedelta_to_pl_timedelta() -> None:
 
 
 def test_estimated_size() -> None:
-    s = pl.Series("n", list(range(10_000)))
+    s = pl.Series("n", list(range(100)))
     df = s.to_frame()
 
     for sz in (s.estimated_size(), s.estimated_size("b"), s.estimated_size("bytes")):

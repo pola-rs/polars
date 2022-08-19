@@ -320,8 +320,8 @@ class DataFrame:
 
         Parameters
         ----------
-        unit : str, optional
-            Scale returned size to the given unit ("b", "kb", "mb", "gb", or "tb").
+        unit : {'b', 'kb', 'mb', 'gb', 'tb'}
+            Scale the returned size to the given unit.
 
         Examples
         --------
