@@ -316,6 +316,13 @@ impl<'a> AnyValue<'a> {
             Datetime(v, _, _) => NumCast::from(*v),
             #[cfg(feature = "dtype-duration")]
             Duration(v, _) => NumCast::from(*v),
+            Boolean(v) => {
+                if *v {
+                    NumCast::from(1)
+                } else {
+                    NumCast::from(0)
+                }
+            }
             _ => unimplemented!(),
         }
     }
