@@ -25,7 +25,7 @@ pub(crate) mod options;
 mod projection;
 
 pub use anonymous_scan::*;
-pub(crate) use apply::*;
+pub use apply::*;
 pub(crate) use builder::*;
 pub use lit::*;
 use polars_core::frame::explode::MeltArgs;
