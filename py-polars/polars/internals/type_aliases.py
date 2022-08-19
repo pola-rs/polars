@@ -39,6 +39,18 @@ PivotAgg: TypeAlias = Literal[
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last"]
+SizeUnit: TypeAlias = Literal[
+    "b",
+    "kb",
+    "mb",
+    "gb",
+    "tb",
+    "bytes",
+    "kilobytes",
+    "megabytes",
+    "gigabytes",
+    "terabytes",
+]
 
 # The following have a Rust enum equivalent with a different name
 AsofJoinStrategy: TypeAlias = Literal["backward", "forward"]  # AsofStrategy

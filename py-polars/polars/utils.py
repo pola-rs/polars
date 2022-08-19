@@ -34,7 +34,7 @@ else:
     from typing_extensions import ParamSpec, TypeGuard
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import TimeUnit
+    from polars.internals.type_aliases import SizeUnit, TimeUnit
 
 
 def _process_null_values(
@@ -344,3 +344,17 @@ def _rename_kwargs(
                 stacklevel=3,
             )
             kwargs[new] = kwargs.pop(alias)
+
+
+def scale_bytes(sz: int, to: SizeUnit) -> int | float:
+    """Scale size in bytes to other size units (eg: "kb", "mb", "gb", "tb")."""
+    scaling_factor = {
+        "b": 1,
+        "k": 1024,
+        "m": 1024**2,
+        "g": 1024**3,
+        "t": 1024**4,
+    }[to[0]]
+    if scaling_factor > 1:
+        return sz / scaling_factor
+    return sz

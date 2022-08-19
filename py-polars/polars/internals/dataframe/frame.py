@@ -53,6 +53,7 @@ from polars.utils import (
     is_int_sequence,
     is_str_sequence,
     range_to_slice,
+    scale_bytes,
 )
 
 try:
@@ -113,6 +114,7 @@ if TYPE_CHECKING:
         ParallelStrategy,
         ParquetCompression,
         PivotAgg,
+        SizeUnit,
         UniqueKeepStrategy,
     )
 
@@ -300,10 +302,10 @@ class DataFrame:
         else:
             raise ValueError("DataFrame constructor not called properly.")
 
-    def estimated_size(self) -> int:
+    def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
         Return an estimation of the total (heap) allocated size of the `DataFrame` in
-        bytes.
+        bytes (pass `unit` to return estimated size in kilobytes, megabytes, etc)..
 
         This estimation is the sum of the size of its buffers, validity, including
         nested arrays. Multiple arrays may share buffers and bitmaps. Therefore, the
@@ -315,8 +317,30 @@ class DataFrame:
         this function returns the visible size of the buffer, not its total capacity.
 
         FFI buffers are included in this estimation.
+
+        Parameters
+        ----------
+        unit : {'b', 'kb', 'mb', 'gb', 'tb'}
+            Scale the returned size to the given unit.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "x": list(reversed(range(1_000_000))),
+        ...         "y": [v / 1000 for v in range(1_000_000)],
+        ...         "z": [str(v) for v in range(1_000_000)],
+        ...     },
+        ...     columns=[("x", pl.UInt32), ("y", pl.Float64), ("z", pl.Utf8)],
+        ... )
+        >>> df.estimated_size()
+        25888898
+        >>> df.estimated_size("mb")
+        24.689577102661133
+
         """
-        return self._df.estimated_size()
+        sz = self._df.estimated_size()
+        return scale_bytes(sz, to=unit)
 
     @classmethod
     def _from_pydf(cls: type[DF], py_df: PyDataFrame) -> DF:

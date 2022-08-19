@@ -54,6 +54,7 @@ from polars.utils import (
     is_bool_sequence,
     is_int_sequence,
     range_to_slice,
+    scale_bytes,
 )
 
 try:
@@ -96,6 +97,7 @@ if TYPE_CHECKING:
         InterpolationMethod,
         NullBehavior,
         RankMethod,
+        SizeUnit,
         TimeUnit,
     )
 
@@ -651,10 +653,10 @@ class Series:
             "SORTED_DESC": self._s.is_sorted_reverse_flag(),
         }
 
-    def estimated_size(self) -> int:
+    def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
         Return an estimation of the total (heap) allocated size of the `Series` in
-        bytes.
+        bytes (pass `unit` to return estimated size in kilobytes, megabytes, etc).
 
         This estimation is the sum of the size of its buffers, validity, including
         nested arrays. Multiple arrays may share buffers and bitmaps. Therefore, the
@@ -667,8 +669,22 @@ class Series:
 
         FFI buffers are included in this estimation.
 
+        Parameters
+        ----------
+        unit : {'b', 'kb', 'mb', 'gb', 'tb'}
+            Scale the returned size to the given unit.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", list(range(1_000_000)), dtype=pl.UInt32)
+        >>> s.estimated_size()
+        4000000
+        >>> s.estimated_size("mb")
+        3.814697265625
+
         """
-        return self._s.estimated_size()
+        sz = self._s.estimated_size()
+        return scale_bytes(sz, to=unit)
 
     def sqrt(self) -> Series:
         """
