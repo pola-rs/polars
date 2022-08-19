@@ -896,7 +896,7 @@ class ExprStringNameSpace:
             Substring to split by.
         n
             Max number of items to return.
-            
+
         Examples
         --------
         >>> df = pl.DataFrame({"s": ["foo bar", "foo-bar", "foo bar baz"]})
@@ -919,7 +919,7 @@ class ExprStringNameSpace:
         List of Utf8 type
 
         """
-        return wrap_expr(self._pyexpr.str_splitn(by, n))
+        return pli.wrap_expr(self._pyexpr.str_splitn(by, n))
 
     def replace(self, pattern: str, value: str, literal: bool = False) -> pli.Expr:
         r"""

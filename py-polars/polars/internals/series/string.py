@@ -582,7 +582,7 @@ class StringNameSpace:
         List of Utf8 type
 
         """
-        s = wrap_s(self._s)
+        s = pli.wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.splitn(by, n)).to_series()
 
     def replace(self, pattern: str, value: str, literal: bool = False) -> pli.Series:
