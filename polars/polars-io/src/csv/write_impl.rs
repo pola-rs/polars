@@ -34,6 +34,17 @@ fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> s
     }
 }
 
+fn fast_float_write<N: ToLexical>(f: &mut Vec<u8>, n: N, write_size: usize) -> std::io::Result<()> {
+    let len = f.len();
+    f.reserve(write_size);
+    unsafe {
+        let buffer = std::slice::from_raw_parts_mut(f.as_mut_ptr().add(len), write_size);
+        let written_n = n.to_lexical(buffer).len();
+        f.set_len(len + written_n);
+    }
+    Ok(())
+}
+
 fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) {
     match value {
         AnyValue::Null => write!(f, ""),
@@ -45,30 +56,14 @@ fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) 
         AnyValue::UInt16(v) => write!(f, "{}", v),
         AnyValue::UInt32(v) => write!(f, "{}", v),
         AnyValue::UInt64(v) => write!(f, "{}", v),
-        AnyValue::Float32(v) => {
-            let len = f.len();
-            let write_size = f32::FORMATTED_SIZE_DECIMAL;
-            f.reserve(write_size);
-            unsafe {
-                let buf = std::slice::from_raw_parts_mut(f.as_mut_ptr().add(len), write_size);
-
-                let written_n = v.to_lexical(buf).len();
-                f.set_len(len + written_n);
-            }
-            Ok(())
-        }
-        AnyValue::Float64(v) => {
-            let len = f.len();
-            let write_size = f64::FORMATTED_SIZE_DECIMAL;
-            f.reserve(write_size);
-            unsafe {
-                let buf = std::slice::from_raw_parts_mut(f.as_mut_ptr().add(len), write_size);
-
-                let written_n = v.to_lexical(buf).len();
-                f.set_len(len + written_n);
-            }
-            Ok(())
-        }
+        AnyValue::Float32(v) => match &options.float_precision {
+            None => fast_float_write(f, v, f32::FORMATTED_SIZE_DECIMAL),
+            Some(precision) => write!(f, "{v:.precision$}", v = v, precision = precision),
+        },
+        AnyValue::Float64(v) => match &options.float_precision {
+            None => fast_float_write(f, v, f64::FORMATTED_SIZE_DECIMAL),
+            Some(precision) => write!(f, "{v:.precision$}", v = v, precision = precision),
+        },
         AnyValue::Boolean(v) => write!(f, "{}", v),
         AnyValue::Utf8(v) => fmt_and_escape_str(f, v, options),
         #[cfg(feature = "dtype-categorical")]
@@ -126,10 +121,12 @@ fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) 
 pub struct SerializeOptions {
     /// used for [`DataType::Date`]
     pub date_format: Option<String>,
-    /// used for [`DataType::Time64`]
+    /// used for [`DataType::Time`]
     pub time_format: Option<String>,
-    /// used for [`DataType::Timestamp`]
+    /// used for [`DataType::Datetime]
     pub datetime_format: Option<String>,
+    /// used for [`DataType::Float64`] and [`DataType::Float32`]
+    pub float_precision: Option<usize>,
     /// used as separator/delimiter
     pub delimiter: u8,
     /// quoting character
@@ -142,6 +139,7 @@ impl Default for SerializeOptions {
             date_format: None,
             time_format: None,
             datetime_format: None,
+            float_precision: None,
             delimiter: b',',
             quote: b'"',
         }
