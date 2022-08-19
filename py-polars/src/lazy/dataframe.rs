@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::io::BufWriter;
 
 use polars::io::RowCount;
@@ -21,6 +22,7 @@ use crate::error::PyPolarsErr;
 use crate::file::get_file_like;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
 use crate::prelude::*;
+use crate::py_modules::POLARS;
 
 #[pyclass]
 #[repr(transparent)]
@@ -685,40 +687,91 @@ impl PyLazyFrame {
         ldf.with_row_count(name, offset).into()
     }
 
-    pub fn map(&self, lambda: PyObject, predicate_pd: bool, projection_pd: bool) -> Self {
+    pub fn map(
+        &self,
+        lambda: PyObject,
+        predicate_pushdown: bool,
+        projection_pushdown: bool,
+        slice_pushdown: bool,
+        schema: Option<Wrap<Schema>>,
+        validate_output: bool,
+    ) -> Self {
         let opt = AllowedOptimizations {
-            predicate_pushdown: predicate_pd,
-            projection_pushdown: projection_pd,
+            predicate_pushdown,
+            projection_pushdown,
+            slice_pushdown,
             ..Default::default()
         };
+        let schema = schema.map(|schema| Arc::new(schema.0));
+        let schema2 = schema.clone();
 
-        let function = move |s: DataFrame| {
+        let function = move |df: DataFrame| {
             Python::with_gil(|py| {
-                // get the pypolars module
-                let pypolars = PyModule::import(py, "polars").unwrap();
+                let opt_schema = schema2.clone();
+
+                let expected_schema = if let Some(schema) = opt_schema.as_ref() {
+                    Cow::Borrowed(schema.as_ref())
+                }
+                // only materialize if we validate the output
+                else if validate_output {
+                    Cow::Owned(df.schema())
+                }
+                // do not materialize the schema, we will ignore it.
+                else {
+                    Cow::Owned(Schema::default())
+                };
+
                 // create a PyDataFrame struct/object for Python
-                let pydf = PyDataFrame::new(s);
+                let pydf = PyDataFrame::new(df);
                 // Wrap this PyDataFrame object in the python side DataFrame wrapper
-                let python_df_wrapper =
-                    pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
+                let python_df_wrapper = POLARS
+                    .getattr(py, "wrap_df")
+                    .unwrap()
+                    .call1(py, (pydf,))
+                    .unwrap();
                 // call the lambda and get a python side Series wrapper
                 let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                     Ok(pyobj) => pyobj,
                     Err(e) => panic!("UDF failed: {}", e.value(py)),
                 };
                 // unpack the wrapper in a PyDataFrame
-                let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
-                "Could net get DataFrame attribute '_s'. Make sure that you return a DataFrame object.",
-            );
+                let py_pydf = match result_df_wrapper.getattr(py, "_df") {
+                    Ok(df) => df,
+                    Err(_) => {
+                        let pytype = result_df_wrapper.as_ref(py).get_type();
+                        return Err(PolarsError::ComputeError(
+                            format!(
+                                "Expected 'LazyFrame.map' to return a 'DataFrame', got a {}",
+                                pytype
+                            )
+                            .into(),
+                        ));
+                    }
+                };
+
                 // Downcast to Rust
                 let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
-                // Finally get the actual Series
-                Ok(pydf.df)
+                // Finally get the actual DataFrame
+                let df = pydf.df;
+
+                if validate_output {
+                    let output_schema = df.schema();
+                    if expected_schema.as_ref() != &output_schema {
+                        return Err(PolarsError::ComputeError(
+                            format!("The output schema of 'LazyFrame.map' is incorrect. Expected: {:?}\n\
+                        Got: {:?}", expected_schema, output_schema).into()
+                        ));
+                    }
+                }
+                Ok(df)
             })
         };
 
         let ldf = self.ldf.clone();
-        ldf.map(function, Some(opt), None, None).into()
+
+        let udf_schema =
+            schema.map(move |s| Arc::new(move |_: &Schema| Ok(s.clone())) as Arc<dyn UdfSchema>);
+        ldf.map(function, Some(opt), udf_schema, None).into()
     }
 
     pub fn drop_columns(&self, cols: Vec<String>) -> Self {

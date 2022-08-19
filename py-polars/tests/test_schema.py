@@ -109,3 +109,35 @@ def test_schema_inference_from_rows() -> None:
         "a": [1.0, 3.1],
         "b": [2.0, 4.5],
     }
+
+
+def test_lazy_map_schema() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
+
+    # identity
+    assert df.lazy().map(lambda x: x).collect().frame_equal(df)
+
+    def custom(df: pl.DataFrame) -> pl.Series:
+        return df["a"]
+
+    with pytest.raises(
+        pl.ComputeError,
+        match="Expected 'LazyFrame.map' to return a 'DataFrame', got a",
+    ):
+        df.lazy().map(custom).collect()  # type: ignore[arg-type]
+
+    def custom2(
+        df: pl.DataFrame,
+    ) -> pl.DataFrame:
+        # changes schema
+        return df.select(pl.all().cast(pl.Utf8))
+
+    with pytest.raises(
+        pl.ComputeError,
+        match="The output schema of 'LazyFrame.map' is incorrect. Expected",
+    ):
+        df.lazy().map(custom2).collect()
+
+    assert df.lazy().map(custom2, validate_output_schema=False).collect().to_dict(
+        False
+    ) == {"a": ["1", "2", "3"], "b": ["a", "b", "c"]}
