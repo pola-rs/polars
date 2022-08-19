@@ -37,7 +37,9 @@ pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<Naive
     }
     let mut year: i32 = 0;
     let mut month: u32 = 0;
-    let mut day: u32 = 0;
+    // minimal day is always 1
+    // otherwise chrono may panic.
+    let mut day: u32 = 1;
     let mut hour: u32 = 0;
     let mut min: u32 = 0;
     let mut sec: u32 = 0;
