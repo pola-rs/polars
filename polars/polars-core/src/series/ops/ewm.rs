@@ -1,4 +1,5 @@
-use crate::prelude::*;
+use std::convert::TryFrom;
+
 use arrow::bitmap::MutableBitmap;
 use arrow::types::NativeType;
 pub use polars_arrow::kernels::ewm::EWMOptions;
@@ -7,18 +8,19 @@ use polars_arrow::kernels::ewm::{
 };
 use polars_arrow::prelude::FromData;
 use polars_utils::mem::to_mutable_slice;
-use std::convert::TryFrom;
+
+use crate::prelude::*;
 
 fn prepare_primitive_array<T: NativeType>(
     vals: Vec<T>,
     min_periods: usize,
     leading_nulls: usize,
 ) -> PrimitiveArray<T> {
-    let leading = std::cmp::max(min_periods, leading_nulls);
-    if leading > 1 {
+    let n = min_periods + leading_nulls;
+    if n > 1 {
         let mut validity = MutableBitmap::with_capacity(vals.len());
-        validity.extend_constant(min_periods, false);
-        validity.extend_constant(vals.len() - min_periods, true);
+        validity.extend_constant(n - 1, false);
+        validity.extend_constant(vals.len() - (n - 1), true);
 
         PrimitiveArray::from_data_default(vals.into(), Some(validity.into()))
     } else {

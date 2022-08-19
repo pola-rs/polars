@@ -1,7 +1,9 @@
-use super::*;
-use crate::physical_plan::state::ExecutionState;
 use rayon::prelude::*;
 
+use super::*;
+use crate::physical_plan::state::ExecutionState;
+
+#[cfg(feature = "list_eval")]
 pub(super) fn prepare_eval_expr(mut expr: Expr) -> Expr {
     expr.mutate().apply(|e| match e {
         Expr::Column(name) => {
@@ -31,7 +33,7 @@ impl Expr {
             let expr = expr.clone();
             let mut arena = Arena::with_capacity(10);
             let aexpr = to_aexpr(expr, &mut arena);
-            let planner = DefaultPlanner::default();
+            let planner = PhysicalPlanner::default();
             let phys_expr = planner.create_physical_expr(aexpr, Context::Default, &mut arena)?;
 
             let state = ExecutionState::new();

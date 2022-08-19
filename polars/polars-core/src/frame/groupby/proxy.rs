@@ -1,11 +1,13 @@
-use crate::prelude::*;
-use crate::utils::{slice_slice, NoNull};
-use crate::POOL;
+use std::mem::ManuallyDrop;
+use std::ops::Deref;
+
 use polars_arrow::utils::CustomIterTools;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
-use std::mem::ManuallyDrop;
-use std::ops::Deref;
+
+use crate::prelude::*;
+use crate::utils::{slice_slice, NoNull};
+use crate::POOL;
 
 /// Indexes of the groups, the first index is stored separately.
 /// this make sorting fast.

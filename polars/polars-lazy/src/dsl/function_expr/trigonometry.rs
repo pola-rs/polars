@@ -1,6 +1,7 @@
-use super::*;
 use num::Float;
 use polars_core::export::num;
+
+use super::*;
 
 pub(super) fn apply_trigonometric_function(
     s: &Series,

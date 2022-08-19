@@ -1,6 +1,7 @@
-use crate::prelude::*;
 use std::iter::FromIterator;
 use std::ops::{Index, Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive};
+
+use crate::prelude::*;
 
 impl FromIterator<Series> for DataFrame {
     /// # Panics

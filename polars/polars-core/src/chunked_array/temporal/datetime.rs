@@ -1,11 +1,13 @@
+use std::fmt::Write;
+
+use arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+};
+
 use super::conversion::{datetime_to_timestamp_ms, datetime_to_timestamp_ns};
 use super::*;
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
-use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
-};
-use std::fmt::Write;
 
 impl DatetimeChunked {
     pub fn as_datetime_iter(
@@ -164,8 +166,9 @@ impl DatetimeChunked {
 
 #[cfg(test)]
 mod test {
-    use crate::prelude::*;
     use chrono::NaiveDateTime;
+
+    use crate::prelude::*;
 
     #[test]
     fn from_datetime() {

@@ -1,8 +1,8 @@
-use super::GroupBy;
-use crate::prelude::*;
 use rayon::prelude::*;
 
+use super::GroupBy;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
+use crate::prelude::*;
 use crate::POOL;
 
 #[derive(Copy, Clone)]

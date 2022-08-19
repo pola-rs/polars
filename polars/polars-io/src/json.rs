@@ -61,15 +61,17 @@
 //! +-----+--------+-------+--------+
 //! ```
 //!
-use crate::mmap::{MmapBytesReader, ReaderBytes};
-use crate::prelude::*;
+use std::convert::TryFrom;
+use std::io::Write;
+use std::ops::Deref;
+
 use arrow::array::StructArray;
 pub use arrow::{error::Result as ArrowResult, io::json};
 use polars_arrow::conversion::chunk_to_struct;
 use polars_core::prelude::*;
-use std::convert::TryFrom;
-use std::io::Write;
-use std::ops::Deref;
+
+use crate::mmap::{MmapBytesReader, ReaderBytes};
+use crate::prelude::*;
 
 pub enum JsonFormat {
     Json,
@@ -111,8 +113,8 @@ where
 
         match self.json_format {
             JsonFormat::JsonLines => {
-                let serializer = ndjson::write::Serializer::new(batches, vec![]);
-                let writer = ndjson::write::FileWriter::new(&mut self.buffer, serializer);
+                let serializer = arrow_ndjson::write::Serializer::new(batches, vec![]);
+                let writer = arrow_ndjson::write::FileWriter::new(&mut self.buffer, serializer);
                 writer.collect::<ArrowResult<()>>()?;
             }
             JsonFormat::Json => {
@@ -235,38 +237,5 @@ where
     pub fn with_json_format(mut self, format: JsonFormat) -> Self {
         self.json_format = format;
         self
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::prelude::*;
-    use std::io::Cursor;
-
-    #[test]
-    fn read_json() {
-        let basic_json = r#"{"a":1, "b":2.0, "c":false, "d":"4"}
-{"a":-10, "b":-3.5, "c":true, "d":"4"}
-{"a":2, "b":0.6, "c":false, "d":"text"}
-{"a":1, "b":2.0, "c":false, "d":"4"}
-{"a":7, "b":-3.5, "c":true, "d":"4"}
-{"a":1, "b":0.6, "c":false, "d":"text"}
-{"a":1, "b":2.0, "c":false, "d":"4"}
-{"a":5, "b":-3.5, "c":true, "d":"4"}
-{"a":1, "b":0.6, "c":false, "d":"text"}
-{"a":1, "b":2.0, "c":false, "d":"4"}
-{"a":1, "b":-3.5, "c":true, "d":"4"}
-{"a":100000000000000, "b":0.6, "c":false, "d":"text"}"#;
-        let file = Cursor::new(basic_json);
-        let df = JsonReader::new(file)
-            .infer_schema_len(Some(3))
-            .with_json_format(JsonFormat::JsonLines)
-            .with_batch_size(3)
-            .finish()
-            .unwrap();
-
-        assert_eq!("a", df.get_columns()[0].name());
-        assert_eq!("d", df.get_columns()[3].name());
-        assert_eq!((12, 4), df.shape());
     }
 }

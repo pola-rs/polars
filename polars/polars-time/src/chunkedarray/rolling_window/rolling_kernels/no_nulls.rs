@@ -1,6 +1,7 @@
-use super::*;
 use polars_arrow::kernels::rolling::no_nulls::{self, RollingAggWindowNoNulls};
 use polars_core::export::num;
+
+use super::*;
 
 // Use an aggregation window that maintains the state
 pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O>(values: &'a [T], offsets: O) -> ArrayRef

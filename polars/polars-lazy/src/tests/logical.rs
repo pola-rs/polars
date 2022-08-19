@@ -1,5 +1,6 @@
-use super::*;
 use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
+
+use super::*;
 
 #[test]
 #[cfg(all(feature = "strings", feature = "temporal", feature = "dtype-duration"))]

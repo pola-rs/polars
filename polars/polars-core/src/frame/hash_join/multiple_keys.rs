@@ -1,3 +1,7 @@
+use hashbrown::hash_map::RawEntryMut;
+use hashbrown::HashMap;
+use rayon::prelude::*;
+
 use super::*;
 use crate::frame::groupby::hashing::{populate_multiple_key_hashmap, HASHMAP_INIT_SIZE};
 use crate::frame::hash_join::{
@@ -8,9 +12,6 @@ use crate::utils::series::to_physical_and_bit_repr;
 use crate::utils::{set_partition_size, split_df};
 use crate::vector_hasher::{df_rows_to_hashes_threaded, this_partition, IdBuildHasher, IdxHash};
 use crate::POOL;
-use hashbrown::hash_map::RawEntryMut;
-use hashbrown::HashMap;
-use rayon::prelude::*;
 
 /// Compare the rows of two DataFrames
 pub(crate) unsafe fn compare_df_rows2(

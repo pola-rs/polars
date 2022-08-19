@@ -2,14 +2,11 @@
 mod csv;
 #[cfg(feature = "ipc")]
 mod ipc;
+#[cfg(feature = "json")]
+mod ndjson;
 #[cfg(feature = "parquet")]
 mod parquet;
 
-use super::*;
-use crate::prelude::*;
-use polars_io::aggregations::ScanAggregation;
-use polars_io::csv::CsvEncoding;
-use polars_io::prelude::*;
 use std::fs::File;
 use std::mem;
 use std::path::Path;
@@ -20,6 +17,12 @@ pub(crate) use csv::CsvExec;
 pub(crate) use ipc::IpcExec;
 #[cfg(feature = "parquet")]
 pub(crate) use parquet::ParquetExec;
+use polars_io::aggregations::ScanAggregation;
+use polars_io::csv::CsvEncoding;
+use polars_io::prelude::*;
+
+use super::*;
+use crate::prelude::*;
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 type Projection = Option<Vec<usize>>;

@@ -8,7 +8,7 @@ pub(crate) mod aggregations;
 #[cfg(feature = "avro")]
 #[cfg_attr(docsrs, doc(cfg(feature = "avro")))]
 pub mod avro;
-#[cfg(feature = "csv-file")]
+#[cfg(any(feature = "csv-file", feature = "json"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "csv-file")))]
 pub mod csv;
 #[cfg(feature = "parquet")]
@@ -24,7 +24,12 @@ pub mod json;
 #[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 pub mod ndjson_core;
 
-#[cfg(any(feature = "csv-file", feature = "parquet", feature = "ipc"))]
+#[cfg(any(
+    feature = "csv-file",
+    feature = "parquet",
+    feature = "ipc",
+    feature = "json"
+))]
 pub mod mmap;
 mod options;
 #[cfg(feature = "parquet")]
@@ -42,7 +47,15 @@ pub(crate) mod utils;
 #[cfg(feature = "partition")]
 pub mod partition;
 
+use std::io::{Read, Seek, Write};
+use std::path::PathBuf;
+
+#[allow(unused)] // remove when updating to rust nightly >= 1.61
+use arrow::array::new_empty_array;
+use arrow::error::Result as ArrowResult;
 pub use options::*;
+use polars_core::frame::ArrowChunk;
+use polars_core::prelude::*;
 
 #[cfg(any(
     feature = "ipc",
@@ -58,13 +71,6 @@ use crate::aggregations::{apply_aggregations, ScanAggregation};
     feature = "ipc_streaming"
 ))]
 use crate::predicates::PhysicalIoExpr;
-#[allow(unused)] // remove when updating to rust nightly >= 1.61
-use arrow::array::new_empty_array;
-use arrow::error::Result as ArrowResult;
-use polars_core::frame::ArrowChunk;
-use polars_core::prelude::*;
-use std::io::{Read, Seek, Write};
-use std::path::PathBuf;
 
 pub trait SerReader<R>
 where

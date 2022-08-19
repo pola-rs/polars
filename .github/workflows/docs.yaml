@@ -14,7 +14,7 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-07-24
+          toolchain: nightly-2022-08-16
           override: true
           components: rustfmt, clippy
       - name: Set up Node
@@ -40,6 +40,7 @@ jobs:
           make html
       - name: deploy docs
         run: |
+          set -e
           RUSTFLAGS="--cfg docsrs" cargo doc --features=docs-selection --package polars && \
           echo '<meta http-equiv=refresh content=0;url=polars/index.html>' > target/doc/index.html && \
           mkdir target/doc/py-polars

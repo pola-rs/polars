@@ -1,4 +1,8 @@
 mod csv;
+
+#[cfg(feature = "json")]
+mod json;
+
 #[cfg(feature = "parquet")]
 mod parquet;
 

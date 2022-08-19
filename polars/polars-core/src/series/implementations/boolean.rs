@@ -1,3 +1,9 @@
+use std::borrow::Cow;
+use std::ops::{BitAnd, BitOr, BitXor};
+
+use ahash::RandomState;
+use polars_arrow::prelude::QuantileInterpolOptions;
+
 use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
@@ -15,10 +21,6 @@ use crate::frame::groupby::*;
 use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
-use ahash::RandomState;
-use polars_arrow::prelude::QuantileInterpolOptions;
-use std::borrow::Cow;
-use std::ops::{BitAnd, BitOr, BitXor};
 
 impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     fn compute_len(&mut self) {

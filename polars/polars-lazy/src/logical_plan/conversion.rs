@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use polars_core::prelude::*;
+
+use crate::prelude::*;
 
 fn to_aexprs(input: Vec<Expr>, arena: &mut Arena<AExpr>) -> Vec<Node> {
     input.into_iter().map(|e| to_aexpr(e, arena)).collect()
@@ -330,9 +331,9 @@ pub(crate) fn to_alp(
                 schema,
             }
         }
-        LogicalPlan::Cache { input } => {
+        LogicalPlan::Cache { input, id } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::Cache { input }
+            ALogicalPlan::Cache { input, id }
         }
         LogicalPlan::Aggregate {
             input,
@@ -831,9 +832,9 @@ pub(crate) fn node_to_lp(
                 schema,
             }
         }
-        ALogicalPlan::Cache { input } => {
+        ALogicalPlan::Cache { input, id } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
-            LogicalPlan::Cache { input }
+            LogicalPlan::Cache { input, id }
         }
         ALogicalPlan::Aggregate {
             input,

@@ -1,7 +1,8 @@
-use super::*;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
 use rayon::prelude::*;
+
+use super::*;
 
 /// Take an input Executor and a multiple expressions
 pub struct PartitionGroupByExec {

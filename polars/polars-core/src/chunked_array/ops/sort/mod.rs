@@ -4,20 +4,23 @@ mod argsort_multiple;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
 
+use std::cmp::Ordering;
+use std::hint::unreachable_unchecked;
+use std::iter::FromIterator;
+
+use arrow::{bitmap::MutableBitmap, buffer::Buffer};
+use num::Float;
+use polars_arrow::array::default_arrays::FromDataUtf8;
+use polars_arrow::kernels::rolling::compare_fn_nan_max;
+use polars_arrow::prelude::{FromData, ValueSize};
+use polars_arrow::trusted_len::PushUnchecked;
+use rayon::prelude::*;
+
 use crate::prelude::compare_inner::PartialOrdInner;
 #[cfg(feature = "sort_multiple")]
 use crate::prelude::sort::argsort_multiple::{args_validate, argsort_multiple_impl};
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
-use arrow::{bitmap::MutableBitmap, buffer::Buffer};
-use num::Float;
-use polars_arrow::array::default_arrays::FromDataUtf8;
-use polars_arrow::prelude::{FromData, ValueSize};
-use polars_arrow::trusted_len::PushUnchecked;
-use rayon::prelude::*;
-use std::cmp::Ordering;
-use std::hint::unreachable_unchecked;
-use std::iter::FromIterator;
 
 #[inline]
 fn sort_cmp<T: PartialOrd + IsFloat>(a: &T, b: &T) -> Ordering {
@@ -80,14 +83,14 @@ fn sort_branch<T, Fd, Fr>(
 #[cfg(feature = "private")]
 pub fn argsort_no_nulls<Idx, T>(slice: &mut [(Idx, T)], reverse: bool)
 where
-    T: PartialOrd + Send,
+    T: PartialOrd + Send + IsFloat,
     Idx: PartialOrd + Send,
 {
     argsort_branch(
         slice,
         reverse,
-        |(_, a), (_, b)| a.partial_cmp(b).unwrap(),
-        |(_, a), (_, b)| b.partial_cmp(a).unwrap(),
+        |(_, a), (_, b)| compare_fn_nan_max(a, b),
+        |(_, a), (_, b)| compare_fn_nan_max(b, a),
     );
 }
 
@@ -127,9 +130,10 @@ macro_rules! sort_with_fast_path {
             return $ca.clone();
         }
 
-        if $options.descending && $ca.is_sorted_reverse() || $ca.is_sorted() {
+        // we can clone if we sort in same order
+        if $options.descending && $ca.is_sorted_reverse() || ($ca.is_sorted() && !$options.descending) {
             // there are nulls
-            if $ca.has_validity() {
+            if $ca.null_count() > 0 {
                 // if the nulls are already last we can clone
                 if $options.nulls_last && $ca.get($ca.len() - 1).is_none()  ||
                 // if the nulls are already first we can clone
@@ -144,6 +148,10 @@ macro_rules! sort_with_fast_path {
                 return $ca.clone();
             }
         }
+        // we can reverse if we sort in other order
+        else if ($options.descending && $ca.is_sorted() || $ca.is_sorted_reverse()) && $ca.null_count() == 0 {
+            return $ca.reverse()
+        };
 
 
     }}
@@ -595,7 +603,6 @@ pub(crate) fn prepare_argsort(
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use crate::series::ops::NullBehavior;
 
     #[test]
     fn test_argsort() {

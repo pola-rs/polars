@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any, cast
 
 import numpy as np
@@ -472,7 +473,7 @@ def test_is_finite_is_infinite() -> None:
 
 def test_len() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3]})
-    assert df.select(col("nrs").len())[0, 0] == 3
+    assert cast(int, df.select(col("nrs").len())[0, 0]) == 3
 
 
 def test_cum_agg() -> None:
@@ -505,7 +506,7 @@ def test_round() -> None:
 
 def test_dot() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0], "b": [3.2, 1, 2]})
-    assert df.select(pl.col("a").dot(pl.col("b")))[0, 0] == 12.96
+    assert cast(float, df.select(pl.col("a").dot(pl.col("b")))[0, 0]) == 12.96
 
 
 def test_sort() -> None:
@@ -588,6 +589,12 @@ def test_fill_nan() -> None:
         .fill_nan(2.0)
         .collect()["a"]
         .series_equal(pl.Series("a", [1.0, 2.0, 3.0]))
+    )
+    assert (
+        df.lazy()
+        .fill_nan(None)
+        .collect()["a"]
+        .series_equal(pl.Series("a", [1.0, None, 3.0]), null_equal=True)
     )
     assert df.select(pl.col("a").fill_nan(2))["a"].series_equal(
         pl.Series("a", [1.0, 2.0, 3.0])
@@ -696,8 +703,8 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
         ]
     )
 
-    assert out_single_val_variance[0, "std"] == 0.0
-    assert out_single_val_variance[0, "var"] == 0.0
+    assert cast(float, out_single_val_variance[0, "std"]) == 0.0
+    assert cast(float, out_single_val_variance[0, "var"]) == 0.0
 
 
 def test_rolling_apply() -> None:
@@ -860,6 +867,12 @@ def test_arithmetic() -> None:
     )
     assert out.frame_equal(expected)
 
+    # floating point floor divide
+    x = 10.4
+    step = 0.5
+    df = pl.DataFrame({"x": [x]})
+    assert df.with_columns(pl.col("x") // step)[0, 0] == x // step
+
 
 def test_ufunc() -> None:
     df = pl.DataFrame({"a": [1, 2]})
@@ -993,7 +1006,7 @@ def test_join_suffix() -> None:
 def test_str_concat() -> None:
     df = pl.DataFrame({"foo": [1, None, 2]})
     df = df.select(pl.col("foo").str.concat("-"))
-    assert df[0, 0] == "1-null-2"
+    assert cast(str, df[0, 0]) == "1-null-2"
 
 
 @pytest.mark.parametrize("no_optimization", [False, True])
@@ -1001,8 +1014,8 @@ def test_collect_all(df: pl.DataFrame, no_optimization: bool) -> None:
     lf1 = df.lazy().select(pl.col("int").sum())
     lf2 = df.lazy().select((pl.col("floats") * 2).sum())
     out = pl.collect_all([lf1, lf2], no_optimization=no_optimization)
-    assert out[0][0, 0] == 6
-    assert out[1][0, 0] == 12.0
+    assert cast(int, out[0][0, 0]) == 6
+    assert cast(float, out[1][0, 0]) == 12.0
 
 
 def test_spearman_corr() -> None:
@@ -1058,8 +1071,10 @@ def test_pearson_corr() -> None:
 
 
 def test_cov(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.select(pl.cov("A", "B"))[0, 0] == -2.5
-    assert fruits_cars.select(pl.cov(pl.col("A"), pl.col("B")))[0, 0] == -2.5
+    assert cast(float, fruits_cars.select(pl.cov("A", "B"))[0, 0]) == -2.5
+    assert (
+        cast(float, fruits_cars.select(pl.cov(pl.col("A"), pl.col("B")))[0, 0]) == -2.5
+    )
 
 
 def test_std(fruits_cars: pl.DataFrame) -> None:
@@ -1412,3 +1427,26 @@ def test_all_any_accept_expr() -> None:
         "null_in_row": [False, True, True],
         "all_null_in_row": [False, False, False],
     }
+
+
+def test_lazy_cache_same_key() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": ["x", "y", "z"]}).lazy()
+
+    # these have the same schema, but should not be used by cache as they are different
+    add_node = df.select([(pl.col("a") + pl.col("b")).alias("a"), pl.col("c")]).cache()
+    mult_node = df.select([(pl.col("a") * pl.col("b")).alias("a"), pl.col("c")]).cache()
+
+    assert mult_node.join(add_node, on="c", suffix="_mult").select(
+        [(pl.col("a") - pl.col("a_mult")).alias("a"), pl.col("c")]
+    ).collect().to_dict(False) == {"a": [-1, 2, 7], "c": ["x", "y", "z"]}
+
+
+def test_lazy_cache_hit(capfd: Any) -> None:
+    os.environ["POLARS_VERBOSE"] = "1"
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": ["x", "y", "z"]}).lazy()
+    add_node = df.select([(pl.col("a") + pl.col("b")).alias("a"), pl.col("c")]).cache()
+    assert add_node.join(add_node, on="c", suffix="_mult").select(
+        [(pl.col("a") - pl.col("a_mult")).alias("a"), pl.col("c")]
+    ).collect().to_dict(False) == {"a": [0, 0, 0], "c": ["x", "y", "z"]}
+    (out, _) = capfd.readouterr()
+    assert "CACHE HIT" in out

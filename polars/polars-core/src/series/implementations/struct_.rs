@@ -1,7 +1,8 @@
+use std::any::Any;
+
 use super::*;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
-use std::any::Any;
 
 impl IntoSeries for StructChunked {
     fn into_series(self) -> Series {

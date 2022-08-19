@@ -1,11 +1,13 @@
-use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
-use crate::prelude::*;
-use crate::{datatypes::PlHashMap, use_string_cache, StrHashGlobal, StringCache, POOL};
+use std::hash::{Hash, Hasher};
+
 use ahash::CallHasher;
 use arrow::array::*;
 use hashbrown::hash_map::RawEntryMut;
 use polars_arrow::trusted_len::PushUnchecked;
-use std::hash::{Hash, Hasher};
+
+use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
+use crate::prelude::*;
+use crate::{datatypes::PlHashMap, use_string_cache, StrHashGlobal, StringCache, POOL};
 
 pub enum RevMappingBuilder {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
@@ -55,7 +57,14 @@ pub enum RevMapping {
 impl Default for RevMapping {
     fn default() -> Self {
         let slice: &[Option<&str>] = &[];
-        RevMapping::Local(Utf8Array::<i64>::from(slice))
+        let cats = Utf8Array::<i64>::from(slice);
+        if use_string_cache() {
+            let cache = &mut crate::STRING_CACHE.lock_map();
+            let id = cache.uuid;
+            RevMapping::Global(Default::default(), cats, id)
+        } else {
+            RevMapping::Local(cats)
+        }
     }
 }
 

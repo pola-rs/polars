@@ -1,13 +1,15 @@
-use crate::dsl::eval::prepare_eval_expr;
-use crate::dsl::function_expr::FunctionExpr;
-use crate::physical_plan::state::ExecutionState;
-use crate::prelude::*;
 use parking_lot::Mutex;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::series::ops::NullBehavior;
 use polars_ops::prelude::*;
 use rayon::prelude::*;
+
+#[cfg(feature = "list_eval")]
+use crate::dsl::eval::prepare_eval_expr;
+use crate::dsl::function_expr::FunctionExpr;
+use crate::physical_plan::state::ExecutionState;
+use crate::prelude::*;
 
 /// Specialized expressions for [`Series`] of [`DataType::List`].
 pub struct ListNameSpace(pub(crate) Expr);
@@ -219,15 +221,29 @@ impl ListNameSpace {
 
         let expr2 = expr.clone();
         let func = move |s: Series| {
-            let expr = expr.clone();
-            let mut arena = Arena::with_capacity(10);
-            let aexpr = to_aexpr(expr, &mut arena);
-            let planner = DefaultPlanner::default();
-            let phys_expr = planner.create_physical_expr(aexpr, Context::Default, &mut arena)?;
+            let lst = s.list()?;
+
+            let mut lp_arena = Arena::with_capacity(8);
+            let mut expr_arena = Arena::with_capacity(10);
+
+            // create a dummy lazyframe and run a very simple optimization run so that
+            // type coercion and simplify expression optimizations run.
+            let column = Series::full_null("", 0, &lst.inner_dtype());
+            let lf = DataFrame::new_no_checks(vec![column])
+                .lazy()
+                .without_optimizations()
+                .with_simplify_expr(true)
+                .select([expr.clone()]);
+            let optimized = lf.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+            let lp = lp_arena.get(optimized);
+            let aexpr = lp.get_exprs().pop().unwrap();
+
+            let planner = PhysicalPlanner::default();
+            let phys_expr =
+                planner.create_physical_expr(aexpr, Context::Default, &mut expr_arena)?;
 
             let state = ExecutionState::new();
 
-            let lst = s.list()?;
             let mut err = None;
             let mut ca: ListChunked = if parallel {
                 let m_err = Mutex::new(None);
@@ -350,6 +366,7 @@ impl ListNameSpace {
                 input_wildcard_expansion: true,
                 auto_explode: true,
                 fmt_str: "arr.contains",
+                cast_to_supertypes: false,
             },
         }
     }

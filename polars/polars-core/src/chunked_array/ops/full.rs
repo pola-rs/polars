@@ -1,20 +1,19 @@
-use crate::chunked_array::builder::get_list_builder;
-use crate::prelude::*;
-use crate::utils::NoNull;
 use arrow::bitmap::MutableBitmap;
 use polars_arrow::array::default_arrays::FromData;
+
+use crate::chunked_array::builder::get_list_builder;
+use crate::prelude::*;
+use crate::series::IsSorted;
 
 impl<T> ChunkFull<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
     fn full(name: &str, value: T::Native, length: usize) -> Self {
-        let mut ca = (0..length)
-            .map(|_| value)
-            .collect::<NoNull<ChunkedArray<T>>>()
-            .into_inner();
-        ca.rename(name);
-        ca
+        let data = vec![value; length];
+        let mut out = ChunkedArray::from_vec(name, data);
+        out.set_sorted2(IsSorted::Ascending);
+        out
     }
 }
 
@@ -31,7 +30,10 @@ impl ChunkFull<bool> for BooleanChunked {
     fn full(name: &str, value: bool, length: usize) -> Self {
         let mut bits = MutableBitmap::with_capacity(length);
         bits.extend_constant(length, value);
-        (name, BooleanArray::from_data_default(bits.into(), None)).into()
+        let mut out: BooleanChunked =
+            (name, BooleanArray::from_data_default(bits.into(), None)).into();
+        out.set_sorted2(IsSorted::Ascending);
+        out
     }
 }
 
@@ -49,7 +51,9 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
         for _ in 0..length {
             builder.append_value(value);
         }
-        builder.finish()
+        let mut out = builder.finish();
+        out.set_sorted2(IsSorted::Ascending);
+        out
     }
 }
 

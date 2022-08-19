@@ -52,6 +52,21 @@ pub mod utils;
 mod write;
 pub(super) mod write_impl;
 
+use std::borrow::Cow;
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
+
+use polars_core::prelude::*;
+#[cfg(feature = "temporal")]
+use polars_time::prelude::*;
+#[cfg(feature = "temporal")]
+use rayon::prelude::*;
+pub use read::{CsvEncoding, CsvReader, NullValues};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+pub use write::CsvWriter;
+
 use crate::aggregations::ScanAggregation;
 use crate::csv::read_impl::{cast_columns, CoreReader};
 use crate::csv::utils::get_reader_bytes;
@@ -59,18 +74,3 @@ use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::resolve_homedir;
 use crate::{RowCount, SerReader, SerWriter};
-
-use polars_core::prelude::*;
-#[cfg(feature = "temporal")]
-use polars_time::prelude::*;
-#[cfg(feature = "temporal")]
-use rayon::prelude::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
-use std::fs::File;
-use std::io::Write;
-use std::path::PathBuf;
-
-pub use read::{CsvEncoding, CsvReader, NullValues};
-pub use write::CsvWriter;

@@ -1,8 +1,10 @@
-use super::*;
+use std::fmt::Write;
+
 use chrono::Timelike;
 use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array, Utf8Array};
 use polars_arrow::export::arrow::temporal_conversions::{time64ns_to_time, NANOSECONDS};
-use std::fmt::Write;
+
+use super::*;
 
 const SECONDS_IN_MINUTE: i64 = 60;
 const SECONDS_IN_HOUR: i64 = 3_600;

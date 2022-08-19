@@ -1,20 +1,21 @@
 mod agg_list;
 
-use crate::POOL;
 pub use agg_list::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::types::{simd::Simd, NativeType};
 use num::{Bounded, Num, NumCast, ToPrimitive, Zero};
+use polars_arrow::data_types::IsFloat;
+use polars_arrow::kernels::rolling;
+use polars_arrow::kernels::rolling::no_nulls::{
+    MaxWindow, MeanWindow, MinWindow, RollingAggWindowNoNulls, StdWindow, SumWindow, VarWindow,
+};
+use polars_arrow::kernels::rolling::nulls::RollingAggWindowNulls;
+use polars_arrow::kernels::take_agg::*;
+use polars_arrow::prelude::QuantileInterpolOptions;
+use polars_arrow::trusted_len::PushUnchecked;
 use rayon::prelude::*;
 
 use crate::apply_method_physical_integer;
-use arrow::types::{simd::Simd, NativeType};
-use polars_arrow::data_types::IsFloat;
-use polars_arrow::kernels::rolling::no_nulls::{
-    is_reverse_sorted_max, is_sorted_min, MaxWindow, MeanWindow, MinWindow,
-    RollingAggWindowNoNulls, StdWindow, SumWindow, VarWindow,
-};
-use polars_arrow::kernels::rolling::nulls::RollingAggWindowNulls;
-
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
 use crate::frame::groupby::GroupsIdx;
@@ -23,10 +24,7 @@ use crate::frame::groupby::GroupsIndicator;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
-use polars_arrow::kernels::rolling;
-use polars_arrow::kernels::take_agg::*;
-use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_arrow::trusted_len::PushUnchecked;
+use crate::POOL;
 
 // if the windows overlap, we can use the rolling_<agg> kernels
 // they maintain state, which saves a lot of compute by not naively traversing all elements every
@@ -258,13 +256,7 @@ impl Series {
                 // groups are always in bounds
                 self.take_opt_iter_unchecked(&mut iter)
             }
-            GroupsProxy::Slice { groups, rolling } => {
-                if *rolling && !groups.is_empty() {
-                    let offset = groups[0][0];
-                    let [upper_offset, upper_len] = groups[groups.len() - 1];
-                    return self.slice_from_offsets(offset, (upper_offset + upper_len) - offset);
-                }
-
+            GroupsProxy::Slice { groups, .. } => {
                 let mut iter =
                     groups.iter().map(
                         |&[first, len]| {
@@ -411,23 +403,17 @@ where
             }),
             GroupsProxy::Slice {
                 groups: groups_slice,
-                rolling,
+                ..
             } => {
                 if use_rolling_kernels(groups_slice, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
                     let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
-                        None => {
-                            if *rolling && is_sorted_min(values) {
-                                return self.clone().into_series();
-                            }
-
-                            rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _>(
-                                values,
-                                offset_iter,
-                            )
-                        }
+                        None => rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _>(
+                            values,
+                            offset_iter,
+                        ),
                         Some(validity) => rolling_apply_agg_window_nulls::<
                             rolling::nulls::MinWindow<_>,
                             _,
@@ -496,23 +482,17 @@ where
             }),
             GroupsProxy::Slice {
                 groups: groups_slice,
-                rolling,
+                ..
             } => {
                 if use_rolling_kernels(groups_slice, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
                     let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
-                        None => {
-                            if *rolling && is_reverse_sorted_max(values) {
-                                return self.clone().into_series();
-                            }
-
-                            rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _>(
-                                values,
-                                offset_iter,
-                            )
-                        }
+                        None => rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _>(
+                            values,
+                            offset_iter,
+                        ),
                         Some(validity) => rolling_apply_agg_window_nulls::<
                             rolling::nulls::MaxWindow<_>,
                             _,

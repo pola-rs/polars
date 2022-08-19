@@ -1,9 +1,11 @@
-use crate::physical_plan::state::ExecutionState;
-use crate::prelude::*;
-use polars_core::frame::groupby::GroupsProxy;
-use polars_core::prelude::*;
 use std::borrow::Cow;
 use std::sync::Arc;
+
+use polars_core::frame::groupby::GroupsProxy;
+use polars_core::prelude::*;
+
+use crate::physical_plan::state::ExecutionState;
+use crate::prelude::*;
 
 pub struct ColumnExpr(Arc<str>, Expr);
 

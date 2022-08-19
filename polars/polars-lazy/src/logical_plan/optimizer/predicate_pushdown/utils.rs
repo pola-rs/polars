@@ -1,8 +1,9 @@
+use polars_core::datatypes::PlHashMap;
+use polars_core::prelude::*;
+
 use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::{aexpr_to_root_names, check_input_node, has_aexpr, rename_aexpr_root_names};
-use polars_core::datatypes::PlHashMap;
-use polars_core::prelude::*;
 
 trait Dsl {
     fn and(self, right: Node, arena: &mut Arena<AExpr>) -> Node;

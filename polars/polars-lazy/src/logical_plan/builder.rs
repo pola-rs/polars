@@ -1,7 +1,6 @@
-use crate::logical_plan::projection::rewrite_projections;
-use crate::prelude::*;
-use crate::utils;
-use crate::utils::{combine_predicates_expr, has_expr};
+use std::io::{Read, Seek, SeekFrom};
+use std::path::PathBuf;
+
 use parking_lot::Mutex;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
@@ -19,8 +18,11 @@ use polars_io::{
     csv::utils::{get_reader_bytes, is_compressed},
     csv::NullValues,
 };
-use std::io::{Read, Seek, SeekFrom};
-use std::path::PathBuf;
+
+use crate::logical_plan::projection::rewrite_projections;
+use crate::prelude::*;
+use crate::utils;
+use crate::utils::{combine_predicates_expr, has_expr};
 
 pub(crate) fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> Result<(Vec<Expr>, Schema)> {
     let exprs = rewrite_projections(exprs, schema, &[]);
@@ -222,10 +224,9 @@ impl LogicalPlanBuilder {
     }
 
     pub fn cache(self) -> Self {
-        LogicalPlan::Cache {
-            input: Box::new(self.0),
-        }
-        .into()
+        let input = Box::new(self.0);
+        let id = input.as_ref() as *const LogicalPlan as usize;
+        LogicalPlan::Cache { input, id }.into()
     }
 
     pub fn project(self, exprs: Vec<Expr>) -> Self {

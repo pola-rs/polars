@@ -18,7 +18,7 @@ jobs:
         - name: Install latest Rust nightly
           uses: actions-rs/toolchain@v1
           with:
-            toolchain: nightly-2022-07-24
+            toolchain: nightly-2022-08-16
             override: true
             components: rustfmt, clippy
         - name: Set up Python
@@ -37,7 +37,7 @@ jobs:
             rm py-polars/README.md
             cp README.md py-polars/README.md
             cd py-polars
-            rustup override set nightly-2022-07-24
+            rustup override set nightly-2022-08-16
             export RUSTFLAGS='-C target-feature=+fxsr,+sse,+sse2,+sse3'
             maturin publish \
             --no-sdist \

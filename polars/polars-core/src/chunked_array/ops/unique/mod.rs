@@ -1,6 +1,8 @@
 #[cfg(feature = "rank")]
 pub(crate) mod rank;
 
+use std::hash::Hash;
+
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::datatypes::PlHashSet;
@@ -10,7 +12,6 @@ use crate::frame::groupby::GroupsProxy;
 use crate::frame::groupby::IntoGroupsProxy;
 use crate::prelude::*;
 use crate::series::IsSorted;
-use std::hash::Hash;
 
 fn finish_is_unique_helper(
     mut unique_idx: Vec<IdxSize>,
@@ -177,6 +178,10 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     fn unique(&self) -> Result<Self> {
+        // prevent stackoverflow repeated sorted.unique call
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
         match self.is_sorted2() {
             IsSorted::Ascending | IsSorted::Descending => {
                 let mask = self.not_equal(&self.shift(1));
@@ -335,9 +340,10 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
 
 #[cfg(feature = "is_first")]
 mod is_first {
+    use arrow::array::BooleanArray;
+
     use super::*;
     use crate::utils::CustomIterTools;
-    use arrow::array::BooleanArray;
 
     fn is_first<T>(ca: &ChunkedArray<T>) -> BooleanChunked
     where

@@ -1,6 +1,7 @@
-use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_io::RowCount;
+
+use crate::prelude::*;
 
 #[derive(Clone)]
 pub struct ScanArgsIpc {

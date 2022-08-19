@@ -1,6 +1,7 @@
+use polars_core::prelude::*;
+
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::prelude::*;
 
 pub struct FilterExec {
     pub(crate) predicate: Arc<dyn PhysicalExpr>,

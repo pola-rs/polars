@@ -1,11 +1,12 @@
-use crate::prelude::*;
-use crate::utils::get_supertype;
-use crate::POOL;
+use std::borrow::Borrow;
+use std::fmt::Debug;
 
 use arrow::bitmap::Bitmap;
 use rayon::prelude::*;
-use std::borrow::Borrow;
-use std::fmt::Debug;
+
+use crate::prelude::*;
+use crate::utils::get_supertype;
+use crate::POOL;
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Row<'a>(pub Vec<AnyValue<'a>>);
 
@@ -99,7 +100,7 @@ impl DataFrame {
     /// as this is a lot slower than creating the `Series` in a columnar fashion
     #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub fn from_rows(rows: &[Row]) -> Result<Self> {
-        let schema = rows_to_schema(rows, Some(50));
+        let schema = rows_to_schema_first_non_null(rows, Some(50));
         let has_nulls = schema
             .iter_dtypes()
             .any(|dtype| matches!(dtype, DataType::Null));
@@ -240,11 +241,70 @@ pub fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
     get_supertype(lhs, rhs).unwrap_or(Utf8)
 }
 
-/// Infer schema from rows.
-pub fn rows_to_schema(rows: &[Row], infer_schema_length: Option<usize>) -> Schema {
+fn is_nested_null(av: &AnyValue) -> bool {
+    match av {
+        AnyValue::Null => true,
+        AnyValue::List(s) => s.null_count() == s.len(),
+        #[cfg(feature = "dtype-struct")]
+        AnyValue::Struct(avs, _) => avs.iter().all(is_nested_null),
+        _ => false,
+    }
+}
+
+// nested dtypes that are all null, will be set as null leaf dtype
+fn infer_dtype_dynamic(av: &AnyValue) -> DataType {
+    match av {
+        AnyValue::List(s) if s.null_count() == s.len() => DataType::List(Box::new(DataType::Null)),
+        #[cfg(feature = "dtype-struct")]
+        AnyValue::Struct(avs, _) => DataType::Struct(
+            avs.iter()
+                .map(|av| {
+                    let dtype = infer_dtype_dynamic(av);
+                    Field::new("", dtype)
+                })
+                .collect(),
+        ),
+        av => av.into(),
+    }
+}
+
+/// Infer schema from rows and set the supertypes of the columns as column data type.
+pub fn rows_to_schema_supertypes(
+    rows: &[Row],
+    infer_schema_length: Option<usize>,
+) -> Result<Schema> {
+    // no of rows to use to infer dtype
+    let max_infer = infer_schema_length.unwrap_or(rows.len());
+
+    let mut dtypes: Vec<PlHashSet<DataType>> = vec![PlHashSet::with_capacity(4); rows[0].0.len()];
+
+    for row in rows.iter().take(max_infer) {
+        for (val, types_set) in row.0.iter().zip(dtypes.iter_mut()) {
+            let dtype = infer_dtype_dynamic(val);
+            types_set.insert(dtype);
+        }
+    }
+
+    dtypes
+        .into_iter()
+        .enumerate()
+        .map(|(i, types_set)| {
+            let dtype = types_set
+                .into_iter()
+                .map(Ok)
+                .fold_first_(|a, b| get_supertype(&a?, &b?))
+                .unwrap()?;
+            Ok(Field::new(format!("column_{}", i).as_ref(), dtype))
+        })
+        .collect::<Result<_>>()
+}
+
+/// Infer schema from rows and set the first no null type as column data type.
+pub fn rows_to_schema_first_non_null(rows: &[Row], infer_schema_length: Option<usize>) -> Schema {
     // no of rows to use to infer dtype
     let max_infer = infer_schema_length.unwrap_or(rows.len());
     let mut schema: Schema = (&rows[0]).into();
+
     // the first row that has no nulls will be used to infer the schema.
     // if there is a null, we check the next row and see if we can update the schema
 
@@ -254,10 +314,13 @@ pub fn rows_to_schema(rows: &[Row], infer_schema_length: Option<usize>) -> Schem
             .iter_dtypes()
             .enumerate()
             .filter_map(|(i, dtype)| {
-                if matches!(dtype, DataType::Null) {
-                    Some(i)
-                } else {
-                    None
+                // double check struct and list types types
+                // nested null values can be wrongly inferred by front ends
+                match dtype {
+                    DataType::Null | DataType::List(_) => Some(i),
+                    #[cfg(feature = "dtype-struct")]
+                    DataType::Struct(_) => Some(i),
+                    _ => None,
                 }
             })
             .collect();
@@ -265,8 +328,12 @@ pub fn rows_to_schema(rows: &[Row], infer_schema_length: Option<usize>) -> Schem
             break;
         } else {
             for i in nulls {
-                let dtype = (&row.0[i]).into();
-                schema.coerce_by_index(i, dtype).unwrap();
+                let val = &row.0[i];
+
+                if !is_nested_null(val) {
+                    let dtype = val.into();
+                    schema.coerce_by_index(i, dtype).unwrap();
+                }
             }
         }
     }
@@ -348,6 +415,18 @@ impl<'a> AnyValueBuffer<'a> {
             (Utf8(builder), AnyValue::Null) => builder.append_null(),
             // Struct and List can be recursive so use anyvalues for that
             (All(_, vals), v) => vals.push(v),
+
+            // dynamic types
+            (Float64(builder), av) => builder.append_value(av.extract()?),
+            (Int64(builder), av) => builder.append_value(av.extract()?),
+            (Utf8(builder), av) => match av {
+                AnyValue::Utf8(v) => builder.append_value(v),
+                AnyValue::Int64(v) => builder.append_value(&format!("{}", v)),
+                AnyValue::Float64(v) => builder.append_value(&format!("{}", v)),
+                AnyValue::Boolean(true) => builder.append_value(&"true"),
+                AnyValue::Boolean(false) => builder.append_value(&"false"),
+                _ => return None,
+            },
             _ => return None,
         };
         Some(())

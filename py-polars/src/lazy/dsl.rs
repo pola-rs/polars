@@ -1,38 +1,27 @@
-use super::apply::*;
-use crate::conversion::{str_to_null_behavior, Wrap};
-use crate::lazy::map_single;
-use crate::lazy::utils::py_exprs_to_exprs;
-use crate::prelude::{parse_strategy, str_to_rankmethod};
-use crate::series::PySeries;
-use crate::utils::reinterpret;
+use std::borrow::Cow;
+
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
+use polars::series::ops::NullBehavior;
 use polars_core::prelude::QuantileInterpolOptions;
 use pyo3::class::basic::CompareOp;
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
-use std::borrow::Cow;
+
+use super::apply::*;
+use crate::conversion::parse_fill_null_strategy;
+use crate::conversion::Wrap;
+use crate::lazy::map_single;
+use crate::lazy::utils::py_exprs_to_exprs;
+use crate::series::PySeries;
+use crate::utils::reinterpret;
 
 #[pyclass]
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PyExpr {
     pub inner: dsl::Expr,
-}
-
-pub(crate) trait ToExprs {
-    fn to_exprs(self) -> Vec<Expr>;
-}
-
-impl ToExprs for Vec<PyExpr> {
-    fn to_exprs(self) -> Vec<Expr> {
-        // Safety
-        // repr is transparent
-        // and has only got one inner field`
-        unsafe { std::mem::transmute(self) }
-    }
 }
 
 #[pymethods]
@@ -64,7 +53,7 @@ impl PyExpr {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::Modulus, rhs.inner).into())
     }
     fn __floordiv__(&self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(self.inner.clone(), Operator::Divide, rhs.inner).into())
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::FloorDivide, rhs.inner).into())
     }
 
     pub fn to_str(&self) -> String {
@@ -178,16 +167,11 @@ impl PyExpr {
     pub fn list(&self) -> PyExpr {
         self.clone().inner.list().into()
     }
-    pub fn quantile(&self, quantile: f64, interpolation: &str) -> PyExpr {
-        let interpol = match interpolation {
-            "nearest" => QuantileInterpolOptions::Nearest,
-            "lower" => QuantileInterpolOptions::Lower,
-            "higher" => QuantileInterpolOptions::Higher,
-            "midpoint" => QuantileInterpolOptions::Midpoint,
-            "linear" => QuantileInterpolOptions::Linear,
-            _ => panic!("not supported"),
-        };
-        self.clone().inner.quantile(quantile, interpol).into()
+    pub fn quantile(&self, quantile: f64, interpolation: Wrap<QuantileInterpolOptions>) -> PyExpr {
+        self.clone()
+            .inner
+            .quantile(quantile, interpolation.0)
+            .into()
     }
     pub fn agg_groups(&self) -> PyExpr {
         self.clone().inner.agg_groups().into()
@@ -235,6 +219,10 @@ impl PyExpr {
     pub fn arg_min(&self) -> PyExpr {
         self.clone().inner.arg_min().into()
     }
+
+    pub fn search_sorted(&self, element: PyExpr) -> PyExpr {
+        self.inner.clone().search_sorted(element.inner).into()
+    }
     pub fn take(&self, idx: PyExpr) -> PyExpr {
         self.clone().inner.take(idx.inner).into()
     }
@@ -271,7 +259,7 @@ impl PyExpr {
         strategy: &str,
         limit: FillNullLimit,
     ) -> PyResult<PyExpr> {
-        let strat = parse_strategy(strategy, limit)?;
+        let strat = parse_fill_null_strategy(strategy, limit)?;
         Ok(self
             .inner
             .clone()
@@ -913,113 +901,112 @@ impl PyExpr {
         let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
 
         let function = move |s: &Series| {
-            let gil = Python::acquire_gil();
-            let py = gil.python();
+            Python::with_gil(|py| {
+                let out = call_lambda_with_series(py, s.clone(), &lambda, &pypolars)
+                    .expect("python function failed");
+                match out.getattr(py, "_s") {
+                    Ok(pyseries) => {
+                        let pyseries = pyseries.extract::<PySeries>(py).unwrap();
+                        pyseries.series
+                    }
+                    Err(_) => {
+                        let obj = out;
+                        let is_float = obj.as_ref(py).is_instance_of::<PyFloat>().unwrap();
 
-            let out = call_lambda_with_series(py, s.clone(), &lambda, &pypolars)
-                .expect("python function failed");
-            match out.getattr(py, "_s") {
-                Ok(pyseries) => {
-                    let pyseries = pyseries.extract::<PySeries>(py).unwrap();
-                    pyseries.series
-                }
-                Err(_) => {
-                    let obj = out;
-                    let is_float = obj.as_ref(py).is_instance_of::<PyFloat>().unwrap();
+                        let dtype = s.dtype();
 
-                    let dtype = s.dtype();
+                        use DataType::*;
+                        let result = match dtype {
+                            UInt8 => {
+                                if is_float {
+                                    let v = obj.extract::<f64>(py).unwrap();
+                                    Ok(UInt8Chunked::from_slice("", &[v as u8]).into_series())
+                                } else {
+                                    obj.extract::<u8>(py)
+                                        .map(|v| UInt8Chunked::from_slice("", &[v]).into_series())
+                                }
+                            }
+                            UInt16 => {
+                                if is_float {
+                                    let v = obj.extract::<f64>(py).unwrap();
+                                    Ok(UInt16Chunked::from_slice("", &[v as u16]).into_series())
+                                } else {
+                                    obj.extract::<u16>(py)
+                                        .map(|v| UInt16Chunked::from_slice("", &[v]).into_series())
+                                }
+                            }
+                            UInt32 => {
+                                if is_float {
+                                    let v = obj.extract::<f64>(py).unwrap();
+                                    Ok(UInt32Chunked::from_slice("", &[v as u32]).into_series())
+                                } else {
+                                    obj.extract::<u32>(py)
+                                        .map(|v| UInt32Chunked::from_slice("", &[v]).into_series())
+                                }
+                            }
+                            UInt64 => {
+                                if is_float {
+                                    let v = obj.extract::<f64>(py).unwrap();
+                                    Ok(UInt64Chunked::from_slice("", &[v as u64]).into_series())
+                                } else {
+                                    obj.extract::<u64>(py)
+                                        .map(|v| UInt64Chunked::from_slice("", &[v]).into_series())
+                                }
+                            }
+                            Int8 => {
+                                if is_float {
+                                    let v = obj.extract::<f64>(py).unwrap();
+                                    Ok(Int8Chunked::from_slice("", &[v as i8]).into_series())
+                                } else {
+                                    obj.extract::<i8>(py)
+                                        .map(|v| Int8Chunked::from_slice("", &[v]).into_series())
+                                }
+                            }
+                            Int16 => {
+                                if is_float {
+                                    let v = obj.extract::<f64>(py).unwrap();
+                                    Ok(Int16Chunked::from_slice("", &[v as i16]).into_series())
+                                } else {
+                                    obj.extract::<i16>(py)
+                                        .map(|v| Int16Chunked::from_slice("", &[v]).into_series())
+                                }
+                            }
+                            Int32 => {
+                                if is_float {
+                                    let v = obj.extract::<f64>(py).unwrap();
+                                    Ok(Int32Chunked::from_slice("", &[v as i32]).into_series())
+                                } else {
+                                    obj.extract::<i32>(py)
+                                        .map(|v| Int32Chunked::from_slice("", &[v]).into_series())
+                                }
+                            }
+                            Int64 => {
+                                if is_float {
+                                    let v = obj.extract::<f64>(py).unwrap();
+                                    Ok(Int64Chunked::from_slice("", &[v as i64]).into_series())
+                                } else {
+                                    obj.extract::<i64>(py)
+                                        .map(|v| Int64Chunked::from_slice("", &[v]).into_series())
+                                }
+                            }
+                            Float32 => obj
+                                .extract::<f32>(py)
+                                .map(|v| Float32Chunked::from_slice("", &[v]).into_series()),
+                            Float64 => obj
+                                .extract::<f64>(py)
+                                .map(|v| Float64Chunked::from_slice("", &[v]).into_series()),
+                            dt => panic!("{:?} not implemented", dt),
+                        };
 
-                    use DataType::*;
-                    let result = match dtype {
-                        UInt8 => {
-                            if is_float {
-                                let v = obj.extract::<f64>(py).unwrap();
-                                Ok(UInt8Chunked::from_slice("", &[v as u8]).into_series())
-                            } else {
-                                obj.extract::<u8>(py)
-                                    .map(|v| UInt8Chunked::from_slice("", &[v]).into_series())
+                        match result {
+                            Ok(s) => s,
+                            Err(e) => {
+                                panic!("{:?}", e)
                             }
-                        }
-                        UInt16 => {
-                            if is_float {
-                                let v = obj.extract::<f64>(py).unwrap();
-                                Ok(UInt16Chunked::from_slice("", &[v as u16]).into_series())
-                            } else {
-                                obj.extract::<u16>(py)
-                                    .map(|v| UInt16Chunked::from_slice("", &[v]).into_series())
-                            }
-                        }
-                        UInt32 => {
-                            if is_float {
-                                let v = obj.extract::<f64>(py).unwrap();
-                                Ok(UInt32Chunked::from_slice("", &[v as u32]).into_series())
-                            } else {
-                                obj.extract::<u32>(py)
-                                    .map(|v| UInt32Chunked::from_slice("", &[v]).into_series())
-                            }
-                        }
-                        UInt64 => {
-                            if is_float {
-                                let v = obj.extract::<f64>(py).unwrap();
-                                Ok(UInt64Chunked::from_slice("", &[v as u64]).into_series())
-                            } else {
-                                obj.extract::<u64>(py)
-                                    .map(|v| UInt64Chunked::from_slice("", &[v]).into_series())
-                            }
-                        }
-                        Int8 => {
-                            if is_float {
-                                let v = obj.extract::<f64>(py).unwrap();
-                                Ok(Int8Chunked::from_slice("", &[v as i8]).into_series())
-                            } else {
-                                obj.extract::<i8>(py)
-                                    .map(|v| Int8Chunked::from_slice("", &[v]).into_series())
-                            }
-                        }
-                        Int16 => {
-                            if is_float {
-                                let v = obj.extract::<f64>(py).unwrap();
-                                Ok(Int16Chunked::from_slice("", &[v as i16]).into_series())
-                            } else {
-                                obj.extract::<i16>(py)
-                                    .map(|v| Int16Chunked::from_slice("", &[v]).into_series())
-                            }
-                        }
-                        Int32 => {
-                            if is_float {
-                                let v = obj.extract::<f64>(py).unwrap();
-                                Ok(Int32Chunked::from_slice("", &[v as i32]).into_series())
-                            } else {
-                                obj.extract::<i32>(py)
-                                    .map(|v| Int32Chunked::from_slice("", &[v]).into_series())
-                            }
-                        }
-                        Int64 => {
-                            if is_float {
-                                let v = obj.extract::<f64>(py).unwrap();
-                                Ok(Int64Chunked::from_slice("", &[v as i64]).into_series())
-                            } else {
-                                obj.extract::<i64>(py)
-                                    .map(|v| Int64Chunked::from_slice("", &[v]).into_series())
-                            }
-                        }
-                        Float32 => obj
-                            .extract::<f32>(py)
-                            .map(|v| Float32Chunked::from_slice("", &[v]).into_series()),
-                        Float64 => obj
-                            .extract::<f64>(py)
-                            .map(|v| Float64Chunked::from_slice("", &[v]).into_series()),
-                        dt => panic!("{:?} not implemented", dt),
-                    };
-
-                    match result {
-                        Ok(s) => s,
-                        Err(e) => {
-                            panic!("{:?}", e)
                         }
                     }
                 }
-            }
+            })
         };
         self.clone()
             .inner
@@ -1064,9 +1051,7 @@ impl PyExpr {
         self.inner
             .clone()
             .map_alias(move |name| {
-                let gil = Python::acquire_gil();
-                let py = gil.python();
-                let out = lambda.call1(py, (name,)).unwrap();
+                let out = Python::with_gil(|py| lambda.call1(py, (name,)).unwrap());
                 out.to_string()
             })
             .into()
@@ -1224,10 +1209,11 @@ impl PyExpr {
         self.inner.clone().rolling_median(options).into()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn rolling_quantile(
         &self,
         quantile: f64,
-        interpolation: &str,
+        interpolation: Wrap<QuantileInterpolOptions>,
         window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
@@ -1235,15 +1221,6 @@ impl PyExpr {
         by: Option<String>,
         closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
-        let interpol = match interpolation {
-            "nearest" => QuantileInterpolOptions::Nearest,
-            "lower" => QuantileInterpolOptions::Lower,
-            "higher" => QuantileInterpolOptions::Higher,
-            "midpoint" => QuantileInterpolOptions::Midpoint,
-            "linear" => QuantileInterpolOptions::Linear,
-            _ => panic!("not supported"),
-        };
-
         let options = RollingOptions {
             window_size: Duration::parse(window_size),
             weights,
@@ -1255,7 +1232,7 @@ impl PyExpr {
 
         self.inner
             .clone()
-            .rolling_quantile(quantile, interpol, options)
+            .rolling_quantile(quantile, interpolation.0, options)
             .into()
     }
 
@@ -1335,9 +1312,8 @@ impl PyExpr {
         self.inner.clone().arr().arg_max().into()
     }
 
-    fn lst_diff(&self, n: usize, null_behavior: &str) -> PyResult<Self> {
-        let null_behavior = str_to_null_behavior(null_behavior)?;
-        Ok(self.inner.clone().arr().diff(n, null_behavior).into())
+    fn lst_diff(&self, n: usize, null_behavior: Wrap<NullBehavior>) -> PyResult<Self> {
+        Ok(self.inner.clone().arr().diff(n, null_behavior.0).into())
     }
 
     fn lst_shift(&self, periods: i64) -> Self {
@@ -1359,18 +1335,11 @@ impl PyExpr {
             .into()
     }
 
-    fn lst_to_struct(&self, width_strat: &str, name_gen: Option<PyObject>) -> PyResult<Self> {
-        let n_fields = match width_strat {
-            "first_non_null" => ListToStructWidthStrategy::FirstNonNull,
-            "max_width" => ListToStructWidthStrategy::MaxWidth,
-            e => {
-                return Err(PyValueError::new_err(format!(
-                    "n_field_strategy must be one of {{'first_non_null', 'max_width'}}, got {}",
-                    e,
-                )))
-            }
-        };
-
+    fn lst_to_struct(
+        &self,
+        width_strat: Wrap<ListToStructWidthStrategy>,
+        name_gen: Option<PyObject>,
+    ) -> PyResult<Self> {
         let name_gen = name_gen.map(|lambda| {
             Arc::new(move |idx: usize| {
                 Python::with_gil(|py| {
@@ -1384,22 +1353,20 @@ impl PyExpr {
             .inner
             .clone()
             .arr()
-            .to_struct(n_fields, name_gen)
+            .to_struct(width_strat.0, name_gen)
             .into())
     }
 
-    fn rank(&self, method: &str, reverse: bool) -> Self {
-        let method = str_to_rankmethod(method).unwrap();
+    fn rank(&self, method: Wrap<RankMethod>, reverse: bool) -> Self {
         let options = RankOptions {
-            method,
+            method: method.0,
             descending: reverse,
         };
         self.inner.clone().rank(options).into()
     }
 
-    fn diff(&self, n: usize, null_behavior: &str) -> Self {
-        let null_behavior = str_to_null_behavior(null_behavior).unwrap();
-        self.inner.clone().diff(n, null_behavior).into()
+    fn diff(&self, n: usize, null_behavior: Wrap<NullBehavior>) -> Self {
+        self.inner.clone().diff(n, null_behavior.0).into()
     }
 
     #[cfg(feature = "pct_change")]
@@ -1417,14 +1384,8 @@ impl PyExpr {
         self.inner.clone().str().concat(delimiter).into()
     }
 
-    fn cat_set_ordering(&self, ordering: &str) -> Self {
-        let ordering = match ordering {
-            "physical" => CategoricalOrdering::Physical,
-            "lexical" => CategoricalOrdering::Lexical,
-            _ => panic!("expected one of {{'physical', 'lexical'}}"),
-        };
-
-        self.inner.clone().cat().set_ordering(ordering).into()
+    fn cat_set_ordering(&self, ordering: Wrap<CategoricalOrdering>) -> Self {
+        self.inner.clone().cat().set_ordering(ordering.0).into()
     }
 
     fn date_truncate(&self, every: &str, offset: &str) -> Self {
@@ -1514,10 +1475,10 @@ impl PyExpr {
             .clone()
             .apply(
                 move |s| {
-                    let gil = Python::acquire_gil();
-                    let py = gil.python();
-                    let value = value.extract::<Wrap<AnyValue>>(py).unwrap().0;
-                    s.extend_constant(value, n)
+                    Python::with_gil(|py| {
+                        let value = value.extract::<Wrap<AnyValue>>(py).unwrap().0;
+                        s.extend_constant(value, n)
+                    })
                 },
                 GetOutput::same_type(),
             )

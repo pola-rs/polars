@@ -1,4 +1,11 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import polars as pl
+
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import PivotAgg
 
 
 def test_pivot_list() -> None:
@@ -33,7 +40,8 @@ def test_pivot() -> None:
     assert gb.count().shape == (2, 6)
     assert gb.median().shape == (2, 6)
 
-    for agg_fn in ["sum", "min", "max", "mean", "count", "median", "mean"]:
+    agg_fns: list[PivotAgg] = ["sum", "min", "max", "mean", "count", "median", "mean"]
+    for agg_fn in agg_fns:
         out = df.pivot(
             values="c", index="b", columns="a", aggregate_fn=agg_fn, sort_columns=True
         )

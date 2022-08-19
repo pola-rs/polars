@@ -1,24 +1,19 @@
 from __future__ import annotations
 
-import copy
 import math
 import random
-from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable, List, Sequence
+from datetime import date, datetime
+from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from polars import internals as pli
-from polars.datatypes import (
-    DTYPE_TEMPORAL_UNITS,
-    DataType,
-    Date,
-    Datetime,
-    Float64,
-    Int32,
-    Time,
-    UInt32,
-    py_type_to_dtype,
-)
-from polars.utils import _timedelta_to_pl_duration, is_expr_sequence, is_pyexpr_sequence
+from polars.datatypes import DataType, Datetime, Float64, UInt32, py_type_to_dtype
+from polars.internals.expr.categorical import ExprCatNameSpace
+from polars.internals.expr.datetime import ExprDateTimeNameSpace
+from polars.internals.expr.list import ExprListNameSpace
+from polars.internals.expr.meta import ExprMetaNameSpace
+from polars.internals.expr.string import ExprStringNameSpace
+from polars.internals.expr.struct import ExprStructNameSpace
+from polars.utils import is_expr_sequence, is_pyexpr_sequence
 
 try:
     from polars.polars import PyExpr
@@ -39,8 +34,8 @@ if TYPE_CHECKING:
         ClosedWindow,
         FillNullStrategy,
         InterpolationMethod,
-        ToStructStrategy,
-        TransferEncoding,
+        NullBehavior,
+        RankMethod,
     )
 
 
@@ -67,6 +62,54 @@ def ensure_list_of_pyexpr(exprs: object) -> list[PyExpr]:
         return [e._pyexpr for e in exprs]
 
     raise TypeError(f"unexpected type '{type(exprs)}'")
+
+
+def expr_to_lit_or_expr(
+    expr: (
+        Expr
+        | bool
+        | int
+        | float
+        | str
+        | pli.Series
+        | None
+        | date
+        | datetime
+        | Sequence[(int | float | str | None)]
+    ),
+    str_to_lit: bool = True,
+) -> Expr:
+    """
+    Convert args to expressions.
+
+    Parameters
+    ----------
+    expr
+        Any argument.
+    str_to_lit
+        If True string argument `"foo"` will be converted to `lit("foo")`,
+        If False it will be converted to `col("foo")`
+
+    Returns
+    -------
+    Expr
+
+    """
+    if isinstance(expr, str) and not str_to_lit:
+        return pli.col(expr)
+    elif (
+        isinstance(expr, (int, float, str, pli.Series, datetime, date)) or expr is None
+    ):
+        return pli.lit(expr)
+    elif isinstance(expr, Expr):
+        return expr
+    elif isinstance(expr, list):
+        return pli.lit(pli.Series("", [expr]))
+    else:
+        raise ValueError(
+            f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with"
+            " pl.lit or pl.col"
+        )
 
 
 def wrap_expr(pyexpr: PyExpr) -> Expr:
@@ -318,15 +361,75 @@ class Expr:
         return wrap_expr(self._pyexpr.all())
 
     def sqrt(self) -> Expr:
-        """Compute the square root of the elements."""
+        """
+        Compute the square root of the elements.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
+        >>> df.select(pl.col("values").sqrt())
+        shape: (3, 1)
+        ┌──────────┐
+        │ values   │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.414214 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 2.0      │
+        └──────────┘
+
+        """
         return self**0.5
 
     def log10(self) -> Expr:
-        """Compute the base 10 logarithm of the input array, element-wise."""
+        """
+        Compute the base 10 logarithm of the input array, element-wise.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
+        >>> df.select(pl.col("values").log10())
+        shape: (3, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ f64    │
+        ╞════════╡
+        │ 0.0    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 0.301  │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 0.602  │
+        └────────┘
+
+        """
         return self.log(10.0)
 
     def exp(self) -> Expr:
-        """Compute the exponential, element-wise."""
+        """
+        Compute the exponential, element-wise.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
+        >>> df.select(pl.col("values").exp())
+        shape: (3, 1)
+        ┌──────────┐
+        │ values   │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 2.718282 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 7.389056 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 54.5981  │
+        └──────────┘
+
+        """
         return wrap_expr(self._pyexpr.exp())
 
     def alias(self, name: str) -> Expr:
@@ -385,7 +488,7 @@ class Expr:
         self,
         columns: (
             str
-            | List[str]
+            | list[str]
             | DataType
             | type[DataType]
             | DataType
@@ -1034,7 +1137,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [8, 9, 10],
+        ...         "b": [None, 4, 4],
+        ...     }
+        ... )
         >>> df.select(pl.all().slice(1, 2))
         shape: (2, 2)
         ┌─────┬─────┐
@@ -1068,7 +1176,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [8, 9, 10],
+        ...         "b": [None, 4, 4],
+        ...     }
+        ... )
         >>> df.select(pl.all().head(1).append(pl.all().tail(1)))
         shape: (2, 2)
         ┌─────┬──────┐
@@ -1086,7 +1199,34 @@ class Expr:
         return wrap_expr(self._pyexpr.append(other._pyexpr, upcast))
 
     def rechunk(self) -> Expr:
-        """Create a single chunk of memory for this Series."""
+        """
+        Create a single chunk of memory for this Series.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> # Create a Series with 3 nulls, append column a then rechunk
+        >>> (df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk()))
+        shape: (6, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ i64     │
+        ╞═════════╡
+        │ null    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ null    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ null    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 1       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 1       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 2       │
+        └─────────┘
+
+        """
         return wrap_expr(self._pyexpr.rechunk())
 
     def drop_nulls(self) -> Expr:
@@ -1100,7 +1240,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"a": [8, 9, 10, 11], "b": [None, 4.0, 4.0, float("nan")]}
+        ...     {
+        ...         "a": [8, 9, 10, 11],
+        ...         "b": [None, 4.0, 4.0, float("nan")],
+        ...     }
         ... )
         >>> df.select(pl.col("b").drop_nulls())
         shape: (3, 1)
@@ -1130,7 +1273,10 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"a": [8, 9, 10, 11], "b": [None, 4.0, 4.0, float("nan")]}
+        ...     {
+        ...         "a": [8, 9, 10, 11],
+        ...         "b": [None, 4.0, 4.0, float("nan")],
+        ...     }
         ... )
         >>> df.select(pl.col("b").drop_nans())
         shape: (3, 1)
@@ -1502,7 +1648,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": ["4", "5", "6"]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": ["4", "5", "6"],
+        ...     }
+        ... )
         >>> df.with_columns(
         ...     [
         ...         pl.col("a").cast(pl.Float64),
@@ -1694,10 +1845,25 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.arg_min())
 
+    def search_sorted(self, element: Expr | int | float) -> Expr:
+        """
+        Find indices where elements should be inserted to maintain order.
+
+        .. math:: a[i-1] < v <= a[i]
+
+        Parameters
+        ----------
+        element
+            Expression or scalar value.
+
+        """
+        element = expr_to_lit_or_expr(element, str_to_lit=False)
+        return wrap_expr(self._pyexpr.search_sorted(element._pyexpr))
+
     def sort_by(
         self,
-        by: Expr | str | List[Expr | str],
-        reverse: bool | List[bool] = False,
+        by: Expr | str | list[Expr | str],
+        reverse: bool | list[bool] = False,
     ) -> Expr:
         """
         Sort this column by the ordering of another column, or multiple other columns.
@@ -1756,7 +1922,7 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    def take(self, index: List[int] | Expr | pli.Series | np.ndarray[Any, Any]) -> Expr:
+    def take(self, index: list[int] | Expr | pli.Series | np.ndarray[Any, Any]) -> Expr:
         """
         Take values by index.
 
@@ -1841,7 +2007,9 @@ class Expr:
         return wrap_expr(self._pyexpr.shift(periods))
 
     def shift_and_fill(
-        self, periods: int, fill_value: int | float | bool | str | Expr | list[Any]
+        self,
+        periods: int,
+        fill_value: int | float | bool | str | Expr | list[Any],
     ) -> Expr:
         """
         Shift the values by a given period and fill the parts that will be empty due to
@@ -1885,6 +2053,7 @@ class Expr:
     ) -> Expr:
         """
         Fill null values using the specified value or strategy.
+        To interpolate over null values see interpolate
 
         Parameters
         ----------
@@ -1898,7 +2067,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, None],
+        ...         "b": [4, None, 6],
+        ...     }
+        ... )
         >>> df.fill_null(strategy="zero")
         shape: (3, 2)
         ┌─────┬─────┐
@@ -1943,14 +2117,17 @@ class Expr:
         else:
             return wrap_expr(self._pyexpr.fill_null_with_strategy(strategy, limit))
 
-    def fill_nan(self, fill_value: str | int | float | bool | Expr) -> Expr:
+    def fill_nan(self, fill_value: str | int | float | bool | Expr | None) -> Expr:
         """
         Fill floating point NaN value with a fill value
 
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"a": [1.0, None, float("nan")], "b": [4.0, float("nan"), 6]}
+        ...     {
+        ...         "a": [1.0, None, float("nan")],
+        ...         "b": [4.0, float("nan"), 6],
+        ...     }
         ... )
         >>> df.fill_nan("zero")
         shape: (3, 2)
@@ -1981,7 +2158,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, None],
+        ...         "b": [4, None, 6],
+        ...     }
+        ... )
         >>> df.select(pl.all().forward_fill())
         shape: (3, 2)
         ┌─────┬─────┐
@@ -2010,7 +2192,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, None],
+        ...         "b": [4, None, 6],
+        ...     }
+        ... )
         >>> df.select(pl.all().backward_fill())
         shape: (3, 2)
         ┌──────┬─────┐
@@ -2243,7 +2430,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.product())
 
-    def n_unique(self) -> "Expr":
+    def n_unique(self) -> Expr:
         """
         Count unique values.
 
@@ -2263,13 +2450,18 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.n_unique())
 
-    def null_count(self) -> "Expr":
+    def null_count(self) -> Expr:
         """
         Count null values.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [None, 1, None], "b": [1, 2, 3]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [None, 1, None],
+        ...         "b": [1, 2, 3],
+        ...     }
+        ... )
         >>> df.select(pl.all().null_count())
         shape: (1, 2)
         ┌─────┬─────┐
@@ -2289,7 +2481,12 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [8, 9, 10],
+        ...         "b": [None, 4, 4],
+        ...     }
+        ... )
         >>> df.select(pl.col("a").arg_unique())
         shape: (3, 1)
         ┌─────┐
@@ -2398,32 +2595,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.last())
 
-    def list(self) -> Expr:
-        """
-        Aggregate to list.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3],
-        ...         "b": [4, 5, 6],
-        ...     }
-        ... )
-        >>> df.select(pl.all().list())
-        shape: (1, 2)
-        ┌───────────┬───────────┐
-        │ a         ┆ b         │
-        │ ---       ┆ ---       │
-        │ list[i64] ┆ list[i64] │
-        ╞═══════════╪═══════════╡
-        │ [1, 2, 3] ┆ [4, 5, 6] │
-        └───────────┴───────────┘
-
-        """
-        return wrap_expr(self._pyexpr.list())
-
-    def over(self, expr: str | Expr | List[Expr | str]) -> Expr:
+    def over(self, expr: str | Expr | list[Expr | str]) -> Expr:
         """
         Apply window function over a subgroup.
 
@@ -2438,6 +2610,29 @@ class Expr:
 
         Examples
         --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "groups": ["g1", "g1", "g2"],
+        ...         "values": [1, 2, 3],
+        ...     }
+        ... )
+        >>> (
+        ...     df.with_column(
+        ...         pl.col("values").max().over("groups").alias("max_by_group")
+        ...     )
+        ... )
+        shape: (3, 3)
+        ┌────────┬────────┬──────────────┐
+        │ groups ┆ values ┆ max_by_group │
+        │ ---    ┆ ---    ┆ ---          │
+        │ str    ┆ i64    ┆ i64          │
+        ╞════════╪════════╪══════════════╡
+        │ g1     ┆ 1      ┆ 2            │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ g1     ┆ 2      ┆ 2            │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ g2     ┆ 3      ┆ 3            │
+        └────────┴────────┴──────────────┘
         >>> df = pl.DataFrame(
         ...     {
         ...         "groups": [1, 1, 2, 2, 1, 2, 3, 3, 1],
@@ -2490,7 +2685,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> df.select(pl.col("a").is_unique())
+        >>> (df.select(pl.col("a").is_unique()))
         shape: (3, 1)
         ┌───────┐
         │ a     │
@@ -2522,7 +2717,7 @@ class Expr:
         ...         "num": [1, 2, 3, 1, 5],
         ...     }
         ... )
-        >>> df.with_column(pl.col("num").is_first().alias("is_first"))
+        >>> (df.with_column(pl.col("num").is_first().alias("is_first")))
         shape: (5, 2)
         ┌─────┬──────────┐
         │ num ┆ is_first │
@@ -2550,7 +2745,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> df.select(pl.col("a").is_duplicated())
+        >>> (df.select(pl.col("a").is_duplicated()))
         shape: (3, 1)
         ┌───────┐
         │ a     │
@@ -2586,7 +2781,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [0, 1, 2, 3, 4, 5]})
-        >>> df.select(pl.col("a").quantile(0.3))
+        >>> (df.select(pl.col("a").quantile(0.3)))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2595,7 +2790,7 @@ class Expr:
         ╞═════╡
         │ 1.0 │
         └─────┘
-        >>> df.select(pl.col("a").quantile(0.3, interpolation="higher"))
+        >>> (df.select(pl.col("a").quantile(0.3, interpolation="higher")))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2604,7 +2799,7 @@ class Expr:
         ╞═════╡
         │ 2.0 │
         └─────┘
-        >>> df.select(pl.col("a").quantile(0.3, interpolation="lower"))
+        >>> (df.select(pl.col("a").quantile(0.3, interpolation="lower")))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2613,7 +2808,7 @@ class Expr:
         ╞═════╡
         │ 1.0 │
         └─────┘
-        >>> df.select(pl.col("a").quantile(0.3, interpolation="midpoint"))
+        >>> (df.select(pl.col("a").quantile(0.3, interpolation="midpoint")))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2622,7 +2817,7 @@ class Expr:
         ╞═════╡
         │ 1.5 │
         └─────┘
-        >>> df.select(pl.col("a").quantile(0.3, interpolation="linear"))
+        >>> (df.select(pl.col("a").quantile(0.3, interpolation="linear")))
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2646,6 +2841,33 @@ class Expr:
         predicate
             Boolean expression.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "group_col": ["g1", "g1", "g2"],
+        ...         "b": [1, 2, 3],
+        ...     }
+        ... )
+        >>> (
+        ...     df.groupby("group_col").agg(
+        ...         [
+        ...             pl.col("b").filter(pl.col("b") < 2).sum().alias("lt"),
+        ...             pl.col("b").filter(pl.col("b") >= 2).sum().alias("gte"),
+        ...         ]
+        ...     )
+        ... ).sort("group_col")
+        shape: (2, 3)
+        ┌───────────┬──────┬─────┐
+        │ group_col ┆ lt   ┆ gte │
+        │ ---       ┆ ---  ┆ --- │
+        │ str       ┆ i64  ┆ i64 │
+        ╞═══════════╪══════╪═════╡
+        │ g1        ┆ 1    ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ g2        ┆ null ┆ 3   │
+        └───────────┴──────┴─────┘
+
         """
         return wrap_expr(self._pyexpr.filter(predicate._pyexpr))
 
@@ -2657,6 +2879,33 @@ class Expr:
         ----------
         predicate
             Boolean expression.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "group_col": ["g1", "g1", "g2"],
+        ...         "b": [1, 2, 3],
+        ...     }
+        ... )
+        >>> (
+        ...     df.groupby("group_col").agg(
+        ...         [
+        ...             pl.col("b").where(pl.col("b") < 2).sum().alias("lt"),
+        ...             pl.col("b").where(pl.col("b") >= 2).sum().alias("gte"),
+        ...         ]
+        ...     )
+        ... ).sort("group_col")
+        shape: (2, 3)
+        ┌───────────┬──────┬─────┐
+        │ group_col ┆ lt   ┆ gte │
+        │ ---       ┆ ---  ┆ --- │
+        │ str       ┆ i64  ┆ i64 │
+        ╞═══════════╪══════╪═════╡
+        │ g1        ┆ 1    ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ g2        ┆ null ┆ 3   │
+        └───────────┴──────┴─────┘
 
         """
         return self.filter(predicate)
@@ -2841,7 +3090,7 @@ class Expr:
         The following example turns each character into a separate row:
 
         >>> df = pl.DataFrame({"foo": ["hello", "world"]})
-        >>> df.select(pl.col("foo").flatten())
+        >>> (df.select(pl.col("foo").flatten()))
         shape: (10, 1)
         ┌─────┐
         │ foo │
@@ -2870,7 +3119,7 @@ class Expr:
         This example turns each word into a separate row:
 
         >>> df = pl.DataFrame({"foo": ["hello world"]})
-        >>> df.select(pl.col("foo").str.split(by=" ").flatten())
+        >>> (df.select(pl.col("foo").str.split(by=" ").flatten()))
         shape: (2, 1)
         ┌───────┐
         │ foo   │
@@ -2946,13 +3195,51 @@ class Expr:
         return wrap_expr(self._pyexpr.take_every(n))
 
     def head(self, n: int | Expr | None = None) -> Expr:
-        """Take the first n values."""
-        if isinstance(n, Expr):
-            return self.slice(0, n)
+        """
+        Take the first n values.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
+        >>> df.head(3)
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        ├╌╌╌╌╌┤
+        │ 3   │
+        └─────┘
+
+        """
         return wrap_expr(self._pyexpr.head(n))
 
     def tail(self, n: int | None = None) -> Expr:
-        """Take the last n values."""
+        """
+        Take the last n values.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
+        >>> df.tail(3)
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 5   │
+        ├╌╌╌╌╌┤
+        │ 6   │
+        ├╌╌╌╌╌┤
+        │ 7   │
+        └─────┘
+
+        """
         return wrap_expr(self._pyexpr.tail(n))
 
     def pow(self, exponent: int | float | pli.Series | Expr) -> Expr:
@@ -3000,7 +3287,7 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {"sets": [[1, 2, 3], [1, 2], [9, 10]], "optional_members": [1, 2, 3]}
         ... )
-        >>> df.select([pl.col("optional_members").is_in("sets").alias("contains")])
+        >>> (df.select([pl.col("optional_members").is_in("sets").alias("contains")]))
         shape: (3, 1)
         ┌──────────┐
         │ contains │
@@ -3204,6 +3491,29 @@ class Expr:
         signed
             If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 1, 2], dtype=pl.UInt64)
+        >>> df = pl.DataFrame([s])
+        >>> df.select(
+        ...     [
+        ...         pl.col("a").reinterpret(signed=True).alias("reinterpreted"),
+        ...         pl.col("a").alias("original"),
+        ...     ]
+        ... )
+        shape: (3, 2)
+        ┌───────────────┬──────────┐
+        │ reinterpreted ┆ original │
+        │ ---           ┆ ---      │
+        │ i64           ┆ u64      │
+        ╞═══════════════╪══════════╡
+        │ 1             ┆ 1        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 1             ┆ 1        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 2             ┆ 2        │
+        └───────────────┴──────────┘
+
         """
         return wrap_expr(self._pyexpr.reinterpret(signed))
 
@@ -3244,13 +3554,76 @@ class Expr:
         return self.map(inspect, return_dtype=None, agg_list=True)
 
     def interpolate(self) -> Expr:
-        """Linearly interpolate intermediate values."""
+        """
+        Fill nulls with linear interpolation over missing values.
+        Can also be used to regrid data to a new grid - see examples below
+
+        Examples
+        --------
+        >>> # Fill nulls with linear interpolation
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, None, 3],
+        ...         "b": [1.0, float("nan"), 3.0],
+        ...     }
+        ... )
+        >>> df.select(pl.all().interpolate())
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ f64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 1.0 │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ NaN │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 3.0 │
+        └─────┴─────┘
+        >>> df_original_grid = pl.DataFrame(
+        ...     {
+        ...         "grid_points": [1, 3, 10],
+        ...         "values": [2.0, 6.0, 20.0],
+        ...     }
+        ... )  # Interpolate from this to the new grid
+        >>> df_new_grid = pl.DataFrame({"grid_points": range(1, 11)})
+        >>> (
+        ...     df_new_grid.join(
+        ...         df_original_grid, on="grid_points", how="left"
+        ...     ).with_column(pl.col("values").interpolate())
+        ... )
+        shape: (10, 2)
+        ┌─────────────┬────────┐
+        │ grid_points ┆ values │
+        │ ---         ┆ ---    │
+        │ i64         ┆ f64    │
+        ╞═════════════╪════════╡
+        │ 1           ┆ 2.0    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2           ┆ 4.0    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 3           ┆ 6.0    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 4           ┆ 8.0    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ ...         ┆ ...    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 7           ┆ 14.0   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 8           ┆ 16.0   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 9           ┆ 18.0   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 10          ┆ 20.0   │
+        └─────────────┴────────┘
+
+        """
         return wrap_expr(self._pyexpr.interpolate())
 
     def rolling_min(
         self,
         window_size: int | str,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -3350,7 +3723,7 @@ class Expr:
     def rolling_max(
         self,
         window_size: int | str,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -3449,7 +3822,7 @@ class Expr:
     def rolling_mean(
         self,
         window_size: int | str,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -3546,7 +3919,7 @@ class Expr:
     def rolling_sum(
         self,
         window_size: int | str,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -3645,7 +4018,7 @@ class Expr:
     def rolling_std(
         self,
         window_size: int | str,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -3702,6 +4075,35 @@ class Expr:
             window, consider using `groupby_rolling` this method can cache the window
             size computation.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_std(window_size=3),
+        ...         ]
+        ...     )
+        ... )
+        shape: (6, 1)
+        ┌──────────┐
+        │ A        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ null     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ null     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.527525 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 2.0      │
+        └──────────┘
+
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -3715,7 +4117,7 @@ class Expr:
     def rolling_var(
         self,
         window_size: int | str,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -3772,6 +4174,35 @@ class Expr:
             window, consider using `groupby_rolling` this method can cache the window
             size computation.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_var(window_size=3),
+        ...         ]
+        ...     )
+        ... )
+        shape: (6, 1)
+        ┌──────────┐
+        │ A        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ null     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ null     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 2.333333 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 4.0      │
+        └──────────┘
+
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -3785,7 +4216,7 @@ class Expr:
     def rolling_median(
         self,
         window_size: int | str,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -3838,6 +4269,35 @@ class Expr:
             window, consider using `groupby_rolling` this method can cache the window
             size computation.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_median(window_size=3),
+        ...         ]
+        ...     )
+        ... )
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 2.0  │
+        ├╌╌╌╌╌╌┤
+        │ 3.0  │
+        ├╌╌╌╌╌╌┤
+        │ 4.0  │
+        ├╌╌╌╌╌╌┤
+        │ 6.0  │
+        └──────┘
+
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -3853,7 +4313,7 @@ class Expr:
         quantile: float,
         interpolation: InterpolationMethod = "nearest",
         window_size: int | str = 2,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
@@ -3910,6 +4370,35 @@ class Expr:
             window, consider using `groupby_rolling` this method can cache the window
             size computation.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("A").rolling_quantile(quantile=0.33, window_size=3),
+        ...         ]
+        ...     )
+        ... )
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 1.0  │
+        ├╌╌╌╌╌╌┤
+        │ 2.0  │
+        ├╌╌╌╌╌╌┤
+        │ 3.0  │
+        ├╌╌╌╌╌╌┤
+        │ 4.0  │
+        └──────┘
+
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -3931,7 +4420,7 @@ class Expr:
         self,
         function: Callable[[pli.Series], Any],
         window_size: int,
-        weights: List[float] | None = None,
+        weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
     ) -> Expr:
@@ -4015,20 +4504,70 @@ class Expr:
         return wrap_expr(self._pyexpr.rolling_skew(window_size, bias))
 
     def abs(self) -> Expr:
-        """Compute absolute values."""
+        """
+        Compute absolute values.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "A": [-1.0, 0.0, 1.0, 2.0],
+        ...     }
+        ... )
+        >>> df.select(pl.col("A").abs())
+        shape: (4, 1)
+        ┌─────┐
+        │ A   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 1.0 │
+        ├╌╌╌╌╌┤
+        │ 0.0 │
+        ├╌╌╌╌╌┤
+        │ 1.0 │
+        ├╌╌╌╌╌┤
+        │ 2.0 │
+        └─────┘
+
+        """
         return wrap_expr(self._pyexpr.abs())
 
     def argsort(self, reverse: bool = False) -> Expr:
-        """Alias for `arg_sort`."""
+        """
+        Alias for `arg_sort`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [20, 10, 30],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").argsort())
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 0   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        └─────┘
+
+        """
         return self.arg_sort(reverse)
 
-    def rank(self, method: str = "average", reverse: bool = False) -> Expr:
+    def rank(self, method: RankMethod = "average", reverse: bool = False) -> Expr:
         """
         Assign ranks to data, dealing with ties appropriately.
 
         Parameters
         ----------
-        method : {'average', 'min', 'max', 'dense', 'ordinal', 'random'}, optional
+        method : {'average', 'min', 'max', 'dense', 'ordinal', 'random'}
             The method used to assign ranks to tied elements.
             The following methods are available (default is 'average'):
 
@@ -4096,7 +4635,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.rank(method, reverse))
 
-    def diff(self, n: int = 1, null_behavior: str = "ignore") -> Expr:
+    def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Expr:
         """
         Calculate the n-th discrete difference.
 
@@ -4104,8 +4643,8 @@ class Expr:
         ----------
         n
             number of slots to shift
-        null_behavior
-            {'ignore', 'drop'}
+        null_behavior : {'ignore', 'drop'}
+            How to handle null values.
 
         Examples
         --------
@@ -4209,6 +4748,19 @@ class Expr:
         .. math::
             G_1 = \frac{k_3}{k_2^{3/2}} = \frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 2, 1]})
+        >>> df.select(pl.col("a").skew())
+        shape: (1, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.343622 │
+        └──────────┘
+
         """
         return wrap_expr(self._pyexpr.skew(bias))
 
@@ -4231,6 +4783,19 @@ class Expr:
             Pearson's definition is used (normal ==> 3.0).
         bias : bool, optional
             If False, then the calculations are corrected for statistical bias.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 2, 1]})
+        >>> df.select(pl.col("a").kurtosis())
+        shape: (1, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ f64       │
+        ╞═══════════╡
+        │ -1.153061 │
+        └───────────┘
 
         """
         return wrap_expr(self._pyexpr.kurtosis(fisher, bias))
@@ -4281,6 +4846,19 @@ class Expr:
         Returns a unit Series with the lowest value possible for the dtype of this
         expression.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 2, 1]})
+        >>> df.select(pl.col("a").lower_bound())
+        shape: (1, 1)
+        ┌──────────────────────┐
+        │ a                    │
+        │ ---                  │
+        │ i64                  │
+        ╞══════════════════════╡
+        │ -9223372036854775808 │
+        └──────────────────────┘
+
         """
         return wrap_expr(self._pyexpr.lower_bound())
 
@@ -4290,6 +4868,19 @@ class Expr:
 
         Returns a unit Series with the highest value possible for the dtype of this
         expression.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 2, 1]})
+        >>> df.select(pl.col("a").upper_bound())
+        shape: (1, 1)
+        ┌─────────────────────┐
+        │ a                   │
+        │ ---                 │
+        │ i64                 │
+        ╞═════════════════════╡
+        │ 9223372036854775807 │
+        └─────────────────────┘
 
         """
         return wrap_expr(self._pyexpr.upper_bound())
@@ -4656,6 +5247,23 @@ class Expr:
             Seed initialization. If None given, the `random` module is used to generate
             a random seed.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").shuffle(seed=1))
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 2   │
+        ├╌╌╌╌╌┤
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 3   │
+        └─────┘
+
         """
         if seed is None:
             seed = random.randint(0, 10000)
@@ -4681,6 +5289,23 @@ class Expr:
             Seed initialization. If None given a random seed is used.
         shuffle
             Shuffle the order of sampled data points.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").sample(seed=1))
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 3   │
+        ├╌╌╌╌╌┤
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 1   │
+        └─────┘
 
         """
         return wrap_expr(
@@ -4735,6 +5360,23 @@ class Expr:
             Minimum number of observations in window required to have a value
             (otherwise result is null).
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").ewm_mean(com=1))
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.666667 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 2.428571 │
+        └──────────┘
+
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_mean(alpha, adjust, min_periods))
@@ -4787,6 +5429,23 @@ class Expr:
             Minimum number of observations in window required to have a value
             (otherwise result is null).
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").ewm_std(com=1))
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 0.5      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 0.754615 │
+        └──────────┘
+
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_std(alpha, adjust, min_periods))
@@ -4838,6 +5497,23 @@ class Expr:
         min_periods
             Minimum number of observations in window required to have a value
             (otherwise result is null).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").ewm_var(com=1))
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 0.25     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 0.569444 │
+        └──────────┘
 
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
@@ -4960,6 +5636,23 @@ class Expr:
         base
             Given base, defaults to `e`
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").log(base=2))
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.0      │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 1.584963 │
+        └──────────┘
+
         """
         return wrap_expr(self._pyexpr.log(base))
 
@@ -4974,6 +5667,28 @@ class Expr:
             Given base, defaults to `e`
         normalize
             Normalize pk if it doesn't sum to 1.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").entropy(base=2))
+        shape: (1, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.459148 │
+        └──────────┘
+        >>> df.select(pl.col("a").entropy(base=2, normalize=False))
+        shape: (1, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ f64       │
+        ╞═══════════╡
+        │ -6.754888 │
+        └───────────┘
 
         """
         return wrap_expr(self._pyexpr.entropy(base, normalize))
@@ -5049,11 +5764,78 @@ class Expr:
         reverse
             If the `Series` order is reversed, e.g. descending.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [1, 3, 2]})
+        >>> df.select(pl.col("values").sort().set_sorted())
+        shape: (3, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ i64    │
+        ╞════════╡
+        │ 1      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 2      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 3      │
+        └────────┘
+
         """
         return self.map(lambda s: s.set_sorted(reverse))
 
-    # Below are the namespaces defined. Keep these at the end of the definition of Expr,
-    # as to not confuse mypy with the type annotation `str` with the namespace "str"
+    # Keep the `list` and `str` methods below at the end of the definition of Expr,
+    # as to not confuse mypy with the type annotation `str` and `list`
+
+    def list(self) -> Expr:
+        """
+        Aggregate to list.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": [4, 5, 6],
+        ...     }
+        ... )
+        >>> df.select(pl.all().list())
+        shape: (1, 2)
+        ┌───────────┬───────────┐
+        │ a         ┆ b         │
+        │ ---       ┆ ---       │
+        │ list[i64] ┆ list[i64] │
+        ╞═══════════╪═══════════╡
+        │ [1, 2, 3] ┆ [4, 5, 6] │
+        └───────────┴───────────┘
+
+        """
+        return wrap_expr(self._pyexpr.list())
+
+    @property
+    def str(self) -> ExprStringNameSpace:
+        """
+        Create an object namespace of all string related methods.
+
+        See the individual method pages for full details
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"letters": ["a", "b"]})
+        >>> df.select(pl.col("letters").str.to_uppercase())
+        shape: (2, 1)
+        ┌─────────┐
+        │ letters │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ A       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ B       │
+        └─────────┘
+
+        """
+        return ExprStringNameSpace(self)
 
     @property
     def dt(self) -> ExprDateTimeNameSpace:
@@ -5061,40 +5843,46 @@ class Expr:
         return ExprDateTimeNameSpace(self)
 
     @property
-    def str(self) -> ExprStringNameSpace:
-        """Create an object namespace of all string related methods."""
-        return ExprStringNameSpace(self)
-
-    @property
     def arr(self) -> ExprListNameSpace:
-        """Create an object namespace of all list related methods."""
+        """
+        Create an object namespace of all list related methods.
+        See the individual method pages for full details
+
+        """
         return ExprListNameSpace(self)
 
     @property
     def cat(self) -> ExprCatNameSpace:
-        """Create an object namespace of all categorical related methods."""
+        """
+        Create an object namespace of all categorical related methods.
+
+        See the individual method pages for full details
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": ["a", "b"]}).select(
+        ...     pl.col("values").cast(pl.Categorical)
+        ... )
+        >>> df.select(pl.col("values").cat.set_ordering(ordering="physical"))
+        shape: (2, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ cat    │
+        ╞════════╡
+        │ a      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ b      │
+        └────────┘
+
+        """
         return ExprCatNameSpace(self)
 
     @property
     def struct(self) -> ExprStructNameSpace:
-        """Create an object namespace of all struct related methods."""
-        return ExprStructNameSpace(self)
-
-
-class ExprStructNameSpace:
-    """Namespace for struct related expressions."""
-
-    def __init__(self, expr: Expr):
-        self._pyexpr = expr._pyexpr
-
-    def field(self, name: str) -> Expr:
         """
-        Retrieve one of the fields of this `Struct` as a new Series.
-
-        Parameters
-        ----------
-        name
-            Name of the field
+        Create an object namespace of all struct related methods.
+        See the individual method pages for full details
 
         Examples
         --------
@@ -5123,2084 +5911,16 @@ class ExprStructNameSpace:
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.struct_field_by_name(name))
+        return ExprStructNameSpace(self)
 
-    def rename_fields(self, names: List[str]) -> Expr:
+    @property
+    def meta(self) -> ExprMetaNameSpace:
         """
-        Rename the fields of the struct
+        Create an object namespace of all meta related expression methods.
+        This can be used to modify and traverse existing expressions
 
-        Parameters
-        ----------
-        names
-            New names in the order of the struct's fields
-
-        Examples
-        --------
-        >>> df = (
-        ...     pl.DataFrame(
-        ...         {
-        ...             "int": [1, 2],
-        ...             "str": ["a", "b"],
-        ...             "bool": [True, None],
-        ...             "list": [[1, 2], [3]],
-        ...         }
-        ...     )
-        ...     .to_struct("my_struct")
-        ...     .to_frame()
-        ... )
-        >>> df = df.with_column(
-        ...     pl.col("my_struct").struct.rename_fields(["INT", "STR", "BOOL", "LIST"])
-        ... )
-
-        Does NOT work anymore:
-        # df.select(pl.col("my_struct").struct.field("int"))
-        #               PanicException: int not found ^^^
-
-        >>> df.select(pl.col("my_struct").struct.field("INT"))
-        shape: (2, 1)
-        ┌─────┐
-        │ INT │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ 1   │
-        ├╌╌╌╌╌┤
-        │ 2   │
-        └─────┘
-
-        """
-        return wrap_expr(self._pyexpr.struct_rename_fields(names))
-
-
-class ExprListNameSpace:
-    """Namespace for list related expressions."""
-
-    def __init__(self, expr: Expr):
-        self._pyexpr = expr._pyexpr
-
-    def lengths(self) -> Expr:
-        """
-        Get the length of the arrays as UInt32.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, 2], "bar": [["a", "b"], ["c"]]})
-        >>> df.select(pl.col("bar").arr.lengths())
-        shape: (2, 1)
-        ┌─────┐
-        │ bar │
-        │ --- │
-        │ u32 │
-        ╞═════╡
-        │ 2   │
-        ├╌╌╌╌╌┤
-        │ 1   │
-        └─────┘
-
-        """
-        return wrap_expr(self._pyexpr.arr_lengths())
-
-    def sum(self) -> Expr:
-        """Sum all the arrays in the list."""
-        return wrap_expr(self._pyexpr.lst_sum())
-
-    def max(self) -> Expr:
-        """Compute the max value of the arrays in the list."""
-        return wrap_expr(self._pyexpr.lst_max())
-
-    def min(self) -> Expr:
-        """Compute the min value of the arrays in the list."""
-        return wrap_expr(self._pyexpr.lst_min())
-
-    def mean(self) -> Expr:
-        """Compute the mean value of the arrays in the list."""
-        return wrap_expr(self._pyexpr.lst_mean())
-
-    def sort(self, reverse: bool = False) -> Expr:
-        """
-        Sort the arrays in the list
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [[3, 2, 1], [9, 1, 2]],
-        ...     }
-        ... )
-        >>> df.select(pl.col("a").arr.sort())
-        shape: (2, 1)
-        ┌───────────┐
-        │ a         │
-        │ ---       │
-        │ list[i64] │
-        ╞═══════════╡
-        │ [1, 2, 3] │
-        ├╌╌╌╌╌╌╌╌╌╌╌┤
-        │ [1, 2, 9] │
-        └───────────┘
-
-        """
-        return wrap_expr(self._pyexpr.lst_sort(reverse))
-
-    def reverse(self) -> Expr:
-        """
-        Reverse the arrays in the list
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [[3, 2, 1], [9, 1, 2]],
-        ...     }
-        ... )
-        >>> df.select(pl.col("a").arr.reverse())
-        shape: (2, 1)
-        ┌───────────┐
-        │ a         │
-        │ ---       │
-        │ list[i64] │
-        ╞═══════════╡
-        │ [1, 2, 3] │
-        ├╌╌╌╌╌╌╌╌╌╌╌┤
-        │ [2, 1, 9] │
-        └───────────┘
-
-        """
-        return wrap_expr(self._pyexpr.lst_reverse())
-
-    def unique(self) -> Expr:
-        """Get the unique/distinct values in the list."""
-        return wrap_expr(self._pyexpr.lst_unique())
-
-    def concat(
-        self, other: List[Expr | str] | Expr | str | pli.Series | List[Any]
-    ) -> Expr:
-        """
-        Concat the arrays in a Series dtype List in linear time.
-
-        Parameters
-        ----------
-        other
-            Columns to concat into a List Series
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [["a"], ["x"]],
-        ...         "b": [["b", "c"], ["y", "z"]],
-        ...     }
-        ... )
-        >>> df.select(pl.col("a").arr.concat("b"))
-        shape: (2, 1)
-        ┌─────────────────┐
-        │ a               │
-        │ ---             │
-        │ list[str]       │
-        ╞═════════════════╡
-        │ ["a", "b", "c"] │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ ["x", "y", "z"] │
-        └─────────────────┘
-
-        """
-        if isinstance(other, list) and (
-            not isinstance(other[0], (Expr, str, pli.Series))
-        ):
-            return self.concat(pli.Series([other]))
-
-        other_list: List[Expr | str | pli.Series]
-        if not isinstance(other, list):
-            other_list = [other]
-        else:
-            other_list = copy.copy(other)  # type: ignore[arg-type]
-
-        other_list.insert(0, wrap_expr(self._pyexpr))
-        return pli.concat_list(other_list)
-
-    def get(self, index: int) -> Expr:
-        """
-        Get the value by index in the sublists.
-        So index `0` would return the first item of every sublist
-        and index `-1` would return the last item of every sublist
-        if an index is out of bounds, it will return a `None`.
-
-        Parameters
-        ----------
-        index
-            Index to return per sublist
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
-        >>> df.select(pl.col("foo").arr.get(0))
-        shape: (3, 1)
-        ┌──────┐
-        │ foo  │
-        │ ---  │
-        │ i64  │
-        ╞══════╡
-        │ 3    │
-        ├╌╌╌╌╌╌┤
-        │ null │
-        ├╌╌╌╌╌╌┤
-        │ 1    │
-        └──────┘
-
-        """
-        return wrap_expr(self._pyexpr.lst_get(index))
-
-    def first(self) -> Expr:
-        """
-        Get the first value of the sublists.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
-        >>> df.select(pl.col("foo").arr.first())
-        shape: (3, 1)
-        ┌──────┐
-        │ foo  │
-        │ ---  │
-        │ i64  │
-        ╞══════╡
-        │ 3    │
-        ├╌╌╌╌╌╌┤
-        │ null │
-        ├╌╌╌╌╌╌┤
-        │ 1    │
-        └──────┘
-
-        """
-        return self.get(0)
-
-    def last(self) -> Expr:
-        """
-        Get the last value of the sublists.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
-        >>> df.select(pl.col("foo").arr.last())
-        shape: (3, 1)
-        ┌──────┐
-        │ foo  │
-        │ ---  │
-        │ i64  │
-        ╞══════╡
-        │ 1    │
-        ├╌╌╌╌╌╌┤
-        │ null │
-        ├╌╌╌╌╌╌┤
-        │ 2    │
-        └──────┘
-
-        """
-        return self.get(-1)
-
-    def contains(self, item: float | str | bool | int | date | datetime | Expr) -> Expr:
-        """
-        Check if sublists contain the given item.
-
-        Parameters
-        ----------
-        item
-            Item that will be checked for membership
-
-        Returns
-        -------
-        Boolean mask
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
-        >>> df.select(pl.col("foo").arr.contains(1))
-        shape: (3, 1)
-        ┌───────┐
-        │ foo   │
-        │ ---   │
-        │ bool  │
-        ╞═══════╡
-        │ true  │
-        ├╌╌╌╌╌╌╌┤
-        │ false │
-        ├╌╌╌╌╌╌╌┤
-        │ true  │
-        └───────┘
-
-        """
-        return wrap_expr(self._pyexpr.arr_contains(expr_to_lit_or_expr(item)._pyexpr))
-
-    def join(self, separator: str) -> Expr:
-        """
-        Join all string items in a sublist and place a separator between them.
-        This errors if inner type of list `!= Utf8`.
-
-        Parameters
-        ----------
-        separator
-            string to separate the items with
-
-        Returns
-        -------
-        Series of dtype Utf8
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"s": [["a", "b", "c"], ["x", "y"]]})
-        >>> df.select(pl.col("s").arr.join(" "))
-        shape: (2, 1)
-        ┌───────┐
-        │ s     │
-        │ ---   │
-        │ str   │
-        ╞═══════╡
-        │ a b c │
-        ├╌╌╌╌╌╌╌┤
-        │ x y   │
-        └───────┘
-
-        """
-        return wrap_expr(self._pyexpr.lst_join(separator))
-
-    def arg_min(self) -> Expr:
-        """
-        Retrieve the index of the minimal value in every sublist
-
-        Returns
-        -------
-        Series of dtype UInt32/UInt64 (depending on compilation)
-
-        """
-        return wrap_expr(self._pyexpr.lst_arg_min())
-
-    def arg_max(self) -> Expr:
-        """
-        Retrieve the index of the maximum value in every sublist
-
-        Returns
-        -------
-        Series of dtype UInt32/UInt64 (depending on compilation)
-
-        """
-        return wrap_expr(self._pyexpr.lst_arg_max())
-
-    def diff(self, n: int = 1, null_behavior: str = "ignore") -> Expr:
-        """
-        Calculate the n-th discrete difference of every sublist.
-
-        Parameters
-        ----------
-        n
-            number of slots to shift
-        null_behavior
-            {'ignore', 'drop'}
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.diff()
-        shape: (2,)
-        Series: 'a' [list]
-        [
-            [null, 1, ... 1]
-            [null, -8, -1]
-        ]
-
-        """
-        return wrap_expr(self._pyexpr.lst_diff(n, null_behavior))
-
-    def shift(self, periods: int = 1) -> Expr:
-        """
-        Shift the values by a given period and fill the parts that will be empty due to
-        this operation with nulls.
-
-        Parameters
-        ----------
-        periods
-            Number of places to shift (may be negative).
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.shift()
-        shape: (2,)
-        Series: 'a' [list]
-        [
-            [null, 1, ... 3]
-            [null, 10, 2]
-        ]
-
-        """
-        return wrap_expr(self._pyexpr.lst_shift(periods))
-
-    def slice(self, offset: int, length: int) -> Expr:
-        """
-        Slice every sublist
-
-        Parameters
-        ----------
-        offset
-            Take the values from this index offset.
-        length
-            The length of the slice to take.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.slice(1, 2)
-        shape: (2,)
-        Series: 'a' [list]
-        [
-            [2, 3]
-            [2, 1]
-        ]
-
-        """
-        return wrap_expr(self._pyexpr.lst_slice(offset, length))
-
-    def head(self, n: int = 5) -> Expr:
-        """
-        Slice the head of every sublist
-
-        Parameters
-        ----------
-        n
-            How many values to take in the slice.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.head(2)
-        shape: (2,)
-        Series: 'a' [list]
-        [
-            [1, 2]
-            [10, 2]
-        ]
-
-        """
-        return self.slice(0, n)
-
-    def tail(self, n: int = 5) -> Expr:
-        """
-        Slice the tail of every sublist
-
-        Parameters
-        ----------
-        n
-            How many values to take in the slice.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.tail(2)
-        shape: (2,)
-        Series: 'a' [list]
-        [
-            [3, 4]
-            [2, 1]
-        ]
-
-        """
-        return self.slice(-n, n)
-
-    def to_struct(
-        self,
-        n_field_strategy: ToStructStrategy = "first_non_null",
-        name_generator: Callable[[int], str] | None = None,
-    ) -> Expr:
-        """
-        Convert the series of type ``List`` to a series of type ``Struct``.
-
-        Parameters
-        ----------
-        n_field_strategy : {'first_non_null', 'max_width'}
-            Strategy to determine the number of fields of the struct.
-        name_generator
-            A custom function that can be used to generate the field names.
-            Default field names are `field_0, field_1 .. field_n`
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
-        >>> df.select([pl.col("a").arr.to_struct()])
-        shape: (2, 1)
-        ┌────────────┐
-        │ a          │
-        │ ---        │
-        │ struct[3]  │
-        ╞════════════╡
-        │ {1,2,3}    │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {1,2,null} │
-        └────────────┘
-        >>> df.select(
-        ...     [
-        ...         pl.col("a").arr.to_struct(
-        ...             name_generator=lambda idx: f"col_name_{idx}"
-        ...         )
-        ...     ]
-        ... ).to_series().to_list()
-        [{'col_name_0': 1, 'col_name_1': 2, 'col_name_2': 3},
-        {'col_name_0': 1, 'col_name_1': 2, 'col_name_2': None}]
-
-        """
-        return wrap_expr(self._pyexpr.lst_to_struct(n_field_strategy, name_generator))
-
-    def eval(self, expr: Expr, parallel: bool = False) -> Expr:
-        """
-        Run any polars expression against the lists' elements
-
-        Parameters
-        ----------
-        expr
-            Expression to run. Note that you can select an element with `pl.first()`, or
-            `pl.col()`
-        parallel
-            Run all expression parallel. Don't activate this blindly.
-            Parallelism is worth it if there is enough work to do per thread.
-
-            This likely should not be use in the groupby context, because we already
-            parallel execution per group
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
-        >>> df.with_column(
-        ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
-        ... )
-        shape: (3, 3)
-        ┌─────┬─────┬────────────┐
-        │ a   ┆ b   ┆ rank       │
-        │ --- ┆ --- ┆ ---        │
-        │ i64 ┆ i64 ┆ list[f32]  │
-        ╞═════╪═════╪════════════╡
-        │ 1   ┆ 4   ┆ [1.0, 2.0] │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 8   ┆ 5   ┆ [2.0, 1.0] │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 3   ┆ 2   ┆ [2.0, 1.0] │
-        └─────┴─────┴────────────┘
-
-        """
-        return wrap_expr(self._pyexpr.lst_eval(expr._pyexpr, parallel))
-
-
-class ExprStringNameSpace:
-    """Namespace for string related expressions."""
-
-    def __init__(self, expr: Expr):
-        self._pyexpr = expr._pyexpr
-
-    def strptime(
-        self,
-        datatype: type[Date] | type[Datetime] | type[Time],
-        fmt: str | None = None,
-        strict: bool = True,
-        exact: bool = True,
-    ) -> Expr:
-        """
-        Parse a Utf8 expression to a Date/Datetime/Time type.
-
-        Parameters
-        ----------
-        datatype
-            Date | Datetime | Time.
-        fmt
-            Format to use, refer to the `chrono strftime documentation
-            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for specification. Example: ``"%y-%m-%d"``.
-        strict
-            Raise an error if any conversion fails.
-        exact
-            - If True, require an exact format match.
-            - If False, allow the format to match anywhere in the target string.
-
-        Examples
-        --------
-        Dealing with different formats.
-
-        >>> s = pl.Series(
-        ...     "date",
-        ...     [
-        ...         "2021-04-22",
-        ...         "2022-01-04 00:00:00",
-        ...         "01/31/22",
-        ...         "Sun Jul  8 00:34:60 2001",
-        ...     ],
-        ... )
-        >>> (
-        ...     s.to_frame().with_column(
-        ...         pl.col("date")
-        ...         .str.strptime(pl.Date, "%F", strict=False)
-        ...         .fill_null(
-        ...             pl.col("date").str.strptime(pl.Date, "%F %T", strict=False)
-        ...         )
-        ...         .fill_null(pl.col("date").str.strptime(pl.Date, "%D", strict=False))
-        ...         .fill_null(pl.col("date").str.strptime(pl.Date, "%c", strict=False))
-        ...     )
-        ... )
-        shape: (4, 1)
-        ┌────────────┐
-        │ date       │
-        │ ---        │
-        │ date       │
-        ╞════════════╡
-        │ 2021-04-22 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2022-01-04 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2022-01-31 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2001-07-08 │
-        └────────────┘
-
-        """
-        if not issubclass(datatype, DataType):  # pragma: no cover
-            raise ValueError(f"expected: {DataType} got: {datatype}")
-        if datatype == Date:
-            return wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact))
-        elif datatype == Datetime:
-            return wrap_expr(self._pyexpr.str_parse_datetime(fmt, strict, exact))
-        elif datatype == Time:
-            return wrap_expr(self._pyexpr.str_parse_time(fmt, strict, exact))
-        else:  # pragma: no cover
-            raise ValueError("dtype should be of type {Date, Datetime, Time}")
-
-    def lengths(self) -> Expr:
-        """
-        Get the length of the Strings as UInt32.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"s": [None, "bears", "110"]})
-        >>> df.select(["s", pl.col("s").str.lengths().alias("len")])
-        shape: (3, 2)
-        ┌───────┬──────┐
-        │ s     ┆ len  │
-        │ ---   ┆ ---  │
-        │ str   ┆ u32  │
-        ╞═══════╪══════╡
-        │ null  ┆ null │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ bears ┆ 5    │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ 110   ┆ 3    │
-        └───────┴──────┘
-
-        """
-        return wrap_expr(self._pyexpr.str_lengths())
-
-    def concat(self, delimiter: str = "-") -> Expr:
-        """
-        Vertically concat the values in the Series to a single string value.
-
-        Parameters
-        ----------
-        delimiter
-            The delimiter to insert between consecutive string values.
-
-        Returns
-        -------
-        Series of dtype Utf8
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, None, 2]})
-        >>> df.select(pl.col("foo").str.concat("-"))
-        shape: (1, 1)
-        ┌──────────┐
-        │ foo      │
-        │ ---      │
-        │ str      │
-        ╞══════════╡
-        │ 1-null-2 │
-        └──────────┘
-
-        """
-        return wrap_expr(self._pyexpr.str_concat(delimiter))
-
-    def to_uppercase(self) -> Expr:
-        """Transform to uppercase variant."""
-        return wrap_expr(self._pyexpr.str_to_uppercase())
-
-    def to_lowercase(self) -> Expr:
-        """Transform to lowercase variant."""
-        return wrap_expr(self._pyexpr.str_to_lowercase())
-
-    def strip(self) -> Expr:
-        """Remove leading and trailing whitespace."""
-        return wrap_expr(self._pyexpr.str_strip())
-
-    def lstrip(self) -> Expr:
-        """Remove leading whitespace."""
-        return wrap_expr(self._pyexpr.str_lstrip())
-
-    def rstrip(self) -> Expr:
-        """Remove trailing whitespace."""
-        return wrap_expr(self._pyexpr.str_rstrip())
-
-    def zfill(self, alignment: int) -> Expr:
-        """
-        Return a copy of the string left filled with ASCII '0' digits to make a string
-        of length width.
-
-        A leading sign prefix ('+'/'-') is handled by inserting the padding after the
-        sign character rather than before. The original string is returned if width is
-        less than or equal to ``len(s)``.
-
-        Parameters
-        ----------
-        alignment
-            Fill the value up to this length
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "num": [-10, -1, 0, 1, 10, 100, 1000, 10000, 100000, 1000000, None],
-        ...     }
-        ... )
-        >>> df.with_column(pl.col("num").cast(str).str.zfill(5))
-        shape: (11, 1)
-        ┌─────────┐
-        │ num     │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ -0010   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ -0001   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ 00000   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ 00001   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ ...     │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ 10000   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ 100000  │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ 1000000 │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ null    │
-        └─────────┘
-
-        """
-        return wrap_expr(self._pyexpr.str_zfill(alignment))
-
-    def ljust(self, width: int, fillchar: str = " ") -> Expr:
-        """
-        Return the string left justified in a string of length ``width``.
-
-        Padding is done using the specified ``fillchar``.
-        The original string is returned if ``width`` is less than or equal to
-        ``len(s)``.
-
-        Parameters
-        ----------
-        width
-            Justify left to this length.
-        fillchar
-            Fill with this ASCII character.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"a": ["cow", "monkey", None, "hippopotamus"]})
-        >>> df.select(pl.col("a").str.ljust(8, "*"))
-        shape: (4, 1)
-        ┌──────────────┐
-        │ a            │
-        │ ---          │
-        │ str          │
-        ╞══════════════╡
-        │ cow*****     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ monkey**     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ null         │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ hippopotamus │
-        └──────────────┘
-
-        """
-        return wrap_expr(self._pyexpr.str_ljust(width, fillchar))
-
-    def rjust(self, width: int, fillchar: str = " ") -> Expr:
-        """
-        Return the string right justified in a string of length ``width``.
-
-        Padding is done using the specified ``fillchar``.
-        The original string is returned if ``width`` is less than or equal to
-        ``len(s)``.
-
-        Parameters
-        ----------
-        width
-            Justify right to this length.
-        fillchar
-            Fill with this ASCII character.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"a": ["cow", "monkey", None, "hippopotamus"]})
-        >>> df.select(pl.col("a").str.rjust(8, "*"))
-        shape: (4, 1)
-        ┌──────────────┐
-        │ a            │
-        │ ---          │
-        │ str          │
-        ╞══════════════╡
-        │ *****cow     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ **monkey     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ null         │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ hippopotamus │
-        └──────────────┘
-
-        """
-        return wrap_expr(self._pyexpr.str_rjust(width, fillchar))
-
-    def contains(self, pattern: str, literal: bool = False) -> Expr:
-        """
-        Check if string contains a substring that matches a regex.
-
-        Parameters
-        ----------
-        pattern
-            A valid regex pattern.
-        literal
-            Treat pattern as a literal string.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"a": ["Crab", "cat and dog", "rab$bit", None]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("a"),
-        ...         pl.col("a").str.contains("cat|bit").alias("regex"),
-        ...         pl.col("a").str.contains("rab$", literal=True).alias("literal"),
-        ...     ]
-        ... )
-        shape: (4, 3)
-        ┌─────────────┬───────┬─────────┐
-        │ a           ┆ regex ┆ literal │
-        │ ---         ┆ ---   ┆ ---     │
-        │ str         ┆ bool  ┆ bool    │
-        ╞═════════════╪═══════╪═════════╡
-        │ Crab        ┆ false ┆ false   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ cat and dog ┆ true  ┆ false   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ rab$bit     ┆ true  ┆ true    │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ null        ┆ null  ┆ null    │
-        └─────────────┴───────┴─────────┘
-
-        See Also
-        --------
-        starts_with : Check if string values start with a substring.
-        ends_with : Check if string values end with a substring.
-
-        """
-        return wrap_expr(self._pyexpr.str_contains(pattern, literal))
-
-    def ends_with(self, sub: str) -> Expr:
-        """
-        Check if string values end with a substring.
-
-        Parameters
-        ----------
-        sub
-            Suffix substring.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"fruits": ["apple", "mango", None]})
-        >>> df.with_column(
-        ...     pl.col("fruits").str.ends_with("go").alias("has_suffix"),
-        ... )
-        shape: (3, 2)
-        ┌────────┬────────────┐
-        │ fruits ┆ has_suffix │
-        │ ---    ┆ ---        │
-        │ str    ┆ bool       │
-        ╞════════╪════════════╡
-        │ apple  ┆ false      │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ mango  ┆ true       │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ null   ┆ null       │
-        └────────┴────────────┘
-
-        Using ``ends_with`` as a filter condition:
-
-        >>> df.filter(pl.col("fruits").str.ends_with("go"))
-        shape: (1, 1)
-        ┌────────┐
-        │ fruits │
-        │ ---    │
-        │ str    │
-        ╞════════╡
-        │ mango  │
-        └────────┘
-
-        See Also
-        --------
-        contains : Check if string contains a substring that matches a regex.
-        starts_with : Check if string values start with a substring.
-
-        """
-        return wrap_expr(self._pyexpr.str_ends_with(sub))
-
-    def starts_with(self, sub: str) -> Expr:
-        """
-        Check if string values start with a substring.
-
-        Parameters
-        ----------
-        sub
-            Prefix substring.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"fruits": ["apple", "mango", None]})
-        >>> df.with_column(
-        ...     pl.col("fruits").str.starts_with("app").alias("has_prefix"),
-        ... )
-        shape: (3, 2)
-        ┌────────┬────────────┐
-        │ fruits ┆ has_prefix │
-        │ ---    ┆ ---        │
-        │ str    ┆ bool       │
-        ╞════════╪════════════╡
-        │ apple  ┆ true       │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ mango  ┆ false      │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ null   ┆ null       │
-        └────────┴────────────┘
-
-        Using ``starts_with`` as a filter condition:
-
-        >>> df.filter(pl.col("fruits").str.starts_with("app"))
-        shape: (1, 1)
-        ┌────────┐
-        │ fruits │
-        │ ---    │
-        │ str    │
-        ╞════════╡
-        │ apple  │
-        └────────┘
-
-        See Also
-        --------
-        contains : Check if string contains a substring that matches a regex.
-        ends_with : Check if string values end with a substring.
-
-        """
-        return wrap_expr(self._pyexpr.str_starts_with(sub))
-
-    def json_path_match(self, json_path: str) -> Expr:
-        """
-        Extract the first match of json string with provided JSONPath expression.
-        Throw errors if encounter invalid json strings.
-        All return value will be casted to Utf8 regardless of the original value.
-
-        Documentation on JSONPath standard can be found
-        `here <https://goessner.net/articles/JsonPath/>`_.
-
-        Parameters
-        ----------
-        json_path
-            A valid JSON path query string.
-
-        Returns
-        -------
-        Utf8 array. Contain null if original value is null or the json_path return
-        nothing.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {"json_val": ['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}']}
-        ... )
-        >>> df.select(pl.col("json_val").str.json_path_match("$.a"))
-        shape: (5, 1)
-        ┌──────────┐
-        │ json_val │
-        │ ---      │
-        │ str      │
-        ╞══════════╡
-        │ 1        │
-        ├╌╌╌╌╌╌╌╌╌╌┤
-        │ null     │
-        ├╌╌╌╌╌╌╌╌╌╌┤
-        │ 2        │
-        ├╌╌╌╌╌╌╌╌╌╌┤
-        │ 2.1      │
-        ├╌╌╌╌╌╌╌╌╌╌┤
-        │ true     │
-        └──────────┘
-
-        """
-        return wrap_expr(self._pyexpr.str_json_path_match(json_path))
-
-    def decode(self, encoding: TransferEncoding, strict: bool = False) -> Expr:
-        """
-        Decode a value using the provided encoding.
-
-        Parameters
-        ----------
-        encoding : {'hex', 'base64'}
-            The encoding to use.
-        strict
-            How to handle invalid inputs:
-
-            - ``True``: An error will be thrown if unable to decode a value.
-            - ``False``: Unhandled values will be replaced with `None`.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"encoded": ["666f6f", "626172", None]})
-        >>> df.select(pl.col("encoded").str.decode("hex"))
-        shape: (3, 1)
-        ┌─────────┐
-        │ encoded │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ foo     │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ bar     │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ null    │
-        └─────────┘
-
-        """
-        if encoding == "hex":
-            return wrap_expr(self._pyexpr.str_hex_decode(strict))
-        elif encoding == "base64":
-            return wrap_expr(self._pyexpr.str_base64_decode(strict))
-        else:
-            raise ValueError(
-                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
-            )
-
-    def encode(self, encoding: TransferEncoding) -> Expr:
-        """
-        Encode a value using the provided encoding.
-
-        Parameters
-        ----------
-        encoding : {'hex', 'base64'}
-            The encoding to use.
-
-        Returns
-        -------
-        Utf8 array with values encoded using provided encoding
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"strings": ["foo", "bar", None]})
-        >>> df.select(pl.col("strings").str.encode("hex"))
-        shape: (3, 1)
-        ┌─────────┐
-        │ strings │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ 666f6f  │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ 626172  │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ null    │
-        └─────────┘
-
-        """
-        if encoding == "hex":
-            return wrap_expr(self._pyexpr.str_hex_encode())
-        elif encoding == "base64":
-            return wrap_expr(self._pyexpr.str_base64_encode())
-        else:
-            raise ValueError(
-                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
-            )
-
-    def extract(self, pattern: str, group_index: int = 1) -> Expr:
-        r"""
-        Extract the target capture group from provided patterns.
-
-        Parameters
-        ----------
-        pattern
-            A valid regex pattern
-        group_index
-            Index of the targeted capture group.
-            Group 0 mean the whole pattern, first group begin at index 1
-            Default to the first capture group
-
-        Returns
-        -------
-        Utf8 array. Contain null if original value is null or regex capture nothing.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [
-        ...             "http://vote.com/ballon_dor?candidate=messi&ref=polars",
-        ...             "http://vote.com/ballon_dor?candidat=jorginho&ref=polars",
-        ...             "http://vote.com/ballon_dor?candidate=ronaldo&ref=polars",
-        ...         ]
-        ...     }
-        ... )
-        >>> df.select(
-        ...     [
-        ...         pl.col("a").str.extract(r"candidate=(\w+)", 1),
-        ...     ]
-        ... )
-        shape: (3, 1)
-        ┌─────────┐
-        │ a       │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ messi   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ null    │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ ronaldo │
-        └─────────┘
-
-        """
-        return wrap_expr(self._pyexpr.str_extract(pattern, group_index))
-
-    def extract_all(self, pattern: str) -> Expr:
-        r"""
-        Extract each successive non-overlapping regex match in an individual string as
-        an array.
-
-        Parameters
-        ----------
-        pattern
-            A valid regex pattern
-
-        Returns
-        -------
-        List[Utf8] array. Contain null if original value is null or regex capture
-        nothing.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("foo").str.extract_all(r"(\d+)").alias("extracted_nrs"),
-        ...     ]
-        ... )
-        shape: (2, 1)
-        ┌────────────────┐
-        │ extracted_nrs  │
-        │ ---            │
-        │ list[str]      │
-        ╞════════════════╡
-        │ ["123", "45"]  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ ["678", "910"] │
-        └────────────────┘
-
-        """
-        return wrap_expr(self._pyexpr.str_extract_all(pattern))
-
-    def count_match(self, pattern: str) -> Expr:
-        r"""
-        Count all successive non-overlapping regex matches.
-
-        Parameters
-        ----------
-        pattern
-            A valid regex pattern
-
-        Returns
-        -------
-        UInt32 array. Contain null if original value is null or regex capture nothing.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("foo").str.count_match(r"\d").alias("count_digits"),
-        ...     ]
-        ... )
-        shape: (2, 1)
-        ┌──────────────┐
-        │ count_digits │
-        │ ---          │
-        │ u32          │
-        ╞══════════════╡
-        │ 5            │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 6            │
-        └──────────────┘
-
-        """
-        return wrap_expr(self._pyexpr.count_match(pattern))
-
-    def split(self, by: str, inclusive: bool = False) -> Expr:
-        """
-        Split the string by a substring.
-
-        Parameters
-        ----------
-        by
-            Substring to split by.
-        inclusive
-            If True, include the split character/string in the results.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"s": ["foo bar", "foo-bar", "foo bar baz"]})
-        >>> df.select(pl.col("s").str.split(by=" "))
-        shape: (3, 1)
-        ┌───────────────────────┐
-        │ s                     │
-        │ ---                   │
-        │ list[str]             │
-        ╞═══════════════════════╡
-        │ ["foo", "bar"]        │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ ["foo-bar"]           │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ ["foo", "bar", "baz"] │
-        └───────────────────────┘
-
-        Returns
-        -------
-        List of Utf8 type
-
-        """
-        if inclusive:
-            return wrap_expr(self._pyexpr.str_split_inclusive(by))
-        return wrap_expr(self._pyexpr.str_split(by))
-
-    def split_exact(self, by: str, n: int, inclusive: bool = False) -> Expr:
-        """
-        Split the string by a substring into a struct of ``n+1`` fields using
-        ``n`` splits.
-
-        If it cannot make ``n`` splits, the remaining field elements will be null.
-
-        Parameters
-        ----------
-        by
-            Substring to split by.
-        n
-            Number of splits to make.
-        inclusive
-            If True, include the split character/string in the results.
-
-        Examples
-        --------
-        >>> (
-        ...     pl.DataFrame({"x": ["a_1", None, "c", "d_4"]}).select(
-        ...         [
-        ...             pl.col("x").str.split_exact("_", 1).alias("fields"),
-        ...         ]
-        ...     )
-        ... )
-        shape: (4, 1)
-        ┌─────────────┐
-        │ fields      │
-        │ ---         │
-        │ struct[2]   │
-        ╞═════════════╡
-        │ {"a","1"}   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {null,null} │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {"c",null}  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {"d","4"}   │
-        └─────────────┘
-
-
-        Split string values in column x in exactly 2 parts and assign
-        each part to a new column.
-
-        >>> pl.DataFrame({"x": ["a_1", None, "c", "d_4"]}).with_columns(
-        ...     [
-        ...         pl.col("x")
-        ...         .str.split_exact("_", 1)
-        ...         .struct.rename_fields(["first_part", "second_part"])
-        ...         .alias("fields"),
-        ...     ]
-        ... ).unnest("fields")
-        shape: (4, 3)
-        ┌──────┬────────────┬─────────────┐
-        │ x    ┆ first_part ┆ second_part │
-        │ ---  ┆ ---        ┆ ---         │
-        │ str  ┆ str        ┆ str         │
-        ╞══════╪════════════╪═════════════╡
-        │ a_1  ┆ a          ┆ 1           │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ null ┆ null       ┆ null        │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ c    ┆ c          ┆ null        │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ d_4  ┆ d          ┆ 4           │
-        └──────┴────────────┴─────────────┘
-
-        Returns
-        -------
-        Struct of Utf8 type
-
-        """
-        if inclusive:
-            return wrap_expr(self._pyexpr.str_split_exact_inclusive(by, n))
-        return wrap_expr(self._pyexpr.str_split_exact(by, n))
-
-    def splitn(self, by: str, n: int) -> Expr:
-        """
-        Split the string by a substring, restricted to returning at most ``n`` items.
-
-        If ``n`` substrings are returned, the last substring (the nth substring)
-        will contain the remainder of the string.
-
-        Parameters
-        ----------
-        by
-            Substring to split by.
-        n
-            Max number of items to return.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"s": ["foo bar", "foo-bar", "foo bar baz"]})
-        >>> df.select(pl.col("s").str.splitn(" ", 2))
-        shape: (3, 1)
-        ┌────────────────────┐
-        │ s                  │
-        │ ---                │
-        │ list[str]          │
-        ╞════════════════════╡
-        │ ["foo", "bar"]     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ ["foo-bar"]        │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ ["foo", "bar baz"] │
-        └────────────────────┘
-
-        Returns
-        -------
-        List of Utf8 type
-
-        """
-        return wrap_expr(self._pyexpr.str_splitn(by, n))
-
-    def replace(self, pattern: str, value: str, literal: bool = False) -> Expr:
-        r"""
-        Replace first matching regex/literal substring with a new string value.
-
-        Parameters
-        ----------
-        pattern
-            Regex pattern.
-        value
-            Replacement string.
-        literal
-             Treat pattern as a literal string.
-
-        See Also
-        --------
-        replace_all : Replace all matching regex/literal substrings.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"id": [1, 2], "text": ["123abc", "abc456"]})
-        >>> df.with_column(
-        ...     pl.col("text").str.replace(r"abc\b", "ABC")
-        ... )  # doctest: +IGNORE_RESULT
-        shape: (2, 2)
-        ┌─────┬────────┐
-        │ id  ┆ text   │
-        │ --- ┆ ---    │
-        │ i64 ┆ str    │
-        ╞═════╪════════╡
-        │ 1   ┆ 123ABC │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 2   ┆ abc456 │
-        └─────┴────────┘
-
-        """
-        return wrap_expr(self._pyexpr.str_replace(pattern, value, literal))
-
-    def replace_all(self, pattern: str, value: str, literal: bool = False) -> Expr:
-        """
-        Replace all matching regex/literal substrings with a new string value.
-
-        Parameters
-        ----------
-        pattern
-            Regex pattern.
-        value
-            Replacement string.
-        literal
-             Treat pattern as a literal string.
-
-        See Also
-        --------
-        replace : Replace first matching regex/literal substring.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"id": [1, 2], "text": ["abcabc", "123a123"]})
-        >>> df.with_column(pl.col("text").str.replace_all("a", "-"))
-        shape: (2, 2)
-        ┌─────┬─────────┐
-        │ id  ┆ text    │
-        │ --- ┆ ---     │
-        │ i64 ┆ str     │
-        ╞═════╪═════════╡
-        │ 1   ┆ -bc-bc  │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ 2   ┆ 123-123 │
-        └─────┴─────────┘
-
-        """
-        return wrap_expr(self._pyexpr.str_replace_all(pattern, value, literal))
-
-    def slice(self, start: int, length: int | None = None) -> Expr:
-        """
-        Create subslices of the string values of a Utf8 Series.
-
-        Parameters
-        ----------
-        start
-            Starting index of the slice (zero-indexed). Negative indexing
-            may be used.
-        length
-            Optional length of the slice. If None (default), the slice is taken to the
-            end of the string.
-
-        Returns
-        -------
-        Series of Utf8 type
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
-        >>> df.with_column(
-        ...     pl.col("s").str.slice(-3).alias("s_sliced"),
-        ... )
-        shape: (4, 2)
-        ┌─────────────┬──────────┐
-        │ s           ┆ s_sliced │
-        │ ---         ┆ ---      │
-        │ str         ┆ str      │
-        ╞═════════════╪══════════╡
-        │ pear        ┆ ear      │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ null        ┆ null     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ papaya      ┆ aya      │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ dragonfruit ┆ uit      │
-        └─────────────┴──────────┘
-
-        Using the optional `length` parameter
-
-        >>> df.with_column(
-        ...     pl.col("s").str.slice(4, length=3).alias("s_sliced"),
-        ... )
-        shape: (4, 2)
-        ┌─────────────┬──────────┐
-        │ s           ┆ s_sliced │
-        │ ---         ┆ ---      │
-        │ str         ┆ str      │
-        ╞═════════════╪══════════╡
-        │ pear        ┆          │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ null        ┆ null     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ papaya      ┆ ya       │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ dragonfruit ┆ onf      │
-        └─────────────┴──────────┘
-
-        """
-        return wrap_expr(self._pyexpr.str_slice(start, length))
-
-
-class ExprDateTimeNameSpace:
-    """Namespace for datetime related expressions."""
-
-    def __init__(self, expr: Expr):
-        self._pyexpr = expr._pyexpr
-
-    def truncate(
-        self,
-        every: str | timedelta,
-        offset: str | timedelta | None = None,
-    ) -> Expr:
-        """
-        Divide the date/ datetime range into buckets.
-
-        The `every` and `offset` arguments are created with
-        the following string language:
-
-        1ns # 1 nanosecond
-        1us # 1 microsecond
-        1ms # 1 millisecond
-        1s  # 1 second
-        1m  # 1 minute
-        1h  # 1 hour
-        1d  # 1 day
-        1w  # 1 week
-        1mo # 1 calendar month
-        1y  # 1 calendar year
-
-        3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
-
-        Parameters
-        ----------
-        every
-            Every interval start and period length
-        offset
-            Offset the window
-
-        Returns
-        -------
-        Date/Datetime series
-
-        Examples
-        --------
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 2)
-        >>> s = pl.date_range(start, stop, timedelta(minutes=30), name="dates")
-        >>> s
-        shape: (49,)
-        Series: 'dates' [datetime[ns]]
-        [
-            2001-01-01 00:00:00
-            2001-01-01 00:30:00
-            2001-01-01 01:00:00
-            2001-01-01 01:30:00
-            2001-01-01 02:00:00
-            2001-01-01 02:30:00
-            2001-01-01 03:00:00
-            2001-01-01 03:30:00
-            2001-01-01 04:00:00
-            2001-01-01 04:30:00
-            2001-01-01 05:00:00
-            2001-01-01 05:30:00
-            ...
-            2001-01-01 18:30:00
-            2001-01-01 19:00:00
-            2001-01-01 19:30:00
-            2001-01-01 20:00:00
-            2001-01-01 20:30:00
-            2001-01-01 21:00:00
-            2001-01-01 21:30:00
-            2001-01-01 22:00:00
-            2001-01-01 22:30:00
-            2001-01-01 23:00:00
-            2001-01-01 23:30:00
-            2001-01-02 00:00:00
-        ]
-        >>> s.dt.truncate("1h")
-        shape: (49,)
-        Series: 'dates' [datetime[ns]]
-        [
-            2001-01-01 00:00:00
-            2001-01-01 00:00:00
-            2001-01-01 01:00:00
-            2001-01-01 01:00:00
-            2001-01-01 02:00:00
-            2001-01-01 02:00:00
-            2001-01-01 03:00:00
-            2001-01-01 03:00:00
-            2001-01-01 04:00:00
-            2001-01-01 04:00:00
-            2001-01-01 05:00:00
-            2001-01-01 05:00:00
-            ...
-            2001-01-01 18:00:00
-            2001-01-01 19:00:00
-            2001-01-01 19:00:00
-            2001-01-01 20:00:00
-            2001-01-01 20:00:00
-            2001-01-01 21:00:00
-            2001-01-01 21:00:00
-            2001-01-01 22:00:00
-            2001-01-01 22:00:00
-            2001-01-01 23:00:00
-            2001-01-01 23:00:00
-            2001-01-02 00:00:00
-        ]
-        >>> assert s.dt.truncate("1h") == s.dt.truncate(timedelta(hours=1))
-
-        """
-        if offset is None:
-            offset = "0ns"
-        if isinstance(every, timedelta):
-            every = _timedelta_to_pl_duration(every)
-        if isinstance(offset, timedelta):
-            offset = _timedelta_to_pl_duration(offset)
-        return wrap_expr(self._pyexpr.date_truncate(every, offset))
-
-    def strftime(self, fmt: str) -> Expr:
-        """
-        Format Date/datetime with a formatting rule.
-
-        See `chrono strftime/strptime
-        <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_.
-
-        """
-        return wrap_expr(self._pyexpr.strftime(fmt))
-
-    def year(self) -> Expr:
-        """
-        Extract year from underlying Date representation.
-
-        Can be performed on Date and Datetime.
-
-        Returns the year number in the calendar date.
-
-        Returns
-        -------
-        Year as Int32
-
-        """
-        return wrap_expr(self._pyexpr.year())
-
-    def quarter(self) -> Expr:
-        """
-        Extract quarter from underlying Date representation.
-
-        Can be performed on Date and Datetime.
-
-        Returns the quarter ranging from 1 to 4.
-
-        Returns
-        -------
-        Quarter as UInt32
-
-        """
-        return wrap_expr(self._pyexpr.quarter())
-
-    def month(self) -> Expr:
-        """
-        Extract month from underlying Date representation.
-
-        Can be performed on Date and Datetime.
-
-        Returns the month number starting from 1.
-        The return value ranges from 1 to 12.
-
-        Returns
-        -------
-        Month as UInt32
-
-        """
-        return wrap_expr(self._pyexpr.month())
-
-    def week(self) -> Expr:
-        """
-        Extract the week from the underlying Date representation.
-
-        Can be performed on Date and Datetime
-
-        Returns the ISO week number starting from 1.
-        The return value ranges from 1 to 53. (The last week of year differs by years.)
-
-        Returns
-        -------
-        Week number as UInt32
-
-        """
-        return wrap_expr(self._pyexpr.week())
-
-    def weekday(self) -> Expr:
-        """
-        Extract the week day from the underlying Date representation.
-
-        Can be performed on Date and Datetime.
-
-        Returns the weekday number where monday = 0 and sunday = 6
-
-        Returns
-        -------
-        Week day as UInt32
-
-        """
-        return wrap_expr(self._pyexpr.weekday())
-
-    def day(self) -> Expr:
-        """
-        Extract day from underlying Date representation.
-
-        Can be performed on Date and Datetime.
-
-        Returns the day of month starting from 1.
-        The return value ranges from 1 to 31. (The last day of month differs by months.)
-
-        Returns
-        -------
-        Day as UInt32
-
-        """
-        return wrap_expr(self._pyexpr.day())
-
-    def ordinal_day(self) -> Expr:
-        """
-        Extract ordinal day from underlying Date representation.
-
-        Can be performed on Date and Datetime.
-
-        Returns the day of year starting from 1.
-        The return value ranges from 1 to 366. (The last day of year differs by years.)
-
-        Returns
-        -------
-        Day as UInt32
-
-        """
-        return wrap_expr(self._pyexpr.ordinal_day())
-
-    def hour(self) -> Expr:
-        """
-        Extract hour from underlying DateTime representation.
-
-        Can be performed on Datetime.
-
-        Returns the hour number from 0 to 23.
-
-        Returns
-        -------
-        Hour as UInt32
-
-        """
-        return wrap_expr(self._pyexpr.hour())
-
-    def minute(self) -> Expr:
-        """
-        Extract minutes from underlying DateTime representation.
-
-        Can be performed on Datetime.
-
-        Returns the minute number from 0 to 59.
-
-        Returns
-        -------
-        Minute as UInt32
-
-        """
-        return wrap_expr(self._pyexpr.minute())
-
-    def second(self) -> Expr:
-        """
-        Extract seconds from underlying DateTime representation.
-
-        Can be performed on Datetime.
-
-        Returns the second number from 0 to 59.
-
-        Returns
-        -------
-        Second as UInt32
-
-        """
-        return wrap_expr(self._pyexpr.second())
-
-    def nanosecond(self) -> Expr:
-        """
-        Extract seconds from underlying DateTime representation.
-
-        Can be performed on Datetime.
-
-        Returns the number of nanoseconds since the whole non-leap second.
-        The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
-
-        Returns
-        -------
-        Nanosecond as UInt32
-
-        """
-        return wrap_expr(self._pyexpr.nanosecond())
-
-    def epoch(self, tu: str = "us") -> Expr:
-        """
-        Get the time passed since the Unix EPOCH in the give time unit
-
-        Parameters
-        ----------
-        tu
-            One of {'ns', 'us', 'ms', 's', 'd'}
-
-        """
-        if tu in DTYPE_TEMPORAL_UNITS:
-            return self.timestamp(tu)
-        if tu == "s":
-            return wrap_expr(self._pyexpr.dt_epoch_seconds())
-        if tu == "d":
-            return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
-        else:
-            raise ValueError(f"time unit {tu} not understood")
-
-    def timestamp(self, tu: str = "us") -> Expr:
-        """
-        Return a timestamp in the given time unit.
-
-        Parameters
-        ----------
-        tu
-            One of {'ns', 'us', 'ms'}
-
-        """
-        return wrap_expr(self._pyexpr.timestamp(tu))
-
-    def with_time_unit(self, tu: str) -> Expr:
-        """
-        Set time unit a Series of dtype Datetime or Duration.
-
-        This does not modify underlying data, and should be used to fix an incorrect
-        time unit.
-
-        Parameters
-        ----------
-        tu
-            Time unit for the `Datetime` Series: one of {"ns", "us", "ms"}
-
-        """
-        return wrap_expr(self._pyexpr.dt_with_time_unit(tu))
-
-    def cast_time_unit(self, tu: str) -> Expr:
-        """
-        Cast the underlying data to another time unit. This may lose precision.
-
-        Parameters
-        ----------
-        tu
-            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
-
-        """
-        return wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
-
-    def with_time_zone(self, tz: str | None) -> Expr:
-        """
-        Set time zone for a Series of type Datetime.
-
-        Parameters
-        ----------
-        tz
-            Time zone for the `Datetime` Series.
-
-        """
-        return wrap_expr(self._pyexpr).map(
-            lambda s: s.dt.with_time_zone(tz), return_dtype=Datetime
-        )
-
-    def days(self) -> Expr:
-        """
-        Extract the days from a Duration type.
-
-        Returns
-        -------
-        A series of dtype Int64
-
-        """
-        return wrap_expr(self._pyexpr.duration_days())
-
-    def hours(self) -> Expr:
-        """
-        Extract the hours from a Duration type.
-
-        Returns
-        -------
-        A series of dtype Int64
-
-        """
-        return wrap_expr(self._pyexpr.duration_hours())
-
-    def minutes(self) -> Expr:
-        """
-        Extract the minutes from a Duration type.
-
-        Returns
-        -------
-        A series of dtype Int64
-
-        """
-        return wrap_expr(self._pyexpr.duration_minutes())
-
-    def seconds(self) -> Expr:
-        """
-        Extract the seconds from a Duration type.
-
-        Returns
-        -------
-        A series of dtype Int64
-
-        """
-        return wrap_expr(self._pyexpr.duration_seconds())
-
-    def milliseconds(self) -> Expr:
-        """
-        Extract the milliseconds from a Duration type.
-
-        Returns
-        -------
-        A series of dtype Int64
-
-        """
-        return wrap_expr(self._pyexpr.duration_milliseconds())
-
-    def nanoseconds(self) -> Expr:
-        """
-        Extract the nanoseconds from a Duration type.
-
-        Returns
-        -------
-        A series of dtype Int64
-
-        """
-        return wrap_expr(self._pyexpr.duration_nanoseconds())
-
-    def offset_by(self, by: str) -> Expr:
-        """
-        Offset this date by a relative time offset.
-
-        This differs from ``pl.col("foo") + timedelta`` in that it can
-        take months and leap years into account. Note that only a single minus
-        sign is allowed in the ``by`` string, as the first character.
-
-        Parameters
-        ----------
-        by
-            The offset is dictated by the following string language:
-
-            - 1ns   (1 nanosecond)
-            - 1us   (1 microsecond)
-            - 1ms   (1 millisecond)
-            - 1s    (1 second)
-            - 1m    (1 minute)
-            - 1h    (1 hour)
-            - 1d    (1 day)
-            - 1w    (1 week)
-            - 1mo   (1 calendar month)
-            - 1y    (1 calendar year)
-            - 1i    (1 index count)
-
-        Returns
-        -------
-        Date/Datetime expression
-
-        """
-        return wrap_expr(self._pyexpr.dt_offset_by(by))
-
-
-def expr_to_lit_or_expr(
-    expr: (
-        Expr
-        | bool
-        | int
-        | float
-        | str
-        | pli.Series
-        | None
-        | date
-        | datetime
-        | Sequence[(int | float | str | None)]
-    ),
-    str_to_lit: bool = True,
-) -> Expr:
-    """
-    Convert args to expressions.
-
-    Parameters
-    ----------
-    expr
-        Any argument.
-    str_to_lit
-        If True string argument `"foo"` will be converted to `lit("foo")`,
-        If False it will be converted to `col("foo")`
-
-    Returns
-    -------
-    Expr
-
-    """
-    if isinstance(expr, str) and not str_to_lit:
-        return pli.col(expr)
-    elif (
-        isinstance(expr, (int, float, str, pli.Series, datetime, date)) or expr is None
-    ):
-        return pli.lit(expr)
-    elif isinstance(expr, Expr):
-        return expr
-    elif isinstance(expr, list):
-        return pli.lit(pli.Series("", [expr]))
-    else:
-        raise ValueError(
-            f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with"
-            " pl.lit or pl.col"
-        )
-
-
-class ExprCatNameSpace:
-    """Namespace for categorical related expressions."""
-
-    def __init__(self, expr: Expr):
-        self._pyexpr = expr._pyexpr
-
-    def set_ordering(self, ordering: str) -> Expr:
-        """
-        Determine how this categorical series should be sorted.
-
-        Parameters
-        ----------
-        ordering
-            One of:
-                - 'physical' -> use the physical representation of the categories to
-                    determine the order (default)
-                - 'lexical' -. use the string values to determine the ordering
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {"cats": ["z", "z", "k", "a", "b"], "vals": [3, 1, 2, 2, 3]}
-        ... ).with_columns(
-        ...     [
-        ...         pl.col("cats").cast(pl.Categorical).cat.set_ordering("lexical"),
-        ...     ]
-        ... )
-        >>> df.sort(["cats", "vals"])
-        shape: (5, 2)
-        ┌──────┬──────┐
-        │ cats ┆ vals │
-        │ ---  ┆ ---  │
-        │ cat  ┆ i64  │
-        ╞══════╪══════╡
-        │ a    ┆ 2    │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ b    ┆ 3    │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ k    ┆ 2    │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ z    ┆ 1    │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ z    ┆ 3    │
-        └──────┴──────┘
-
         """
-        return wrap_expr(self._pyexpr.cat_set_ordering(ordering))
+        return ExprMetaNameSpace(self)
 
 
 def _prepare_alpha(

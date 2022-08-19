@@ -50,7 +50,7 @@
 //! * [Performance](#performance-and-string-data)
 //!     - [Custom allocator](#custom-allocator)
 //! * [Config](#config-with-env-vars)
-//! * [WASM target](#compile-for-wasm)
+//! * [User Guide](#user-guide)
 //!
 //! ## Cookbooks
 //! See examples in the cookbooks:
@@ -89,6 +89,9 @@
 //! Polars supports an eager and a lazy API. The eager API directly yields results, but is overall
 //! more verbose and less capable of building elegant composite queries. We recommend to use the Lazy API
 //! whenever you can.
+//!
+//! As neither API is async they should be wrapped in `spawn_blocking` when used in an async context
+//! to avoid blocking the async thread pool of the runtime.
 //!
 //! ## Expressions
 //! Polars has a powerful concept called expressions.
@@ -231,7 +234,8 @@
 //!     - `list_to_struct` - Convert `List` to `Struct` dtypes.
 //!     - `list_eval` - Apply expressions over list elements.
 //!     - `cumulative_eval` - Apply expressions over cumulatively increasing windows.
-//!     - `argwhere` Get indices where condition holds.
+//!     - `arg_where` - Get indices where condition holds.
+//!     - `search_sorted` - Find indices where elements should be inserted to maintain order.
 //!     - `date_offset` Add an offset to dates that take months and leap years into account.
 //!     - `trigonometry` Trigonometric functions.
 //!     - `sign` Compute the element-wise sign of a Series.
@@ -286,6 +290,16 @@
 //! #[global_allocator]
 //! static GLOBAL: MiMalloc = MiMalloc;
 //! ```
+//! ```ignore
+//! use jemallocator::Jemalloc;
+//!
+//! #[global_allocator]
+//! static GLOBAL: Jemalloc = Jemalloc;
+//! ```
+//!
+//! #### Notes
+//! [Benchmarks](https://github.com/pola-rs/polars/pull/3108) have shown that on Linux JeMalloc
+//! outperforms Mimalloc on all tasks and is therefor the default Linux allocator used for the Python bindings.
 //!
 //! #### Cargo.toml
 //! ```ignore
@@ -319,16 +333,14 @@ pub mod docs;
 pub mod export;
 pub mod prelude;
 
+pub use polars_core::apply_method_all_arrow_series;
+pub use polars_core::df;
 #[cfg(feature = "dtype-categorical")]
 pub use polars_core::toggle_string_cache;
 pub use polars_core::{chunked_array, datatypes, doc, error, frame, functions, series, testing};
-#[cfg(feature = "temporal")]
-pub use polars_time as time;
-
-pub use polars_core::apply_method_all_arrow_series;
-pub use polars_core::df;
-
 #[cfg(feature = "polars-io")]
 pub use polars_io as io;
 #[cfg(feature = "lazy")]
 pub use polars_lazy as lazy;
+#[cfg(feature = "temporal")]
+pub use polars_time as time;

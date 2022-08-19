@@ -1,3 +1,12 @@
+use std::borrow::Cow;
+#[cfg(any(feature = "ipc", feature = "csv-file", feature = "parquet"))]
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use polars_core::frame::explode::MeltArgs;
+use polars_core::prelude::*;
+use polars_utils::arena::{Arena, Node};
+
 #[cfg(feature = "ipc")]
 use crate::logical_plan::IpcScanOptionsInner;
 #[cfg(feature = "parquet")]
@@ -5,13 +14,6 @@ use crate::logical_plan::ParquetOptions;
 use crate::logical_plan::{det_melt_schema, Context, CsvParserOptions};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
-use polars_core::frame::explode::MeltArgs;
-use polars_core::prelude::*;
-use polars_utils::arena::{Arena, Node};
-use std::borrow::Cow;
-#[cfg(any(feature = "ipc", feature = "csv-file", feature = "parquet"))]
-use std::path::PathBuf;
-use std::sync::Arc;
 
 /// ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
 #[derive(Clone, Debug)]
@@ -102,6 +104,7 @@ pub enum ALogicalPlan {
     },
     Cache {
         input: Node,
+        id: usize,
     },
     Aggregate {
         input: Node,
@@ -183,7 +186,7 @@ impl ALogicalPlan {
             #[cfg(feature = "python")]
             PythonScan { options } => &options.schema,
             Union { inputs, .. } => return arena.get(inputs[0]).schema(arena),
-            Cache { input } => return arena.get(*input).schema(arena),
+            Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),
             Explode { schema, .. } => schema,
             #[cfg(feature = "parquet")]
@@ -317,7 +320,10 @@ impl ALogicalPlan {
                 columns: columns.clone(),
                 schema: schema.clone(),
             },
-            Cache { .. } => Cache { input: inputs[0] },
+            Cache { id, .. } => Cache {
+                input: inputs[0],
+                id: *id,
+            },
             Distinct { options, .. } => Distinct {
                 input: inputs[0],
                 options: options.clone(),

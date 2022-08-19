@@ -4,16 +4,18 @@ pub mod list;
 mod primitive;
 mod utf8;
 
-use crate::{
-    prelude::*,
-    utils::{get_iter_capacity, NoNull},
-};
-use arrow::{array::*, bitmap::Bitmap};
 use std::borrow::Cow;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::sync::Arc;
+
+use arrow::{array::*, bitmap::Bitmap};
 pub use {boolean::*, list::*, primitive::*, utf8::*};
+
+use crate::{
+    prelude::*,
+    utils::{get_iter_capacity, NoNull},
+};
 
 // N: the value type; T: the sentinel type
 pub trait ChunkedBuilder<N, T: PolarsDataType> {

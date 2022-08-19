@@ -1,13 +1,15 @@
-use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
-use crate::prelude::PlHashMap;
-use ahash::RandomState;
-use once_cell::sync::Lazy;
-use smartstring::{LazyCompact, SmartString};
 use std::borrow::Borrow;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use ahash::RandomState;
+use once_cell::sync::Lazy;
+use smartstring::{LazyCompact, SmartString};
+
+use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
+use crate::prelude::PlHashMap;
 
 pub(crate) static USE_STRING_CACHE: AtomicBool = AtomicBool::new(false);
 

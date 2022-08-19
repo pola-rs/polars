@@ -1,7 +1,8 @@
-use crate::prelude::*;
-use crate::utils::{align_chunks_ternary, CustomIterTools};
 use arrow::compute::if_then_else::if_then_else;
 use polars_arrow::array::default_arrays::FromData;
+
+use crate::prelude::*;
+use crate::utils::{align_chunks_ternary, CustomIterTools};
 
 fn ternary_apply<T>(predicate: bool, truthy: T, falsy: T) -> T {
     if predicate {

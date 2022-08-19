@@ -10,47 +10,49 @@ mod expr;
 mod from;
 pub(crate) mod function_expr;
 #[cfg(feature = "compile")]
-mod functions;
+pub mod functions;
 #[cfg(feature = "list")]
 mod list;
+#[cfg(feature = "meta")]
+mod meta;
+pub(crate) mod names;
 mod options;
 #[cfg(feature = "strings")]
 pub mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
-use polars_time::series::SeriesOpsTime;
-
-use crate::prelude::*;
-use crate::utils::has_expr;
-
-#[cfg(feature = "is_in")]
-use crate::utils::has_root_literal_expr;
-use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
-use polars_core::prelude::*;
 
 use std::fmt::Debug;
 use std::{
     ops::{Add, Div, Mul, Rem, Sub},
     sync::Arc,
 };
-// reexport the lazy method
-pub use crate::frame::IntoLazy;
-pub use crate::logical_plan::lit;
+
 pub use expr::*;
 pub use functions::*;
 pub use options::*;
-
-use crate::dsl::function_expr::FunctionExpr;
-
-#[cfg(feature = "trigonometry")]
-use crate::dsl::function_expr::TrigonometricFunction;
-
+use polars_arrow::prelude::QuantileInterpolOptions;
+use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
+use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
 use polars_core::utils::{get_supertype, NoNull};
 use polars_ops::prelude::SeriesOps;
+#[cfg(feature = "rolling_window")]
+use polars_time::series::SeriesOpsTime;
+
+use crate::dsl::function_expr::FunctionExpr;
+use crate::dsl::function_expr::NanFunction;
+#[cfg(feature = "trigonometry")]
+use crate::dsl::function_expr::TrigonometricFunction;
+// reexport the lazy method
+pub use crate::frame::IntoLazy;
+pub use crate::logical_plan::lit;
+use crate::prelude::*;
+use crate::utils::has_expr;
+#[cfg(feature = "is_in")]
+use crate::utils::has_root_literal_expr;
 
 pub fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
     Expr::BinaryExpr {
@@ -301,22 +303,7 @@ impl Expr {
 
     /// Drop NaN values
     pub fn drop_nans(self) -> Self {
-        self.apply(
-            |s| match s.dtype() {
-                DataType::Float32 => {
-                    let ca = s.f32()?;
-                    let mask = ca.is_not_nan();
-                    ca.filter(&mask).map(|ca| ca.into_series())
-                }
-                DataType::Float64 => {
-                    let ca = s.f64()?;
-                    let mask = ca.is_not_nan();
-                    ca.filter(&mask).map(|ca| ca.into_series())
-                }
-                _ => Ok(s),
-            },
-            GetOutput::same_type(),
-        )
+        self.apply_private(NanFunction::DropNans.into(), "drop_nans")
     }
 
     /// Reduce groups to minimal value.
@@ -490,6 +477,7 @@ impl Expr {
             input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "arg_min",
+            cast_to_supertypes: false,
         };
 
         self.function_with_options(
@@ -506,6 +494,7 @@ impl Expr {
             input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "arg_max",
+            cast_to_supertypes: false,
         };
 
         self.function_with_options(
@@ -517,15 +506,12 @@ impl Expr {
 
     /// Get the index values that would sort this expression.
     pub fn arg_sort(self, reverse: bool) -> Self {
-        assert!(
-            !has_expr(&self, |e| matches!(e, Expr::Wildcard)),
-            "wildcard not supported in argsort expr"
-        );
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: true,
+            input_wildcard_expansion: false,
             auto_explode: false,
             fmt_str: "arg_sort",
+            cast_to_supertypes: false,
         };
 
         self.function_with_options(
@@ -539,6 +525,23 @@ impl Expr {
             GetOutput::from_type(IDX_DTYPE),
             options,
         )
+    }
+
+    #[cfg(feature = "search_sorted")]
+    /// Find indices where elements should be inserted to maintain order.
+    pub fn search_sorted<E: Into<Expr>>(self, element: E) -> Expr {
+        let element = element.into();
+        Expr::Function {
+            input: vec![self, element],
+            function: FunctionExpr::SearchSorted,
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyGroups,
+                input_wildcard_expansion: false,
+                auto_explode: true,
+                fmt_str: "search_sorted",
+                cast_to_supertypes: false,
+            },
+        }
     }
 
     /// Cast expression to another data type.
@@ -616,6 +619,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "map",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -629,6 +633,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str,
+                cast_to_supertypes: false,
             },
         }
     }
@@ -652,6 +657,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -678,6 +684,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "map_list",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -726,6 +733,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -739,6 +747,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str,
+                cast_to_supertypes: false,
             },
         }
     }
@@ -762,6 +771,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: true,
                 fmt_str: "",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -772,6 +782,7 @@ impl Expr {
         arguments: &[Expr],
         fmt_str: &'static str,
         auto_explode: bool,
+        cast_to_supertypes: bool,
     ) -> Self {
         let mut input = Vec::with_capacity(arguments.len() + 1);
         input.push(self);
@@ -785,6 +796,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode,
                 fmt_str,
+                cast_to_supertypes,
             },
         }
     }
@@ -794,6 +806,7 @@ impl Expr {
         function_expr: FunctionExpr,
         arguments: &[Expr],
         fmt_str: &'static str,
+        cast_to_supertypes: bool,
     ) -> Self {
         let mut input = Vec::with_capacity(arguments.len() + 1);
         input.push(self);
@@ -807,6 +820,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: true,
                 fmt_str,
+                cast_to_supertypes,
             },
         }
     }
@@ -832,23 +846,13 @@ impl Expr {
     }
 
     /// Get mask of NaN values if dtype is Float
-    #[allow(clippy::wrong_self_convention)]
     pub fn is_nan(self) -> Self {
-        self.map(
-            |s: Series| s.is_nan().map(|ca| ca.into_series()),
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_fmt("is_nan")
+        self.map_private(NanFunction::IsNan.into(), "is_nan")
     }
 
     /// Get inverse mask of NaN values if dtype is Float
-    #[allow(clippy::wrong_self_convention)]
     pub fn is_not_nan(self) -> Self {
-        self.map(
-            |s: Series| s.is_not_nan().map(|ca| ca.into_series()),
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_fmt("is_not_nan")
+        self.map_private(NanFunction::IsNotNan.into(), "is_not_nan")
     }
 
     /// Shift the values in the array by some period. See [the eager implementation](polars_core::series::SeriesTrait::shift).
@@ -866,6 +870,7 @@ impl Expr {
             &[fill_value.into()],
             "shift_and_fill",
             false,
+            true,
         )
     }
 
@@ -931,6 +936,7 @@ impl Expr {
             input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "product",
+            cast_to_supertypes: false,
         };
 
         self.function_with_options(
@@ -1093,6 +1099,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "fill_null",
+                cast_to_supertypes: true,
             },
         }
     }
@@ -1106,6 +1113,7 @@ impl Expr {
     pub fn fill_nan<E: Into<Expr>>(self, fill_value: E) -> Self {
         // we take the not branch so that self is truthy value of `when -> then -> otherwise`
         // and that ensure we keep the name of `self`
+
         when(self.clone().is_not_nan())
             .then(self)
             .otherwise(fill_value.into())
@@ -1164,6 +1172,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "pow",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1179,6 +1188,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "sin",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1194,6 +1204,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "cos",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1209,6 +1220,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "tan",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1224,6 +1236,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "arcsin",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1239,6 +1252,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "arccos",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1254,6 +1268,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "arctan",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1269,6 +1284,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "sinh",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1284,6 +1300,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "cosh",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1299,6 +1316,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "tanh",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1314,6 +1332,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "arcsinh",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1329,6 +1348,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "arccosh",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1344,6 +1364,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "arctanh",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1359,6 +1380,7 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "sign",
+                cast_to_supertypes: false,
             },
         }
     }
@@ -1394,9 +1416,9 @@ impl Expr {
         let arguments = &[other];
         // we don't have to apply on groups, so this is faster
         if has_literal {
-            self.map_many_private(FunctionExpr::IsIn, arguments, "is_in_map")
+            self.map_many_private(FunctionExpr::IsIn, arguments, "is_in_map", true)
         } else {
-            self.apply_many_private(FunctionExpr::IsIn, arguments, "is_in_apply", true)
+            self.apply_many_private(FunctionExpr::IsIn, arguments, "is_in_apply", true, true)
         }
     }
 
@@ -1564,6 +1586,7 @@ impl Expr {
             .with_fmt("interpolate")
     }
 
+    #[cfg(feature = "rolling_window")]
     #[allow(clippy::type_complexity)]
     fn finish_rolling(
         self,
@@ -2249,6 +2272,10 @@ impl Expr {
     pub fn struct_(self) -> struct_::StructNameSpace {
         struct_::StructNameSpace(self)
     }
+    #[cfg(feature = "meta")]
+    pub fn meta(self) -> meta::MetaNameSpace {
+        meta::MetaNameSpace(self)
+    }
 }
 
 // Arithmetic ops
@@ -2317,6 +2344,7 @@ where
             input_wildcard_expansion: false,
             auto_explode: false,
             fmt_str: "",
+            cast_to_supertypes: false,
         },
     }
 }
@@ -2344,6 +2372,7 @@ where
             input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "",
+            cast_to_supertypes: false,
         },
     }
 }
@@ -2373,6 +2402,7 @@ where
             input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "",
+            cast_to_supertypes: false,
         },
     }
 }

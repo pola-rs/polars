@@ -2,12 +2,14 @@ pub(crate) mod drop;
 mod list;
 pub(crate) mod polars_extension;
 
-use crate::{prelude::*, PROCESS_ID};
+use std::mem;
+
 use arrow::array::{Array, FixedSizeBinaryArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use polars_extension::PolarsExtension;
-use std::mem;
+
+use crate::{prelude::*, PROCESS_ID};
 
 /// Invariants
 /// `ptr` must point to start a `T` allocation
@@ -136,8 +138,9 @@ pub(crate) fn create_extension<
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use std::fmt::{Display, Formatter};
+
+    use super::*;
 
     #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
     struct Foo {

@@ -1,11 +1,11 @@
-use super::*;
+pub use arrow::io::avro::avro_schema::file::Compression;
 use arrow::io::avro::{
     avro_schema::{self},
     write,
 };
-
-pub use arrow::io::avro::avro_schema::file::Compression;
 pub use Compression as AvroCompression;
+
+use super::*;
 
 /// Write a DataFrame to Apache Avro format
 ///

@@ -1,6 +1,5 @@
 //! macros that define kernels for extracting
 //! `week`, `weekday`, `year`, `hour` etc. from primitive arrays.
-use super::*;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
 use polars_arrow::export::arrow::array::PrimitiveArray;
 use polars_arrow::export::arrow::compute::arity::unary;
@@ -10,6 +9,8 @@ use polars_arrow::export::arrow::temporal_conversions::{
     date32_to_datetime, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
     timestamp_us_to_datetime,
 };
+
+use super::*;
 
 trait PolarsWeekDay {
     fn p_weekday(&self) -> u32;

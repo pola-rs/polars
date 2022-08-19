@@ -1,9 +1,11 @@
-use crate::series::ops::SeriesSealed;
+use std::ops::SubAssign;
+
 use polars_core::export::num;
 use polars_core::export::num::{Float, FromPrimitive};
 use polars_core::prelude::*;
 use polars_core::utils::with_unstable_series;
-use std::ops::SubAssign;
+
+use crate::series::ops::SeriesSealed;
 
 #[cfg(feature = "moment")]
 fn rolling_skew<T>(ca: &ChunkedArray<T>, window_size: usize, bias: bool) -> Result<ChunkedArray<T>>

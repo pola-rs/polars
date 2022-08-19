@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, TextIO
+from typing import TYPE_CHECKING, BinaryIO, Callable, Mapping, TextIO
 
-from polars.utils import format_path, handle_projection_columns
+from polars.utils import deprecated_alias, format_path, handle_projection_columns
 
 try:
     import pyarrow as pa
@@ -63,6 +63,12 @@ def _update_columns(df: DataFrame, new_columns: list[str]) -> DataFrame:
     return df
 
 
+@deprecated_alias(
+    has_headers="has_header",
+    dtype="dtypes",
+    stop_after_n_rows="n_rows",
+    projection="columns",
+)
 def read_csv(
     file: str | TextIO | BytesIO | Path | BinaryIO | bytes,
     has_header: bool = True,
@@ -80,7 +86,7 @@ def read_csv(
     infer_schema_length: int | None = 100,
     batch_size: int = 8192,
     n_rows: int | None = None,
-    encoding: CsvEncoding = "utf8",
+    encoding: CsvEncoding | str = "utf8",
     low_memory: bool = False,
     rechunk: bool = True,
     use_pyarrow: bool = False,
@@ -90,7 +96,6 @@ def read_csv(
     row_count_offset: int = 0,
     sample_size: int = 1024,
     eol_char: str = "\n",
-    **kwargs: Any,
 ) -> DataFrame:
     """
     Read a CSV file into a DataFrame.
@@ -142,6 +147,7 @@ def read_csv(
     parse_dates
         Try to automatically parse dates. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
+        If ``use_pyarrow=True``, dates will always be parsed.
     n_threads
         Number of threads to use in csv parsing.
         Defaults to the number of physical cpu's of your system.
@@ -156,16 +162,19 @@ def read_csv(
         Stop reading from CSV file after reading ``n_rows``.
         During multi-threaded parsing, an upper bound of ``n_rows``
         rows cannot be guaranteed.
-    encoding : {'utf8', 'utf8-lossy'}
+    encoding : {'utf8', 'utf8-lossy', ...}
         Lossy means that invalid utf8 values are replaced with ``�``
-        characters. Defaults to "utf8".
+        characters. When using other encodings than ``utf8`` or
+        ``utf8-lossy``, the input is first decoded im memory with
+        python. Defaults to ``utf8``.
     low_memory
         Reduce memory usage at expense of performance.
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
     use_pyarrow
-        Try to use pyarrow's native CSV parser.
+        Try to use pyarrow's native CSV parser. This will always
+        parse dates, even if ``parse_dates=False``.
         This is not always possible. The set of arguments given to
         this function determines if it is possible to use pyarrow's
         native parser. Note that pyarrow and polars may have a
@@ -185,7 +194,7 @@ def read_csv(
         Set the sample size. This is used to sample statistics to estimate the
         allocation needed.
     eol_char
-        Single byte end of line character
+        Single byte end of line character.
 
     Returns
     -------
@@ -196,17 +205,10 @@ def read_csv(
     scan_csv : Lazily read from a CSV file or multiple files via glob patterns.
 
     """
-    # Map legacy arguments to current ones and remove them from kwargs.
-    has_header = kwargs.pop("has_headers", has_header)
-    dtypes = kwargs.pop("dtype", dtypes)
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
-    if columns is None:
-        columns = kwargs.pop("projection", None)
-
     _check_arg_is_1byte("sep", sep, False)
     _check_arg_is_1byte("comment_char", comment_char, False)
     _check_arg_is_1byte("quote_char", quote_char, True)
+    _check_arg_is_1byte("eol_char", eol_char, False)
 
     projection, columns = handle_projection_columns(columns)
 
@@ -233,10 +235,8 @@ def read_csv(
         and dtypes is None
         and n_rows is None
         and n_threads is None
-        and encoding == "utf8"
         and not low_memory
         and null_values is None
-        and parse_dates
     ):
         include_columns = None
 
@@ -253,13 +253,21 @@ def read_csv(
             # for pyarrow.
             include_columns = [f"f{column_idx}" for column_idx in projection]
 
-        with _prepare_file_arg(file, **storage_options) as data:
+        with _prepare_file_arg(
+            file, encoding=None, use_pyarrow=True, **storage_options
+        ) as data:
             tbl = pa.csv.read_csv(
                 data,
                 pa.csv.ReadOptions(
-                    skip_rows=skip_rows, autogenerate_column_names=not has_header
+                    skip_rows=skip_rows,
+                    autogenerate_column_names=not has_header,
+                    encoding=encoding,
                 ),
-                pa.csv.ParseOptions(delimiter=sep),
+                pa.csv.ParseOptions(
+                    delimiter=sep,
+                    quote_char=quote_char if quote_char else False,
+                    double_quote=quote_char is not None and quote_char == '"',
+                ),
                 pa.csv.ConvertOptions(
                     column_types=None,
                     include_columns=include_columns,
@@ -370,7 +378,9 @@ def read_csv(
                 for column_name, column_dtype in dtypes.items()
             }
 
-    with _prepare_file_arg(file, **storage_options) as data:
+    with _prepare_file_arg(
+        file, encoding=encoding, use_pyarrow=False, **storage_options
+    ) as data:
         df = DataFrame._read_csv(
             file=data,
             has_header=has_header,
@@ -387,7 +397,7 @@ def read_csv(
             infer_schema_length=infer_schema_length,
             batch_size=batch_size,
             n_rows=n_rows,
-            encoding=encoding,
+            encoding=encoding if encoding == "utf8-lossy" else "utf8",
             low_memory=low_memory,
             rechunk=rechunk,
             skip_rows_after_header=skip_rows_after_header,
@@ -402,6 +412,7 @@ def read_csv(
     return df
 
 
+@deprecated_alias(has_headers="has_header", dtype="dtypes", stop_after_n_rows="n_rows")
 def scan_csv(
     file: str | Path,
     has_header: bool = True,
@@ -424,7 +435,6 @@ def scan_csv(
     row_count_offset: int = 0,
     parse_dates: bool = False,
     eol_char: str = "\n",
-    **kwargs: Any,
 ) -> LazyFrame:
     """
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -547,11 +557,6 @@ def scan_csv(
     └─────────┴──────────┘
 
     """
-    # Map legacy arguments to current ones and remove them from kwargs.
-    has_header = kwargs.pop("has_headers", has_header)
-    dtypes = kwargs.pop("dtype", dtypes)
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
     _check_arg_is_1byte("sep", sep, False)
     _check_arg_is_1byte("comment_char", comment_char, False)
     _check_arg_is_1byte("quote_char", quote_char, True)
@@ -584,6 +589,7 @@ def scan_csv(
     )
 
 
+@deprecated_alias(stop_after_n_rows="n_rows")
 def scan_ipc(
     file: str | Path,
     n_rows: int | None = None,
@@ -593,7 +599,6 @@ def scan_ipc(
     row_count_offset: int = 0,
     storage_options: dict[str, object] | None = None,
     memory_map: bool = True,
-    **kwargs: Any,
 ) -> LazyFrame:
     """
     Lazily read from an Arrow IPC (Feather v2) file or multiple files via glob patterns.
@@ -626,9 +631,6 @@ def scan_ipc(
         Only uncompressed IPC files can be memory mapped.
 
     """
-    # Map legacy arguments to current ones and remove them from kwargs.
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
     return LazyFrame.scan_ipc(
         file=file,
         n_rows=n_rows,
@@ -641,6 +643,7 @@ def scan_ipc(
     )
 
 
+@deprecated_alias(stop_after_n_rows="n_rows")
 def scan_parquet(
     file: str | Path,
     n_rows: int | None = None,
@@ -651,7 +654,6 @@ def scan_parquet(
     row_count_offset: int = 0,
     storage_options: dict[str, object] | None = None,
     low_memory: bool = False,
-    **kwargs: Any,
 ) -> LazyFrame:
     """
     Lazily read from a parquet file or multiple files via glob patterns.
@@ -686,9 +688,6 @@ def scan_parquet(
         Reduce memory pressure at the expense of performance.
 
     """
-    # Map legacy arguments to current ones and remove them from kwargs.
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
     if isinstance(file, (str, Path)):
         file = format_path(file)
 
@@ -705,11 +704,63 @@ def scan_parquet(
     )
 
 
+def scan_ndjson(
+    file: str | Path,
+    infer_schema_length: int | None = 100,
+    batch_size: int | None = 1024,
+    n_rows: int | None = None,
+    low_memory: bool = False,
+    rechunk: bool = True,
+    row_count_name: str | None = None,
+    row_count_offset: int = 0,
+) -> LazyFrame:
+    """
+    Lazily read from a newline delimited JSON file.
+
+    This allows the query optimizer to push down predicates and projections to the scan
+    level, thereby potentially reducing memory overhead.
+
+    Parameters
+    ----------
+    file
+        Path to a file.
+    infer_schema_length
+        Infer the schema length from the first ``infer_schema_length`` rows.
+    batch_size
+        Number of rows to read in each batch.
+    n_rows
+        Stop reading from JSON file after reading ``n_rows``.
+    low_memory
+        Reduce memory pressure at the expense of performance.
+    rechunk
+        Reallocate to contiguous memory when all chunks/ files are parsed.
+    row_count_name
+        If not None, this will insert a row count column with give name into the
+        DataFrame
+    row_count_offset
+        Offset to start the row_count column (only use if the name is set)
+
+    """
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
+
+    return LazyFrame.scan_ndjson(
+        file=file,
+        infer_schema_length=infer_schema_length,
+        batch_size=batch_size,
+        n_rows=n_rows,
+        low_memory=low_memory,
+        rechunk=rechunk,
+        row_count_name=row_count_name,
+        row_count_offset=row_count_offset,
+    )
+
+
+@deprecated_alias(projection="columns")
 def read_avro(
     file: str | Path | BytesIO | BinaryIO,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
-    **kwargs: Any,
 ) -> DataFrame:
     """
     Read into a DataFrame from Apache Avro format.
@@ -731,12 +782,11 @@ def read_avro(
     """
     if isinstance(file, (str, Path)):
         file = format_path(file)
-    if columns is None:
-        columns = kwargs.pop("projection", None)
 
     return DataFrame._read_avro(file, n_rows=n_rows, columns=columns)
 
 
+@deprecated_alias(stop_after_n_rows="n_rows", projection="columns")
 def read_ipc(
     file: str | BinaryIO | BytesIO | Path | bytes,
     columns: list[int] | list[str] | None = None,
@@ -747,7 +797,6 @@ def read_ipc(
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     rechunk: bool = True,
-    **kwargs: Any,
 ) -> DataFrame:
     """
     Read into a DataFrame from Arrow IPC (Feather v2) file.
@@ -785,12 +834,6 @@ def read_ipc(
     DataFrame
 
     """
-    # Map legacy arguments to current ones and remove them from kwargs.
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
-    if columns is None:
-        columns = kwargs.pop("projection", None)
-
     if use_pyarrow:
         if n_rows and not memory_map:
             raise ValueError(
@@ -799,7 +842,7 @@ def read_ipc(
             )
 
     storage_options = storage_options or {}
-    with _prepare_file_arg(file, **storage_options) as data:
+    with _prepare_file_arg(file, use_pyarrow=use_pyarrow, **storage_options) as data:
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
                 raise ImportError(
@@ -826,6 +869,7 @@ def read_ipc(
         )
 
 
+@deprecated_alias(stop_after_n_rows="n_rows", projection="columns")
 def read_parquet(
     source: str | Path | BinaryIO | BytesIO | bytes,
     columns: list[int] | list[str] | None = None,
@@ -837,7 +881,7 @@ def read_parquet(
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     low_memory: bool = False,
-    **kwargs: Any,
+    pyarrow_options: dict[str, object] | None = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
@@ -873,8 +917,8 @@ def read_parquet(
         Offset to start the row_count column (only use if the name is set).
     low_memory
         Reduce memory pressure at the expense of performance.
-    **kwargs
-        kwargs for `pyarrow.parquet.read_table
+    pyarrow_options
+        Keyword arguments for `pyarrow.parquet.read_table
         <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html>`_.
 
     Returns
@@ -882,18 +926,15 @@ def read_parquet(
     DataFrame
 
     """  # noqa: E501
-    # Map legacy arguments to current ones and remove them from kwargs.
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
-    if columns is None:
-        columns = kwargs.pop("projection", None)
-
-    if use_pyarrow:
-        if n_rows:
-            raise ValueError("``n_rows`` cannot be used with ``use_pyarrow=True``.")
+    if use_pyarrow and n_rows:
+        raise ValueError("``n_rows`` cannot be used with ``use_pyarrow=True``.")
 
     storage_options = storage_options or {}
-    with _prepare_file_arg(source, **storage_options) as source_prep:
+    pyarrow_options = pyarrow_options or {}
+
+    with _prepare_file_arg(
+        source, use_pyarrow=use_pyarrow, **storage_options
+    ) as source_prep:
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
                 raise ImportError(
@@ -906,7 +947,7 @@ def read_parquet(
                     source_prep,
                     memory_map=memory_map,
                     columns=columns,
-                    **kwargs,
+                    **pyarrow_options,
                 )
             )
 

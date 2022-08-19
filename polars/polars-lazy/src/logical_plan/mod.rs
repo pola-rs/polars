@@ -1,9 +1,9 @@
-use parking_lot::Mutex;
 use std::borrow::Cow;
 #[cfg(any(feature = "ipc", feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
 use std::{cell::Cell, fmt::Debug, sync::Arc};
 
+use parking_lot::Mutex;
 use polars_core::prelude::*;
 
 use crate::logical_plan::LogicalPlan::DataFrameScan;
@@ -25,11 +25,10 @@ pub(crate) mod options;
 mod projection;
 
 pub use anonymous_scan::*;
-pub(crate) use apply::*;
+pub use apply::*;
 pub(crate) use builder::*;
 pub use lit::*;
 use polars_core::frame::explode::MeltArgs;
-
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -64,7 +63,7 @@ pub enum LogicalPlan {
         predicate: Expr,
     },
     /// Cache the input at this point in the LP
-    Cache { input: Box<LogicalPlan> },
+    Cache { input: Box<LogicalPlan>, id: usize },
     /// Scan a CSV file
     #[cfg(feature = "csv-file")]
     CsvScan {
@@ -227,7 +226,7 @@ impl LogicalPlan {
             #[cfg(feature = "python")]
             PythonScan { options } => Ok(Cow::Borrowed(&options.schema)),
             Union { inputs, .. } => inputs[0].schema(),
-            Cache { input } => input.schema(),
+            Cache { input, .. } => input.schema(),
             Sort { input, .. } => input.schema(),
             Explode { schema, .. } => Ok(Cow::Borrowed(schema)),
             #[cfg(feature = "parquet")]
@@ -254,7 +253,12 @@ impl LogicalPlan {
                     None => Ok(input_schema),
                 }
             }
-            Error { input, .. } => input.schema(),
+            Error { err, .. } => {
+                // We just take the error. The LogicalPlan should not be used anymore once this
+                // is taken.
+                let mut err = err.lock();
+                Err(err.take().unwrap())
+            }
             ExtContext { schema, .. } => Ok(Cow::Borrowed(schema)),
         }
     }

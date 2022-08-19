@@ -1,7 +1,7 @@
-use crate::prelude::*;
-
 use base64;
 use hex;
+
+use crate::prelude::*;
 
 impl Utf8Chunked {
     #[cfg(feature = "string_encoding")]

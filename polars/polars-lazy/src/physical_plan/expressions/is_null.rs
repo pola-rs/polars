@@ -1,13 +1,15 @@
-use crate::physical_plan::state::ExecutionState;
-use crate::prelude::*;
-use crate::utils::expr_to_root_column_name;
+use std::sync::Arc;
+
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_io::predicates::StatsEvaluator;
 #[cfg(feature = "parquet")]
 use polars_io::prelude::predicates::BatchStats;
-use std::sync::Arc;
+
+use crate::physical_plan::state::ExecutionState;
+use crate::prelude::*;
+use crate::utils::expr_to_root_column_name;
 
 pub struct IsNullExpr {
     physical_expr: Arc<dyn PhysicalExpr>,

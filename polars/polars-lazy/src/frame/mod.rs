@@ -3,6 +3,8 @@
 mod csv;
 #[cfg(feature = "ipc")]
 mod ipc;
+#[cfg(feature = "json")]
+mod ndjson;
 #[cfg(feature = "parquet")]
 mod parquet;
 #[cfg(feature = "python")]
@@ -10,23 +12,29 @@ mod python;
 
 mod anonymous_scan;
 
-pub use anonymous_scan::*;
+use std::borrow::Cow;
+use std::sync::Arc;
 
+pub use anonymous_scan::*;
 #[cfg(feature = "csv-file")]
 pub use csv::*;
 #[cfg(feature = "ipc")]
 pub use ipc::*;
+#[cfg(feature = "json")]
+pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
-use std::borrow::Cow;
-
+use polars_arrow::prelude::QuantileInterpolOptions;
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use polars_core::datatypes::PlHashMap;
+use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::toggle_string_cache;
-use std::sync::Arc;
+use polars_io::RowCount;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
@@ -36,25 +44,18 @@ use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer
 use crate::logical_plan::optimizer::{
     predicate_pushdown::PredicatePushDown, projection_pushdown::ProjectionPushDown,
 };
+use crate::logical_plan::FETCH_ROWS;
 use crate::physical_plan::state::ExecutionState;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
+use crate::prelude::delay_rechunk::DelayRechunk;
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+use crate::prelude::file_caching::collect_fingerprints;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use crate::prelude::file_caching::find_column_union_and_fingerprints;
 use crate::prelude::{
     drop_nulls::ReplaceDropNulls, fast_projection::FastProjection,
     simplify_expr::SimplifyBooleanRule, slice_pushdown_lp::SlicePushDown, *,
 };
-
-use crate::logical_plan::FETCH_ROWS;
-use crate::prelude::delay_rechunk::DelayRechunk;
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-use crate::prelude::file_caching::collect_fingerprints;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
-use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_core::frame::explode::MeltArgs;
-use polars_io::RowCount;
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -621,7 +622,9 @@ impl LazyFrame {
         }
 
         // make sure its before slice pushdown.
-        rules.push(Box::new(FastProjection {}));
+        if projection_pushdown {
+            rules.push(Box::new(FastProjection {}));
+        }
         rules.push(Box::new(DelayRechunk {}));
 
         if slice_pushdown {
@@ -718,7 +721,7 @@ impl LazyFrame {
             None
         };
 
-        let planner = DefaultPlanner::default();
+        let planner = PhysicalPlanner::default();
         let mut physical_plan =
             planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 

@@ -1,5 +1,6 @@
-use polars_core::prelude::*;
 use std::fmt::{Debug, Formatter};
+
+use polars_core::prelude::*;
 
 pub trait DataFrameUdf: Send + Sync {
     fn call_udf(&self, df: DataFrame) -> Result<DataFrame>;

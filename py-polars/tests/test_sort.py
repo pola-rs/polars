@@ -189,3 +189,40 @@ def test_sorted_join_and_dtypes() -> None:
         "row_nr": [0, 1, 2, 3, 4, 5],
         "a": [-5, -2, 3, 3, 9, 10],
     }
+
+
+def test_sorted_flag_reverse() -> None:
+    s = pl.arange(0, 7, eager=True)
+    assert s.flags["SORTED_ASC"]
+    assert s.reverse().flags["SORTED_DESC"]
+
+
+def test_sorted_fast_paths() -> None:
+    s = pl.Series([1, 2, 3]).sort()
+    rev = s.sort(reverse=True)
+
+    assert rev.to_list() == [3, 2, 1]
+    assert s.sort().to_list() == [1, 2, 3]
+
+    s = pl.Series([None, 1, 2, 3]).sort()
+    rev = s.sort(reverse=True)
+    assert rev.to_list() == [None, 3, 2, 1]
+    assert rev.sort(reverse=True).to_list() == [None, 3, 2, 1]
+    assert rev.sort().to_list() == [None, 1, 2, 3]
+
+
+def test_argsort_rank_nans() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "val": [1.0, float("NaN")],
+            }
+        )
+        .with_columns(
+            [
+                pl.col("val").rank().alias("rank"),
+                pl.col("val").argsort().alias("argsort"),
+            ]
+        )
+        .select(["rank", "argsort"])
+    ).to_dict(False) == {"rank": [1.0, 2.0], "argsort": [0, 1]}

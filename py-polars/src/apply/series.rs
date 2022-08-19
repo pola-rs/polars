@@ -1,12 +1,13 @@
+use polars::chunked_array::builder::get_list_builder;
+use polars::prelude::*;
+use pyo3::prelude::*;
+use pyo3::types::{PyBool, PyCFunction, PyDict, PyFloat, PyList, PyString, PyTuple};
+
 use super::*;
 use crate::conversion::slice_to_wrapped;
 use crate::py_modules::SERIES;
 use crate::series::PySeries;
 use crate::{PyPolarsErr, Wrap};
-use polars::chunked_array::builder::get_list_builder;
-use polars::prelude::*;
-use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyCFunction, PyDict, PyFloat, PyList, PyString, PyTuple};
 
 /// Find the output type and dispatch to that implementation.
 fn infer_and_finish<'a, A: ApplyLambda<'a>>(
@@ -1564,7 +1565,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
             let iter = self
                 .into_no_null_iter()
                 .skip(init_null_count + 1)
-                .map(|val| call_with_value(val));
+                .map(call_with_value);
             avs.extend(iter);
         }
         Ok(Series::new(self.name(), &avs))

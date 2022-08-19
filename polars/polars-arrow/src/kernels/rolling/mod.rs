@@ -2,17 +2,19 @@ pub mod no_nulls;
 pub mod nulls;
 mod window;
 
-use crate::data_types::IsFloat;
-use crate::prelude::*;
-use crate::utils::CustomIterTools;
+use std::cmp::Ordering;
+use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
+
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
 use num::ToPrimitive;
 use num::{Bounded, Float, NumCast, One, Zero};
-use std::cmp::Ordering;
-use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 use window::*;
+
+use crate::data_types::IsFloat;
+use crate::prelude::*;
+use crate::utils::CustomIterTools;
 
 type Start = usize;
 type End = usize;
@@ -20,9 +22,9 @@ type Idx = usize;
 type WindowSize = usize;
 type Len = usize;
 
-fn compare_fn_nan_min<T>(a: &T, b: &T) -> Ordering
+pub fn compare_fn_nan_min<T>(a: &T, b: &T) -> Ordering
 where
-    T: PartialOrd + IsFloat + NativeType,
+    T: PartialOrd + IsFloat,
 {
     if T::is_float() {
         match (a.is_nan(), b.is_nan()) {
@@ -39,9 +41,9 @@ where
     }
 }
 
-fn compare_fn_nan_max<T>(a: &T, b: &T) -> Ordering
+pub fn compare_fn_nan_max<T>(a: &T, b: &T) -> Ordering
 where
-    T: PartialOrd + IsFloat + NativeType,
+    T: PartialOrd + IsFloat,
 {
     if T::is_float() {
         match (a.is_nan(), b.is_nan()) {

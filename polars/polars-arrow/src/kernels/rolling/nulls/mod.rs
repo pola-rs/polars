@@ -4,12 +4,13 @@ mod quantile;
 mod sum;
 mod variance;
 
-use super::*;
 pub use mean::*;
 pub use min_max::*;
 pub use quantile::*;
 pub use sum::*;
 pub use variance::*;
+
+use super::*;
 
 pub trait RollingAggWindowNulls<'a, T: NativeType> {
     /// # Safety
@@ -85,10 +86,12 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use crate::kernels::rolling::nulls::mean::rolling_mean;
+    use arrow::array::{Array, Int32Array};
     use arrow::buffer::Buffer;
     use arrow::datatypes::DataType;
+
+    use super::*;
+    use crate::kernels::rolling::nulls::mean::rolling_mean;
 
     fn get_null_arr() -> PrimitiveArray<f64> {
         // 1, None, -1, 4
@@ -217,5 +220,31 @@ mod test {
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(4.0), Some(4.0), Some(3.0), Some(2.0)]);
+    }
+
+    #[test]
+    fn test_rolling_extrema_nulls() {
+        let vals = vec![3, 3, 3, 10, 10, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+        let mut validity = MutableBitmap::new();
+        validity.extend_constant(vals.len(), true);
+
+        let window_size = 3;
+        let min_periods = 3;
+
+        let arr = Int32Array::new(DataType::Int32, vals.into(), Some(validity.into()));
+
+        let out = rolling_apply_agg_window::<MaxWindow<_>, _, _>(
+            arr.values().as_slice(),
+            arr.validity().as_ref().unwrap(),
+            window_size,
+            min_periods,
+            det_offsets,
+        );
+        let arr = out.as_any().downcast_ref::<Int32Array>().unwrap();
+        assert_eq!(arr.null_count(), 2);
+        assert_eq!(
+            &arr.values().as_slice()[2..],
+            &[3, 10, 10, 10, 10, 10, 9, 8, 7, 6, 5, 4, 3]
+        );
     }
 }

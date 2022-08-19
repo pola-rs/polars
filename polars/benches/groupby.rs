@@ -1,28 +1,26 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use lazy_static::lazy_static;
+use polars::export::once_cell::sync::Lazy;
 use polars::prelude::*;
 use polars_lazy::dsl::functions::pearson_corr;
 
-lazy_static! {
-    static ref DATA: DataFrame = {
-        let path =
-            std::env::var("CSV_SRC").expect("env var CSV_SRC pointing to the csv_file is not set");
+pub static DATA: Lazy<DataFrame> = Lazy::new(|| {
+    let path =
+        std::env::var("CSV_SRC").expect("env var CSV_SRC pointing to the csv_file is not set");
 
-        let mut df = CsvReader::from_path(&path)
-            .expect("could not read file")
-            // 1M rows
-            .with_n_rows(Some(1000000))
-            .finish()
-            .unwrap();
-        df.try_apply("id1", |s| s.cast(&DataType::Categorical))
-            .unwrap();
-        df.try_apply("id2", |s| s.cast(&DataType::Categorical))
-            .unwrap();
-        df.try_apply("id3", |s| s.cast(&DataType::Categorical))
-            .unwrap();
-        df
-    };
-}
+    let mut df = CsvReader::from_path(&path)
+        .expect("could not read file")
+        // 1M rows
+        .with_n_rows(Some(1000000))
+        .finish()
+        .unwrap();
+    df.try_apply("id1", |s| s.cast(&DataType::Categorical(None)))
+        .unwrap();
+    df.try_apply("id2", |s| s.cast(&DataType::Categorical(None)))
+        .unwrap();
+    df.try_apply("id3", |s| s.cast(&DataType::Categorical(None)))
+        .unwrap();
+    df
+});
 
 fn q1(c: &mut Criterion) {
     c.bench_function("groupby q1", |b| {
@@ -97,7 +95,7 @@ fn q6(c: &mut Criterion) {
                 .groupby([col("id4"), col("id5")])
                 .agg([
                     col("v3").median().alias("v3_median"),
-                    col("v3").std().alias("v3_std"),
+                    col("v3").std(0).alias("v3_std"),
                 ])
                 .collect()
                 .unwrap();
@@ -126,7 +124,13 @@ fn q8(c: &mut Criterion) {
                 .lazy()
                 // todo! accept slice of str
                 .drop_nulls(Some(vec![col("v3")]))
-                .sort("v3", true)
+                .sort(
+                    "v3",
+                    SortOptions {
+                        descending: true,
+                        nulls_last: false,
+                    },
+                )
                 .groupby([col("id6")])
                 .agg([col("v3").head(Some(2)).alias("v3_top_2")])
                 .explode(vec![col("v3_top_2")])

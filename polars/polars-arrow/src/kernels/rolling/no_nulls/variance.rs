@@ -1,13 +1,17 @@
-use super::mean::MeanWindow;
-use super::*;
 use no_nulls::{rolling_apply_agg_window, RollingAggWindowNoNulls};
 use num::pow::Pow;
+
+use super::mean::MeanWindow;
+use super::*;
 
 pub(super) struct SumSquaredWindow<'a, T> {
     slice: &'a [T],
     sum_of_squares: T,
     last_start: usize,
     last_end: usize,
+    // if we don't recompute every 'n' iterations
+    // we get a accumulated error/drift
+    last_recompute: u8,
 }
 
 impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<Output = T>>
@@ -20,15 +24,18 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<
             sum_of_squares: sum,
             last_start: start,
             last_end: end,
+            last_recompute: 0,
         }
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
         // if we exceed the end, we have a completely new window
         // so we recompute
-        let recompute_sum = if start >= self.last_end {
+        let recompute_sum = if start >= self.last_end || self.last_recompute > 128 {
+            self.last_recompute = 0;
             true
         } else {
+            self.last_recompute += 1;
             // remove elements that should leave the window
             let mut recompute_sum = false;
             for idx in self.last_start..start {

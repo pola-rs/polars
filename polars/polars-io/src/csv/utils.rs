@@ -1,9 +1,7 @@
-#[cfg(any(feature = "decompress", feature = "decompress-fast"))]
-use crate::csv::parser::next_line_position_naive;
-use crate::csv::parser::{next_line_position, skip_bom, skip_line_ending, SplitFields, SplitLines};
-use crate::csv::CsvEncoding;
-use crate::mmap::{MmapBytesReader, ReaderBytes};
-use crate::prelude::NullValues;
+use std::borrow::Cow;
+use std::io::Read;
+use std::mem::MaybeUninit;
+
 use once_cell::sync::Lazy;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
@@ -12,9 +10,13 @@ use polars_time::chunkedarray::utf8::infer as date_infer;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::utf8::Pattern;
 use regex::{Regex, RegexBuilder};
-use std::borrow::Cow;
-use std::io::Read;
-use std::mem::MaybeUninit;
+
+#[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+use crate::csv::parser::next_line_position_naive;
+use crate::csv::parser::{next_line_position, skip_bom, skip_line_ending, SplitFields, SplitLines};
+use crate::csv::CsvEncoding;
+use crate::mmap::{MmapBytesReader, ReaderBytes};
+use crate::prelude::NullValues;
 
 pub(crate) fn get_file_chunks(
     bytes: &[u8],
@@ -283,7 +285,8 @@ pub fn infer_file_schema(
 
     let header_length = headers.len();
     // keep track of inferred field types
-    let mut column_types: Vec<PlHashSet<DataType>> = vec![PlHashSet::new(); header_length];
+    let mut column_types: Vec<PlHashSet<DataType>> =
+        vec![PlHashSet::with_capacity(4); header_length];
     // keep track of columns with nulls
     let mut nulls: Vec<bool> = vec![false; header_length];
 

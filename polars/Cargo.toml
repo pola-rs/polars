@@ -40,7 +40,7 @@ strings = ["polars-core/strings", "polars-lazy/strings", "polars-ops/strings"]
 object = ["polars-core/object", "polars-lazy/object"]
 
 # support for arrows json parsing
-json = ["polars-io", "polars-io/json"]
+json = ["polars-io", "polars-io/json", "polars-lazy/json"]
 
 # support for arrows ipc file parsing
 ipc = ["polars-io", "polars-io/ipc", "polars-lazy/ipc"]
@@ -117,6 +117,8 @@ describe = ["polars-core/describe"]
 timezones = ["polars-core/timezones"]
 string_justify = ["polars-lazy/string_justify", "polars-ops/string_justify"]
 arg_where = ["polars-lazy/arg_where"]
+search_sorted = ["polars-lazy/search_sorted"]
+meta = ["polars-lazy/meta"]
 date_offset = ["polars-lazy/date_offset"]
 trigonometry = ["polars-lazy/trigonometry"]
 sign = ["polars-lazy/sign"]
@@ -137,6 +139,7 @@ test = [
   "parquet",
   "ipc",
   "ipc_streaming",
+  "json",
 ]
 
 # don't use this
@@ -195,7 +198,12 @@ dtype-categorical = [
   "polars-lazy/dtype-categorical",
   "polars-ops/dtype-categorical",
 ]
-dtype-struct = ["polars-core/dtype-struct", "polars-lazy/dtype-struct", "polars-ops/dtype-struct"]
+dtype-struct = [
+  "polars-core/dtype-struct",
+  "polars-lazy/dtype-struct",
+  "polars-ops/dtype-struct",
+  "polars-io/dtype-struct",
+]
 
 docs-selection = [
   "csv-file",

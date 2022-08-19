@@ -1,7 +1,8 @@
-use super::super::executors;
-use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_io::aggregations::ScanAggregation;
+
+use super::super::executors;
+use crate::prelude::*;
 
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 fn aggregate_expr_to_scan_agg(
@@ -48,9 +49,9 @@ fn aggregate_expr_to_scan_agg(
 }
 
 #[derive(Default)]
-pub struct DefaultPlanner {}
+pub struct PhysicalPlanner {}
 
-impl DefaultPlanner {
+impl PhysicalPlanner {
     pub fn create_physical_expressions(
         &self,
         exprs: &[Node],
@@ -259,21 +260,9 @@ impl DefaultPlanner {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 Ok(Box::new(executors::ExplodeExec { input, columns }))
             }
-            Cache { input } => {
-                let schema = lp_arena.get(input).schema(lp_arena);
-                // todo! fix the unique constraint in the schema. Probably in projection pushdown at joins
-                let mut unique = PlHashSet::with_capacity(schema.len());
-                // assumption of 80 characters per column name
-                let mut key = String::with_capacity(schema.len() * 80);
-                for name in schema.iter_names() {
-                    if unique.insert(name) {
-                        key.push_str(name)
-                    }
-                }
-                // mutable borrow otherwise
-                drop(unique);
+            Cache { input, id } => {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
-                Ok(Box::new(executors::CacheExec { key, input }))
+                Ok(Box::new(executors::CacheExec { id, input }))
             }
             Distinct { input, options } => {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
@@ -379,7 +368,12 @@ impl DefaultPlanner {
                                 match ae {
                                     // struct is needed to keep both states
                                     #[cfg(feature = "dtype-struct")]
-                                    Agg(AAggExpr::Mean(_)) => true,
+                                    Agg(AAggExpr::Mean(_)) => {
+                                        // only numeric means for now.
+                                        // logical types seem to break because of casts to float.
+                                        matches!(expr_arena.get(*agg).get_type(&input_schema, Context::Default, expr_arena).map(|dt| {
+                                        dt.is_numeric()}), Ok(true))
+                                    },
                                     // only allowed expressions
                                     Agg(agg_e) => {
                                         matches!(

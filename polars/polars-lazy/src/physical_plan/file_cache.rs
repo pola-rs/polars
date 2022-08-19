@@ -1,7 +1,8 @@
-use crate::prelude::file_caching::FileFingerPrint;
-use crate::prelude::*;
 use parking_lot::Mutex;
 use polars_core::prelude::*;
+
+use crate::prelude::file_caching::FileFingerPrint;
+use crate::prelude::*;
 
 #[derive(Clone)]
 pub(crate) struct FileCache {

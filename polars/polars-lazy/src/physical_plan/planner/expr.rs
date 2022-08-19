@@ -1,11 +1,12 @@
-use super::super::expressions as phys_expr;
-use crate::prelude::*;
 use polars_core::frame::groupby::GroupByMethod;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::parallel_op_series;
 
-impl DefaultPlanner {
+use super::super::expressions as phys_expr;
+use crate::prelude::*;
+
+impl PhysicalPlanner {
     pub fn create_physical_expr(
         &self,
         expression: Node,

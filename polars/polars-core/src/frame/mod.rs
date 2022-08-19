@@ -10,10 +10,9 @@ use rayon::prelude::*;
 
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
-use crate::utils::{get_supertype, split_ca, split_df, NoNull};
-
 #[cfg(feature = "describe")]
 use crate::utils::concat_df_unchecked;
+use crate::utils::{get_supertype, split_ca, split_df, NoNull};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -30,18 +29,20 @@ pub mod hash_join;
 pub mod row;
 mod upstream_traits;
 
+use std::hash::{BuildHasher, Hash, Hasher};
+
+pub use chunks::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+use crate::frame::groupby::GroupsIndicator;
 #[cfg(feature = "sort_multiple")]
 use crate::prelude::sort::prepare_argsort;
+use crate::series::IsSorted;
 use crate::vector_hasher::_boost_hash_combine;
 #[cfg(feature = "row_hash")]
 use crate::vector_hasher::df_rows_to_hashes_threaded;
 use crate::POOL;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-use std::hash::{BuildHasher, Hash, Hasher};
-
-use crate::series::IsSorted;
-pub use chunks::*;
 
 #[derive(Copy, Clone, Debug)]
 pub enum NullStrategy {
@@ -469,7 +470,6 @@ impl DataFrame {
     /// Ensure all the chunks in the DataFrame are aligned.
     pub fn rechunk(&mut self) -> &mut Self {
         if self.should_rechunk() {
-            debug_assert!(!self.columns.iter().map(|s| s.n_chunks()).all_equal());
             self.as_single_chunk_par()
         } else {
             self
@@ -2968,9 +2968,20 @@ impl DataFrame {
                 self.apply_columns_par(&|s| unsafe { s.agg_first(groups) })
             }
             (Last, true) => {
-                let gb = self.groupby_stable(names)?;
+                // maintain order by last values, so the sorted groups are not correct as they
+                // are sorted by the first value
+                let gb = self.groupby(names)?;
                 let groups = gb.get_groups();
-                self.apply_columns_par(&|s| unsafe { s.agg_last(groups) })
+                let last_idx: NoNull<IdxCa> = groups
+                    .iter()
+                    .map(|g| match g {
+                        GroupsIndicator::Idx((_first, idx)) => idx[idx.len() - 1],
+                        GroupsIndicator::Slice([first, len]) => first + len,
+                    })
+                    .collect();
+
+                let last_idx = last_idx.sort(false);
+                return Ok(unsafe { self.take_unchecked(&last_idx) });
             }
             (First, false) => {
                 let gb = self.groupby(names)?;

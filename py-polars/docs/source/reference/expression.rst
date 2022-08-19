@@ -163,6 +163,7 @@ Computations
     Expr.rolling_std
     Expr.rolling_sum
     Expr.rolling_var
+    Expr.search_sorted
     Expr.sign
     Expr.sin
     Expr.sinh
@@ -264,7 +265,7 @@ TimeSeries
 ----------
 The following methods are available under the `expr.dt` attribute.
 
-.. currentmodule:: polars.internals.expr
+.. currentmodule:: polars.internals.expr.datetime
 
 .. autosummary::
    :toctree: api/
@@ -299,7 +300,7 @@ Strings
 
 The following methods are available under the `Expr.str` attribute.
 
-.. currentmodule:: polars.internals.expr
+.. currentmodule:: polars.internals.expr.string
 
 .. autosummary::
    :toctree: api/
@@ -335,7 +336,7 @@ Lists
 -----
 The following methods are available under the `expr.arr` attribute.
 
-.. currentmodule:: polars.internals.expr
+.. currentmodule:: polars.internals.expr.list
 
 .. autosummary::
    :toctree: api/
@@ -368,7 +369,7 @@ Categories
 ----------
 The following methods are available under the `expr.cat` attribute.
 
-.. currentmodule:: polars.internals.expr
+.. currentmodule:: polars.internals.expr.categorical
 
 .. autosummary::
    :toctree: api/
@@ -379,10 +380,25 @@ Struct
 ------
 The following methods are available under the `expr.struct` attribute.
 
-.. currentmodule:: polars.internals.expr
+.. currentmodule:: polars.internals.expr.struct
 
 .. autosummary::
    :toctree: api/
 
     ExprStructNameSpace.field
     ExprStructNameSpace.rename_fields
+
+
+Meta
+----
+The following methods are available under the `expr.meta` attribute.
+
+.. currentmodule:: polars.internals.expr.meta
+
+.. autosummary::
+   :toctree: api/
+
+    ExprMetaNameSpace.output_name
+    ExprMetaNameSpace.pop
+    ExprMetaNameSpace.root_names
+    ExprMetaNameSpace.undo_aliases

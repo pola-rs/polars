@@ -1,7 +1,8 @@
-use super::RepeatBy;
-use crate::prelude::*;
 use arrow::array::ListArray;
 use polars_arrow::array::ListFromIter;
+
+use super::RepeatBy;
+use crate::prelude::*;
 
 type LargeListArray = ListArray<i64>;
 

@@ -1,3 +1,11 @@
+use std::fmt::Debug;
+use std::hash::Hash;
+
+use ahash::{CallHasher, RandomState};
+use num::NumCast;
+use polars_arrow::prelude::QuantileInterpolOptions;
+use rayon::prelude::*;
+
 use self::hashing::*;
 use crate::prelude::*;
 #[cfg(feature = "groupby_list")]
@@ -5,12 +13,6 @@ use crate::utils::Wrap;
 use crate::utils::{accumulate_dataframes_vertical, set_partition_size, split_offsets};
 use crate::vector_hasher::{get_null_hash_value, AsU64, StrHash};
 use crate::POOL;
-use ahash::{CallHasher, RandomState};
-use num::NumCast;
-use polars_arrow::prelude::QuantileInterpolOptions;
-use rayon::prelude::*;
-use std::fmt::Debug;
-use std::hash::Hash;
 
 pub mod aggregations;
 pub(crate) mod hashing;
@@ -19,10 +21,9 @@ mod into_groups;
 pub(crate) mod pivot;
 mod proxy;
 
+pub use into_groups::*;
 #[cfg(feature = "rows")]
 pub use pivot::PivotAgg;
-
-pub use into_groups::*;
 use polars_arrow::array::ValueSize;
 pub use proxy::*;
 
@@ -936,10 +937,11 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
 
 #[cfg(test)]
 mod test {
+    use num::traits::FloatConst;
+
     use crate::frame::groupby::{groupby, groupby_threaded_num};
     use crate::prelude::*;
     use crate::utils::split_ca;
-    use num::traits::FloatConst;
 
     #[test]
     #[cfg(feature = "dtype-date")]

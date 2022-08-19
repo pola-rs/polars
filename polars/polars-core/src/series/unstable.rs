@@ -1,7 +1,8 @@
-use crate::prelude::*;
 use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
+
+use crate::prelude::*;
 
 /// A wrapper type that should make it a bit more clear that we should not clone Series
 #[derive(Debug, Copy, Clone)]

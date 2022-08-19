@@ -1,8 +1,9 @@
-use crate::index::IdxSize;
 use arrow::{
     array::{Array, BooleanArray, PrimitiveArray},
     bitmap::{Bitmap, MutableBitmap},
 };
+
+use crate::index::IdxSize;
 
 unsafe fn take_values(values: &Bitmap, indices: &[IdxSize]) -> Bitmap {
     let values = indices.iter().map(|&index| {

@@ -1,7 +1,10 @@
 use polars_core::datatypes::DataType;
 use polars_core::prelude::TimeUnit;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct StrpTimeOptions {
     /// DataType to parse in. One of {Date, Datetime}
     pub date_dtype: DataType,

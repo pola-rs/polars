@@ -1,4 +1,5 @@
-use crate::prelude::*;
+use std::cmp::Ordering;
+
 use polars_arrow::trusted_len::TrustedLen;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
@@ -7,7 +8,8 @@ use polars_core::{export::rayon::prelude::*, utils::split_offsets};
 use polars_utils::flatten;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
+
+use crate::prelude::*;
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -157,7 +159,7 @@ pub(crate) fn groupby_values_iter_full_lookbehind(
         .enumerate()
         .map(move |(mut i, lower)| {
             if *lower < last {
-                panic!("index column of 'groupby_rolling' must be sorted!")
+                panic!("index column of 'groupby_rolling' must be sorted in ascending order!")
             }
             last = *lower;
             i += start_offset;

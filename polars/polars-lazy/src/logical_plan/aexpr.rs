@@ -1,11 +1,14 @@
-use crate::dsl::function_expr::FunctionExpr;
-use crate::logical_plan::Context;
-use crate::prelude::*;
+use std::sync::Arc;
+
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_time_units};
 use polars_utils::arena::{Arena, Node};
-use std::sync::Arc;
+
+use crate::dsl::function_expr::FunctionExpr;
+use crate::logical_plan::Context;
+use crate::prelude::names::COUNT;
+use crate::prelude::*;
 
 #[derive(Clone, Debug)]
 pub enum AAggExpr {
@@ -113,6 +116,7 @@ impl Default for AExpr {
         AExpr::Wildcard
     }
 }
+
 impl AExpr {
     /// This should be a 1 on 1 copy of the get_type method of Expr until Expr is completely phased out.
     pub(crate) fn get_type(
@@ -164,7 +168,7 @@ impl AExpr {
     ) -> Result<Field> {
         use AExpr::*;
         match self {
-            Count => Ok(Field::new("count", DataType::UInt32)),
+            Count => Ok(Field::new(COUNT, DataType::UInt32)),
             Window { function, .. } => {
                 let e = arena.get(*function);
                 e.to_field(schema, ctxt, arena)
@@ -269,7 +273,7 @@ impl AExpr {
                     }
                     Mean(expr) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        field.coerce(DataType::Float64);
+                        coerce_numeric_aggregation(&mut field);
                         Ok(field)
                     }
                     List(expr) => {
@@ -281,12 +285,12 @@ impl AExpr {
                     }
                     Std(expr, _) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        field.coerce(DataType::Float64);
+                        coerce_numeric_aggregation(&mut field);
                         Ok(field)
                     }
                     Var(expr, _) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        field.coerce(DataType::Float64);
+                        coerce_numeric_aggregation(&mut field);
                         Ok(field)
                     }
                     NUnique(expr) => {
@@ -306,7 +310,7 @@ impl AExpr {
                     }
                     Quantile { expr, .. } => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        field.coerce(DataType::Float64);
+                        coerce_numeric_aggregation(&mut field);
                         Ok(field)
                     }
                 }
@@ -353,6 +357,20 @@ impl AExpr {
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
             Nth(_) => panic!("should be no nth at this point"),
+        }
+    }
+}
+
+fn coerce_numeric_aggregation(field: &mut Field) {
+    match field.dtype {
+        DataType::Duration(_) => {
+            // pass
+        }
+        DataType::Float32 => {
+            // pass
+        }
+        _ => {
+            field.coerce(DataType::Float64);
         }
     }
 }

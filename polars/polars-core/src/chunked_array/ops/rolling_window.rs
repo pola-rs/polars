@@ -24,14 +24,16 @@ impl Default for RollingOptionsFixedWindow {
 
 #[cfg(feature = "rolling_window")]
 mod inner_mod {
-    use crate::prelude::*;
+    use std::ops::SubAssign;
+
     use arrow::array::{Array, PrimitiveArray};
     use arrow::bitmap::MutableBitmap;
     use num::{Float, Zero};
     use polars_arrow::bit_util::unset_bit_raw;
     use polars_arrow::data_types::IsFloat;
     use polars_arrow::trusted_len::PushUnchecked;
-    use std::ops::SubAssign;
+
+    use crate::prelude::*;
 
     /// utility
     fn check_input(window_size: usize, min_periods: usize) -> Result<()> {

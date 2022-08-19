@@ -95,7 +95,7 @@ jobs:
           #   target: aarch64-unknown-linux-musl
           #   docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
           #   build: |-
-          #     rustup toolchain install $(cat ./rust-toolchain)
+          #     rustup toolchain install $(cat ./rust-toolchain.toml)
           #     rustup target add aarch64-unknown-linux-musl
           #     yarn build --target=aarch64-unknown-linux-musl
           #     /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip polars/*.node
@@ -112,8 +112,8 @@ jobs:
           cache: yarn
           cache-dependency-path: nodejs-polars/yarn.lock
           architecture: ${{ matrix.settings.architecture }}
-      - name: Copy rust-toolchain to root
-        run: cp rust-toolchain ..
+      - name: Copy rust-toolchain.toml to root
+        run: cp rust-toolchain.toml ..
       - name: Install
         uses: actions-rs/toolchain@v1
         if: ${{ !matrix.settings.docker }}

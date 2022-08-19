@@ -1,15 +1,17 @@
 mod asof;
 mod groups;
 
-use crate::prelude::*;
-use crate::utils::slice_slice;
+use std::borrow::Cow;
+
 use asof::*;
 use num::Bounded;
 #[cfg(feature = "serde")]
 use serde::Deserializer;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
+
+use crate::prelude::*;
+use crate::utils::slice_slice;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]

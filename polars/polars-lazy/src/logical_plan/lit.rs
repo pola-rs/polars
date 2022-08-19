@@ -1,10 +1,10 @@
-use crate::prelude::*;
 #[cfg(feature = "temporal")]
 use polars_core::export::chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::prelude::*;
-
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use crate::prelude::*;
 
 #[derive(Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

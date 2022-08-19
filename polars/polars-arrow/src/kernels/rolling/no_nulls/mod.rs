@@ -4,21 +4,22 @@ mod quantile;
 mod sum;
 mod variance;
 
-use super::*;
-use crate::utils::CustomIterTools;
+use std::fmt::Debug;
+
 use arrow::array::PrimitiveArray;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
-use num::{Float, NumCast};
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
-
 pub use mean::*;
 pub use min_max::*;
+use num::{Float, NumCast};
 pub use quantile::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 pub use sum::*;
 pub use variance::*;
+
+use super::*;
+use crate::utils::CustomIterTools;
 
 pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self;

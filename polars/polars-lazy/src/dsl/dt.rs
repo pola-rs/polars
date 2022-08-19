@@ -1,5 +1,6 @@
-use super::*;
 use polars_time::prelude::TemporalMethods;
+
+use super::*;
 
 /// Specialized expressions for [`Series`] with dates/datetimes.
 pub struct DateLikeNameSpace(pub(crate) Expr);

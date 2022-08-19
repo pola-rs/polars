@@ -1,7 +1,3 @@
-use crate::csv::parser::{is_whitespace, skip_whitespace};
-use crate::csv::read_impl::RunningSize;
-use crate::csv::utils::escape_field;
-use crate::csv::CsvEncoding;
 use arrow::array::Utf8Array;
 use arrow::bitmap::MutableBitmap;
 use polars_arrow::prelude::FromDataUtf8;
@@ -10,6 +6,11 @@ use polars_core::prelude::*;
 use polars_time::chunkedarray::utf8::Pattern;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::prelude::utf8::infer::{infer_pattern_single, DatetimeInfer};
+
+use crate::csv::parser::{is_whitespace, skip_whitespace};
+use crate::csv::read_impl::RunningSize;
+use crate::csv::utils::escape_field;
+use crate::csv::CsvEncoding;
 
 pub(crate) trait PrimitiveParser: PolarsNumericType {
     fn parse(bytes: &[u8]) -> Option<Self::Native>;

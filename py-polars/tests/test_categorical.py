@@ -200,3 +200,28 @@ def test_cast_null_to_categorical() -> None:
     assert pl.DataFrame().with_columns(
         [pl.lit(None).cast(pl.Categorical).alias("nullable_enum")]
     ).dtypes == [pl.Categorical]
+
+
+def test_shift_and_fill() -> None:
+    df = pl.DataFrame({"a": ["a", "b"]}).with_columns(
+        [pl.col("a").cast(pl.Categorical)]
+    )
+
+    s = df.with_column(pl.col("a").shift_and_fill(1, "c"))["a"]
+    assert s.dtype == pl.Categorical
+    assert s.to_list() == ["c", "a"]
+
+
+def test_merge_lit_under_global_cache_4491() -> None:
+    with pl.StringCache():
+        df = pl.DataFrame(
+            [
+                pl.Series("label", ["foo", "bar"], dtype=pl.Categorical),
+                pl.Series("value", [3, 9]),
+            ]
+        )
+        assert df.with_column(
+            pl.when(pl.col("value") > 5)
+            .then(pl.col("label"))
+            .otherwise(pl.lit(None, pl.Categorical))
+        ).to_dict(False) == {"label": [None, "bar"], "value": [3, 9]}

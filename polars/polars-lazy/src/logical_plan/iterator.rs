@@ -1,5 +1,4 @@
 use crate::prelude::*;
-
 macro_rules! push_expr {
     ($current_expr:expr, $push:ident, $iter:ident) => {{
         use Expr::*;
@@ -8,26 +7,29 @@ macro_rules! push_expr {
             Alias(e, _) => $push(e),
             Not(e) => $push(e),
             BinaryExpr { left, op: _, right } => {
-                $push(left);
+                // reverse order so that left is popped first
                 $push(right);
+                $push(left);
             }
             IsNull(e) => $push(e),
             IsNotNull(e) => $push(e),
             Cast { expr, .. } => $push(expr),
             Sort { expr, .. } => $push(expr),
             Take { expr, idx } => {
-                $push(expr);
                 $push(idx);
+                $push(expr);
             }
             Filter { input, by } => {
+                $push(by);
+                // latest, so that it is popped first
                 $push(input);
-                $push(by)
             }
             SortBy { expr, by, .. } => {
-                $push(expr);
                 for e in by {
                     $push(e)
                 }
+                // latest, so that it is popped first
+                $push(expr);
             }
             Agg(agg_e) => {
                 use AggExpr::*;
@@ -53,12 +55,15 @@ macro_rules! push_expr {
                 falsy,
                 predicate,
             } => {
-                $push(truthy);
+                $push(predicate);
                 $push(falsy);
-                $push(predicate)
+                // latest, so that it is popped first
+                $push(truthy);
             }
-            AnonymousFunction { input, .. } => input.$iter().for_each(|e| $push(e)),
-            Function { input, .. } => input.$iter().for_each(|e| $push(e)),
+            // we iterate in reverse order, so that the lhs is popped first and will be found
+            // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
+            AnonymousFunction { input, .. } => input.$iter().rev().for_each(|e| $push(e)),
+            Function { input, .. } => input.$iter().rev().for_each(|e| $push(e)),
             Shift { input, .. } => $push(input),
             Reverse(e) => $push(e),
             Duplicated(e) => $push(e),
@@ -70,22 +75,24 @@ macro_rules! push_expr {
                 order_by,
                 ..
             } => {
-                $push(function);
-                for e in partition_by {
+                for e in partition_by.into_iter().rev() {
                     $push(e)
                 }
                 if let Some(e) = order_by {
                     $push(e);
                 }
+                // latest so that it is popped first
+                $push(function);
             }
             Slice {
                 input,
                 offset,
                 length,
             } => {
-                $push(input);
-                $push(offset);
                 $push(length);
+                $push(offset);
+                // latest, so that it is popped first
+                $push(input);
             }
             Exclude(e, _) => $push(e),
             KeepName(e) => $push(e),
@@ -168,26 +175,30 @@ impl AExpr {
             Alias(e, _) => push(e),
             Not(e) => push(e),
             BinaryExpr { left, op: _, right } => {
-                push(left);
+                // reverse order so that left is popped first
                 push(right);
+                push(left);
             }
             IsNull(e) => push(e),
             IsNotNull(e) => push(e),
             Cast { expr, .. } => push(expr),
             Sort { expr, .. } => push(expr),
             Take { expr, idx } => {
-                push(expr);
                 push(idx);
+                // latest, so that it is popped first
+                push(expr);
             }
             SortBy { expr, by, .. } => {
-                push(expr);
                 for node in by {
                     push(node)
                 }
+                // latest, so that it is popped first
+                push(expr);
             }
             Filter { input, by } => {
-                push(input);
                 push(by);
+                // latest, so that it is popped first
+                push(input);
             }
             Agg(agg_e) => {
                 use AAggExpr::*;
@@ -213,11 +224,17 @@ impl AExpr {
                 falsy,
                 predicate,
             } => {
-                push(truthy);
+                push(predicate);
                 push(falsy);
-                push(predicate)
+                // latest, so that it is popped first
+                push(truthy);
             }
-            AnonymousFunction { input, .. } | Function { input, .. } => input.iter().for_each(push),
+            AnonymousFunction { input, .. } | Function { input, .. } =>
+            // we iterate in reverse order, so that the lhs is popped first and will be found
+            // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
+            {
+                input.iter().rev().for_each(push)
+            }
             Shift { input, .. } => push(input),
             Reverse(e) => push(e),
             Duplicated(e) => push(e),
@@ -229,22 +246,24 @@ impl AExpr {
                 order_by,
                 options: _,
             } => {
-                push(function);
-                for e in partition_by {
+                for e in partition_by.iter().rev() {
                     push(e);
                 }
                 if let Some(e) = order_by {
                     push(e);
                 }
+                // latest so that it is popped first
+                push(function);
             }
             Slice {
                 input,
                 offset,
                 length,
             } => {
-                push(input);
-                push(offset);
                 push(length);
+                push(offset);
+                // latest so that it is popped first
+                push(input);
             }
         }
     }
@@ -316,9 +335,10 @@ impl<'a> Iterator for AlpIter<'a> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use polars_core::df;
     use polars_core::prelude::*;
+
+    use super::*;
 
     #[test]
     fn test_lp_iter() -> Result<()> {

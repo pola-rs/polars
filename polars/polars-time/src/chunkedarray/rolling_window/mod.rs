@@ -3,8 +3,10 @@ mod ints;
 #[cfg(feature = "rolling_window")]
 mod rolling_kernels;
 
-use crate::prelude::*;
-use crate::series::WrapFloat;
+#[cfg(feature = "rolling_window")]
+use std::convert::TryFrom;
+use std::ops::SubAssign;
+
 #[cfg(feature = "rolling_window")]
 use arrow::array::{Array, PrimitiveArray};
 use polars_arrow::data_types::IsFloat;
@@ -15,9 +17,9 @@ use polars_arrow::kernels::rolling;
 #[cfg(feature = "rolling_window")]
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::prelude::*;
-#[cfg(feature = "rolling_window")]
-use std::convert::TryFrom;
-use std::ops::SubAssign;
+
+use crate::prelude::*;
+use crate::series::WrapFloat;
 
 #[derive(Clone)]
 pub struct RollingOptions {
@@ -236,8 +238,8 @@ where
         check_input(options.window_size, options.min_periods)?;
         let ca = ca.rechunk();
 
-        match ca.has_validity() {
-            false => rolling_agg_fn(
+        match ca.null_count() {
+            0 => rolling_agg_fn(
                 arr.values().as_slice(),
                 options.window_size,
                 options.min_periods,

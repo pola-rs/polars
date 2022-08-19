@@ -2,12 +2,8 @@
 //!
 //! Functions that might be useful.
 //!
-#[cfg(feature = "sort_multiple")]
-use crate::chunked_array::ops::sort::prepare_argsort;
-use crate::prelude::*;
-use crate::utils::coalesce_nulls;
-#[cfg(feature = "diagonal_concat")]
-use crate::utils::concat_df;
+use std::ops::Add;
+
 #[cfg(feature = "diagonal_concat")]
 use ahash::AHashSet;
 use arrow::compute;
@@ -15,7 +11,13 @@ use arrow::types::simd::Simd;
 use num::{Float, NumCast, ToPrimitive};
 #[cfg(feature = "concat_str")]
 use polars_arrow::prelude::ValueSize;
-use std::ops::Add;
+
+#[cfg(feature = "sort_multiple")]
+use crate::chunked_array::ops::sort::prepare_argsort;
+use crate::prelude::*;
+use crate::utils::coalesce_nulls;
+#[cfg(feature = "diagonal_concat")]
+use crate::utils::concat_df;
 
 /// Compute the covariance between two columns.
 pub fn cov_f<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>

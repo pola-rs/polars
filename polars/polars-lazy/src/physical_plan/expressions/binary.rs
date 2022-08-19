@@ -1,10 +1,12 @@
-use crate::physical_plan::state::{ExecutionState, StateFlags};
-use crate::prelude::*;
+use std::convert::TryFrom;
+use std::sync::Arc;
+
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::series::unstable::UnstableSeries;
 use polars_core::{prelude::*, POOL};
-use std::convert::TryFrom;
-use std::sync::Arc;
+
+use crate::physical_plan::state::{ExecutionState, StateFlags};
+use crate::prelude::*;
 
 pub struct BinaryExpr {
     pub(crate) left: Arc<dyn PhysicalExpr>,
@@ -44,13 +46,8 @@ fn apply_operator_owned(left: Series, right: Series, op: Operator) -> Result<Ser
         Operator::Minus => Ok(left - right),
         Operator::Multiply => Ok(left * right),
         Operator::Divide => Ok(&left / &right),
-        Operator::TrueDivide => {
-            use DataType::*;
-            match left.dtype() {
-                Date | Datetime(_, _) | Float32 | Float64 => Ok(&left / &right),
-                _ => Ok(&left.cast(&Float64)? / &right.cast(&Float64)?),
-            }
-        }
+        Operator::TrueDivide => apply_operator(&left, &right, op),
+        Operator::FloorDivide => apply_operator(&left, &right, op),
         Operator::And => left.bitand(&right),
         Operator::Or => left.bitor(&right),
         Operator::Xor => left.bitxor(&right),
@@ -77,6 +74,14 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> Result<Ser
             match left.dtype() {
                 Date | Datetime(_, _) | Float32 | Float64 => Ok(left / right),
                 _ => Ok(&left.cast(&Float64)? / &right.cast(&Float64)?),
+            }
+        }
+        Operator::FloorDivide => {
+            use DataType::*;
+            match left.dtype() {
+                #[cfg(feature = "round_series")]
+                Float32 | Float64 => (left / right).floor(),
+                _ => Ok(left / right),
             }
         }
         Operator::And => left.bitand(right),
@@ -404,9 +409,10 @@ impl PhysicalExpr for BinaryExpr {
 
 #[cfg(feature = "parquet")]
 mod stats {
-    use super::*;
     use polars_io::parquet::predicates::BatchStats;
     use polars_io::predicates::StatsEvaluator;
+
+    use super::*;
 
     fn apply_operator_stats_rhs_lit(min_max: &Series, literal: &Series, op: Operator) -> bool {
         match op {

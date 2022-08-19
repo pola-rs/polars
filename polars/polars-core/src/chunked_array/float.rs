@@ -1,7 +1,8 @@
-use crate::prelude::*;
 use num::Float;
 use polars_arrow::kernels::float::*;
 use polars_arrow::kernels::set::set_at_nulls;
+
+use crate::prelude::*;
 
 impl<T> ChunkedArray<T>
 where

@@ -25,6 +25,7 @@ Attributes
    Series.shape
    Series.str
    Series.time_unit
+   Series.flags
 
 Conversion
 ----------
@@ -142,6 +143,7 @@ Computations
     Series.rolling_std
     Series.rolling_sum
     Series.rolling_var
+    Series.search_sorted
     Series.sign
     Series.sin
     Series.sinh
@@ -213,7 +215,7 @@ TimeSeries
 ----------
 The following methods are available under the `Series.dt` attribute.
 
-.. currentmodule:: polars.internals.series
+.. currentmodule:: polars.internals.series.datetime
 
 .. autosummary::
    :toctree: api/
@@ -253,7 +255,7 @@ Strings
 
 The following methods are available under the `Series.str` attribute.
 
-.. currentmodule:: polars.internals.series
+.. currentmodule:: polars.internals.series.string
 
 .. autosummary::
    :toctree: api/
@@ -290,7 +292,7 @@ Lists
 
 The following methods are available under the `Series.arr` attribute.
 
-.. currentmodule:: polars.internals.series
+.. currentmodule:: polars.internals.series.list
 
 .. autosummary::
    :toctree: api/
@@ -322,7 +324,7 @@ Categories
 ----------
 The following methods are available under the `Series.cat` attribute.
 
-.. currentmodule:: polars.internals.series
+.. currentmodule:: polars.internals.series.categorical
 
 .. autosummary::
    :toctree: api/
@@ -333,7 +335,7 @@ Struct
 ------
 The following methods are available under the `Series.struct` attribute.
 
-.. currentmodule:: polars.internals.series
+.. currentmodule:: polars.internals.series.struct
 
 .. autosummary::
    :toctree: api/

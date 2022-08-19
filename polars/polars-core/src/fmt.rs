@@ -1,15 +1,19 @@
-use crate::config::{FMT_MAX_COLS, FMT_MAX_ROWS, FMT_STR_LEN};
-use crate::prelude::*;
-
-#[cfg(feature = "timezones")]
-use chrono::TimeZone;
-use num::{Num, NumCast};
 use std::{
     fmt,
     fmt::{Debug, Display, Formatter},
 };
 
+#[cfg(feature = "timezones")]
+use chrono::TimeZone;
+use num::{Num, NumCast};
+
+use crate::config::{FMT_MAX_COLS, FMT_MAX_ROWS, FMT_STR_LEN};
+use crate::prelude::*;
+
 const LIMIT: usize = 25;
+
+#[cfg(feature = "fmt")]
+use std::borrow::Cow;
 
 #[cfg(any(
     feature = "dtype-date",
@@ -21,8 +25,6 @@ use arrow::temporal_conversions::*;
 use comfy_table::presets::{ASCII_FULL, UTF8_FULL};
 #[cfg(feature = "fmt")]
 use comfy_table::*;
-#[cfg(feature = "fmt")]
-use std::borrow::Cow;
 
 macro_rules! format_array {
     ($f:ident, $a:expr, $dtype:expr, $name:expr, $array_type:expr) => {{

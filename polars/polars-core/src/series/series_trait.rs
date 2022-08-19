@@ -1,12 +1,14 @@
-#[cfg(feature = "object")]
-use crate::chunked_array::object::PolarsObjectSafe;
-pub use crate::prelude::ChunkCompare;
-use crate::prelude::*;
-use polars_arrow::prelude::QuantileInterpolOptions;
 use std::any::Any;
 use std::borrow::Cow;
 #[cfg(feature = "temporal")]
 use std::sync::Arc;
+
+use polars_arrow::prelude::QuantileInterpolOptions;
+
+#[cfg(feature = "object")]
+use crate::chunked_array::object::PolarsObjectSafe;
+pub use crate::prelude::ChunkCompare;
+use crate::prelude::*;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum IsSorted {
@@ -36,12 +38,12 @@ macro_rules! invalid_operation_panic {
 }
 
 pub(crate) mod private {
+    use ahash::RandomState;
+
     use super::*;
+    use crate::chunked_array::ops::compare_inner::{PartialEqInner, PartialOrdInner};
     #[cfg(feature = "rows")]
     use crate::frame::groupby::GroupsProxy;
-
-    use crate::chunked_array::ops::compare_inner::{PartialEqInner, PartialOrdInner};
-    use ahash::RandomState;
 
     pub trait PrivateSeriesNumeric {
         fn bit_repr_is_large(&self) -> bool {

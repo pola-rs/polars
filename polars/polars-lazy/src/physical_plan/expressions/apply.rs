@@ -1,11 +1,13 @@
-use crate::physical_plan::state::ExecutionState;
-use crate::prelude::*;
+use std::sync::Arc;
+
 use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
 use rayon::prelude::*;
-use std::sync::Arc;
+
+use crate::physical_plan::state::ExecutionState;
+use crate::prelude::*;
 
 pub struct ApplyExpr {
     pub inputs: Vec<Arc<dyn PhysicalExpr>>,

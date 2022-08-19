@@ -1,7 +1,8 @@
 #![feature(test)]
 extern crate test;
-use polars::prelude::*;
 use std::iter;
+
+use polars::prelude::*;
 use test::Bencher;
 
 #[bench]

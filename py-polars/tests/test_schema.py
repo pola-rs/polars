@@ -85,3 +85,59 @@ def test_with_context() -> None:
 
     with pytest.raises(pl.ComputeError):
         (df_a.with_context(df_b.lazy()).select(["a", "c"])).collect()
+
+
+def test_from_dicst_nested_nulls() -> None:
+    assert pl.from_dicts([{"a": [None, None]}, {"a": [1, 2]}]).to_dict(False) == {
+        "a": [[None, None], [1, 2]]
+    }
+
+
+def test_schema_err() -> None:
+    df = pl.DataFrame({"foo": [None, 1, 2], "bar": [1, 2, 3]}).lazy()
+    with pytest.raises(pl.NotFoundError):
+        df.groupby("not-existent").agg(pl.col("bar").max().alias("max_bar")).schema
+
+
+def test_schema_inference_from_rows() -> None:
+    # these have to upcast to float
+    assert pl.from_records([[1, 2.1, 3], [4, 5, 6.4]]).to_dict(False) == {
+        "column_0": [1.0, 2.1, 3.0],
+        "column_1": [4.0, 5.0, 6.4],
+    }
+    assert pl.from_dicts([{"a": 1, "b": 2}, {"a": 3.1, "b": 4.5}]).to_dict(False) == {
+        "a": [1.0, 3.1],
+        "b": [2.0, 4.5],
+    }
+
+
+def test_lazy_map_schema() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
+
+    # identity
+    assert df.lazy().map(lambda x: x).collect().frame_equal(df)
+
+    def custom(df: pl.DataFrame) -> pl.Series:
+        return df["a"]
+
+    with pytest.raises(
+        pl.ComputeError,
+        match="Expected 'LazyFrame.map' to return a 'DataFrame', got a",
+    ):
+        df.lazy().map(custom).collect()  # type: ignore[arg-type]
+
+    def custom2(
+        df: pl.DataFrame,
+    ) -> pl.DataFrame:
+        # changes schema
+        return df.select(pl.all().cast(pl.Utf8))
+
+    with pytest.raises(
+        pl.ComputeError,
+        match="The output schema of 'LazyFrame.map' is incorrect. Expected",
+    ):
+        df.lazy().map(custom2).collect()
+
+    assert df.lazy().map(custom2, validate_output_schema=False).collect().to_dict(
+        False
+    ) == {"a": ["1", "2", "3"], "b": ["a", "b", "c"]}

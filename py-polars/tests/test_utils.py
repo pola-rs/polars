@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from typing import TYPE_CHECKING
+
+import pytest
 
 import polars as pl
 from polars.utils import (
@@ -10,20 +13,26 @@ from polars.utils import (
     in_nanoseconds_window,
 )
 
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import TimeUnit
+
 
 def test_in_ns_window() -> None:
     assert not in_nanoseconds_window(datetime(year=2600, month=1, day=1))
     assert in_nanoseconds_window(datetime(year=2000, month=1, day=1))
 
 
-def test_datetime_to_pl_timestamp() -> None:
-    for dt, tu, expected in (
+@pytest.mark.parametrize(
+    "dt, tu, expected",
+    [
         (datetime(2121, 1, 1), "ns", 4765132800000000000),
         (datetime(2121, 1, 1), "us", 4765132800000000),
         (datetime(2121, 1, 1), "ms", 4765132800000),
-    ):
-        out = _datetime_to_pl_timestamp(dt, tu)
-        assert out == expected
+    ],
+)
+def test_datetime_to_pl_timestamp(dt: datetime, tu: TimeUnit, expected: int) -> None:
+    out = _datetime_to_pl_timestamp(dt, tu)
+    assert out == expected
 
 
 def test_date_to_pl_date() -> None:
@@ -44,5 +53,13 @@ def test_timedelta_to_pl_timedelta() -> None:
 
 
 def test_estimated_size() -> None:
-    a = pl.Series([1, 2, 3])
-    assert a.estimated_size() == a.to_frame().estimated_size()
+    s = pl.Series("n", list(range(100)))
+    df = s.to_frame()
+
+    for sz in (s.estimated_size(), s.estimated_size("b"), s.estimated_size("bytes")):
+        assert sz == df.estimated_size()
+
+    assert s.estimated_size("kb") == (df.estimated_size("b") / 1024)
+    assert s.estimated_size("mb") == (df.estimated_size("kb") / 1024)
+    assert s.estimated_size("gb") == (df.estimated_size("mb") / 1024)
+    assert s.estimated_size("tb") == (df.estimated_size("gb") / 1024)

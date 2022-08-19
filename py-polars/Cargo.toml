@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.14.0"
+version = "0.14.2"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
 edition = "2021"
@@ -41,7 +41,7 @@ avro = ["polars/avro"]
 parquet = ["polars/parquet"]
 ipc = ["polars/ipc"]
 is_in = ["polars/is_in"]
-json = ["polars/serde", "serde_json"]
+json = ["polars/serde", "serde_json", "polars/json"]
 trigonometry = ["polars/trigonometry"]
 sign = ["polars/sign"]
 asof_join = ["polars/asof_join"]
@@ -49,6 +49,7 @@ cross_join = ["polars/cross_join"]
 pct_change = ["polars/pct_change"]
 repeat_by = ["polars/repeat_by"]
 simd = ["polars/simd"]
+meta = ["polars/meta"]
 
 all = [
   "json",
@@ -56,13 +57,14 @@ all = [
   "ipc",
   "avro",
   "is_in",
-  "json",
   "repeat_by",
   "trigonometry",
   "sign",
   "asof_join",
   "cross_join",
   "pct_change",
+  "polars/search_sorted",
+  "meta",
 ]
 
 # we cannot conditionaly activate simd

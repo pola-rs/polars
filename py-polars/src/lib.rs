@@ -34,18 +34,9 @@ pub mod series;
 mod set;
 pub mod utils;
 
-use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};
-use crate::error::{
-    ArrowErrorException, ComputeError, DuplicateError, NoDataError, NotFoundError, PyPolarsErr,
-    SchemaError,
-};
-use crate::file::get_either_file;
-use crate::prelude::{
-    vec_extract_wrapped, ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs,
-};
-use dsl::ToExprs;
 #[cfg(target_os = "linux")]
 use jemallocator::Jemalloc;
+use lazy::ToExprs;
 #[cfg(not(target_os = "linux"))]
 use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
@@ -56,6 +47,16 @@ use polars_core::prelude::{DataFrame, IDX_DTYPE};
 use polars_core::POOL;
 use pyo3::panic::PanicException;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
+
+use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};
+use crate::error::{
+    ArrowErrorException, ComputeError, DuplicateError, NoDataError, NotFoundError, PyPolarsErr,
+    SchemaError,
+};
+use crate::file::get_either_file;
+use crate::prelude::{
+    vec_extract_wrapped, ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs,
+};
 
 #[global_allocator]
 #[cfg(target_os = "linux")]

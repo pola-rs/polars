@@ -113,3 +113,43 @@ def test_groupby_signed_transmutes() -> None:
             "foo": [-1, -2, -3, -4, -5],
             "bar": [500.0, 600.0, 700.0, 800.0, 900.0],
         }
+
+
+def test_argsort_sort_by_groups_update__4360() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a"] * 3 + ["b"] * 3 + ["c"] * 3,
+            "col1": [1, 2, 3] * 3,
+            "col2": [1, 2, 3, 3, 2, 1, 2, 3, 1],
+        }
+    )
+
+    out = df.with_column(
+        pl.col("col2").arg_sort().over("group").alias("col2_argsort")
+    ).with_columns(
+        [
+            pl.col("col1")
+            .sort_by(pl.col("col2_argsort"))
+            .over("group")
+            .alias("result_a"),
+            pl.col("col1")
+            .sort_by(pl.col("col2").arg_sort())
+            .over("group")
+            .alias("result_b"),
+        ]
+    )
+
+    pl.testing.assert_series_equal(out["result_a"], out["result_b"], check_names=False)
+    assert out["result_a"].to_list() == [1, 2, 3, 3, 2, 1, 2, 3, 1]
+
+
+def test_unique_order() -> None:
+    df = pl.DataFrame({"a": [1, 2, 1]}).with_row_count()
+    assert df.unique(keep="last", subset="a", maintain_order=True).to_dict(False) == {
+        "row_nr": [1, 2],
+        "a": [2, 1],
+    }
+    assert df.unique(keep="first", subset="a", maintain_order=True).to_dict(False) == {
+        "row_nr": [0, 1],
+        "a": [1, 2],
+    }

@@ -1,12 +1,13 @@
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-use super::file_cache::FileCache;
-#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
-use crate::prelude::file_caching::FileFingerPrint;
 use bitflags::bitflags;
 use parking_lot::Mutex;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::frame::hash_join::JoinOptIds;
 use polars_core::prelude::*;
+
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+use super::file_cache::FileCache;
+#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+use crate::prelude::file_caching::FileFingerPrint;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, JoinOptIds>>>;
 pub type GroupsProxyCache = Arc<Mutex<PlHashMap<String, GroupsProxy>>>;
@@ -39,7 +40,7 @@ impl StateFlags {
 /// State/ cache that is maintained during the Execution of the physical plan.
 pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
-    df_cache: Arc<Mutex<PlHashMap<String, DataFrame>>>,
+    df_cache: Arc<Mutex<PlHashMap<usize, DataFrame>>>,
     // cache file reads until all branches got there file, then we delete it
     #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
     pub(super) file_cache: FileCache,
@@ -130,13 +131,13 @@ impl ExecutionState {
     }
 
     /// Check if we have DataFrame in cache
-    pub(crate) fn cache_hit(&self, key: &str) -> Option<DataFrame> {
+    pub(crate) fn cache_hit(&self, key: &usize) -> Option<DataFrame> {
         let guard = self.df_cache.lock();
         guard.get(key).cloned()
     }
 
     /// Store DataFrame in cache.
-    pub(crate) fn store_cache(&self, key: String, df: DataFrame) {
+    pub(crate) fn store_cache(&self, key: usize, df: DataFrame) {
         let mut guard = self.df_cache.lock();
         guard.insert(key, df);
     }

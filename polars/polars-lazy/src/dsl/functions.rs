@@ -2,19 +2,22 @@
 //!
 //! Functions on expressions that might be useful.
 //!
+use std::ops::{BitAnd, BitOr};
+
+use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
+use polars_core::prelude::*;
+use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
+#[cfg(feature = "rank")]
+use polars_core::utils::coalesce_nulls_series;
+use polars_core::utils::get_supertype;
+#[cfg(feature = "list")]
+use polars_ops::prelude::ListNameSpaceImpl;
+use rayon::prelude::*;
+
 #[cfg(feature = "arg_where")]
 use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::*;
 use crate::utils::has_wildcard;
-use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
-use polars_core::functions::pearson_corr_i;
-use polars_core::prelude::*;
-use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
-use polars_core::utils::{coalesce_nulls_series, get_supertype};
-#[cfg(feature = "list")]
-use polars_ops::prelude::ListNameSpaceImpl;
-use rayon::prelude::*;
-use std::ops::{BitAnd, BitOr};
 
 /// Compute the covariance between two columns.
 pub fn cov(a: Expr, b: Expr) -> Expr {
@@ -184,7 +187,10 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
         let b = b.idx().unwrap();
 
         let name = "spearman_rank_correlation";
-        Ok(Series::new(name, &[pearson_corr_i(a, b, ddof)]))
+        Ok(Series::new(
+            name,
+            &[polars_core::functions::pearson_corr_i(a, b, ddof)],
+        ))
     };
 
     apply_binary(a, b, function, GetOutput::from_type(DataType::Float64)).with_function_options(
@@ -215,6 +221,7 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
             input_wildcard_expansion: true,
             auto_explode: false,
             fmt_str: "argsort_by",
+            cast_to_supertypes: false,
         },
     }
 }
@@ -237,6 +244,7 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
             input_wildcard_expansion: true,
             auto_explode: true,
             fmt_str: "concat_by",
+            cast_to_supertypes: false,
         },
     }
 }
@@ -285,6 +293,7 @@ pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
             input_wildcard_expansion: true,
             auto_explode: false,
             fmt_str: "concat_list",
+            cast_to_supertypes: false,
         },
     }
 }
@@ -472,6 +481,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
             input_wildcard_expansion: true,
             auto_explode: false,
             fmt_str: "datetime",
+            cast_to_supertypes: false,
         },
     }
     .alias("datetime")
@@ -549,6 +559,7 @@ pub fn duration(args: DurationArgs) -> Expr {
             input_wildcard_expansion: true,
             auto_explode: false,
             fmt_str: "duration",
+            cast_to_supertypes: false,
         },
     }
     .alias("duration")
@@ -749,6 +760,7 @@ where
                 input_wildcard_expansion: true,
                 auto_explode: true,
                 fmt_str: "",
+                cast_to_supertypes: false,
             },
         }
     } else {
@@ -924,6 +936,7 @@ pub fn arg_where<E: Into<Expr>>(condition: E) -> Expr {
             input_wildcard_expansion: false,
             auto_explode: false,
             fmt_str: "arg_where",
+            cast_to_supertypes: false,
         },
     }
 }

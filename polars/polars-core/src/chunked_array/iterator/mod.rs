@@ -1,9 +1,11 @@
+use std::convert::TryFrom;
+
+use arrow::array::*;
+
 use crate::prelude::*;
 #[cfg(feature = "dtype-struct")]
 use crate::series::iterator::SeriesIter;
 use crate::utils::CustomIterTools;
-use arrow::array::*;
-use std::convert::TryFrom;
 
 type LargeStringArray = Utf8Array<i64>;
 type LargeListArray = ListArray<i64>;
