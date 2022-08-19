@@ -1304,7 +1304,6 @@ dependencies = [
  "polars-core",
  "polars-time",
  "polars-utils",
- "rand",
  "rayon",
  "regex",
  "serde",
