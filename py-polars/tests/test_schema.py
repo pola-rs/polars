@@ -97,3 +97,15 @@ def test_schema_err() -> None:
     df = pl.DataFrame({"foo": [None, 1, 2], "bar": [1, 2, 3]}).lazy()
     with pytest.raises(pl.NotFoundError):
         df.groupby("not-existent").agg(pl.col("bar").max().alias("max_bar")).schema
+
+
+def test_schema_inference_from_rows() -> None:
+    # these have to upcast to float
+    assert pl.from_records([[1, 2.1, 3], [4, 5, 6.4]]).to_dict(False) == {
+        "column_0": [1.0, 2.1, 3.0],
+        "column_1": [4.0, 5.0, 6.4],
+    }
+    assert pl.from_dicts([{"a": 1, "b": 2}, {"a": 3.1, "b": 4.5}]).to_dict(False) == {
+        "a": [1.0, 3.1],
+        "b": [2.0, 4.5],
+    }

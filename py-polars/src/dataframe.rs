@@ -3,7 +3,7 @@ use std::ops::Deref;
 
 use numpy::IntoPyArray;
 use polars::frame::groupby::GroupBy;
-use polars::frame::row::{rows_to_schema, Row};
+use polars::frame::row::{rows_to_schema_supertypes, Row};
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
 #[cfg(feature = "ipc")]
@@ -52,8 +52,9 @@ impl PyDataFrame {
     }
 
     fn finish_from_rows(rows: Vec<Row>, infer_schema_length: Option<usize>) -> PyResult<Self> {
+        let schema =
+            rows_to_schema_supertypes(&rows, infer_schema_length).map_err(PyPolarsErr::from)?;
         // replace inferred nulls with boolean
-        let schema = rows_to_schema(&rows, infer_schema_length);
         let fields = schema.iter_fields().map(|mut fld| match fld.data_type() {
             DataType::Null => {
                 fld.coerce(DataType::Boolean);

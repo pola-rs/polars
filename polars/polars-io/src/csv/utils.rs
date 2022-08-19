@@ -285,7 +285,8 @@ pub fn infer_file_schema(
 
     let header_length = headers.len();
     // keep track of inferred field types
-    let mut column_types: Vec<PlHashSet<DataType>> = vec![PlHashSet::new(); header_length];
+    let mut column_types: Vec<PlHashSet<DataType>> =
+        vec![PlHashSet::with_capacity(4); header_length];
     // keep track of columns with nulls
     let mut nulls: Vec<bool> = vec![false; header_length];
 
