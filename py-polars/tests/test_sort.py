@@ -209,3 +209,20 @@ def test_sorted_fast_paths() -> None:
     assert rev.to_list() == [None, 3, 2, 1]
     assert rev.sort(reverse=True).to_list() == [None, 3, 2, 1]
     assert rev.sort().to_list() == [None, 1, 2, 3]
+
+
+def test_argsort_rank_nans() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "val": [1.0, float("NaN")],
+            }
+        )
+        .with_columns(
+            [
+                pl.col("val").rank().alias("rank"),
+                pl.col("val").argsort().alias("argsort"),
+            ]
+        )
+        .select(["rank", "argsort"])
+    ).to_dict(False) == {"rank": [1.0, 2.0], "argsort": [0, 1]}

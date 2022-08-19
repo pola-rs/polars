@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use polars_arrow::kernels::rolling::compare_fn_nan_min;
+use polars_arrow::kernels::rolling::compare_fn_nan_max;
 use polars_arrow::prelude::*;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::export::num::NumCast;
@@ -27,7 +27,7 @@ where
         // - `mid < size`: `mid` is limited by `[left; right)` bound.
         let cmp = match unsafe { taker.get_unchecked(mid as usize) } {
             None => Ordering::Less,
-            Some(value) => compare_fn_nan_min(&value, &search_value),
+            Some(value) => compare_fn_nan_max(&value, &search_value),
         };
 
         // The reason why we use if/else control flow rather than match
