@@ -883,7 +883,7 @@ class ExprStringNameSpace:
             return pli.wrap_expr(self._pyexpr.str_split_exact_inclusive(by, n))
         return pli.wrap_expr(self._pyexpr.str_split_exact(by, n))
 
-    def splitn(self, by: str, n: int) -> Expr:
+    def splitn(self, by: str, n: int) -> pli.Expr:
         """
         Split the string by a substring, restricted to returning at most ``n`` items.
 

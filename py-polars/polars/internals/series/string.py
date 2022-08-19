@@ -546,7 +546,7 @@ class StringNameSpace:
             .to_series()
         )
 
-    def splitn(self, by: str, n: int) -> Series:
+    def splitn(self, by: str, n: int) -> pli.Series:
         """
         Split the string by a substring, restricted to returning at most ``n`` items.
 
