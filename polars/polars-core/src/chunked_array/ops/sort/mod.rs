@@ -11,6 +11,7 @@ use std::iter::FromIterator;
 use arrow::{bitmap::MutableBitmap, buffer::Buffer};
 use num::Float;
 use polars_arrow::array::default_arrays::FromDataUtf8;
+use polars_arrow::kernels::rolling::compare_fn_nan_max;
 use polars_arrow::prelude::{FromData, ValueSize};
 use polars_arrow::trusted_len::PushUnchecked;
 use rayon::prelude::*;
@@ -82,14 +83,14 @@ fn sort_branch<T, Fd, Fr>(
 #[cfg(feature = "private")]
 pub fn argsort_no_nulls<Idx, T>(slice: &mut [(Idx, T)], reverse: bool)
 where
-    T: PartialOrd + Send,
+    T: PartialOrd + Send + IsFloat,
     Idx: PartialOrd + Send,
 {
     argsort_branch(
         slice,
         reverse,
-        |(_, a), (_, b)| a.partial_cmp(b).unwrap(),
-        |(_, a), (_, b)| b.partial_cmp(a).unwrap(),
+        |(_, a), (_, b)| compare_fn_nan_max(a, b),
+        |(_, a), (_, b)| compare_fn_nan_max(b, a),
     );
 }
 
