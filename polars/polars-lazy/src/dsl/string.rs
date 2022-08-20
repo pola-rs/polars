@@ -282,29 +282,55 @@ impl StringNameSpace {
             .with_fmt("str.split_exact")
     }
 
-    // Split exactly `n` times by a given substring, keeping the back part of the string
-    // intact even if there are more possible splits. The resulting dtype is `List<Utf8>`.
+    #[cfg(feature = "dtype-struct")]
+    // Split exactly `n` times by a given substring, keeping the remainder of the string
+    // intact even if there are more possible splits. The resulting dtype is [`DataType::Struct`].
     pub fn splitn(self, by: &str, n: usize) -> Expr {
         let by = by.to_string();
 
         let function = move |s: Series| {
             let ca = s.utf8()?;
 
-            let mut builder = ListUtf8ChunkedBuilder::new(s.name(), s.len(), ca.get_values_size());
+            let mut arrs = (0..n)
+                .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
+                .collect::<Vec<_>>();
+
             ca.into_iter().for_each(|opt_s| match opt_s {
-                None => builder.append_null(),
+                None => {
+                    for arr in &mut arrs {
+                        arr.push_null()
+                    }
+                }
                 Some(s) => {
-                    let iter = s.splitn(n, &by);
-                    builder.append_values_iter(iter);
+                    let mut arr_iter = arrs.iter_mut();
+                    let split_iter = s.splitn(n, &by);
+                    (split_iter)
+                        .zip(&mut arr_iter)
+                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                    // fill the remaining with null
+                    for arr in arr_iter {
+                        arr.push_null()
+                    }
                 }
             });
-            Ok(builder.finish().into_series())
+            let fields = arrs
+                .into_iter()
+                .enumerate()
+                .map(|(i, mut arr)| {
+                    Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
+                })
+                .collect::<Vec<_>>();
+            Ok(StructChunked::new(ca.name(), &fields)?.into_series())
         };
         self.0
             .map(
                 function,
-                GetOutput::from_type(DataType::List(Box::new(DataType::Utf8))),
+                GetOutput::from_type(DataType::Struct(
+                    (0..n)
+                        .map(|i| Field::new(&format!("field_{i}"), DataType::Utf8))
+                        .collect(),
+                )),
             )
-            .with_fmt("str.splitn")
+            .with_fmt("str.split_exact")
     }
 }

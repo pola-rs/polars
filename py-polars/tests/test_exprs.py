@@ -142,7 +142,7 @@ def test_split() -> None:
     )
 
     assert out.frame_equal(expected)
-    assert out["x"].series_equal(expected["x"], null_equal=True)
+    assert df["x"].str.split("_").to_frame().frame_equal(expected)
 
     out = df.select([pl.col("x").str.split("_", inclusive=True)])
 
@@ -156,7 +156,7 @@ def test_split() -> None:
     )
 
     assert out.frame_equal(expected)
-    assert out["x"].series_equal(expected["x"], null_equal=True)
+    assert df["x"].str.split("_", inclusive=True).to_frame().frame_equal(expected)
 
 
 def test_split_exact() -> None:
@@ -172,8 +172,15 @@ def test_split_exact() -> None:
     )
 
     assert out.frame_equal(expected)
+    assert (
+        df["x"]
+        .str.split_exact("_", 2, inclusive=False)
+        .to_frame()
+        .unnest("x")
+        .frame_equal(expected)
+    )
 
-    out = df["x"].str.split_exact("_", 1, inclusive=True).to_frame().unnest("x")
+    out = df.select([pl.col("x").str.split_exact("_", 1, inclusive=True)]).unnest("x")
 
     expected = pl.DataFrame(
         {"field_0": ["a_", None, "b", "c_"], "field_1": ["a", None, None, "c"]}
@@ -185,19 +192,14 @@ def test_split_exact() -> None:
 
 def test_splitn() -> None:
     df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c"]})
-    out = df.select([pl.col("x").str.splitn("_", 2)])
+    out = df.select([pl.col("x").str.splitn("_", 2)]).unnest("x")
 
     expected = pl.DataFrame(
-        [
-            {"x": ["a", "a"]},
-            {"x": None},
-            {"x": ["b"]},
-            {"x": ["c", "c_c"]},
-        ]
+        {"field_0": ["a", None, "b", "c"], "field_1": ["a", None, None, "c_c"]}
     )
 
     assert out.frame_equal(expected)
-    assert out["x"].series_equal(expected["x"], null_equal=True)
+    assert df["x"].str.splitn("_", 2).to_frame().unnest("x").frame_equal(expected)
 
 
 def test_unique_and_drop_stability() -> None:

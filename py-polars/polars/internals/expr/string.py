@@ -825,12 +825,11 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> (
-        ...     pl.DataFrame({"x": ["a_1", None, "c", "d_4"]}).select(
-        ...         [
-        ...             pl.col("x").str.split_exact("_", 1).alias("fields"),
-        ...         ]
-        ...     )
+        >>> df = pl.DataFrame({"x": ["a_1", None, "c", "d_4"]})
+        >>> df.select(
+        ...     [
+        ...         pl.col("x").str.split_exact("_", 1).alias("fields"),
+        ...     ]
         ... )
         shape: (4, 1)
         ┌─────────────┐
@@ -851,7 +850,7 @@ class ExprStringNameSpace:
         Split string values in column x in exactly 2 parts and assign
         each part to a new column.
 
-        >>> pl.DataFrame({"x": ["a_1", None, "c", "d_4"]}).with_columns(
+        >>> df.with_columns(
         ...     [
         ...         pl.col("x")
         ...         .str.split_exact("_", 1)
@@ -887,8 +886,9 @@ class ExprStringNameSpace:
         """
         Split the string by a substring, restricted to returning at most ``n`` items.
 
-        If ``n`` substrings are returned, the last substring (the nth substring)
-        will contain the remainder of the string.
+        If the number of possible splits is less than ``n-1``, the remaining field
+        elements will be null. If the number of possible splits is ``n-1`` or greater,
+        the last (nth) substring will contain the remainder of the string.
 
         Parameters
         ----------
@@ -899,24 +899,52 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"s": ["foo bar", "foo-bar", "foo bar baz"]})
-        >>> df.select(pl.col("s").str.splitn(" ", 2))
-        shape: (3, 1)
-        ┌────────────────────┐
-        │ s                  │
-        │ ---                │
-        │ list[str]          │
-        ╞════════════════════╡
-        │ ["foo", "bar"]     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ ["foo-bar"]        │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ ["foo", "bar baz"] │
-        └────────────────────┘
+        >>> df = pl.DataFrame({"s": ["foo bar", None, "foo-bar", "foo bar baz"]})
+        >>> df.select(pl.col("s").str.splitn(" ", 2).alias("fields"))
+        shape: (4, 1)
+        ┌───────────────────┐
+        │ s                 │
+        │ ---               │
+        │ struct[2]         │
+        ╞═══════════════════╡
+        │ {"foo","bar"}     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        | {null,null}       |
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"foo-bar",null}  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"foo","bar baz"} │
+        └───────────────────┘
+
+        Split string values in column s in exactly 2 parts and assign
+        each part to a new column.
+
+        >>> df.with_columns(
+        ...     [
+        ...         pl.col("s")
+        ...         .str.splitn(" ", 2)
+        ...         .struct.rename_fields(["first_part", "second_part"])
+        ...         .alias("fields"),
+        ...     ]
+        ... ).unnest("fields")
+        shape: (4, 3)
+        ┌─────────────┬────────────┬─────────────┐
+        │ s           ┆ first_part ┆ second_part │
+        │ ---         ┆ ---        ┆ ---         │
+        │ str         ┆ str        ┆ str         │
+        ╞═════════════╪════════════╪═════════════╡
+        │ foo bar     ┆ foo        ┆ bar         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null        ┆ null       ┆ null        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ foo-bar     ┆ foo-bar    ┆ null        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ foo bar baz ┆ foo        ┆ bar baz     │
+        └─────────────┴────────────┴─────────────┘
 
         Returns
         -------
-        List of Utf8 type
+        Struct of Utf8 type
 
         """
         return pli.wrap_expr(self._pyexpr.str_splitn(by, n))
