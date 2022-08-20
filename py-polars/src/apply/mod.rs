@@ -162,6 +162,7 @@ fn iterator_to_bool(
     ca
 }
 
+#[cfg(feature = "object")]
 fn iterator_to_object(
     it: impl Iterator<Item = Option<ObjectValue>>,
     init_null_count: usize,

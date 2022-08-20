@@ -220,6 +220,7 @@ impl PyExpr {
         self.clone().inner.arg_min().into()
     }
 
+    #[cfg(feature = "search_sorted")]
     pub fn search_sorted(&self, element: PyExpr) -> PyExpr {
         self.inner.clone().search_sorted(element.inner).into()
     }
@@ -706,6 +707,7 @@ impl PyExpr {
             .with_fmt("str.base64_decode")
             .into()
     }
+    #[cfg(feature = "extract_jsonpath")]
     pub fn str_json_path_match(&self, pat: String) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
@@ -754,6 +756,7 @@ impl PyExpr {
         self.inner.clone().arr().lengths().into()
     }
 
+    #[cfg(feature = "is_in")]
     pub fn arr_contains(&self, other: PyExpr) -> PyExpr {
         self.inner.clone().arr().contains(other.inner).into()
     }
