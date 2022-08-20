@@ -1357,7 +1357,7 @@ class DataFrame:
         statistics: bool = False,
         row_group_size: int | None = None,
         use_pyarrow: bool = False,
-        **kwargs: Any,
+        pyarrow_options: dict[str, object] | None = None,
     ) -> None:
         """
         Write to Apache Parquet file.
@@ -1388,8 +1388,8 @@ class DataFrame:
         use_pyarrow
             Use C++ parquet implementation vs rust parquet implementation.
             At the moment C++ supports more features.
-        kwargs
-            Arguments are passed to ``pyarrow.parquet.write_table``.
+        pyarrow_options
+            Arguments passed to ``pyarrow.parquet.write_table``.
 
         """
         if compression is None:
@@ -1423,7 +1423,7 @@ class DataFrame:
                 where=file,
                 compression=compression,
                 write_statistics=statistics,
-                **kwargs,
+                **(pyarrow_options or {}),
             )
         else:
             self._df.write_parquet(
