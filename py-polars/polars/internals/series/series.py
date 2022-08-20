@@ -101,9 +101,10 @@ if TYPE_CHECKING:
     )
 
 
-def _datetime_values_dtype(
+def _resolve_datetime_dtype(
     dtype: PolarsDataType | None, ndtype: np.datetime64
 ) -> PolarsDataType | None:
+    """Given polars/numpy datetime dtypes, resolve to an explicit unit"""
     if dtype is None or (dtype == Datetime and not getattr(dtype, "tu", None)):
         tu = getattr(dtype, "tu", np.datetime_data(ndtype)[0])
         # explicit formulation is verbose, but keeps mypy happy
@@ -258,11 +259,11 @@ class Series:
             self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
             if values.dtype.type == np.datetime64:
                 # detect/assign dtype timeunit
-                dtype = _datetime_values_dtype(dtype, values.dtype)
+                dtype = _resolve_datetime_dtype(dtype, values.dtype)
 
                 # handle NaT values
                 if dtype is not None and np.isnan(values).any(0):
-                    nat: int = np.datetime64("NaT").astype(int)
+                    nat = np.datetime64("NaT").astype(np.int64)
                     scol = pli.col(self.name)
                     self._s = (
                         self.to_frame()
