@@ -1797,3 +1797,37 @@ def test_mutable_borrowed_append_3915() -> None:
     s = pl.Series("s", [1, 2, 3])
     s.append(s)
     assert s.to_list() == [1, 2, 3, 1, 2, 3]
+
+
+def test_set_at_idx() -> None:
+    s = pl.Series("s", [1, 2, 3])
+
+    # no-op (empty sequences)
+    for x in (
+        (),
+        [],
+        pl.Series(),
+        pl.Series(dtype=pl.Int8),
+        np.array([]),
+        np.ndarray(shape=(0, 0)),
+    ):
+        s.set_at_idx(x, 8)  # type: ignore[arg-type]
+        assert s.to_list() == [1, 2, 3]
+
+    # set new values, one index at a time
+    s.set_at_idx(0, 8)
+    s.set_at_idx([1], None)
+    assert s.to_list() == [8, None, 3]
+
+    # set new value at multiple indexes in one go
+    s.set_at_idx([0, 2], None)
+    assert s.to_list() == [None, None, None]
+
+    # try with different series dtype
+    s = pl.Series("s", ["a", "b", "c"])
+    s.set_at_idx((1, 2), "x")
+    assert s.to_list() == ["a", "x", "x"]
+
+    # expected error condition
+    with pytest.raises(TypeError):
+        s.set_at_idx([0, 2], 0.12345)

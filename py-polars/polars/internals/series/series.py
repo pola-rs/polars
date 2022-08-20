@@ -119,9 +119,7 @@ def _resolve_datetime_dtype(
 
 
 def get_ffi_func(
-    name: str,
-    dtype: type[DataType],
-    obj: PySeries,
+    name: str, dtype: type[DataType], obj: PySeries
 ) -> Callable[..., Any] | None:
     """
     Dynamically obtain the proper ffi function/ method.
@@ -258,21 +256,12 @@ class Series:
         elif _NUMPY_AVAILABLE and isinstance(values, np.ndarray):
             self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
             if values.dtype.type == np.datetime64:
-                # detect/assign dtype timeunit
+                # cast to appropriate dtype, handling NaT values
                 dtype = _resolve_datetime_dtype(dtype, values.dtype)
-
-                # handle NaT values
-                if dtype is not None and np.isnan(values).any(0):
-                    nat = np.datetime64("NaT").astype(np.int64)
-                    scol = pli.col(self.name)
+                if dtype is not None:
                     self._s = (
-                        self.to_frame()
-                        .with_column(
-                            (pli.when(scol == nat).then(None).otherwise(scol))
-                            .cast(dtype)
-                            .keep_name()
-                        )
-                        .to_series()
+                        self.cast(dtype)
+                        .set_at_idx(np.argwhere(np.isnat(values)).flatten(), None)
                         ._s
                     )
                     return
@@ -305,10 +294,7 @@ class Series:
 
     @classmethod
     def _from_pandas(
-        cls,
-        name: str,
-        values: pd.Series | pd.DatetimeIndex,
-        nan_to_none: bool = True,
+        cls, name: str, values: pd.Series | pd.DatetimeIndex, nan_to_none: bool = True
     ) -> Series:
         """Construct a Series from a pandas Series or DatetimeIndex."""
         return cls._from_pyseries(
@@ -2372,11 +2358,7 @@ class Series:
             return self.to_numpy().__array__()
 
     def __array_ufunc__(
-        self,
-        ufunc: np.ufunc,
-        method: str,
-        *inputs: Any,
-        **kwargs: Any,
+        self, ufunc: np.ufunc, method: str, *inputs: Any, **kwargs: Any
     ) -> Series:
         """Numpy universal functions."""
         if not _NUMPY_AVAILABLE:
@@ -2556,7 +2538,7 @@ class Series:
 
     def set_at_idx(
         self,
-        idx: Series | np.ndarray[Any, Any] | list[int] | tuple[int],
+        idx: Series | np.ndarray[Any, Any] | Sequence[int] | int,
         value: int
         | float
         | str
@@ -2567,7 +2549,8 @@ class Series:
         | Sequence[datetime]
         | date
         | datetime
-        | Series,
+        | Series
+        | None,
     ) -> Series:
         """
         Set values at the index locations.
@@ -2588,9 +2571,14 @@ class Series:
         the series mutated
 
         """
+        if isinstance(idx, int):
+            idx = [idx]
+        if len(idx) == 0:
+            return self
+
         if self.is_numeric() or self.is_datelike():
             idx = Series("", idx)
-            if isinstance(value, (int, float, bool)):
+            if isinstance(value, (int, float, bool)) or (value is None):
                 value = Series("", [value])
 
                 # if we need to set more than a single value, we extend it
@@ -2610,7 +2598,7 @@ class Series:
             )
         if isinstance(idx, Series):
             # make sure the dtype matches
-            idx = idx.cast(UInt32)
+            idx = idx.cast(get_idx_type())
             idx_array = idx.view()
         elif _NUMPY_AVAILABLE and isinstance(idx, np.ndarray):
             if not idx.data.c_contiguous:
@@ -2619,7 +2607,6 @@ class Series:
                 idx_array = idx
                 if idx_array.dtype != np.uint32:
                     idx_array = np.array(idx_array, np.uint32)
-
         else:
             if not _NUMPY_AVAILABLE:
                 raise ImportError("'numpy' is required for this functionality.")
@@ -3066,9 +3053,7 @@ class Series:
         return self.to_frame().select(pli.col(self.name).tanh()).to_series()
 
     def apply(
-        self,
-        func: Callable[[Any], Any],
-        return_dtype: type[DataType] | None = None,
+        self, func: Callable[[Any], Any], return_dtype: type[DataType] | None = None
     ) -> Series:
         """
         Apply a function over elements in this Series and return a new Series.
