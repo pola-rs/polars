@@ -58,7 +58,7 @@ InterpolationMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear"
 ]  # QuantileInterpolOptions
 JoinStrategy: TypeAlias = Literal[
-    "inner", "left", "outer", "semi", "anti", "cross"
+    "inner", "left", "outer", "semi", "anti", "cross", "right"
 ]  # JoinType
 ToStructStrategy: TypeAlias = Literal[
     "first_non_null", "max_width"

@@ -358,3 +358,26 @@ def scale_bytes(sz: int, to: SizeUnit) -> int | float:
     if scaling_factor > 1:
         return sz / scaling_factor
     return sz
+
+
+def _standardize_join_key(
+    key: str | pli.Expr | Sequence[str | pli.Expr] | None,
+) -> list[PyExpr] | None:
+    """Standardize the given join keys."""
+    if isinstance(key, str):
+        return [pli.col(key)._pyexpr]
+    elif isinstance(key, pli.Expr):
+        return [key._pyexpr]
+    elif isinstance(key, Sequence):
+        result = []
+        for k in key:
+            if isinstance(k, str):
+                expr = pli.col(k)
+            elif isinstance(k, pli.Expr):
+                expr = k
+            else:
+                raise TypeError(f"encountered unexpected key type, {type(k)}")
+            result.append(expr._pyexpr)
+        return result
+    else:
+        return key

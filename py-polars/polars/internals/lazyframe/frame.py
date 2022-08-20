@@ -23,7 +23,7 @@ from polars.utils import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
-    format_path,
+    format_path, _standardize_join_key,
 )
 
 try:
@@ -1353,9 +1353,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def join(
         self: LDF,
         other: LazyFrame,
-        left_on: str | pli.Expr | list[str | pli.Expr] | None = None,
-        right_on: str | pli.Expr | list[str | pli.Expr] | None = None,
-        on: str | pli.Expr | list[str | pli.Expr] | None = None,
+        left_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        right_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
         how: JoinStrategy = "inner",
         suffix: str = "_right",
         allow_parallel: bool = True,
@@ -1367,15 +1367,15 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Parameters
         ----------
         other
-            Lazy DataFrame to join with.
+            ``LazyFrame`` to join with.
         left_on
-            Join column of the left DataFrame.
+            Join column of the left ``LazyFrame``.
         right_on
-            Join column of the right DataFrame.
+            Join column of the right ``LazyFrame``.
         on
-            Join column of both DataFrames. If set, `left_on` and `right_on` should be
-            None.
-        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross'}
+            Join column present in each ``LazyFrame``. If set, ``left_on`` and
+            ``right_on`` should be ``None``.
+        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross', 'right'}
             Join strategy.
         suffix
             Suffix to append to columns with a duplicate name.
@@ -1443,44 +1443,22 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 )
             )
 
-        left_on_: list[str | pli.Expr] | None
-        if isinstance(left_on, (str, pli.Expr)):
-            left_on_ = [left_on]
+        on_ = _standardize_join_key(on)
+        if on_ is None:
+            left_on_ = _standardize_join_key(left_on)
+            right_on_ = _standardize_join_key(right_on)
         else:
-            left_on_ = left_on
-
-        right_on_: list[str | pli.Expr] | None
-        if isinstance(right_on, (str, pli.Expr)):
-            right_on_ = [right_on]
-        else:
-            right_on_ = right_on
-
-        if isinstance(on, (str, pli.Expr)):
-            left_on_ = [on]
-            right_on_ = [on]
-        elif isinstance(on, list):
-            left_on_ = on
-            right_on_ = on
+            left_on_ = on_
+            right_on_ = on_
 
         if left_on_ is None or right_on_ is None:
-            raise ValueError("You should pass the column to join on as an argument.")
-
-        new_left_on = []
-        for column in left_on_:
-            if isinstance(column, str):
-                column = pli.col(column)
-            new_left_on.append(column._pyexpr)
-        new_right_on = []
-        for column in right_on_:
-            if isinstance(column, str):
-                column = pli.col(column)
-            new_right_on.append(column._pyexpr)
+            raise ValueError("must specify `on` OR `left_on` and `right_on`")
 
         return self._from_pyldf(
             self._ldf.join(
                 other._ldf,
-                new_left_on,
-                new_right_on,
+                left_on_,
+                right_on_,
                 allow_parallel,
                 force_parallel,
                 how,

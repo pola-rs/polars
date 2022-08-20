@@ -3551,9 +3551,9 @@ class DataFrame:
     def join(
         self,
         other: DataFrame,
-        left_on: str | pli.Expr | list[str | pli.Expr] | None = None,
-        right_on: str | pli.Expr | list[str | pli.Expr] | None = None,
-        on: str | pli.Expr | list[str | pli.Expr] | None = None,
+        left_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        right_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
         how: JoinStrategy = "inner",
         suffix: str = "_right",
     ) -> DataFrame:
@@ -3563,7 +3563,7 @@ class DataFrame:
         Parameters
         ----------
         other
-            DataFrame to join with.
+            ``DataFrame`` to join with.
         left_on
             Name(s) of the left join column(s).
         right_on
@@ -3577,7 +3577,7 @@ class DataFrame:
 
         Returns
         -------
-            Joined DataFrame
+            Joined ``DataFrame``
 
         See Also
         --------
@@ -3626,52 +3626,23 @@ class DataFrame:
         │ 3    ┆ 8.0  ┆ c   ┆ null  │
         └──────┴──────┴─────┴───────┘
 
-        **Joining on columns with categorical data**
-        See pl.StringCache().
+        Note
+        ----
+        For joining on columns with categorical data, see ``pl.StringCache()``.
 
         """
-        if how == "cross":
-            return self._from_pydf(self._df.join(other._df, [], [], how, suffix))
-
-        left_on_: list[str | pli.Expr] | None
-        if isinstance(left_on, (str, pli.Expr)):
-            left_on_ = [left_on]
-        else:
-            left_on_ = left_on
-
-        right_on_: list[str | pli.Expr] | None
-        if isinstance(right_on, (str, pli.Expr)):
-            right_on_ = [right_on]
-        else:
-            right_on_ = right_on
-
-        if isinstance(on, (str, pli.Expr)):
-            left_on_ = [on]
-            right_on_ = [on]
-        elif isinstance(on, list):
-            left_on_ = on
-            right_on_ = on
-
-        if left_on_ is None or right_on_ is None:
-            raise ValueError("You should pass the column to join on as an argument.")
-
-        if isinstance(left_on_[0], pli.Expr) or isinstance(right_on_[0], pli.Expr):
-            return (
-                self.lazy()
-                .join(
-                    other.lazy(),
-                    left_on,
-                    right_on,
-                    on=on,
-                    how=how,
-                    suffix=suffix,
-                )
-                .collect(no_optimization=True)
+        return (
+            self.lazy()
+            .join(
+                other.lazy(),
+                left_on,
+                right_on,
+                on=on,
+                how=how,
+                suffix=suffix,
             )
-        else:
-            return self._from_pydf(
-                self._df.join(other._df, left_on_, right_on_, how, suffix)
-            )
+            .collect(no_optimization=True)
+        )
 
     def apply(
         self: DF,
