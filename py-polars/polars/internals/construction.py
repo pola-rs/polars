@@ -563,13 +563,24 @@ def numpy_to_pydf(
         n_columns = 1
 
     elif len(shape) == 2:
-        # Infer orientation
-        if orient is None and columns is not None:
-            orient = "col" if len(columns) == shape[0] else "row"
-
-        if orient == "row":
+        # default convention
+        # first axis is rows, second axis is columns
+        if orient is None and columns is None:
             n_columns = shape[1]
-        elif orient == "col" or orient is None:
+            orient = "row"
+
+        # Infer orientation if columns argument is given
+        elif orient is None and columns is not None:
+            if len(columns) == shape[0]:
+                orient = "col"
+                n_columns = shape[0]
+            else:
+                orient = "row"
+                n_columns = shape[1]
+
+        elif orient == "row":
+            n_columns = shape[1]
+        elif orient == "col":
             n_columns = shape[0]
         else:
             raise ValueError(
