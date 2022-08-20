@@ -903,7 +903,7 @@ class ExprStringNameSpace:
         >>> df.select(pl.col("s").str.splitn(" ", 2).alias("fields"))
         shape: (4, 1)
         ┌───────────────────┐
-        │ s                 │
+        │ fields            │
         │ ---               │
         │ struct[2]         │
         ╞═══════════════════╡
