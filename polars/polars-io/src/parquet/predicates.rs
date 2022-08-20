@@ -1,4 +1,3 @@
-use arrow::array::{Array, UInt64Array};
 use arrow::compute::concatenate::concatenate;
 use arrow::io::parquet::read::statistics::{deserialize, Statistics};
 use arrow::io::parquet::read::RowGroupMetaData;
@@ -24,18 +23,13 @@ impl ColumnStats {
         match self.1.data_type() {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(_) => None,
-            _ => self
-                .0
-                .null_count
-                .as_any()
-                .downcast_ref::<UInt64Array>()
-                .and_then(|arr| {
-                    if arr.is_valid(0) {
-                        Some(arr.value(0) as usize)
-                    } else {
-                        None
-                    }
-                }),
+            _ => {
+                // the array holds the null count for every row group
+                // so we sum them to get them of the whole file.
+                Series::try_from(("", self.0.null_count.clone()))
+                    .unwrap()
+                    .sum()
+            }
         }
     }
 
