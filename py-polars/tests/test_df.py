@@ -1234,7 +1234,7 @@ Series: 'cat_column' [list]
 	["a", "b"]
 	["b", "a"]
 	["b"]
-]"""
+]"""  # noqa: W191, E101
     )
 
 

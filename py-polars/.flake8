@@ -13,8 +13,6 @@ extend-ignore =
     # flake8-simplify
     SIM102, SIM117,
 
-per-file-ignores =
-    tests/*.py: E101, W191
 extend-exclude =
     # Automatically generated test artifacts
     venv/,
