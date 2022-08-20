@@ -331,6 +331,6 @@ impl StringNameSpace {
                         .collect(),
                 )),
             )
-            .with_fmt("str.split_exact")
+            .with_fmt("str.splitn")
     }
 }
