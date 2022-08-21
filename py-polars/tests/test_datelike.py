@@ -1303,3 +1303,19 @@ def test_date_parse_omit_day() -> None:
     assert df.select(pl.col("month").str.strptime(pl.Datetime, fmt="%Y-%m"))[
         0, 0
     ] == datetime(2022, 1, 1)
+
+
+def test_shift_and_fill_group_logicals() -> None:
+    df = pl.from_records(
+        [
+            (date(2001, 1, 2), "A"),
+            (date(2001, 1, 3), "A"),
+            (date(2001, 1, 4), "A"),
+            (date(2001, 1, 3), "B"),
+            (date(2001, 1, 4), "B"),
+        ],
+        columns=["d", "s"],
+    )
+    assert df.select(
+        pl.col("d").shift_and_fill(-1, pl.col("d").max()).over("s")
+    ).dtypes == [pl.Date]
