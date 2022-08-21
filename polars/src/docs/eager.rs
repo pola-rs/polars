@@ -415,9 +415,9 @@
 //!
 //! # fn example(df: &DataFrame) -> Result<()> {
 //!  // groupby "groups" | sum "foo"
-//!  let out = df.groupby("groups")?
-//!  .select("foo")
-//!  .sum();
+//!  let out = df.groupby(["groups"])?
+//!     .select(["foo"])
+//!     .sum();
 //!
 //! # Ok(())
 //! # }
