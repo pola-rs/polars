@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import sys
 from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable
@@ -31,6 +32,7 @@ def call_expr(func: Callable[P, pli.Series]) -> Callable[P, pli.Series]:
         f = getattr(expr, func.__name__)
         return s.to_frame().select(f(*args, **kwargs)).to_series()
 
+    setattr(wrapper, "__signature__", inspect.signature(func))  # noqa: B010
     return wrapper  # type: ignore[return-value]
 
 
