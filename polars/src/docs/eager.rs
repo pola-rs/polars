@@ -300,7 +300,7 @@
 //!
 //!
 //! // coerce numbers to floats
-//! df.try_apply("number", |s: &Series| s.cast::<Float64Type>())?;
+//! df.try_apply("number", |s: &Series| s.cast(&DataType::Float64))?;
 //!
 //! // transform letters to uppercase letters
 //! df.try_apply("letters", |s: &Series| {
