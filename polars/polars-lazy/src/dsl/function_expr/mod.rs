@@ -145,6 +145,8 @@ impl FunctionExpr {
                     Strptime(options) => with_dtype(options.date_dtype.clone()),
                     #[cfg(feature = "concat_str")]
                     Concat(_) => with_dtype(DataType::Utf8),
+                    #[cfg(feature = "regex")]
+                    Replace { .. } => with_dtype(DataType::Utf8),
                 }
             }
 
@@ -341,6 +343,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             }
             #[cfg(feature = "concat_str")]
             Concat(delimiter) => map_with_args!(strings::concat, &delimiter),
+            #[cfg(feature = "regex")]
+            Replace { all, literal } => map_as_slice!(strings::replace, literal, all),
         }
     }
 }

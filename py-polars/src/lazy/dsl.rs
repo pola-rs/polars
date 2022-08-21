@@ -600,41 +600,19 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_replace(&self, pat: String, val: String, literal: Option<bool>) -> PyExpr {
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            let replaced = match literal {
-                Some(true) => ca.replace_literal(&pat, &val),
-                _ => ca.replace(&pat, &val),
-            };
-            match replaced {
-                Ok(ca) => Ok(ca.into_series()),
-                Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
-            }
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::same_type())
-            .with_fmt("str.replace")
+    pub fn str_replace(&self, pat: PyExpr, val: PyExpr, literal: bool) -> PyExpr {
+        self.inner
+            .clone()
+            .str()
+            .replace(pat.inner, val.inner, literal)
             .into()
     }
 
-    pub fn str_replace_all(&self, pat: String, val: String, literal: Option<bool>) -> PyExpr {
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            let replaced = match literal {
-                Some(true) => ca.replace_literal_all(&pat, &val),
-                _ => ca.replace_all(&pat, &val),
-            };
-            match replaced {
-                Ok(ca) => Ok(ca.into_series()),
-                Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
-            }
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::same_type())
-            .with_fmt("str.replace_all")
+    pub fn str_replace_all(&self, pat: PyExpr, val: PyExpr, literal: bool) -> PyExpr {
+        self.inner
+            .clone()
+            .str()
+            .replace_all(pat.inner, val.inner, literal)
             .into()
     }
 
