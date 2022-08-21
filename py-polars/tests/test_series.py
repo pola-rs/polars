@@ -10,7 +10,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import Date, Float64, Int32, Int64, UInt32, UInt64
+from polars.datatypes import Date, Datetime, Float64, Int32, Int64, UInt32, UInt64
 from polars.testing import assert_series_equal, verify_series_and_expr_api
 
 
@@ -45,6 +45,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
             == pl.List
         )
         assert pl.Series("a", [10000, 20000, 30000], dtype=pl.Time).dtype == pl.Time
+
         # 2d numpy array
         res = pl.Series(name="a", values=np.array([[1, 2], [3, 4]]))
         assert all(res[0] == np.array([1, 2]))
@@ -56,6 +57,21 @@ def test_init_inputs(monkeypatch: Any) -> None:
 
         # lists
         assert pl.Series("a", [[1, 2], [3, 4]]).dtype == pl.List
+
+    # datetime64: check timeunit (auto-detect, implicit/explicit) and NaT
+    d64 = pd.date_range(date(2021, 8, 1), date(2021, 8, 3)).values
+    d64[1] = None
+
+    expected = [datetime(2021, 8, 1, 0), None, datetime(2021, 8, 3, 0)]
+    for dtype in (None, Datetime, Datetime("ns")):
+        s = pl.Series("dates", d64, dtype)
+        assert s.to_list() == expected
+        assert Datetime == s.dtype
+        assert s.dtype.tu == "ns"  # type: ignore[attr-defined]
+
+    s = pl.Series(values=d64.astype("<M8[ms]"))
+    assert s.dtype.tu == "ms"  # type: ignore[attr-defined]
+    assert expected == s.to_list()
 
     # pandas
     assert pl.Series(pd.Series([1, 2])).dtype == pl.Int64
@@ -1794,3 +1810,37 @@ def test_mutable_borrowed_append_3915() -> None:
     s = pl.Series("s", [1, 2, 3])
     s.append(s)
     assert s.to_list() == [1, 2, 3, 1, 2, 3]
+
+
+def test_set_at_idx() -> None:
+    s = pl.Series("s", [1, 2, 3])
+
+    # no-op (empty sequences)
+    for x in (
+        (),
+        [],
+        pl.Series(),
+        pl.Series(dtype=pl.Int8),
+        np.array([]),
+        np.ndarray(shape=(0, 0)),
+    ):
+        s.set_at_idx(x, 8)  # type: ignore[arg-type]
+        assert s.to_list() == [1, 2, 3]
+
+    # set new values, one index at a time
+    s.set_at_idx(0, 8)
+    s.set_at_idx([1], None)
+    assert s.to_list() == [8, None, 3]
+
+    # set new value at multiple indexes in one go
+    s.set_at_idx([0, 2], None)
+    assert s.to_list() == [None, None, None]
+
+    # try with different series dtype
+    s = pl.Series("s", ["a", "b", "c"])
+    s.set_at_idx((1, 2), "x")
+    assert s.to_list() == ["a", "x", "x"]
+
+    # expected error condition
+    with pytest.raises(TypeError):
+        s.set_at_idx([0, 2], 0.12345)

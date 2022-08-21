@@ -921,17 +921,39 @@ def test_literal_series() -> None:
     df = pl.DataFrame(
         {
             "a": np.array([21.7, 21.8, 21], dtype=np.float32),
-            "b": np.array([1, 3, 2], dtype=np.int64),
+            "b": np.array([1, 3, 2], dtype=np.int8),
             "c": ["reg1", "reg2", "reg3"],
+            "d": np.array(
+                [datetime(2022, 8, 16), datetime(2022, 8, 17), datetime(2022, 8, 18)],
+                dtype="<M8[ns]",
+            ),
         }
     )
     out = (
         df.lazy()
-        .with_column(pl.Series("e", [2, 1, 3]))  # type: ignore[arg-type]
+        .with_column(pl.Series("e", [2, 1, 3], pl.Int32))  # type: ignore[arg-type]
         .with_column(pl.col("e").cast(pl.Float32))
         .collect()
     )
-    assert out["e"] == [2, 1, 3]
+    expected_schema = {
+        "a": pl.Float32,
+        "b": pl.Int8,
+        "c": pl.Utf8,
+        "d": pl.Datetime("ns"),
+        "e": pl.Float32,
+    }
+    assert_frame_equal(
+        pl.DataFrame(
+            [
+                (21.7, 1, "reg1", datetime(2022, 8, 16, 0), 2),
+                (21.8, 3, "reg2", datetime(2022, 8, 17, 0), 1),
+                (21.0, 2, "reg3", datetime(2022, 8, 18, 0), 3),
+            ],
+            columns=expected_schema,  # type: ignore[arg-type]
+        ),
+        out,
+        atol=0.00001,
+    )
 
 
 def test_to_html(df: pl.DataFrame) -> None:

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 
 from polars import internals as pli
 from polars.datatypes import (
+    DTYPE_TEMPORAL_UNITS,
     Categorical,
     ColumnsType,
     Date,
@@ -101,9 +102,18 @@ def numpy_to_pyseries(
         if dtype == np.float16:
             values = values.astype(np.float32)
             dtype = values.dtype.type
+        elif (
+            dtype == np.datetime64
+            and np.datetime_data(values.dtype)[0] not in DTYPE_TEMPORAL_UNITS
+        ):
+            dtype = object
+
         constructor = numpy_type_to_constructor(dtype)
+
         if dtype == np.float32 or dtype == np.float64:
             return constructor(name, values, nan_to_null)
+        elif dtype == np.datetime64:
+            return constructor(name, values.astype(np.int64), strict)
         else:
             return constructor(name, values, strict)
     else:
