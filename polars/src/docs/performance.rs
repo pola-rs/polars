@@ -42,7 +42,7 @@
 //!     let mut df = CsvReader::from_path(path)?
 //!                 .finish()?;
 //!
-//!     df.try_apply("utf8-column", |s| s.cast::<CategoricalType>())?;
+//!     df.try_apply("utf8-column", |s| s.categorical().cloned())?;
 //!     Ok(df)
 //! }
 //!
