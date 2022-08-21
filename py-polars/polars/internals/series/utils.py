@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     T = TypeVar("T")
     P = ParamSpec("P")
     SeriesMethod = Callable[..., pli.Series]
-    ExprLookup = set[tuple[str | None, str, Any]]
+    ExprLookup = set[tuple[str | None, str, tuple[str, ...]]]
 
 
 def _empty_() -> None:
@@ -47,8 +47,7 @@ def _expr_lookup(namespace: str | None) -> ExprLookup:
             m = getattr(expr, name)
             if callable(m):
                 args = m.__code__.co_varnames[: m.__code__.co_argcount]
-                key = (namespace, name, args)
-                lookup.add(key)
+                lookup.add((namespace, name, args))
     return lookup
 
 
@@ -79,8 +78,7 @@ def expr_dispatch(cls: type[T]) -> type[T]:
             attr = getattr(cls, name)
             if callable(attr):
                 args = attr.__code__.co_varnames[: attr.__code__.co_argcount]
-                key = (namespace, name, args)
-                if key in expr_lookup and _is_empty_method(attr):
+                if (namespace, name, args) in expr_lookup and _is_empty_method(attr):
                     setattr(cls, name, call_expr(attr))
     return cls
 
