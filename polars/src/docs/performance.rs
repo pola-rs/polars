@@ -80,13 +80,13 @@
 //! fn lazy_example(mut df_a: LazyFrame, mut df_b: LazyFrame) -> Result<DataFrame> {
 //!
 //!     let q1 = df_a.with_columns(vec![
-//!         col("a").cast(DataType::Categorical),
+//!         col("a").cast(DataType::Categorical(None)),
 //!     ]);
 //!
 //!     let q2 = df_b.with_columns(vec![
-//!         col("b").cast(DataType::Categorical)
+//!         col("b").cast(DataType::Categorical(None))
 //!     ]);
-//!     q1.inner_join(q2, col("a"), col("b"), None).collect()
+//!     q1.inner_join(q2, col("a"), col("b")).collect()
 //! }
 //! # }
 //! ```
