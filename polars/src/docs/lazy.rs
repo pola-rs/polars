@@ -30,11 +30,11 @@
 //!
 //! // scan a csv file lazily
 //! let lf: LazyFrame = LazyCsvReader::new("some_path".into())
-//!                     .has_header(true)
-//!                     .finish();
+//!     .has_header(true)
+//!     .finish()?;
 //!
 //! // scan a parquet file lazily
-//! let lf: LazyFrame = LazyFrame::scan_parquet("some_path".into(), None, true);
+//! let lf: LazyFrame = LazyFrame::scan_parquet("some_path".into(), Default::default())?;
 //!
 //! # Ok(())
 //! # }
