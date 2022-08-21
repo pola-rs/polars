@@ -345,7 +345,7 @@
 //! // sort this DataFrame by multiple columns
 //!
 //! // ordering of the columns
-//! let reverse = &[true, false];
+//! let reverse = vec![true, false];
 //! // columns to sort by
 //! let by = &["b", "a"];
 //! // do the sort operation
