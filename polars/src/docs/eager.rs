@@ -633,7 +633,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &mut DataFrame) -> Result<()> {
 //! // create a file
 //! let file = File::create("example.parquet").expect("could not create file");
 //!
