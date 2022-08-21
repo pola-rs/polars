@@ -164,9 +164,9 @@
 //!
 //! // compare Series with numeric values
 //! // ==
-//! s.eq(2);
+//! s.equal(2);
 //! // !=
-//! s.neq(2);
+//! s.not_equal(2);
 //! // >
 //! s.gt(2);
 //! // >=
@@ -179,9 +179,9 @@
 //!
 //! // compare Series with Series
 //! // ==
-//! s.eq(&s);
+//! s.equal(&s);
 //! // !=
-//! s.neq(&s);
+//! s.not_equal(&s);
 //! // >
 //! s.gt(&s);
 //! // >=
@@ -194,9 +194,9 @@
 //!
 //! // compare chunked-array with numeric values
 //! // ==
-//! ca.eq(2);
+//! ca.equal(2);
 //! // !=
-//! ca.neq(2);
+//! ca.not_equal(2);
 //! // >
 //! ca.gt(2);
 //! // >=
@@ -208,9 +208,9 @@
 //!
 //! // compare chunked-array with chunked-array
 //! // ==
-//! ca.eq(&ca);
+//! ca.equal(&ca);
 //! // !=
-//! ca.neq(&ca);
+//! ca.not_equal(&ca);
 //! // >
 //! ca.gt(&ca);
 //! // >=
