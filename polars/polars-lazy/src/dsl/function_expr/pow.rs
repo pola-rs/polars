@@ -1,14 +1,14 @@
 use num::pow::Pow;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::export::num;
-use polars_core::export::num::ToPrimitive;
+use polars_core::export::num::{Float, ToPrimitive};
 
 use super::*;
 
 fn pow_on_floats<T>(base: &ChunkedArray<T>, exponent: &Series) -> Result<Series>
 where
     T: PolarsFloatType,
-    T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive,
+    T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
     ChunkedArray<T>: IntoSeries,
 {
     let dtype = T::get_dtype();
@@ -16,20 +16,23 @@ where
     let exponent = base.unpack_series_matching_type(&exponent).unwrap();
 
     if exponent.len() == 1 {
-        let av = exponent
+        let exponent_value = exponent
             .get(0)
             .ok_or_else(|| PolarsError::ComputeError("exponent is null".into()))?;
-        let s = match av.to_f64().unwrap() {
+        let s = match exponent_value.to_f64().unwrap() {
             a if a == 1.0 => base.clone().into_series(),
+            // specialized sqrt will ensure (-inf)^0.5 = NaN
+            // and will likely be faster as well.
+            a if a == 0.5 => base.apply(|v| v.sqrt()).into_series(),
             a if a.fract() == 0.0 && a < 10.0 && a > 1.0 => {
                 let mut out = base.clone();
 
-                for _ in 1..av.to_u8().unwrap() {
+                for _ in 1..exponent_value.to_u8().unwrap() {
                     out = out * base.clone()
                 }
                 out.into_series()
             }
-            _ => base.apply(|v| Pow::pow(v, av)).into_series(),
+            _ => base.apply(|v| Pow::pow(v, exponent_value)).into_series(),
         };
         Ok(s)
     } else if (base.len() == 1) && (exponent.len() != 1) {
