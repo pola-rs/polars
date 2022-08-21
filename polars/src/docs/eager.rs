@@ -113,8 +113,8 @@
 //! let ca_int = s_int.i32()?;
 //! let ca_flt = s_flt.f32()?;
 //!
-//! &ca_int.cast::<Float32Type>()? * ca_flt;
-//! &ca_flt.cast::<Int32Type>()? * ca_int;
+//! ca_int.cast(&DataType::Float32)?.f32()? * ca_flt;
+//! ca_flt.cast(&DataType::Int32)?.i32()? * ca_int;
 //!
 //! // we can also do arithmetic with numeric values
 //! let multiplied = ca_int * 2.0;
