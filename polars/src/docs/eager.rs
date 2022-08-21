@@ -389,12 +389,12 @@
 //! )?;
 //!
 //! // join on a single column
-//! temp.left_join(&rain, "days", "days");
-//! temp.inner_join(&rain, "days", "days");
-//! temp.outer_join(&rain, "days", "days");
+//! temp.left_join(&rain, ["days"], ["days"]);
+//! temp.inner_join(&rain, ["days"], ["days"]);
+//! temp.outer_join(&rain, ["days"], ["days"]);
 //!
 //! // join on multiple columns
-//! temp.join(&rain, vec!["days", "other"], vec!["days", "other"], JoinType::Left);
+//! temp.join(&rain, vec!["days", "other"], vec!["days", "other"], JoinType::Left, None);
 //!
 //! # Ok(())
 //! # }
