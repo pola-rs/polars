@@ -437,8 +437,8 @@
 //!      )?;
 //!
 //! // groupby "foo" | pivot "bar" column | aggregate "N"
-//!  let pivoted = df.groupby("groups")?
-//!     .pivot("bar", "N")
+//!  let pivoted = df.groupby(["groups"])?
+//!     .pivot(["bar"], ["N"])
 //!     .first();
 //!
 //! // pivoted:
