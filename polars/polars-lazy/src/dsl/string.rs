@@ -259,7 +259,7 @@ impl StringNameSpace {
     }
 
     /// Split the string by a substring and keep the substring.
-    // Split exactly `n` times by a given substring. The resulting dtype is `List<Utf8>`.
+    /// Split exactly `n` times by a given substring. The resulting dtype is `List<Utf8>`.
     pub fn split_inclusive(self, by: &str) -> Expr {
         let by = by.to_string();
 
@@ -282,5 +282,30 @@ impl StringNameSpace {
                 GetOutput::from_type(DataType::List(Box::new(DataType::Utf8))),
             )
             .with_fmt("str.split_inclusive")
+    }
+
+    #[cfg(feature = "regex")]
+    /// Replace values that match a regex `pat` with a `value`.
+    pub fn replace(self, pat: Expr, value: Expr, literal: bool) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Replace {
+                all: false,
+                literal,
+            }),
+            &[pat, value],
+            "str.replace",
+            true,
+        )
+    }
+
+    #[cfg(feature = "regex")]
+    /// Replace all values that match a regex `pat` with a `value`.
+    pub fn replace_all(self, pat: Expr, value: Expr, literal: bool) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Replace { all: true, literal }),
+            &[pat, value],
+            "str.replace_all",
+            true,
+        )
     }
 }

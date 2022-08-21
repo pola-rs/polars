@@ -131,6 +131,20 @@ def test_replace_all() -> None:
             df["text"].str.replace_all("*", "")
 
 
+def test_replace_expressions() -> None:
+    df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"], "value": ["A", "B"]})
+    out = df.select([pl.col("foo").str.replace(pl.col("foo").first(), pl.col("value"))])
+    assert out.to_dict(False) == {"foo": ["A", "xyz 678 910t"]}
+    out = df.select([pl.col("foo").str.replace(pl.col("foo").last(), "value")])
+    assert out.to_dict(False) == {"foo": ["123 bla 45 asd", "value"]}
+
+    df = pl.DataFrame(
+        {"foo": ["1 bla 45 asd", "xyz 6t"], "pat": [r"\d", r"\W"], "value": ["A", "B"]}
+    )
+    out = df.select([pl.col("foo").str.replace_all(pl.col("pat").first(), "value")])
+    assert out.to_dict(False) == {"foo": ["value bla valuevalue asd", "xyz valuet"]}
+
+
 def test_extract_all_count() -> None:
     df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
     assert (

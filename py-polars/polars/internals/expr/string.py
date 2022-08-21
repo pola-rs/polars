@@ -882,7 +882,9 @@ class ExprStringNameSpace:
             return pli.wrap_expr(self._pyexpr.str_split_exact_inclusive(by, n))
         return pli.wrap_expr(self._pyexpr.str_split_exact(by, n))
 
-    def replace(self, pattern: str, value: str, literal: bool = False) -> pli.Expr:
+    def replace(
+        self, pattern: str | pli.Expr, value: str | pli.Expr, literal: bool = False
+    ) -> pli.Expr:
         r"""
         Replace first matching regex/literal substring with a new string value.
 
@@ -917,9 +919,15 @@ class ExprStringNameSpace:
         └─────┴────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_replace(pattern, value, literal))
+        pattern = pli.expr_to_lit_or_expr(pattern, str_to_lit=True)
+        value = pli.expr_to_lit_or_expr(value, str_to_lit=True)
+        return pli.wrap_expr(
+            self._pyexpr.str_replace(pattern._pyexpr, value._pyexpr, literal)
+        )
 
-    def replace_all(self, pattern: str, value: str, literal: bool = False) -> pli.Expr:
+    def replace_all(
+        self, pattern: str | pli.Expr, value: str | pli.Expr, literal: bool = False
+    ) -> pli.Expr:
         """
         Replace all matching regex/literal substrings with a new string value.
 
@@ -952,7 +960,11 @@ class ExprStringNameSpace:
         └─────┴─────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_replace_all(pattern, value, literal))
+        pattern = pli.expr_to_lit_or_expr(pattern, str_to_lit=True)
+        value = pli.expr_to_lit_or_expr(value, str_to_lit=True)
+        return pli.wrap_expr(
+            self._pyexpr.str_replace_all(pattern._pyexpr, value._pyexpr, literal)
+        )
 
     def slice(self, start: int, length: int | None = None) -> pli.Expr:
         """
