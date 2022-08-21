@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import ParamSpec
 
-    T = TypeVar('T')
+    T = TypeVar("T")
     P = ParamSpec("P")
     SeriesMethod = Callable[..., pli.Series]
     ExprLookup = set[tuple[str | None, str, Any]]
@@ -69,9 +69,7 @@ def call_expr(func: SeriesMethod) -> SeriesMethod:
     return wrapper
 
 
-def expr_dispatch(
-    cls: type[T],
-) -> type[T]:
+def expr_dispatch(cls: type[T]) -> type[T]:
     """Series/NameSpace class decorator that sets up expression dispatch."""
     namespace = getattr(cls, "_accessor", None)
     expr_lookup = _expr_lookup(namespace)
