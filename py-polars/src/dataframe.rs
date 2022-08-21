@@ -757,21 +757,6 @@ impl PyDataFrame {
         format!("{:?}", self.df)
     }
 
-    pub fn join(
-        &self,
-        other: &PyDataFrame,
-        left_on: Vec<&str>,
-        right_on: Vec<&str>,
-        how: Wrap<JoinType>,
-        suffix: String,
-    ) -> PyResult<Self> {
-        let df = self
-            .df
-            .join(&other.df, left_on, right_on, how.0, Some(suffix))
-            .map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
-    }
-
     pub fn get_columns(&self) -> Vec<PySeries> {
         let cols = self.df.get_columns().clone();
         to_pyseries_collection(cols)
