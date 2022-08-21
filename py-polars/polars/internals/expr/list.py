@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Final
 
 import polars.internals as pli
 
@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
 class ExprListNameSpace:
     """Namespace for list related expressions."""
+
+    _accessor: Final = "arr"
 
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr

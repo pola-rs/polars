@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import polars.internals as pli
 
@@ -10,6 +10,8 @@ if TYPE_CHECKING:
 
 class ExprCatNameSpace:
     """Namespace for categorical related expressions."""
+
+    _accessor: Final = "cat"
 
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr

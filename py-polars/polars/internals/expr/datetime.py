@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import polars.internals as pli
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int32
@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 
 class ExprDateTimeNameSpace:
     """Namespace for datetime related expressions."""
+
+    _accessor: Final = "dt"
 
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr
