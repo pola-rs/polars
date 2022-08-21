@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
+#[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
 use polars::frame::row::Row;
 use polars::frame::{groupby::PivotAgg, NullStrategy};
@@ -217,6 +218,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::List(v) => PySeries::new(v).to_list(),
             AnyValue::Struct(vals, flds) => struct_dict(py, vals, flds),
             AnyValue::StructOwned(payload) => struct_dict(py, payload.0, &payload.1),
+            #[cfg(feature = "object")]
             AnyValue::Object(v) => {
                 let s = format!("{}", v);
                 s.into_py(py)
@@ -259,6 +261,7 @@ impl ToPyObject for Wrap<DataType> {
                 let duration_class = pl.getattr("Duration").unwrap();
                 duration_class.call1((tu.to_ascii(),)).unwrap().into()
             }
+            #[cfg(feature = "object")]
             DataType::Object(_) => pl.getattr("Object").unwrap().into(),
             DataType::Categorical(_) => pl.getattr("Categorical").unwrap().into(),
             DataType::Time => pl.getattr("Time").unwrap().into(),
@@ -313,6 +316,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Duration" => DataType::Duration(TimeUnit::Microseconds),
                     "Float32" => DataType::Float32,
                     "Float64" => DataType::Float64,
+                    #[cfg(feature = "object")]
                     "Object" => DataType::Object("unknown"),
                     "List" => DataType::List(Box::new(DataType::Boolean)),
                     "Null" => DataType::Null,
@@ -631,6 +635,7 @@ impl Display for ObjectValue {
     }
 }
 
+#[cfg(feature = "object")]
 impl PolarsObject for ObjectValue {
     fn type_name() -> &'static str {
         "object"
@@ -656,6 +661,7 @@ impl<'a> FromPyObject<'a> for ObjectValue {
 /// # Safety
 ///
 /// The caller is responsible for checking that val is Object otherwise UB
+#[cfg(feature = "object")]
 impl From<&dyn PolarsObjectSafe> for &ObjectValue {
     fn from(val: &dyn PolarsObjectSafe) -> Self {
         unsafe { &*(val as *const dyn PolarsObjectSafe as *const ObjectValue) }

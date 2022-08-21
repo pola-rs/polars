@@ -50,6 +50,13 @@ pct_change = ["polars/pct_change"]
 repeat_by = ["polars/repeat_by"]
 simd = ["polars/simd"]
 meta = ["polars/meta"]
+search_sorted = ["polars/search_sorted"]
+# Use "decompress" instead of "decompress-fast" till zlib-ng is fixed.
+decompress = ["polars/decompress"]
+lazy_regex = ["polars/lazy_regex"]
+csv-file = ["polars/csv-file"]
+object = ["polars/object"]
+extract_jsonpath = ["polars/extract_jsonpath"]
 
 all = [
   "json",
@@ -63,8 +70,14 @@ all = [
   "asof_join",
   "cross_join",
   "pct_change",
-  "polars/search_sorted",
+  "search_sorted",
   "meta",
+  "decompress",
+  "lazy_regex",
+  "csv-file",
+  "extract_jsonpath",
+  "polars/timezones",
+  "object",
 ]
 
 # we cannot conditionaly activate simd
@@ -86,8 +99,6 @@ features = [
   "strings",
   "temporal",
   "random",
-  "object",
-  "csv-file",
   "fmt",
   "performant",
   "dtype-full",
@@ -99,11 +110,7 @@ features = [
   "concat_str",
   "row_hash",
   "reinterpret",
-  # Use "decompress" instead of "decompress-fast" till zlib-ng is fixed.
-  "decompress",
   "mode",
-  "extract_jsonpath",
-  "lazy_regex",
   "cum_agg",
   "rolling_window",
   "interpolate",
@@ -120,7 +127,6 @@ features = [
   "ewma",
   "dot_diagram",
   "dataframe_arithmetic",
-  "json",
   "string_encoding",
   "product",
   "ndarray",
@@ -135,7 +141,6 @@ features = [
   "to_dummies",
   "string_justify",
   "arg_where",
-  "timezones",
   "date_offset",
 ]
 

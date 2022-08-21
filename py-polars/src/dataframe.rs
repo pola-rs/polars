@@ -112,6 +112,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "csv-file")]
     pub fn read_csv(
         py_f: &PyAny,
         infer_schema_length: Option<usize>,
@@ -488,6 +489,7 @@ impl PyDataFrame {
         Ok(())
     }
 
+    #[cfg(feature = "object")]
     pub fn row_tuple(&self, idx: i64) -> PyObject {
         Python::with_gil(|py| {
             let idx = if idx < 0 {
@@ -509,6 +511,7 @@ impl PyDataFrame {
         })
     }
 
+    #[cfg(feature = "object")]
     pub fn row_tuples(&self) -> PyObject {
         Python::with_gil(|py| {
             let df = &self.df;

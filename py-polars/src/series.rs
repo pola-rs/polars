@@ -236,8 +236,15 @@ impl PySeries {
 
     #[staticmethod]
     pub fn new_object(name: &str, val: Vec<ObjectValue>, _strict: bool) -> Self {
-        let s = ObjectChunked::<ObjectValue>::new_from_vec(name, val).into_series();
-        s.into()
+        #[cfg(feature = "object")]
+        {
+            let s = ObjectChunked::<ObjectValue>::new_from_vec(name, val).into_series();
+            s.into()
+        }
+        #[cfg(not(feature = "object"))]
+        {
+            todo!()
+        }
     }
 
     #[staticmethod]
@@ -348,6 +355,7 @@ impl PySeries {
         self.series.estimated_size()
     }
 
+    #[cfg(feature = "object")]
     pub fn get_object(&self, index: usize) -> PyObject {
         Python::with_gil(|py| {
             if matches!(self.series.dtype(), DataType::Object(_)) {
@@ -776,6 +784,7 @@ impl PySeries {
                     DataType::Categorical(_) => {
                         PyList::new(py, series.categorical().unwrap().iter_str())
                     }
+                    #[cfg(feature = "object")]
                     DataType::Object(_) => {
                         let v = PyList::empty(py);
                         for i in 0..series.len() {
@@ -1082,6 +1091,7 @@ impl PySeries {
                     )?;
                     ca.into_series()
                 }
+                #[cfg(feature = "object")]
                 Some(DataType::Object(_)) => {
                     let ca: ObjectChunked<ObjectValue> = apply_method_all_arrow_series2!(
                         series,
@@ -1140,6 +1150,7 @@ impl PySeries {
         Ok(s.into())
     }
 
+    #[cfg(feature = "extract_jsonpath")]
     pub fn str_json_path_match(&self, pat: &str) -> PyResult<Self> {
         let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
         let s = ca
