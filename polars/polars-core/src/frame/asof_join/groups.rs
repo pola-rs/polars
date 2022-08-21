@@ -604,7 +604,7 @@ impl DataFrame {
             )
         };
 
-        self.finish_join(left, right_df, None)
+        self.assign_suffixes_and_hstack(left, right_df, None)
     }
 
     /// This is similar to a left-join except that we match on nearest key rather than equal keys.

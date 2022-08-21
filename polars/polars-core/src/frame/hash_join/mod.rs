@@ -118,6 +118,7 @@ pub(crate) fn check_categorical_src(l: &DataType, r: &DataType) -> Result<()> {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum JoinType {
     Left,
+    Right,
     Inner,
     Outer,
     #[cfg(feature = "asof_join")]
@@ -264,8 +265,8 @@ impl ZipOuterJoinColumn for Float64Chunked {
 }
 
 impl DataFrame {
-    /// Utility method to finish a join.
-    pub(crate) fn finish_join(
+    /// Suffixes get added to columns in `df_right` that are also present in `df_left`.
+    pub(crate) fn assign_suffixes_and_hstack(
         &self,
         mut df_left: DataFrame,
         mut df_right: DataFrame,
@@ -400,7 +401,12 @@ impl DataFrame {
                 JoinType::Inner => {
                     self.inner_join_from_series(other, s_left, s_right, suffix, slice)
                 }
-                JoinType::Left => self.left_join_from_series(other, s_left, s_right, suffix, slice),
+                JoinType::Left => {
+                    self.left_join_from_series(other, s_left, s_right, suffix, slice, false)
+                }
+                JoinType::Right => {
+                    other.left_join_from_series(self, s_right, s_left, suffix, slice, true)
+                }
                 JoinType::Outer => {
                     self.outer_join_from_series(other, s_left, s_right, suffix, slice)
                 }
@@ -490,14 +496,33 @@ impl DataFrame {
                             ._take_unchecked_slice(join_idx_right, true)
                     },
                 );
-                self.finish_join(df_left, df_right, suffix)
+                self.assign_suffixes_and_hstack(df_left, df_right, suffix)
             }
             JoinType::Left => {
                 let left = DataFrame::new_no_checks(selected_left_physical);
                 let right = DataFrame::new_no_checks(selected_right_physical);
                 let ids = left_join_multiple_keys(&left, &right, None, None);
 
-                self.finish_left_join(ids, &remove_selected(other, &selected_right), suffix, slice)
+                self.finish_left_join(
+                    ids,
+                    &remove_selected(other, &selected_right),
+                    suffix,
+                    slice,
+                    false,
+                )
+            }
+            JoinType::Right => {
+                let left = DataFrame::new_no_checks(selected_left_physical);
+                let right = DataFrame::new_no_checks(selected_right_physical);
+                let ids = left_join_multiple_keys(&right, &left, None, None);
+
+                other.finish_left_join(
+                    ids,
+                    &remove_selected(self, &selected_left),
+                    suffix,
+                    slice,
+                    true,
+                )
             }
             JoinType::Outer => {
                 let left = DataFrame::new_no_checks(selected_left_physical);
@@ -538,7 +563,7 @@ impl DataFrame {
                 }
                 keys.extend_from_slice(df_left.get_columns());
                 let df_left = DataFrame::new_no_checks(keys);
-                self.finish_join(df_left, df_right, suffix)
+                self.assign_suffixes_and_hstack(df_left, df_right, suffix)
             }
             #[cfg(feature = "asof_join")]
             JoinType::AsOf(_) => Err(PolarsError::ComputeError(
@@ -687,7 +712,7 @@ impl DataFrame {
                     ._take_unchecked_slice(join_tuples_right, true)
             },
         );
-        self.finish_join(df_left, df_right, suffix)
+        self.assign_suffixes_and_hstack(df_left, df_right, suffix)
     }
 
     /// Perform a left join on two DataFrames
@@ -739,6 +764,7 @@ impl DataFrame {
         other: &DataFrame,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
+        invert_suffixes: bool,
     ) -> Result<DataFrame> {
         let (left_idx, right_idx) = ids;
         let materialize_left = || {
@@ -762,7 +788,11 @@ impl DataFrame {
         };
         let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
 
-        self.finish_join(df_left, df_right, suffix)
+        if invert_suffixes {
+            self.assign_suffixes_and_hstack(df_right, df_left, suffix)
+        } else {
+            self.assign_suffixes_and_hstack(df_left, df_right, suffix)
+        }
     }
 
     #[cfg(feature = "chunked_ids")]
@@ -772,6 +802,7 @@ impl DataFrame {
         other: &DataFrame,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
+        invert_suffixes: bool,
     ) -> Result<DataFrame> {
         let (left_idx, right_idx) = ids;
         let materialize_left = || match left_idx {
@@ -813,16 +844,25 @@ impl DataFrame {
         };
         let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
 
-        self.finish_join(df_left, df_right, suffix)
+        if invert_suffixes {
+            self.assign_suffixes_and_hstack(df_right, df_left, suffix)
+        } else {
+            self.assign_suffixes_and_hstack(df_left, df_right, suffix)
+        }
     }
 
-    pub(crate) fn left_join_from_series(
+    /// Left join `other` onto `self`. `invert_suffixes` controls whether the suffixes should
+    /// be added to the columns in `self` or `other`. This is useful when we transform
+    /// `x.join(y, how="right") => y.join(x, how="left")`. We want to ensure that `y` gets
+    /// the suffixes.
+    fn left_join_from_series(
         &self,
         other: &DataFrame,
         s_left: &Series,
         s_right: &Series,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
+        invert_suffixes: bool,
     ) -> Result<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
@@ -849,7 +889,13 @@ impl DataFrame {
             s_left.hash_join_left(s_right)
         };
 
-        self.finish_left_join(ids, &other.drop(s_right.name()).unwrap(), suffix, slice)
+        self.finish_left_join(
+            ids,
+            &other.drop(s_right.name()).unwrap(),
+            suffix,
+            slice,
+            invert_suffixes,
+        )
     }
 
     #[cfg(feature = "semi_anti_join")]
@@ -964,7 +1010,7 @@ impl DataFrame {
         };
 
         df_left.get_columns_mut().insert(join_column_index, s);
-        self.finish_join(df_left, df_right, suffix)
+        self.assign_suffixes_and_hstack(df_left, df_right, suffix)
     }
 }
 

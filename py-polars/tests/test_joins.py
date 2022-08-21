@@ -263,6 +263,56 @@ def test_join() -> None:
     assert lazy_join.shape == eager_join.shape
 
 
+def test_join_right() -> None:
+    x = pl.DataFrame({"row_id": [1, 2, 3, 4, 5], "values": [5, 6, 7, 8, 9]})
+    y = pl.DataFrame({"row_id": [1, 2, 3, 4], "values": [10, 11, 12, 13]})
+
+    result = x.join(y, how="right", on="row_id", suffix="_y")
+    expected = pl.DataFrame(
+        {"values": [5, 6, 7, 8], "row_id": [1, 2, 3, 4], "values_y": [10, 11, 12, 13]}
+    )
+    assert result.frame_equal(expected)
+
+    result = y.join(x, how="right", on="row_id", suffix="_x")
+    expected = pl.DataFrame(
+        {
+            "values": [10, 11, 12, 13, None],
+            "row_id": [1, 2, 3, 4, 5],
+            "values_x": [5, 6, 7, 8, 9],
+        }
+    )
+    assert result.frame_equal(expected)
+
+    x = pl.DataFrame(
+        {"id_1": [1, 1, 2, 2, 3], "id_2": [1, 2, 1, 2, 1], "values": [5, 6, 7, 8, 9]}
+    )
+    y = pl.DataFrame(
+        {"id_1": [1, 1, 2, 2], "id_2": [1, 2, 1, 2], "values": [9, 10, 11, 12]}
+    )
+
+    result = x.join(y, how="right", on=["id_1", "id_2"], suffix="_y")
+    expected = pl.DataFrame(
+        {
+            "values": [5, 6, 7, 8],
+            "id_1": [1, 1, 2, 2],
+            "id_2": [1, 2, 1, 2],
+            "values_y": [9, 10, 11, 12],
+        }
+    )
+    assert result.frame_equal(expected)
+
+    result = y.join(x, how="right", on=["id_1", "id_2"], suffix="_x")
+    expected = pl.DataFrame(
+        {
+            "values": [9, 10, 11, 12, None],
+            "id_1": [1, 1, 2, 2, 3],
+            "id_2": [1, 2, 1, 2, 1],
+            "values_x": [5, 6, 7, 8, 9],
+        }
+    )
+    assert result.frame_equal(expected)
+
+
 def test_joins_dispatch() -> None:
     # this just flexes the dispatch a bit
 

@@ -824,6 +824,7 @@ impl FromPyObject<'_> for Wrap<JoinType> {
         let parsed = match ob.extract::<&str>()? {
             "inner" => JoinType::Inner,
             "left" => JoinType::Left,
+            "right" => JoinType::Right,
             "outer" => JoinType::Outer,
             "semi" => JoinType::Semi,
             "anti" => JoinType::Anti,
@@ -831,7 +832,7 @@ impl FromPyObject<'_> for Wrap<JoinType> {
             "cross" => JoinType::Cross,
             v => {
                 return Err(PyValueError::new_err(format!(
-                "how must be one of {{'inner', 'left', 'outer', 'semi', 'anti', 'cross'}}, got {}",
+                "how must be one of {{'inner', 'left', 'outer', 'semi', 'anti', 'cross', 'right}}, got {}",
                 v
             )))
             }

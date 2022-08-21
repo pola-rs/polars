@@ -23,7 +23,8 @@ from polars.utils import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
-    format_path, _standardize_join_key,
+    _standardize_join_key,
+    format_path,
 )
 
 try:
