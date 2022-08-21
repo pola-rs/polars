@@ -2,7 +2,7 @@ use arrow::array::PrimitiveArray;
 use arrow::types::NativeType;
 use num::Float;
 
-use crate::trusted_len::PushUnchecked;
+use crate::utils::CustomIterTools;
 
 // See:
 // https://github.com/pola-rs/polars/issues/2148
@@ -17,37 +17,34 @@ pub fn ewm_mean<T>(
 where
     T: Float + NativeType,
 {
-    let n = xs.len();
-    let mut results = Vec::with_capacity(n);
-
     let mut denom = T::zero();
     let one_sub_alpha = T::one() - alpha;
     let mut non_null_cnt = 0usize;
 
     let mut opt_ewma = None;
 
-    for opt_x in xs.iter() {
-        if let Some(&x) = opt_x {
-            non_null_cnt += 1;
+    xs.iter()
+        .map(|opt_x| {
+            if let Some(&x) = opt_x {
+                non_null_cnt += 1;
 
-            let prev_ewma = opt_ewma.unwrap_or(x);
+                let prev_ewma = opt_ewma.unwrap_or(x);
 
-            let value = if adjust {
-                let numer = prev_ewma * denom * one_sub_alpha + x;
-                denom = T::one() + one_sub_alpha * denom;
-                numer / denom
-            } else {
-                x * alpha + prev_ewma * one_sub_alpha
-            };
-            opt_ewma = Some(value);
-        }
-        let push_me = match non_null_cnt < min_periods {
-            true => None,
-            false => opt_ewma,
-        };
-        unsafe { results.push_unchecked(push_me) }
-    }
-    PrimitiveArray::from(results.as_slice())
+                let value = if adjust {
+                    let numer = prev_ewma * denom * one_sub_alpha + x;
+                    denom = T::one() + one_sub_alpha * denom;
+                    numer / denom
+                } else {
+                    x * alpha + prev_ewma * one_sub_alpha
+                };
+                opt_ewma = Some(value);
+            }
+            match non_null_cnt < min_periods {
+                true => None,
+                false => opt_ewma,
+            }
+        })
+        .collect_trusted()
 }
 
 #[cfg(test)]
