@@ -690,13 +690,13 @@
 //!     ]?;
 //!
 //!     // first extract ChunkedArray to get the inner type.
-//!     let ca = df.column("a").f32();
+//!     let ca = df.column("a")?.f32()?;
 //!
 //!     // Then convert to vec
 //!     let to_vec: Vec<Option<f32>> = Vec::from(ca);
 //!
 //!     // We can also do this with iterators
-//!     let ca = df.column("str").utf8();
+//!     let ca = df.column("str")?.utf8()?;
 //!     let to_vec: Vec<Option<&str>> = ca.into_iter().collect();
 //!     let to_vec_no_options: Vec<&str> = ca.into_no_null_iter().collect();
 //!
