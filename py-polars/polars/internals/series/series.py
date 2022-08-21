@@ -2631,9 +2631,6 @@ class Series:
         self, fill_value: str | int | float | bool | pli.Expr | None
     ) -> Series:
         """Fill floating point NaN value with a fill value."""
-        return (
-            self.to_frame().select(pli.col(self.name).fill_nan(fill_value)).to_series()
-        )
 
     def fill_null(
         self,
@@ -2686,9 +2683,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(
-            pli.col(self.name).fill_null(value, strategy, limit)
-        )[self.name]
 
     def floor(self) -> Series:
         """
@@ -2708,7 +2702,6 @@ class Series:
         Only works on floating point Series
 
         """
-        return self.to_frame().select(pli.col(self.name).ceil()).to_series()
 
     def round(self, decimals: int) -> Series:
         """
@@ -2789,7 +2782,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).sign()).to_series()
 
     def sin(self) -> Series:
         """
@@ -2809,7 +2801,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).sin()).to_series()
 
     def cos(self) -> Series:
         """
@@ -2829,7 +2820,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).cos()).to_series()
 
     def tan(self) -> Series:
         """
@@ -2849,7 +2839,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).tan()).to_series()
 
     def arcsin(self) -> Series:
         """
@@ -2868,7 +2857,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).arcsin()).to_series()
 
     def arccos(self) -> Series:
         """
@@ -2887,7 +2875,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).arccos()).to_series()
 
     def arctan(self) -> Series:
         """
@@ -2906,7 +2893,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).arctan()).to_series()
 
     def arcsinh(self) -> Series:
         """
@@ -2925,7 +2911,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).arcsinh()).to_series()
 
     def arccosh(self) -> Series:
         """
@@ -2945,7 +2930,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).arccosh()).to_series()
 
     def arctanh(self) -> Series:
         """
@@ -2968,7 +2952,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).arctanh()).to_series()
 
     def sinh(self) -> Series:
         """
@@ -2987,7 +2970,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).sinh()).to_series()
 
     def cosh(self) -> Series:
         """
@@ -3006,7 +2988,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).cosh()).to_series()
 
     def tanh(self) -> Series:
         """
@@ -3025,7 +3006,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).tanh()).to_series()
 
     def apply(
         self, func: Callable[[Any], Any], return_dtype: type[DataType] | None = None
@@ -3113,9 +3093,6 @@ class Series:
             Fill None values with the result of this expression.
 
         """
-        return self.to_frame().select(
-            pli.col(self.name).shift_and_fill(periods, fill_value)
-        )[self.name]
 
     def zip_with(self, mask: Series, other: Series) -> Series:
         """
@@ -3479,26 +3456,20 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0])
-        >>> s.rolling_apply(function=lambda s: s.std(), window_size=3)
+        >>> import numpy as np
+        >>> s = pl.Series("A", [11.0, 2.0, 9.0, float("nan"), 8.0])
+        >>> print(s.rolling_apply(function=np.nanstd, window_size=3))
         shape: (5,)
         Series: 'A' [f64]
         [
             null
             null
-            4.358899
-            4.041452
-            5.567764
+            3.858612
+            3.5
+            0.5
         ]
 
         """
-        if min_periods is None:
-            min_periods = window_size
-        return self.to_frame().select(
-            pli.col(self.name).rolling_apply(
-                function, window_size, weights, min_periods, center
-            )
-        )[self.name]
 
     def rolling_median(
         self,
@@ -3592,9 +3563,6 @@ class Series:
             If False, then the calculations are corrected for statistical bias.
 
         """
-        return self.to_frame().select(
-            pli.col(self.name).rolling_skew(window_size, bias)
-        )[self.name]
 
     def sample(
         self,
@@ -3924,7 +3892,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).pct_change(n)).to_series()
 
     def skew(self, bias: bool = True) -> float | None:
         r"""
@@ -4020,9 +3987,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).clip(min_val, max_val))[
-            self.name
-        ]
 
     def clip_min(self, min_val: int | float) -> Series:
         """

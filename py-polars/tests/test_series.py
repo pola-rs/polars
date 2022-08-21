@@ -584,11 +584,26 @@ def test_fill_null() -> None:
         a, pl.Series("a", [1, 2, 14], dtype=Int64), "fill_null", 14
     )
 
+    a = pl.Series("a", [0.0, 1.0, None, 2.0, None, 3.0])
+
+    assert a.fill_null(0).to_list() == [0.0, 1.0, 0.0, 2.0, 0.0, 3.0]
+    assert a.fill_null(strategy="zero").to_list() == [0.0, 1.0, 0.0, 2.0, 0.0, 3.0]
+    assert a.fill_null(strategy="max").to_list() == [0.0, 1.0, 3.0, 2.0, 3.0, 3.0]
+    assert a.fill_null(strategy="min").to_list() == [0.0, 1.0, 0.0, 2.0, 0.0, 3.0]
+    assert a.fill_null(strategy="one").to_list() == [0.0, 1.0, 1.0, 2.0, 1.0, 3.0]
+    assert a.fill_null(strategy="forward").to_list() == [0.0, 1.0, 1.0, 2.0, 2.0, 3.0]
+    assert a.fill_null(strategy="backward").to_list() == [0.0, 1.0, 2.0, 2.0, 3.0, 3.0]
+    assert a.fill_null(strategy="mean").to_list() == [0.0, 1.0, 1.5, 2.0, 1.5, 3.0]
+
 
 def test_fill_nan() -> None:
-    a = pl.Series("a", [1.0, 2.1, float("nan")])
+    nan = float("nan")
+    a = pl.Series("a", [1.0, nan, 2.0, nan, 3.0])
     assert a.fill_nan(None).series_equal(
-        pl.Series("a", [1.0, 2.1, None]), null_equal=True
+        pl.Series("a", [1.0, None, 2.0, None, 3.0]), null_equal=True
+    )
+    assert a.fill_nan(0).series_equal(
+        pl.Series("a", [1.0, 0.0, 2.0, 0.0, 3.0]), null_equal=True
     )
 
 
@@ -628,6 +643,7 @@ def test_rolling() -> None:
     assert_series_equal(a.rolling_max(2), pl.Series("a", [None, 2, 3, 3, 2]))
     assert_series_equal(a.rolling_sum(2), pl.Series("a", [None, 3, 5, 5, 3]))
     assert_series_equal(a.rolling_mean(2), pl.Series("a", [None, 1.5, 2.5, 2.5, 1.5]))
+
     assert a.rolling_std(2).to_list()[1] == pytest.approx(0.7071067811865476)
     assert a.rolling_var(2).to_list()[1] == pytest.approx(0.5)
     assert_series_equal(
@@ -679,6 +695,11 @@ def test_rolling() -> None:
         .to_list()
         == expected
     )
+
+    nan = float("nan")
+    a = pl.Series("a", [11.0, 2.0, 9.0, nan, 8.0])
+    assert a.rolling_sum(3) == [None, None, 22.0, nan, nan]
+    assert a.rolling_apply(np.nansum, 3) == [None, None, 22.0, 11.0, 17.0]
 
 
 def test_object() -> None:
@@ -908,7 +929,7 @@ def test_extract_regex() -> None:
     verify_series_and_expr_api(s, expected, "str.extract", r"candidate=(\w+)", 1)
 
 
-def test_rank_dispatch() -> None:
+def test_rank() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
 
     assert_series_equal(
@@ -924,7 +945,7 @@ def test_rank_dispatch() -> None:
     )
 
 
-def test_diff_dispatch() -> None:
+def test_diff() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
     expected = pl.Series("a", [1, 1, -1, 0, 1, -3])
 
@@ -936,13 +957,13 @@ def test_diff_dispatch() -> None:
     )
 
 
-def test_pct_change_dispatch() -> None:
+def test_pct_change() -> None:
     s = pl.Series("a", [1, 2, 4, 8, 16, 32, 64])
     expected = pl.Series("a", [None, None, float("inf"), 3.0, 3.0, 3.0, 3.0])
     verify_series_and_expr_api(s, expected, "pct_change", 2)
 
 
-def test_skew_dispatch() -> None:
+def test_skew() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
 
     assert s.skew(True) == pytest.approx(-0.5953924651018018)
@@ -952,7 +973,7 @@ def test_skew_dispatch() -> None:
     assert np.isclose(df.select(pl.col("a").skew(False))["a"][0], -0.7717168360221258)
 
 
-def test_kurtosis_dispatch() -> None:
+def test_kurtosis() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
     expected = -0.6406250000000004
 
@@ -961,7 +982,7 @@ def test_kurtosis_dispatch() -> None:
     assert np.isclose(df.select(pl.col("a").kurtosis())["a"][0], expected)
 
 
-def test_arr_lengths_dispatch() -> None:
+def test_arr_lengths() -> None:
     s = pl.Series("a", [[1, 2], [1, 2, 3]])
     assert_series_equal(s.arr.lengths(), pl.Series("a", [2, 3], dtype=UInt32))
     df = pl.DataFrame([s])
@@ -992,7 +1013,7 @@ def test_arr_unique() -> None:
     assert sorted(result[1]) == [1, 2]
 
 
-def test_sqrt_dispatch() -> None:
+def test_sqrt() -> None:
     s = pl.Series("a", [1, 2])
     assert_series_equal(s.sqrt(), pl.Series("a", [1.0, np.sqrt(2)]))
     df = pl.DataFrame([s])
@@ -1015,7 +1036,7 @@ def test_strict_cast() -> None:
         pl.DataFrame({"a": [2**16]}).select([pl.col("a").cast(pl.Int16, strict=True)])
 
 
-def test_list_concat_dispatch() -> None:
+def test_list_concat() -> None:
     s0 = pl.Series("a", [[1, 2]])
     s1 = pl.Series("b", [[3, 4, 5]])
     expected = pl.Series("a", [[1, 2, 3, 4, 5]])
@@ -1831,6 +1852,16 @@ def test_reverse() -> None:
 
     s = pl.Series("values", ["a", "b", None, "y", "x"])
     assert s.reverse().to_list() == ["x", "y", None, "b", "a"]
+
+
+def test_n_unique() -> None:
+    s = pl.Series("s", [11, 11, 11, 22, 22, 33, None, None, None])
+    assert s.n_unique() == 4
+
+
+def test_clip() -> None:
+    s = pl.Series("foo", [-50, 5, None, 50])
+    assert s.clip(1, 10) == [1, 5, None, 10]
 
 
 def test_mutable_borrowed_append_3915() -> None:
