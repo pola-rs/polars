@@ -62,9 +62,9 @@
 //!     // Set a global string cache
 //!     toggle_string_cache(true);
 //!
-//!     df_a.try_apply("a", |s| s.cast::<CategoricalType>())?;
-//!     df_b.try_apply("b", |s| s.cast::<CategoricalType>())?;
-//!     df_a.join(&df_b, "a", "b", JoinType::Inner)
+//!     df_a.try_apply("a", |s| s.categorical().cloned())?;
+//!     df_b.try_apply("b", |s| s.categorical().cloned())?;
+//!     df_a.join(&df_b, ["a"], ["b"], JoinType::Inner, None)
 //! }
 //! ```
 //!
