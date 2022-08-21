@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import sys
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 import polars.internals as pli
 from polars.datatypes import DataType, dtype_to_ffiname
@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import ParamSpec
 
+    T = TypeVar('T')
     P = ParamSpec("P")
     SeriesMethod = Callable[..., pli.Series]
     ExprLookup = set[tuple[str | None, str, Any]]
@@ -69,8 +70,8 @@ def call_expr(func: SeriesMethod) -> SeriesMethod:
 
 
 def expr_dispatch(
-    cls: type,
-) -> type:
+    cls: type[T],
+) -> type[T]:
     """Series/NameSpace class decorator that sets up expression dispatch."""
     namespace = getattr(cls, "_accessor", None)
     expr_lookup = _expr_lookup(namespace)
