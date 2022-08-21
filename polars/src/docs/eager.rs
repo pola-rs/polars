@@ -514,7 +514,7 @@
 //! let s1 = Series::new("C", [1, 1, 1]);
 //! let df = DataFrame::new(vec![list, s0, s1])?;
 //!
-//! let exploded = df.explode("foo")?;
+//! let exploded = df.explode(["foo"])?;
 //! // exploded:
 //!
 //! // +-----+-----+-----+
