@@ -4,7 +4,7 @@ import sys
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
-from polars.internals.series.utils import call_expr
+from polars.internals.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars.polars import PySeries
@@ -15,6 +15,7 @@ if TYPE_CHECKING:
         from typing_extensions import Final
 
 
+@expr_dispatch
 class StructNameSpace:
     """Series.struct namespace."""
 
@@ -32,7 +33,6 @@ class StructNameSpace:
         """Get the names of the fields."""
         return self._s.struct_fields()
 
-    @call_expr
     def field(self, name: str) -> pli.Series:
         """
         Retrieve one of the fields of this `Struct` as a new Series.
@@ -43,9 +43,7 @@ class StructNameSpace:
             Name of the field
 
         """
-        ...
 
-    @call_expr
     def rename_fields(self, names: list[str]) -> pli.Series:
         """
         Rename the fields of the struct
@@ -56,4 +54,3 @@ class StructNameSpace:
             New names in the order of the struct's fields
 
         """
-        ...

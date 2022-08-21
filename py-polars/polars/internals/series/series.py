@@ -46,7 +46,7 @@ from polars.internals.series.datetime import DateTimeNameSpace
 from polars.internals.series.list import ListNameSpace
 from polars.internals.series.string import StringNameSpace
 from polars.internals.series.struct import StructNameSpace
-from polars.internals.series.utils import get_ffi_func
+from polars.internals.series.utils import expr_dispatch, get_ffi_func
 from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _date_to_pl_date,
@@ -118,6 +118,7 @@ ArrayLike = Union[
 ]
 
 
+@expr_dispatch
 class Series:
     """
     A Series represents a single column in a polars DataFrame.

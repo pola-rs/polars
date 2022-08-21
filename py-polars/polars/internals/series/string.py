@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import polars.internals as pli
 from polars.datatypes import Date, Datetime, Time
-from polars.internals.series.utils import call_expr
+from polars.internals.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TransferEncoding
@@ -17,6 +17,7 @@ if TYPE_CHECKING:
         from typing_extensions import Final
 
 
+@expr_dispatch
 class StringNameSpace:
     """Series.str namespace."""
 
@@ -25,7 +26,6 @@ class StringNameSpace:
     def __init__(self, series: pli.Series):
         self._s: PySeries = series._s
 
-    @call_expr
     def strptime(
         self,
         datatype: type[Date] | type[Datetime] | type[Time],
@@ -95,9 +95,7 @@ class StringNameSpace:
         └────────────┘
 
         """
-        ...
 
-    @call_expr
     def lengths(self) -> pli.Series:
         """
         Get length of the string values in the Series.
@@ -120,9 +118,7 @@ class StringNameSpace:
         ]
 
         """
-        ...
 
-    @call_expr
     def concat(self, delimiter: str = "-") -> pli.Series:
         """
         Vertically concat the values in the Series to a single string value.
@@ -142,9 +138,7 @@ class StringNameSpace:
         '1-null-2'
 
         """
-        ...
 
-    @call_expr
     def contains(self, pattern: str, literal: bool = False) -> pli.Series:
         """
         Check if strings in Series contain a substring that matches a regex.
@@ -183,9 +177,7 @@ class StringNameSpace:
         ]
 
         """
-        ...
 
-    @call_expr
     def ends_with(self, sub: str) -> pli.Series:
         """
         Check if string values end with a substring.
@@ -213,9 +205,7 @@ class StringNameSpace:
         starts_with : Check if string values start with a substring.
 
         """
-        ...
 
-    @call_expr
     def starts_with(self, sub: str) -> pli.Series:
         """
         Check if string values start with a substring.
@@ -243,9 +233,7 @@ class StringNameSpace:
         ends_with : Check if string values end with a substring.
 
         """
-        ...
 
-    @call_expr
     def decode(self, encoding: TransferEncoding, strict: bool = False) -> pli.Series:
         """
         Decode a value using the provided encoding.
@@ -273,9 +261,7 @@ class StringNameSpace:
         ]
 
         """
-        ...
 
-    @call_expr
     def encode(self, encoding: TransferEncoding) -> pli.Series:
         """
         Encode a value using the provided encoding
@@ -302,9 +288,7 @@ class StringNameSpace:
         ]
 
         """
-        ...
 
-    @call_expr
     def json_path_match(self, json_path: str) -> pli.Series:
         """
         Extract the first match of json string with provided JSONPath expression.
@@ -341,9 +325,7 @@ class StringNameSpace:
         ]
 
         """
-        ...
 
-    @call_expr
     def extract(self, pattern: str, group_index: int = 1) -> pli.Series:
         r"""
         Extract the target capture group from provided patterns.
@@ -387,9 +369,7 @@ class StringNameSpace:
         └─────────┘
 
         """
-        ...
 
-    @call_expr
     def extract_all(self, pattern: str) -> pli.Series:
         r"""
         Extract each successive non-overlapping regex match in an individual string as
@@ -417,9 +397,7 @@ class StringNameSpace:
         ]
 
         """
-        ...
 
-    @call_expr
     def count_match(self, pattern: str) -> pli.Series:
         r"""
         Count all successive non-overlapping regex matches.
@@ -446,9 +424,7 @@ class StringNameSpace:
         ]
 
         """
-        ...
 
-    @call_expr
     def split(self, by: str, inclusive: bool = False) -> pli.Series:
         """
         Split the string by a substring.
@@ -465,9 +441,7 @@ class StringNameSpace:
         List of Utf8 type
 
         """
-        ...
 
-    @call_expr
     def split_exact(self, by: str, n: int, inclusive: bool = False) -> pli.Series:
         """
         Split the string by a substring into a struct of ``n`` fields.
@@ -537,9 +511,7 @@ class StringNameSpace:
         Struct of Utf8 type
 
         """
-        ...
 
-    @call_expr
     def replace(self, pattern: str, value: str, literal: bool = False) -> pli.Series:
         r"""
         Replace first matching regex/literal substring with a new string value.
@@ -569,9 +541,7 @@ class StringNameSpace:
         ]
 
         """
-        ...
 
-    @call_expr
     def replace_all(
         self, pattern: str, value: str, literal: bool = False
     ) -> pli.Series:
@@ -603,24 +573,16 @@ class StringNameSpace:
         ]
 
         """
-        ...
 
-    @call_expr
     def strip(self) -> pli.Series:
         """Remove leading and trailing whitespace."""
-        ...
 
-    @call_expr
     def lstrip(self) -> pli.Series:
         """Remove leading whitespace."""
-        ...
 
-    @call_expr
     def rstrip(self) -> pli.Series:
         """Remove trailing whitespace."""
-        ...
 
-    @call_expr
     def zfill(self, alignment: int) -> pli.Series:
         """
         Return a copy of the string left filled with ASCII '0' digits to make a string
@@ -634,9 +596,7 @@ class StringNameSpace:
             Fill the value up to this length.
 
         """
-        ...
 
-    @call_expr
     def ljust(self, width: int, fillchar: str = " ") -> pli.Series:
         """
         Return the string left justified in a string of length ``width``.
@@ -665,9 +625,7 @@ class StringNameSpace:
         ]
 
         """
-        ...
 
-    @call_expr
     def rjust(self, width: int, fillchar: str = " ") -> pli.Series:
         """
         Return the string right justified in a string of length ``width``.
@@ -696,19 +654,13 @@ class StringNameSpace:
         ]
 
         """
-        ...
 
-    @call_expr
     def to_lowercase(self) -> pli.Series:
         """Modify the strings to their lowercase equivalent."""
-        ...
 
-    @call_expr
     def to_uppercase(self) -> pli.Series:
         """Modify the strings to their uppercase equivalent."""
-        ...
 
-    @call_expr
     def slice(self, start: int, length: int | None = None) -> pli.Series:
         """
         Create subslices of the string values of a Utf8 Series.
@@ -752,4 +704,3 @@ class StringNameSpace:
         ]
 
         """
-        ...
