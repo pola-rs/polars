@@ -118,6 +118,7 @@
 //!
 //! ```no_run
 //! # use polars::prelude::*;
+//! # fn example() -> Result<()> {
 //! # let df = DataFrame::default();
 //!   df.lazy()
 //!    .select([
@@ -125,6 +126,8 @@
 //!        col("bar").filter(col("foo").eq(lit(1))).sum(),
 //!    ])
 //!    .collect()?;
+//! # Ok(())
+//! # }
 //! ```
 //! All expressions are ran in parallel, meaning that separate polars expressions are embarrassingly parallel.
 //! (Note that within an expression there may be more parallelization going on).
