@@ -26,7 +26,7 @@ jobs:
       - name: Install Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-08-16
+          toolchain: nightly-2022-08-22
           override: true
       - uses: Swatinem/rust-cache@v1
       - name: Install dependencies
@@ -44,7 +44,7 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-08-16
+          toolchain: nightly-2022-08-22
           override: true
           components: rustfmt, clippy, miri
       - name: Cache Cargo

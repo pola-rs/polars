@@ -18,7 +18,7 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-08-16
+          toolchain: nightly-2022-08-22
           override: true
           components: rustfmt, clippy
       - name: Set up Python
@@ -36,7 +36,7 @@ jobs:
           blackdoc --check .
           isort --check .
           pyupgrade --py37-plus `find . -name "*.py" -type f`
-          rustup override set nightly-2022-08-16 && cargo fmt --all -- --check
+          rustup override set nightly-2022-08-22 && cargo fmt --all -- --check
           cd ..
       - name: Run linting
         run: |
@@ -47,7 +47,7 @@ jobs:
       - name: Run tests
         run: |
           export RUSTFLAGS="-C debuginfo=0"
-          cd py-polars && rustup override set nightly-2022-08-16 && make venv && make test-with-cov
+          cd py-polars && rustup override set nightly-2022-08-22 && make venv && make test-with-cov
           cargo clippy
       - name: Check doc examples
         run: |
@@ -69,7 +69,7 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-08-16
+          toolchain: nightly-2022-08-22
           override: true
           components: rustfmt, clippy
       - name: Set up Python
@@ -87,7 +87,7 @@ jobs:
           blackdoc --check .
           isort --check .
           pyupgrade --py37-plus `find . -name "*.py" -type f`
-          rustup override set nightly-2022-08-16 && cargo fmt --all -- --check
+          rustup override set nightly-2022-08-22 && cargo fmt --all -- --check
           cd ..
       - name: Run linting
         run: |
@@ -99,7 +99,7 @@ jobs:
       - name: Run tests
         run: |
           export RUSTFLAGS="-C debuginfo=0"
-          cd py-polars && rustup override set nightly-2022-08-16 && make venv && make test-with-cov
+          cd py-polars && rustup override set nightly-2022-08-22 && make venv && make test-with-cov
           cargo clippy
       - name: Check doc examples
         run: |

@@ -24,7 +24,7 @@ jobs:
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
         with:
-          rust-toolchain: nightly-2022-08-16
+          rust-toolchain: nightly-2022-08-22
           # don't use `2_17` it does not work: https://github.com/pola-rs/polars/runs/6107328960
           manylinux: '2_24'
           target: aarch64-unknown-linux-gnu
