@@ -30,15 +30,6 @@ jobs:
           maturin-version: '0.13.0'
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing --no-sdist -o wheels -i python -u ritchie46
-
-#      - uses: actions/checkout@v3
-#      - name: publish x86_64
-#        uses: docker://ghcr.io/pyo3/maturin:latest
-#        env:
-#          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
-#        with:
-#          entrypoint: /bin/bash
-#          args: .github/deploy_manylinux.sh
       # needed for docker on apple m1
       - name: publish aarch64
         uses: messense/maturin-action@main
