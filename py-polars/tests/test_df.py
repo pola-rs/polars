@@ -146,6 +146,19 @@ def test_selection() -> None:
     expect = pl.DataFrame({"a": [1, 3], "b": [1.0, 3.0], "c": ["a", "c"]})
     assert df[::2].frame_equal(expect)
 
+    # only allow boolean values in column position
+    df = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [2, 3],
+            "c": [3, 4],
+        }
+    )
+
+    assert df[:, [False, True, True]].columns == ["b", "c"]
+    assert df[:, pl.Series([False, True, True])].columns == ["b", "c"]
+    assert df[:, pl.Series([False, False, False])].columns == []
+
 
 def test_mixed_sequence_selection() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
