@@ -34,7 +34,7 @@ def from_dict(
     columns: Sequence[str] | None = None,
 ) -> DataFrame:
     """
-    Construct a DataFrame from a dictionary of sequences. This operation clones data.
+    Construct a DataFrame from a dictionary of sequences. This operation clones data, unless you pass in a `dict[str, pl.Series]`.
 
     Parameters
     ----------
@@ -73,7 +73,7 @@ def from_dicts(
     dicts: Sequence[dict[str, Any]], infer_schema_length: int | None = 50
 ) -> DataFrame:
     """
-    Construct a DataFrame from a sequence of dictionaries. This operation clones data.
+    Construct a DataFrame from a sequence of dictionaries. This operation clones data, unless you pass in a `dict[str, pl.Series]`.
 
     Parameters
     ----------
