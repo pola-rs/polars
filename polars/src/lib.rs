@@ -10,6 +10,9 @@
 //! in parallel and your queries are optimized just in time.
 //!
 //! ```rust no_run
+//! use polars::prelude::*;
+//! # fn example() -> Result<()> {
+//!
 //! let lf1 = LazyFrame::scan_parquet("myfile_1.parquet".into(), Default::default())?
 //!     .groupby([col("ham")])
 //!     .agg([
@@ -31,6 +34,8 @@
 //!     .join(lf2, [col("reverse_group")], [col("foo")], JoinType::Left)
 //!     // now we finally materialize the result.
 //!     .collect()?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! This means that Polars data structures can be shared zero copy with processes in many different
@@ -113,6 +118,7 @@
 //!
 //! ```no_run
 //! # use polars::prelude::*;
+//! # fn example() -> Result<()> {
 //! # let df = DataFrame::default();
 //!   df.lazy()
 //!    .select([
@@ -120,6 +126,8 @@
 //!        col("bar").filter(col("foo").eq(lit(1))).sum(),
 //!    ])
 //!    .collect()?;
+//! # Ok(())
+//! # }
 //! ```
 //! All expressions are ran in parallel, meaning that separate polars expressions are embarrassingly parallel.
 //! (Note that within an expression there may be more parallelization going on).

@@ -30,11 +30,11 @@
 //!
 //! // scan a csv file lazily
 //! let lf: LazyFrame = LazyCsvReader::new("some_path".into())
-//!                     .has_header(true)
-//!                     .finish();
+//!     .has_header(true)
+//!     .finish()?;
 //!
 //! // scan a parquet file lazily
-//! let lf: LazyFrame = LazyFrame::scan_parquet("some_path".into(), None, true);
+//! let lf: LazyFrame = LazyFrame::scan_parquet("some_path".into(), Default::default())?;
 //!
 //! # Ok(())
 //! # }
@@ -85,7 +85,7 @@
 //! let reverse = vec![true, false];
 //!
 //! let sorted = df.lazy()
-//!     .sort_by_exprs(vec![col("b"), col("a")], reverse)
+//!     .sort_by_exprs(vec![col("b"), col("a")], reverse, false)
 //!     .collect()?;
 //!
 //! // sorted:
@@ -117,7 +117,7 @@
 //!  let df = LazyCsvReader::new("reddit.csv".into())
 //!     .has_header(true)
 //!     .with_delimiter(b',')
-//!     .finish()
+//!     .finish()?
 //!     .groupby([col("comment_karma")])
 //!     .agg([col("name").n_unique().alias("unique_names"), col("link_karma").max()])
 //!     // take only 100 rows.

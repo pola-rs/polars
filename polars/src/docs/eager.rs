@@ -113,8 +113,8 @@
 //! let ca_int = s_int.i32()?;
 //! let ca_flt = s_flt.f32()?;
 //!
-//! &ca_int.cast::<Float32Type>()? * ca_flt;
-//! &ca_flt.cast::<Int32Type>()? * ca_int;
+//! ca_int.cast(&DataType::Float32)?.f32()? * ca_flt;
+//! ca_flt.cast(&DataType::Int32)?.i32()? * ca_int;
 //!
 //! // we can also do arithmetic with numeric values
 //! let multiplied = ca_int * 2.0;
@@ -164,9 +164,9 @@
 //!
 //! // compare Series with numeric values
 //! // ==
-//! s.eq(2);
+//! s.equal(2);
 //! // !=
-//! s.neq(2);
+//! s.not_equal(2);
 //! // >
 //! s.gt(2);
 //! // >=
@@ -179,9 +179,9 @@
 //!
 //! // compare Series with Series
 //! // ==
-//! s.eq(&s);
+//! s.equal(&s);
 //! // !=
-//! s.neq(&s);
+//! s.not_equal(&s);
 //! // >
 //! s.gt(&s);
 //! // >=
@@ -194,9 +194,9 @@
 //!
 //! // compare chunked-array with numeric values
 //! // ==
-//! ca.eq(2);
+//! ca.equal(2);
 //! // !=
-//! ca.neq(2);
+//! ca.not_equal(2);
 //! // >
 //! ca.gt(2);
 //! // >=
@@ -208,9 +208,9 @@
 //!
 //! // compare chunked-array with chunked-array
 //! // ==
-//! ca.eq(&ca);
+//! ca.equal(&ca);
 //! // !=
-//! ca.neq(&ca);
+//! ca.not_equal(&ca);
 //! // >
 //! ca.gt(&ca);
 //! // >=
@@ -300,7 +300,7 @@
 //!
 //!
 //! // coerce numbers to floats
-//! df.try_apply("number", |s: &Series| s.cast::<Float64Type>())?;
+//! df.try_apply("number", |s: &Series| s.cast(&DataType::Float64))?;
 //!
 //! // transform letters to uppercase letters
 //! df.try_apply("letters", |s: &Series| {
@@ -345,7 +345,7 @@
 //! // sort this DataFrame by multiple columns
 //!
 //! // ordering of the columns
-//! let reverse = &[true, false];
+//! let reverse = vec![true, false];
 //! // columns to sort by
 //! let by = &["b", "a"];
 //! // do the sort operation
@@ -389,12 +389,12 @@
 //! )?;
 //!
 //! // join on a single column
-//! temp.left_join(&rain, "days", "days");
-//! temp.inner_join(&rain, "days", "days");
-//! temp.outer_join(&rain, "days", "days");
+//! temp.left_join(&rain, ["days"], ["days"]);
+//! temp.inner_join(&rain, ["days"], ["days"]);
+//! temp.outer_join(&rain, ["days"], ["days"]);
 //!
 //! // join on multiple columns
-//! temp.join(&rain, vec!["days", "other"], vec!["days", "other"], JoinType::Left);
+//! temp.join(&rain, vec!["days", "other"], vec!["days", "other"], JoinType::Left, None);
 //!
 //! # Ok(())
 //! # }
@@ -415,9 +415,9 @@
 //!
 //! # fn example(df: &DataFrame) -> Result<()> {
 //!  // groupby "groups" | sum "foo"
-//!  let out = df.groupby("groups")?
-//!  .select("foo")
-//!  .sum();
+//!  let out = df.groupby(["groups"])?
+//!     .select(["foo"])
+//!     .sum();
 //!
 //! # Ok(())
 //! # }
@@ -437,8 +437,8 @@
 //!      )?;
 //!
 //! // groupby "foo" | pivot "bar" column | aggregate "N"
-//!  let pivoted = df.groupby("groups")?
-//!     .pivot("bar", "N")
+//!  let pivoted = df.groupby(["groups"])?
+//!     .pivot(["bar"], ["N"])
 //!     .first();
 //!
 //! // pivoted:
@@ -514,7 +514,7 @@
 //! let s1 = Series::new("C", [1, 1, 1]);
 //! let df = DataFrame::new(vec![list, s0, s1])?;
 //!
-//! let exploded = df.explode("foo")?;
+//! let exploded = df.explode(["foo"])?;
 //! // exploded:
 //!
 //! // +-----+-----+-----+
@@ -568,7 +568,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &mut DataFrame) -> Result<()> {
 //! // create a file
 //! let mut file = File::create("example.csv").expect("could not create file");
 //!
@@ -602,7 +602,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &mut DataFrame) -> Result<()> {
 //! // create a file
 //! let mut file = File::create("file.ipc").expect("could not create file");
 //!
@@ -633,7 +633,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &mut DataFrame) -> Result<()> {
 //! // create a file
 //! let file = File::create("example.parquet").expect("could not create file");
 //!
@@ -690,13 +690,13 @@
 //!     ]?;
 //!
 //!     // first extract ChunkedArray to get the inner type.
-//!     let ca = df.column("a").f32();
+//!     let ca = df.column("a")?.f32()?;
 //!
 //!     // Then convert to vec
 //!     let to_vec: Vec<Option<f32>> = Vec::from(ca);
 //!
 //!     // We can also do this with iterators
-//!     let ca = df.column("str").utf8();
+//!     let ca = df.column("str")?.utf8()?;
 //!     let to_vec: Vec<Option<&str>> = ca.into_iter().collect();
 //!     let to_vec_no_options: Vec<&str> = ca.into_no_null_iter().collect();
 //!
