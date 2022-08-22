@@ -1870,6 +1870,12 @@ class DataFrame:
             f" of type: '{type(item)}'."
         )
 
+    def __setitem__(self, key: Any, value: Any) -> None:
+        raise TypeError(
+            "'DataFrame' object does not support item assignment by index. "
+            "Use 'DataFrame.with_columns'"
+        )
+
     def __len__(self) -> int:
         return self.height
 
