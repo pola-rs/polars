@@ -61,10 +61,9 @@ impl LazyFrame {
             let lfs = paths
                 .map(|r| {
                     let path = r.map_err(|e| PolarsError::ComputeError(format!("{}", e).into()))?;
-                    let path_string = path.to_string_lossy().into_owned();
                     let mut args = args.clone();
                     args.row_count = None;
-                    Self::scan_ipc_impl(path_string, args)
+                    Self::scan_ipc_impl(path, args)
                 })
                 .collect::<Result<Vec<_>>>()?;
 
