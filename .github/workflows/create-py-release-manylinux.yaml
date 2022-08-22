@@ -48,9 +48,9 @@ jobs:
         shell: bash
         run: |
           # now compile polars with bigidx feature
-          sed -i 's/name = "polars"/name = "polars-u64-idx"/' pyproject.toml
+          sed -i 's/name = "polars"/name = "polars-u64-idx"/' py-polars/pyproject.toml
           # a brittle hack to insert the 'bigidx' feature
-          sed -i 's/"dynamic_groupby",/"dynamic_groupby",\n"bigidx",/' Cargo.toml
+          sed -i 's/"dynamic_groupby",/"dynamic_groupby",\n"bigidx",/' py-polars/Cargo.toml
       - name: publish x64_64 bigidx
         uses: messense/maturin-action@main
         env:
