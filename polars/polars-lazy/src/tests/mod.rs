@@ -52,7 +52,7 @@ static FOODS_IPC: &str = "../../examples/datasets/foods1.ipc";
 static FOODS_PARQUET: &str = "../../examples/datasets/foods1.parquet";
 
 fn scan_foods_csv() -> LazyFrame {
-    LazyCsvReader::new(FOODS_CSV.to_string()).finish().unwrap()
+    LazyCsvReader::new(FOODS_CSV).finish().unwrap()
 }
 
 fn scan_foods_ipc() -> LazyFrame {

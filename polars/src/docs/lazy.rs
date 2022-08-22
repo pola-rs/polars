@@ -29,12 +29,12 @@
 //! let lf: LazyFrame = df.lazy();
 //!
 //! // scan a csv file lazily
-//! let lf: LazyFrame = LazyCsvReader::new("some_path".into())
+//! let lf: LazyFrame = LazyCsvReader::new("some_path")
 //!     .has_header(true)
 //!     .finish()?;
 //!
 //! // scan a parquet file lazily
-//! let lf: LazyFrame = LazyFrame::scan_parquet("some_path".into(), Default::default())?;
+//! let lf: LazyFrame = LazyFrame::scan_parquet("some_path", Default::default())?;
 //!
 //! # Ok(())
 //! # }
@@ -114,7 +114,7 @@
 //! use polars::prelude::*;
 //! # fn example() -> Result<()> {
 //!
-//!  let df = LazyCsvReader::new("reddit.csv".into())
+//!  let df = LazyCsvReader::new("reddit.csv")
 //!     .has_header(true)
 //!     .with_delimiter(b',')
 //!     .finish()?
