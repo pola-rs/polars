@@ -60,37 +60,23 @@ impl Series {
 
     #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
     /// Ceil underlying floating point array to the highest integers smaller or equal to the float value.
-    pub fn clip(&self, min: f64, max: f64) -> Result<Self> {
-        if let Ok(ca) = self.f32() {
-            let min = min as f32;
-            let max = max as f32;
-            let s = ca.apply(|val| val.clamp(min, max)).into_series();
-            return Ok(s);
+    pub fn clip(mut self, min: f64, max: f64) -> Result<Self> {
+        if self.dtype().is_numeric() {
+            macro_rules! apply_clip {
+                ($pl_type:ty, $ca:expr, $min:expr, $max: expr) => {{
+                    let min = min as <$pl_type as PolarsNumericType>::Native;
+                    let max = max as <$pl_type as PolarsNumericType>::Native;
+
+                    $ca.apply_mut(|val| val.clamp(min, max));
+                }};
+            }
+            let mutable = self._get_inner_mut();
+            downcast_as_macro_arg_physical_mut!(mutable, apply_clip, min, max);
+            Ok(self)
+        } else {
+            Err(PolarsError::SchemaMisMatch(
+                format!("Cannot use 'clip' on dtype {:?}, consider using a when -> then -> otherwise expression", self.dtype()).into(),
+            ))
         }
-        if let Ok(ca) = self.f64() {
-            let s = ca.apply(|val| val.clamp(min, max)).into_series();
-            return Ok(s);
-        }
-        if let Ok(ca) = self.i64() {
-            let min = min as i64;
-            let max = max as i64;
-            let s = ca.apply(|val| val.clamp(min, max)).into_series();
-            return Ok(s);
-        }
-        if let Ok(ca) = self.i32() {
-            let min = min as i32;
-            let max = max as i32;
-            let s = ca.apply(|val| val.clamp(min, max)).into_series();
-            return Ok(s);
-        }
-        if let Ok(ca) = self.u32() {
-            let min = min as u32;
-            let max = max as u32;
-            let s = ca.apply(|val| val.clamp(min, max)).into_series();
-            return Ok(s);
-        }
-        Err(PolarsError::SchemaMisMatch(
-            format!("{:?} is not one of {{Float32, Float64, Int32, Int64, UInt32}} consider using a when -> then -> otherwise", self.dtype()).into(),
-        ))
     }
 }
