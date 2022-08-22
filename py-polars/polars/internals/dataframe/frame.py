@@ -21,6 +21,7 @@ from typing import (
 from polars import internals as pli
 from polars._html import NotebookFormatter
 from polars.datatypes import (
+    Boolean,
     ColumnsType,
     DataType,
     Int8,
@@ -50,6 +51,7 @@ from polars.utils import (
     _process_null_values,
     format_path,
     handle_projection_columns,
+    is_bool_sequence,
     is_int_sequence,
     is_str_sequence,
     range_to_slice,
@@ -123,7 +125,9 @@ if TYPE_CHECKING:
     # MultiColSelector indexes into the horizontal axis
     # NOTE: wrapping these as strings is necessary for Python <3.10
     MultiRowSelector: TypeAlias = "slice | range | list[int] | pli.Series"
-    MultiColSelector: TypeAlias = "slice | range | list[int] | list[str] | pli.Series"
+    MultiColSelector: TypeAlias = (
+        "slice | range | list[int] | list[str] | list[bool] | pli.Series"
+    )
 
 # A type variable used to refer to a polars.DataFrame or any subclass of it.
 # Used to annotate DataFrame methods which returns the same type as self.
@@ -1777,6 +1781,24 @@ class DataFrame:
                     col_selection = slice(start, stop, col_selection.step)
 
                     df = self.__getitem__(self.columns[col_selection])
+                    return df[row_selection]
+
+                # df[:, [True, False]]
+                if is_bool_sequence(col_selection) or (
+                    isinstance(col_selection, pli.Series)
+                    and col_selection.dtype == Boolean
+                ):
+                    if len(col_selection) != self.width:
+                        raise ValueError(
+                            f"Expected {self.width} values when selecting columns by"
+                            f" boolean mask. Got {len(col_selection)}."
+                        )
+                    series_list = []
+                    for (i, val) in enumerate(col_selection):
+                        if val:
+                            series_list.append(self.to_series(i))
+
+                    df = self.__class__(series_list)
                     return df[row_selection]
 
                 # single slice
