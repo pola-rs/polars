@@ -13,7 +13,7 @@
 //! use polars::prelude::*;
 //! # fn example() -> Result<()> {
 //!
-//! let lf1 = LazyFrame::scan_parquet("myfile_1.parquet".into(), Default::default())?
+//! let lf1 = LazyFrame::scan_parquet("myfile_1.parquet", Default::default())?
 //!     .groupby([col("ham")])
 //!     .agg([
 //!         // expressions can be combined into powerful aggregations
@@ -27,7 +27,7 @@
 //!         col("foo").reverse().list().alias("reverse_group"),
 //!     ]);
 //!
-//! let lf2 = LazyFrame::scan_parquet("myfile_2.parquet".into(), Default::default())?
+//! let lf2 = LazyFrame::scan_parquet("myfile_2.parquet", Default::default())?
 //!     .select([col("ham"), col("spam")]);
 //!
 //! let df = lf1

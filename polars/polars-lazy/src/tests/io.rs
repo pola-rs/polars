@@ -256,7 +256,7 @@ fn test_union_and_agg_projections() -> Result<()> {
     // hashmap, if that doesn't set them sorted the vstack will panic.
     let lf1 = LazyFrame::scan_parquet(GLOB_PARQUET, Default::default())?;
     let lf2 = LazyFrame::scan_ipc(GLOB_IPC, Default::default())?;
-    let lf3 = LazyCsvReader::new(GLOB_CSV.into()).finish()?;
+    let lf3 = LazyCsvReader::new(GLOB_CSV).finish()?;
 
     for lf in [lf1, lf2, lf3] {
         let lf = lf.filter(col("category").eq(lit("vegetables"))).select([
@@ -386,7 +386,7 @@ fn test_row_count_on_files() -> Result<()> {
 
 #[test]
 fn scan_predicate_on_set_null_values() -> Result<()> {
-    let df = LazyCsvReader::new(FOODS_CSV.into())
+    let df = LazyCsvReader::new(FOODS_CSV)
         .with_null_values(Some(NullValues::Named(vec![("fats_g".into(), "0".into())])))
         .with_infer_schema_length(Some(0))
         .finish()?
