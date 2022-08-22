@@ -4035,10 +4035,9 @@ class Series:
 
     def clip(self, min_val: int | float, max_val: int | float) -> Series:
         """
-        Clip (limit) the values in an array to any value that fits in 64 floating point
-        range.
+        Clip (limit) the values in an array to a `min` and `max` boundary
 
-        Only works for the following dtypes: {Int32, Int64, Float32, Float64, UInt32}.
+        Only works for numerical types.
 
         If you want to clip other dtypes, consider writing a "when, then, otherwise"
         expression. See :func:`when` for more information.
@@ -4067,6 +4066,40 @@ class Series:
         return self.to_frame().select(pli.col(self.name).clip(min_val, max_val))[
             self.name
         ]
+
+    def clip_min(self, min_val: int | float) -> Series:
+        """
+        Clip (limit) the values in an array to a `min` boundary
+
+        Only works for numerical types.
+
+        If you want to clip other dtypes, consider writing a "when, then, otherwise"
+        expression. See :func:`when` for more information.
+
+        Parameters
+        ----------
+        min_val
+            Minimum value.
+
+        """
+        return self.to_frame().select(pli.col(self.name).clip_min(min_val))[self.name]
+
+    def clip_max(self, max_val: int | float) -> Series:
+        """
+        Clip (limit) the values in an array to a `max` boundary
+
+        Only works for numerical types.
+
+        If you want to clip other dtypes, consider writing a "when, then, otherwise"
+        expression. See :func:`when` for more information.
+
+        Parameters
+        ----------
+        max_val
+            Maximum value.
+
+        """
+        return self.to_frame().select(pli.col(self.name).clip_max(max_val))[self.name]
 
     def reshape(self, dims: tuple[int, ...]) -> Series:
         """

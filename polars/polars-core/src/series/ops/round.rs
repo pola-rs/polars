@@ -59,19 +59,72 @@ impl Series {
     }
 
     #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
-    /// Ceil underlying floating point array to the highest integers smaller or equal to the float value.
-    pub fn clip(mut self, min: f64, max: f64) -> Result<Self> {
+    /// Clamp underlying values to the `min` and `max` values.
+    pub fn clip(mut self, min: AnyValue<'_>, max: AnyValue<'_>) -> Result<Self> {
         if self.dtype().is_numeric() {
             macro_rules! apply_clip {
-                ($pl_type:ty, $ca:expr, $min:expr, $max: expr) => {{
-                    let min = min as <$pl_type as PolarsNumericType>::Native;
-                    let max = max as <$pl_type as PolarsNumericType>::Native;
+                ($pl_type:ty, $ca:expr) => {{
+                    let min = min
+                        .extract::<<$pl_type as PolarsNumericType>::Native>()
+                        .unwrap();
+                    let max = max
+                        .extract::<<$pl_type as PolarsNumericType>::Native>()
+                        .unwrap();
 
                     $ca.apply_mut(|val| val.clamp(min, max));
                 }};
             }
             let mutable = self._get_inner_mut();
-            downcast_as_macro_arg_physical_mut!(mutable, apply_clip, min, max);
+            downcast_as_macro_arg_physical_mut!(mutable, apply_clip);
+            Ok(self)
+        } else {
+            Err(PolarsError::SchemaMisMatch(
+                format!("Cannot use 'clip' on dtype {:?}, consider using a when -> then -> otherwise expression", self.dtype()).into(),
+            ))
+        }
+    }
+
+    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
+    /// Clamp underlying values to the `max` value.
+    pub fn clip_max(mut self, max: AnyValue<'_>) -> Result<Self> {
+        use num::traits::clamp_max;
+        if self.dtype().is_numeric() {
+            macro_rules! apply_clip {
+                ($pl_type:ty, $ca:expr) => {{
+                    let max = max
+                        .extract::<<$pl_type as PolarsNumericType>::Native>()
+                        .unwrap();
+
+                    $ca.apply_mut(|val| clamp_max(val, max));
+                }};
+            }
+            let mutable = self._get_inner_mut();
+            downcast_as_macro_arg_physical_mut!(mutable, apply_clip);
+            Ok(self)
+        } else {
+            Err(PolarsError::SchemaMisMatch(
+                format!("Cannot use 'clip' on dtype {:?}, consider using a when -> then -> otherwise expression", self.dtype()).into(),
+            ))
+        }
+    }
+
+    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
+    /// Clamp underlying values to the `min` value.
+    pub fn clip_min(mut self, min: AnyValue<'_>) -> Result<Self> {
+        use num::traits::clamp_min;
+
+        if self.dtype().is_numeric() {
+            macro_rules! apply_clip {
+                ($pl_type:ty, $ca:expr) => {{
+                    let min = min
+                        .extract::<<$pl_type as PolarsNumericType>::Native>()
+                        .unwrap();
+
+                    $ca.apply_mut(|val| clamp_min(val, min));
+                }};
+            }
+            let mutable = self._get_inner_mut();
+            downcast_as_macro_arg_physical_mut!(mutable, apply_clip);
             Ok(self)
         } else {
             Err(PolarsError::SchemaMisMatch(
