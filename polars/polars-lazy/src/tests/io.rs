@@ -254,8 +254,8 @@ fn test_union_and_agg_projections() -> Result<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     // a union vstacks columns and aggscan optimization determines columns to aggregate in a
     // hashmap, if that doesn't set them sorted the vstack will panic.
-    let lf1 = LazyFrame::scan_parquet(GLOB_PARQUET.into(), Default::default())?;
-    let lf2 = LazyFrame::scan_ipc(GLOB_IPC.into(), Default::default())?;
+    let lf1 = LazyFrame::scan_parquet(GLOB_PARQUET, Default::default())?;
+    let lf2 = LazyFrame::scan_ipc(GLOB_IPC, Default::default())?;
     let lf3 = LazyCsvReader::new(GLOB_CSV.into()).finish()?;
 
     for lf in [lf1, lf2, lf3] {
@@ -352,7 +352,7 @@ fn test_row_count_on_files() -> Result<()> {
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
-        let lf = LazyFrame::scan_parquet(FOODS_PARQUET.to_string(), Default::default())?
+        let lf = LazyFrame::scan_parquet(FOODS_PARQUET, Default::default())?
             .with_row_count("rc", Some(offset));
         assert!(row_count_at_scan(lf.clone()));
         let df = lf.collect()?;
@@ -362,8 +362,8 @@ fn test_row_count_on_files() -> Result<()> {
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
-        let lf = LazyFrame::scan_ipc(FOODS_IPC.to_string(), Default::default())?
-            .with_row_count("rc", Some(offset));
+        let lf =
+            LazyFrame::scan_ipc(FOODS_IPC, Default::default())?.with_row_count("rc", Some(offset));
 
         assert!(row_count_at_scan(lf.clone()));
         let df = lf.clone().collect()?;
