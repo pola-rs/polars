@@ -74,8 +74,7 @@ def from_dicts(
     dicts: Sequence[dict[str, Any]], infer_schema_length: int | None = 50
 ) -> DataFrame:
     """
-    Construct a DataFrame from a sequence of dictionaries. This operation clones data,
-    unless you pass in a `dict[str, pl.Series]`.
+    Construct a DataFrame from a sequence of dictionaries. This operation clones data.
 
     Parameters
     ----------
