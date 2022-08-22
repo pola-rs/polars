@@ -501,6 +501,7 @@ def sequence_to_pydf(
     data: Sequence[Any],
     columns: ColumnsType | None = None,
     orient: Orientation | None = None,
+    infer_schema_length: int | None = 50,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a sequence."""
     data_series: list[PySeries]
@@ -523,7 +524,7 @@ def sequence_to_pydf(
             data_series.append(s.inner())
 
     elif isinstance(data[0], dict):
-        pydf = PyDataFrame.read_dicts(data)
+        pydf = PyDataFrame.read_dicts(data, infer_schema_length)
         if columns:
             pydf = _post_apply_columns(pydf, columns)
         return pydf
@@ -534,7 +535,7 @@ def sequence_to_pydf(
             orient = "col" if len(columns) == len(data) else "row"
 
         if orient == "row":
-            pydf = PyDataFrame.read_rows(data)
+            pydf = PyDataFrame.read_rows(data, infer_schema_length)
             if columns:
                 pydf = _post_apply_columns(pydf, columns)
             return pydf

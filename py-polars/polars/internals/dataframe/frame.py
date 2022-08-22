@@ -286,7 +286,9 @@ class DataFrame:
             self._df = arrow_to_pydf(data, columns=columns)
 
         elif isinstance(data, Sequence) and not isinstance(data, str):
-            self._df = sequence_to_pydf(data, columns=columns, orient=orient)
+            self._df = sequence_to_pydf(
+                data, columns=columns, orient=orient, infer_schema_length=50
+            )
 
         elif isinstance(data, pli.Series):
             self._df = series_to_pydf(data, columns=columns)
@@ -389,6 +391,7 @@ class DataFrame:
         data: Sequence[Sequence[Any]],
         columns: Sequence[str] | None = None,
         orient: Orientation | None = None,
+        infer_schema_length: int | None = 50,
     ) -> DF:
         """
         Construct a DataFrame from a sequence of sequences.
@@ -404,13 +407,22 @@ class DataFrame:
             Whether to interpret two-dimensional data as columns or as rows. If None,
             the orientation is inferred by matching the columns and data dimensions. If
             this does not yield conclusive results, column orientation is used.
+        infer_schema_length
+            How many rows to scan to determine the column type.
 
         Returns
         -------
         DataFrame
 
         """
-        return cls._from_pydf(sequence_to_pydf(data, columns=columns, orient=orient))
+        return cls._from_pydf(
+            sequence_to_pydf(
+                data,
+                columns=columns,
+                orient=orient,
+                infer_schema_length=infer_schema_length,
+            )
+        )
 
     @classmethod
     def _from_numpy(

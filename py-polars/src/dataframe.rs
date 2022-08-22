@@ -377,11 +377,11 @@ impl PyDataFrame {
 
     // somehow from_rows did not work
     #[staticmethod]
-    pub fn read_rows(rows: Vec<Wrap<Row>>) -> PyResult<Self> {
+    pub fn read_rows(rows: Vec<Wrap<Row>>, infer_schema_length: Option<usize>) -> PyResult<Self> {
         // safety:
         // wrap is transparent
         let rows: Vec<Row> = unsafe { std::mem::transmute(rows) };
-        Self::finish_from_rows(rows, Some(50))
+        Self::finish_from_rows(rows, infer_schema_length)
     }
 
     #[staticmethod]

@@ -113,6 +113,7 @@ def from_records(
     data: Sequence[Sequence[Any]],
     columns: Sequence[str] | None = None,
     orient: Orientation | None = None,
+    infer_schema_length: int | None = 50,
 ) -> DataFrame:
     """
     Construct a DataFrame from a sequence of sequences.
@@ -130,6 +131,9 @@ def from_records(
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
+    infer_schema_length
+        How many dictionaries/rows to scan to determine the data types
+        if set to `None` all rows are scanned. This will be slow.
 
     Returns
     -------
@@ -154,7 +158,9 @@ def from_records(
     └─────┴─────┘
 
     """
-    return DataFrame._from_records(data, columns=columns, orient=orient)
+    return DataFrame._from_records(
+        data, columns=columns, orient=orient, infer_schema_length=infer_schema_length
+    )
 
 
 def from_numpy(
