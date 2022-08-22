@@ -10,7 +10,7 @@ fmt_toml:
 
 coverage:
 	@bash -c "\
-		rustup override set nightly-2022-08-16; \
+		rustup override set nightly-2022-08-22; \
 		source <(cargo llvm-cov show-env --export-prefix); \
 		export CARGO_TARGET_DIR=\$$CARGO_LLVM_COV_TARGET_DIR; \
 		export CARGO_INCREMENTAL=1; \
