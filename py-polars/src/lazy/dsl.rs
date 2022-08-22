@@ -347,8 +347,20 @@ impl PyExpr {
         self.clone().inner.ceil().into()
     }
 
-    pub fn clip(&self, min: f64, max: f64) -> PyExpr {
+    pub fn clip(&self, py: Python, min: PyObject, max: PyObject) -> PyExpr {
+        let min = min.extract::<Wrap<AnyValue>>(py).unwrap().0;
+        let max = max.extract::<Wrap<AnyValue>>(py).unwrap().0;
         self.clone().inner.clip(min, max).into()
+    }
+
+    pub fn clip_min(&self, py: Python, min: PyObject) -> PyExpr {
+        let min = min.extract::<Wrap<AnyValue>>(py).unwrap().0;
+        self.clone().inner.clip_min(min).into()
+    }
+
+    pub fn clip_max(&self, py: Python, max: PyObject) -> PyExpr {
+        let max = max.extract::<Wrap<AnyValue>>(py).unwrap().0;
+        self.clone().inner.clip_max(max).into()
     }
 
     pub fn abs(&self) -> PyExpr {

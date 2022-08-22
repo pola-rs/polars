@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::*;
-use crate::{map_owned_without_args, map_without_args};
+use crate::{map_owned, map_without_args};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -58,7 +58,7 @@ impl From<NanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
         match nan_function {
             NanFunction::IsNan => map_without_args!(is_nan),
             NanFunction::IsNotNan => map_without_args!(is_not_nan),
-            NanFunction::DropNans => map_owned_without_args!(drop_nans),
+            NanFunction::DropNans => map_owned!(drop_nans),
         }
     }
 }

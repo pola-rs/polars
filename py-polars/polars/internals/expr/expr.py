@@ -4839,6 +4839,40 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.clip(min_val, max_val))
 
+    def clip_min(self, min_val: int | float) -> Expr:
+        """
+        Clip (limit) the values in an array to a `min` boundary
+
+        Only works for numerical types.
+
+        If you want to clip other dtypes, consider writing a "when, then, otherwise"
+        expression. See :func:`when` for more information.
+
+        Parameters
+        ----------
+        min_val
+            Minimum value.
+
+        """
+        return wrap_expr(self._pyexpr.clip_min(min_val))
+
+    def clip_max(self, max_val: int | float) -> Expr:
+        """
+        Clip (limit) the values in an array to a `max` boundary
+
+        Only works for numerical types.
+
+        If you want to clip other dtypes, consider writing a "when, then, otherwise"
+        expression. See :func:`when` for more information.
+
+        Parameters
+        ----------
+        max_val
+            Maximum value.
+
+        """
+        return wrap_expr(self._pyexpr.clip_max(max_val))
+
     def lower_bound(self) -> Expr:
         """
         Calculate the lower bound.
