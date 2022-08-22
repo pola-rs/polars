@@ -1228,8 +1228,14 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn to_dummies(&self) -> PyResult<Self> {
-        let df = self.df.to_dummies().map_err(PyPolarsErr::from)?;
+    pub fn to_dummies(&self, columns: Option<Vec<String>>) -> PyResult<Self> {
+        let df = match columns {
+            Some(cols) => self
+                .df
+                .columns_to_dummies(cols.iter().map(|x| x as &str).collect()),
+            None => self.df.to_dummies(),
+        }
+        .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 

@@ -5364,9 +5364,15 @@ class DataFrame:
         """
         return self._from_pydf(self._df.quantile(quantile, interpolation))
 
-    def to_dummies(self: DF) -> DF:
+    def to_dummies(self: DF, *, columns: list[str] | None = None) -> DF:
         """
         Get one hot encoded dummy variables.
+
+        Parameters
+        ----------
+        columns:
+            A subset of columns to convert to dummy variables. ``None`` means
+            "all columns".
 
         Examples
         --------
@@ -5392,7 +5398,7 @@ class DataFrame:
         └───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┘
 
         """
-        return self._from_pydf(self._df.to_dummies())
+        return self._from_pydf(self._df.to_dummies(columns))
 
     def unique(
         self: DF,

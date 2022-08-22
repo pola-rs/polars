@@ -708,6 +708,21 @@ def test_get_dummies() -> None:
     ).with_columns(pl.all().cast(pl.UInt8))
     assert res.frame_equal(expected)
 
+    df = pl.DataFrame(
+        {"i": [1, 2, 3], "category": ["dog", "cat", "cat"]},
+        columns={"i": pl.Int32, "category": pl.Categorical},
+    )
+    expected = pl.DataFrame(
+        {
+            "i": [1, 2, 3],
+            "category_cat": [0, 1, 1],
+            "category_dog": [1, 0, 0],
+        },
+        columns={"i": pl.Int32, "category_cat": pl.UInt8, "category_dog": pl.UInt8},
+    )
+    result = pl.get_dummies(df, columns=["category"])
+    assert result.frame_equal(expected)
+
 
 def test_to_pandas(df: pl.DataFrame) -> None:
     # pyarrow cannot deal with unsigned dictionary integer yet.
