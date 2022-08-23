@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 
 from polars import internals as pli
 from polars.datatypes import (
+    DTYPE_TEMPORAL_UNITS,
     Categorical,
     ColumnsType,
     Date,
@@ -101,9 +102,18 @@ def numpy_to_pyseries(
         if dtype == np.float16:
             values = values.astype(np.float32)
             dtype = values.dtype.type
+        elif (
+            dtype == np.datetime64
+            and np.datetime_data(values.dtype)[0] not in DTYPE_TEMPORAL_UNITS
+        ):
+            dtype = object
+
         constructor = numpy_type_to_constructor(dtype)
+
         if dtype == np.float32 or dtype == np.float64:
             return constructor(name, values, nan_to_null)
+        elif dtype == np.datetime64:
+            return constructor(name, values.astype(np.int64), strict)
         else:
             return constructor(name, values, strict)
     else:
@@ -491,6 +501,7 @@ def sequence_to_pydf(
     data: Sequence[Any],
     columns: ColumnsType | None = None,
     orient: Orientation | None = None,
+    infer_schema_length: int | None = 50,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a sequence."""
     data_series: list[PySeries]
@@ -513,7 +524,7 @@ def sequence_to_pydf(
             data_series.append(s.inner())
 
     elif isinstance(data[0], dict):
-        pydf = PyDataFrame.read_dicts(data)
+        pydf = PyDataFrame.read_dicts(data, infer_schema_length)
         if columns:
             pydf = _post_apply_columns(pydf, columns)
         return pydf
@@ -524,7 +535,7 @@ def sequence_to_pydf(
             orient = "col" if len(columns) == len(data) else "row"
 
         if orient == "row":
-            pydf = PyDataFrame.read_rows(data)
+            pydf = PyDataFrame.read_rows(data, infer_schema_length)
             if columns:
                 pydf = _post_apply_columns(pydf, columns)
             return pydf
@@ -563,13 +574,24 @@ def numpy_to_pydf(
         n_columns = 1
 
     elif len(shape) == 2:
-        # Infer orientation
-        if orient is None and columns is not None:
-            orient = "col" if len(columns) == shape[0] else "row"
-
-        if orient == "row":
+        # default convention
+        # first axis is rows, second axis is columns
+        if orient is None and columns is None:
             n_columns = shape[1]
-        elif orient == "col" or orient is None:
+            orient = "row"
+
+        # Infer orientation if columns argument is given
+        elif orient is None and columns is not None:
+            if len(columns) == shape[0]:
+                orient = "col"
+                n_columns = shape[0]
+            else:
+                orient = "row"
+                n_columns = shape[1]
+
+        elif orient == "row":
+            n_columns = shape[1]
+        elif orient == "col":
             n_columns = shape[0]
         else:
             raise ValueError(

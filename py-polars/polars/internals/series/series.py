@@ -20,6 +20,7 @@ from polars.datatypes import (
     Int64,
     List,
     Object,
+    PolarsDataType,
     Time,
     UInt8,
     UInt16,
@@ -102,10 +103,25 @@ if TYPE_CHECKING:
     )
 
 
+def _resolve_datetime_dtype(
+    dtype: PolarsDataType | None, ndtype: np.datetime64
+) -> PolarsDataType | None:
+    """Given polars/numpy datetime dtypes, resolve to an explicit unit"""
+    if dtype is None or (dtype == Datetime and not getattr(dtype, "tu", None)):
+        tu = getattr(dtype, "tu", np.datetime_data(ndtype)[0])
+        # explicit formulation is verbose, but keeps mypy happy
+        # (and avoids unsupported timeunits such as "s")
+        if tu == "ns":
+            dtype = Datetime("ns")
+        elif tu == "us":
+            dtype = Datetime("us")
+        elif tu == "ms":
+            dtype = Datetime("ms")
+    return dtype
+
+
 def get_ffi_func(
-    name: str,
-    dtype: type[DataType],
-    obj: PySeries,
+    name: str, dtype: type[DataType], obj: PySeries
 ) -> Callable[..., Any] | None:
     """
     Dynamically obtain the proper ffi function/ method.
@@ -161,10 +177,10 @@ class Series:
     dtype : DataType, default None
         Polars dtype of the Series data. If not specified, the dtype is inferred.
     strict
-        Throw error on numeric overflow
+        Throw error on numeric overflow.
     nan_to_null
-        In case a numpy arrow is used to create this Series, indicate how to deal with
-        np.nan
+        In case a numpy array is used to create this Series, indicate how to deal
+        with np.nan values.
 
     Examples
     --------
@@ -241,6 +257,17 @@ class Series:
             self._s = arrow_to_pyseries(name, values)
         elif _NUMPY_AVAILABLE and isinstance(values, np.ndarray):
             self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
+            if values.dtype.type == np.datetime64:
+                # cast to appropriate dtype, handling NaT values
+                dtype = _resolve_datetime_dtype(dtype, values.dtype)
+                if dtype is not None:
+                    self._s = (
+                        self.cast(dtype)
+                        .set_at_idx(np.argwhere(np.isnat(values)).flatten(), None)
+                        ._s
+                    )
+                    return
+
             if dtype is not None:
                 self._s = self.cast(dtype, strict=True)._s
         elif isinstance(values, Sequence):
@@ -269,10 +296,7 @@ class Series:
 
     @classmethod
     def _from_pandas(
-        cls,
-        name: str,
-        values: pd.Series | pd.DatetimeIndex,
-        nan_to_none: bool = True,
+        cls, name: str, values: pd.Series | pd.DatetimeIndex, nan_to_none: bool = True
     ) -> Series:
         """Construct a Series from a pandas Series or DatetimeIndex."""
         return cls._from_pyseries(
@@ -2350,11 +2374,7 @@ class Series:
             return self.to_numpy().__array__()
 
     def __array_ufunc__(
-        self,
-        ufunc: np.ufunc,
-        method: str,
-        *inputs: Any,
-        **kwargs: Any,
+        self, ufunc: np.ufunc, method: str, *inputs: Any, **kwargs: Any
     ) -> Series:
         """Numpy universal functions."""
         if not _NUMPY_AVAILABLE:
@@ -2534,7 +2554,7 @@ class Series:
 
     def set_at_idx(
         self,
-        idx: Series | np.ndarray[Any, Any] | list[int] | tuple[int],
+        idx: Series | np.ndarray[Any, Any] | Sequence[int] | int,
         value: int
         | float
         | str
@@ -2545,7 +2565,8 @@ class Series:
         | Sequence[datetime]
         | date
         | datetime
-        | Series,
+        | Series
+        | None,
     ) -> Series:
         """
         Set values at the index locations.
@@ -2566,9 +2587,14 @@ class Series:
         the series mutated
 
         """
+        if isinstance(idx, int):
+            idx = [idx]
+        if len(idx) == 0:
+            return self
+
         if self.is_numeric() or self.is_datelike():
             idx = Series("", idx)
-            if isinstance(value, (int, float, bool)):
+            if isinstance(value, (int, float, bool)) or (value is None):
                 value = Series("", [value])
 
                 # if we need to set more than a single value, we extend it
@@ -2588,7 +2614,7 @@ class Series:
             )
         if isinstance(idx, Series):
             # make sure the dtype matches
-            idx = idx.cast(UInt32)
+            idx = idx.cast(get_idx_type())
             idx_array = idx.view()
         elif _NUMPY_AVAILABLE and isinstance(idx, np.ndarray):
             if not idx.data.c_contiguous:
@@ -2597,7 +2623,6 @@ class Series:
                 idx_array = idx
                 if idx_array.dtype != np.uint32:
                     idx_array = np.array(idx_array, np.uint32)
-
         else:
             if not _NUMPY_AVAILABLE:
                 raise ImportError("'numpy' is required for this functionality.")
@@ -3046,9 +3071,7 @@ class Series:
         return self.to_frame().select(pli.col(self.name).tanh()).to_series()
 
     def apply(
-        self,
-        func: Callable[[Any], Any],
-        return_dtype: type[DataType] | None = None,
+        self, func: Callable[[Any], Any], return_dtype: type[DataType] | None = None
     ) -> Series:
         """
         Apply a function over elements in this Series and return a new Series.
@@ -4012,10 +4035,9 @@ class Series:
 
     def clip(self, min_val: int | float, max_val: int | float) -> Series:
         """
-        Clip (limit) the values in an array to any value that fits in 64 floating point
-        range.
+        Clip (limit) the values in an array to a `min` and `max` boundary
 
-        Only works for the following dtypes: {Int32, Int64, Float32, Float64, UInt32}.
+        Only works for numerical types.
 
         If you want to clip other dtypes, consider writing a "when, then, otherwise"
         expression. See :func:`when` for more information.
@@ -4044,6 +4066,40 @@ class Series:
         return self.to_frame().select(pli.col(self.name).clip(min_val, max_val))[
             self.name
         ]
+
+    def clip_min(self, min_val: int | float) -> Series:
+        """
+        Clip (limit) the values in an array to a `min` boundary
+
+        Only works for numerical types.
+
+        If you want to clip other dtypes, consider writing a "when, then, otherwise"
+        expression. See :func:`when` for more information.
+
+        Parameters
+        ----------
+        min_val
+            Minimum value.
+
+        """
+        return self.to_frame().select(pli.col(self.name).clip_min(min_val))[self.name]
+
+    def clip_max(self, max_val: int | float) -> Series:
+        """
+        Clip (limit) the values in an array to a `max` boundary
+
+        Only works for numerical types.
+
+        If you want to clip other dtypes, consider writing a "when, then, otherwise"
+        expression. See :func:`when` for more information.
+
+        Parameters
+        ----------
+        max_val
+            Maximum value.
+
+        """
+        return self.to_frame().select(pli.col(self.name).clip_max(max_val))[self.name]
 
     def reshape(self, dims: tuple[int, ...]) -> Series:
         """

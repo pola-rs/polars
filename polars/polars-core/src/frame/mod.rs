@@ -226,11 +226,14 @@ impl DataFrame {
     pub fn new<S: IntoSeries>(columns: Vec<S>) -> Result<Self> {
         let mut first_len = None;
 
-        let shape_err = || {
-            Err(PolarsError::ShapeMisMatch(
-                "Could not create a new DataFrame from Series. The Series have different lengths"
-                    .into(),
-            ))
+        let shape_err = |s: &[Series]| {
+            let msg = format!(
+                "Could not create a new DataFrame from Series. \
+            The Series have different lengths.\
+            Got {:?}",
+                s
+            );
+            Err(PolarsError::ShapeMisMatch(msg.into()))
         };
 
         let series_cols = if S::is_series() {
@@ -244,7 +247,7 @@ impl DataFrame {
                 match first_len {
                     Some(len) => {
                         if s.len() != len {
-                            return shape_err();
+                            return shape_err(&series_cols);
                         }
                     }
                     None => first_len = Some(s.len()),
@@ -271,7 +274,7 @@ impl DataFrame {
                 match first_len {
                     Some(len) => {
                         if series.len() != len {
-                            return shape_err();
+                            return shape_err(&series_cols);
                         }
                     }
                     None => first_len = Some(series.len()),

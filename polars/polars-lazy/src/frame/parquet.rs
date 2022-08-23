@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use polars_core::prelude::*;
 use polars_io::parquet::ParallelStrategy;
 use polars_io::RowCount;
@@ -29,7 +31,7 @@ impl Default for ScanArgsParquet {
 
 impl LazyFrame {
     fn scan_parquet_impl(
-        path: String,
+        path: impl AsRef<Path>,
         n_rows: Option<usize>,
         cache: bool,
         parallel: ParallelStrategy,
@@ -38,7 +40,13 @@ impl LazyFrame {
         low_memory: bool,
     ) -> Result<Self> {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(
-            path, n_rows, cache, parallel, None, rechunk, low_memory,
+            path.as_ref(),
+            n_rows,
+            cache,
+            parallel,
+            None,
+            rechunk,
+            low_memory,
         )?
         .build()
         .into();
@@ -67,12 +75,15 @@ impl LazyFrame {
     /// Create a LazyFrame directly from a parquet scan.
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     #[deprecated(note = "please use `concat_lf` instead")]
-    pub fn scan_parquet_files(paths: Vec<String>, args: ScanArgsParquet) -> Result<Self> {
+    pub fn scan_parquet_files<P: AsRef<Path>>(
+        paths: Vec<P>,
+        args: ScanArgsParquet,
+    ) -> Result<Self> {
         let lfs = paths
             .iter()
             .map(|p| {
                 Self::scan_parquet_impl(
-                    p.to_string(),
+                    p,
                     args.n_rows,
                     args.cache,
                     args.parallel,
@@ -88,16 +99,17 @@ impl LazyFrame {
 
     /// Create a LazyFrame directly from a parquet scan.
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
-    pub fn scan_parquet(path: String, args: ScanArgsParquet) -> Result<Self> {
-        if path.contains('*') {
-            let paths = glob::glob(&path)
+    pub fn scan_parquet(path: impl AsRef<Path>, args: ScanArgsParquet) -> Result<Self> {
+        let path = path.as_ref();
+        let path_str = path.to_string_lossy();
+        if path_str.contains('*') {
+            let paths = glob::glob(&path_str)
                 .map_err(|_| PolarsError::ComputeError("invalid glob pattern given".into()))?;
             let lfs = paths
                 .map(|r| {
                     let path = r.map_err(|e| PolarsError::ComputeError(format!("{}", e).into()))?;
-                    let path_string = path.to_string_lossy().into_owned();
                     Self::scan_parquet_impl(
-                        path_string,
+                        path,
                         args.n_rows,
                         args.cache,
                         ParallelStrategy::None,

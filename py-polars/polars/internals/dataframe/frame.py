@@ -21,6 +21,7 @@ from typing import (
 from polars import internals as pli
 from polars._html import NotebookFormatter
 from polars.datatypes import (
+    Boolean,
     ColumnsType,
     DataType,
     Int8,
@@ -50,6 +51,7 @@ from polars.utils import (
     _process_null_values,
     format_path,
     handle_projection_columns,
+    is_bool_sequence,
     is_int_sequence,
     is_str_sequence,
     range_to_slice,
@@ -123,7 +125,9 @@ if TYPE_CHECKING:
     # MultiColSelector indexes into the horizontal axis
     # NOTE: wrapping these as strings is necessary for Python <3.10
     MultiRowSelector: TypeAlias = "slice | range | list[int] | pli.Series"
-    MultiColSelector: TypeAlias = "slice | range | list[int] | list[str] | pli.Series"
+    MultiColSelector: TypeAlias = (
+        "slice | range | list[int] | list[str] | list[bool] | pli.Series"
+    )
 
 # A type variable used to refer to a polars.DataFrame or any subclass of it.
 # Used to annotate DataFrame methods which returns the same type as self.
@@ -286,7 +290,9 @@ class DataFrame:
             self._df = arrow_to_pydf(data, columns=columns)
 
         elif isinstance(data, Sequence) and not isinstance(data, str):
-            self._df = sequence_to_pydf(data, columns=columns, orient=orient)
+            self._df = sequence_to_pydf(
+                data, columns=columns, orient=orient, infer_schema_length=50
+            )
 
         elif isinstance(data, pli.Series):
             self._df = series_to_pydf(data, columns=columns)
@@ -389,6 +395,7 @@ class DataFrame:
         data: Sequence[Sequence[Any]],
         columns: Sequence[str] | None = None,
         orient: Orientation | None = None,
+        infer_schema_length: int | None = 50,
     ) -> DF:
         """
         Construct a DataFrame from a sequence of sequences.
@@ -404,13 +411,22 @@ class DataFrame:
             Whether to interpret two-dimensional data as columns or as rows. If None,
             the orientation is inferred by matching the columns and data dimensions. If
             this does not yield conclusive results, column orientation is used.
+        infer_schema_length
+            How many rows to scan to determine the column type.
 
         Returns
         -------
         DataFrame
 
         """
-        return cls._from_pydf(sequence_to_pydf(data, columns=columns, orient=orient))
+        return cls._from_pydf(
+            sequence_to_pydf(
+                data,
+                columns=columns,
+                orient=orient,
+                infer_schema_length=infer_schema_length,
+            )
+        )
 
     @classmethod
     def _from_numpy(
@@ -1357,7 +1373,7 @@ class DataFrame:
         statistics: bool = False,
         row_group_size: int | None = None,
         use_pyarrow: bool = False,
-        **kwargs: Any,
+        pyarrow_options: dict[str, object] | None = None,
     ) -> None:
         """
         Write to Apache Parquet file.
@@ -1388,8 +1404,8 @@ class DataFrame:
         use_pyarrow
             Use C++ parquet implementation vs rust parquet implementation.
             At the moment C++ supports more features.
-        kwargs
-            Arguments are passed to ``pyarrow.parquet.write_table``.
+        pyarrow_options
+            Arguments passed to ``pyarrow.parquet.write_table``.
 
         """
         if compression is None:
@@ -1423,7 +1439,7 @@ class DataFrame:
                 where=file,
                 compression=compression,
                 write_statistics=statistics,
-                **kwargs,
+                **(pyarrow_options or {}),
             )
         else:
             self._df.write_parquet(
@@ -1767,6 +1783,24 @@ class DataFrame:
                     df = self.__getitem__(self.columns[col_selection])
                     return df[row_selection]
 
+                # df[:, [True, False]]
+                if is_bool_sequence(col_selection) or (
+                    isinstance(col_selection, pli.Series)
+                    and col_selection.dtype == Boolean
+                ):
+                    if len(col_selection) != self.width:
+                        raise ValueError(
+                            f"Expected {self.width} values when selecting columns by"
+                            f" boolean mask. Got {len(col_selection)}."
+                        )
+                    series_list = []
+                    for (i, val) in enumerate(col_selection):
+                        if val:
+                            series_list.append(self.to_series(i))
+
+                    df = self.__class__(series_list)
+                    return df[row_selection]
+
                 # single slice
                 # df[:, unknown]
                 series = self.__getitem__(col_selection)
@@ -1857,6 +1891,73 @@ class DataFrame:
             f"Cannot __getitem__ on DataFrame with item: '{item}'"
             f" of type: '{type(item)}'."
         )
+
+    def __setitem__(
+        self, key: str | list[int] | list[str] | tuple[Any, str | int], value: Any
+    ) -> None:  # pragma: no cover
+        # df["foo"] = series
+        if isinstance(key, str):
+            raise TypeError(
+                "'DataFrame' object does not support 'Series' assignment by index. "
+                "Use 'DataFrame.with_columns'"
+            )
+
+        # df[["C", "D"]]
+        elif isinstance(key, list):
+            # TODO: Use python sequence constructors
+            if not _NUMPY_AVAILABLE:
+                raise ImportError("'numpy' is required for this functionality.")
+            value = np.array(value)
+            if value.ndim != 2:
+                raise ValueError("can only set multiple columns with 2D matrix")
+            if value.shape[1] != len(key):
+                raise ValueError(
+                    "matrix columns should be equal to list use to determine column"
+                    " names"
+                )
+
+            # todo! we can parallize this by calling from_numpy
+            columns = []
+            for (i, name) in enumerate(key):
+                columns.append(pli.Series(name, value[:, i]))
+            self._df = self.with_columns(columns)._df
+
+        # df[a, b]
+        elif isinstance(key, tuple):
+            row_selection, col_selection = key
+
+            if (
+                isinstance(row_selection, pli.Series) and row_selection.dtype == Boolean
+            ) or is_bool_sequence(row_selection):
+                raise ValueError(
+                    "Not allowed to set 'DataFrame' by boolean mask in the "
+                    "row position. Consider using 'DataFrame.with_columns'"
+                )
+
+            # get series column selection
+            if isinstance(col_selection, str):
+                s = self.__getitem__(col_selection)
+            elif isinstance(col_selection, int):
+                s = self[:, col_selection]
+            else:
+                raise ValueError(f"column selection not understood: {col_selection}")
+
+            # dispatch to __setitem__ of Series to do modification
+            s[row_selection] = value
+
+            # now find the location to place series
+            # df[idx]
+            if isinstance(col_selection, int):
+                self.replace_at_idx(col_selection, s)
+            # df["foo"]
+            elif isinstance(col_selection, str):
+                self.replace(col_selection, s)
+        else:
+            raise ValueError(
+                f"Cannot __setitem__ on DataFrame with key: '{key}' "
+                f"of type: '{type(key)}' and value: '{value}' "
+                f"of type: '{type(value)}'."
+            )
 
     def __len__(self) -> int:
         return self.height
@@ -5346,9 +5447,15 @@ class DataFrame:
         """
         return self._from_pydf(self._df.quantile(quantile, interpolation))
 
-    def to_dummies(self: DF) -> DF:
+    def to_dummies(self: DF, *, columns: list[str] | None = None) -> DF:
         """
         Get one hot encoded dummy variables.
+
+        Parameters
+        ----------
+        columns:
+            A subset of columns to convert to dummy variables. ``None`` means
+            "all columns".
 
         Examples
         --------
@@ -5374,7 +5481,7 @@ class DataFrame:
         └───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┘
 
         """
-        return self._from_pydf(self._df.to_dummies())
+        return self._from_pydf(self._df.to_dummies(columns))
 
     def unique(
         self: DF,

@@ -126,8 +126,12 @@ def test_init_ndarray(monkeypatch: Any) -> None:
 
     # 2D array - default to column orientation
     df = pl.DataFrame(np.array([[1, 2], [3, 4]]))
-    truth = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
+    truth = pl.DataFrame({"column_0": [1, 3], "column_1": [2, 4]})
     assert df.frame_equal(truth)
+
+    # no orientation is numpy convention
+    df = pl.DataFrame(np.ones((3, 1)))
+    assert df.shape == (3, 1)
 
     # 2D array - row orientation inferred
     df = pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b", "c"])

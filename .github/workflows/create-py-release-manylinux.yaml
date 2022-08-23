@@ -11,23 +11,55 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: publish x86_64
-        uses: docker://ghcr.io/pyo3/maturin:latest
+      - name: Prepare maturin publish
+        shell: bash
+        run: |
+          rm py-polars/README.md
+          cp README.md py-polars/README.md
+          cd py-polars
+
+      - name: publish x64_64
+        uses: messense/maturin-action@main
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
+          RUSTFLAGS: '-C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma'
         with:
-          entrypoint: /bin/bash
-          args: .github/deploy_manylinux.sh
+          rust-toolchain: nightly-2022-08-22
+          # don't use `2_17` it does not work: https://github.com/pola-rs/polars/runs/6107328960
+          manylinux: '2_24'
+          maturin-version: '0.13.0'
+          command: publish
+          args: -m py-polars/Cargo.toml --skip-existing -o wheels -i python -u ritchie46
       # needed for docker on apple m1
       - name: publish aarch64
         uses: messense/maturin-action@main
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
         with:
-          rust-toolchain: nightly-2022-08-16
+          rust-toolchain: nightly-2022-08-22
           # don't use `2_17` it does not work: https://github.com/pola-rs/polars/runs/6107328960
           manylinux: '2_24'
           target: aarch64-unknown-linux-gnu
           maturin-version: '0.13.0'
           command: publish
-          args: -m py-polars/Cargo.toml --no-sdist -o wheels -i python -u ritchie46
+          args: -m py-polars/Cargo.toml --skip-existing --no-sdist -o wheels -i python -u ritchie46
+
+      - name: Prepare bigidx
+        shell: bash
+        run: |
+          # now compile polars with bigidx feature
+          sed -i 's/name = "polars"/name = "polars-u64-idx"/' py-polars/pyproject.toml
+          # a brittle hack to insert the 'bigidx' feature
+          sed -i 's/"dynamic_groupby",/"dynamic_groupby",\n"bigidx",/' py-polars/Cargo.toml
+      - name: publish x64_64 bigidx
+        uses: messense/maturin-action@main
+        env:
+          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
+          RUSTFLAGS: '-C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma'
+        with:
+          rust-toolchain: nightly-2022-08-22
+          # don't use `2_17` it does not work: https://github.com/pola-rs/polars/runs/6107328960
+          manylinux: '2_24'
+          maturin-version: '0.13.0'
+          command: publish
+          args: -m py-polars/Cargo.toml --skip-existing -o wheels -i python -u ritchie46

@@ -165,6 +165,8 @@ Manipulation/ selection
     Series.ceil
     Series.cleared
     Series.clip
+    Series.clip_max
+    Series.clip_min
     Series.clone
     Series.drop_nans
     Series.drop_nulls

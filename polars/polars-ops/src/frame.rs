@@ -69,12 +69,28 @@ pub trait DataFrameOps: IntoDf {
     /// ```
     #[cfg(feature = "to_dummies")]
     fn to_dummies(&self) -> Result<DataFrame> {
+        self._to_dummies(None)
+    }
+
+    #[cfg(feature = "to_dummies")]
+    fn columns_to_dummies(&self, columns: Vec<&str>) -> Result<DataFrame> {
+        self._to_dummies(Some(columns))
+    }
+
+    #[cfg(feature = "to_dummies")]
+    fn _to_dummies(&self, columns: Option<Vec<&str>>) -> Result<DataFrame> {
         let df = self.to_df();
+
+        let set: PlHashSet<&str> =
+            PlHashSet::from_iter(columns.unwrap_or_else(|| df.get_column_names()));
 
         let cols = POOL.install(|| {
             df.get_columns()
                 .par_iter()
-                .map(|s| s.to_ops().to_dummies())
+                .map(|s| match set.contains(s.name()) {
+                    true => s.to_ops().to_dummies(),
+                    false => Ok(s.clone().into_frame()),
+                })
                 .collect::<Result<Vec<_>>>()
         })?;
 

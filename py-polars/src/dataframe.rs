@@ -112,6 +112,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "csv-file")]
     pub fn read_csv(
         py_f: &PyAny,
         infer_schema_length: Option<usize>,
@@ -376,11 +377,11 @@ impl PyDataFrame {
 
     // somehow from_rows did not work
     #[staticmethod]
-    pub fn read_rows(rows: Vec<Wrap<Row>>) -> PyResult<Self> {
+    pub fn read_rows(rows: Vec<Wrap<Row>>, infer_schema_length: Option<usize>) -> PyResult<Self> {
         // safety:
         // wrap is transparent
         let rows: Vec<Row> = unsafe { std::mem::transmute(rows) };
-        Self::finish_from_rows(rows, Some(50))
+        Self::finish_from_rows(rows, infer_schema_length)
     }
 
     #[staticmethod]
@@ -488,6 +489,7 @@ impl PyDataFrame {
         Ok(())
     }
 
+    #[cfg(feature = "object")]
     pub fn row_tuple(&self, idx: i64) -> PyObject {
         Python::with_gil(|py| {
             let idx = if idx < 0 {
@@ -509,6 +511,7 @@ impl PyDataFrame {
         })
     }
 
+    #[cfg(feature = "object")]
     pub fn row_tuples(&self) -> PyObject {
         Python::with_gil(|py| {
             let df = &self.df;
@@ -1225,8 +1228,14 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn to_dummies(&self) -> PyResult<Self> {
-        let df = self.df.to_dummies().map_err(PyPolarsErr::from)?;
+    pub fn to_dummies(&self, columns: Option<Vec<String>>) -> PyResult<Self> {
+        let df = match columns {
+            Some(cols) => self
+                .df
+                .columns_to_dummies(cols.iter().map(|x| x as &str).collect()),
+            None => self.df.to_dummies(),
+        }
+        .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 

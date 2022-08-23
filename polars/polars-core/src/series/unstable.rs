@@ -1,4 +1,3 @@
-use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
@@ -56,9 +55,13 @@ impl<'a> UnstableSeries<'a> {
     }
 
     pub fn deep_clone(&self) -> Series {
-        let array_ref = unsafe { (*self.container).chunks() }[0].clone();
-        let name = unsafe { (*self.container).name() };
-        Series::try_from((name, array_ref)).unwrap()
+        unsafe {
+            let s = &(*self.container);
+            debug_assert_eq!(s.chunks().len(), 1);
+            let array_ref = s.chunks().get_unchecked(0).clone();
+            let name = s.name();
+            Series::from_chunks_and_dtype_unchecked(name, vec![array_ref], s.dtype())
+        }
     }
 
     #[inline]

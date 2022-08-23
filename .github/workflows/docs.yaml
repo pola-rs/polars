@@ -14,15 +14,15 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-08-16
+          toolchain: nightly-2022-08-22
           override: true
           components: rustfmt, clippy
       - name: Set up Node
         uses: actions/setup-node@v2
-        with: 
+        with:
           node-version: 16
       - name: Build node reference
-        run: | 
+        run: |
           cd nodejs-polars
           npm install
           npx typedoc

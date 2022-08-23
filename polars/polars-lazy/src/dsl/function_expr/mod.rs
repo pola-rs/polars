@@ -1,5 +1,7 @@
 #[cfg(feature = "arg_where")]
 mod arg_where;
+#[cfg(feature = "round_series")]
+mod clip;
 mod fill_null;
 #[cfg(feature = "is_in")]
 mod is_in;
@@ -68,6 +70,11 @@ pub enum FunctionExpr {
         periods: i64,
     },
     Nan(NanFunction),
+    #[cfg(feature = "round_series")]
+    Clip {
+        min: Option<AnyValue<'static>>,
+        max: Option<AnyValue<'static>>,
+    },
 }
 
 #[cfg(feature = "trigonometry")]
@@ -145,6 +152,9 @@ impl FunctionExpr {
                     Strptime(options) => with_dtype(options.date_dtype.clone()),
                     #[cfg(feature = "concat_str")]
                     Concat(_) => with_dtype(DataType::Utf8),
+                    #[cfg(feature = "regex")]
+                    Replace { .. } => with_dtype(DataType::Utf8),
+                    Uppercase | Lowercase => with_dtype(DataType::Utf8),
                 }
             }
 
@@ -161,6 +171,8 @@ impl FunctionExpr {
             RollingSkew { .. } => float_dtype(),
             ShiftAndFill { .. } => same_type(),
             Nan(n) => n.get_field(fields),
+            #[cfg(feature = "round_series")]
+            Clip { .. } => same_type(),
         }
     }
 }
@@ -198,12 +210,22 @@ macro_rules! map_without_args {
 }
 
 // FnOnce(Series)
+// FnOnce(Series, args)
 #[macro_export(super)]
-macro_rules! map_owned_without_args {
+macro_rules! map_owned {
     ($func:path) => {{
         let f = move |s: &mut [Series]| {
             let s = std::mem::take(&mut s[0]);
             $func(s)
+        };
+
+        SpecialEq::new(Arc::new(f))
+    }};
+
+    ($func:path, $($args:expr),*) => {{
+        let f = move |s: &mut [Series]| {
+            let s = std::mem::take(&mut s[0]);
+            $func(s, $($args),*)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -215,19 +237,6 @@ macro_rules! map_with_args {
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
             let s = &s[0];
-            $func(s, $($args),*)
-        };
-
-        SpecialEq::new(Arc::new(f))
-    }};
-}
-
-// FnOnce(Series, args)
-#[macro_export(super)]
-macro_rules! map_owned_with_args {
-    ($func:path, $($args:expr),*) => {{
-        let f = move |s: &mut [Series]| {
-            let s = std::mem::take(&mut s[0]);
             $func(s, $($args),*)
         };
 
@@ -270,7 +279,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
 
             #[cfg(feature = "date_offset")]
             DateOffset(offset) => {
-                map_owned_with_args!(temporal::date_offset, offset)
+                map_owned!(temporal::date_offset, offset)
             }
             #[cfg(feature = "trigonometry")]
             Trigonometry(trig_function) => {
@@ -296,6 +305,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(shift_and_fill::shift_and_fill, periods)
             }
             Nan(n) => n.into(),
+            #[cfg(feature = "round_series")]
+            Clip { min, max } => {
+                map_owned!(clip::clip, min.clone(), max.clone())
+            }
         }
     }
 }
@@ -341,6 +354,10 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             }
             #[cfg(feature = "concat_str")]
             Concat(delimiter) => map_with_args!(strings::concat, &delimiter),
+            #[cfg(feature = "regex")]
+            Replace { all, literal } => map_as_slice!(strings::replace, literal, all),
+            Uppercase => map_without_args!(strings::uppercase),
+            Lowercase => map_without_args!(strings::lowercase),
         }
     }
 }

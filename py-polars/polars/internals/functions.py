@@ -27,7 +27,9 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import ClosedWindow, ConcatMethod, TimeUnit
 
 
-def get_dummies(df: pli.DataFrame) -> pli.DataFrame:
+def get_dummies(
+    df: pli.DataFrame, *, columns: list[str] | None = None
+) -> pli.DataFrame:
     """
     Convert categorical variables into dummy/indicator variables.
 
@@ -35,9 +37,12 @@ def get_dummies(df: pli.DataFrame) -> pli.DataFrame:
     ----------
     df
         DataFrame to convert.
+    columns
+        A subset of columns to convert to dummy variables. ``None`` means
+        "all columns".
 
     """
-    return df.to_dummies()
+    return df.to_dummies(columns=columns)
 
 
 @overload

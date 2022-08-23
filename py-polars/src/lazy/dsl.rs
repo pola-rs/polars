@@ -220,6 +220,7 @@ impl PyExpr {
         self.clone().inner.arg_min().into()
     }
 
+    #[cfg(feature = "search_sorted")]
     pub fn search_sorted(&self, element: PyExpr) -> PyExpr {
         self.inner.clone().search_sorted(element.inner).into()
     }
@@ -346,8 +347,20 @@ impl PyExpr {
         self.clone().inner.ceil().into()
     }
 
-    pub fn clip(&self, min: f64, max: f64) -> PyExpr {
+    pub fn clip(&self, py: Python, min: PyObject, max: PyObject) -> PyExpr {
+        let min = min.extract::<Wrap<AnyValue>>(py).unwrap().0;
+        let max = max.extract::<Wrap<AnyValue>>(py).unwrap().0;
         self.clone().inner.clip(min, max).into()
+    }
+
+    pub fn clip_min(&self, py: Python, min: PyObject) -> PyExpr {
+        let min = min.extract::<Wrap<AnyValue>>(py).unwrap().0;
+        self.clone().inner.clip_min(min).into()
+    }
+
+    pub fn clip_max(&self, py: Python, max: PyObject) -> PyExpr {
+        let max = max.extract::<Wrap<AnyValue>>(py).unwrap().0;
+        self.clone().inner.clip_max(max).into()
     }
 
     pub fn abs(&self) -> PyExpr {
@@ -552,18 +565,6 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_to_uppercase(&self) -> PyExpr {
-        let function = |s: Series| {
-            let ca = s.utf8()?;
-            Ok(ca.to_uppercase().into_series())
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("str.to_uppercase")
-            .into()
-    }
-
     pub fn str_slice(&self, start: i64, length: Option<u64>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
@@ -576,16 +577,12 @@ impl PyExpr {
             .into()
     }
 
+    pub fn str_to_uppercase(&self) -> PyExpr {
+        self.inner.clone().str().to_uppercase().into()
+    }
+
     pub fn str_to_lowercase(&self) -> PyExpr {
-        let function = |s: Series| {
-            let ca = s.utf8()?;
-            Ok(ca.to_lowercase().into_series())
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("str.to_lowercase")
-            .into()
+        self.inner.clone().str().to_lowercase().into()
     }
 
     pub fn str_lengths(&self) -> PyExpr {
@@ -600,41 +597,19 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_replace(&self, pat: String, val: String, literal: Option<bool>) -> PyExpr {
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            let replaced = match literal {
-                Some(true) => ca.replace_literal(&pat, &val),
-                _ => ca.replace(&pat, &val),
-            };
-            match replaced {
-                Ok(ca) => Ok(ca.into_series()),
-                Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
-            }
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::same_type())
-            .with_fmt("str.replace")
+    pub fn str_replace(&self, pat: PyExpr, val: PyExpr, literal: bool) -> PyExpr {
+        self.inner
+            .clone()
+            .str()
+            .replace(pat.inner, val.inner, literal)
             .into()
     }
 
-    pub fn str_replace_all(&self, pat: String, val: String, literal: Option<bool>) -> PyExpr {
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            let replaced = match literal {
-                Some(true) => ca.replace_literal_all(&pat, &val),
-                _ => ca.replace_all(&pat, &val),
-            };
-            match replaced {
-                Ok(ca) => Ok(ca.into_series()),
-                Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
-            }
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::same_type())
-            .with_fmt("str.replace_all")
+    pub fn str_replace_all(&self, pat: PyExpr, val: PyExpr, literal: bool) -> PyExpr {
+        self.inner
+            .clone()
+            .str()
+            .replace_all(pat.inner, val.inner, literal)
             .into()
     }
 
@@ -706,6 +681,7 @@ impl PyExpr {
             .with_fmt("str.base64_decode")
             .into()
     }
+    #[cfg(feature = "extract_jsonpath")]
     pub fn str_json_path_match(&self, pat: String) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
@@ -758,6 +734,7 @@ impl PyExpr {
         self.inner.clone().arr().lengths().into()
     }
 
+    #[cfg(feature = "is_in")]
     pub fn arr_contains(&self, other: PyExpr) -> PyExpr {
         self.inner.clone().arr().contains(other.inner).into()
     }

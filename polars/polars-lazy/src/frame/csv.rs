@@ -1,3 +1,6 @@
+use std::path::Path;
+use std::path::PathBuf;
+
 use polars_core::prelude::*;
 use polars_io::csv::utils::get_reader_bytes;
 use polars_io::csv::utils::infer_file_schema;
@@ -9,7 +12,7 @@ use crate::prelude::*;
 #[derive(Clone)]
 #[cfg(feature = "csv-file")]
 pub struct LazyCsvReader<'a> {
-    path: String,
+    path: PathBuf,
     delimiter: u8,
     has_header: bool,
     ignore_errors: bool,
@@ -33,9 +36,9 @@ pub struct LazyCsvReader<'a> {
 
 #[cfg(feature = "csv-file")]
 impl<'a> LazyCsvReader<'a> {
-    pub fn new(path: String) -> Self {
+    pub fn new(path: impl AsRef<Path>) -> Self {
         LazyCsvReader {
-            path,
+            path: path.as_ref().to_owned(),
             delimiter: b',',
             has_header: true,
             ignore_errors: false,
@@ -262,16 +265,16 @@ impl<'a> LazyCsvReader<'a> {
     }
 
     pub fn finish(self) -> Result<LazyFrame> {
-        if self.path.contains('*') {
-            let paths = glob::glob(&self.path)
+        let path_str = self.path.to_string_lossy();
+        if path_str.contains('*') {
+            let paths = glob::glob(&path_str)
                 .map_err(|_| PolarsError::ComputeError("invalid glob pattern given".into()))?;
 
             let lfs = paths
                 .map(|r| {
                     let path = r.map_err(|e| PolarsError::ComputeError(format!("{}", e).into()))?;
-                    let path_string = path.to_string_lossy().into_owned();
                     let mut builder = self.clone();
-                    builder.path = path_string;
+                    builder.path = path;
                     if builder.skip_rows > 0 {
                         builder.skip_rows = 0;
                         builder.n_rows = None;

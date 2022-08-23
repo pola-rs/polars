@@ -6,15 +6,13 @@ use std::borrow::Cow;
 use asof::*;
 use num::Bounded;
 #[cfg(feature = "serde")]
-use serde::Deserializer;
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 use crate::utils::slice_slice;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct AsOfOptions {
     pub strategy: AsofStrategy,
     /// A tolerance in the same unit as the asof column
@@ -27,16 +25,6 @@ pub struct AsOfOptions {
     pub tolerance_str: Option<String>,
     pub left_by: Option<Vec<String>>,
     pub right_by: Option<Vec<String>>,
-}
-
-#[cfg(feature = "serde")]
-impl<'a> Deserialize<'a> for AsOfOptions {
-    fn deserialize<D>(_deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'a>,
-    {
-        todo!()
-    }
 }
 
 fn check_asof_columns(a: &Series, b: &Series) -> Result<()> {

@@ -180,7 +180,7 @@ impl StringNameSpace {
     }
 
     #[cfg(feature = "dtype-struct")]
-    // Split exactly `n` times by a given substring. The resulting dtype is [`DataType::Struct`].
+    /// Split exactly `n` times by a given substring. The resulting dtype is [`DataType::Struct`].
     pub fn split_exact(self, by: &str, n: usize) -> Expr {
         let by = by.to_string();
 
@@ -231,8 +231,8 @@ impl StringNameSpace {
     }
 
     #[cfg(feature = "dtype-struct")]
-    // Split exactly `n` times by a given substring and keep the substring.
-    // The resulting dtype is [`DataType::Struct`].
+    /// Split exactly `n` times by a given substring and keep the substring.
+    /// The resulting dtype is [`DataType::Struct`].
     pub fn split_exact_inclusive(self, by: &str, n: usize) -> Expr {
         let by = by.to_string();
 
@@ -283,8 +283,8 @@ impl StringNameSpace {
     }
 
     #[cfg(feature = "dtype-struct")]
-    // Split exactly `n` times by a given substring, keeping the remainder of the string
-    // intact even if there are more possible splits. The resulting dtype is [`DataType::Struct`].
+    /// Split exactly `n` times by a given substring, keeping the remainder of the string
+    /// intact even if there are more possible splits. The resulting dtype is [`DataType::Struct`].
     pub fn splitn(self, by: &str, n: usize) -> Expr {
         let by = by.to_string();
 
@@ -332,5 +332,46 @@ impl StringNameSpace {
                 )),
             )
             .with_fmt("str.splitn")
+    }
+
+    #[cfg(feature = "regex")]
+    /// Replace values that match a regex `pat` with a `value`.
+    pub fn replace(self, pat: Expr, value: Expr, literal: bool) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Replace {
+                all: false,
+                literal,
+            }),
+            &[pat, value],
+            "str.replace",
+            true,
+        )
+    }
+
+    #[cfg(feature = "regex")]
+    /// Replace all values that match a regex `pat` with a `value`.
+    pub fn replace_all(self, pat: Expr, value: Expr, literal: bool) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Replace { all: true, literal }),
+            &[pat, value],
+            "str.replace_all",
+            true,
+        )
+    }
+
+    /// Convert all characters to lowercase.
+    pub fn to_lowercase(self) -> Expr {
+        self.0.map_private(
+            FunctionExpr::StringExpr(StringFunction::Lowercase),
+            "str.lowercase",
+        )
+    }
+
+    /// Convert all characters to uppercase.
+    pub fn to_uppercase(self) -> Expr {
+        self.0.map_private(
+            FunctionExpr::StringExpr(StringFunction::Uppercase),
+            "str.uppercase",
+        )
     }
 }

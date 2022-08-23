@@ -146,6 +146,19 @@ def test_selection() -> None:
     expect = pl.DataFrame({"a": [1, 3], "b": [1.0, 3.0], "c": ["a", "c"]})
     assert df[::2].frame_equal(expect)
 
+    # only allow boolean values in column position
+    df = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [2, 3],
+            "c": [3, 4],
+        }
+    )
+
+    assert df[:, [False, True, True]].columns == ["b", "c"]
+    assert df[:, pl.Series([False, True, True])].columns == ["b", "c"]
+    assert df[:, pl.Series([False, False, False])].columns == []
+
 
 def test_mixed_sequence_selection() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
@@ -708,6 +721,21 @@ def test_get_dummies() -> None:
     ).with_columns(pl.all().cast(pl.UInt8))
     assert res.frame_equal(expected)
 
+    df = pl.DataFrame(
+        {"i": [1, 2, 3], "category": ["dog", "cat", "cat"]},
+        columns={"i": pl.Int32, "category": pl.Categorical},
+    )
+    expected = pl.DataFrame(
+        {
+            "i": [1, 2, 3],
+            "category_cat": [0, 1, 1],
+            "category_dog": [1, 0, 0],
+        },
+        columns={"i": pl.Int32, "category_cat": pl.UInt8, "category_dog": pl.UInt8},
+    )
+    result = pl.get_dummies(df, columns=["category"])
+    assert result.frame_equal(expected)
+
 
 def test_to_pandas(df: pl.DataFrame) -> None:
     # pyarrow cannot deal with unsigned dictionary integer yet.
@@ -921,17 +949,39 @@ def test_literal_series() -> None:
     df = pl.DataFrame(
         {
             "a": np.array([21.7, 21.8, 21], dtype=np.float32),
-            "b": np.array([1, 3, 2], dtype=np.int64),
+            "b": np.array([1, 3, 2], dtype=np.int8),
             "c": ["reg1", "reg2", "reg3"],
+            "d": np.array(
+                [datetime(2022, 8, 16), datetime(2022, 8, 17), datetime(2022, 8, 18)],
+                dtype="<M8[ns]",
+            ),
         }
     )
     out = (
         df.lazy()
-        .with_column(pl.Series("e", [2, 1, 3]))  # type: ignore[arg-type]
+        .with_column(pl.Series("e", [2, 1, 3], pl.Int32))  # type: ignore[arg-type]
         .with_column(pl.col("e").cast(pl.Float32))
         .collect()
     )
-    assert out["e"] == [2, 1, 3]
+    expected_schema = {
+        "a": pl.Float32,
+        "b": pl.Int8,
+        "c": pl.Utf8,
+        "d": pl.Datetime("ns"),
+        "e": pl.Float32,
+    }
+    assert_frame_equal(
+        pl.DataFrame(
+            [
+                (21.7, 1, "reg1", datetime(2022, 8, 16, 0), 2),
+                (21.8, 3, "reg2", datetime(2022, 8, 17, 0), 1),
+                (21.0, 2, "reg3", datetime(2022, 8, 18, 0), 3),
+            ],
+            columns=expected_schema,  # type: ignore[arg-type]
+        ),
+        out,
+        atol=0.00001,
+    )
 
 
 def test_to_html(df: pl.DataFrame) -> None:
@@ -1234,7 +1284,7 @@ Series: 'cat_column' [list]
 	["a", "b"]
 	["b", "a"]
 	["b"]
-]"""
+]"""  # noqa: W191, E101
     )
 
 
@@ -2028,3 +2078,83 @@ def test_filter_sequence() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     assert df.filter([True, False, True])["a"].to_list() == [1, 3]
     assert df.filter(np.array([True, False, True]))["a"].to_list() == [1, 3]
+
+
+def test_indexing_set() -> None:
+    df = pl.DataFrame({"bool": [True, True], "str": ["N/A", "N/A"], "nr": [1, 2]})
+
+    df[0, "bool"] = False
+    df[0, "nr"] = 100
+    df[0, "str"] = "foo"
+
+    assert df.to_dict(False) == {
+        "bool": [False, True],
+        "str": ["foo", "N/A"],
+        "nr": [100, 2],
+    }
+
+
+def test_set() -> None:
+    """
+    Setting a dataframe using indices is deprecated. We keep these tests because we
+    only generate a warning
+    """
+    np.random.seed(1)
+    df = pl.DataFrame(
+        {"foo": np.random.rand(10), "bar": np.arange(10), "ham": ["h"] * 10}
+    )
+    with pytest.raises(
+        TypeError,
+        match=r"'DataFrame' object does not support "
+        r"'Series' assignment by index. Use "
+        r"'DataFrame.with_columns'",
+    ):
+        df["new"] = np.random.rand(10)
+
+    with pytest.raises(
+        ValueError,
+        match=r"Not allowed to set 'DataFrame' by "
+        r"boolean mask in the row position. "
+        r"Consider using 'DataFrame.with_columns'",
+    ):
+        df[df["ham"] > 0.5, "ham"] = "a"
+    with pytest.raises(
+        ValueError,
+        match=r"Not allowed to set 'DataFrame' by "
+        r"boolean mask in the row position. "
+        r"Consider using 'DataFrame.with_columns'",
+    ):
+        df[[True, False], "ham"] = "a"
+
+    # set 2D
+    df = pl.DataFrame({"b": [0, 0]})
+    df[["A", "B"]] = [[1, 2], [1, 2]]
+
+    with pytest.raises(ValueError):
+        df[["C", "D"]] = 1
+    with pytest.raises(ValueError):
+        df[["C", "D"]] = [1, 1]
+    with pytest.raises(ValueError):
+        df[["C", "D"]] = [[1, 2, 3], [1, 2, 3]]
+
+    # set tuple
+    df = pl.DataFrame({"b": [0, 0]})
+    df[0, "b"] = 1
+    assert df[0, "b"] == 1
+
+    df[0, 0] = 2
+    assert df[0, "b"] == 2
+
+    # row and col selection have to be int or str
+    with pytest.raises(ValueError):
+        df[:, [1]] = 1  # type: ignore[index]
+    with pytest.raises(ValueError):
+        df[True, :] = 1  # type: ignore[index]
+
+    # needs to be a 2 element tuple
+    with pytest.raises(ValueError):
+        df[(1, 2, 3)] = 1  # type: ignore[index]
+
+    # we cannot index with any type, such as bool
+    with pytest.raises(ValueError):
+        df[True] = 1  # type: ignore[index]

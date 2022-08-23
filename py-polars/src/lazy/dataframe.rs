@@ -2,9 +2,11 @@ use std::borrow::Cow;
 use std::io::BufWriter;
 
 use polars::io::RowCount;
-use polars::lazy::frame::{
-    AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy, LazyJsonLineReader,
-};
+#[cfg(feature = "csv-file")]
+use polars::lazy::frame::LazyCsvReader;
+#[cfg(feature = "json")]
+use polars::lazy::frame::LazyJsonLineReader;
+use polars::lazy::frame::{AllowedOptimizations, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
 use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Schema};
 use polars::time::*;
@@ -166,6 +168,7 @@ impl PyLazyFrame {
 
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "csv-file")]
     pub fn new_from_csv(
         path: String,
         sep: &str,

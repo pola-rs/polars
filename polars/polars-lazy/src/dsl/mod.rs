@@ -998,9 +998,40 @@ impl Expr {
     /// Clip underlying values to a set boundary.
     #[cfg(feature = "round_series")]
     #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
-    pub fn clip(self, min: f64, max: f64) -> Self {
-        self.map(move |s: Series| s.clip(min, max), GetOutput::same_type())
-            .with_fmt("clip")
+    pub fn clip(self, min: AnyValue<'_>, max: AnyValue<'_>) -> Self {
+        self.map_private(
+            FunctionExpr::Clip {
+                min: Some(min.into_static().unwrap()),
+                max: Some(max.into_static().unwrap()),
+            },
+            "clip",
+        )
+    }
+
+    /// Clip underlying values to a set boundary.
+    #[cfg(feature = "round_series")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
+    pub fn clip_max(self, max: AnyValue<'_>) -> Self {
+        self.map_private(
+            FunctionExpr::Clip {
+                min: None,
+                max: Some(max.into_static().unwrap()),
+            },
+            "clip_max",
+        )
+    }
+
+    /// Clip underlying values to a set boundary.
+    #[cfg(feature = "round_series")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
+    pub fn clip_min(self, min: AnyValue<'_>) -> Self {
+        self.map_private(
+            FunctionExpr::Clip {
+                min: Some(min.into_static().unwrap()),
+                max: None,
+            },
+            "clip_min",
+        )
     }
 
     /// Convert all values to their absolute/positive value.

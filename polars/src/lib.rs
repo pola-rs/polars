@@ -10,7 +10,10 @@
 //! in parallel and your queries are optimized just in time.
 //!
 //! ```rust no_run
-//! let lf1 = LazyFrame::scan_parquet("myfile_1.parquet".into(), Default::default())?
+//! use polars::prelude::*;
+//! # fn example() -> Result<()> {
+//!
+//! let lf1 = LazyFrame::scan_parquet("myfile_1.parquet", Default::default())?
 //!     .groupby([col("ham")])
 //!     .agg([
 //!         // expressions can be combined into powerful aggregations
@@ -24,13 +27,15 @@
 //!         col("foo").reverse().list().alias("reverse_group"),
 //!     ]);
 //!
-//! let lf2 = LazyFrame::scan_parquet("myfile_2.parquet".into(), Default::default())?
+//! let lf2 = LazyFrame::scan_parquet("myfile_2.parquet", Default::default())?
 //!     .select([col("ham"), col("spam")]);
 //!
 //! let df = lf1
 //!     .join(lf2, [col("reverse_group")], [col("foo")], JoinType::Left)
 //!     // now we finally materialize the result.
 //!     .collect()?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! This means that Polars data structures can be shared zero copy with processes in many different
@@ -113,6 +118,7 @@
 //!
 //! ```no_run
 //! # use polars::prelude::*;
+//! # fn example() -> Result<()> {
 //! # let df = DataFrame::default();
 //!   df.lazy()
 //!    .select([
@@ -120,6 +126,8 @@
 //!        col("bar").filter(col("foo").eq(lit(1))).sum(),
 //!    ])
 //!    .collect()?;
+//! # Ok(())
+//! # }
 //! ```
 //! All expressions are ran in parallel, meaning that separate polars expressions are embarrassingly parallel.
 //! (Note that within an expression there may be more parallelization going on).
@@ -325,6 +333,7 @@
 //! * `POLARS_ALLOW_EXTENSION` -> allows for `[ObjectChunked<T>]` to be used in arrow, opening up possibilities like using
 //!                               `T` in complex lazy expressions. However this does require `unsafe` code allow this.
 //! * `POLARS_NO_PARQUET_STATISTICS` -> if set, statistics in parquet files are ignored.
+//! * `POLARS_PANIC_ON_ERR` -> panic instead of returning an Error..
 //!
 //! ## User Guide
 //! If you want to read more, [check the User Guide](https://pola-rs.github.io/polars-book/).

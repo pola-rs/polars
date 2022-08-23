@@ -1,3 +1,8 @@
+use std::borrow::Cow;
+
+use polars_arrow::utils::CustomIterTools;
+#[cfg(feature = "regex")]
+use regex::{escape, Regex};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +39,24 @@ pub enum StringFunction {
     Strptime(StrpTimeOptions),
     #[cfg(feature = "concat_str")]
     Concat(String),
+    #[cfg(feature = "regex")]
+    Replace {
+        // replace_single or replace_all
+        all: bool,
+        literal: bool,
+    },
+    Uppercase,
+    Lowercase,
+}
+
+pub(super) fn uppercase(s: &Series) -> Result<Series> {
+    let ca = s.utf8()?;
+    Ok(ca.to_uppercase().into_series())
+}
+
+pub(super) fn lowercase(s: &Series) -> Result<Series> {
+    let ca = s.utf8()?;
+    Ok(ca.to_lowercase().into_series())
 }
 
 pub(super) fn contains(s: &Series, pat: &str, literal: bool) -> Result<Series> {
@@ -150,4 +173,130 @@ impl From<StringFunction> for FunctionExpr {
     fn from(str: StringFunction) -> Self {
         FunctionExpr::StringExpr(str)
     }
+}
+
+#[cfg(feature = "regex")]
+fn get_pat(pat: &Utf8Chunked) -> Result<&str> {
+    pat.get(0).ok_or_else(|| {
+        PolarsError::ComputeError("pattern may not be 'null' in 'replace' expression".into())
+    })
+}
+
+fn iter_and_replace<'a, F>(ca: &'a Utf8Chunked, val: &'a Utf8Chunked, f: F) -> Utf8Chunked
+where
+    F: Fn(&'a str, &'a str) -> Cow<'a, str>,
+{
+    let mut out: Utf8Chunked = ca
+        .into_iter()
+        .zip(val.into_iter())
+        .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
+            (Some(src), Some(val)) => Some(f(src, val)),
+            _ => None,
+        })
+        .collect_trusted();
+
+    out.rename(ca.name());
+    out
+}
+
+#[cfg(feature = "regex")]
+fn replace_single<'a>(
+    ca: &'a Utf8Chunked,
+    pat: &'a Utf8Chunked,
+    val: &'a Utf8Chunked,
+    literal: bool,
+) -> Result<Utf8Chunked> {
+    match (pat.len(), val.len()) {
+        (1, 1) => {
+            let pat = get_pat(pat)?;
+            let val = val.get(0).ok_or_else(|| PolarsError::ComputeError("value may not be 'null' in 'replace' expression".into()))?;
+
+            match literal {
+                true => ca.replace_literal(pat, val),
+                false => ca.replace(pat, val),
+            }
+        }
+        (1, len_val) => {
+            let mut pat = get_pat(pat)?.to_string();
+            if len_val != ca.len() {
+                return Err(PolarsError::ComputeError(format!("The replacement value expression in 'str.replace' should be equal to the length of the string column.\
+                Got column length: {} and replacement value length: {}", ca.len(), len_val).into()))
+            }
+
+            if literal {
+                pat = escape(&pat)
+            }
+
+
+            let reg = Regex::new(&pat)?;
+            let lit = pat.chars().all(|c| !c.is_ascii_punctuation());
+
+            let f = |s: &'a str, val: &'a str| {
+                if lit && (s.len() <= 32) {
+                    Cow::Owned(s.replacen(&pat, val, 1))
+                } else {
+                    reg.replace(s, val)
+                }
+            };
+            Ok(iter_and_replace(ca, val, f))
+        }
+        _ => Err(PolarsError::ComputeError("A dynamic pattern length in the 'str.replace' expressions are not yet supported. Consider open a feature request for this.".into()))
+    }
+}
+
+#[cfg(feature = "regex")]
+fn replace_all<'a>(
+    ca: &'a Utf8Chunked,
+    pat: &'a Utf8Chunked,
+    val: &'a Utf8Chunked,
+    literal: bool,
+) -> Result<Utf8Chunked> {
+    match (pat.len(), val.len()) {
+        (1, 1) => {
+            let pat = get_pat(pat)?;
+            let val = val.get(0).ok_or_else(|| PolarsError::ComputeError("value may not be 'null' in 'replace' expression".into()))?;
+
+            match literal {
+                true => ca.replace_literal_all(pat, val),
+                false => ca.replace_all(pat, val),
+            }
+        }
+        (1, len_val) => {
+            let mut pat = get_pat(pat)?.to_string();
+            if len_val != ca.len() {
+                return Err(PolarsError::ComputeError(format!("The replacement value expression in 'str.replace' should be equal to the length of the string column.\
+                Got column length: {} and replacement value length: {}", ca.len(), len_val).into()))
+            }
+
+            if literal {
+                pat = escape(&pat)
+            }
+
+            let reg = Regex::new(&pat)?;
+
+            let f = |s: &'a str, val: &'a str| {
+                reg.replace_all(s, val)
+            };
+            Ok(iter_and_replace(ca, val, f))
+        }
+        _ => Err(PolarsError::ComputeError("A dynamic pattern length in the 'str.replace' expressions are not yet supported. Consider open a feature request for this.".into()))
+    }
+}
+
+#[cfg(feature = "regex")]
+pub(super) fn replace(s: &[Series], literal: bool, all: bool) -> Result<Series> {
+    let column = &s[0];
+    let pat = &s[1];
+    let val = &s[2];
+
+    let column = column.utf8()?;
+    let pat = pat.utf8()?;
+    let val = val.utf8()?;
+
+    if all {
+        replace_all(column, pat, val, literal)
+    } else {
+        replace_single(column, pat, val, literal)
+    }
+    .map(|ca| ca.into_series())
 }
