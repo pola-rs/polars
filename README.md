@@ -94,7 +94,26 @@ See the results in [h2oai's db-benchmark](https://h2oai.github.io/db-benchmark/)
 Install the latest polars version with:
 
 ```
+# Install Polars only.
+$ pip3 install -U 'polars'
+
+# Install Polars and numpy.
+$ pip3 install -U 'polars[numpy]'
+
+# Install Polars and pyarrow/pandas/numpy to be able to convert to/from pandas and/or read data with pyarrow.
 $ pip3 install -U 'polars[pyarrow]'
+
+# Install Polars and pyarrow/pandas/numpy and fsspec (read from e.g. remote filesystems, compressed files).
+$ pip3 install -U 'polars[pyarrow,fsspec]'
+
+# Install Polars and connectorx (read data from SQL databases).
+$ pip3 install -U 'polars[connectorx]'
+
+# Install Polars and xlsx2csv (read data from Excel).
+$ pip3 install -U 'polars[xlsx2csv]'
+
+# Install Polars and pytz (for timezone support).
+$ pip3 install -U 'polars[pytz]'
 ```
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.
@@ -135,6 +154,7 @@ Want to know about all the features Polars supports? Read the docs!
   * Installation guide: `$ yarn add nodejs-polars`
   * [Node documentation](https://pola-rs.github.io/polars/nodejs-polars/html/index.html)
   * [User guide](https://pola-rs.github.io/polars-book/)
+  * [Github](https://github.com/pola-rs/nodejs-polars)
 
 
 ## Contribution
