@@ -23,7 +23,7 @@ The Python bindings of `polars` have their own changelog.
 * bug fix
   - Categorical type append
   - fix serde
-  - csv decompression 33f69fe33e70cbeffda04ea218df525bcf6fce8a 
+  - csv decompression 33f69fe33e70cbeffda04ea218df525bcf6fce8a
   - fix O^2 pivot.count
   - improve type-casting optimizer
   - fix agg_quantile
@@ -108,7 +108,7 @@ The Python bindings of `polars` have their own changelog.
 * performance
   - Vast reduction of compile times by making compilation dtypes of Series opt-in.
   - Fast multi-threaded csv parser. Fixes multiple gripes of old parser.
-  
+
 * features
   - Series / ChunkedArray implementations
     * Series::week
@@ -118,7 +118,7 @@ The Python bindings of `polars` have their own changelog.
 
 * breaking
   - ChunkedArray::arg_unique return UInt32Chunked instead of Vec<u32>
-  
+
 * bug fixes
   - various
 

@@ -19,10 +19,10 @@ jobs:
           components: rustfmt, clippy
       - name: Set up Node
         uses: actions/setup-node@v2
-        with: 
+        with:
           node-version: 16
       - name: Build node reference
-        run: | 
+        run: |
           cd nodejs-polars
           npm install
           npx typedoc

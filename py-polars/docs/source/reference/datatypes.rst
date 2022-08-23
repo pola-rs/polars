@@ -6,7 +6,7 @@ Data Types
 .. autosummary::
     :toctree: api/
     :nosignatures:
-    
+
     DataType
 
 Numeric
