@@ -6,7 +6,7 @@ Exceptions
 .. autosummary::
     :toctree: api/
     :nosignatures:
-    
+
     ArrowError
     ComputeError
     DuplicateError

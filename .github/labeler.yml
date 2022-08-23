@@ -1,6 +1,6 @@
 python:
   - py-polars/**/*
-node-js: 
+node-js:
   - nodejs-polars/**/*
-rust: 
+rust:
   - polars/**/*
