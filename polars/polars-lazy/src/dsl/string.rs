@@ -283,8 +283,8 @@ impl StringNameSpace {
     }
 
     #[cfg(feature = "dtype-struct")]
-    /// Split exactly `n` times by a given substring, keeping the remainder of the string
-    /// intact even if there are more possible splits. The resulting dtype is [`DataType::Struct`].
+    /// Split by a given substring, returning exactly `n` items. If there are more possible splits,
+    /// keeps the remainder of the string intact. The resulting dtype is [`DataType::Struct`].
     pub fn splitn(self, by: &str, n: usize) -> Expr {
         let by = by.to_string();
 
