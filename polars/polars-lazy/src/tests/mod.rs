@@ -52,11 +52,11 @@ static FOODS_IPC: &str = "../../examples/datasets/foods1.ipc";
 static FOODS_PARQUET: &str = "../../examples/datasets/foods1.parquet";
 
 fn scan_foods_csv() -> LazyFrame {
-    LazyCsvReader::new(FOODS_CSV.to_string()).finish().unwrap()
+    LazyCsvReader::new(FOODS_CSV).finish().unwrap()
 }
 
 fn scan_foods_ipc() -> LazyFrame {
-    LazyFrame::scan_ipc(FOODS_IPC.to_string(), Default::default()).unwrap()
+    LazyFrame::scan_ipc(FOODS_IPC, Default::default()).unwrap()
 }
 
 fn init_files() {
@@ -89,7 +89,7 @@ fn init_files() {
 #[cfg(feature = "parquet")]
 fn scan_foods_parquet(parallel: bool) -> LazyFrame {
     init_files();
-    let out_path = FOODS_PARQUET.to_string();
+    let out_path = FOODS_PARQUET;
     let parallel = if parallel {
         ParallelStrategy::Auto
     } else {

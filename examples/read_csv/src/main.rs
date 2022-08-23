@@ -1,7 +1,7 @@
 use polars::prelude::*;
 
 fn main() -> Result<()> {
-    let mut df = LazyCsvReader::new("../datasets/foods1.csv".into())
+    let mut df = LazyCsvReader::new("../datasets/foods1.csv")
         .finish()?
         .select([
             // select all columns

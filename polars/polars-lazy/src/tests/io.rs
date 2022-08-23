@@ -150,7 +150,7 @@ fn test_parquet_globbing() -> Result<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     let glob = "../../examples/datasets/*.parquet";
     let df = LazyFrame::scan_parquet(
-        glob.into(),
+        glob,
         ScanArgsParquet {
             n_rows: None,
             cache: true,
@@ -174,7 +174,7 @@ fn test_ipc_globbing() -> Result<()> {
     init_files();
     let glob = "../../examples/datasets/*.ipc";
     let df = LazyFrame::scan_ipc(
-        glob.into(),
+        glob,
         ScanArgsIpc {
             n_rows: None,
             cache: true,
@@ -206,7 +206,7 @@ fn slice_at_union(lp_arena: &Arena<ALogicalPlan>, lp: Node) -> bool {
 #[cfg(not(target_os = "windows"))]
 fn test_csv_globbing() -> Result<()> {
     let glob = "../../examples/datasets/*.csv";
-    let full_df = LazyCsvReader::new(glob.into()).finish()?.collect()?;
+    let full_df = LazyCsvReader::new(glob).finish()?.collect()?;
 
     // all 5 files * 27 rows
     assert_eq!(full_df.shape(), (135, 4));
@@ -215,14 +215,11 @@ fn test_csv_globbing() -> Result<()> {
     assert_eq!(cal.get(53), AnyValue::Int64(194));
 
     let glob = "../../examples/datasets/*.csv";
-    let lf = LazyCsvReader::new(glob.into()).finish()?.slice(0, 100);
+    let lf = LazyCsvReader::new(glob).finish()?.slice(0, 100);
 
     let df = lf.clone().collect()?;
     assert_eq!(df.shape(), (100, 4));
-    let df = LazyCsvReader::new(glob.into())
-        .finish()?
-        .slice(20, 60)
-        .collect()?;
+    let df = LazyCsvReader::new(glob).finish()?.slice(20, 60).collect()?;
     assert!(full_df.slice(20, 60).frame_equal(&df));
 
     let mut expr_arena = Arena::with_capacity(16);
@@ -230,7 +227,7 @@ fn test_csv_globbing() -> Result<()> {
     let node = lf.clone().optimize(&mut lp_arena, &mut expr_arena)?;
     assert!(slice_at_union(&mut lp_arena, node));
 
-    let lf = LazyCsvReader::new(glob.into())
+    let lf = LazyCsvReader::new(glob)
         .finish()?
         .filter(col("sugars_g").lt(lit(1i32)))
         .slice(0, 100);
@@ -254,9 +251,9 @@ fn test_union_and_agg_projections() -> Result<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     // a union vstacks columns and aggscan optimization determines columns to aggregate in a
     // hashmap, if that doesn't set them sorted the vstack will panic.
-    let lf1 = LazyFrame::scan_parquet(GLOB_PARQUET.into(), Default::default())?;
-    let lf2 = LazyFrame::scan_ipc(GLOB_IPC.into(), Default::default())?;
-    let lf3 = LazyCsvReader::new(GLOB_CSV.into()).finish()?;
+    let lf1 = LazyFrame::scan_parquet(GLOB_PARQUET, Default::default())?;
+    let lf2 = LazyFrame::scan_ipc(GLOB_IPC, Default::default())?;
+    let lf3 = LazyCsvReader::new(GLOB_CSV).finish()?;
 
     for lf in [lf1, lf2, lf3] {
         let lf = lf.filter(col("category").eq(lit("vegetables"))).select([
@@ -323,7 +320,7 @@ fn test_slice_filter() -> Result<()> {
 
 #[test]
 fn skip_rows_and_slice() -> Result<()> {
-    let out = LazyCsvReader::new(FOODS_CSV.to_string())
+    let out = LazyCsvReader::new(FOODS_CSV)
         .with_skip_rows(4)
         .finish()?
         .limit(1)
@@ -337,7 +334,7 @@ fn skip_rows_and_slice() -> Result<()> {
 fn test_row_count_on_files() -> Result<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     for offset in [0 as IdxSize, 10] {
-        let lf = LazyCsvReader::new(FOODS_CSV.to_string())
+        let lf = LazyCsvReader::new(FOODS_CSV)
             .with_row_count(Some(RowCount {
                 name: "rc".into(),
                 offset,
@@ -352,7 +349,7 @@ fn test_row_count_on_files() -> Result<()> {
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
-        let lf = LazyFrame::scan_parquet(FOODS_PARQUET.to_string(), Default::default())?
+        let lf = LazyFrame::scan_parquet(FOODS_PARQUET, Default::default())?
             .with_row_count("rc", Some(offset));
         assert!(row_count_at_scan(lf.clone()));
         let df = lf.collect()?;
@@ -362,8 +359,8 @@ fn test_row_count_on_files() -> Result<()> {
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
-        let lf = LazyFrame::scan_ipc(FOODS_IPC.to_string(), Default::default())?
-            .with_row_count("rc", Some(offset));
+        let lf =
+            LazyFrame::scan_ipc(FOODS_IPC, Default::default())?.with_row_count("rc", Some(offset));
 
         assert!(row_count_at_scan(lf.clone()));
         let df = lf.clone().collect()?;
@@ -386,7 +383,7 @@ fn test_row_count_on_files() -> Result<()> {
 
 #[test]
 fn scan_predicate_on_set_null_values() -> Result<()> {
-    let df = LazyCsvReader::new(FOODS_CSV.into())
+    let df = LazyCsvReader::new(FOODS_CSV)
         .with_null_values(Some(NullValues::Named(vec![("fats_g".into(), "0".into())])))
         .with_infer_schema_length(Some(0))
         .finish()?
