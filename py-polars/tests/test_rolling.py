@@ -259,3 +259,51 @@ def test_rolling_groupby_extrema() -> None:
         "col1_min": [3, 3, 3, 4, 2, 1, 0],
         "col1_max": [3, 4, 5, 6, 6, 6, 2],
     }
+
+
+def test_rolling_slice_pushdown() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "a", "b"], "c": [1, 3, 5]}).lazy()
+    df = (
+        df.sort("a")
+        .groupby_rolling(
+            "a",
+            by="b",
+            period="2i",
+        )
+        .agg(
+            [
+                (pl.col("c") - pl.col("c").shift_and_fill(1, fill_value=0))
+                .sum()
+                .alias("c")
+            ]
+        )
+    )
+    assert df.head(2).collect().to_dict(False) == {
+        "b": ["a", "a"],
+        "a": [1, 2],
+        "c": [1, 3],
+    }
+
+
+def test_groupby_dynamic_slice_pushdown() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "a", "b"], "c": [1, 3, 5]}).lazy()
+    df = (
+        df.sort("a")
+        .groupby_dynamic(
+            "a",
+            by="b",
+            every="2i",
+        )
+        .agg(
+            [
+                (pl.col("c") - pl.col("c").shift_and_fill(1, fill_value=0))
+                .sum()
+                .alias("c")
+            ]
+        )
+    )
+    assert df.head(2).collect().to_dict(False) == {
+        "b": ["a", "a"],
+        "a": [0, 2],
+        "c": [1, 3],
+    }

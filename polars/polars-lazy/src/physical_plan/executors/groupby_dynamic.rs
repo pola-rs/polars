@@ -35,7 +35,7 @@ impl Executor for GroupByDynamicExec {
             .map(|e| e.evaluate(&df, state))
             .collect::<Result<Vec<_>>>()?;
 
-        let (time_key, keys, groups) = df.groupby_dynamic(keys, &self.options)?;
+        let (mut time_key, mut keys, groups) = df.groupby_dynamic(keys, &self.options)?;
 
         let mut groups = &groups;
         #[allow(unused_assignments)]
@@ -45,6 +45,14 @@ impl Executor for GroupByDynamicExec {
         if let Some((offset, len)) = self.slice {
             sliced_groups = Some(groups.slice(offset, len));
             groups = sliced_groups.as_deref().unwrap();
+
+            time_key = time_key.slice(offset, len);
+
+            // todo! optimize this, we can prevent an agg_first aggregation upstream
+            // the ordering has changed due to the groupby
+            for key in keys.iter_mut() {
+                *key = key.slice(offset, len)
+            }
         }
 
         let agg_columns = POOL.install(|| {

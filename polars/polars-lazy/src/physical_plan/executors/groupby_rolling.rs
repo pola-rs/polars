@@ -34,7 +34,7 @@ impl Executor for GroupByRollingExec {
             .map(|e| e.evaluate(&df, state))
             .collect::<Result<Vec<_>>>()?;
 
-        let (time_key, keys, groups) = df.groupby_rolling(keys, &self.options)?;
+        let (mut time_key, mut keys, groups) = df.groupby_rolling(keys, &self.options)?;
 
         let mut groups = &groups;
         #[allow(unused_assignments)]
@@ -44,7 +44,18 @@ impl Executor for GroupByRollingExec {
         if let Some((offset, len)) = self.slice {
             sliced_groups = Some(groups.slice(offset, len));
             groups = sliced_groups.as_deref().unwrap();
+
+            time_key = time_key.slice(offset, len);
         }
+
+        // the ordering has changed due to the groupby
+        if !keys.is_empty() {
+            unsafe {
+                for key in keys.iter_mut() {
+                    *key = key.agg_first(groups);
+                }
+            }
+        };
 
         let agg_columns = POOL.install(|| {
                     self.aggs

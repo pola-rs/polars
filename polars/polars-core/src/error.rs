@@ -1,9 +1,43 @@
-use std::borrow::Cow;
+use std::fmt::{Display, Formatter};
 
 use anyhow::Error;
 use thiserror::Error as ThisError;
 
-type ErrString = Cow<'static, str>;
+#[derive(Debug)]
+pub enum ErrString {
+    Owned(String),
+    Borrowed(&'static str),
+}
+
+impl From<&'static str> for ErrString {
+    fn from(msg: &'static str) -> Self {
+        if std::env::var("POLARS_PANIC_ON_ERR").is_ok() {
+            panic!("{}", msg)
+        } else {
+            ErrString::Borrowed(msg)
+        }
+    }
+}
+
+impl From<String> for ErrString {
+    fn from(msg: String) -> Self {
+        if std::env::var("POLARS_PANIC_ON_ERR").is_ok() {
+            panic!("{}", msg)
+        } else {
+            ErrString::Owned(msg)
+        }
+    }
+}
+
+impl Display for ErrString {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let msg = match self {
+            ErrString::Owned(msg) => msg.as_str(),
+            ErrString::Borrowed(msg) => msg,
+        };
+        write!(f, "{}", msg)
+    }
+}
 
 #[derive(Debug, ThisError)]
 pub enum PolarsError {

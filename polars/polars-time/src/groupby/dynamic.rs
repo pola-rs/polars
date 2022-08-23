@@ -327,7 +327,7 @@ impl Wrap<&DataFrame> {
     fn impl_groupby_rolling(
         &self,
         dt: Series,
-        mut by: Vec<Series>,
+        by: Vec<Series>,
         options: &RollingGroupOptions,
         tu: TimeUnit,
         time_type: &DataType,
@@ -385,15 +385,6 @@ impl Wrap<&DataFrame> {
             GroupsProxy::Idx(groupsidx)
         };
         let dt = dt.cast(time_type).unwrap();
-
-        // // the ordering has changed due to the groupby
-        if !by.is_empty() {
-            unsafe {
-                for key in by.iter_mut() {
-                    *key = key.agg_first(&groups);
-                }
-            }
-        };
 
         Ok((dt, by, groups))
     }
