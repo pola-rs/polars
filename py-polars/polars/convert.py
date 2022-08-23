@@ -34,7 +34,8 @@ def from_dict(
     columns: Sequence[str] | None = None,
 ) -> DataFrame:
     """
-    Construct a DataFrame from a dictionary of sequences.
+    Construct a DataFrame from a dictionary of sequences. This operation clones data,
+    unless you pass in a `dict[str, pl.Series]`.
 
     Parameters
     ----------
@@ -73,7 +74,7 @@ def from_dicts(
     dicts: Sequence[dict[str, Any]], infer_schema_length: int | None = 50
 ) -> DataFrame:
     """
-    Construct a DataFrame from a sequence of dictionaries.
+    Construct a DataFrame from a sequence of dictionaries. This operation clones data.
 
     Parameters
     ----------
@@ -116,7 +117,7 @@ def from_records(
     infer_schema_length: int | None = 50,
 ) -> DataFrame:
     """
-    Construct a DataFrame from a sequence of sequences.
+    Construct a DataFrame from a sequence of sequences. This operation clones data.
 
     Note that this is slower than creating from columnar memory.
 
@@ -169,7 +170,7 @@ def from_numpy(
     orient: Orientation | None = None,
 ) -> DataFrame:
     """
-    Construct a DataFrame from a numpy ndarray.
+    Construct a DataFrame from a numpy ndarray. This operation clones data.
 
     Note that this is slower than creating from columnar memory.
 
@@ -317,6 +318,7 @@ def from_pandas(
 ) -> DataFrame | Series:
     """
     Construct a Polars DataFrame or Series from a pandas DataFrame or Series.
+    This operation clones data.
 
     This requires that pandas and pyarrow are installed.
 
