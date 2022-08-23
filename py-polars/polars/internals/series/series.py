@@ -708,7 +708,6 @@ class Series:
 
     def log(self, base: float = math.e) -> Series:
         """Compute the logarithm to a given base."""
-        return self.to_frame().select(pli.col(self.name).log(base)).to_series()
 
     def log10(self) -> Series:
         """Compute the base 10 logarithm of the input array, element-wise."""
@@ -716,7 +715,6 @@ class Series:
 
     def exp(self) -> Series:
         """Compute the exponential, element-wise."""
-        return self.to_frame().select(pli.col(self.name).exp()).to_series()
 
     def drop_nulls(self) -> Series:
         """Create a new Series that copies data from this Series without null values."""
@@ -4102,15 +4100,6 @@ class Series:
             (otherwise result is null).
 
         """
-        return (
-            self.to_frame()
-            .select(
-                pli.col(self.name).ewm_mean(
-                    com, span, half_life, alpha, adjust, min_periods
-                )
-            )
-            .to_series()
-        )
 
     def ewm_std(
         self,
@@ -4161,15 +4150,6 @@ class Series:
             (otherwise result is null).
 
         """
-        return (
-            self.to_frame()
-            .select(
-                pli.col(self.name).ewm_std(
-                    com, span, half_life, alpha, adjust, min_periods
-                )
-            )
-            .to_series()
-        )
 
     def ewm_var(
         self,
@@ -4220,15 +4200,6 @@ class Series:
             (otherwise result is null).
 
         """
-        return (
-            self.to_frame()
-            .select(
-                pli.col(self.name).ewm_var(
-                    com, span, half_life, alpha, adjust, min_periods
-                )
-            )
-            .to_series()
-        )
 
     def extend_constant(self, value: int | float | str | bool | None, n: int) -> Series:
         """
