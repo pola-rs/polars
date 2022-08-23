@@ -45,6 +45,18 @@ pub enum StringFunction {
         all: bool,
         literal: bool,
     },
+    Uppercase,
+    Lowercase,
+}
+
+pub(super) fn uppercase(s: &Series) -> Result<Series> {
+    let ca = s.utf8()?;
+    Ok(ca.to_uppercase().into_series())
+}
+
+pub(super) fn lowercase(s: &Series) -> Result<Series> {
+    let ca = s.utf8()?;
+    Ok(ca.to_lowercase().into_series())
 }
 
 pub(super) fn contains(s: &Series, pat: &str, literal: bool) -> Result<Series> {

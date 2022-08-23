@@ -308,4 +308,20 @@ impl StringNameSpace {
             true,
         )
     }
+
+    /// Convert all characters to lowercase.
+    pub fn to_lowercase(self) -> Expr {
+        self.0.map_private(
+            FunctionExpr::StringExpr(StringFunction::Lowercase),
+            "str.lowercase",
+        )
+    }
+
+    /// Convert all characters to uppercase.
+    pub fn to_uppercase(self) -> Expr {
+        self.0.map_private(
+            FunctionExpr::StringExpr(StringFunction::Uppercase),
+            "str.uppercase",
+        )
+    }
 }

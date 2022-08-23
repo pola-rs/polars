@@ -366,3 +366,14 @@ def test_query_4438() -> None:
         4,
         3,
     ]
+
+
+def test_query_4538() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("value", ["aaa", "bbb"]),
+        ]
+    )
+    assert df.select([pl.col("value").str.to_uppercase().is_in(["AAA"])])[
+        "value"
+    ].to_list() == [True, False]
