@@ -154,6 +154,7 @@ impl FunctionExpr {
                     Concat(_) => with_dtype(DataType::Utf8),
                     #[cfg(feature = "regex")]
                     Replace { .. } => with_dtype(DataType::Utf8),
+                    Uppercase | Lowercase => with_dtype(DataType::Utf8),
                 }
             }
 
@@ -355,6 +356,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Concat(delimiter) => map_with_args!(strings::concat, &delimiter),
             #[cfg(feature = "regex")]
             Replace { all, literal } => map_as_slice!(strings::replace, literal, all),
+            Uppercase => map_without_args!(strings::uppercase),
+            Lowercase => map_without_args!(strings::lowercase),
         }
     }
 }

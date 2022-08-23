@@ -565,18 +565,6 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_to_uppercase(&self) -> PyExpr {
-        let function = |s: Series| {
-            let ca = s.utf8()?;
-            Ok(ca.to_uppercase().into_series())
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("str.to_uppercase")
-            .into()
-    }
-
     pub fn str_slice(&self, start: i64, length: Option<u64>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
@@ -589,16 +577,12 @@ impl PyExpr {
             .into()
     }
 
+    pub fn str_to_uppercase(&self) -> PyExpr {
+        self.inner.clone().str().to_uppercase().into()
+    }
+
     pub fn str_to_lowercase(&self) -> PyExpr {
-        let function = |s: Series| {
-            let ca = s.utf8()?;
-            Ok(ca.to_lowercase().into_series())
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("str.to_lowercase")
-            .into()
+        self.inner.clone().str().to_lowercase().into()
     }
 
     pub fn str_lengths(&self) -> PyExpr {
