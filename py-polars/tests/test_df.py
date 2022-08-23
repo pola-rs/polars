@@ -2078,3 +2078,83 @@ def test_filter_sequence() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     assert df.filter([True, False, True])["a"].to_list() == [1, 3]
     assert df.filter(np.array([True, False, True]))["a"].to_list() == [1, 3]
+
+
+def test_indexing_set() -> None:
+    df = pl.DataFrame({"bool": [True, True], "str": ["N/A", "N/A"], "nr": [1, 2]})
+
+    df[0, "bool"] = False
+    df[0, "nr"] = 100
+    df[0, "str"] = "foo"
+
+    assert df.to_dict(False) == {
+        "bool": [False, True],
+        "str": ["foo", "N/A"],
+        "nr": [100, 2],
+    }
+
+
+def test_set() -> None:
+    """
+    Setting a dataframe using indices is deprecated. We keep these tests because we
+    only generate a warning
+    """
+    np.random.seed(1)
+    df = pl.DataFrame(
+        {"foo": np.random.rand(10), "bar": np.arange(10), "ham": ["h"] * 10}
+    )
+    with pytest.raises(
+        TypeError,
+        match=r"'DataFrame' object does not support "
+        r"'Series' assignment by index. Use "
+        r"'DataFrame.with_columns'",
+    ):
+        df["new"] = np.random.rand(10)
+
+    with pytest.raises(
+        ValueError,
+        match=r"Not allowed to set 'DataFrame' by "
+        r"boolean mask in the row position. "
+        r"Consider using 'DataFrame.with_columns'",
+    ):
+        df[df["ham"] > 0.5, "ham"] = "a"
+    with pytest.raises(
+        ValueError,
+        match=r"Not allowed to set 'DataFrame' by "
+        r"boolean mask in the row position. "
+        r"Consider using 'DataFrame.with_columns'",
+    ):
+        df[[True, False], "ham"] = "a"
+
+    # set 2D
+    df = pl.DataFrame({"b": [0, 0]})
+    df[["A", "B"]] = [[1, 2], [1, 2]]
+
+    with pytest.raises(ValueError):
+        df[["C", "D"]] = 1
+    with pytest.raises(ValueError):
+        df[["C", "D"]] = [1, 1]
+    with pytest.raises(ValueError):
+        df[["C", "D"]] = [[1, 2, 3], [1, 2, 3]]
+
+    # set tuple
+    df = pl.DataFrame({"b": [0, 0]})
+    df[0, "b"] = 1
+    assert df[0, "b"] == 1
+
+    df[0, 0] = 2
+    assert df[0, "b"] == 2
+
+    # row and col selection have to be int or str
+    with pytest.raises(ValueError):
+        df[:, [1]] = 1  # type: ignore[index]
+    with pytest.raises(ValueError):
+        df[True, :] = 1  # type: ignore[index]
+
+    # needs to be a 2 element tuple
+    with pytest.raises(ValueError):
+        df[(1, 2, 3)] = 1  # type: ignore[index]
+
+    # we cannot index with any type, such as bool
+    with pytest.raises(ValueError):
+        df[True] = 1  # type: ignore[index]
