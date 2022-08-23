@@ -67,7 +67,9 @@ body:
       value: >
         <details>
 
+
         Replace this line with the output of pl.show_versions()
+
 
         </details>
     validations:
