@@ -22,22 +22,6 @@ use crate::prelude::sort::argsort_multiple::{args_validate, argsort_multiple_imp
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
 
-#[inline]
-fn sort_cmp<T: PartialOrd + IsFloat>(a: &T, b: &T) -> Ordering {
-    if T::is_float() {
-        match (a.is_nan(), b.is_nan()) {
-            // safety: we checked nans
-            (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
-            (true, true) => Ordering::Equal,
-            (true, false) => Ordering::Greater,
-            (false, true) => Ordering::Less,
-        }
-    } else {
-        // no floats, so we can compare unchecked
-        unsafe { a.partial_cmp(b).unwrap_unchecked() }
-    }
-}
-
 /// Reverse sorting when there are no nulls
 fn order_reverse<T: Ord>(a: &T, b: &T) -> Ordering {
     b.cmp(a)

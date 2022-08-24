@@ -579,6 +579,14 @@ impl Expr {
         }
     }
 
+    /// Returns the `k` largest elements.
+    ///
+    /// This has time complexity `O(n + k log(n))`.
+    #[cfg(feature = "top_k")]
+    pub fn top_k(self, k: usize, reverse: bool) -> Self {
+        self.apply_private(FunctionExpr::TopK { k, reverse }, "top_k")
+    }
+
     /// Reverse column
     pub fn reverse(self) -> Self {
         Expr::Reverse(Box::new(self))

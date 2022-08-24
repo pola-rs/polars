@@ -219,6 +219,12 @@ impl PyExpr {
             })
             .into()
     }
+
+    #[cfg(feature = "top_k")]
+    pub fn top_k(&self, k: usize, reverse: bool) -> PyExpr {
+        self.inner.clone().top_k(k, reverse).into()
+    }
+
     pub fn arg_max(&self) -> PyExpr {
         self.clone().inner.arg_max().into()
     }

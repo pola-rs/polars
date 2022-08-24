@@ -1571,6 +1571,25 @@ class Series:
         else:
             return wrap_s(self._s.sort(reverse))
 
+    def top_k(self, k: int = 5, reverse: bool = False) -> Series:
+        r"""
+        Return the `k` largest elements.
+
+        If 'reverse=True` the smallest elements will be given.
+
+        This has time complexity:
+
+        .. math:: O(n + k \\log{}n - \frac{k}{2})
+
+        Parameters
+        ----------
+        k
+            Number of elements to return.
+        reverse
+            Return the smallest elements.
+
+        """
+
     def arg_sort(self, reverse: bool = False, nulls_last: bool = False) -> Series:
         """
         Get the index values that would sort this Series.
