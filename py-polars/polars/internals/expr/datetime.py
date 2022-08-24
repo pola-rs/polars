@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import sys
 from datetime import timedelta
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
 import polars.internals as pli
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int32
@@ -9,6 +10,11 @@ from polars.utils import _timedelta_to_pl_duration
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import EpochTimeUnit, TimeUnit
+
+    if sys.version_info >= (3, 8):
+        from typing import Final
+    else:
+        from typing_extensions import Final
 
 
 class ExprDateTimeNameSpace:

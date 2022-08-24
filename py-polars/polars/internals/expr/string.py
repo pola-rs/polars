@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+import sys
+from typing import TYPE_CHECKING
 
 import polars.internals as pli
 from polars.datatypes import DataType, Date, Datetime, Time
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TransferEncoding
+
+    if sys.version_info >= (3, 8):
+        from typing import Final
+    else:
+        from typing_extensions import Final
 
 
 class ExprStringNameSpace:

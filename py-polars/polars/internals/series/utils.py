@@ -19,7 +19,6 @@ if TYPE_CHECKING:
     T = TypeVar("T")
     P = ParamSpec("P")
     SeriesMethod = Callable[..., pli.Series]
-    ExprLookup = set[tuple[str | None, str, tuple[str, ...]]]
 
 
 def _empty_() -> None:
@@ -34,7 +33,7 @@ def _is_empty_method(func: SeriesMethod) -> bool:
     )
 
 
-def _expr_lookup(namespace: str | None) -> ExprLookup:
+def _expr_lookup(namespace: str | None) -> set[tuple[str | None, str, tuple[str, ...]]]:
     """Create lookup of potential Expr methods (in the same namespace)"""
     expr = pli.Expr()
     expr._pyexpr = None

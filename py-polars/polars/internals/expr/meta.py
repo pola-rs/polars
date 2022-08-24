@@ -1,8 +1,15 @@
 from __future__ import annotations
 
-from typing import Final
+import sys
+from typing import TYPE_CHECKING
 
 import polars.internals as pli
+
+if TYPE_CHECKING:
+    if sys.version_info >= (3, 8):
+        from typing import Final
+    else:
+        from typing_extensions import Final
 
 
 class ExprMetaNameSpace:
