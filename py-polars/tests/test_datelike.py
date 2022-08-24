@@ -1319,3 +1319,14 @@ def test_shift_and_fill_group_logicals() -> None:
     assert df.select(
         pl.col("d").shift_and_fill(-1, pl.col("d").max()).over("s")
     ).dtypes == [pl.Date]
+
+
+def test_date_arr_concat() -> None:
+    expected = {"d": [[date(2000, 1, 1), date(2000, 1, 1)]]}
+
+    # type date
+    df = pl.DataFrame({"d": [date(2000, 1, 1)]})
+    assert df.select(pl.col("d").arr.concat(pl.col("d"))).to_dict(False) == expected
+    # type list[date]
+    df = pl.DataFrame({"d": [[date(2000, 1, 1)]]})
+    assert df.select(pl.col("d").arr.concat(pl.col("d"))).to_dict(False) == expected

@@ -5,7 +5,7 @@ mod clip;
 mod fill_null;
 #[cfg(feature = "is_in")]
 mod is_in;
-#[cfg(feature = "is_in")]
+#[cfg(any(feature = "is_in", feature = "list"))]
 mod list;
 mod nan;
 mod pow;
@@ -25,6 +25,8 @@ mod temporal;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
 
+#[cfg(feature = "list")]
+pub(super) use list::ListFunction;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -75,6 +77,8 @@ pub enum FunctionExpr {
         min: Option<AnyValue<'static>>,
         max: Option<AnyValue<'static>>,
     },
+    #[cfg(feature = "list")]
+    ListExpr(ListFunction),
 }
 
 #[cfg(feature = "trigonometry")]
@@ -102,12 +106,27 @@ impl FunctionExpr {
         _cntxt: Context,
         fields: &[Field],
     ) -> Result<Field> {
+        // set a dtype
         let with_dtype = |dtype: DataType| Ok(Field::new(fields[0].name(), dtype));
+
+        // map a single dtype
         let map_dtype = |func: &dyn Fn(&DataType) -> DataType| {
             let dtype = func(fields[0].data_type());
             Ok(Field::new(fields[0].name(), dtype))
         };
+
+        // map all dtypes
+        #[cfg(feature = "list")]
+        let map_dtypes = |func: &dyn Fn(&[&DataType]) -> DataType| {
+            let mut fld = fields[0].clone();
+            let dtypes = fields.iter().map(|fld| fld.data_type()).collect::<Vec<_>>();
+            let new_type = func(&dtypes);
+            fld.coerce(new_type);
+            Ok(fld)
+        };
+
         #[cfg(any(feature = "rolling_window", feature = "trigonometry"))]
+        // set float supertype
         let float_dtype = || {
             map_dtype(&|dtype| match dtype {
                 DataType::Float32 => DataType::Float32,
@@ -115,7 +134,10 @@ impl FunctionExpr {
             })
         };
 
+        // map to same type
         let same_type = || map_dtype(&|dtype| dtype.clone());
+
+        // get supertype of all types
         let super_type = || {
             let mut first = fields[0].clone();
             let mut st = first.data_type().clone();
@@ -124,6 +146,30 @@ impl FunctionExpr {
             }
             first.coerce(st);
             Ok(first)
+        };
+
+        // inner super type of lists
+        #[cfg(feature = "list")]
+        let inner_super_type_list = || {
+            map_dtypes(&|dts| {
+                let mut super_type_inner = None;
+
+                for dt in dts {
+                    match dt {
+                        DataType::List(inner) => match super_type_inner {
+                            None => super_type_inner = Some(*inner.clone()),
+                            Some(st_inner) => {
+                                super_type_inner = get_supertype(&st_inner, inner).ok()
+                            }
+                        },
+                        dt => match super_type_inner {
+                            None => super_type_inner = Some((*dt).clone()),
+                            Some(st_inner) => super_type_inner = get_supertype(&st_inner, dt).ok(),
+                        },
+                    }
+                }
+                DataType::List(Box::new(super_type_inner.unwrap()))
+            })
         };
 
         use FunctionExpr::*;
@@ -173,6 +219,13 @@ impl FunctionExpr {
             Nan(n) => n.get_field(fields),
             #[cfg(feature = "round_series")]
             Clip { .. } => same_type(),
+            #[cfg(feature = "list")]
+            ListExpr(l) => {
+                use ListFunction::*;
+                match l {
+                    Concat => inner_super_type_list(),
+                }
+            }
         }
     }
 }
@@ -308,6 +361,13 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "round_series")]
             Clip { min, max } => {
                 map_owned!(clip::clip, min.clone(), max.clone())
+            }
+            #[cfg(feature = "list")]
+            ListExpr(lf) => {
+                use ListFunction::*;
+                match lf {
+                    Concat => wrap!(list::concat),
+                }
             }
         }
     }

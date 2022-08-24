@@ -610,7 +610,7 @@ impl ListChunked {
     }
 
     pub(crate) fn with_inner_type(&mut self, dtype: DataType) {
-        assert_eq!(dtype.to_physical(), self.inner_dtype());
+        debug_assert_eq!(dtype.to_physical(), self.inner_dtype().to_physical());
         let field = Arc::make_mut(&mut self.field);
         field.coerce(DataType::List(Box::new(dtype)));
     }
