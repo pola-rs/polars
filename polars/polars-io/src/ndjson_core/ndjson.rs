@@ -178,7 +178,14 @@ impl<'a> CoreJsonReader<'a> {
         let mut bytes = bytes;
         let mut total_rows = 128;
 
-        if let Some((mean, std)) = get_line_stats(bytes, self.sample_size, NEWLINE) {
+        if let Some((mean, std)) = get_line_stats(
+            bytes,
+            self.sample_size,
+            NEWLINE,
+            self.schema.len(),
+            b',',
+            None,
+        ) {
             let line_length_upper_bound = mean + 1.1 * std;
 
             total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;

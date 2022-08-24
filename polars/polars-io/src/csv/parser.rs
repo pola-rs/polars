@@ -148,33 +148,49 @@ pub(crate) fn skip_line_ending(input: &[u8], eol_char: u8) -> &[u8] {
 }
 
 /// Get the mean and standard deviation of length of lines in bytes
-pub(crate) fn get_line_stats(bytes: &[u8], n_lines: usize, eol_char: u8) -> Option<(f32, f32)> {
-    let mut n_read = 0;
+pub(crate) fn get_line_stats(
+    bytes: &[u8],
+    n_lines: usize,
+    eol_char: u8,
+    expected_fields: usize,
+    delimiter: u8,
+    quote_char: Option<u8>,
+) -> Option<(f32, f32)> {
     let mut lengths = Vec::with_capacity(n_lines);
-    let file_len = bytes.len();
-    let mut bytes_trunc;
 
-    for _ in 0..n_lines {
-        if n_read >= file_len {
-            return None;
-        }
-        bytes_trunc = &bytes[n_read..];
-        match memchr::memchr(eol_char, bytes_trunc) {
-            Some(position) => {
-                n_read += position + 1;
-                lengths.push(position + 1);
-            }
-            None => {
-                return None;
-            }
+    let mut bytes_trunc;
+    let n_lines_per_iter = n_lines / 2;
+
+    let mut n_read = 0;
+
+    // sample from start and 75% in the file
+    for offset in [0, (bytes.len() as f32 * 0.75) as usize] {
+        bytes_trunc = &bytes[offset..];
+        let pos = next_line_position(
+            bytes_trunc,
+            expected_fields,
+            delimiter,
+            quote_char,
+            eol_char,
+        )?;
+        bytes_trunc = &bytes_trunc[pos + 1..];
+
+        for _ in offset..(offset + n_lines_per_iter) {
+            let pos = next_line_position_naive(bytes_trunc, eol_char)? + 1;
+            n_read += pos;
+            lengths.push(pos);
+            bytes_trunc = &bytes_trunc[pos..];
         }
     }
-    let mean = (n_read as f32) / (n_lines as f32);
+
+    let n_samples = lengths.len();
+
+    let mean = (n_read as f32) / (n_samples as f32);
     let mut std = 0.0;
-    for &len in lengths.iter().take(n_lines) {
+    for &len in lengths.iter() {
         std += (len as f32 - mean).pow(2.0)
     }
-    std = (std / n_lines as f32).pow(0.5);
+    std = (std / n_samples as f32).sqrt();
     Some((mean, std))
 }
 
