@@ -7,15 +7,23 @@
 [![NPM Latest Release](https://img.shields.io/npm/v/nodejs-polars.svg)](https://www.npmjs.com/package/nodejs-polars)
 
 <p align="center">
-  <a href="https://pola-rs.github.io/polars/py-polars/html/reference/index.html">Python Documentation</a>
+  <b>Documentation</b>:
+  <a href="https://pola-rs.github.io/polars/py-polars/html/reference/index.html">Python</a>
+  -
+  <a href="https://pola-rs.github.io/polars/polars/index.html">Rust</a>
+  -
+  <a href="https://pola-rs.github.io/nodejs-polars/index.html">Node.js</a>
   |
-  <a href="https://pola-rs.github.io/polars/polars/index.html">Rust Documentation</a>
+  <b>StackOverflow</b>:
+  <a href="https://stackoverflow.com/questions/tagged/python-polars">Python</a>
+  -
+  <a href="https://stackoverflow.com/questions/tagged/rust-polars">Rust</a>
+  -
+  <a href="https://stackoverflow.com/questions/tagged/nodejs-polars">Node.js</a>
   |
   <a href="https://pola-rs.github.io/polars-book/">User Guide</a>
   |
   <a href="https://discord.gg/4UfP5cfBE7">Discord</a>
-  |
-  <a href="https://stackoverflow.com/questions/tagged/python-polars">StackOverflow</a>
 </p>
 
 
@@ -152,7 +160,7 @@ Want to know about all the features Polars supports? Read the docs!
 #### Node
 
   * Installation guide: `$ yarn add nodejs-polars`
-  * [Node documentation](https://pola-rs.github.io/polars/nodejs-polars/html/index.html)
+  * [Node documentation](https://pola-rs.github.io/nodejs-polars/index.html)
   * [User guide](https://pola-rs.github.io/polars-book/)
   * [Github](https://github.com/pola-rs/nodejs-polars)
 

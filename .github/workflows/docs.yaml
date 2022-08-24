@@ -17,15 +17,6 @@ jobs:
           toolchain: nightly-2022-08-22
           override: true
           components: rustfmt, clippy
-      - name: Set up Node
-        uses: actions/setup-node@v2
-        with:
-          node-version: 16
-      - name: Build node reference
-        run: |
-          cd nodejs-polars
-          npm install
-          npx typedoc
       - name: Set up Python
         uses: actions/setup-python@v3
         with:
@@ -44,9 +35,7 @@ jobs:
           RUSTFLAGS="--cfg docsrs" cargo doc --features=docs-selection --package polars && \
           echo '<meta http-equiv=refresh content=0;url=polars/index.html>' > target/doc/index.html && \
           mkdir target/doc/py-polars
-          mkdir -p target/doc/nodejs-polars/html
           cp -r py-polars/docs/build/html target/doc/py-polars
-          cp -r nodejs-polars/docs/* target/doc/nodejs-polars/html
           echo ghp-import step
           ghp-import -n target/doc && \
           git push -qf https://${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git gh-pages
