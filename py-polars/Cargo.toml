@@ -57,6 +57,7 @@ lazy_regex = ["polars/lazy_regex"]
 csv-file = ["polars/csv-file"]
 object = ["polars/object"]
 extract_jsonpath = ["polars/extract_jsonpath"]
+pivot = ["polars/pivot"]
 
 all = [
   "json",
@@ -78,6 +79,7 @@ all = [
   "extract_jsonpath",
   "polars/timezones",
   "object",
+  "pivot",
 ]
 
 # we cannot conditionaly activate simd

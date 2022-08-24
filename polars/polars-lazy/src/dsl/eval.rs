@@ -3,22 +3,6 @@ use rayon::prelude::*;
 use super::*;
 use crate::physical_plan::state::ExecutionState;
 
-#[cfg(feature = "list_eval")]
-pub(super) fn prepare_eval_expr(mut expr: Expr) -> Expr {
-    expr.mutate().apply(|e| match e {
-        Expr::Column(name) => {
-            *name = Arc::from("");
-            true
-        }
-        Expr::Nth(_) => {
-            *e = Expr::Column(Arc::from(""));
-            true
-        }
-        _ => true,
-    });
-    expr
-}
-
 impl Expr {
     /// Run an expression over a sliding window that increases `1` slot every iteration.
     ///

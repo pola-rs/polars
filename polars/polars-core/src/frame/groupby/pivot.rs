@@ -1,11 +1,12 @@
 use rayon::prelude::*;
 
 use super::GroupBy;
+use crate::frame::groupby::expr::PhysicalAggExpr;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::POOL;
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub enum PivotAgg {
     First,
     Sum,
@@ -15,6 +16,7 @@ pub enum PivotAgg {
     Median,
     Count,
     Last,
+    Expr(Arc<dyn PhysicalAggExpr + Send + Sync>),
 }
 
 fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
@@ -71,6 +73,11 @@ impl DataFrame {
         self.pivot_impl(&values, &index, &columns, agg_fn, sort_columns, false)
     }
 
+    /// Do a pivot operation based on the group key, a pivot column and an aggregation function on the values column.
+    ///
+    /// # Note
+    /// Polars'/arrow memory is not ideal for transposing operations like pivots.
+    /// If you have a relatively large table, consider using a groupby over a pivot.
     pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
         &self,
         values: I0,
@@ -272,8 +279,8 @@ impl DataFrame {
                 let (col_locations, column_agg) = col?;
                 let (row_locations, n_rows, mut row_index) = row?;
 
-                for value_col in values {
-                    let value_col = self.column(value_col)?;
+                for value_col_name in values {
+                    let value_col = self.column(value_col_name)?;
 
                     use PivotAgg::*;
                     let value_agg = unsafe {
@@ -286,6 +293,15 @@ impl DataFrame {
                             Mean => value_col.agg_mean(&groups),
                             Median => value_col.agg_median(&groups),
                             Count => groups.group_count().into_series(),
+                            Expr(ref expr) => {
+                                let name = expr.root_name()?;
+                                let mut value_col = value_col.clone();
+                                value_col.rename(name);
+                                let tmp_df = DataFrame::new_no_checks(vec![value_col]);
+                                let mut aggregated = expr.evaluate(&tmp_df, &groups)?;
+                                aggregated.rename(value_col_name);
+                                aggregated
+                            }
                         }
                     };
 

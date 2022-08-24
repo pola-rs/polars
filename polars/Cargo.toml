@@ -122,6 +122,7 @@ meta = ["polars-lazy/meta"]
 date_offset = ["polars-lazy/date_offset"]
 trigonometry = ["polars-lazy/trigonometry"]
 sign = ["polars-lazy/sign"]
+pivot = ["polars-lazy/pivot"]
 
 test = [
   "lazy",

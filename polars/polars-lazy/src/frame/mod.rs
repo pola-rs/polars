@@ -11,6 +11,8 @@ mod parquet;
 mod python;
 
 mod anonymous_scan;
+#[cfg(feature = "pivot")]
+pub mod pivot;
 
 use std::borrow::Cow;
 use std::sync::Arc;
