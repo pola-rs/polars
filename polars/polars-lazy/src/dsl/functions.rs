@@ -10,12 +10,13 @@ use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "rank")]
 use polars_core::utils::coalesce_nulls_series;
 use polars_core::utils::get_supertype;
-#[cfg(feature = "list")]
-use polars_ops::prelude::ListNameSpaceImpl;
 use rayon::prelude::*;
 
 #[cfg(feature = "arg_where")]
 use crate::dsl::function_expr::FunctionExpr;
+#[cfg(feature = "list")]
+use crate::dsl::function_expr::ListFunction;
+use crate::dsl::*;
 use crate::prelude::*;
 use crate::utils::has_wildcard;
 
@@ -255,39 +256,9 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
 pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
     let s = s.as_ref().iter().map(|e| e.clone().into()).collect();
 
-    let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-        let mut first = std::mem::take(&mut s[0]);
-        let other = &s[1..];
-
-        let first_ca = match first.list().ok() {
-            Some(ca) => ca,
-            None => {
-                first = first.reshape(&[-1, 1]).unwrap();
-                first.list().unwrap()
-            }
-        };
-        first_ca.lst_concat(other).map(|ca| ca.into_series())
-    }) as Arc<dyn SeriesUdf>);
-    Expr::AnonymousFunction {
+    Expr::Function {
         input: s,
-        function,
-        output_type: GetOutput::map_dtypes(|dts| {
-            let mut super_type_inner = None;
-
-            for dt in dts {
-                match dt {
-                    DataType::List(inner) => match super_type_inner {
-                        None => super_type_inner = Some(*inner.clone()),
-                        Some(st_inner) => super_type_inner = get_supertype(&st_inner, inner).ok(),
-                    },
-                    dt => match super_type_inner {
-                        None => super_type_inner = Some((*dt).clone()),
-                        Some(st_inner) => super_type_inner = get_supertype(&st_inner, dt).ok(),
-                    },
-                }
-            }
-            DataType::List(Box::new(super_type_inner.unwrap()))
-        }),
+        function: FunctionExpr::ListExpr(ListFunction::Concat),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
