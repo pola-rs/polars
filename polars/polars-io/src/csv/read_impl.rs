@@ -363,7 +363,14 @@ impl<'a> CoreReader<'a> {
         let mut total_rows = 128;
 
         // if None, there are less then 128 rows in the file and the statistics don't matter that much
-        if let Some((mean, std)) = get_line_stats(bytes, self.sample_size, self.eol_char) {
+        if let Some((mean, std)) = get_line_stats(
+            bytes,
+            self.sample_size,
+            self.eol_char,
+            self.schema.len(),
+            self.delimiter,
+            self.quote_char,
+        ) {
             if logging {
                 eprintln!("avg line length: {}\nstd. dev. line length: {}", mean, std);
             }
