@@ -75,6 +75,7 @@ string_justify = ["polars-ops/string_justify"]
 arg_where = []
 search_sorted = ["polars-ops/search_sorted"]
 meta = []
+pivot = ["polars-core/rows"]
 
 # no guarantees whatsoever
 private = ["polars-time/private"]

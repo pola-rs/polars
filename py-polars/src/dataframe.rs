@@ -18,6 +18,7 @@ use polars_core::frame::ArrowChunk;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use polars_core::utils::get_supertype;
+use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::types::{PyDict, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
@@ -37,6 +38,7 @@ use crate::{
     file::{get_either_file, get_file_like, EitherRustPythonFile},
     py_modules,
     series::{to_pyseries_collection, to_series_collection, PySeries},
+    PyExpr,
 };
 
 #[pyclass]
@@ -1078,6 +1080,7 @@ impl PyDataFrame {
             PivotAgg::Sum => pivot.sum(),
             PivotAgg::Count => pivot.count(),
             PivotAgg::Last => pivot.last(),
+            PivotAgg::Expr(_) => unimplemented!(),
         };
         let df = df.map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
@@ -1124,6 +1127,32 @@ impl PyDataFrame {
             index,
             columns,
             aggregate_fn.0,
+            sort_columns,
+        )
+        .map_err(PyPolarsErr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
+
+    #[cfg(feature = "pivot")]
+    pub fn pivot_expr(
+        &self,
+        values: Vec<String>,
+        index: Vec<String>,
+        columns: Vec<String>,
+        aggregate_expr: PyExpr,
+        maintain_order: bool,
+        sort_columns: bool,
+    ) -> PyResult<Self> {
+        let fun = match maintain_order {
+            true => pivot_stable,
+            false => pivot,
+        };
+        let df = fun(
+            &self.df,
+            values,
+            index,
+            columns,
+            aggregate_expr.inner,
             sort_columns,
         )
         .map_err(PyPolarsErr::from)?;

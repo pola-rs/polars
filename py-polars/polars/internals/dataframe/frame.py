@@ -4496,7 +4496,7 @@ class DataFrame:
         values: list[str] | str,
         index: list[str] | str,
         columns: list[str] | str,
-        aggregate_fn: PivotAgg = "first",
+        aggregate_fn: PivotAgg | pli.Expr = "first",
         maintain_order: bool = True,
         sort_columns: bool = False,
     ) -> DF:
@@ -4513,7 +4513,7 @@ class DataFrame:
         columns
             Columns whose values will be used as the header of the output DataFrame
         aggregate_fn : {'first', 'sum', 'max', 'min', 'mean', 'median', 'last', 'count'}
-            Aggregate function.
+            A predefined aggregate function str or an expression.
         maintain_order
             Sort the grouped keys so that the output order is predictable.
         sort_columns
@@ -4551,6 +4551,18 @@ class DataFrame:
             index = [index]
         if isinstance(columns, str):
             columns = [columns]
+        if isinstance(aggregate_fn, pli.Expr):
+            return self._from_pydf(
+                self._df.pivot_expr(
+                    values,
+                    index,
+                    columns,
+                    aggregate_fn._pyexpr,
+                    maintain_order,
+                    sort_columns,
+                )
+            )
+
         return self._from_pydf(
             self._df.pivot2(
                 values, index, columns, aggregate_fn, maintain_order, sort_columns

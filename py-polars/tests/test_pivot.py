@@ -83,9 +83,21 @@ def test_pivot_categorical_index() -> None:
         columns=[("A", pl.Categorical), ("B", pl.Categorical)],
     )
 
-    assert df.pivot(values="B", index=["A"], columns="B", aggregate_fn="count").to_dict(
-        False
-    ) == {"A": ["Fire", "Water"], "Car": [1, 2], "Ship": [1, None]}
+    expected = {"A": ["Fire", "Water"], "Car": [1, 2], "Ship": [1, None]}
+    assert (
+        df.pivot(values="B", index=["A"], columns="B", aggregate_fn="count").to_dict(
+            False
+        )
+        == expected
+    )
+
+    # test expression dispatch
+    assert (
+        df.pivot(values="B", index=["A"], columns="B", aggregate_fn=pl.count()).to_dict(
+            False
+        )
+        == expected
+    )
 
     df = pl.DataFrame(
         {

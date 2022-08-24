@@ -15,6 +15,7 @@ use crate::vector_hasher::{get_null_hash_value, AsU64, StrHash};
 use crate::POOL;
 
 pub mod aggregations;
+pub mod expr;
 pub(crate) mod hashing;
 mod into_groups;
 #[cfg(feature = "rows")]
