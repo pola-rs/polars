@@ -325,13 +325,10 @@ impl<'a> CoreReader<'a> {
                     Some(first) if Some(*first) == self.comment_char => {
                         next_line_position_naive(bytes, eol_char)
                     }
-                    _ => next_line_position(
-                        bytes,
-                        self.schema.len(),
-                        self.delimiter,
-                        self.quote_char,
-                        eol_char,
-                    ),
+                    // we don't pass expected fields
+                    // as we want to skip all rows
+                    // no matter the no. of fields
+                    _ => next_line_position(bytes, None, self.delimiter, self.quote_char, eol_char),
                 }
                 .ok_or_else(|| PolarsError::NoData("not enough lines to skip".into()))?;
 
@@ -390,7 +387,7 @@ impl<'a> CoreReader<'a> {
                 if n_bytes < bytes.len() {
                     if let Some(pos) = next_line_position(
                         &bytes[n_bytes..],
-                        self.schema.len(),
+                        Some(self.schema.len()),
                         self.delimiter,
                         self.quote_char,
                         self.eol_char,

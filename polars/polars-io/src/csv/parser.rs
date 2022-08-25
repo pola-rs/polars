@@ -27,7 +27,7 @@ pub(crate) fn next_line_position_naive(input: &[u8], eol_char: u8) -> Option<usi
 /// Find the nearest next line position that is not embedded in a String field.
 pub(crate) fn next_line_position(
     mut input: &[u8],
-    expected_fields: usize,
+    expected_fields: Option<usize>,
     delimiter: u8,
     quote_char: Option<u8>,
     eol_char: u8,
@@ -45,30 +45,39 @@ pub(crate) fn next_line_position(
         let new_input = unsafe { input.get_unchecked(pos..) };
         let line = SplitLines::new(new_input, eol_char).next();
 
-        if let Some(line) = line {
-            if SplitFields::new(line, delimiter, quote_char, eol_char)
-                .into_iter()
-                .count()
-                == expected_fields
+        match (line, expected_fields) {
+            // count the fields, and determine if they are equal to what we expect from the schema
+            (Some(line), Some(expected_fields))
+                if {
+                    SplitFields::new(line, delimiter, quote_char, eol_char)
+                        .into_iter()
+                        .count()
+                        == expected_fields
+                } =>
             {
-                return Some(total_pos + pos);
-            } else {
+                return Some(total_pos + pos)
+            }
+            (Some(_), Some(_)) => {
                 debug_assert!(pos < input.len());
                 unsafe {
                     input = input.get_unchecked(pos + 1..);
                 }
                 total_pos += pos + 1;
             }
-        } else {
+            // don't count the fields
+            (Some(_), None) => return Some(total_pos + pos),
             // no new line found, check latest line (without eol) for number of fields
-            if SplitFields::new(new_input, delimiter, quote_char, eol_char)
-                .into_iter()
-                .count()
-                == expected_fields
+            (None, Some(expected_fields))
+                if {
+                    SplitFields::new(new_input, delimiter, quote_char, eol_char)
+                        .into_iter()
+                        .count()
+                        == expected_fields
+                } =>
             {
-                return Some(total_pos + pos);
+                return Some(total_pos + pos)
             }
-            return None;
+            _ => return None,
         }
     }
 }
@@ -168,7 +177,7 @@ pub(crate) fn get_line_stats(
         bytes_trunc = &bytes[offset..];
         let pos = next_line_position(
             bytes_trunc,
-            expected_fields,
+            Some(expected_fields),
             delimiter,
             quote_char,
             eol_char,
