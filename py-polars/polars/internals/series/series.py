@@ -2361,7 +2361,7 @@ class Series:
             )
 
     def to_numpy(
-        self, *args: Any, zero_copy_only: bool = False, **kwargs: Any
+        self, *args: Any, zero_copy_only: bool = False, writable: bool = False
     ) -> np.ndarray[Any, Any]:
         """
         Convert this Series to numpy. This operation clones data but is completely safe.
@@ -2390,6 +2390,11 @@ class Series:
             If True, an exception will be raised if the conversion to a numpy
             array would require copying the underlying data (e.g. in presence
             of nulls, or for non-primitive types).
+        writable
+            For numpy arrays created with zero copy (view on the Arrow data),
+            the resulting array is not writable (Arrow data is immutable).
+            By setting this to True, a copy of the array is made to ensure
+            it is writable.
         kwargs
             kwargs will be sent to pyarrow.Array.to_numpy
 
@@ -2406,16 +2411,23 @@ class Series:
 
         if _PYARROW_AVAILABLE and not self.is_datelike():
             return self.to_arrow().to_numpy(
-                *args, zero_copy_only=zero_copy_only, **kwargs
+                *args, zero_copy_only=zero_copy_only, writable=writable
             )
         else:
             if not self.has_validity():
                 if self.is_datelike():
-                    return convert_to_date(self.view(ignore_nulls=True))
-                return self.view(ignore_nulls=True)
-            if self.is_datelike():
-                return convert_to_date(self._s.to_numpy())
-            return self._s.to_numpy()
+                    np_array = convert_to_date(self.view(ignore_nulls=True))
+                else:
+                    np_array = self.view(ignore_nulls=True)
+            elif self.is_datelike():
+                np_array = convert_to_date(self._s.to_numpy())
+            else:
+                np_array = self._s.to_numpy()
+
+            if writable and not np_array.flags.writeable:
+                return np_array.copy()
+            else:
+                return np_array
 
     def to_arrow(self) -> pa.Array:
         """
