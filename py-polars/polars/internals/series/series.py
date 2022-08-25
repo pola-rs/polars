@@ -1913,7 +1913,7 @@ class Series:
         """
         return wrap_s(self._s.is_not_nan())
 
-    def is_in(self, other: Series | Sequence[object]) -> Series:
+    def is_in(self, other: Series | Sequence[Any]) -> Series:
         """
         Check if elements of this Series are in the other Series, or
         if this Series is itself a member of the other Series.
@@ -1963,11 +1963,7 @@ class Series:
         ]
 
         """
-        if isinstance(other, str):
-            raise TypeError("'other' parameter expects non-string sequence data")
-        elif isinstance(other, Sequence):
-            other = Series("", other)
-        return wrap_s(self._s.is_in(other._s))
+        return self.to_frame().select(pli.col(self.name).is_in(other)).to_series()
 
     def arg_true(self) -> Series:
         """

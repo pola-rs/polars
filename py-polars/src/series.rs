@@ -892,17 +892,6 @@ impl PySeries {
         })
     }
 
-    #[cfg(feature = "is_in")]
-    pub fn is_in(&self, py: Python, other: &PySeries) -> PyResult<Self> {
-        py.allow_threads(|| {
-            let out = self
-                .series
-                .is_in(&other.series)
-                .map_err(PyPolarsErr::from)?;
-            Ok(out.into_series().into())
-        })
-    }
-
     pub fn clone(&self) -> Self {
         PySeries::new(self.series.clone())
     }

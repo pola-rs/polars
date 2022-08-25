@@ -3269,7 +3269,7 @@ class Expr:
         exponent = expr_to_lit_or_expr(exponent)
         return wrap_expr(self._pyexpr.pow(exponent._pyexpr))
 
-    def is_in(self, other: Expr | Sequence[Any] | str) -> Expr:
+    def is_in(self, other: Expr | Sequence[Any] | str | pli.Series) -> Expr:
         """
         Check if elements of this expression are present in the other Series.
 
@@ -3303,7 +3303,10 @@ class Expr:
 
         """
         if isinstance(other, Sequence) and not isinstance(other, str):
-            other = pli.lit(pli.Series(other))
+            if len(other) == 0:
+                other = pli.lit(None)
+            else:
+                other = pli.lit(pli.Series(other))
         else:
             other = expr_to_lit_or_expr(other, str_to_lit=False)
         return wrap_expr(self._pyexpr.is_in(other._pyexpr))
