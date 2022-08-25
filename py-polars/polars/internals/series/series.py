@@ -314,7 +314,8 @@ class Series:
         self._s.__setstate__(state)
 
     def __str__(self) -> str:
-        return self._s.as_str()
+        s_repr: str = self._s.as_str()
+        return s_repr.replace("Series", f"{self.__class__.__name__}", 1)
 
     def __repr__(self) -> str:
         return self.__str__()
