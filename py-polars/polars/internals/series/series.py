@@ -181,6 +181,9 @@ class Series:
     nan_to_null
         In case a numpy array is used to create this Series, indicate how to deal
         with np.nan values.
+    dtype_if_empty=dtype_if_empty : DataType, default None
+        If no dtype is specified and values contains None or an empty list,
+        set the Polars dtype of the Series data. If not specified, Float32 is used.
 
     Examples
     --------
@@ -236,6 +239,7 @@ class Series:
         dtype: type[DataType] | DataType | None = None,
         strict: bool = True,
         nan_to_null: bool = False,
+        dtype_if_empty: type[DataType] | DataType | None = None,
     ):
 
         # Handle case where values are passed as the first argument
@@ -250,7 +254,9 @@ class Series:
             name = ""
 
         if values is None:
-            self._s = sequence_to_pyseries(name, [], dtype=dtype)
+            self._s = sequence_to_pyseries(
+                name, [], dtype=dtype, dtype_if_empty=dtype_if_empty
+            )
         elif isinstance(values, Series):
             self._s = series_to_pyseries(name, values)
         elif _PYARROW_AVAILABLE and isinstance(values, (pa.Array, pa.ChunkedArray)):
@@ -271,7 +277,9 @@ class Series:
             if dtype is not None:
                 self._s = self.cast(dtype, strict=True)._s
         elif isinstance(values, Sequence):
-            self._s = sequence_to_pyseries(name, values, dtype=dtype, strict=strict)
+            self._s = sequence_to_pyseries(
+                name, values, dtype=dtype, strict=strict, dtype_if_empty=dtype_if_empty
+            )
         elif _PANDAS_AVAILABLE and isinstance(values, (pd.Series, pd.DatetimeIndex)):
             self._s = pandas_to_pyseries(name, values)
         else:
@@ -356,7 +364,7 @@ class Series:
             return wrap_s(f(d))
 
         if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other)
+            other = Series("", other, dtype_if_empty=self.dtype)
         if isinstance(other, Series):
             return wrap_s(getattr(self._s, op)(other._s))
         other = maybe_cast(other, self.dtype, self.time_unit)

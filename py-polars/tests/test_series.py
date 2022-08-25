@@ -36,6 +36,13 @@ def test_init_inputs(monkeypatch: Any) -> None:
         assert pl.Series(values=[1, 2]).dtype == pl.Int64
         assert pl.Series("a").dtype == pl.Float32  # f32 type used in case of no data
         assert pl.Series().dtype == pl.Float32
+        assert pl.Series([]).dtype == pl.Float32
+        assert pl.Series(dtype_if_empty=pl.Utf8).dtype == pl.Utf8
+        assert pl.Series([], dtype_if_empty=pl.UInt16).dtype == pl.UInt16
+        # "== []" will be cast to empty Series with Utf8 dtype.
+        pl.testing.assert_series_equal(
+            pl.Series([], dtype_if_empty=pl.Utf8) == [], pl.Series("", dtype=pl.Boolean)
+        )
         assert pl.Series(values=[True, False]).dtype == pl.Boolean
         assert pl.Series(values=np.array([True, False])).dtype == pl.Boolean
         assert pl.Series(values=np.array(["foo", "bar"])).dtype == pl.Utf8
@@ -789,13 +796,19 @@ def test_describe() -> None:
 
 
 def test_is_in() -> None:
-    s = pl.Series([1, 2, 3])
+    s = pl.Series(["a", "b", "c"])
 
-    out = s.is_in([1, 2])
+    out = s.is_in(["a", "b"])
     assert out == [True, True, False]
-    df = pl.DataFrame({"a": [1.0, 2.0], "b": [1, 4]})
+
+    # Check if empty list is converted to pl.Utf8.
+    out = s.is_in([])
+    assert out == [False, False, False]
+
+    df = pl.DataFrame({"a": [1.0, 2.0], "b": [1, 4], "c": ["e", "d"]})
 
     assert df.select(pl.col("a").is_in(pl.col("b"))).to_series() == [True, False]
+    assert df.select(pl.col("b").is_in([])).to_series() == [False, False]
 
 
 def test_slice() -> None:
