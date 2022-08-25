@@ -174,13 +174,12 @@ impl PhysicalPlanner {
                                     }
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -204,13 +203,12 @@ impl PhysicalPlanner {
                                     }
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -226,13 +224,12 @@ impl PhysicalPlanner {
                                     parallel_op_series(|s| Ok(s.sum_as_series()), s, None)
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -249,13 +246,12 @@ impl PhysicalPlanner {
                                     Ok(s.std_as_series(ddof))
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -272,13 +268,12 @@ impl PhysicalPlanner {
                                     Ok(s.var_as_series(ddof))
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -294,13 +289,12 @@ impl PhysicalPlanner {
                                     Ok(s.mean_as_series())
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -316,13 +310,12 @@ impl PhysicalPlanner {
                                     Ok(s.median_as_series())
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -338,13 +331,12 @@ impl PhysicalPlanner {
                                     Ok(s.head(Some(1)))
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -360,13 +352,12 @@ impl PhysicalPlanner {
                                     Ok(s.tail(Some(1)))
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -382,13 +373,12 @@ impl PhysicalPlanner {
                                     s.to_list().map(|ca| ca.into_series())
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -408,13 +398,12 @@ impl PhysicalPlanner {
                                     })
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -435,13 +424,12 @@ impl PhysicalPlanner {
                                     s.quantile_as_series(quantile, interpol)
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -469,13 +457,12 @@ impl PhysicalPlanner {
                                         .into_series())
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -523,6 +510,7 @@ impl PhysicalPlanner {
                     expr: node_to_expr(expression, expr_arena),
                     collect_groups: options.collect_groups,
                     auto_explode: options.auto_explode,
+                    allow_rename: options.allow_rename,
                 }))
             }
             Function {
@@ -539,6 +527,7 @@ impl PhysicalPlanner {
                     expr: node_to_expr(expression, expr_arena),
                     collect_groups: options.collect_groups,
                     auto_explode: options.auto_explode,
+                    allow_rename: options.allow_rename,
                 }))
             }
             Shift { input, periods } => {
@@ -570,13 +559,12 @@ impl PhysicalPlanner {
                     let s = std::mem::take(&mut s[0]);
                     Ok(s.reverse())
                 }) as Arc<dyn SeriesUdf>);
-                Ok(Arc::new(ApplyExpr {
-                    inputs: vec![input],
+                Ok(Arc::new(ApplyExpr::new_minimal(
+                    vec![input],
                     function,
-                    expr: node_to_expr(expression, expr_arena),
-                    collect_groups: ApplyOptions::ApplyGroups,
-                    auto_explode: false,
-                }))
+                    node_to_expr(expression, expr_arena),
+                    ApplyOptions::ApplyGroups,
+                )))
             }
             Duplicated(expr) => {
                 let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
@@ -584,13 +572,12 @@ impl PhysicalPlanner {
                     let s = std::mem::take(&mut s[0]);
                     s.is_duplicated().map(|ca| ca.into_series())
                 }) as Arc<dyn SeriesUdf>);
-                Ok(Arc::new(ApplyExpr {
-                    inputs: vec![input],
+                Ok(Arc::new(ApplyExpr::new_minimal(
+                    vec![input],
                     function,
-                    expr: node_to_expr(expression, expr_arena),
-                    collect_groups: ApplyOptions::ApplyGroups,
-                    auto_explode: false,
-                }))
+                    node_to_expr(expression, expr_arena),
+                    ApplyOptions::ApplyGroups,
+                )))
             }
             IsUnique(expr) => {
                 let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
@@ -598,13 +585,12 @@ impl PhysicalPlanner {
                     let s = std::mem::take(&mut s[0]);
                     s.is_unique().map(|ca| ca.into_series())
                 }) as Arc<dyn SeriesUdf>);
-                Ok(Arc::new(ApplyExpr {
-                    inputs: vec![input],
+                Ok(Arc::new(ApplyExpr::new_minimal(
+                    vec![input],
                     function,
-                    expr: node_to_expr(expression, expr_arena),
-                    collect_groups: ApplyOptions::ApplyGroups,
-                    auto_explode: false,
-                }))
+                    node_to_expr(expression, expr_arena),
+                    ApplyOptions::ApplyGroups,
+                )))
             }
             Explode(expr) => {
                 let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
@@ -612,13 +598,12 @@ impl PhysicalPlanner {
                     let s = std::mem::take(&mut s[0]);
                     s.explode()
                 }) as Arc<dyn SeriesUdf>);
-                Ok(Arc::new(ApplyExpr {
-                    inputs: vec![input],
+                Ok(Arc::new(ApplyExpr::new_minimal(
+                    vec![input],
                     function,
-                    expr: node_to_expr(expression, expr_arena),
-                    collect_groups: ApplyOptions::ApplyFlat,
-                    auto_explode: false,
-                }))
+                    node_to_expr(expression, expr_arena),
+                    ApplyOptions::ApplyFlat,
+                )))
             }
             Wildcard => panic!("should be no wildcard at this point"),
             Nth(_) => panic!("should be no nth at this point"),

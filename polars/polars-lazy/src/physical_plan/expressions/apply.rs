@@ -15,9 +15,26 @@ pub struct ApplyExpr {
     pub expr: Expr,
     pub collect_groups: ApplyOptions,
     pub auto_explode: bool,
+    pub allow_rename: bool,
 }
 
 impl ApplyExpr {
+    pub(crate) fn new_minimal(
+        inputs: Vec<Arc<dyn PhysicalExpr>>,
+        function: SpecialEq<Arc<dyn SeriesUdf>>,
+        expr: Expr,
+        collect_groups: ApplyOptions,
+    ) -> Self {
+        Self {
+            inputs,
+            function,
+            expr,
+            collect_groups,
+            auto_explode: false,
+            allow_rename: false,
+        }
+    }
+
     #[allow(clippy::ptr_arg)]
     fn prepare_multiple_inputs<'a>(
         &self,
@@ -76,6 +93,10 @@ impl PhysicalExpr for ApplyExpr {
             .par_iter()
             .map(|e| e.evaluate(df, state))
             .collect::<Result<Vec<_>>>()?;
+
+        if self.allow_rename {
+            return self.function.call_udf(&mut inputs);
+        }
         let in_name = inputs[0].name().to_string();
         let mut out = self.function.call_udf(&mut inputs)?;
         if in_name != out.name() {

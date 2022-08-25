@@ -124,7 +124,7 @@ impl StringNameSpace {
                 input_wildcard_expansion: false,
                 auto_explode: true,
                 fmt_str: "str.concat",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }

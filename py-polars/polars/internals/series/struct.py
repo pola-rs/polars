@@ -7,6 +7,14 @@ class StructNameSpace:
     def __init__(self, s: pli.Series):
         self.s = s
 
+    def __getitem__(self, item: int | str) -> pli.Series:
+        if isinstance(item, int):
+            return self.field(self.fields[item])
+        elif isinstance(item, str):
+            return self.field(item)
+        else:
+            raise ValueError(f"expected type 'int | str', got {type(item)}")
+
     def to_frame(self) -> pli.DataFrame:
         """Convert this Struct Series to a DataFrame."""
         return pli.wrap_df(self.s._s.struct_to_frame())

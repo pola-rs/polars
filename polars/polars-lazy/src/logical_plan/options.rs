@@ -166,6 +166,20 @@ pub struct FunctionOptions {
 
     // if the expression and its inputs should be cast to supertypes
     pub(crate) cast_to_supertypes: bool,
+    pub(crate) allow_rename: bool,
+}
+
+impl Default for FunctionOptions {
+    fn default() -> Self {
+        FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: false,
+            auto_explode: false,
+            fmt_str: "",
+            cast_to_supertypes: false,
+            allow_rename: false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

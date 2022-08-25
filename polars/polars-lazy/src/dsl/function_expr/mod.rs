@@ -20,6 +20,8 @@ mod shift_and_fill;
 mod sign;
 #[cfg(feature = "strings")]
 mod strings;
+#[cfg(feature = "dtype-struct")]
+mod struct_;
 #[cfg(any(feature = "temporal", feature = "date_offset"))]
 mod temporal;
 #[cfg(feature = "trigonometry")]
@@ -28,12 +30,15 @@ mod trigonometry;
 #[cfg(feature = "list")]
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
+use polars_core::utils::slice_offsets;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 pub(super) use self::nan::NanFunction;
 #[cfg(feature = "strings")]
 pub(super) use self::strings::StringFunction;
+#[cfg(feature = "dtype-struct")]
+pub(super) use self::struct_::StructFunction;
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -79,6 +84,8 @@ pub enum FunctionExpr {
     },
     #[cfg(feature = "list")]
     ListExpr(ListFunction),
+    #[cfg(feature = "dtype-struct")]
+    StructExpr(StructFunction),
 }
 
 #[cfg(feature = "trigonometry")]
@@ -226,6 +233,31 @@ impl FunctionExpr {
                     Concat => inner_super_type_list(),
                 }
             }
+            #[cfg(feature = "dtype-struct")]
+            StructExpr(s) => {
+                use StructFunction::*;
+                match s {
+                    FieldByIndex(index) => {
+                        let (index, _) = slice_offsets(*index, 0, fields.len());
+                        fields.get(index).cloned().ok_or_else(|| {
+                            PolarsError::ComputeError(
+                                "index out of bounds in 'struct.field'".into(),
+                            )
+                        })
+                    }
+                    FieldByName(name) => {
+                        if let DataType::Struct(flds) = &fields[0].dtype {
+                            let fld = flds
+                                .iter()
+                                .find(|fld| fld.name() == name.as_ref())
+                                .ok_or_else(|| PolarsError::NotFound(name.as_ref().to_string()))?;
+                            Ok(fld.clone())
+                        } else {
+                            Err(PolarsError::NotFound(name.as_ref().to_string()))
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -367,6 +399,14 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 use ListFunction::*;
                 match lf {
                     Concat => wrap!(list::concat),
+                }
+            }
+            #[cfg(feature = "dtype-struct")]
+            StructExpr(sf) => {
+                use StructFunction::*;
+                match sf {
+                    FieldByIndex(index) => map_with_args!(struct_::get_by_index, index),
+                    FieldByName(name) => map_with_args!(struct_::get_by_name, name.clone()),
                 }
             }
         }

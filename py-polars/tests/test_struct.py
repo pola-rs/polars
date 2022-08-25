@@ -622,3 +622,13 @@ def test_struct_groupby_field_agg_4216() -> None:
     assert df.groupby("c").agg(pl.col("a").struct.field("b").count()).to_dict(
         False
     ) == {"c": [0], "b": [1]}
+
+
+def test_struct_getitem() -> None:
+    assert pl.Series([{"a": 1, "b": 2}]).struct["b"].name == "b"
+    assert pl.Series([{"a": 1, "b": 2}]).struct[0].name == "a"
+    assert pl.Series([{"a": 1, "b": 2}]).struct[1].name == "b"
+    assert pl.Series([{"a": 1, "b": 2}]).struct[-1].name == "b"
+    assert pl.Series([{"a": 1, "b": 2}]).to_frame().select(
+        [pl.col("").struct[0]]
+    ).to_dict(False) == {"a": [1]}
