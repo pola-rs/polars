@@ -137,7 +137,7 @@ def read_csv(
         Values to interpret as null values. You can provide a:
 
         - ``str``: All values equal to this string will be null.
-        - ``List[str]``: A null value per column.
+        - ``List[str]``: All values equal to any string in this list will be null.
         - ``Dict[str, str]``: A dictionary that maps column name to a
           null value string.
     ignore_errors
@@ -469,7 +469,7 @@ def scan_csv(
         Values to interpret as null values. You can provide a:
 
         - ``str``: All values equal to this string will be null.
-        - ``List[str]``: A null value per column.
+        - ``List[str]``: All values equal to any string in this list will be null.
         - ``Dict[str, str]``: A dictionary that maps column name to a
           null value string.
     ignore_errors
