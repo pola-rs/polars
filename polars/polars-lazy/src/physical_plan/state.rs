@@ -43,7 +43,7 @@ pub struct ExecutionState {
     df_cache: Arc<Mutex<PlHashMap<usize, DataFrame>>>,
     // cache file reads until all branches got there file, then we delete it
     #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-    pub(super) file_cache: FileCache,
+    pub(crate) file_cache: FileCache,
     pub(super) schema_cache: Option<SchemaRef>,
     /// Used by Window Expression to prevent redundant grouping
     pub(super) group_tuples: GroupsProxyCache,

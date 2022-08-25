@@ -593,6 +593,38 @@ impl LazyFrame {
             lp_arena.replace(lp_top, alp);
         }
 
+        // make sure its before slice pushdown.
+        if projection_pushdown {
+            rules.push(Box::new(FastProjection {}));
+        }
+        rules.push(Box::new(DelayRechunk {}));
+
+        if slice_pushdown {
+            let slice_pushdown_opt = SlicePushDown {};
+            let alp = lp_arena.take(lp_top);
+            let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
+
+            lp_arena.replace(lp_top, alp);
+
+            // expressions use the stack optimizer
+            rules.push(Box::new(slice_pushdown_opt));
+        }
+        if type_coercion {
+            rules.push(Box::new(TypeCoercionRule {}))
+        }
+        // this optimization removes branches, so we must do it when type coercion
+        // is completed
+        if simplify_expr {
+            rules.push(Box::new(SimplifyBooleanRule {}));
+        }
+
+        if aggregate_pushdown {
+            rules.push(Box::new(AggregatePushdown::new()))
+        }
+
+        // make sure that we do that once slice pushdown
+        // and predicate pushdown are done. At that moment
+        // the file fingerprints are finished.
         #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
         if agg_scan_projection {
             // we do this so that expressions are simplified created by the pushdown optimizations
@@ -621,36 +653,6 @@ impl LazyFrame {
                 lp_arena,
                 lp_top,
             );
-        }
-
-        // make sure its before slice pushdown.
-        if projection_pushdown {
-            rules.push(Box::new(FastProjection {}));
-        }
-        rules.push(Box::new(DelayRechunk {}));
-
-        if slice_pushdown {
-            let slice_pushdown_opt = SlicePushDown {};
-            let alp = lp_arena.take(lp_top);
-            let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
-
-            lp_arena.replace(lp_top, alp);
-
-            // expressions use the stack optimizer
-            rules.push(Box::new(slice_pushdown_opt));
-        }
-
-        if type_coercion {
-            rules.push(Box::new(TypeCoercionRule {}))
-        }
-        // this optimization removes branches, so we must do it when type coercion
-        // is completed
-        if simplify_expr {
-            rules.push(Box::new(SimplifyBooleanRule {}));
-        }
-
-        if aggregate_pushdown {
-            rules.push(Box::new(AggregatePushdown::new()))
         }
 
         rules.push(Box::new(ReplaceDropNulls {}));
@@ -729,6 +731,11 @@ impl LazyFrame {
 
         let mut state = ExecutionState::with_finger_prints(finger_prints);
         let out = physical_plan.execute(&mut state);
+        #[cfg(debug_assertions)]
+        {
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            state.file_cache.assert_empty();
+        }
         #[cfg(feature = "dtype-categorical")]
         if use_string_cache {
             toggle_string_cache(!use_string_cache);
