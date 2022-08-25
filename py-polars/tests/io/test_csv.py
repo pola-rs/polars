@@ -741,3 +741,20 @@ def test_float_precision(dtype: pl.Float32 | pl.Float64) -> None:
     assert df.write_csv(float_precision=1) == "col\n1.0\n2.2\n3.3\n"
     assert df.write_csv(float_precision=2) == "col\n1.00\n2.20\n3.33\n"
     assert df.write_csv(float_precision=3) == "col\n1.000\n2.200\n3.330\n"
+
+
+def test_skip_rows_different_field_len() -> None:
+    csv = io.StringIO(
+        textwrap.dedent(
+            """a,b
+        1,A
+        2,
+        3,B
+        4,
+        """
+        )
+    )
+    assert pl.read_csv(csv, skip_rows_after_header=2).to_dict(False) == {
+        "a": [3, 4],
+        "b": ["B", None],
+    }
