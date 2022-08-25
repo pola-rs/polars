@@ -1,3 +1,4 @@
+use std::ops::AddAssign;
 use arrow::array::PrimitiveArray;
 use arrow::types::NativeType;
 use num::Float;
@@ -15,33 +16,38 @@ pub fn ewm_mean<T>(
     min_periods: usize,
 ) -> PrimitiveArray<T>
 where
-    T: Float + NativeType,
+    T: Float + NativeType + AddAssign,
 {
-    let mut denom = T::zero();
     let one_sub_alpha = T::one() - alpha;
-    let mut non_null_cnt = 0usize;
 
-    let mut opt_ewma = None;
+    let mut opt_mean = None;
+    let mut non_null_cnt = 0usize;
+    let mut wgt_sum = T::zero();
 
     xs.iter()
         .map(|opt_x| {
             if let Some(&x) = opt_x {
                 non_null_cnt += 1;
 
-                let prev_ewma = opt_ewma.unwrap_or(x);
+                let prev_mean = opt_mean.unwrap_or(x);
 
-                let value = if adjust {
-                    let numer = prev_ewma * denom * one_sub_alpha + x;
-                    denom = T::one() + one_sub_alpha * denom;
-                    numer / denom
+                let curr_mean = if adjust {
+                    let pow = T::from(non_null_cnt - 1).unwrap();
+                    // TODO: introduce `ignore_na` parameter. We currently default to
+                    //  `ignore_na = True` but we can achieve `ignore_na = False` (for
+                    //  the adjusted case, at least) by setting `pow = T::from(i).unwrap();`
+                    let wgt = one_sub_alpha.powf(pow);
+
+                    wgt_sum += wgt;
+                    prev_mean + (x - prev_mean) / wgt_sum
                 } else {
-                    x * alpha + prev_ewma * one_sub_alpha
+                    prev_mean + alpha * (x - prev_mean)
                 };
-                opt_ewma = Some(value);
+                opt_mean = Some(curr_mean);
             }
             match non_null_cnt < min_periods {
                 true => None,
-                false => opt_ewma,
+                false => opt_mean,
             }
         })
         .collect_trusted()
@@ -62,7 +68,7 @@ mod test {
                 false => PrimitiveArray::from([Some(1.0f32), Some(1.5f32), Some(2.25f32)]),
                 true => PrimitiveArray::from([
                     Some(1.0f32),
-                    Some(1.6666666666666667f32),
+                    Some(1.6666667f32), // <-- pandas gives 1.6666666666666667
                     Some(2.4285714285714284f32),
                 ]),
             };
@@ -136,7 +142,7 @@ mod test {
             Some(6.333333333333333f32),
             Some(3.857142857142857f32),
             Some(2.3333333333333335f32),
-            Some(3.193548387096774f32),
+            Some(3.1935482f32), // <-- pandas gives 3.19354838...
         ]);
         assert_eq!(adjusted_result, adjusted_expected);
 
@@ -157,7 +163,7 @@ mod test {
             Some(3.6666666666666665f32),
             Some(5.571428571428571f32),
             Some(5.571428571428571f32),
-            Some(3.6666666666666665f32),
+            Some(3.6666665), // <-- pandas gives 3.6666666666666665
             Some(2.2903225806451615f32),
             Some(3.1587301587301586f32),
         ]);
