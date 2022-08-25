@@ -25,6 +25,15 @@ impl FileCache {
 
         Self { inner }
     }
+
+    #[cfg(debug_assertions)]
+    pub(crate) fn assert_empty(&self) {
+        for (_, guard) in self.inner.iter() {
+            let state = guard.lock();
+            assert!(state.1.is_empty());
+        }
+    }
+
     pub(crate) fn read<F>(
         &self,
         finger_print: FileFingerPrint,
