@@ -430,3 +430,7 @@ def test_list_eval_type_coercion() -> None:
             .alias("col_last")
         ]
     ).to_dict(False) == {"col_last": [[3]]}
+
+
+def test_is_empty_list_4559() -> None:
+    assert pl.Series(["a"]).is_in([]).to_list() == [False]
