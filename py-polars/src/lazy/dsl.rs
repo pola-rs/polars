@@ -726,6 +726,10 @@ impl PyExpr {
         self.inner.clone().str().split_exact_inclusive(by, n).into()
     }
 
+    pub fn str_splitn(&self, by: &str, n: usize) -> PyExpr {
+        self.inner.clone().str().splitn(by, n).into()
+    }
+
     pub fn arr_lengths(&self) -> PyExpr {
         self.inner.clone().arr().lengths().into()
     }

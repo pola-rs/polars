@@ -471,7 +471,8 @@ class StringNameSpace:
 
     def split_exact(self, by: str, n: int, inclusive: bool = False) -> pli.Series:
         """
-        Split the string by a substring into a struct of ``n`` fields.
+        Split the string by a substring into a struct of ``n+1`` fields using
+        ``n`` splits.
 
         If it cannot make ``n`` splits, the remaining field elements will be null.
 
@@ -487,37 +488,27 @@ class StringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"x": ["a_1", None, "c", "d_4"]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("x").str.split_exact("_", 1).alias("fields"),
-        ...     ]
+        >>> df["x"].str.split_exact("_", 1).alias("fields")
+        shape: (4,)
+        Series: 'fields' [struct[2]]
+        [
+                {"a","1"}
+                {null,null}
+                {"c",null}
+                {"d","4"}
+        ]
+
+        Split string values in column x in exactly 2 parts and assign
+        each part to a new column.
+
+        >>> (
+        ...     df["x"]
+        ...     .str.split_exact("_", 1)
+        ...     .struct.rename_fields(["first_part", "second_part"])
+        ...     .alias("fields")
+        ...     .to_frame()
+        ...     .unnest("fields")
         ... )
-        shape: (4, 1)
-        ┌─────────────┐
-        │ fields      │
-        │ ---         │
-        │ struct[2]   │
-        ╞═════════════╡
-        │ {"a","1"}   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {null,null} │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {"c",null}  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {"d","4"}   │
-        └─────────────┘
-
-        Split column in ``n`` fields, give them a proper name in the struct and add them
-        as columns.
-
-        >>> df.select(
-        ...     [
-        ...         pl.col("x")
-        ...         .str.split_exact("_", 1)
-        ...         .struct.rename_fields(["first_part", "second_part"])
-        ...         .alias("fields"),
-        ...     ]
-        ... ).unnest("fields")
         shape: (4, 2)
         ┌────────────┬─────────────┐
         │ first_part ┆ second_part │
@@ -544,6 +535,68 @@ class StringNameSpace:
             .select(pli.col(s.name).str.split_exact(by, n, inclusive))
             .to_series()
         )
+
+    def splitn(self, by: str, n: int) -> pli.Series:
+        """
+        Split the string by a substring, restricted to returning at most ``n`` items.
+
+        If the number of possible splits is less than ``n-1``, the remaining field
+        elements will be null. If the number of possible splits is ``n-1`` or greater,
+        the last (nth) substring will contain the remainder of the string.
+
+        Parameters
+        ----------
+        by
+            Substring to split by.
+        n
+            Max number of items to return.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"s": ["foo bar", None, "foo-bar", "foo bar baz"]})
+        >>> df["s"].str.splitn(" ", 2).alias("fields")
+        shape: (4,)
+        Series: 'fields' [struct[2]]
+        [
+                {"foo","bar"}
+                {null,null}
+                {"foo-bar",null}
+                {"foo","bar baz"}
+        ]
+
+        Split string values in column s in exactly 2 parts and assign
+        each part to a new column.
+
+        >>> (
+        ...     df["s"]
+        ...     .str.splitn(" ", 2)
+        ...     .struct.rename_fields(["first_part", "second_part"])
+        ...     .alias("fields")
+        ...     .to_frame()
+        ...     .unnest("fields")
+        ... )
+        shape: (4, 2)
+        ┌────────────┬─────────────┐
+        │ first_part ┆ second_part │
+        │ ---        ┆ ---         │
+        │ str        ┆ str         │
+        ╞════════════╪═════════════╡
+        │ foo        ┆ bar         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null       ┆ null        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ foo-bar    ┆ null        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ foo        ┆ bar baz     │
+        └────────────┴─────────────┘
+
+        Returns
+        -------
+        Struct of Utf8 type
+
+        """
+        s = pli.wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.splitn(by, n)).to_series()
 
     def replace(self, pattern: str, value: str, literal: bool = False) -> pli.Series:
         r"""
