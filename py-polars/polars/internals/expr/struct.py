@@ -9,6 +9,14 @@ class ExprStructNameSpace:
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr
 
+    def __getitem__(self, item: str | int) -> pli.Expr:
+        if isinstance(item, str):
+            return self.field(item)
+        elif isinstance(item, int):
+            return pli.wrap_expr(self._pyexpr.struct_field_by_index(item))
+        else:
+            raise ValueError(f"expected type 'int | str', got {type(item)}")
+
     def field(self, name: str) -> pli.Expr:
         """
         Retrieve one of the fields of this `Struct` as a new Series.

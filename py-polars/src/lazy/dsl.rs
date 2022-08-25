@@ -1474,6 +1474,10 @@ impl PyExpr {
         self.inner.clone().struct_().field_by_name(name).into()
     }
 
+    pub fn struct_field_by_index(&self, index: i64) -> PyExpr {
+        self.inner.clone().struct_().field_by_index(index).into()
+    }
+
     pub fn struct_rename_fields(&self, names: Vec<String>) -> PyExpr {
         self.inner.clone().struct_().rename_fields(names).into()
     }

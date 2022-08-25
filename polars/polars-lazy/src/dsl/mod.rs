@@ -474,10 +474,9 @@ impl Expr {
     pub fn arg_min(self) -> Self {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "arg_min",
-            cast_to_supertypes: false,
+            ..Default::default()
         };
 
         self.function_with_options(
@@ -491,10 +490,9 @@ impl Expr {
     pub fn arg_max(self) -> Self {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "arg_max",
-            cast_to_supertypes: false,
+            ..Default::default()
         };
 
         self.function_with_options(
@@ -508,10 +506,8 @@ impl Expr {
     pub fn arg_sort(self, reverse: bool) -> Self {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: false,
-            auto_explode: false,
             fmt_str: "arg_sort",
-            cast_to_supertypes: false,
+            ..Default::default()
         };
 
         self.function_with_options(
@@ -536,10 +532,9 @@ impl Expr {
             function: FunctionExpr::SearchSorted,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
-                input_wildcard_expansion: false,
                 auto_explode: true,
                 fmt_str: "search_sorted",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -620,6 +615,7 @@ impl Expr {
                 auto_explode: false,
                 fmt_str: "map",
                 cast_to_supertypes: false,
+                allow_rename: false,
             },
         }
     }
@@ -634,6 +630,7 @@ impl Expr {
                 auto_explode: false,
                 fmt_str,
                 cast_to_supertypes: false,
+                allow_rename: false,
             },
         }
     }
@@ -654,10 +651,8 @@ impl Expr {
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -681,10 +676,8 @@ impl Expr {
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyList,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "map_list",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -730,10 +723,8 @@ impl Expr {
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -744,10 +735,8 @@ impl Expr {
             function: function_expr,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str,
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -768,10 +757,9 @@ impl Expr {
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
-                input_wildcard_expansion: false,
-                auto_explode: true,
                 fmt_str: "",
-                cast_to_supertypes: false,
+                auto_explode: true,
+                ..Default::default()
             },
         }
     }
@@ -793,10 +781,10 @@ impl Expr {
             function: function_expr,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
-                input_wildcard_expansion: false,
                 auto_explode,
                 fmt_str,
                 cast_to_supertypes,
+                ..Default::default()
             },
         }
     }
@@ -817,10 +805,10 @@ impl Expr {
             function: function_expr,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
                 auto_explode: true,
                 fmt_str,
                 cast_to_supertypes,
+                ..Default::default()
             },
         }
     }
@@ -933,10 +921,9 @@ impl Expr {
     pub fn product(self) -> Self {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "product",
-            cast_to_supertypes: false,
+            ..Default::default()
         };
 
         self.function_with_options(
@@ -1127,10 +1114,9 @@ impl Expr {
             },
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "fill_null",
                 cast_to_supertypes: true,
+                ..Default::default()
             },
         }
     }
@@ -1204,6 +1190,7 @@ impl Expr {
                 auto_explode: false,
                 fmt_str: "pow",
                 cast_to_supertypes: false,
+                allow_rename: false,
             },
         }
     }
@@ -1216,10 +1203,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Sin),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "sin",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -1232,10 +1217,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Cos),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "cos",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -1248,10 +1231,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Tan),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "tan",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -1264,10 +1245,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcSin),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "arcsin",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -1280,10 +1259,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcCos),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "arccos",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -1296,10 +1273,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcTan),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "arctan",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -1312,10 +1287,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Sinh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "sinh",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -1328,10 +1301,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Cosh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "cosh",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -1344,10 +1315,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Tanh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "tanh",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -1360,10 +1329,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcSinh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "arcsinh",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -1376,10 +1343,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcCosh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "arccosh",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -1392,10 +1357,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcTanh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "arctanh",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -1408,10 +1371,8 @@ impl Expr {
             function: FunctionExpr::Sign,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "sign",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
@@ -2372,10 +2333,8 @@ where
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
-            input_wildcard_expansion: false,
-            auto_explode: false,
             fmt_str: "",
-            cast_to_supertypes: false,
+            ..Default::default()
         },
     }
 }
@@ -2400,10 +2359,9 @@ where
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyList,
-            input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "",
-            cast_to_supertypes: false,
+            ..Default::default()
         },
     }
 }
@@ -2430,10 +2388,9 @@ where
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "",
-            cast_to_supertypes: false,
+            ..Default::default()
         },
     }
 }

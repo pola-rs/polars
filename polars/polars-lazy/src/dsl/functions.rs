@@ -220,9 +220,8 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
-            auto_explode: false,
             fmt_str: "argsort_by",
-            cast_to_supertypes: false,
+            ..Default::default()
         },
     }
 }
@@ -245,7 +244,7 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
             input_wildcard_expansion: true,
             auto_explode: true,
             fmt_str: "concat_by",
-            cast_to_supertypes: false,
+            ..Default::default()
         },
     }
 }
@@ -262,9 +261,8 @@ pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
-            auto_explode: false,
             fmt_str: "concat_list",
-            cast_to_supertypes: false,
+            ..Default::default()
         },
     }
 }
@@ -450,9 +448,8 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
-            auto_explode: false,
             fmt_str: "datetime",
-            cast_to_supertypes: false,
+            ..Default::default()
         },
     }
     .alias("datetime")
@@ -528,9 +525,8 @@ pub fn duration(args: DurationArgs) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
-            auto_explode: false,
             fmt_str: "duration",
-            cast_to_supertypes: false,
+            ..Default::default()
         },
     }
     .alias("duration")
@@ -731,7 +727,7 @@ where
                 input_wildcard_expansion: true,
                 auto_explode: true,
                 fmt_str: "",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     } else {
@@ -904,10 +900,8 @@ pub fn arg_where<E: Into<Expr>>(condition: E) -> Expr {
         function: FunctionExpr::ArgWhere,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: false,
-            auto_explode: false,
             fmt_str: "arg_where",
-            cast_to_supertypes: false,
+            ..Default::default()
         },
     }
 }

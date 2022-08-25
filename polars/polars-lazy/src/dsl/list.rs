@@ -352,7 +352,7 @@ impl ListNameSpace {
                 input_wildcard_expansion: true,
                 auto_explode: true,
                 fmt_str: "arr.contains",
-                cast_to_supertypes: false,
+                ..Default::default()
             },
         }
     }
