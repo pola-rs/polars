@@ -437,10 +437,6 @@ impl PySeries {
         self.series.cumprod(reverse).into()
     }
 
-    pub fn reverse(&self) -> Self {
-        self.series.reverse().into()
-    }
-
     pub fn chunk_lengths(&self) -> Vec<usize> {
         self.series.chunk_lengths().collect()
     }
@@ -739,11 +735,6 @@ impl PySeries {
 
     pub fn len(&self) -> usize {
         self.series.len()
-    }
-
-    pub fn to_physical(&self) -> Self {
-        let s = self.series.to_physical_repr().into_owned();
-        s.into()
     }
 
     pub fn to_list(&self) -> PyObject {

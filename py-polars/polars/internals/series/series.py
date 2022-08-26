@@ -2119,8 +2119,6 @@ class Series:
         ]
 
         """
-        pl_dtype = py_type_to_dtype(dtype)
-        return wrap_s(self._s.cast(pl_dtype, strict))
 
     def to_physical(self) -> Series:
         """
@@ -2152,7 +2150,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.to_physical())
 
     def to_list(self, use_pyarrow: bool = False) -> list[Any | None]:
         """
@@ -2224,7 +2221,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.reverse())
 
     def is_numeric(self) -> bool:
         """
