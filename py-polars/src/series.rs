@@ -1258,10 +1258,6 @@ impl PySeries {
         Ok(out.into())
     }
 
-    pub fn shuffle(&self, seed: u64) -> Self {
-        self.series.shuffle(seed).into()
-    }
-
     pub fn extend_constant(&self, value: Wrap<AnyValue>, n: usize) -> PyResult<Self> {
         let value = value.0;
         let out = self
