@@ -1757,7 +1757,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.is_null())
 
     def is_not_null(self) -> Series:
         """
@@ -1781,7 +1780,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.is_not_null())
 
     def is_finite(self) -> Series:
         """
@@ -1805,7 +1803,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.is_finite())
 
     def is_infinite(self) -> Series:
         """
@@ -1829,7 +1826,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.is_infinite())
 
     def is_nan(self) -> Series:
         """
@@ -1854,7 +1850,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.is_nan())
 
     def is_not_nan(self) -> Series:
         """
@@ -1879,7 +1874,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.is_not_nan())
 
     def is_in(self, other: Series | Sequence[Any]) -> Series:
         """
@@ -1931,7 +1925,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).is_in(other)).to_series()
 
     def arg_true(self) -> Series:
         """
@@ -1966,7 +1959,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.is_unique())
 
     def is_first(self) -> Series:
         """
@@ -1977,7 +1969,6 @@ class Series:
         Boolean Series
 
         """
-        return wrap_s(self._s.is_first())
 
     def is_duplicated(self) -> Series:
         """
@@ -2001,7 +1992,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.is_duplicated())
 
     def explode(self) -> Series:
         """
@@ -2029,7 +2019,6 @@ class Series:
         Exploded Series of same dtype
 
         """
-        return wrap_s(self._s.explode())
 
     def series_equal(
         self, other: Series, null_equal: bool = False, strict: bool = False

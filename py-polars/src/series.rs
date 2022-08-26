@@ -606,39 +606,6 @@ impl PySeries {
         self.series.has_validity()
     }
 
-    pub fn is_null(&self) -> PySeries {
-        Self::new(self.series.is_null().into_series())
-    }
-
-    pub fn is_not_null(&self) -> PySeries {
-        Self::new(self.series.is_not_null().into_series())
-    }
-
-    pub fn is_not_nan(&self) -> PyResult<Self> {
-        let ca = self.series.is_not_nan().map_err(PyPolarsErr::from)?;
-        Ok(ca.into_series().into())
-    }
-
-    pub fn is_nan(&self) -> PyResult<Self> {
-        let ca = self.series.is_nan().map_err(PyPolarsErr::from)?;
-        Ok(ca.into_series().into())
-    }
-
-    pub fn is_finite(&self) -> PyResult<Self> {
-        let ca = self.series.is_finite().map_err(PyPolarsErr::from)?;
-        Ok(ca.into_series().into())
-    }
-
-    pub fn is_infinite(&self) -> PyResult<Self> {
-        let ca = self.series.is_infinite().map_err(PyPolarsErr::from)?;
-        Ok(ca.into_series().into())
-    }
-
-    pub fn is_unique(&self) -> PyResult<Self> {
-        let ca = self.series.is_unique().map_err(PyPolarsErr::from)?;
-        Ok(ca.into_series().into())
-    }
-
     pub fn sample_n(
         &self,
         n: usize,
@@ -664,16 +631,6 @@ impl PySeries {
             .series
             .sample_frac(frac, with_replacement, shuffle, seed)
             .map_err(PyPolarsErr::from)?;
-        Ok(s.into())
-    }
-
-    pub fn is_duplicated(&self) -> PyResult<Self> {
-        let ca = self.series.is_duplicated().map_err(PyPolarsErr::from)?;
-        Ok(ca.into_series().into())
-    }
-
-    pub fn explode(&self) -> PyResult<Self> {
-        let s = self.series.explode().map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
@@ -1110,15 +1067,6 @@ impl PySeries {
 
     pub fn peak_min(&self) -> Self {
         self.series.peak_min().into_series().into()
-    }
-
-    pub fn is_first(&self) -> PyResult<Self> {
-        let out = self
-            .series
-            .is_first()
-            .map_err(PyPolarsErr::from)?
-            .into_series();
-        Ok(out.into())
     }
 
     pub fn floor(&self) -> PyResult<Self> {
