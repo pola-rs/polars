@@ -58,12 +58,12 @@ class LazyGroupBy(Generic[LDF]):
 
     def head(self, n: int = 5) -> LDF:
         """
-        Return first n rows of each group.
+        Get the first `n` rows of each group.
 
         Parameters
         ----------
         n
-            Number of values of the group to select
+            Number of rows to return.
 
         Examples
         --------
@@ -115,12 +115,12 @@ class LazyGroupBy(Generic[LDF]):
 
     def tail(self, n: int = 5) -> LDF:
         """
-        Return last n rows of each group.
+        Get the last `n` rows of each group.
 
         Parameters
         ----------
         n
-            Number of values of the group to select
+            Number of rows to return.
 
         Examples
         --------

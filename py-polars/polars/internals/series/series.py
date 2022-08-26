@@ -52,6 +52,7 @@ from polars.utils import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
     _ptr_to_numpy,
+    deprecated_alias,
     is_bool_sequence,
     is_int_sequence,
     range_to_slice,
@@ -1483,14 +1484,15 @@ class Series:
             predicate = Series("", predicate)
         return wrap_s(self._s.filter(predicate._s))
 
-    def head(self, length: int | None = None) -> Series:
+    @deprecated_alias(length="n")
+    def head(self, n: int = 10) -> Series:
         """
-        Get first N elements as Series.
+        Get the first `n` rows.
 
         Parameters
         ----------
-        length
-            Length of the head.
+        n
+            Number of rows to return.
 
         Examples
         --------
@@ -1504,16 +1506,17 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.head(length))
+        return self.to_frame().select(pli.col(self.name).head(n)).to_series()
 
-    def tail(self, length: int | None = None) -> Series:
+    @deprecated_alias(length="n")
+    def tail(self, n: int = 10) -> Series:
         """
-        Get last N elements as Series.
+        Get the last `n` rows.
 
         Parameters
         ----------
-        length
-            Length of the tail.
+        n
+            Number of rows to return.
 
         Examples
         --------
@@ -1527,7 +1530,7 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.tail(length))
+        return self.to_frame().select(pli.col(self.name).tail(n)).to_series()
 
     def take_every(self, n: int) -> Series:
         """
