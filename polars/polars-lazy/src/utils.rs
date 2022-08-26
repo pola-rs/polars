@@ -88,8 +88,13 @@ where
 /// Check if root expression is a literal
 #[cfg(feature = "is_in")]
 pub(crate) fn has_root_literal_expr(e: &Expr) -> bool {
-    let roots = expr_to_root_column_exprs(e);
-    roots.iter().any(|e| matches!(e, Expr::Literal(_)))
+    match e {
+        Expr::Literal(_) => true,
+        _ => {
+            let roots = expr_to_root_column_exprs(e);
+            roots.iter().any(|e| matches!(e, Expr::Literal(_)))
+        }
+    }
 }
 
 // this one is used so much that it has its own function, to reduce inlining

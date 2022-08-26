@@ -49,54 +49,70 @@ impl PhysicalExpr for FilterExpr {
         let groups = ac_s.groups();
         let predicate_s = ac_predicate.flat_naive();
         let predicate = predicate_s.bool()?.rechunk();
-        let predicate = predicate.downcast_iter().next().unwrap();
 
-        let groups = POOL.install(|| {
-            match groups.as_ref() {
-                GroupsProxy::Idx(groups) => {
-                    let groups = groups
-                        .par_iter()
-                        .map(|(first, idx)| unsafe {
-                            let idx: Vec<IdxSize> = idx
-                                .iter()
-                                // Safety:
-                                // just checked bounds in short circuited lhs
-                                .filter_map(|i| {
-                                    match predicate.value(*i as usize)
-                                        && predicate.is_valid_unchecked(*i as usize)
-                                    {
-                                        true => Some(*i),
-                                        _ => None,
-                                    }
-                                })
-                                .collect();
-
-                            (*idx.first().unwrap_or(&first), idx)
-                        })
-                        .collect();
-
-                    GroupsProxy::Idx(groups)
-                }
-                GroupsProxy::Slice { groups, .. } => {
-                    let groups = groups
-                        .par_iter()
-                        .map(|&[first, len]| unsafe {
-                            let idx: Vec<IdxSize> = (first..first + len)
-                                // Safety:
-                                // just checked bounds in short circuited lhs
-                                .filter(|&i| {
-                                    predicate.value(i as usize)
-                                        && predicate.is_valid_unchecked(i as usize)
-                                })
-                                .collect();
-
-                            (*idx.first().unwrap_or(&first), idx)
-                        })
-                        .collect();
-                    GroupsProxy::Idx(groups)
-                }
+        // all values true don't do anything
+        if predicate.all() {
+            return Ok(ac_s);
+        }
+        // all values false
+        // create empty groups
+        let groups = if !predicate.any() {
+            let groups = groups.iter().map(|gi| [gi.first(), 0]).collect::<Vec<_>>();
+            GroupsProxy::Slice {
+                groups,
+                rolling: false,
             }
-        });
+        }
+        // filter the indexes that are true
+        else {
+            let predicate = predicate.downcast_iter().next().unwrap();
+            POOL.install(|| {
+                match groups.as_ref() {
+                    GroupsProxy::Idx(groups) => {
+                        let groups = groups
+                            .par_iter()
+                            .map(|(first, idx)| unsafe {
+                                let idx: Vec<IdxSize> = idx
+                                    .iter()
+                                    // Safety:
+                                    // just checked bounds in short circuited lhs
+                                    .filter_map(|i| {
+                                        match predicate.value(*i as usize)
+                                            && predicate.is_valid_unchecked(*i as usize)
+                                        {
+                                            true => Some(*i),
+                                            _ => None,
+                                        }
+                                    })
+                                    .collect();
+
+                                (*idx.first().unwrap_or(&first), idx)
+                            })
+                            .collect();
+
+                        GroupsProxy::Idx(groups)
+                    }
+                    GroupsProxy::Slice { groups, .. } => {
+                        let groups = groups
+                            .par_iter()
+                            .map(|&[first, len]| unsafe {
+                                let idx: Vec<IdxSize> = (first..first + len)
+                                    // Safety:
+                                    // just checked bounds in short circuited lhs
+                                    .filter(|&i| {
+                                        predicate.value(i as usize)
+                                            && predicate.is_valid_unchecked(i as usize)
+                                    })
+                                    .collect();
+
+                                (*idx.first().unwrap_or(&first), idx)
+                            })
+                            .collect();
+                        GroupsProxy::Idx(groups)
+                    }
+                }
+            })
+        };
 
         ac_s.with_groups(groups).set_original_len(false);
         Ok(ac_s)
