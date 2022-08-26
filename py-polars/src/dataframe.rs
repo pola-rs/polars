@@ -89,7 +89,8 @@ impl PyDataFrame {
         // don't use this anywhere else.
         let mut df = std::mem::take(&mut self.df);
         let cols = std::mem::take(df.get_columns_mut());
-        let (ptr, len, cap) = cols.into_raw_parts();
+        let mut cols_md = std::mem::ManuallyDrop::new(cols);
+        let (ptr, len, cap) = (cols_md.as_mut_ptr(), cols_md.len(), cols_md.capacity());
         (ptr as usize, len, cap)
     }
 
