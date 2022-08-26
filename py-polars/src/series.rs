@@ -11,7 +11,6 @@ use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::list_construction::py_seq_to_list;
 use crate::set::set_at_idx;
-use crate::utils::reinterpret;
 use crate::{
     apply_method_all_arrow_series2, arrow_interop,
     npy::{aligned_array, get_refcnt},
@@ -1091,11 +1090,6 @@ impl PySeries {
         })
     }
 
-    pub fn shift(&self, periods: i64) -> Self {
-        let s = self.series.shift(periods);
-        PySeries::new(s)
-    }
-
     pub fn zip_with(&self, mask: &PySeries, other: &PySeries) -> PyResult<Self> {
         let mask = mask.series.bool().map_err(PyPolarsErr::from)?;
         let s = self
@@ -1127,11 +1121,6 @@ impl PySeries {
         self.series.peak_min().into_series().into()
     }
 
-    pub fn n_unique(&self) -> PyResult<usize> {
-        let n = self.series.n_unique().map_err(PyPolarsErr::from)?;
-        Ok(n)
-    }
-
     pub fn is_first(&self) -> PyResult<Self> {
         let out = self
             .series
@@ -1139,11 +1128,6 @@ impl PySeries {
             .map_err(PyPolarsErr::from)?
             .into_series();
         Ok(out.into())
-    }
-
-    pub fn round(&self, decimals: u32) -> PyResult<Self> {
-        let s = self.series.round(decimals).map_err(PyPolarsErr::from)?;
-        Ok(s.into())
     }
 
     pub fn floor(&self) -> PyResult<Self> {
@@ -1157,16 +1141,6 @@ impl PySeries {
 
     pub fn dot(&self, other: &PySeries) -> Option<f64> {
         self.series.dot(&other.series)
-    }
-
-    pub fn hash(&self, k0: u64, k1: u64, k2: u64, k3: u64) -> Self {
-        let hb = ahash::RandomState::with_seeds(k0, k1, k2, k3);
-        self.series.hash(hb).into_series().into()
-    }
-
-    pub fn mode(&self) -> PyResult<Self> {
-        let s = self.series.mode().map_err(PyPolarsErr::from)?;
-        Ok(s.into())
     }
 
     pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {

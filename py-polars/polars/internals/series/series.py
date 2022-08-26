@@ -2699,7 +2699,6 @@ class Series:
         Only works on floating point Series
 
         """
-        return wrap_s(self._s.floor())
 
     def ceil(self) -> Series:
         """
@@ -2732,7 +2731,6 @@ class Series:
             number of decimals to round by.
 
         """
-        return wrap_s(self._s.round(decimals))
 
     def dot(self, other: Series) -> float | None:
         """
@@ -2768,7 +2766,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.mode())
 
     def sign(self) -> Series:
         """
@@ -3085,7 +3082,6 @@ class Series:
             Number of places to shift (may be negative).
 
         """
-        return wrap_s(self._s.shift(periods))
 
     def shift_and_fill(self, periods: int, fill_value: int | pli.Expr) -> Series:
         """
@@ -3671,7 +3667,6 @@ class Series:
         3
 
         """
-        return self._s.n_unique()
 
     @overload
     def shrink_to_fit(self, in_place: Literal[False] = ...) -> Series:
@@ -3734,11 +3729,6 @@ class Series:
         ]
 
         """
-        k0 = seed
-        k1 = seed_1 if seed_1 is not None else seed
-        k2 = seed_2 if seed_2 is not None else seed
-        k3 = seed_3 if seed_3 is not None else seed
-        return wrap_s(self._s.hash(k0, k1, k2, k3))
 
     def reinterpret(self, signed: bool = True) -> Series:
         """
