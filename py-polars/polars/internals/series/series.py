@@ -4,6 +4,7 @@ import math
 import sys
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Sequence, Union, overload
+from warnings import warn
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -2495,9 +2496,9 @@ class Series:
         """
         Set masked values.
 
-        .. note::
-            Using this is an anti-pattern.
-            Always prefer: `pl.when(predicate).then(value).otherwise(self)`
+        .. deprecated:: 0.14.5
+            `set` will be removed in a future version of Polars.
+            Instead use: `pl.when(predicate).then(value).otherwise(self)`
 
         Parameters
         ----------
@@ -2507,6 +2508,12 @@ class Series:
             Value to replace the the masked values with.
 
         """
+        warn(
+            "Series.set will be removed in a future version of Polars."
+            " Instead use: pl.when(predicate).then(value).otherwise(self)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
