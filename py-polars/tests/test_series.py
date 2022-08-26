@@ -1902,3 +1902,26 @@ def test_set_at_idx() -> None:
     # expected error condition
     with pytest.raises(TypeError):
         s.set_at_idx([0, 2], 0.12345)
+
+
+def test_repr() -> None:
+    s = pl.Series("ints", [1001, 2002, 3003])
+    s_repr = repr(s)
+
+    assert "shape: (3,)" in s_repr
+    assert "Series: 'ints' [i64]" in s_repr
+    for n in s.to_list():
+        assert str(n) in s_repr
+
+    class XSeries(pl.Series):
+        """Custom Series class"""
+
+    # check custom class name reflected in repr ouput
+    x = XSeries("ints", [1001, 2002, 3003])
+    x_repr = repr(x)
+
+    assert "shape: (3,)" in x_repr
+    assert "XSeries: 'ints' [i64]" in x_repr
+    assert "1001" in x_repr
+    for n in x.to_list():
+        assert str(n) in x_repr
