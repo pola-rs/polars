@@ -3753,7 +3753,6 @@ class Series:
             If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
 
         """
-        return wrap_s(self._s.reinterpret(signed))
 
     def interpolate(self) -> Series:
         """

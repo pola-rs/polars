@@ -1164,11 +1164,6 @@ impl PySeries {
         self.series.hash(hb).into_series().into()
     }
 
-    pub fn reinterpret(&self, signed: bool) -> PyResult<Self> {
-        let s = reinterpret(&self.series, signed).map_err(PyPolarsErr::from)?;
-        Ok(s.into())
-    }
-
     pub fn mode(&self) -> PyResult<Self> {
         let s = self.series.mode().map_err(PyPolarsErr::from)?;
         Ok(s.into())
