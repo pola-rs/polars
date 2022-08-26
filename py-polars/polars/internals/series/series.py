@@ -4245,7 +4245,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.extend_constant(value, n))
 
     def set_sorted(self, reverse: bool = False) -> Series:
         """

@@ -1242,15 +1242,6 @@ impl PySeries {
         Ok(out.into())
     }
 
-    pub fn extend_constant(&self, value: Wrap<AnyValue>, n: usize) -> PyResult<Self> {
-        let value = value.0;
-        let out = self
-            .series
-            .extend_constant(value, n)
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
-    }
-
     pub fn time_unit(&self) -> Option<&str> {
         if let DataType::Datetime(tu, _) | DataType::Duration(tu) = self.series.dtype() {
             Some(match tu {
