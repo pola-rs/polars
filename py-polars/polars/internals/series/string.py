@@ -4,16 +4,21 @@ from typing import TYPE_CHECKING
 
 import polars.internals as pli
 from polars.datatypes import Date, Datetime, Time
+from polars.internals.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TransferEncoding
+    from polars.polars import PySeries
 
 
+@expr_dispatch
 class StringNameSpace:
     """Series.str namespace."""
 
+    _accessor = "str"
+
     def __init__(self, series: pli.Series):
-        self._s = series._s
+        self._s: PySeries = series._s
 
     def strptime(
         self,
@@ -84,12 +89,6 @@ class StringNameSpace:
         └────────────┘
 
         """
-        s = pli.wrap_s(self._s)
-        return (
-            s.to_frame()
-            .select(pli.col(s.name).str.strptime(datatype, fmt, strict, exact))
-            .to_series()
-        )
 
     def lengths(self) -> pli.Series:
         """
@@ -113,7 +112,6 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_lengths())
 
     def concat(self, delimiter: str = "-") -> pli.Series:
         """
@@ -134,8 +132,6 @@ class StringNameSpace:
         '1-null-2'
 
         """
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.concat(delimiter)).to_series()
 
     def contains(self, pattern: str, literal: bool = False) -> pli.Series:
         """
@@ -175,7 +171,6 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_contains(pattern, literal))
 
     def ends_with(self, sub: str) -> pli.Series:
         """
@@ -204,8 +199,6 @@ class StringNameSpace:
         starts_with : Check if string values start with a substring.
 
         """
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.ends_with(sub)).to_series()
 
     def starts_with(self, sub: str) -> pli.Series:
         """
@@ -234,8 +227,6 @@ class StringNameSpace:
         ends_with : Check if string values end with a substring.
 
         """
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.starts_with(sub)).to_series()
 
     def decode(self, encoding: TransferEncoding, strict: bool = False) -> pli.Series:
         """
@@ -264,14 +255,6 @@ class StringNameSpace:
         ]
 
         """
-        if encoding == "hex":
-            return pli.wrap_s(self._s.str_hex_decode(strict))
-        elif encoding == "base64":
-            return pli.wrap_s(self._s.str_base64_decode(strict))
-        else:
-            raise ValueError(
-                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
-            )
 
     def encode(self, encoding: TransferEncoding) -> pli.Series:
         """
@@ -299,14 +282,6 @@ class StringNameSpace:
         ]
 
         """
-        if encoding == "hex":
-            return pli.wrap_s(self._s.str_hex_encode())
-        elif encoding == "base64":
-            return pli.wrap_s(self._s.str_base64_encode())
-        else:
-            raise ValueError(
-                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
-            )
 
     def json_path_match(self, json_path: str) -> pli.Series:
         """
@@ -344,7 +319,6 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_json_path_match(json_path))
 
     def extract(self, pattern: str, group_index: int = 1) -> pli.Series:
         r"""
@@ -389,7 +363,6 @@ class StringNameSpace:
         └─────────┘
 
         """
-        return pli.wrap_s(self._s.str_extract(pattern, group_index))
 
     def extract_all(self, pattern: str) -> pli.Series:
         r"""
@@ -418,8 +391,6 @@ class StringNameSpace:
         ]
 
         """
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.extract_all(pattern)).to_series()
 
     def count_match(self, pattern: str) -> pli.Series:
         r"""
@@ -447,8 +418,6 @@ class StringNameSpace:
         ]
 
         """
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.count_match(pattern)).to_series()
 
     def split(self, by: str, inclusive: bool = False) -> pli.Series:
         """
@@ -466,8 +435,6 @@ class StringNameSpace:
         List of Utf8 type
 
         """
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.split(by, inclusive)).to_series()
 
     def split_exact(self, by: str, n: int, inclusive: bool = False) -> pli.Series:
         """
@@ -529,12 +496,6 @@ class StringNameSpace:
         Struct of Utf8 type
 
         """
-        s = pli.wrap_s(self._s)
-        return (
-            s.to_frame()
-            .select(pli.col(s.name).str.split_exact(by, n, inclusive))
-            .to_series()
-        )
 
     def splitn(self, by: str, n: int) -> pli.Series:
         """
@@ -627,7 +588,6 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_replace(pattern, value, literal))
 
     def replace_all(
         self, pattern: str, value: str, literal: bool = False
@@ -660,22 +620,15 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_replace_all(pattern, value, literal))
 
     def strip(self) -> pli.Series:
         """Remove leading and trailing whitespace."""
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.strip()).to_series()
 
     def lstrip(self) -> pli.Series:
         """Remove leading whitespace."""
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.lstrip()).to_series()
 
     def rstrip(self) -> pli.Series:
         """Remove trailing whitespace."""
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.rstrip()).to_series()
 
     def zfill(self, alignment: int) -> pli.Series:
         """
@@ -690,8 +643,6 @@ class StringNameSpace:
             Fill the value up to this length.
 
         """
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.zfill(alignment)).to_series()
 
     def ljust(self, width: int, fillchar: str = " ") -> pli.Series:
         """
@@ -721,10 +672,6 @@ class StringNameSpace:
         ]
 
         """
-        s = pli.wrap_s(self._s)
-        return (
-            s.to_frame().select(pli.col(s.name).str.ljust(width, fillchar)).to_series()
-        )
 
     def rjust(self, width: int, fillchar: str = " ") -> pli.Series:
         """
@@ -754,18 +701,12 @@ class StringNameSpace:
         ]
 
         """
-        s = pli.wrap_s(self._s)
-        return (
-            s.to_frame().select(pli.col(s.name).str.rjust(width, fillchar)).to_series()
-        )
 
     def to_lowercase(self) -> pli.Series:
         """Modify the strings to their lowercase equivalent."""
-        return pli.wrap_s(self._s.str_to_lowercase())
 
     def to_uppercase(self) -> pli.Series:
         """Modify the strings to their uppercase equivalent."""
-        return pli.wrap_s(self._s.str_to_uppercase())
 
     def slice(self, start: int, length: int | None = None) -> pli.Series:
         """
@@ -810,4 +751,3 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_slice(start, length))

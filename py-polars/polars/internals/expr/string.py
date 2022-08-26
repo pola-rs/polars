@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 class ExprStringNameSpace:
     """Namespace for string related expressions."""
 
+    _accessor = "str"
+
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr
 

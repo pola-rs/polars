@@ -6,6 +6,8 @@ import polars.internals as pli
 class ExprMetaNameSpace:
     """Namespace for expressions on a meta level."""
 
+    _accessor = "meta"
+
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr
 

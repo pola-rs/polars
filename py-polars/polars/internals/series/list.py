@@ -4,16 +4,21 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 import polars.internals as pli
+from polars.internals.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import NullBehavior
+    from polars.polars import PySeries
 
 
+@expr_dispatch
 class ListNameSpace:
     """Series.arr namespace."""
 
+    _accessor = "arr"
+
     def __init__(self, series: pli.Series):
-        self._s = series._s
+        self._s: PySeries = series._s
 
     def lengths(self) -> pli.Series:
         """
@@ -31,35 +36,27 @@ class ListNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.arr_lengths())
 
     def sum(self) -> pli.Series:
         """Sum all the arrays in the list."""
-        return pli.select(pli.lit(pli.wrap_s(self._s)).arr.sum()).to_series()
 
     def max(self) -> pli.Series:
         """Compute the max value of the arrays in the list."""
-        return pli.select(pli.lit(pli.wrap_s(self._s)).arr.max()).to_series()
 
     def min(self) -> pli.Series:
         """Compute the min value of the arrays in the list."""
-        return pli.select(pli.lit(pli.wrap_s(self._s)).arr.min()).to_series()
 
     def mean(self) -> pli.Series:
         """Compute the mean value of the arrays in the list."""
-        return pli.select(pli.lit(pli.wrap_s(self._s)).arr.mean()).to_series()
 
     def sort(self, reverse: bool = False) -> pli.Series:
         """Sort the arrays in the list."""
-        return pli.select(pli.lit(pli.wrap_s(self._s)).arr.sort(reverse)).to_series()
 
     def reverse(self) -> pli.Series:
         """Reverse the arrays in the list."""
-        return pli.select(pli.lit(pli.wrap_s(self._s)).arr.reverse()).to_series()
 
     def unique(self) -> pli.Series:
         """Get the unique/distinct values in the list."""
-        return pli.select(pli.lit(pli.wrap_s(self._s)).arr.unique()).to_series()
 
     def concat(self, other: list[pli.Series] | pli.Series | list[Any]) -> pli.Series:
         """
@@ -87,7 +84,6 @@ class ListNameSpace:
             Index to return per sublist
 
         """
-        return pli.select(pli.lit(pli.wrap_s(self._s)).arr.get(index)).to_series()
 
     def join(self, separator: str) -> pli.Series:
         """
@@ -115,15 +111,12 @@ class ListNameSpace:
         ]
 
         """
-        return pli.select(pli.lit(pli.wrap_s(self._s)).arr.join(separator)).to_series()
 
     def first(self) -> pli.Series:
         """Get the first value of the sublists."""
-        return self.get(0)
 
     def last(self) -> pli.Series:
         """Get the last value of the sublists."""
-        return self.get(-1)
 
     def contains(self, item: float | str | bool | int | date | datetime) -> pli.Series:
         """
@@ -139,10 +132,6 @@ class ListNameSpace:
         Boolean mask
 
         """
-        s = pli.Series("", [item])
-        s_list = pli.wrap_s(self._s)
-        out = s.is_in(s_list)
-        return out.rename(s_list.name)
 
     def arg_min(self) -> pli.Series:
         """
@@ -153,7 +142,6 @@ class ListNameSpace:
         Series of dtype UInt32/UInt64 (depending on compilation)
 
         """
-        return pli.select(pli.lit(pli.wrap_s(self._s)).arr.arg_min()).to_series()
 
     def arg_max(self) -> pli.Series:
         """
@@ -164,7 +152,6 @@ class ListNameSpace:
         Series of dtype UInt32/UInt64 (depending on compilation)
 
         """
-        return pli.select(pli.lit(pli.wrap_s(self._s)).arr.arg_max()).to_series()
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> pli.Series:
         """
@@ -189,9 +176,6 @@ class ListNameSpace:
         ]
 
         """
-        return pli.select(
-            pli.lit(pli.wrap_s(self._s)).arr.diff(n, null_behavior)
-        ).to_series()
 
     def shift(self, periods: int = 1) -> pli.Series:
         """
@@ -215,7 +199,6 @@ class ListNameSpace:
         ]
 
         """
-        return pli.select(pli.lit(pli.wrap_s(self._s)).arr.shift(periods)).to_series()
 
     def slice(self, offset: int, length: int) -> pli.Series:
         """
@@ -240,9 +223,6 @@ class ListNameSpace:
         ]
 
         """
-        return pli.select(
-            pli.lit(pli.wrap_s(self._s)).arr.slice(offset, length)
-        ).to_series()
 
     def head(self, n: int = 5) -> pli.Series:
         """
@@ -265,7 +245,6 @@ class ListNameSpace:
         ]
 
         """
-        return self.slice(0, n)
 
     def tail(self, n: int = 5) -> pli.Series:
         """
@@ -288,7 +267,6 @@ class ListNameSpace:
         ]
 
         """
-        return self.slice(-n, n)
 
     def eval(self, expr: pli.Expr, parallel: bool = False) -> pli.Series:
         """
@@ -326,6 +304,3 @@ class ListNameSpace:
         └─────┴─────┴────────────┘
 
         """
-        return pli.select(
-            pli.lit(pli.wrap_s(self._s)).arr.eval(expr, parallel)
-        ).to_series()

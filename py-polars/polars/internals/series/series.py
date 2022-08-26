@@ -28,7 +28,6 @@ from polars.datatypes import (
     UInt64,
     Utf8,
     dtype_to_ctype,
-    dtype_to_ffiname,
     get_idx_type,
     maybe_cast,
     numpy_char_code_to_dtype,
@@ -47,6 +46,7 @@ from polars.internals.series.datetime import DateTimeNameSpace
 from polars.internals.series.list import ListNameSpace
 from polars.internals.series.string import StringNameSpace
 from polars.internals.series.struct import StructNameSpace
+from polars.internals.series.utils import expr_dispatch, get_ffi_func
 from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _date_to_pl_date,
@@ -103,50 +103,6 @@ if TYPE_CHECKING:
     )
 
 
-def _resolve_datetime_dtype(
-    dtype: PolarsDataType | None, ndtype: np.datetime64
-) -> PolarsDataType | None:
-    """Given polars/numpy datetime dtypes, resolve to an explicit unit"""
-    if dtype is None or (dtype == Datetime and not getattr(dtype, "tu", None)):
-        tu = getattr(dtype, "tu", np.datetime_data(ndtype)[0])
-        # explicit formulation is verbose, but keeps mypy happy
-        # (and avoids unsupported timeunits such as "s")
-        if tu == "ns":
-            dtype = Datetime("ns")
-        elif tu == "us":
-            dtype = Datetime("us")
-        elif tu == "ms":
-            dtype = Datetime("ms")
-    return dtype
-
-
-def get_ffi_func(
-    name: str, dtype: type[DataType], obj: PySeries
-) -> Callable[..., Any] | None:
-    """
-    Dynamically obtain the proper ffi function/ method.
-
-    Parameters
-    ----------
-    name
-        function or method name where dtype is replaced by <>
-        for example
-            "call_foo_<>"
-    dtype
-        polars dtype.
-    obj
-        Object to find the method for.
-
-    Returns
-    -------
-    ffi function, or None if not found
-
-    """
-    ffi_name = dtype_to_ffiname(dtype)
-    fname = name.replace("<>", ffi_name)
-    return getattr(obj, fname, None)
-
-
 def wrap_s(s: PySeries) -> Series:
     return Series._from_pyseries(s)
 
@@ -162,6 +118,7 @@ ArrayLike = Union[
 ]
 
 
+@expr_dispatch
 class Series:
     """
     A Series represents a single column in a polars DataFrame.
@@ -751,7 +708,6 @@ class Series:
 
     def log(self, base: float = math.e) -> Series:
         """Compute the logarithm to a given base."""
-        return self.to_frame().select(pli.col(self.name).log(base)).to_series()
 
     def log10(self) -> Series:
         """Compute the base 10 logarithm of the input array, element-wise."""
@@ -759,7 +715,6 @@ class Series:
 
     def exp(self) -> Series:
         """Compute the exponential, element-wise."""
-        return self.to_frame().select(pli.col(self.name).exp()).to_series()
 
     def drop_nulls(self) -> Series:
         """Create a new Series that copies data from this Series without null values."""
@@ -2670,9 +2625,6 @@ class Series:
         self, fill_value: str | int | float | bool | pli.Expr | None
     ) -> Series:
         """Fill floating point NaN value with a fill value."""
-        return (
-            self.to_frame().select(pli.col(self.name).fill_nan(fill_value)).to_series()
-        )
 
     def fill_null(
         self,
@@ -2725,9 +2677,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(
-            pli.col(self.name).fill_null(value, strategy, limit)
-        )[self.name]
 
     def floor(self) -> Series:
         """
@@ -2747,7 +2696,6 @@ class Series:
         Only works on floating point Series
 
         """
-        return self.to_frame().select(pli.col(self.name).ceil()).to_series()
 
     def round(self, decimals: int) -> Series:
         """
@@ -2828,7 +2776,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).sign()).to_series()
 
     def sin(self) -> Series:
         """
@@ -2848,7 +2795,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).sin()).to_series()
 
     def cos(self) -> Series:
         """
@@ -2868,7 +2814,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).cos()).to_series()
 
     def tan(self) -> Series:
         """
@@ -2888,7 +2833,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).tan()).to_series()
 
     def arcsin(self) -> Series:
         """
@@ -2907,7 +2851,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).arcsin()).to_series()
 
     def arccos(self) -> Series:
         """
@@ -2926,7 +2869,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).arccos()).to_series()
 
     def arctan(self) -> Series:
         """
@@ -2945,7 +2887,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).arctan()).to_series()
 
     def arcsinh(self) -> Series:
         """
@@ -2964,7 +2905,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).arcsinh()).to_series()
 
     def arccosh(self) -> Series:
         """
@@ -2984,7 +2924,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).arccosh()).to_series()
 
     def arctanh(self) -> Series:
         """
@@ -3007,7 +2946,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).arctanh()).to_series()
 
     def sinh(self) -> Series:
         """
@@ -3026,7 +2964,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).sinh()).to_series()
 
     def cosh(self) -> Series:
         """
@@ -3045,7 +2982,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).cosh()).to_series()
 
     def tanh(self) -> Series:
         """
@@ -3064,7 +3000,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).tanh()).to_series()
 
     def apply(
         self, func: Callable[[Any], Any], return_dtype: type[DataType] | None = None
@@ -3152,9 +3087,6 @@ class Series:
             Fill None values with the result of this expression.
 
         """
-        return self.to_frame().select(
-            pli.col(self.name).shift_and_fill(periods, fill_value)
-        )[self.name]
 
     def zip_with(self, mask: Series, other: Series) -> Series:
         """
@@ -3518,26 +3450,20 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0])
-        >>> s.rolling_apply(function=lambda s: s.std(), window_size=3)
+        >>> import numpy as np
+        >>> s = pl.Series("A", [11.0, 2.0, 9.0, float("nan"), 8.0])
+        >>> print(s.rolling_apply(function=np.nanstd, window_size=3))
         shape: (5,)
         Series: 'A' [f64]
         [
             null
             null
-            4.358899
-            4.041452
-            5.567764
+            3.858612
+            3.5
+            0.5
         ]
 
         """
-        if min_periods is None:
-            min_periods = window_size
-        return self.to_frame().select(
-            pli.col(self.name).rolling_apply(
-                function, window_size, weights, min_periods, center
-            )
-        )[self.name]
 
     def rolling_median(
         self,
@@ -3631,9 +3557,6 @@ class Series:
             If False, then the calculations are corrected for statistical bias.
 
         """
-        return self.to_frame().select(
-            pli.col(self.name).rolling_skew(window_size, bias)
-        )[self.name]
 
     def sample(
         self,
@@ -3963,7 +3886,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).pct_change(n)).to_series()
 
     def skew(self, bias: bool = True) -> float | None:
         r"""
@@ -4059,9 +3981,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).clip(min_val, max_val))[
-            self.name
-        ]
 
     def clip_min(self, min_val: int | float) -> Series:
         """
@@ -4177,15 +4096,6 @@ class Series:
             (otherwise result is null).
 
         """
-        return (
-            self.to_frame()
-            .select(
-                pli.col(self.name).ewm_mean(
-                    com, span, half_life, alpha, adjust, min_periods
-                )
-            )
-            .to_series()
-        )
 
     def ewm_std(
         self,
@@ -4236,15 +4146,6 @@ class Series:
             (otherwise result is null).
 
         """
-        return (
-            self.to_frame()
-            .select(
-                pli.col(self.name).ewm_std(
-                    com, span, half_life, alpha, adjust, min_periods
-                )
-            )
-            .to_series()
-        )
 
     def ewm_var(
         self,
@@ -4295,15 +4196,6 @@ class Series:
             (otherwise result is null).
 
         """
-        return (
-            self.to_frame()
-            .select(
-                pli.col(self.name).ewm_var(
-                    com, span, half_life, alpha, adjust, min_periods
-                )
-            )
-            .to_series()
-        )
 
     def extend_constant(self, value: int | float | str | bool | None, n: int) -> Series:
         """
@@ -4404,3 +4296,20 @@ class SeriesIter:
             return self.s[i]
         else:
             raise StopIteration
+
+
+def _resolve_datetime_dtype(
+    dtype: PolarsDataType | None, ndtype: np.datetime64
+) -> PolarsDataType | None:
+    """Given polars/numpy datetime dtypes, resolve to an explicit unit"""
+    if dtype is None or (dtype == Datetime and not getattr(dtype, "tu", None)):
+        tu = getattr(dtype, "tu", np.datetime_data(ndtype)[0])
+        # explicit formulation is verbose, but keeps mypy happy
+        # (and avoids unsupported timeunits such as "s")
+        if tu == "ns":
+            dtype = Datetime("ns")
+        elif tu == "us":
+            dtype = Datetime("us")
+        elif tu == "ms":
+            dtype = Datetime("ms")
+    return dtype

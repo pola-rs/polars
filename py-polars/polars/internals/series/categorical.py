@@ -3,16 +3,21 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
+from polars.internals.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import CategoricalOrdering
+    from polars.polars import PySeries
 
 
+@expr_dispatch
 class CatNameSpace:
     """Namespace for categorical related series."""
 
-    def __init__(self, s: pli.Series):
-        self._s = s
+    _accessor = "cat"
+
+    def __init__(self, series: pli.Series):
+        self._s: PySeries = series._s
 
     def set_ordering(self, ordering: CategoricalOrdering) -> pli.Series:
         """
@@ -55,4 +60,3 @@ class CatNameSpace:
         └──────┴──────┘
 
         """
-        return pli.select(pli.lit(self._s).cat.set_ordering(ordering)).to_series()

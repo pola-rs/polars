@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 class ExprDateTimeNameSpace:
     """Namespace for datetime related expressions."""
 
+    _accessor = "dt"
+
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr
 

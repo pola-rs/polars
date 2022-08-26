@@ -6,6 +6,8 @@ import polars.internals as pli
 class ExprStructNameSpace:
     """Namespace for struct related expressions."""
 
+    _accessor = "struct"
+
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr
 
