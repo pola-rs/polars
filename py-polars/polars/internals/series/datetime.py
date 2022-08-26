@@ -315,6 +315,16 @@ class DateTimeNameSpace:
 
         """
 
+    def microseconds(self) -> pli.Series:
+        """
+        Extract the microseconds from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+
+        """
+
     def nanoseconds(self) -> pli.Series:
         """
         Extract the nanoseconds from a Duration type.
