@@ -3652,6 +3652,7 @@ class Series:
         3
 
         """
+        return self._s.n_unique()
 
     @overload
     def shrink_to_fit(self, in_place: Literal[False] = ...) -> Series:

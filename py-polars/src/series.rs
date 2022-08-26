@@ -1069,6 +1069,11 @@ impl PySeries {
         self.series.peak_min().into_series().into()
     }
 
+    pub fn n_unique(&self) -> PyResult<usize> {
+        let n = self.series.n_unique().map_err(PyPolarsErr::from)?;
+        Ok(n)
+    }
+
     pub fn floor(&self) -> PyResult<Self> {
         let s = self.series.floor().map_err(PyPolarsErr::from)?;
         Ok(s.into())
