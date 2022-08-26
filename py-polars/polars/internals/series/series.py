@@ -4046,7 +4046,6 @@ class Series:
         Series
 
         """
-        return wrap_s(self._s.reshape(dims))
 
     def shuffle(self, seed: int | None = None) -> Series:
         """

@@ -1237,11 +1237,6 @@ impl PySeries {
         Ok(out.into())
     }
 
-    pub fn reshape(&self, dims: Vec<i64>) -> PyResult<Self> {
-        let out = self.series.reshape(&dims).map_err(PyPolarsErr::from)?;
-        Ok(out.into())
-    }
-
     pub fn time_unit(&self) -> Option<&str> {
         if let DataType::Datetime(tu, _) | DataType::Duration(tu) = self.series.dtype() {
             Some(match tu {
