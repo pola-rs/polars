@@ -12,13 +12,10 @@ from polars.datatypes import (
     Datetime,
     Duration,
     PolarsDataType,
+    is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.utils import (
-    _datetime_to_pl_timestamp,
-    _timedelta_to_pl_timedelta,
-    timedelta_in_nanoseconds_window,
-)
+from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_timedelta
 
 try:
     from polars.polars import arange as pyarange
@@ -173,14 +170,10 @@ def col(
     if isinstance(name, list):
         if len(name) == 0 or isinstance(name[0], str):
             return pli.wrap_expr(pycols(name))
-        elif (
-            isclass(name[0])
-            and issubclass(name[0], DataType)
-            or isinstance(name[0], DataType)
-        ):
+        elif is_polars_dtype(name[0]):
             return pli.wrap_expr(_dtype_cols(name))
         else:
-            raise ValueError("did expect argument of List[str] or List[DataType]")
+            raise ValueError("Expected list values to be all `str` or all `DataType`")
     return pli.wrap_expr(pycol(name))
 
 
@@ -644,19 +637,15 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
     if isinstance(value, datetime):
         tu = "us"
         return lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime(tu))
-    if isinstance(value, timedelta):
-        # TODO: python timedelta should also default to 'us' units.
-        #  (needs some corresponding work on the Rust side first)
-        if timedelta_in_nanoseconds_window(value):
-            tu = "ns"
-        else:
-            tu = "ms"
+
+    elif isinstance(value, timedelta):
+        tu = "us"
         return lit(_timedelta_to_pl_timedelta(value, tu)).cast(Duration(tu))
 
-    if isinstance(value, date):
+    elif isinstance(value, date):
         return lit(datetime(value.year, value.month, value.day)).cast(Date)
 
-    if isinstance(value, pli.Series):
+    elif isinstance(value, pli.Series):
         name = value.name
         value = value._s
         e = pli.wrap_expr(pylit(value))

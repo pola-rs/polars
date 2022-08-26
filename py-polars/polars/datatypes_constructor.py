@@ -65,6 +65,7 @@ if not _DOCUMENTING:
     }
     for tu in DTYPE_TEMPORAL_UNITS:
         _POLARS_TYPE_TO_CONSTRUCTOR[Datetime(tu)] = PySeries.new_opt_i64
+        _POLARS_TYPE_TO_CONSTRUCTOR[Duration(tu)] = PySeries.new_opt_i64
 
 
 def polars_type_to_constructor(

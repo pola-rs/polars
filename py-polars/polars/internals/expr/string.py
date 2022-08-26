@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
-from polars.datatypes import DataType, Date, Datetime, Time
+from polars.datatypes import DataType, Date, Datetime, Time, is_polars_dtype
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TransferEncoding
@@ -81,8 +81,9 @@ class ExprStringNameSpace:
         └────────────┘
 
         """
-        if not issubclass(datatype, DataType):  # pragma: no cover
+        if not is_polars_dtype(datatype):  # pragma: no cover
             raise ValueError(f"expected: {DataType} got: {datatype}")
+
         if datatype == Date:
             return pli.wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact))
         elif datatype == Datetime:

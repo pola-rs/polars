@@ -20,7 +20,7 @@ pub struct StrpTimeOptions {
 impl Default for StrpTimeOptions {
     fn default() -> Self {
         StrpTimeOptions {
-            date_dtype: DataType::Datetime(TimeUnit::Milliseconds, None),
+            date_dtype: DataType::Datetime(TimeUnit::Microseconds, None),
             fmt: None,
             strict: false,
             exact: false,

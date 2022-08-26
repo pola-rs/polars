@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence, TypeVar, overload
 
 from polars import internals as pli
 from polars.cfg import Config
-from polars.datatypes import DataType, Schema, py_type_to_dtype
+from polars.datatypes import DataType, PolarsDataType, Schema, py_type_to_dtype
 from polars.internals.lazyframe.groupby import LazyGroupBy
 from polars.internals.slice import LazyPolarsSlice
 from polars.utils import (
@@ -88,7 +88,7 @@ class LazyFrame:
         comment_char: str | None = None,
         quote_char: str | None = r'"',
         skip_rows: int = 0,
-        dtypes: dict[str, type[DataType]] | None = None,
+        dtypes: dict[str, PolarsDataType] | None = None,
         null_values: str | list[str] | dict[str, str] | None = None,
         ignore_errors: bool = False,
         cache: bool = True,
@@ -114,7 +114,7 @@ class LazyFrame:
         polars.io.scan_csv
 
         """
-        dtype_list: list[tuple[str, type[DataType]]] | None = None
+        dtype_list: list[tuple[str, PolarsDataType]] | None = None
         if dtypes is not None:
             dtype_list = []
             for k, v in dtypes.items():

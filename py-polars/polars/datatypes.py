@@ -472,14 +472,12 @@ def dtype_to_py_type(dtype: PolarsDataType) -> type:
 
 
 def is_polars_dtype(data_type: Any) -> bool:
-    return (
-        type(data_type) is type
-        and issubclass(data_type, DataType)
-        or isinstance(data_type, DataType)
+    return isinstance(data_type, DataType) or (
+        type(data_type) is type and issubclass(data_type, DataType)
     )
 
 
-def py_type_to_dtype(data_type: Any) -> type[DataType]:
+def py_type_to_dtype(data_type: Any) -> PolarsDataType:
     # when the passed in is already a Polars datatype, return that
     if is_polars_dtype(data_type):
         return data_type

@@ -28,6 +28,7 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
+    PolarsDataType,
     UInt8,
     UInt16,
     UInt32,
@@ -544,7 +545,7 @@ class DataFrame:
         comment_char: str | None = None,
         quote_char: str | None = r'"',
         skip_rows: int = 0,
-        dtypes: None | (Mapping[str, type[DataType]] | list[type[DataType]]) = None,
+        dtypes: None | (Mapping[str, PolarsDataType] | Sequence[PolarsDataType]) = None,
         null_values: str | list[str] | dict[str, str] | None = None,
         ignore_errors: bool = False,
         parse_dates: bool = False,
@@ -583,14 +584,14 @@ class DataFrame:
             if isinstance(file, StringIO):
                 file = file.getvalue().encode()
 
-        dtype_list: list[tuple[str, type[DataType]]] | None = None
-        dtype_slice: list[type[DataType]] | None = None
+        dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
+        dtype_slice: Sequence[PolarsDataType] | None = None
         if dtypes is not None:
             if isinstance(dtypes, dict):
                 dtype_list = []
                 for k, v in dtypes.items():
                     dtype_list.append((k, py_type_to_dtype(v)))
-            elif isinstance(dtypes, list):
+            elif isinstance(dtypes, Sequence):
                 dtype_slice = dtypes
             else:
                 raise ValueError("dtype arg should be list or dict")

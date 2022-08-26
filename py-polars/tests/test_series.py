@@ -1788,8 +1788,11 @@ def test_duration_extract_times() -> None:
     expected = pl.Series("b", [3600 * 24])
     verify_series_and_expr_api(duration, expected, "dt.seconds")
 
-    expected = pl.Series("b", [3600 * 24 * 1000])
+    expected = pl.Series("b", [3600 * 24 * int(1e3)])
     verify_series_and_expr_api(duration, expected, "dt.milliseconds")
+
+    expected = pl.Series("b", [3600 * 24 * int(1e6)])
+    verify_series_and_expr_api(duration, expected, "dt.microseconds")
 
     expected = pl.Series("b", [3600 * 24 * int(1e9)])
     verify_series_and_expr_api(duration, expected, "dt.nanoseconds")

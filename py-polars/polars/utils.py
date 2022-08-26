@@ -81,11 +81,6 @@ def in_nanoseconds_window(dt: datetime) -> bool:
     return 1386 < dt.year < 2554
 
 
-def timedelta_in_nanoseconds_window(td: timedelta) -> bool:
-    """Check whether the given timedelta can be represented as a Unix timestamp."""
-    return in_nanoseconds_window(datetime(1970, 1, 1) + td)
-
-
 def _datetime_to_pl_timestamp(dt: datetime, tu: TimeUnit | None) -> int:
     """Convert a python datetime to a timestamp in nanoseconds."""
     if tu == "ns":
