@@ -13,7 +13,7 @@ from polars.internals.expr.list import ExprListNameSpace
 from polars.internals.expr.meta import ExprMetaNameSpace
 from polars.internals.expr.string import ExprStringNameSpace
 from polars.internals.expr.struct import ExprStructNameSpace
-from polars.utils import is_expr_sequence, is_pyexpr_sequence
+from polars.utils import deprecated_alias, is_expr_sequence, is_pyexpr_sequence
 
 try:
     from polars.polars import PyExpr
@@ -1922,13 +1922,16 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    def take(self, index: list[int] | Expr | pli.Series | np.ndarray[Any, Any]) -> Expr:
+    @deprecated_alias(index="indices")
+    def take(
+        self, indices: int | list[int] | Expr | pli.Series | np.ndarray[Any, Any]
+    ) -> Expr:
         """
         Take values by index.
 
         Parameters
         ----------
-        index
+        indices
             An expression that leads to a UInt32 dtyped Series.
 
         Returns
@@ -1963,16 +1966,16 @@ class Expr:
         └───────┴───────┘
 
         """
-        if isinstance(index, list) or (
-            _NUMPY_AVAILABLE and isinstance(index, np.ndarray)
+        if isinstance(indices, list) or (
+            _NUMPY_AVAILABLE and isinstance(indices, np.ndarray)
         ):
-            index_lit = pli.lit(pli.Series("", index, dtype=UInt32))
+            indices_lit = pli.lit(pli.Series("", indices, dtype=UInt32))
         else:
-            index_lit = pli.expr_to_lit_or_expr(
-                index,  # type: ignore[arg-type]
+            indices_lit = pli.expr_to_lit_or_expr(
+                indices,  # type: ignore[arg-type]
                 str_to_lit=False,
             )
-        return pli.wrap_expr(self._pyexpr.take(index_lit._pyexpr))
+        return pli.wrap_expr(self._pyexpr.take(indices_lit._pyexpr))
 
     def shift(self, periods: int = 1) -> Expr:
         """
