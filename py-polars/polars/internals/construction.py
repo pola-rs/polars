@@ -150,15 +150,22 @@ def sequence_to_pyseries(
     values: Sequence[Any],
     dtype: PolarsDataType | None = None,
     strict: bool = True,
+    dtype_if_empty: PolarsDataType | None = None,
 ) -> PySeries:
     """Construct a PySeries from a sequence."""
     python_dtype: type | None = None
     nested_dtype: PolarsDataType | type | None = None
     temporal_unit: str | None = None
 
-    # empty sequence defaults to Float32 type
+    # empty sequence
     if not values and dtype is None:
-        dtype = Float32
+        if dtype_if_empty:
+            # if dtype for empty sequence could be guessed
+            # (e.g comparisons between self and other)
+            dtype = dtype_if_empty
+        else:
+            # default to Float32 type
+            dtype = Float32
     # lists defer to subsequent handling; identify nested type
     elif dtype == List:
         nested_dtype = getattr(dtype, "inner", None)
