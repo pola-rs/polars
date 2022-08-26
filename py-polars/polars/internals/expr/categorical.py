@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
@@ -8,16 +7,11 @@ import polars.internals as pli
 if TYPE_CHECKING:
     from polars.internals.type_aliases import CategoricalOrdering
 
-    if sys.version_info >= (3, 8):
-        from typing import Final
-    else:
-        from typing_extensions import Final
-
 
 class ExprCatNameSpace:
     """Namespace for categorical related expressions."""
 
-    _accessor: Final = "cat"
+    _accessor = "cat"
 
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr

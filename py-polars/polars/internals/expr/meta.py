@@ -1,21 +1,12 @@
 from __future__ import annotations
 
-import sys
-from typing import TYPE_CHECKING
-
 import polars.internals as pli
-
-if TYPE_CHECKING:
-    if sys.version_info >= (3, 8):
-        from typing import Final
-    else:
-        from typing_extensions import Final
 
 
 class ExprMetaNameSpace:
     """Namespace for expressions on a meta level."""
 
-    _accessor: Final = "meta"
+    _accessor = "meta"
 
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr

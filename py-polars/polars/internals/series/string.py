@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
@@ -11,17 +10,12 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import TransferEncoding
     from polars.polars import PySeries
 
-    if sys.version_info >= (3, 8):
-        from typing import Final
-    else:
-        from typing_extensions import Final
-
 
 @expr_dispatch
 class StringNameSpace:
     """Series.str namespace."""
 
-    _accessor: Final = "str"
+    _accessor = "str"
 
     def __init__(self, series: pli.Series):
         self._s: PySeries = series._s

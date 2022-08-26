@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
@@ -9,17 +8,12 @@ from polars.internals.series.utils import expr_dispatch
 if TYPE_CHECKING:
     from polars.polars import PySeries
 
-    if sys.version_info >= (3, 8):
-        from typing import Final
-    else:
-        from typing_extensions import Final
-
 
 @expr_dispatch
 class StructNameSpace:
     """Series.struct namespace."""
 
-    _accessor: Final = "struct"
+    _accessor = "struct"
 
     def __init__(self, series: pli.Series):
         self._s: PySeries = series._s

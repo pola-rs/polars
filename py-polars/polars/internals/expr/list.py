@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import sys
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -10,16 +9,11 @@ import polars.internals as pli
 if TYPE_CHECKING:
     from polars.internals.type_aliases import NullBehavior, ToStructStrategy
 
-    if sys.version_info >= (3, 8):
-        from typing import Final
-    else:
-        from typing_extensions import Final
-
 
 class ExprListNameSpace:
     """Namespace for list related expressions."""
 
-    _accessor: Final = "arr"
+    _accessor = "arr"
 
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
@@ -11,16 +10,11 @@ from polars.utils import _timedelta_to_pl_duration
 if TYPE_CHECKING:
     from polars.internals.type_aliases import EpochTimeUnit, TimeUnit
 
-    if sys.version_info >= (3, 8):
-        from typing import Final
-    else:
-        from typing_extensions import Final
-
 
 class ExprDateTimeNameSpace:
     """Namespace for datetime related expressions."""
 
-    _accessor: Final = "dt"
+    _accessor = "dt"
 
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr
