@@ -4658,7 +4658,7 @@ class Expr:
         Parameters
         ----------
         n
-            number of slots to shift
+            Number of slots to shift.
         null_behavior : {'ignore', 'drop'}
             How to handle null values.
 

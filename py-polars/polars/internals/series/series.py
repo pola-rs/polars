@@ -3774,11 +3774,9 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.interpolate())
 
     def abs(self) -> Series:
         """Compute absolute values."""
-        return wrap_s(self._s.abs())
 
     def rank(self, method: RankMethod = "average", reverse: bool = False) -> Series:
         """
@@ -3838,7 +3836,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.rank(method, reverse))
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
         """
@@ -3852,7 +3849,6 @@ class Series:
             How to handle null values.
 
         """
-        return wrap_s(self._s.diff(n, null_behavior))
 
     def pct_change(self, n: int = 1) -> Series:
         """
@@ -4010,7 +4006,6 @@ class Series:
             Minimum value.
 
         """
-        return self.to_frame().select(pli.col(self.name).clip_min(min_val))[self.name]
 
     def clip_max(self, max_val: int | float) -> Series:
         """
@@ -4027,7 +4022,6 @@ class Series:
             Maximum value.
 
         """
-        return self.to_frame().select(pli.col(self.name).clip_max(max_val))[self.name]
 
     def reshape(self, dims: tuple[int, ...]) -> Series:
         """

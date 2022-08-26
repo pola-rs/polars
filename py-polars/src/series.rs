@@ -1,5 +1,4 @@
 use numpy::PyArray1;
-use polars::series::ops::NullBehavior;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::CustomIterTools;
@@ -1175,11 +1174,6 @@ impl PySeries {
         Ok(s.into())
     }
 
-    pub fn interpolate(&self) -> Self {
-        let s = self.series.interpolate();
-        s.into()
-    }
-
     pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         // Used in pickle/pickling
         Ok(PyBytes::new(py, &bincode::serialize(&self.series).unwrap()).to_object(py))
@@ -1194,18 +1188,6 @@ impl PySeries {
             }
             Err(e) => Err(e),
         }
-    }
-
-    pub fn rank(&self, method: Wrap<RankMethod>, reverse: bool) -> PyResult<Self> {
-        let options = RankOptions {
-            method: method.0,
-            descending: reverse,
-        };
-        Ok(self.series.rank(options).into())
-    }
-
-    pub fn diff(&self, n: usize, null_behavior: Wrap<NullBehavior>) -> PyResult<Self> {
-        Ok(self.series.diff(n, null_behavior.0).into())
     }
 
     pub fn skew(&self, bias: bool) -> PyResult<Option<f64>> {
@@ -1229,11 +1211,6 @@ impl PySeries {
             self.series.cast(&dtype)
         };
         let out = out.map_err(PyPolarsErr::from)?;
-        Ok(out.into())
-    }
-
-    pub fn abs(&self) -> PyResult<Self> {
-        let out = self.series.abs().map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
 
