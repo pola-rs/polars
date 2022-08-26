@@ -26,3 +26,22 @@ def test_melt_values_predicate_pushdown() -> None:
         .filter(pl.col("value") == pl.lit("123"))
         .collect()
     ).to_dict(False) == {"id": [1], "variable": ["asset_key_1"], "value": ["123"]}
+
+
+def test_filter_is_in_4572() -> None:
+    df = pl.DataFrame({"id": [1, 2, 1, 2], "k": ["a"] * 2 + ["b"] * 2})
+    expected = (
+        df.groupby("id").agg(pl.col("k").filter(pl.col("k") == "a").list()).sort("id")
+    )
+    assert (
+        df.groupby("id")
+        .agg(pl.col("k").filter(pl.col("k").is_in(["a"])).list())
+        .sort("id")
+        .frame_equal(expected)
+    )
+    assert (
+        df.sort("id")
+        .groupby("id")
+        .agg(pl.col("k").filter(pl.col("k").is_in(["a"])).list())
+        .frame_equal(expected)
+    )

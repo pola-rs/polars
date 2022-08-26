@@ -568,6 +568,7 @@ pub trait PhysicalExpr: Send + Sync {
         None
     }
 
+    //
     fn is_valid_aggregation(&self) -> bool;
 
     fn is_literal(&self) -> bool {
