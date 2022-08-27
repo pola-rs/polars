@@ -4,6 +4,7 @@ import math
 import sys
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Sequence, Union, overload
+from warnings import warn
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -4044,17 +4045,25 @@ class Series:
         """
         return wrap_s(self._s.reshape(dims))
 
-    def shuffle(self, seed: int = 0) -> Series:
+    def shuffle(self, seed: int | None = None) -> Series:
         """
         Shuffle the contents of this Series.
 
         Parameters
         ----------
         seed
-            Seed initialization
+            Seed initialization.
 
         """
-        return wrap_s(self._s.shuffle(seed))
+        if seed is None:
+            warn(
+                "Series.shuffle will default to a random seed in a future version."
+                " Provide a value for the seed argument to silence this warning.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            seed = 0
+        return self.to_frame().select(pli.col(self.name).shuffle(seed)).to_series()
 
     def ewm_mean(
         self,
