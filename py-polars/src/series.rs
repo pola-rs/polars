@@ -421,22 +421,6 @@ impl PySeries {
         Ok(out.into())
     }
 
-    pub fn cumsum(&self, reverse: bool) -> Self {
-        self.series.cumsum(reverse).into()
-    }
-
-    pub fn cummax(&self, reverse: bool) -> Self {
-        self.series.cummax(reverse).into()
-    }
-
-    pub fn cummin(&self, reverse: bool) -> Self {
-        self.series.cummin(reverse).into()
-    }
-
-    pub fn cumprod(&self, reverse: bool) -> Self {
-        self.series.cumprod(reverse).into()
-    }
-
     pub fn chunk_lengths(&self) -> Vec<usize> {
         self.series.chunk_lengths().collect()
     }
@@ -566,22 +550,12 @@ impl PySeries {
             .into()
     }
 
-    pub fn unique(&self) -> PyResult<Self> {
-        let unique = self.series.unique().map_err(PyPolarsErr::from)?;
-        Ok(unique.into())
-    }
-
     pub fn value_counts(&self, sorted: bool) -> PyResult<PyDataFrame> {
         let df = self
             .series
             .value_counts(true, sorted)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
-    }
-
-    pub fn arg_unique(&self) -> PyResult<Self> {
-        let arg_unique = self.series.arg_unique().map_err(PyPolarsErr::from)?;
-        Ok(arg_unique.into_series().into())
     }
 
     pub fn arg_min(&self) -> Option<usize> {
@@ -632,11 +606,6 @@ impl PySeries {
             .sample_frac(frac, with_replacement, shuffle, seed)
             .map_err(PyPolarsErr::from)?;
         Ok(s.into())
-    }
-
-    pub fn take_every(&self, n: usize) -> Self {
-        let s = self.series.take_every(n);
-        s.into()
     }
 
     pub fn series_equal(&self, other: &PySeries, null_equal: bool, strict: bool) -> bool {
@@ -807,10 +776,6 @@ impl PySeries {
     pub fn as_single_ptr(&mut self) -> PyResult<usize> {
         let ptr = self.series.as_single_ptr().map_err(PyPolarsErr::from)?;
         Ok(ptr)
-    }
-
-    pub fn drop_nulls(&self) -> Self {
-        self.series.drop_nulls().into()
     }
 
     pub fn to_arrow(&mut self) -> PyResult<PyObject> {
