@@ -5,10 +5,7 @@ from typing import TYPE_CHECKING, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import Categorical, Date, Float64
-from polars.utils import (
-    _datetime_to_pl_timestamp,
-    _timedelta_to_pl_duration,
-)
+from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_duration
 
 try:
     from polars.polars import concat_df as _concat_df
@@ -252,6 +249,8 @@ def date_range(
     tu: TimeUnit
     if time_unit is not None:
         tu = time_unit
+    elif "ns" in interval:
+        tu = "ns"
     else:
         tu = "us"
 

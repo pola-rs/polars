@@ -302,10 +302,22 @@ def test_truncate() -> None:
     start = datetime(2001, 1, 1)
     stop = datetime(2001, 1, 2)
 
-    s1 = pl.date_range(start, stop, timedelta(minutes=30), name="dates", time_unit="ms")
-    s2 = pl.date_range(start, stop, timedelta(minutes=30), name="dates", time_unit="ns")
-    # we can pass strings and timedeltas
-    for out in [s1.dt.truncate("1h"), s2.dt.truncate(timedelta(hours=1))]:
+    s1 = pl.date_range(
+        start, stop, timedelta(minutes=30), name="dates[ms]", time_unit="ms"
+    )
+    s2 = pl.date_range(
+        start, stop, timedelta(minutes=30), name="dates[us]", time_unit="us"
+    )
+    s3 = pl.date_range(
+        start, stop, timedelta(minutes=30), name="dates[ns]", time_unit="ns"
+    )
+
+    # can pass strings and timedeltas
+    for out in [
+        s1.dt.truncate("1h"),
+        s2.dt.truncate("1h0m0s"),
+        s3.dt.truncate(timedelta(hours=1)),
+    ]:
         assert out.dt[0] == start
         assert out.dt[1] == start
         assert out.dt[2] == start + timedelta(hours=1)
@@ -358,6 +370,14 @@ def test_date_range() -> None:
         datetime(2022, 1, 1, 22, 30),
         datetime(2022, 1, 2, 0, 0),
     ]
+
+    result = pl.date_range(
+        datetime(2022, 1, 1), datetime(2022, 1, 1, 0, 1), "987654321ns"
+    )
+    assert len(result) == 61
+    assert getattr(result.dtype, "tu") == "ns"
+    assert result.dt.second()[-1] == 59
+    assert result.dt.nanosecond()[-1] == 259259260
 
 
 def test_date_comp() -> None:
