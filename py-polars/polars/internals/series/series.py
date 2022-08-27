@@ -1757,7 +1757,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.is_null())
 
     def is_not_null(self) -> Series:
         """
@@ -1781,7 +1780,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.is_not_null())
 
     def is_finite(self) -> Series:
         """
@@ -1805,7 +1803,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.is_finite())
 
     def is_infinite(self) -> Series:
         """
@@ -1829,7 +1826,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.is_infinite())
 
     def is_nan(self) -> Series:
         """
@@ -1854,7 +1850,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.is_nan())
 
     def is_not_nan(self) -> Series:
         """
@@ -1879,7 +1874,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.is_not_nan())
 
     def is_in(self, other: Series | Sequence[Any]) -> Series:
         """
@@ -1931,7 +1925,6 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).is_in(other)).to_series()
 
     def arg_true(self) -> Series:
         """
@@ -1966,7 +1959,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.is_unique())
 
     def is_first(self) -> Series:
         """
@@ -1977,7 +1969,6 @@ class Series:
         Boolean Series
 
         """
-        return wrap_s(self._s.is_first())
 
     def is_duplicated(self) -> Series:
         """
@@ -2001,7 +1992,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.is_duplicated())
 
     def explode(self) -> Series:
         """
@@ -2029,7 +2019,6 @@ class Series:
         Exploded Series of same dtype
 
         """
-        return wrap_s(self._s.explode())
 
     def series_equal(
         self, other: Series, null_equal: bool = False, strict: bool = False
@@ -2119,8 +2108,6 @@ class Series:
         ]
 
         """
-        pl_dtype = py_type_to_dtype(dtype)
-        return wrap_s(self._s.cast(pl_dtype, strict))
 
     def to_physical(self) -> Series:
         """
@@ -2152,7 +2139,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.to_physical())
 
     def to_list(self, use_pyarrow: bool = False) -> list[Any | None]:
         """
@@ -2224,7 +2210,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.reverse())
 
     def is_numeric(self) -> bool:
         """
@@ -2699,7 +2684,6 @@ class Series:
         Only works on floating point Series
 
         """
-        return wrap_s(self._s.floor())
 
     def ceil(self) -> Series:
         """
@@ -2732,7 +2716,6 @@ class Series:
             number of decimals to round by.
 
         """
-        return wrap_s(self._s.round(decimals))
 
     def dot(self, other: Series) -> float | None:
         """
@@ -2768,7 +2751,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.mode())
 
     def sign(self) -> Series:
         """
@@ -3085,7 +3067,6 @@ class Series:
             Number of places to shift (may be negative).
 
         """
-        return wrap_s(self._s.shift(periods))
 
     def shift_and_fill(self, periods: int, fill_value: int | pli.Expr) -> Series:
         """
@@ -3734,11 +3715,6 @@ class Series:
         ]
 
         """
-        k0 = seed
-        k1 = seed_1 if seed_1 is not None else seed
-        k2 = seed_2 if seed_2 is not None else seed
-        k3 = seed_3 if seed_3 is not None else seed
-        return wrap_s(self._s.hash(k0, k1, k2, k3))
 
     def reinterpret(self, signed: bool = True) -> Series:
         """
@@ -3753,7 +3729,6 @@ class Series:
             If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
 
         """
-        return wrap_s(self._s.reinterpret(signed))
 
     def interpolate(self) -> Series:
         """
@@ -3774,11 +3749,9 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.interpolate())
 
     def abs(self) -> Series:
         """Compute absolute values."""
-        return wrap_s(self._s.abs())
 
     def rank(self, method: RankMethod = "average", reverse: bool = False) -> Series:
         """
@@ -3838,7 +3811,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.rank(method, reverse))
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
         """
@@ -3852,7 +3824,6 @@ class Series:
             How to handle null values.
 
         """
-        return wrap_s(self._s.diff(n, null_behavior))
 
     def pct_change(self, n: int = 1) -> Series:
         """
@@ -4010,7 +3981,6 @@ class Series:
             Minimum value.
 
         """
-        return self.to_frame().select(pli.col(self.name).clip_min(min_val))[self.name]
 
     def clip_max(self, max_val: int | float) -> Series:
         """
@@ -4027,7 +3997,6 @@ class Series:
             Maximum value.
 
         """
-        return self.to_frame().select(pli.col(self.name).clip_max(max_val))[self.name]
 
     def reshape(self, dims: tuple[int, ...]) -> Series:
         """
@@ -4046,7 +4015,6 @@ class Series:
         Series
 
         """
-        return wrap_s(self._s.reshape(dims))
 
     def shuffle(self, seed: int | None = None) -> Series:
         """
@@ -4245,7 +4213,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.extend_constant(value, n))
 
     def set_sorted(self, reverse: bool = False) -> Series:
         """

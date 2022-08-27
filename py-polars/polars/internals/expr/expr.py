@@ -3495,7 +3495,7 @@ class Expr:
         k3 = seed_3 if seed_3 is not None else seed
         return wrap_expr(self._pyexpr.hash(k0, k1, k2, k3))
 
-    def reinterpret(self, signed: bool) -> Expr:
+    def reinterpret(self, signed: bool = True) -> Expr:
         """
         Reinterpret the underlying bits as a signed/unsigned integer.
 
@@ -4658,7 +4658,7 @@ class Expr:
         Parameters
         ----------
         n
-            number of slots to shift
+            Number of slots to shift.
         null_behavior : {'ignore', 'drop'}
             How to handle null values.
 

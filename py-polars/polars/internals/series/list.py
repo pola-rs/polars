@@ -68,8 +68,6 @@ class ListNameSpace:
             Columns to concat into a List Series
 
         """
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).arr.concat(other)).to_series()
 
     def get(self, index: int) -> pli.Series:
         """
