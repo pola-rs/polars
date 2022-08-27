@@ -847,7 +847,7 @@ def fold(
     return pli.wrap_expr(pyfold(acc._pyexpr, f, exprs))
 
 
-def any(name: str | list[pli.Expr] | pli.Expr) -> pli.Expr:
+def any(name: str | list[str] | list[pli.Expr] | pli.Expr) -> pli.Expr:
     """Evaluate columnwise or elementwise with a bitwise OR operation."""
     if isinstance(name, (list, pli.Expr)):
         return fold(lit(False), lambda a, b: a.cast(bool) | b.cast(bool), name).alias(
