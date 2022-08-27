@@ -9,7 +9,6 @@ use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "rank")]
 use polars_core::utils::coalesce_nulls_series;
-use polars_core::utils::get_supertype;
 use rayon::prelude::*;
 
 #[cfg(feature = "arg_where")]
@@ -18,7 +17,6 @@ use crate::dsl::function_expr::FunctionExpr;
 use crate::dsl::function_expr::ListFunction;
 use crate::dsl::*;
 use crate::prelude::*;
-use crate::utils::has_wildcard;
 
 /// Compute the covariance between two columns.
 pub fn cov(a: Expr, b: Expr) -> Expr {
@@ -699,47 +697,34 @@ where
 }
 
 /// Accumulate over multiple columns horizontally / row wise.
-pub fn fold_exprs<F: 'static, E: AsRef<[Expr]>>(mut acc: Expr, f: F, exprs: E) -> Expr
+pub fn fold_exprs<F: 'static, E: AsRef<[Expr]>>(acc: Expr, f: F, exprs: E) -> Expr
 where
     F: Fn(Series, Series) -> Result<Series> + Send + Sync + Clone,
 {
     let mut exprs = exprs.as_ref().to_vec();
-    if exprs.iter().any(|e| has_wildcard(e) | has_regex(e)) {
-        exprs.push(acc);
+    exprs.push(acc);
 
-        let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
-            let mut series = series.to_vec();
-            let mut acc = series.pop().unwrap();
+    let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
+        let mut series = series.to_vec();
+        let mut acc = series.pop().unwrap();
 
-            for s in series {
-                acc = f(acc, s)?;
-            }
-            Ok(acc)
-        }) as Arc<dyn SeriesUdf>);
-
-        // Todo! make sure that output type is correct
-        Expr::AnonymousFunction {
-            input: exprs,
-            function,
-            output_type: GetOutput::same_type(),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: true,
-                auto_explode: true,
-                fmt_str: "",
-                ..Default::default()
-            },
+        for s in series {
+            acc = f(acc, s)?;
         }
-    } else {
-        for e in exprs {
-            acc = map_binary(
-                acc,
-                e,
-                f.clone(),
-                GetOutput::map_dtypes(|dt| get_supertype(dt[0], dt[1]).unwrap()),
-            );
-        }
-        acc
+        Ok(acc)
+    }) as Arc<dyn SeriesUdf>);
+
+    Expr::AnonymousFunction {
+        input: exprs,
+        function,
+        output_type: GetOutput::super_type(),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            fmt_str: "fold",
+            ..Default::default()
+        },
     }
 }
 
