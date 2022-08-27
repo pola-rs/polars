@@ -1680,7 +1680,9 @@ class Series:
             return pli.select(pli.lit(self).unique(maintain_order)).to_series()
         return wrap_s(self._s.unique())
 
-    def take(self, indices: np.ndarray[Any, Any] | list[int] | pli.Expr) -> Series:
+    def take(
+        self, indices: int | list[int] | pli.Expr | Series | np.ndarray[Any, Any]
+    ) -> Series:
         """
         Take values by index.
 
@@ -1701,9 +1703,7 @@ class Series:
         ]
 
         """
-        if isinstance(indices, pli.Expr):
-            return pli.select(pli.lit(self).take(indices)).to_series()
-        return wrap_s(self._s.take(indices))
+        return self.to_frame().select(pli.col(self.name).take(indices)).to_series()
 
     def null_count(self) -> int:
         """Count the null values in this Series."""
