@@ -375,7 +375,7 @@ def test_date_range() -> None:
         datetime(2022, 1, 1), datetime(2022, 1, 1, 0, 1), "987654321ns"
     )
     assert len(result) == 61
-    assert getattr(result.dtype, "tu") == "ns"
+    assert result.dtype.tu == "ns"  # type: ignore[attr-defined]
     assert result.dt.second()[-1] == 59
     assert result.dt.nanosecond()[-1] == 259259260
 
