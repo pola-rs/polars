@@ -2025,7 +2025,7 @@ impl Expr {
             move |s| s.sample_frac(frac, with_replacement, shuffle, seed),
             GetOutput::same_type(),
         )
-        .with_fmt("shuffle")
+        .with_fmt("sample_frac")
     }
 
     #[cfg(feature = "ewma")]
@@ -2038,7 +2038,7 @@ impl Expr {
                 _ => Float64,
             }),
         )
-        .with_fmt("emw_mean")
+        .with_fmt("ewm_mean")
     }
 
     #[cfg(feature = "ewma")]
@@ -2051,7 +2051,7 @@ impl Expr {
                 _ => Float64,
             }),
         )
-        .with_fmt("emw_std")
+        .with_fmt("ewm_std")
     }
 
     #[cfg(feature = "ewma")]
@@ -2064,7 +2064,7 @@ impl Expr {
                 _ => Float64,
             }),
         )
-        .with_fmt("emw_var")
+        .with_fmt("ewm_var")
     }
 
     /// Check if any boolean value is `true`
@@ -2189,7 +2189,7 @@ impl Expr {
                 }
             }),
         )
-        .with_fmt("log")
+        .with_fmt("exp")
     }
 
     #[cfg(feature = "log")]
