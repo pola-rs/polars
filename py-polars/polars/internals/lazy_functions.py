@@ -552,25 +552,25 @@ def last(column: str | pli.Series | None = None) -> pli.Expr:
 
 
 @overload
-def head(column: str, n: int | None) -> pli.Expr:
+def head(column: str, n: int = 10) -> pli.Expr:
     ...
 
 
 @overload
-def head(column: pli.Series, n: int | None) -> pli.Series:
+def head(column: pli.Series, n: int = 10) -> pli.Series:
     ...
 
 
-def head(column: str | pli.Series, n: int | None = None) -> pli.Expr | pli.Series:
+def head(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
     """
-    Get the first n rows of an Expression.
+    Get the first `n` rows.
 
     Parameters
     ----------
     column
         Column name or Series.
     n
-        Number of rows to take.
+        Number of rows to return.
 
     """
     if isinstance(column, pli.Series):
@@ -579,25 +579,25 @@ def head(column: str | pli.Series, n: int | None = None) -> pli.Expr | pli.Serie
 
 
 @overload
-def tail(column: str, n: int | None) -> pli.Expr:
+def tail(column: str, n: int = 10) -> pli.Expr:
     ...
 
 
 @overload
-def tail(column: pli.Series, n: int | None) -> pli.Series:
+def tail(column: pli.Series, n: int = 10) -> pli.Series:
     ...
 
 
-def tail(column: str | pli.Series, n: int | None = None) -> pli.Expr | pli.Series:
+def tail(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
     """
-    Get the last n rows of an Expression.
+    Get the last `n` rows.
 
     Parameters
     ----------
     column
         Column name or Series.
     n
-        Number of rows to take.
+        Number of rows to return.
 
     """
     if isinstance(column, pli.Series):

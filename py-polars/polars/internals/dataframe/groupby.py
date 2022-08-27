@@ -295,12 +295,12 @@ class GroupBy(Generic[DF]):
 
     def head(self, n: int = 5) -> DF:
         """
-        Return first n rows of each group.
+        Get the first `n` rows of each group.
 
         Parameters
         ----------
         n
-            Number of values of the group to select
+            Number of rows to return.
 
         Examples
         --------
@@ -359,12 +359,12 @@ class GroupBy(Generic[DF]):
 
     def tail(self, n: int = 5) -> DF:
         """
-        Return last n rows of each group.
+        Get the last `n` rows of each group.
 
         Parameters
         ----------
         n
-            Number of values of the group to select
+            Number of rows to return.
 
         Examples
         --------

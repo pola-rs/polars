@@ -3197,9 +3197,14 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.take_every(n))
 
-    def head(self, n: int | Expr | None = None) -> Expr:
+    def head(self, n: int = 10) -> Expr:
         """
-        Take the first n values.
+        Get the first `n` rows.
+
+        Parameters
+        ----------
+        n
+            Number of rows to return.
 
         Examples
         --------
@@ -3221,9 +3226,14 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.head(n))
 
-    def tail(self, n: int | None = None) -> Expr:
+    def tail(self, n: int = 10) -> Expr:
         """
-        Take the last n values.
+        Get the last `n` rows.
+
+        Parameters
+        ----------
+        n
+            Number of rows to return.
 
         Examples
         --------

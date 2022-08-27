@@ -226,12 +226,12 @@ class ListNameSpace:
 
     def head(self, n: int = 5) -> pli.Series:
         """
-        Slice the head of every sublist
+        Slice the first `n` values of every sublist.
 
         Parameters
         ----------
         n
-            How many values to take in the slice.
+            Number of values to return for each sublist.
 
         Examples
         --------
@@ -248,12 +248,12 @@ class ListNameSpace:
 
     def tail(self, n: int = 5) -> pli.Series:
         """
-        Slice the tail of every sublist
+        Slice the last `n` values of every sublist.
 
         Parameters
         ----------
         n
-            How many values to take in the slice.
+            Number of values to return for each sublist.
 
         Examples
         --------

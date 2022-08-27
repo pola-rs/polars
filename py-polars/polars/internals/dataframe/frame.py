@@ -49,6 +49,7 @@ from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
+    deprecated_alias,
     format_path,
     handle_projection_columns,
     is_bool_sequence,
@@ -2652,14 +2653,15 @@ class DataFrame:
         """
         return self.head(length)
 
-    def head(self: DF, length: int = 5) -> DF:
+    @deprecated_alias(length="n")
+    def head(self: DF, n: int = 5) -> DF:
         """
-        Get first N rows as DataFrame.
+        Get the first `n` rows.
 
         Parameters
         ----------
-        length
-            Length of the head.
+        n
+            Number of rows to return.
 
         Examples
         --------
@@ -2685,16 +2687,17 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        return self._from_pydf(self._df.head(length))
+        return self._from_pydf(self._df.head(n))
 
-    def tail(self: DF, length: int = 5) -> DF:
+    @deprecated_alias(length="n")
+    def tail(self: DF, n: int = 5) -> DF:
         """
-        Get last N rows as DataFrame.
+        Get the last `n` rows.
 
         Parameters
         ----------
-        length
-            Length of the tail.
+        n
+            Number of rows to return.
 
         Examples
         --------
@@ -2720,7 +2723,7 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        return self._from_pydf(self._df.tail(length))
+        return self._from_pydf(self._df.tail(n))
 
     def drop_nulls(self: DF, subset: str | list[str] | None = None) -> DF:
         """

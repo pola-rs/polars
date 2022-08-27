@@ -558,14 +558,6 @@ impl PySeries {
         (&self.series % &other.series).into()
     }
 
-    pub fn head(&self, length: Option<usize>) -> Self {
-        (self.series.head(length)).into()
-    }
-
-    pub fn tail(&self, length: Option<usize>) -> Self {
-        (self.series.tail(length)).into()
-    }
-
     pub fn sort(&mut self, reverse: bool) -> Self {
         PySeries::new(self.series.sort(reverse))
     }
