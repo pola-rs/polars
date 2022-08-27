@@ -8,7 +8,6 @@ from polars.datatypes import Categorical, Date, Float64
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _timedelta_to_pl_duration,
-    in_nanoseconds_window,
 )
 
 try:
@@ -251,12 +250,10 @@ def date_range(
     high, high_is_date = _ensure_datetime(high)
 
     tu: TimeUnit
-    if in_nanoseconds_window(low) and in_nanoseconds_window(high) and time_unit is None:
-        tu = "ns"
-    elif time_unit is not None:
+    if time_unit is not None:
         tu = time_unit
     else:
-        tu = "ms"
+        tu = "us"
 
     start = _datetime_to_pl_timestamp(low, tu)
     stop = _datetime_to_pl_timestamp(high, tu)
