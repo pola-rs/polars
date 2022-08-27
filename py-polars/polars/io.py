@@ -20,7 +20,7 @@ except ImportError:
     _PYARROW_AVAILABLE = False
 
 from polars.convert import from_arrow
-from polars.datatypes import DataType, Utf8
+from polars.datatypes import DataType, PolarsDataType, Utf8
 from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
 
@@ -420,7 +420,7 @@ def scan_csv(
     comment_char: str | None = None,
     quote_char: str | None = r'"',
     skip_rows: int = 0,
-    dtypes: dict[str, type[DataType]] | None = None,
+    dtypes: dict[str, PolarsDataType] | None = None,
     null_values: str | list[str] | dict[str, str] | None = None,
     ignore_errors: bool = False,
     cache: bool = True,

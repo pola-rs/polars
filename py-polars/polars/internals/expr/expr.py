@@ -6,7 +6,15 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from polars import internals as pli
-from polars.datatypes import DataType, Datetime, Float64, UInt32, py_type_to_dtype
+from polars.datatypes import (
+    DataType,
+    Datetime,
+    Float64,
+    PolarsDataType,
+    UInt32,
+    is_polars_dtype,
+    py_type_to_dtype,
+)
 from polars.internals.expr.categorical import ExprCatNameSpace
 from polars.internals.expr.datetime import ExprDateTimeNameSpace
 from polars.internals.expr.list import ExprListNameSpace
@@ -590,12 +598,7 @@ class Expr:
             columns = [columns]
             return wrap_expr(self._pyexpr.exclude_dtype(columns))
 
-        if not all(
-            [
-                isinstance(a, str) or (type(a) is type and issubclass(a, DataType))
-                for a in columns
-            ]
-        ):
+        if not all((isinstance(a, str) or is_polars_dtype(a)) for a in columns):
             raise ValueError("input should be all string or all DataType")
 
         if isinstance(columns[0], str):
@@ -1634,7 +1637,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.mode())
 
-    def cast(self, dtype: type[Any] | DataType, strict: bool = True) -> Expr:
+    def cast(self, dtype: PolarsDataType | type[Any], strict: bool = True) -> Expr:
         """
         Cast between data types.
 
@@ -2916,7 +2919,7 @@ class Expr:
     def map(
         self,
         f: Callable[[pli.Series], pli.Series | Any],
-        return_dtype: type[DataType] | None = None,
+        return_dtype: PolarsDataType | None = None,
         agg_list: bool = False,
     ) -> Expr:
         """

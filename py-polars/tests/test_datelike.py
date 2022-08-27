@@ -115,15 +115,77 @@ def test_from_pydatetime() -> None:
     assert s.dt[0] == dates[0]
 
 
-def test_to_python_datetime() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3]})
-    assert (
-        df.select(pl.col("a").cast(pl.Datetime).dt.timestamp())["a"].dtype == pl.Int64
+def test_int_to_python_datetime() -> None:
+    df = pl.DataFrame({"a": [100_000_000, 200_000_000]}).with_columns(
+        [
+            pl.col("a").cast(pl.Datetime).alias("b"),
+            pl.col("a").cast(pl.Datetime("ms")).alias("c"),
+            pl.col("a").cast(pl.Datetime("us")).alias("d"),
+            pl.col("a").cast(pl.Datetime("ns")).alias("e"),
+        ]
     )
+    assert df.rows() == [
+        (
+            100000000,
+            datetime(1970, 1, 1, 0, 1, 40),
+            datetime(1970, 1, 2, 3, 46, 40),
+            datetime(1970, 1, 1, 0, 1, 40),
+            datetime(1970, 1, 1, 0, 0, 0, 100000),
+        ),
+        (
+            200000000,
+            datetime(1970, 1, 1, 0, 3, 20),
+            datetime(1970, 1, 3, 7, 33, 20),
+            datetime(1970, 1, 1, 0, 3, 20),
+            datetime(1970, 1, 1, 0, 0, 0, 200000),
+        ),
+    ]
+    assert df.select(
+        [pl.col(col).dt.timestamp() for col in ("c", "d", "e")]
+        + [
+            getattr(pl.col("b").cast(pl.Duration).dt, unit)().alias(f"u[{unit}]")
+            for unit in ("milliseconds", "microseconds", "nanoseconds")
+        ]
+    ).rows() == [
+        (100000000000, 100000000, 100000, 100000, 100000000, 100000000000),
+        (200000000000, 200000000, 200000, 200000, 200000000, 200000000000),
+    ]
+
+
+def test_int_to_python_timedelta() -> None:
+    df = pl.DataFrame({"a": [100_001, 200_002]}).with_columns(
+        [
+            pl.col("a").cast(pl.Duration).alias("b"),
+            pl.col("a").cast(pl.Duration("ms")).alias("c"),
+            pl.col("a").cast(pl.Duration("us")).alias("d"),
+            pl.col("a").cast(pl.Duration("ns")).alias("e"),
+        ]
+    )
+    assert df.rows() == [
+        (
+            100001,
+            timedelta(microseconds=100001),
+            timedelta(seconds=100, microseconds=1000),
+            timedelta(microseconds=100001),
+            timedelta(microseconds=100),
+        ),
+        (
+            200002,
+            timedelta(microseconds=200002),
+            timedelta(seconds=200, microseconds=2000),
+            timedelta(microseconds=200002),
+            timedelta(microseconds=200),
+        ),
+    ]
+
+    assert df.select(
+        [pl.col(col).dt.timestamp() for col in ("c", "d", "e")]
+    ).rows() == [(100001, 100001, 100001), (200002, 200002, 200002)]
 
 
 def test_from_numpy() -> None:
-    # numpy support is limited; will be stored as object
+    # note: numpy timeunit support is limited to those supported by polars.
+    # as a result, datetime64[s] will be stored as object.
     x = np.asarray(range(100_000, 200_000, 10_000), dtype="datetime64[s]")
     s = pl.Series(x)
     assert s[0] == x[0]

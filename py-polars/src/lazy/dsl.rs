@@ -790,7 +790,6 @@ impl PyExpr {
             )
             .into()
     }
-
     pub fn duration_minutes(&self) -> PyExpr {
         self.inner
             .clone()
@@ -800,7 +799,6 @@ impl PyExpr {
             )
             .into()
     }
-
     pub fn duration_seconds(&self) -> PyExpr {
         self.inner
             .clone()
@@ -815,6 +813,15 @@ impl PyExpr {
             .clone()
             .map(
                 |s| Ok(s.duration()?.nanoseconds().into_series()),
+                GetOutput::from_type(DataType::Int64),
+            )
+            .into()
+    }
+    pub fn duration_microseconds(&self) -> PyExpr {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.duration()?.microseconds().into_series()),
                 GetOutput::from_type(DataType::Int64),
             )
             .into()

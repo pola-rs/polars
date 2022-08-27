@@ -46,11 +46,11 @@ pub enum SerializableDataType {
     /// in days (32 bits).
     Date,
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
-    /// in milliseconds (64 bits).
+    /// in the given ms/us/ns TimeUnit (64 bits).
     Datetime(TimeUnit, Option<TimeZone>),
-    // 64-bit integer representing difference between times in milliseconds or nanoseconds
+    // 64-bit integer representing difference between times in milli|micro|nano seconds
     Duration(TimeUnit),
-    /// A 64-bit time representing the elapsed time since midnight in nanoseconds
+    /// A 64-bit time representing elapsed time since midnight in the given TimeUnit.
     Time,
     List(Box<SerializableDataType>),
     Null,
