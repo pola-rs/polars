@@ -355,42 +355,44 @@ fn coerce_time_units<'a>(
     lhs: &'a Series,
     rhs: &'a Series,
 ) -> Option<(Cow<'a, Series>, Cow<'a, Series>)> {
-    if let (DataType::Datetime(lu, t), DataType::Duration(ru)) = (lhs.dtype(), rhs.dtype()) {
-        let units = get_time_units(lu, ru);
-        let left = if *lu == units {
-            Cow::Borrowed(lhs)
-        } else {
-            Cow::Owned(lhs.cast(&DataType::Datetime(units, t.clone())).ok()?)
-        };
-        let right = if *ru == units {
-            Cow::Borrowed(rhs)
-        } else {
-            Cow::Owned(rhs.cast(&DataType::Duration(units)).ok()?)
-        };
-        Some((left, right))
-    } else if let (DataType::Duration(lu), DataType::Duration(ru)) = (lhs.dtype(), rhs.dtype()) {
-        let units = get_time_units(lu, ru);
-        let left = if *lu == units {
-            Cow::Borrowed(lhs)
-        } else {
-            Cow::Owned(lhs.cast(&DataType::Duration(units)).ok()?)
-        };
-        let right = if *ru == units {
-            Cow::Borrowed(rhs)
-        } else {
-            Cow::Owned(rhs.cast(&DataType::Duration(units)).ok()?)
-        };
-        Some((left, right))
-    } else if let (DataType::Date, DataType::Duration(units)) = (lhs.dtype(), rhs.dtype()) {
-        let left = Cow::Owned(lhs.cast(&DataType::Datetime(*units, None)).ok()?);
-        Some((left, Cow::Borrowed(rhs)))
-    } else if let (DataType::Duration(_), DataType::Datetime(_, _))
-    | (DataType::Duration(_), DataType::Date) = (lhs.dtype(), rhs.dtype())
-    {
-        let (right, left) = coerce_time_units(rhs, lhs)?;
-        Some((left, right))
-    } else {
-        None
+    match (lhs.dtype(), rhs.dtype()) {
+        (DataType::Datetime(lu, t), DataType::Duration(ru)) => {
+            let units = get_time_units(lu, ru);
+            let left = if *lu == units {
+                Cow::Borrowed(lhs)
+            } else {
+                Cow::Owned(lhs.cast(&DataType::Datetime(units, t.clone())).ok()?)
+            };
+            let right = if *ru == units {
+                Cow::Borrowed(rhs)
+            } else {
+                Cow::Owned(rhs.cast(&DataType::Duration(units)).ok()?)
+            };
+            Some((left, right))
+        }
+        // make sure to return Some here, so we don't cast to supertype.
+        (DataType::Date, DataType::Duration(_)) => Some((Cow::Borrowed(lhs), Cow::Borrowed(rhs))),
+        (DataType::Duration(lu), DataType::Duration(ru)) => {
+            let units = get_time_units(lu, ru);
+            let left = if *lu == units {
+                Cow::Borrowed(lhs)
+            } else {
+                Cow::Owned(lhs.cast(&DataType::Duration(units)).ok()?)
+            };
+            let right = if *ru == units {
+                Cow::Borrowed(rhs)
+            } else {
+                Cow::Owned(rhs.cast(&DataType::Duration(units)).ok()?)
+            };
+            Some((left, right))
+        }
+        // swap the order
+        (DataType::Duration(_), DataType::Datetime(_, _))
+        | (DataType::Duration(_), DataType::Date) => {
+            let (right, left) = coerce_time_units(rhs, lhs)?;
+            Some((left, right))
+        }
+        _ => None,
     }
 }
 
