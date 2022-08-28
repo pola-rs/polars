@@ -42,10 +42,7 @@ impl Serialize for Series {
                 }
                 #[cfg(feature = "dtype-datetime")]
                 DataType::Datetime(_, _) => {
-                    let s = self
-                        .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
-                        .unwrap();
-                    let ca = s.datetime().unwrap();
+                    let ca = self.datetime().unwrap();
                     ca.serialize(serializer)
                 }
                 #[cfg(feature = "dtype-categorical")]
@@ -151,10 +148,10 @@ impl<'de> Deserialize<'de> for Series {
                         Ok(Series::new(&name, values).cast(&DataType::Date).unwrap())
                     }
                     #[cfg(feature = "dtype-datetime")]
-                    DeDataType::Datetime => {
+                    DeDataType::Datetime(tu, tz) => {
                         let values: Vec<Option<i64>> = map.next_value()?;
                         Ok(Series::new(&name, values)
-                            .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+                            .cast(&DataType::Datetime(tu, tz))
                             .unwrap())
                     }
                     DeDataType::Boolean => {
