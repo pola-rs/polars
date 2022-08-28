@@ -270,9 +270,6 @@ class Series:
             pandas_to_pyseries(name, values, nan_to_none=nan_to_none)
         )
 
-    def inner(self) -> PySeries:
-        return self._s
-
     def __getstate__(self) -> Any:
         return self._s.__getstate__()
 
@@ -568,9 +565,9 @@ class Series:
                 raise ValueError("Only a 1D-Numpy array is supported as index.")
             if item.dtype.kind in ("i", "u"):
                 # Numpy array with signed or unsigned integers.
-                return wrap_s(self._s.take_with_series(self._pos_idxs(item).inner()))
+                return wrap_s(self._s.take_with_series(self._pos_idxs(item)._s))
             if item.dtype == bool:
-                return wrap_s(self._s.filter(pli.Series("", item).inner()))
+                return wrap_s(self._s.filter(pli.Series("", item)._s))
 
         if is_bool_sequence(item) or is_int_sequence(item):
             item = Series("", item)  # fall through to next if isinstance
@@ -579,9 +576,9 @@ class Series:
             if item.dtype == Boolean:
                 return wrap_s(self._s.filter(item._s))
             if item.dtype == UInt32:
-                return wrap_s(self._s.take_with_series(item.inner()))
+                return wrap_s(self._s.take_with_series(item._s))
             if item.dtype in {UInt8, UInt16, UInt64, Int8, Int16, Int32, Int64}:
-                return wrap_s(self._s.take_with_series(self._pos_idxs(item).inner()))
+                return wrap_s(self._s.take_with_series(self._pos_idxs(item)._s))
 
         if isinstance(item, range):
             return self[range_to_slice(item)]
