@@ -467,7 +467,14 @@ fn take_aggregations() -> Result<()> {
         .agg([
             // keep the head as it test slice correctness
             col("book")
-                .take(col("count").arg_sort(true).head(Some(2)))
+                .take(
+                    col("count")
+                        .arg_sort(SortOptions {
+                            descending: true,
+                            nulls_last: false,
+                        })
+                        .head(Some(2)),
+                )
                 .alias("ordered"),
         ])
         .sort("user", Default::default())
@@ -498,7 +505,12 @@ fn test_take_consistency() -> Result<()> {
     let out = df
         .clone()
         .lazy()
-        .select([col("A").arg_sort(true).take(lit(0))])
+        .select([col("A")
+            .arg_sort(SortOptions {
+                descending: true,
+                nulls_last: false,
+            })
+            .take(lit(0))])
         .collect()?;
 
     let a = out.column("A")?;
@@ -509,7 +521,12 @@ fn test_take_consistency() -> Result<()> {
         .clone()
         .lazy()
         .groupby_stable([col("cars")])
-        .agg([col("A").arg_sort(true).take(lit(0))])
+        .agg([col("A")
+            .arg_sort(SortOptions {
+                descending: true,
+                nulls_last: false,
+            })
+            .take(lit(0))])
         .collect()?;
 
     let out = out.column("A")?;
@@ -522,9 +539,22 @@ fn test_take_consistency() -> Result<()> {
         .groupby_stable([col("cars")])
         .agg([
             col("A"),
-            col("A").arg_sort(true).take(lit(0)).alias("1"),
             col("A")
-                .take(col("A").arg_sort(true).take(lit(0)))
+                .arg_sort(SortOptions {
+                    descending: true,
+                    nulls_last: false,
+                })
+                .take(lit(0))
+                .alias("1"),
+            col("A")
+                .take(
+                    col("A")
+                        .arg_sort(SortOptions {
+                            descending: true,
+                            nulls_last: false,
+                        })
+                        .take(lit(0)),
+                )
                 .alias("2"),
         ])
         .collect()?;
