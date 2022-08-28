@@ -65,7 +65,7 @@ if TYPE_CHECKING:
 def series_to_pyseries(name: str, values: pli.Series) -> PySeries:
     """Construct a PySeries from a Polars Series."""
     values.rename(name, in_place=True)
-    return values.inner()
+    return values._s
 
 
 def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySeries:
@@ -287,7 +287,7 @@ def sequence_to_pyseries(
             return PySeries.new_object(name, values, strict)
 
         elif python_dtype == pli.Series:
-            return PySeries.new_series_list(name, [v.inner() for v in values], strict)
+            return PySeries.new_series_list(name, [v._s for v in values], strict)
         elif python_dtype == PySeries:
             return PySeries.new_series_list(name, values, strict)
         else:
@@ -397,7 +397,7 @@ def _handle_columns_arg(
         return data
     else:
         if not data:
-            return [pli.Series(c, None).inner() for c in columns]
+            return [pli.Series(c, None)._s for c in columns]
         elif len(data) == len(columns):
             for i, c in enumerate(columns):
                 data[i].rename(c)
@@ -465,11 +465,11 @@ def dict_to_pydf(
 
         if not data and dtypes:
             data_series = [
-                pli.Series(name, [], dtypes.get(name)).inner() for name in columns
+                pli.Series(name, [], dtypes.get(name))._s for name in columns
             ]
         else:
             data_series = [
-                pli.Series(name, values, dtypes.get(name)).inner()
+                pli.Series(name, values, dtypes.get(name))._s
                 for name, values in data.items()
             ]
         data_series = _handle_columns_arg(data_series, columns=columns)
@@ -495,7 +495,7 @@ def dict_to_pydf(
             pool_size = threadpool_size()
             pool = multiprocessing.dummy.Pool(pool_size)
             data_series = pool.map(
-                lambda t: pli.Series(t[0], t[1]).inner(),
+                lambda t: pli.Series(t[0], t[1])._s,
                 [(k, v) for k, v in data.items()],
             )
             return PyDataFrame(data_series)
@@ -528,7 +528,7 @@ def sequence_to_pydf(
             if new_dtype and new_dtype != s.dtype:
                 s = s.cast(new_dtype)
 
-            data_series.append(s.inner())
+            data_series.append(s._s)
 
     elif isinstance(data[0], dict):
         pydf = PyDataFrame.read_dicts(data, infer_schema_length)
@@ -549,7 +549,7 @@ def sequence_to_pydf(
         elif orient == "col" or orient is None:
             columns, dtypes = _unpack_columns(columns, n_expected=len(data))
             data_series = [
-                pli.Series(columns[i], data[i], dtypes.get(columns[i])).inner()
+                pli.Series(columns[i], data[i], dtypes.get(columns[i]))._s
                 for i in range(len(data))
             ]
         else:
@@ -559,7 +559,7 @@ def sequence_to_pydf(
 
     else:
         columns, dtypes = _unpack_columns(columns, n_expected=1)
-        data_series = [pli.Series(columns[0], data, dtypes.get(columns[0])).inner()]
+        data_series = [pli.Series(columns[0], data, dtypes.get(columns[0]))._s]
 
     data_series = _handle_columns_arg(data_series, columns=columns)
     return PyDataFrame(data_series)
@@ -620,17 +620,17 @@ def numpy_to_pydf(
         data_series = []
 
     elif len(shape) == 1:
-        data_series = [pli.Series(columns[0], data, dtypes.get(columns[0])).inner()]
+        data_series = [pli.Series(columns[0], data, dtypes.get(columns[0]))._s]
 
     else:
         if orient == "row":
             data_series = [
-                pli.Series(columns[i], data[:, i], dtypes.get(columns[i])).inner()
+                pli.Series(columns[i], data[:, i], dtypes.get(columns[i]))._s
                 for i in range(n_columns)
             ]
         else:
             data_series = [
-                pli.Series(columns[i], data[i], dtypes.get(columns[i])).inner()
+                pli.Series(columns[i], data[i], dtypes.get(columns[i]))._s
                 for i in range(n_columns)
             ]
 
@@ -704,7 +704,7 @@ def arrow_to_pydf(
 
 def series_to_pydf(data: pli.Series, columns: ColumnsType | None = None) -> PyDataFrame:
     """Construct a PyDataFrame from a Polars Series."""
-    data_series = [data.inner()]
+    data_series = [data._s]
     series_name = [s.name() for s in data_series]
     columns, dtypes = _unpack_columns(columns or series_name, n_expected=1)
     if dtypes:

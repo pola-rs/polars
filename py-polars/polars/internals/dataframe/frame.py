@@ -1865,7 +1865,7 @@ class DataFrame:
             if item.dtype.kind in ("i", "u"):
                 # Numpy array with signed or unsigned integers.
                 return self._from_pydf(
-                    self._df.take_with_series(self._pos_idxs(item, dim=0).inner())
+                    self._df.take_with_series(self._pos_idxs(item, dim=0)._s)
                 )
             if isinstance(item[0], str):
                 return self._from_pydf(self._df.select(item))
@@ -1882,10 +1882,10 @@ class DataFrame:
             if dtype == Utf8:
                 return self._from_pydf(self._df.select(item))
             if dtype == UInt32:
-                return self._from_pydf(self._df.take_with_series(item.inner()))
+                return self._from_pydf(self._df.take_with_series(item._s))
             if dtype in {UInt8, UInt16, UInt64, Int8, Int16, Int32, Int64}:
                 return self._from_pydf(
-                    self._df.take_with_series(self._pos_idxs(item, dim=0).inner())
+                    self._df.take_with_series(self._pos_idxs(item, dim=0)._s)
                 )
 
         # if no data has been returned, the operation is not supported
@@ -2578,7 +2578,7 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        self._df.replace(column, new_col.inner())
+        self._df.replace(column, new_col._s)
 
     def slice(self: DF, offset: int, length: int | None = None) -> DF:
         """
@@ -3976,10 +3976,10 @@ class DataFrame:
         if not isinstance(columns, list):
             columns = columns.get_columns()
         if in_place:
-            self._df.hstack_mut([s.inner() for s in columns])
+            self._df.hstack_mut([s._s for s in columns])
             return None
         else:
-            return self._from_pydf(self._df.hstack([s.inner() for s in columns]))
+            return self._from_pydf(self._df.hstack([s._s for s in columns]))
 
     @overload
     def vstack(self, df: DataFrame, in_place: Literal[True]) -> None:
