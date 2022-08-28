@@ -1927,7 +1927,7 @@ def test_repr() -> None:
         assert str(n) in s_repr
 
     class XSeries(pl.Series):
-        """Custom Series class"""
+        """Custom Series class."""
 
     # check custom class name reflected in repr ouput
     x = XSeries("ints", [1001, 2002, 3003])
