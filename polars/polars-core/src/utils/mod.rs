@@ -689,9 +689,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                 Some(Datetime(get_time_units(lu, ru), None))
             }
             #[cfg(all(feature = "dtype-duration", feature = "dtype-date"))]
-            (Duration(_), Date) | (Date, Duration(_)) => {
-                Some(Datetime(TimeUnit::Milliseconds, None))
-            }
+            (Duration(_), Date) | (Date, Duration(_)) => Some(Date),
             #[cfg(feature = "dtype-duration")]
             (Duration(lu), Duration(ru)) => Some(Duration(get_time_units(lu, ru))),
 

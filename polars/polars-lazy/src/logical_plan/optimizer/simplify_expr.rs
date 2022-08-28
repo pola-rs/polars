@@ -1,3 +1,4 @@
+use polars_core::export::chrono;
 use polars_utils::arena::Arena;
 
 use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
@@ -407,88 +408,101 @@ impl OptimizationRule for SimplifyExprRule {
             } => {
                 let input = expr_arena.get(*expr);
                 // faster casts (we only do strict casts)
-                match (input, data_type) {
-                    #[cfg(feature = "dtype-i8")]
-                    (AExpr::Literal(LiteralValue::Int8(v)), DataType::Int64) => {
-                        Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
-                    }
-                    #[cfg(feature = "dtype-i16")]
-                    (AExpr::Literal(LiteralValue::Int16(v)), DataType::Int64) => {
-                        Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
-                    }
-                    (AExpr::Literal(LiteralValue::Int32(v)), DataType::Int64) => {
-                        Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
-                    }
-                    (AExpr::Literal(LiteralValue::UInt32(v)), DataType::Int64) => {
-                        Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
-                    }
-                    (AExpr::Literal(LiteralValue::Float32(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-                    }
-
-                    #[cfg(feature = "dtype-i8")]
-                    (AExpr::Literal(LiteralValue::Int8(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-                    }
-                    #[cfg(feature = "dtype-i16")]
-                    (AExpr::Literal(LiteralValue::Int16(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-                    }
-                    (AExpr::Literal(LiteralValue::Int32(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-                    }
-                    (AExpr::Literal(LiteralValue::Int64(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-                    }
-                    #[cfg(feature = "dtype-u8")]
-                    (AExpr::Literal(LiteralValue::UInt8(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-                    }
-                    #[cfg(feature = "dtype-u16")]
-                    (AExpr::Literal(LiteralValue::UInt16(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-                    }
-                    (AExpr::Literal(LiteralValue::UInt32(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-                    }
-                    (AExpr::Literal(LiteralValue::UInt64(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-                    }
-
-                    #[cfg(feature = "dtype-i8")]
-                    (AExpr::Literal(LiteralValue::Int8(v)), DataType::Float32) => {
-                        Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-                    }
-                    #[cfg(feature = "dtype-i16")]
-                    (AExpr::Literal(LiteralValue::Int16(v)), DataType::Float32) => {
-                        Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-                    }
-                    (AExpr::Literal(LiteralValue::Int32(v)), DataType::Float32) => {
-                        Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-                    }
-                    (AExpr::Literal(LiteralValue::Int64(v)), DataType::Float32) => {
-                        Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-                    }
-                    #[cfg(feature = "dtype-u8")]
-                    (AExpr::Literal(LiteralValue::UInt8(v)), DataType::Float32) => {
-                        Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-                    }
-                    #[cfg(feature = "dtype-u16")]
-                    (AExpr::Literal(LiteralValue::UInt16(v)), DataType::Float32) => {
-                        Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-                    }
-                    (AExpr::Literal(LiteralValue::UInt32(v)), DataType::Float32) => {
-                        Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-                    }
-                    (AExpr::Literal(LiteralValue::UInt64(v)), DataType::Float32) => {
-                        Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-                    }
-                    _ => None,
-                }
+                inline_cast(input, data_type)
             }
 
             _ => None,
         }
+    }
+}
+
+fn inline_cast(input: &AExpr, dtype: &DataType) -> Option<AExpr> {
+    match (input, dtype) {
+        #[cfg(feature = "dtype-i8")]
+        (AExpr::Literal(LiteralValue::Int8(v)), DataType::Int64) => {
+            Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
+        }
+        #[cfg(feature = "dtype-i16")]
+        (AExpr::Literal(LiteralValue::Int16(v)), DataType::Int64) => {
+            Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
+        }
+        (AExpr::Literal(LiteralValue::Int32(v)), DataType::Int64) => {
+            Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
+        }
+        (AExpr::Literal(LiteralValue::UInt32(v)), DataType::Int64) => {
+            Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
+        }
+        (AExpr::Literal(LiteralValue::Float32(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+
+        #[cfg(feature = "dtype-i8")]
+        (AExpr::Literal(LiteralValue::Int8(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+        #[cfg(feature = "dtype-i16")]
+        (AExpr::Literal(LiteralValue::Int16(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+        (AExpr::Literal(LiteralValue::Int32(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+        (AExpr::Literal(LiteralValue::Int64(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+        #[cfg(feature = "dtype-u8")]
+        (AExpr::Literal(LiteralValue::UInt8(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+        #[cfg(feature = "dtype-u16")]
+        (AExpr::Literal(LiteralValue::UInt16(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+        (AExpr::Literal(LiteralValue::UInt32(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+        (AExpr::Literal(LiteralValue::UInt64(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+
+        #[cfg(feature = "dtype-i8")]
+        (AExpr::Literal(LiteralValue::Int8(v)), DataType::Float32) => {
+            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
+        }
+        #[cfg(feature = "dtype-i16")]
+        (AExpr::Literal(LiteralValue::Int16(v)), DataType::Float32) => {
+            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
+        }
+        (AExpr::Literal(LiteralValue::Int32(v)), DataType::Float32) => {
+            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
+        }
+        (AExpr::Literal(LiteralValue::Int64(v)), DataType::Float32) => {
+            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
+        }
+        #[cfg(feature = "dtype-u8")]
+        (AExpr::Literal(LiteralValue::UInt8(v)), DataType::Float32) => {
+            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
+        }
+        #[cfg(feature = "dtype-u16")]
+        (AExpr::Literal(LiteralValue::UInt16(v)), DataType::Float32) => {
+            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
+        }
+        (AExpr::Literal(LiteralValue::UInt32(v)), DataType::Float32) => {
+            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
+        }
+        (AExpr::Literal(LiteralValue::UInt64(v)), DataType::Float32) => {
+            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
+        }
+        #[cfg(feature = "dtype-duration")]
+        (AExpr::Literal(LiteralValue::Int64(v)), DataType::Duration(tu)) => {
+            let dur = match tu {
+                TimeUnit::Nanoseconds => chrono::Duration::nanoseconds(*v),
+                TimeUnit::Microseconds => chrono::Duration::microseconds(*v),
+                TimeUnit::Milliseconds => chrono::Duration::milliseconds(*v),
+            };
+            Some(AExpr::Literal(LiteralValue::Duration(dur, *tu)))
+        }
+        _ => None,
     }
 }
 

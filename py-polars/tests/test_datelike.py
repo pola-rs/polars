@@ -1412,3 +1412,17 @@ def test_date_arr_concat() -> None:
     # type list[date]
     df = pl.DataFrame({"d": [[date(2000, 1, 1)]]})
     assert df.select(pl.col("d").arr.concat(pl.col("d"))).to_dict(False) == expected
+
+
+def test_date_timedelta() -> None:
+    df = pl.DataFrame({"date": pl.date_range(date(2001, 1, 1), date(2001, 1, 3), "1d")})
+    assert df.with_columns(
+        [
+            (pl.col("date") + timedelta(days=1)).alias("date_plus_one"),
+            (pl.col("date") - timedelta(days=1)).alias("date_min_one"),
+        ]
+    ).to_dict(False) == {
+        "date": [date(2001, 1, 1), date(2001, 1, 2), date(2001, 1, 3)],
+        "date_plus_one": [date(2001, 1, 2), date(2001, 1, 3), date(2001, 1, 4)],
+        "date_min_one": [date(2000, 12, 31), date(2001, 1, 1), date(2001, 1, 2)],
+    }
