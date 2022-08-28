@@ -210,8 +210,14 @@ impl PyExpr {
             .into()
     }
 
-    pub fn arg_sort(&self, reverse: bool) -> PyExpr {
-        self.clone().inner.arg_sort(reverse).into()
+    pub fn arg_sort(&self, reverse: bool, nulls_last: bool) -> PyExpr {
+        self.clone()
+            .inner
+            .arg_sort(SortOptions {
+                descending: reverse,
+                nulls_last,
+            })
+            .into()
     }
     pub fn arg_max(&self) -> PyExpr {
         self.clone().inner.arg_max().into()

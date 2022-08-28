@@ -1579,21 +1579,21 @@ class Series:
         else:
             return wrap_s(self._s.sort(reverse))
 
-    def argsort(self, reverse: bool = False, nulls_last: bool = False) -> Series:
+    def arg_sort(self, reverse: bool = False, nulls_last: bool = False) -> Series:
         """
-        Index location of the sorted variant of this Series.
+        Get the index values that would sort this Series.
 
-        Returns
-        -------
-        indexes
-            Indexes that can be used to sort this array.
+        Parameters
+        ----------
+        reverse
+            Sort in reverse (descending) order.
         nulls_last
-            Place null values last.
+            Place null values last instead of first.
 
         Examples
         --------
         >>> s = pl.Series("a", [5, 3, 4, 1, 2])
-        >>> s.argsort()
+        >>> s.arg_sort()
         shape: (5,)
         Series: 'a' [u32]
         [
@@ -1605,7 +1605,21 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.argsort(reverse, nulls_last))
+
+    def argsort(self, reverse: bool = False, nulls_last: bool = False) -> Series:
+        """
+        Get the index values that would sort this Series.
+
+        Alias for :func:`arg_sort`.
+
+        Parameters
+        ----------
+        reverse
+            Sort in reverse (descending) order.
+        nulls_last
+            Place null values last instead of first.
+
+        """
 
     def arg_unique(self) -> Series:
         """Get unique index as Series."""

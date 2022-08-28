@@ -503,7 +503,7 @@ impl Expr {
     }
 
     /// Get the index values that would sort this expression.
-    pub fn arg_sort(self, reverse: bool) -> Self {
+    pub fn arg_sort(self, sort_options: SortOptions) -> Self {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             fmt_str: "arg_sort",
@@ -511,13 +511,7 @@ impl Expr {
         };
 
         self.function_with_options(
-            move |s: Series| {
-                Ok(s.argsort(SortOptions {
-                    descending: reverse,
-                    ..Default::default()
-                })
-                .into_series())
-            },
+            move |s: Series| Ok(s.argsort(sort_options).into_series()),
             GetOutput::from_type(IDX_DTYPE),
             options,
         )

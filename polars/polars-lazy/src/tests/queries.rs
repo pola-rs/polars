@@ -1831,7 +1831,14 @@ fn test_single_group_result() -> Result<()> {
 
     let out = df
         .lazy()
-        .select([col("a").arg_sort(false).list().over([col("a")]).flatten()])
+        .select([col("a")
+            .arg_sort(SortOptions {
+                descending: false,
+                nulls_last: false,
+            })
+            .list()
+            .over([col("a")])
+            .flatten()])
         .collect()?;
 
     let a = out.column("a")?.idx()?;

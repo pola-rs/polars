@@ -540,16 +540,6 @@ impl PySeries {
         PySeries::new(self.series.sort(reverse))
     }
 
-    pub fn argsort(&self, reverse: bool, nulls_last: bool) -> Self {
-        self.series
-            .argsort(SortOptions {
-                descending: reverse,
-                nulls_last,
-            })
-            .into_series()
-            .into()
-    }
-
     pub fn value_counts(&self, sorted: bool) -> PyResult<PyDataFrame> {
         let df = self
             .series
