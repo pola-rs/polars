@@ -1127,7 +1127,7 @@ class Expr:
         """
         return self.count()
 
-    def slice(self, offset: int | Expr, length: int | Expr) -> Expr:
+    def slice(self, offset: int | Expr, length: int | Expr | None = None) -> Expr:
         """
         Slice the Series.
 
@@ -1159,9 +1159,9 @@ class Expr:
         └─────┴─────┘
 
         """
-        if isinstance(offset, int):
+        if not isinstance(offset, Expr):
             offset = pli.lit(offset)
-        if isinstance(length, int):
+        if not isinstance(length, Expr):
             length = pli.lit(length)
         return wrap_expr(self._pyexpr.slice(offset._pyexpr, length._pyexpr))
 
