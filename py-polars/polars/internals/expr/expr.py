@@ -1761,20 +1761,21 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.sort_with(reverse, nulls_last))
 
-    def arg_sort(self, reverse: bool = False) -> Expr:
+    def arg_sort(self, reverse: bool = False, nulls_last: bool = False) -> Expr:
         """
         Get the index values that would sort this column.
 
         Parameters
         ----------
         reverse
-            False -> order from small to large.
-            True -> order from large to small.
+            Sort in reverse (descending) order.
+        nulls_last
+            Place null values last instead of first.
 
         Returns
         -------
-        out
-            Series of type UInt32
+        Expr
+            Series of dtype UInt32.
 
         Examples
         --------
@@ -1798,7 +1799,7 @@ class Expr:
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.arg_sort(reverse))
+        return wrap_expr(self._pyexpr.arg_sort(reverse, nulls_last))
 
     def arg_max(self) -> Expr:
         """
@@ -4553,9 +4554,23 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.abs())
 
-    def argsort(self, reverse: bool = False) -> Expr:
+    def argsort(self, reverse: bool = False, nulls_last: bool = False) -> Expr:
         """
+        Get the index values that would sort this column.
+
         Alias for `arg_sort`.
+
+        Parameters
+        ----------
+        reverse
+            Sort in reverse (descending) order.
+        nulls_last
+            Place null values last instead of first.
+
+        Returns
+        -------
+        Expr
+            Series of dtype UInt32.
 
         Examples
         --------
@@ -4579,7 +4594,7 @@ class Expr:
         └─────┘
 
         """
-        return self.arg_sort(reverse)
+        return self.arg_sort(reverse, nulls_last)
 
     def rank(self, method: RankMethod = "average", reverse: bool = False) -> Expr:
         """
