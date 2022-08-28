@@ -18,7 +18,7 @@ pub struct SliceExpr {
 
 fn extract_offset(offset: &Series) -> Result<i64> {
     if offset.len() > 1 {
-        return Err(PolarsError::ComputeError(format!("Invalid argument to slice; expected an offset literal but got an Series of length {}", offset.len()).into()));
+        return Err(PolarsError::ComputeError(format!("Invalid argument to slice; expected an offset literal but got a Series of length {}", offset.len()).into()));
     }
     offset.get(0).extract::<i64>().ok_or_else(|| {
         PolarsError::ComputeError(format!("could not get an offset from {:?}", offset).into())
@@ -27,7 +27,7 @@ fn extract_offset(offset: &Series) -> Result<i64> {
 
 fn extract_length(length: &Series) -> Result<usize> {
     if length.len() > 1 {
-        return Err(PolarsError::ComputeError(format!("Invalid argument to slice; expected a length literal but got an Series of length {}", length.len()).into()));
+        return Err(PolarsError::ComputeError(format!("Invalid argument to slice; expected a length literal but got a Series of length {}", length.len()).into()));
     }
     length.get(0).extract::<usize>().ok_or_else(|| {
         PolarsError::ComputeError(format!("could not get a length from {:?}", length).into())
