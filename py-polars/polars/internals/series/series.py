@@ -1605,7 +1605,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.argsort(reverse, nulls_last))
 
     def argsort(self, reverse: bool = False, nulls_last: bool = False) -> Series:
         """
@@ -1621,7 +1620,6 @@ class Series:
             Place null values last instead of first.
 
         """
-        return self.arg_sort(reverse, nulls_last)
 
     def arg_unique(self) -> Series:
         """Get unique index as Series."""
