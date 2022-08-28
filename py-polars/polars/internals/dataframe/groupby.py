@@ -127,10 +127,15 @@ class GroupBy(Generic[DF]):
 
     def _groups(self) -> DF:  # pragma: no cover
         """
-        Return a `DataFrame` with:
+        Get keys and group indices for each group in the groupby.
 
-        * the groupby keys
-        * the group indexes aggregated as lists
+        Returns
+        -------
+        DataFrame
+            A DataFrame with:
+
+            - the groupby keys
+            - the group indexes aggregated as lists
 
         Examples
         --------
@@ -249,8 +254,9 @@ class GroupBy(Generic[DF]):
 
     def agg(self, aggs: pli.Expr | Sequence[pli.Expr]) -> pli.DataFrame:
         """
-        Use multiple aggregations on columns. This can be combined with complete lazy
-        API and is considered idiomatic polars.
+        Use multiple aggregations on columns.
+
+        This can be combined with complete lazy API and is considered idiomatic polars.
 
         Parameters
         ----------
@@ -425,12 +431,10 @@ class GroupBy(Generic[DF]):
         self, pivot_column: str | list[str], values_column: str | list[str]
     ) -> PivotOps[DF]:
         """
-        Do a pivot operation based on the group key, a pivot column and an aggregation
-        function on the values column.
+        Do a pivot operation.
 
-        .. note::
-            Polars'/arrow memory is not ideal for transposing operations like pivots.
-            If you have a relatively large table, consider using a groupby over a pivot.
+        The pivot operation is based on the group key, a pivot column and an aggregation
+        function on the values column.
 
         Parameters
         ----------
@@ -438,6 +442,11 @@ class GroupBy(Generic[DF]):
             Column to pivot.
         values_column
             Column that will be aggregated.
+
+        Notes
+        -----
+        Polars'/arrow memory is not ideal for transposing operations like pivots.
+        If you have a relatively large table, consider using a groupby over a pivot.
 
         Examples
         --------
@@ -814,8 +823,10 @@ class GroupBy(Generic[DF]):
 
 class RollingGroupBy(Generic[DF]):
     """
-    A rolling grouper. This has an `.agg` method which will allow you to run all polars
-    expressions in a groupby context.
+    A rolling grouper.
+
+    This has an `.agg` method which will allow you to run all polars expressions in a
+    groupby context.
     """
 
     def __init__(
@@ -847,8 +858,10 @@ class RollingGroupBy(Generic[DF]):
 
 class DynamicGroupBy(Generic[DF]):
     """
-    A dynamic grouper. This has an `.agg` method which will allow you to run all polars
-    expressions in a groupby context.
+    A dynamic grouper.
+
+    This has an `.agg` method which will allow you to run all polars expressions in a
+    groupby context.
     """
 
     def __init__(
