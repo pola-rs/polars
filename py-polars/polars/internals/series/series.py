@@ -1364,7 +1364,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.slice(offset, length))
 
     def append(self, other: Series, append_chunks: bool = True) -> None:
         """
