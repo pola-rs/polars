@@ -202,6 +202,7 @@ Manipulation/ selection
     Expr.head
     Expr.inspect
     Expr.interpolate
+    Expr.limit
     Expr.lower_bound
     Expr.rechunk
     Expr.reinterpret

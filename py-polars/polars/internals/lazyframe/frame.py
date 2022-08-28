@@ -1832,44 +1832,45 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def limit(self: LDF, n: int = 5) -> LDF:
         """
-        Limit the LazyFrame to the first `n` rows.
+        Get the first `n` rows.
 
-        .. note::
-            Consider using the :func:`fetch` operation when you only want to test your
-            query. The :func:`fetch` operation will load the first `n` rows at the scan
-            level, whereas the :func:`head`/:func:`limit` are applied at the end.
+        Alias for :func:`head`.
 
         Parameters
         ----------
         n
             Number of rows to return.
 
+        Notes
+        -----
+        Consider using the :func:`fetch` operation if you only want to test your
+        query. The :func:`fetch` operation will load the first `n` rows at the scan
+        level, whereas the :func:`head`/:func:`limit` are applied at the end.
+
         """
-        return self.slice(0, n)
+        return self.head(n)
 
     def head(self: LDF, n: int = 5) -> LDF:
         """
         Get the first `n` rows.
 
-        .. note::
-            Consider using the :func:`fetch` operation if you only want to test your
-            query. The :func:`fetch` operation will load the first `n` rows at the scan
-            level, whereas the :func:`head`/:func:`limit` are applied at the end.
-
-        This operation instead loads all the rows and only applies the ``head`` at the
-        end.
-
         Parameters
         ----------
         n
             Number of rows to return.
 
+        Notes
+        -----
+        Consider using the :func:`fetch` operation if you only want to test your
+        query. The :func:`fetch` operation will load the first `n` rows at the scan
+        level, whereas the :func:`head`/:func:`limit` are applied at the end.
+
         """
-        return self.limit(n)
+        return self.slice(0, n)
 
     def tail(self: LDF, n: int = 5) -> LDF:
         """
-        Get the last `n` rows of the DataFrame.
+        Get the last `n` rows.
 
         Parameters
         ----------

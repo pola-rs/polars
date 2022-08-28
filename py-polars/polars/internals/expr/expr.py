@@ -3260,6 +3260,20 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.tail(n))
 
+    def limit(self, n: int = 10) -> Expr:
+        """
+        Get the first `n` rows.
+
+        Alias for :func:`head`.
+
+        Parameters
+        ----------
+        n
+            Number of rows to return.
+
+        """
+        return self.head(n)
+
     def pow(self, exponent: int | float | pli.Series | Expr) -> Expr:
         """
         Raise expression to the power of exponent.
