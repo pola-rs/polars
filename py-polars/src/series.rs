@@ -480,11 +480,6 @@ impl PySeries {
         self.series.n_chunks()
     }
 
-    pub fn limit(&self, num_elements: usize) -> Self {
-        let series = self.series.limit(num_elements);
-        series.into()
-    }
-
     pub fn slice(&self, offset: i64, length: Option<usize>) -> Self {
         let series = self
             .series

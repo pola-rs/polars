@@ -2617,18 +2617,17 @@ class DataFrame:
             length = self.height - offset + length
         return self._from_pydf(self._df.slice(offset, length))
 
-    def limit(self: DF, length: int = 5) -> DF:
+    @deprecated_alias(length="n")
+    def limit(self: DF, n: int = 5) -> DF:
         """
-        Get first N rows as DataFrame.
+        Get the first `n` rows.
 
-        See Also
-        --------
-        head, tail, slice
+        Alias for :func:`head`.
 
         Parameters
         ----------
-        length
-            Amount of rows to take.
+        n
+            Number of rows to return.
 
         Examples
         --------
@@ -2652,7 +2651,7 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        return self.head(length)
+        return self.head(n)
 
     @deprecated_alias(length="n")
     def head(self: DF, n: int = 5) -> DF:

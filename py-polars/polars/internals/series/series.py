@@ -1326,14 +1326,17 @@ class Series:
 
         """
 
-    def limit(self, num_elements: int = 10) -> Series:
+    @deprecated_alias(num_elements="n")
+    def limit(self, n: int = 10) -> Series:
         """
-        Take n elements from this Series.
+        Get the first `n` rows.
+
+        Alias for :func:`head`.
 
         Parameters
         ----------
-        num_elements
-            Amount of elements to take.
+        n
+            Number of rows to return.
 
         Examples
         --------
@@ -1347,7 +1350,7 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.limit(num_elements))
+        return self.to_frame().select(pli.col(self.name).limit(n)).to_series()
 
     def slice(self, offset: int, length: int | None = None) -> Series:
         """
