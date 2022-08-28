@@ -1834,7 +1834,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         Get the first `n` rows.
 
-        Alias for :func:`head`.
+        Alias for :func:`LazyFrame.head`.
 
         Parameters
         ----------
