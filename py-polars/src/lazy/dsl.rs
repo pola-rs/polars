@@ -1310,7 +1310,11 @@ impl PyExpr {
         self.inner.clone().arr().shift(periods).into()
     }
 
-    fn lst_slice(&self, offset: i64, length: usize) -> Self {
+    fn lst_slice(&self, offset: i64, length: Option<usize>) -> Self {
+        let length = match length {
+            Some(i) => i,
+            None => usize::MAX,
+        };
         self.inner.clone().arr().slice(offset, length).into()
     }
 

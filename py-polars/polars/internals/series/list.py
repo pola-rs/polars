@@ -198,7 +198,7 @@ class ListNameSpace:
 
         """
 
-    def slice(self, offset: int, length: int) -> pli.Series:
+    def slice(self, offset: int, length: int | None = None) -> pli.Series:
         """
         Slice every sublist.
 
@@ -207,7 +207,8 @@ class ListNameSpace:
         offset
             Start index. Negative indexing is supported.
         length
-            Length of the slice.
+            Length of the slice. If set to ``None`` (default), the slice is taken to the
+            end of the list.
 
         Examples
         --------

@@ -508,7 +508,7 @@ class ExprListNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.lst_shift(periods))
 
-    def slice(self, offset: int, length: int) -> pli.Expr:
+    def slice(self, offset: int, length: int | None = None) -> pli.Expr:
         """
         Slice every sublist.
 
@@ -517,7 +517,8 @@ class ExprListNameSpace:
         offset
             Start index. Negative indexing is supported.
         length
-            Length of the slice.
+            Length of the slice. If set to ``None`` (default), the slice is taken to the
+            end of the list.
 
         Examples
         --------
