@@ -2587,7 +2587,7 @@ class DataFrame:
         Parameters
         ----------
         offset
-            Start index.
+            Start index. Negative indexing is supported.
         length
             Length of the slice. If set to ``None``, all rows starting at the offset
             will be selected.

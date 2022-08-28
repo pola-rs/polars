@@ -200,14 +200,14 @@ class ListNameSpace:
 
     def slice(self, offset: int, length: int) -> pli.Series:
         """
-        Slice every sublist
+        Slice every sublist.
 
         Parameters
         ----------
         offset
-            Take the values from this index offset
+            Start index. Negative indexing is supported.
         length
-            The length of the slice to take
+            Length of the slice.
 
         Examples
         --------
