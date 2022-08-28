@@ -142,8 +142,7 @@ def wrap_df(df: PyDataFrame) -> DataFrame:
 
 class DataFrame:
     """
-    A DataFrame is a two-dimensional data structure that represents data as a table
-    with rows and columns.
+    Two-dimensional data structure representing data as a table with rows and columns.
 
     Parameters
     ----------
@@ -312,8 +311,9 @@ class DataFrame:
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
-        Return an estimation of the total (heap) allocated size of the `DataFrame` in
-        bytes (pass `unit` to return estimated size in kilobytes, megabytes, etc)..
+        Return an estimation of the total (heap) allocated size of the `DataFrame`.
+
+        Estimated size is given in the specified unit (bytes by default).
 
         This estimation is the sum of the size of its buffers, validity, including
         nested arrays. Multiple arrays may share buffers and bitmaps. Therefore, the
@@ -773,8 +773,9 @@ class DataFrame:
         memory_map: bool = True,
     ) -> DataFrame:
         """
-        Read into a DataFrame from Arrow IPC stream format. This is also called the
-        Feather (v2) format.
+        Read into a DataFrame from Arrow IPC stream format.
+
+        Arrow IPC is also know as Feather (v2).
 
         Parameters
         ----------
@@ -842,9 +843,12 @@ class DataFrame:
         json_lines: bool = False,
     ) -> DF:
         """
+        Read into a DataFrame from JSON format.
+
         See Also
         --------
         read_json
+
         """
         if isinstance(file, StringIO):
             file = BytesIO(file.getvalue().encode())
@@ -858,6 +862,7 @@ class DataFrame:
     def to_arrow(self) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.
+
         This operation is mostly zero copy.
 
         Data types that do copy:
@@ -1064,6 +1069,7 @@ class DataFrame:
     ) -> pd.DataFrame:
         """
         Cast to a pandas DataFrame.
+
         This requires that pandas and pyarrow are installed.
         This operation clones data.
 
@@ -1450,7 +1456,8 @@ class DataFrame:
 
     def to_numpy(self) -> np.ndarray[Any, Any]:
         """
-        Convert DataFrame to a 2d numpy array.
+        Convert DataFrame to a 2D NumPy array.
+
         This operation clones data.
 
         Notes
@@ -2322,7 +2329,7 @@ class DataFrame:
     @property
     def schema(self) -> dict[str, type[DataType]]:
         """
-        Get a dict[column name, DataType]
+        Get a dict[column name, DataType].
 
         Examples
         --------
@@ -2972,17 +2979,13 @@ class DataFrame:
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> RollingGroupBy[DF]:
         """
-        Create rolling groups based on a time column (or index value of type Int32,
-        Int64).
+        Create rolling groups based on a time column.
+
+        Also works for index values of type Int32 or Int64.
 
         Different from a rolling groupby the windows are now determined by the
         individual values and are not of constant intervals. For constant intervals use
         *groupby_dynamic*
-
-        .. seealso::
-
-            groupby_dynamic
-
 
         The `period` and `offset` arguments are created with
         the following string language:
@@ -3026,6 +3029,10 @@ class DataFrame:
             Define whether the temporal window interval is closed or not.
         by
             Also group by this column/these columns
+
+        See Also
+        --------
+        groupby_dynamic
 
         Examples
         --------
@@ -3504,8 +3511,10 @@ class DataFrame:
         force_parallel: bool = False,
     ) -> DataFrame:
         """
-        Perform an asof join. This is similar to a left-join except that we
-        match on nearest key rather than equal keys.
+        Perform an asof join.
+
+        This is similar to a left-join except that we match on nearest key rather than
+        equal keys.
 
         Both DataFrames must be sorted by the asof_join key.
 
@@ -3763,8 +3772,9 @@ class DataFrame:
         inference_size: int = 256,
     ) -> DF:
         """
-        Apply a custom function over the rows of the DataFrame. The rows are passed as
-        tuple.
+        Apply a custom function over the rows of the DataFrame.
+
+        The rows are passed as tuple.
 
         Implementing logic using this .apply method is generally slower and more memory
         intensive than implementing the same logic using the expression API because:
@@ -4147,8 +4157,9 @@ class DataFrame:
 
     def cleared(self: DF) -> DF:
         """
-        Create an empty copy of the current DataFrame, with identical schema but no
-        data.
+        Create an empty copy of the current DataFrame.
+
+        Returns a DataFrame with identical schema but no data.
 
         See Also
         --------
@@ -4559,8 +4570,9 @@ class DataFrame:
         value_name: str | None = None,
     ) -> DF:
         """
-        Unpivot a DataFrame from wide to long format, optionally leaving identifiers
-        set.
+        Unpivot a DataFrame from wide to long format.
+
+        Optionally leaves identifiers set.
 
         This function is useful to massage a DataFrame into a format where one or more
         columns are identifier variables (id_vars), while all other columns, considered
@@ -4736,13 +4748,16 @@ class DataFrame:
 
     def shift(self: DF, periods: int) -> DF:
         """
-        Shift the values by a given period and fill the parts that will be empty due to
-        this operation with `Nones`.
+        Shift values by the given period.
 
         Parameters
         ----------
         periods
             Number of places to shift (may be negative).
+
+        See Also
+        --------
+        shift_and_fill
 
         Examples
         --------
@@ -4785,8 +4800,10 @@ class DataFrame:
 
     def shift_and_fill(self, periods: int, fill_value: int | str | float) -> DataFrame:
         """
-        Shift the values by a given period and fill the parts that will be empty due to
-        this operation with the result of the `fill_value` expression.
+        Shift values by the given period and fill resulting null values.
+
+        Fill the parts that will be empty due to this operation with the result of the
+        `fill_value` expression.
 
         Parameters
         ----------
@@ -5381,7 +5398,7 @@ class DataFrame:
 
     def product(self) -> DataFrame:
         """
-        Aggregate the columns of this DataFrame to their product values
+        Aggregate the columns of this DataFrame to their product values.
 
         Examples
         --------
@@ -5635,9 +5652,11 @@ class DataFrame:
         self, operation: Callable[[pli.Series, pli.Series], pli.Series]
     ) -> pli.Series:
         """
-        Apply a horizontal reduction on a DataFrame. This can be used to effectively
-        determine aggregations on a row level, and can be applied to any DataType that
-        can be supercasted (casted to a similar parent type).
+        Apply a horizontal reduction on a DataFrame.
+
+        This can be used to effectively determine aggregations on a row level, and can
+        be applied to any DataType that can be supercasted (casted to a similar parent
+        type).
 
         An example of the supercast rules when applying an arithmetic operation on two
         DataTypes are for instance:
@@ -5781,8 +5800,9 @@ class DataFrame:
 
     def shrink_to_fit(self: DF, in_place: bool = False) -> DF | None:
         """
-        Shrink memory usage of this DataFrame to fit the exact capacity needed to hold
-        the data.
+        Shrink DataFrame memory usage.
+
+        Shrinks to fit the exact capacity needed to hold the data.
         """
         if in_place:
             self._df.shrink_to_fit()
@@ -5896,7 +5916,7 @@ class DataFrame:
 
     def is_empty(self) -> bool:
         """
-        Check if the dataframe is empty
+        Check if the dataframe is empty.
 
         Examples
         --------
@@ -5911,7 +5931,7 @@ class DataFrame:
 
     def to_struct(self, name: str) -> pli.Series:
         """
-        Convert a ``DataFrame`` to a ``Series`` of type ``Struct``
+        Convert a ``DataFrame`` to a ``Series`` of type ``Struct``.
 
         Parameters
         ----------
