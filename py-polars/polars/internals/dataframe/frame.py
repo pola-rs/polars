@@ -2582,14 +2582,15 @@ class DataFrame:
 
     def slice(self: DF, offset: int, length: int | None = None) -> DF:
         """
-        Slice this DataFrame over the rows direction.
+        Get a slice of this DataFrame.
 
         Parameters
         ----------
         offset
-            Offset index.
+            Start index.
         length
-            Length of the slice.
+            Length of the slice. If set to ``None``, all rows starting at the offset
+            will be selected.
 
         Examples
         --------
