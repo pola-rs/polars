@@ -2839,7 +2839,8 @@ class Expr:
     def filter(self, predicate: Expr) -> Expr:
         """
         Filter a single column.
-        Mostly useful in in aggregation context. If you want to filter on a DataFrame
+
+        Mostly useful in an aggregation context. If you want to filter on a DataFrame
         level, use `LazyFrame.filter`.
 
         Parameters

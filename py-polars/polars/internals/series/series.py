@@ -693,7 +693,6 @@ class Series:
         ]
 
         """
-        return self**0.5
 
     def any(self) -> bool:
         """
@@ -722,18 +721,15 @@ class Series:
 
     def log10(self) -> Series:
         """Compute the base 10 logarithm of the input array, element-wise."""
-        return self.log(10.0)
 
     def exp(self) -> Series:
         """Compute the exponential, element-wise."""
 
     def drop_nulls(self) -> Series:
         """Create a new Series that copies data from this Series without null values."""
-        return wrap_s(self._s.drop_nulls())
 
     def drop_nans(self) -> Series:
         """Drop NaN values."""
-        return self.filter(self.is_not_nan())
 
     def to_frame(self) -> pli.DataFrame:
         """
@@ -1097,7 +1093,6 @@ class Series:
         ]
 
         """
-        return pli.select(pli.lit(self).unique_counts()).to_series()
 
     def entropy(self, base: float = math.e, normalize: bool = False) -> float | None:
         """
@@ -1165,9 +1160,6 @@ class Series:
         ]
 
         """
-        return pli.select(
-            pli.lit(self).cumulative_eval(expr, min_periods, parallel)
-        ).to_series()
 
     @property
     def name(self) -> str:
@@ -1270,7 +1262,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.cumsum(reverse))
 
     def cummin(self, reverse: bool = False) -> Series:
         """
@@ -1294,7 +1285,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.cummin(reverse))
 
     def cummax(self, reverse: bool = False) -> Series:
         """
@@ -1318,7 +1308,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.cummax(reverse))
 
     def cumprod(self, reverse: bool = False) -> Series:
         """
@@ -1347,7 +1336,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.cumprod(reverse))
 
     def limit(self, num_elements: int = 10) -> Series:
         """
@@ -1549,7 +1537,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.take_every(n))
 
     @overload
     def sort(self, reverse: bool = False, *, in_place: Literal[False] = ...) -> Series:
@@ -1633,7 +1620,6 @@ class Series:
 
     def arg_unique(self) -> Series:
         """Get unique index as Series."""
-        return wrap_s(self._s.arg_unique())
 
     def arg_min(self) -> int | None:
         """Get the index of the minimal value."""
@@ -1679,9 +1665,6 @@ class Series:
         ]
 
         """
-        if maintain_order:
-            return pli.select(pli.lit(self).unique(maintain_order)).to_series()
-        return wrap_s(self._s.unique())
 
     def take(
         self, indices: int | list[int] | pli.Expr | Series | np.ndarray[Any, Any]
