@@ -238,7 +238,7 @@ pub trait ChunkSet<'a, A, B> {
     ///
     /// assert_eq!(Vec::from(&new), &[Some(10), Some(10), Some(3)]);
     /// ```
-    fn set_at_idx<I: IntoIterator<Item = usize>>(
+    fn set_at_idx<I: IntoIterator<Item = IdxSize>>(
         &'a self,
         idx: I,
         opt_value: Option<A>,
@@ -257,7 +257,7 @@ pub trait ChunkSet<'a, A, B> {
     ///
     /// assert_eq!(Vec::from(&new), &[Some(-4), Some(-3), Some(3)]);
     /// ```
-    fn set_at_idx_with<I: IntoIterator<Item = usize>, F>(&'a self, idx: I, f: F) -> Result<Self>
+    fn set_at_idx_with<I: IntoIterator<Item = IdxSize>, F>(&'a self, idx: I, f: F) -> Result<Self>
     where
         Self: Sized,
         F: Fn(Option<A>) -> Option<B>;

@@ -42,6 +42,7 @@ from polars.internals.construction import (
     sequence_to_pyseries,
     series_to_pyseries,
 )
+from polars.internals.series._numpy import SeriesView, _ptr_to_numpy
 from polars.internals.series.categorical import CatNameSpace
 from polars.internals.series.datetime import DateTimeNameSpace
 from polars.internals.series.list import ListNameSpace
@@ -52,7 +53,6 @@ from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
-    _ptr_to_numpy,
     deprecated_alias,
     is_bool_sequence,
     is_int_sequence,
@@ -956,11 +956,7 @@ class Series:
         """
         if not self.is_numeric():
             return None
-        if ddof == 1:
-            return self.to_frame().select(pli.col(self.name).std()).to_series()[0]
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.std(self.drop_nulls().view(), ddof=ddof)
+        return self.to_frame().select(pli.col(self.name).std(ddof)).to_series()[0]
 
     def var(self, ddof: int = 1) -> float | None:
         """
@@ -982,11 +978,7 @@ class Series:
         """
         if not self.is_numeric():
             return None
-        if ddof == 1:
-            return self.to_frame().select(pli.col(self.name).var()).to_series()[0]
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        return np.var(self.drop_nulls().view(), ddof=ddof)
+        return self.to_frame().select(pli.col(self.name).var(ddof)).to_series()[0]
 
     def median(self) -> float:
         """
@@ -2271,23 +2263,11 @@ class Series:
         """
         return self.dtype is Utf8
 
-    def view(self, ignore_nulls: bool = False) -> np.ndarray[Any, Any]:
+    def view(self, ignore_nulls: bool = False) -> SeriesView:
         """
         Get a view into this Series data with a numpy array. This operation doesn't
         clone data, but does not include missing values. Don't use this unless you know
         what you are doing.
-
-        .. warning::
-
-            This function can lead to undefined behavior in the following cases:
-
-            Returns a view to a piece of memory that is already dropped:
-
-            >>> pl.Series([1, 3, 5]).sort().view()  # doctest: +IGNORE_RESULT
-
-            Sums invalid data that is missing:
-
-            >>> pl.Series([1, 2, None]).view().sum()  # doctest: +SKIP
 
         """
         if not ignore_nulls:
@@ -2297,7 +2277,7 @@ class Series:
         ptr = self._s.as_single_ptr()
         array = _ptr_to_numpy(ptr, self.len(), ptr_type)
         array.setflags(write=False)
-        return array
+        return SeriesView(array, self)
 
     def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
         if dtype:
@@ -2524,43 +2504,16 @@ class Series:
         if len(idx) == 0:
             return self
 
-        if self.is_numeric() or self.is_datelike():
-            idx = Series("", idx)
-            if isinstance(value, (int, float, bool)) or (value is None):
-                value = Series("", [value])
+        idx = Series("", idx)
+        if isinstance(value, (int, float, bool, str)) or (value is None):
+            value = Series("", [value])
 
-                # if we need to set more than a single value, we extend it
-                if len(idx) > 0:
-                    value = value.extend_constant(value[0], len(idx) - 1)
-            elif not isinstance(value, Series):
-                value = Series("", value)
-            self._s.set_at_idx(idx._s, value._s)
-            return self
-
-        # the set_at_idx function expects a np.array of dtype u32
-        f = get_ffi_func("set_at_idx_<>", self.dtype, self._s)
-        if f is None:
-            raise ValueError(
-                "could not find the FFI function needed to set at idx for series"
-                f" {self._s}"
-            )
-        if isinstance(idx, Series):
-            # make sure the dtype matches
-            idx = idx.cast(get_idx_type())
-            idx_array = idx.view()
-        elif _NUMPY_AVAILABLE and isinstance(idx, np.ndarray):
-            if not idx.data.c_contiguous:
-                idx_array = np.ascontiguousarray(idx, dtype=np.uint32)
-            else:
-                idx_array = idx
-                if idx_array.dtype != np.uint32:
-                    idx_array = np.array(idx_array, np.uint32)
-        else:
-            if not _NUMPY_AVAILABLE:
-                raise ImportError("'numpy' is required for this functionality.")
-            idx_array = np.array(idx, dtype=np.uint32)
-
-        self._s = f(idx_array, value)
+            # if we need to set more than a single value, we extend it
+            if len(idx) > 0:
+                value = value.extend_constant(value[0], len(idx) - 1)
+        elif not isinstance(value, Series):
+            value = Series("", value)
+        self._s.set_at_idx(idx._s, value._s)
         return self
 
     def cleared(self) -> Series:
