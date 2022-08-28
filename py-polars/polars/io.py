@@ -1141,8 +1141,6 @@ def read_excel(
     ...     read_csv_options={"infer_schema_length": None},
     ... )  # doctest: +SKIP
 
-    Alternative
-    -----------
     If :func:`read_excel` does not work or you need to read other types of spreadsheet
     files, you can try pandas ``pd.read_excel()``
     (supports `xls`, `xlsx`, `xlsm`, `xlsb`, `odf`, `ods` and `odt`).
