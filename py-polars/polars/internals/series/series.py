@@ -1338,17 +1338,6 @@ class Series:
         n
             Number of rows to return.
 
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.limit(2)
-        shape: (2,)
-        Series: 'a' [i64]
-        [
-                1
-                2
-        ]
-
         """
         return self.to_frame().select(pli.col(self.name).limit(n)).to_series()
 
