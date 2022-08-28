@@ -1214,28 +1214,6 @@ impl_set_with_mask!(set_with_mask_i32, i32, i32, Int32);
 impl_set_with_mask!(set_with_mask_i64, i64, i64, Int64);
 impl_set_with_mask!(set_with_mask_bool, bool, bool, Boolean);
 
-macro_rules! impl_set_at_idx {
-    ($name:ident, $native:ty, $cast:ident, $variant:ident) => {
-        fn $name(series: &Series, idx: &[u32], value: Option<$native>) -> Result<Series> {
-            let ca = series.$cast()?;
-            let new = ca.set_at_idx(idx.iter().map(|idx| *idx as usize), value)?;
-            Ok(new.into_series())
-        }
-
-        #[pymethods]
-        impl PySeries {
-            pub fn $name(&self, idx: &PyArray1<u32>, value: Option<$native>) -> PyResult<Self> {
-                let idx = unsafe { idx.as_slice().unwrap() };
-                let series = $name(&self.series, &idx, value).map_err(PyPolarsErr::from)?;
-                Ok(Self::new(series))
-            }
-        }
-    };
-}
-
-impl_set_at_idx!(set_at_idx_str, &str, utf8, Utf8);
-impl_set_at_idx!(set_at_idx_bool, bool, bool, Boolean);
-
 macro_rules! impl_get {
     ($name:ident, $series_variant:ident, $type:ty) => {
         #[pymethods]

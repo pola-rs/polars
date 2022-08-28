@@ -1914,10 +1914,7 @@ def test_set_at_idx() -> None:
     s = pl.Series("s", ["a", "b", "c"])
     s.set_at_idx((1, 2), "x")
     assert s.to_list() == ["a", "x", "x"]
-
-    # expected error condition
-    with pytest.raises(TypeError):
-        s.set_at_idx([0, 2], 0.12345)
+    assert s.set_at_idx([0, 2], 0.12345).to_list() == ["0.12345", "x", "0.12345"]
 
 
 def test_repr() -> None:

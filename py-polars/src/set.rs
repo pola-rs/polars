@@ -74,6 +74,24 @@ pub(crate) fn set_at_idx(mut s: Series, idx: &Series, values: &Series) -> Result
             let values = values.f64()?;
             std::mem::take(ca).set_at_idx2(idx, values.into_iter())
         }
+        DataType::Boolean => {
+            let ca = s.bool()?;
+            let values = values.bool()?;
+            let value = values.get(0);
+            let out = ca
+                .set_at_idx(idx.into_iter().copied(), value)
+                .map(|ca| ca.into_series())?;
+            out
+        }
+        DataType::Utf8 => {
+            let ca = s.utf8()?;
+            let values = values.utf8()?;
+            let value = values.get(0);
+            let out = ca
+                .set_at_idx(idx.into_iter().copied(), value)
+                .map(|ca| ca.into_series())?;
+            out
+        }
         _ => panic!("not yet implemented for dtype: {}", logical_dtype),
     };
 

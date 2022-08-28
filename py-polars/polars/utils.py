@@ -1,14 +1,13 @@
 """Utility functions."""
 from __future__ import annotations
 
-import ctypes
 import functools
 import os
 import sys
 import warnings
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, TypeVar
+from typing import TYPE_CHECKING, Callable, Iterable, Sequence, TypeVar
 
 import polars.internals as pli
 from polars.datatypes import DataType, Date, Datetime
@@ -20,13 +19,6 @@ try:
     _DOCUMENTING = False
 except ImportError:
     _DOCUMENTING = True
-
-try:
-    import numpy as np
-
-    _NUMPY_AVAILABLE = True
-except ImportError:
-    _NUMPY_AVAILABLE = False
 
 if sys.version_info >= (3, 10):
     from typing import ParamSpec, TypeGuard
@@ -44,32 +36,6 @@ def _process_null_values(
         return list(null_values.items())
     else:
         return null_values
-
-
-# https://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy
-def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray[Any, Any]:
-    """
-    Create a memory block view as a numpy array.
-
-    Parameters
-    ----------
-    ptr
-        C/Rust ptr casted to usize.
-    len
-        Length of the array values.
-    ptr_type
-        Example:
-            f32: ctypes.c_float)
-
-    Returns
-    -------
-    View of memory block as numpy array.
-
-    """
-    if not _NUMPY_AVAILABLE:
-        raise ImportError("'numpy' is required for this functionality.")
-    ptr_ctype = ctypes.cast(ptr, ctypes.POINTER(ptr_type))
-    return np.ctypeslib.as_array(ptr_ctype, (len,))
 
 
 def _timedelta_to_pl_duration(td: timedelta) -> str:

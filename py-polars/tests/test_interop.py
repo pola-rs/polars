@@ -428,3 +428,8 @@ def test_numpy_preserve_uint64_4112() -> None:
     assert pl.DataFrame({"a": [1, 2, 3]}).with_column(
         pl.col("a").hash()
     ).to_numpy().dtype == np.dtype("uint64")
+
+
+def test_view_ub() -> None:
+    # this would be UB if the series was dropped and not passed to the view
+    assert np.sum(pl.Series([3, 1, 5]).sort().view()) == 9
