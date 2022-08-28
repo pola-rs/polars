@@ -270,15 +270,6 @@ class Series:
             pandas_to_pyseries(name, values, nan_to_none=nan_to_none)
         )
 
-    def inner(self) -> PySeries:
-        warn(
-            "Series.inner will be removed in a future version. Use the public Polars"
-            " API instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self._s
-
     def __getstate__(self) -> Any:
         return self._s.__getstate__()
 
