@@ -1836,15 +1836,16 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         Alias for :func:`head`.
 
-        .. note::
-            Consider using the :func:`fetch` operation if you only want to test your
-            query. The :func:`fetch` operation will load the first `n` rows at the scan
-            level, whereas the :func:`head`/:func:`limit` are applied at the end.
-
         Parameters
         ----------
         n
             Number of rows to return.
+
+        Notes
+        -----
+        Consider using the :func:`fetch` operation if you only want to test your
+        query. The :func:`fetch` operation will load the first `n` rows at the scan
+        level, whereas the :func:`head`/:func:`limit` are applied at the end.
 
         """
         return self.head(n)
@@ -1853,18 +1854,16 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         Get the first `n` rows.
 
-        .. note::
-            Consider using the :func:`fetch` operation if you only want to test your
-            query. The :func:`fetch` operation will load the first `n` rows at the scan
-            level, whereas the :func:`head`/:func:`limit` are applied at the end.
-
-        This operation instead loads all the rows and only applies the ``head`` at the
-        end.
-
         Parameters
         ----------
         n
             Number of rows to return.
+
+        Notes
+        -----
+        Consider using the :func:`fetch` operation if you only want to test your
+        query. The :func:`fetch` operation will load the first `n` rows at the scan
+        level, whereas the :func:`head`/:func:`limit` are applied at the end.
 
         """
         return self.slice(0, n)
