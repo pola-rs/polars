@@ -10,16 +10,10 @@ from polars.utils import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
     _timedelta_to_pl_timedelta,
-    in_nanoseconds_window,
 )
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit
-
-
-def test_in_ns_window() -> None:
-    assert not in_nanoseconds_window(datetime(year=2600, month=1, day=1))
-    assert in_nanoseconds_window(datetime(year=2000, month=1, day=1))
 
 
 @pytest.mark.parametrize(

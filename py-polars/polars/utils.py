@@ -76,11 +76,6 @@ def _timedelta_to_pl_duration(td: timedelta) -> str:
     return f"{td.days}d{td.seconds}s{td.microseconds}us"
 
 
-def in_nanoseconds_window(dt: datetime) -> bool:
-    """Check whether the given datetime can be represented as a Unix timestamp."""
-    return 1386 < dt.year < 2554
-
-
 def _datetime_to_pl_timestamp(dt: datetime, tu: TimeUnit | None) -> int:
     """Convert a python datetime to a timestamp in nanoseconds."""
     if tu == "ns":

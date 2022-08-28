@@ -192,7 +192,7 @@ impl ListNameSpace {
                 move |s| Ok(s.list()?.lst_shift(periods).into_series()),
                 GetOutput::same_type(),
             )
-            .with_fmt("arr.diff")
+            .with_fmt("arr.shift")
     }
 
     /// Slice every sublist.
