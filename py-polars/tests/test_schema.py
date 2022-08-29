@@ -141,3 +141,10 @@ def test_lazy_map_schema() -> None:
     assert df.lazy().map(custom2, validate_output_schema=False).collect().to_dict(
         False
     ) == {"a": ["1", "2", "3"], "b": ["a", "b", "c"]}
+
+
+def test_join_as_of_by_schema() -> None:
+    a = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
+    b = pl.DataFrame({"a": [1], "b": [2], "d": [4]}).lazy()
+    q = a.join_asof(b, on="a", by="b")
+    assert q.collect().columns == q.columns

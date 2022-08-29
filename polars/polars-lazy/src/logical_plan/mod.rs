@@ -23,6 +23,7 @@ mod lit;
 pub(crate) mod optimizer;
 pub(crate) mod options;
 mod projection;
+mod schema;
 
 pub use anonymous_scan::*;
 pub use apply::*;
