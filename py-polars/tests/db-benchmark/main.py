@@ -23,7 +23,7 @@ x = pl.read_csv(
 ON_STRINGS = sys.argv.pop() == "on_strings"
 
 if not ON_STRINGS:
-    x.with_columns([pl.col(["id1", "id2", "id3"]).cast(pl.Categorical)])
+    x = x.with_columns([pl.col(["id1", "id2", "id3"]).cast(pl.Categorical)])
 df = x.clone()
 x = df.lazy()
 
