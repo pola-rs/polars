@@ -1016,11 +1016,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         individual values and are not of constant intervals. For constant intervals use
         *groupby_dynamic*
 
-        .. seealso::
-
-            groupby_dynamic
-
-
         The `period` and `offset` arguments are created with
         the following string language:
 
@@ -1063,6 +1058,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Define whether the temporal window interval is closed or not.
         by
             Also group by this column/these columns
+
+        See Also
+        --------
+        groupby_dynamic
 
         Examples
         --------
@@ -1134,10 +1133,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         window could be seen as a rolling window, with a window size determined by
         dates/times/values instead of slots in the DataFrame.
 
-        .. seealso::
-
-            groupby_rolling
-
         A window is defined by:
 
         - every: interval of the window
@@ -1195,6 +1190,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Define whether the temporal window interval is closed or not.
         by
             Also group by this column/these columns
+
+        See Also
+        --------
+        groupby_rolling
 
         """
         if offset is None:
