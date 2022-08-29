@@ -757,6 +757,21 @@ impl ProjectionPushDown {
                 let mut names_right = init_set();
                 let mut local_projection = init_vec();
 
+                fn add_nodes_to_accumulated_state(
+                    expr: Node,
+                    acc_projections: &mut Vec<Node>,
+                    local_projection: &mut Vec<Node>,
+                    projected_names: &mut PlHashSet<Arc<str>>,
+                    expr_arena: &mut Arena<AExpr>,
+                    // only for left hand side table we add local names
+                    left_side: bool,
+                ) {
+                    add_expr_to_accumulated(expr, acc_projections, projected_names, expr_arena);
+                    if left_side && !local_projection.contains(&expr) {
+                        local_projection.push(expr)
+                    }
+                }
+
                 // if there are no projections we don't have to do anything (all columns are projected)
                 // otherwise we build local projections to sort out proper column names due to the
                 // join operation
@@ -769,26 +784,57 @@ impl ProjectionPushDown {
                     let schema_left = lp_arena.get(input_left).schema(lp_arena);
                     let schema_right = lp_arena.get(input_right).schema(lp_arena);
 
-                    // We need the join columns so we push the projection downwards
-                    for e in &left_on {
-                        add_expr_to_accumulated(
-                            *e,
-                            &mut pushdown_left,
-                            &mut names_left,
-                            expr_arena,
-                        );
-                        if !local_projection.contains(e) {
-                            local_projection.push(*e)
+                    // make sure that the asof join 'by' columns are projected
+                    #[cfg(feature = "asof_join")]
+                    if let JoinType::AsOf(asof_options) = &options.how {
+                        if let (Some(left_by), Some(right_by)) =
+                            (&asof_options.left_by, &asof_options.right_by)
+                        {
+                            for name in left_by {
+                                let node = expr_arena.add(AExpr::Column(Arc::from(name.as_str())));
+                                add_nodes_to_accumulated_state(
+                                    node,
+                                    &mut pushdown_left,
+                                    &mut local_projection,
+                                    &mut names_left,
+                                    expr_arena,
+                                    true,
+                                );
+                            }
+                            for name in right_by {
+                                let node = expr_arena.add(AExpr::Column(Arc::from(name.as_str())));
+                                add_nodes_to_accumulated_state(
+                                    node,
+                                    &mut pushdown_right,
+                                    &mut local_projection,
+                                    &mut names_right,
+                                    expr_arena,
+                                    false,
+                                );
+                            }
                         }
                     }
+
+                    // We need the join columns so we push the projection downwards
+                    for e in &left_on {
+                        add_nodes_to_accumulated_state(
+                            *e,
+                            &mut pushdown_left,
+                            &mut local_projection,
+                            &mut names_left,
+                            expr_arena,
+                            true,
+                        );
+                    }
                     for e in &right_on {
-                        add_expr_to_accumulated(
+                        add_nodes_to_accumulated_state(
                             *e,
                             &mut pushdown_right,
+                            &mut local_projection,
                             &mut names_right,
                             expr_arena,
+                            false,
                         );
-                        // we don't add right column names to local_projection as they are removed
                     }
 
                     for proj in acc_projections {
@@ -803,7 +849,7 @@ impl ProjectionPushDown {
                                 let proj = expr_arena.add(AExpr::Alias(node, name.clone()));
                                 local_projection.push(proj)
                             }
-                            // now we don
+                            // now we don't
                             add_local = false;
                         }
 

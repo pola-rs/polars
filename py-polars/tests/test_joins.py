@@ -305,3 +305,12 @@ def test_join_on_cast() -> None:
     assert df_a.lazy().join(
         df_b.lazy(), on=pl.col("a").cast(pl.Int64)
     ).collect().to_dict(False) == {"row_nr": [1, 2, 3, 5], "a": [-2, 3, 3, 10]}
+
+
+def test_asof_join_projection_resolution_4606() -> None:
+    a = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
+    b = pl.DataFrame({"a": [1], "b": [2], "d": [4]}).lazy()
+    joined_tbl = a.join_asof(b, on="a", by="b")
+    assert joined_tbl.groupby("a").agg(
+        [pl.col("c").sum().alias("c")]
+    ).collect().columns == ["a", "c"]
