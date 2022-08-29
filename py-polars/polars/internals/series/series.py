@@ -385,7 +385,7 @@ class Series:
     def __le__(self, other: Any) -> Series:
         return self._comp(other, "lt_eq")
 
-    def _comp(self, other: Any, op: ComparisonOperator) -> Series:
+    def _comp(self, other: Any, op: ComparisonOperator) -> Series:  # noqa: CCE001
         if isinstance(other, datetime) and self.dtype == Datetime:
             ts = _datetime_to_pl_timestamp(other, self.time_unit)
             f = get_ffi_func(op + "_<>", Int64, self._s)
@@ -485,7 +485,7 @@ class Series:
             raise ValueError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
-    def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Series:
+    def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Series:  # noqa: CCE001
         if isinstance(other, Series):
             return wrap_s(getattr(self._s, op_s)(other._s))
         if isinstance(other, float) and not self.is_float():
@@ -588,7 +588,7 @@ class Series:
             f"with argument: '{item}' of type: '{type(item)}'."
         )
 
-    def _pos_idxs(self, idxs: np.ndarray[Any, Any] | Series) -> Series:
+    def _pos_idxs(self, idxs: np.ndarray[Any, Any] | Series) -> Series:  # noqa: CCE001
         # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
         idx_type = get_idx_type()
 
@@ -4189,7 +4189,7 @@ class Series:
 
         """
 
-    def set_sorted(self, reverse: bool = False) -> Series:
+    def set_sorted(self, reverse: bool = False) -> Series:  # noqa: CCE001
         """
         Set this `Series` as `sorted` so that downstream code can use
         fast paths for sorted arrays.
