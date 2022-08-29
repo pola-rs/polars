@@ -367,6 +367,24 @@ class Series:
     def __rxor__(self, other: Series) -> Series:
         return self.__xor__(other)
 
+    def __eq__(self, other: Any) -> Series:  # type: ignore[override]
+        return self._comp(other, "eq")
+
+    def __ne__(self, other: Any) -> Series:  # type: ignore[override]
+        return self._comp(other, "neq")
+
+    def __gt__(self, other: Any) -> Series:
+        return self._comp(other, "gt")
+
+    def __lt__(self, other: Any) -> Series:
+        return self._comp(other, "lt")
+
+    def __ge__(self, other: Any) -> Series:
+        return self._comp(other, "gt_eq")
+
+    def __le__(self, other: Any) -> Series:
+        return self._comp(other, "lt_eq")
+
     def _comp(self, other: Any, op: ComparisonOperator) -> Series:
         if isinstance(other, datetime) and self.dtype == Datetime:
             ts = _datetime_to_pl_timestamp(other, self.time_unit)
@@ -387,43 +405,6 @@ class Series:
         f = get_ffi_func(op + "_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
-        return wrap_s(f(other))
-
-    def __eq__(self, other: Any) -> Series:  # type: ignore[override]
-        return self._comp(other, "eq")
-
-    def __ne__(self, other: Any) -> Series:  # type: ignore[override]
-        return self._comp(other, "neq")
-
-    def __gt__(self, other: Any) -> Series:
-        return self._comp(other, "gt")
-
-    def __lt__(self, other: Any) -> Series:
-        return self._comp(other, "lt")
-
-    def __ge__(self, other: Any) -> Series:
-        return self._comp(other, "gt_eq")
-
-    def __le__(self, other: Any) -> Series:
-        return self._comp(other, "lt_eq")
-
-    def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Series:
-        if isinstance(other, Series):
-            return wrap_s(getattr(self._s, op_s)(other._s))
-        if isinstance(other, float) and not self.is_float():
-            _s = sequence_to_pyseries("", [other])
-            if "rhs" in op_ffi:
-                return wrap_s(getattr(_s, op_s)(self._s))
-            else:
-                return wrap_s(getattr(self._s, op_s)(_s))
-        else:
-            other = maybe_cast(other, self.dtype, self.time_unit)
-            f = get_ffi_func(op_ffi, self.dtype, self._s)
-        if f is None:
-            raise ValueError(
-                f"cannot do arithmetic with series of dtype: {self.dtype} and argument"
-                f" of type: {type(other)}"
-            )
         return wrap_s(f(other))
 
     def __add__(self, other: Any) -> Series:
@@ -504,6 +485,25 @@ class Series:
             raise ValueError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
+    def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Series:
+        if isinstance(other, Series):
+            return wrap_s(getattr(self._s, op_s)(other._s))
+        if isinstance(other, float) and not self.is_float():
+            _s = sequence_to_pyseries("", [other])
+            if "rhs" in op_ffi:
+                return wrap_s(getattr(_s, op_s)(self._s))
+            else:
+                return wrap_s(getattr(self._s, op_s)(_s))
+        else:
+            other = maybe_cast(other, self.dtype, self.time_unit)
+            f = get_ffi_func(op_ffi, self.dtype, self._s)
+        if f is None:
+            raise ValueError(
+                f"cannot do arithmetic with series of dtype: {self.dtype} and argument"
+                f" of type: {type(other)}"
+            )
+        return wrap_s(f(other))
+
     def __pow__(self, power: int | float | Series) -> Series:
         if self.is_datelike():
             raise ValueError(
@@ -520,6 +520,73 @@ class Series:
 
     def __neg__(self) -> Series:
         return 0 - self
+
+    def __copy__(self) -> Series:
+        return self.clone()
+
+    def __deepcopy__(self, memo: None = None) -> Series:
+        return self.clone()
+
+    def __iter__(self) -> SeriesIter:
+        return SeriesIter(self.len(), self)
+
+    def __getitem__(
+        self,
+        item: int
+        | Series
+        | range
+        | slice
+        | np.ndarray[Any, Any]
+        | list[int]
+        | list[bool],
+    ) -> Any:
+        if isinstance(item, int):
+            if item < 0:
+                item = self.len() + item
+            if self.dtype in (List, Object):
+                f = get_ffi_func("get_<>", self.dtype, self._s)
+                if f is None:
+                    return NotImplemented
+                out = f(item)
+                if self.dtype == List:
+                    if out is None:
+                        return None
+                    return wrap_s(out)
+                return out
+
+            return self._s.get_idx(item)
+
+        if _NUMPY_AVAILABLE and isinstance(item, np.ndarray):
+            if item.ndim != 1:
+                raise ValueError("Only a 1D-Numpy array is supported as index.")
+            if item.dtype.kind in ("i", "u"):
+                # Numpy array with signed or unsigned integers.
+                return wrap_s(self._s.take_with_series(self._pos_idxs(item)._s))
+            if item.dtype == bool:
+                return wrap_s(self._s.filter(pli.Series("", item)._s))
+
+        if is_bool_sequence(item) or is_int_sequence(item):
+            item = Series("", item)  # fall through to next if isinstance
+
+        if isinstance(item, Series):
+            if item.dtype == Boolean:
+                return wrap_s(self._s.filter(item._s))
+            if item.dtype == UInt32:
+                return wrap_s(self._s.take_with_series(item._s))
+            if item.dtype in {UInt8, UInt16, UInt64, Int8, Int16, Int32, Int64}:
+                return wrap_s(self._s.take_with_series(self._pos_idxs(item)._s))
+
+        if isinstance(item, range):
+            return self[range_to_slice(item)]
+
+        # slice
+        if isinstance(item, slice):
+            return PolarsSlice(self).apply(item)
+
+        raise ValueError(
+            f"Cannot __getitem__ on Series of dtype: '{self.dtype}' "
+            f"with argument: '{item}' of type: '{type(item)}'."
+        )
 
     def _pos_idxs(self, idxs: np.ndarray[Any, Any] | Series) -> Series:
         # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
@@ -592,73 +659,6 @@ class Series:
                 return Series("", idxs, dtype=idx_type)
 
         raise NotImplementedError("Unsupported idxs datatype.")
-
-    def __copy__(self) -> Series:
-        return self.clone()
-
-    def __deepcopy__(self, memo: None = None) -> Series:
-        return self.clone()
-
-    def __iter__(self) -> SeriesIter:
-        return SeriesIter(self.len(), self)
-
-    def __getitem__(
-        self,
-        item: int
-        | Series
-        | range
-        | slice
-        | np.ndarray[Any, Any]
-        | list[int]
-        | list[bool],
-    ) -> Any:
-        if isinstance(item, int):
-            if item < 0:
-                item = self.len() + item
-            if self.dtype in (List, Object):
-                f = get_ffi_func("get_<>", self.dtype, self._s)
-                if f is None:
-                    return NotImplemented
-                out = f(item)
-                if self.dtype == List:
-                    if out is None:
-                        return None
-                    return wrap_s(out)
-                return out
-
-            return self._s.get_idx(item)
-
-        if _NUMPY_AVAILABLE and isinstance(item, np.ndarray):
-            if item.ndim != 1:
-                raise ValueError("Only a 1D-Numpy array is supported as index.")
-            if item.dtype.kind in ("i", "u"):
-                # Numpy array with signed or unsigned integers.
-                return wrap_s(self._s.take_with_series(self._pos_idxs(item)._s))
-            if item.dtype == bool:
-                return wrap_s(self._s.filter(pli.Series("", item)._s))
-
-        if is_bool_sequence(item) or is_int_sequence(item):
-            item = Series("", item)  # fall through to next if isinstance
-
-        if isinstance(item, Series):
-            if item.dtype == Boolean:
-                return wrap_s(self._s.filter(item._s))
-            if item.dtype == UInt32:
-                return wrap_s(self._s.take_with_series(item._s))
-            if item.dtype in {UInt8, UInt16, UInt64, Int8, Int16, Int32, Int64}:
-                return wrap_s(self._s.take_with_series(self._pos_idxs(item)._s))
-
-        if isinstance(item, range):
-            return self[range_to_slice(item)]
-
-        # slice
-        if isinstance(item, slice):
-            return PolarsSlice(self).apply(item)
-
-        raise ValueError(
-            f"Cannot __getitem__ on Series of dtype: '{self.dtype}' "
-            f"with argument: '{item}' of type: '{type(item)}'."
-        )
 
     def __setitem__(
         self,
