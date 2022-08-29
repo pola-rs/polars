@@ -20,6 +20,7 @@ use polars_io::{
 };
 
 use crate::logical_plan::projection::rewrite_projections;
+use crate::logical_plan::schema::det_join_schema;
 use crate::prelude::*;
 use crate::utils;
 use crate::utils::{combine_predicates_expr, has_expr};
@@ -509,35 +510,19 @@ impl LogicalPlanBuilder {
     ) -> Self {
         let schema_left = try_delayed!(self.0.schema(), &self.0, into);
         let schema_right = try_delayed!(other.schema(), &self.0, into);
+        let right_names = try_delayed!(
+            right_on
+                .iter()
+                .map(|e| e
+                    .to_field(&schema_right, Context::Default)
+                    .map(|field| field.name))
+                .collect::<Result<Vec<_>>>(),
+            &self.0,
+            into
+        );
 
-        // column names of left table
-        let mut names: PlHashSet<&str> = PlHashSet::default();
-        let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len());
+        let schema = det_join_schema(&schema_left, &schema_right, &right_names, &options);
 
-        for (name, dtype) in schema_left.iter() {
-            names.insert(name);
-            new_schema.with_column(name.to_string(), dtype.clone())
-        }
-
-        let right_names: PlHashSet<_> = right_on
-            .iter()
-            .map(|e| utils::expr_output_name(e).expect("could not find name"))
-            .collect();
-
-        for (name, dtype) in schema_right.iter() {
-            if !right_names.iter().any(|s| s.as_ref() == name) {
-                if names.contains(&**name) {
-                    let new_name = format!("{}{}", name, options.suffix.as_ref());
-                    new_schema.with_column(new_name, dtype.clone())
-                } else {
-                    new_schema.with_column(name.to_string(), dtype.clone())
-                }
-            }
-        }
-
-        let schema = Arc::new(new_schema);
-
-        drop(names);
         LogicalPlan::Join {
             input_left: Box::new(self.0),
             input_right: Box::new(other),
