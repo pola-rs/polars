@@ -480,13 +480,6 @@ impl PySeries {
         self.series.n_chunks()
     }
 
-    pub fn slice(&self, offset: i64, length: Option<usize>) -> Self {
-        let series = self
-            .series
-            .slice(offset, length.unwrap_or_else(|| self.series.len()));
-        series.into()
-    }
-
     pub fn append(&mut self, other: &PySeries) -> PyResult<()> {
         self.series
             .append(&other.series)

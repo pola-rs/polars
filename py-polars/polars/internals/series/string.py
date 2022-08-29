@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import polars.internals as pli
 from polars.datatypes import Date, Datetime, Time
 from polars.internals.series.utils import expr_dispatch
+from polars.utils import deprecated_alias
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TransferEncoding
@@ -708,22 +709,23 @@ class StringNameSpace:
     def to_uppercase(self) -> pli.Series:
         """Modify the strings to their uppercase equivalent."""
 
-    def slice(self, start: int, length: int | None = None) -> pli.Series:
+    @deprecated_alias(start="offset")
+    def slice(self, offset: int, length: int | None = None) -> pli.Series:
         """
         Create subslices of the string values of a Utf8 Series.
 
         Parameters
         ----------
-        start
-            Starting index of the slice (zero-indexed). Negative indexing
-            may be used.
+        offset
+            Start index. Negative indexing is supported.
         length
-            Optional length of the slice. If None (default), the slice is taken to the
+            Length of the slice. If set to ``None`` (default), the slice is taken to the
             end of the string.
 
         Returns
         -------
-        Series of Utf8 type
+        Series
+            Series of dtype Utf8.
 
         Examples
         --------
@@ -751,3 +753,7 @@ class StringNameSpace:
         ]
 
         """
+        s = pli.wrap_s(self._s)
+        return (
+            s.to_frame().select(pli.col(s.name).str.slice(offset, length)).to_series()
+        )

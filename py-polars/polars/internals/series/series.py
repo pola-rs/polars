@@ -1348,13 +1348,14 @@ class Series:
         Parameters
         ----------
         offset
-            Offset index.
+            Start index. Negative indexing is supported.
         length
-            Length of the slice.
+            Length of the slice. If set to ``None``, all rows starting at the offset
+            will be selected.
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s = pl.Series("a", [1, 2, 3, 4])
         >>> s.slice(1, 2)
         shape: (2,)
         Series: 'a' [i64]
@@ -1364,7 +1365,6 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.slice(offset, length))
 
     def append(self, other: Series, append_chunks: bool = True) -> None:
         """

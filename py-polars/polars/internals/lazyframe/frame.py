@@ -1792,14 +1792,15 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def slice(self: LDF, offset: int, length: int | None = None) -> LDF:
         """
-        Slice the DataFrame.
+        Get a slice of this DataFrame.
 
         Parameters
         ----------
         offset
-            Start index.
+            Start index. Negative indexing is supported.
         length
-            Length of the slice.
+            Length of the slice. If set to ``None``, all rows starting at the offset
+            will be selected.
 
         Examples
         --------

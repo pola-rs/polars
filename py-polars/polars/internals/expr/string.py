@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import polars.internals as pli
 from polars.datatypes import DataType, Date, Datetime, Time, is_polars_dtype
+from polars.utils import deprecated_alias
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TransferEncoding
@@ -1036,22 +1037,23 @@ class ExprStringNameSpace:
             self._pyexpr.str_replace_all(pattern._pyexpr, value._pyexpr, literal)
         )
 
-    def slice(self, start: int, length: int | None = None) -> pli.Expr:
+    @deprecated_alias(start="offset")
+    def slice(self, offset: int, length: int | None = None) -> pli.Expr:
         """
         Create subslices of the string values of a Utf8 Series.
 
         Parameters
         ----------
-        start
-            Starting index of the slice (zero-indexed). Negative indexing
-            may be used.
+        offset
+            Start index. Negative indexing is supported.
         length
-            Optional length of the slice. If None (default), the slice is taken to the
+            Length of the slice. If set to ``None`` (default), the slice is taken to the
             end of the string.
 
         Returns
         -------
-        Series of Utf8 type
+        Expr
+            Series of dtype Utf8.
 
         Examples
         --------
@@ -1095,4 +1097,4 @@ class ExprStringNameSpace:
         └─────────────┴──────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_slice(start, length))
+        return pli.wrap_expr(self._pyexpr.str_slice(offset, length))
