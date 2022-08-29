@@ -16,3 +16,8 @@ dt em.sig-param:last-of-type::after {
 dl.class > dt:first-of-type {
     display: block !important;
 }
+
+/* Display long method names over multiple lines in navbar. */
+.bd-toc-item {
+    overflow-wrap: break-word;
+}
