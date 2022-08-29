@@ -403,7 +403,7 @@ class DateTimeNameSpace:
 
         Warnings
         --------
-        This API is experimental and may change without it being considered a
+        This functionality is experimental and may change without it being considered a
         breaking change.
 
         Examples

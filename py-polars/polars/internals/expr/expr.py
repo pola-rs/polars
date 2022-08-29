@@ -3731,8 +3731,8 @@ class Expr:
 
         Warnings
         --------
-        The dynamic windows functionality is still experimental and may change
-        without it considered being a breaking change.
+        This functionality is experimental and may change without it being considered a
+        breaking change.
 
         Notes
         -----
@@ -3832,8 +3832,8 @@ class Expr:
 
         Warnings
         --------
-        The dynamic windows functionality is still experimental and may change
-        without it considered being a breaking change.
+        This functionality is experimental and may change without it being considered a
+        breaking change.
 
         Notes
         -----
@@ -3933,8 +3933,8 @@ class Expr:
 
         Warnings
         --------
-        The dynamic windows functionality is still experimental and may change
-        without it considered being a breaking change.
+        This functionality is experimental and may change without it being considered a
+        breaking change.
 
         Notes
         -----
@@ -4032,8 +4032,8 @@ class Expr:
 
         Warnings
         --------
-        The dynamic windows functionality is still experimental and may change
-        without it considered being a breaking change.
+        This functionality is experimental and may change without it being considered a
+        breaking change.
 
         Notes
         -----
@@ -4133,8 +4133,8 @@ class Expr:
 
         Warnings
         --------
-        The dynamic windows functionality is still experimental and may change
-        without it considered being a breaking change.
+        This functionality is experimental and may change without it being considered a
+        breaking change.
 
         Notes
         -----
@@ -4234,8 +4234,8 @@ class Expr:
 
         Warnings
         --------
-        The dynamic windows functionality is still experimental and may change
-        without it considered being a breaking change.
+        This functionality is experimental and may change without it being considered a
+        breaking change.
 
         Notes
         -----
@@ -4331,8 +4331,8 @@ class Expr:
 
         Warnings
         --------
-        The dynamic windows functionality is still experimental and may change
-        without it considered being a breaking change.
+        This functionality is experimental and may change without it being considered a
+        breaking change.
 
         Notes
         -----
@@ -4434,8 +4434,8 @@ class Expr:
 
         Warnings
         --------
-        The dynamic windows functionality is still experimental and may change
-        without it considered being a breaking change.
+        This functionality is experimental and may change without it being considered a
+        breaking change.
 
         Notes
         -----
@@ -5833,7 +5833,7 @@ class Expr:
 
         Warnings
         --------
-        This API is experimental and may change without it being considered a
+        This functionality is experimental and may change without it being considered a
         breaking change.
 
         This can be really slow as it can have `O(n^2)` complexity. Don't use this

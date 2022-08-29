@@ -1128,7 +1128,7 @@ class Series:
 
         Warnings
         --------
-        This API is experimental and may change without it being considered a
+        This functionality is experimental and may change without it being considered a
         breaking change.
 
         This can be really slow as it can have `O(n^2)` complexity. Don't use this
