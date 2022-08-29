@@ -209,6 +209,10 @@ Or for python users install `$ pip install -U polars-u64-idx`.
 
 Don't use this unless you hit the row boundary as the default polars is faster and consumes less memory.
 
+# Legacy
+Do you want polars to run on an old CPU (e.g. dating from before 2011)? Install `$pip -U polars-lts-cpu`. This polars project is 
+compiled without [avx](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target features.
+
 ## Acknowledgements
 
 Development of Polars is proudly powered by
