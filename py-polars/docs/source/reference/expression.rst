@@ -221,6 +221,7 @@ Manipulation/ selection
     Expr.take
     Expr.take_every
     Expr.to_physical
+    Expr.top_k
     Expr.upper_bound
     Expr.where
 

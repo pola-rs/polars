@@ -226,3 +226,10 @@ def test_argsort_rank_nans() -> None:
         )
         .select(["rank", "argsort"])
     ).to_dict(False) == {"rank": [1.0, 2.0], "argsort": [0, 1]}
+
+
+def test_top_k() -> None:
+    s = pl.Series([3, 1, 2, 5, 8])
+
+    assert s.top_k(3).to_list() == [8, 5, 3]
+    assert s.top_k(4, reverse=True).to_list() == [1, 2, 3, 5]

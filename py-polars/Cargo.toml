@@ -58,6 +58,7 @@ csv-file = ["polars/csv-file"]
 object = ["polars/object"]
 extract_jsonpath = ["polars/extract_jsonpath"]
 pivot = ["polars/pivot"]
+top_k = ["polars/top_k"]
 
 all = [
   "json",
@@ -80,6 +81,7 @@ all = [
   "polars/timezones",
   "object",
   "pivot",
+  "top_k",
 ]
 
 # we cannot conditionaly activate simd

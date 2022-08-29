@@ -37,8 +37,8 @@ pub(crate) fn argsort_multiple_impl<T: PartialOrd + Send + IsFloat + Copy>(
         .collect_trusted();
 
     let first_reverse = reverse[0];
-    vals.par_sort_by(
-        |tpl_a, tpl_b| match (first_reverse, sort_cmp(&tpl_a.1, &tpl_b.1)) {
+    vals.par_sort_by(|tpl_a, tpl_b| {
+        match (first_reverse, compare_fn_nan_max(&tpl_a.1, &tpl_b.1)) {
             // if ordering is equal, we check the other arrays until we find a non-equal ordering
             // if we have exhausted all arrays, we keep the equal ordering.
             (_, Ordering::Equal) => {
@@ -51,8 +51,8 @@ pub(crate) fn argsort_multiple_impl<T: PartialOrd + Send + IsFloat + Copy>(
             (true, Ordering::Less) => Ordering::Greater,
             (true, Ordering::Greater) => Ordering::Less,
             (_, ord) => ord,
-        },
-    );
+        }
+    });
     let ca: NoNull<IdxCa> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
     let mut ca = ca.into_inner();
     ca.set_sorted(reverse[0]);

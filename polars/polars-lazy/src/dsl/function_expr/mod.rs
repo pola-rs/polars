@@ -86,6 +86,11 @@ pub enum FunctionExpr {
     ListExpr(ListFunction),
     #[cfg(feature = "dtype-struct")]
     StructExpr(StructFunction),
+    #[cfg(feature = "top_k")]
+    TopK {
+        k: usize,
+        reverse: bool,
+    },
 }
 
 #[cfg(feature = "trigonometry")]
@@ -258,6 +263,8 @@ impl FunctionExpr {
                     }
                 }
             }
+            #[cfg(feature = "top_k")]
+            TopK { .. } => same_type(),
         }
     }
 }
@@ -408,6 +415,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     FieldByIndex(index) => map_with_args!(struct_::get_by_index, index),
                     FieldByName(name) => map_with_args!(struct_::get_by_name, name.clone()),
                 }
+            }
+            #[cfg(feature = "top_k")]
+            TopK { k, reverse } => {
+                map_with_args!(top_k, k, reverse)
             }
         }
     }

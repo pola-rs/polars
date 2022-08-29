@@ -2,12 +2,12 @@ use super::*;
 
 #[inline]
 fn default_order<T: PartialOrd + IsFloat>(a: &(IdxSize, T), b: &(IdxSize, T)) -> Ordering {
-    sort_cmp(&a.1, &b.1)
+    compare_fn_nan_max(&a.1, &b.1)
 }
 
 #[inline]
 fn reverse_order<T: PartialOrd + IsFloat>(a: &(IdxSize, T), b: &(IdxSize, T)) -> Ordering {
-    sort_cmp(&b.1, &a.1)
+    compare_fn_nan_max(&b.1, &a.1)
 }
 
 pub(super) fn argsort<I, J, T>(
