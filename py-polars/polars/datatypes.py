@@ -46,15 +46,14 @@ def get_idx_type() -> type[DataType]:
     return _get_idx_type()
 
 
-def _custom_reconstruct(
-    cls: type[DataType], base: type[Any], state: Any
-) -> PolarsDataType:
+def _custom_reconstruct(cls: type[Any], base: type[Any], state: Any) -> PolarsDataType:
     if state:
         obj = base.__new__(cls, state)
         if base.__init__ != object.__init__:
             base.__init__(obj, state)
     else:
-        return object.__new__(cls)
+        obj = object.__new__(cls)
+    return obj
 
 
 class DataType:
