@@ -2481,16 +2481,17 @@ class Series:
         """
         Set masked values.
 
-        .. note::
-            Using this is an anti-pattern.
-            Always prefer: `pl.when(predicate).then(value).otherwise(self)`
-
         Parameters
         ----------
         filter
             Boolean mask.
         value
             Value to replace the the masked values with.
+
+        Notes
+        -----
+        Using this is an anti-pattern.
+        Always prefer: `pl.when(predicate).then(value).otherwise(self)`
 
         """
         f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
@@ -2517,10 +2518,6 @@ class Series:
         """
         Set values at the index locations.
 
-        .. note::
-            Using this is an anti-pattern.
-            Always prefer: `pl.when(predicate).then(value).otherwise(self)`
-
         Parameters
         ----------
         idx
@@ -2531,6 +2528,11 @@ class Series:
         Returns
         -------
         the series mutated
+
+        Notes
+        -----
+        Using this is considered an anti-pattern.
+        Always prefer: `pl.when(predicate).then(value).otherwise(self)`
 
         """
         if isinstance(idx, int):

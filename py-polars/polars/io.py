@@ -988,10 +988,6 @@ def read_sql(
     """
     Read a SQL query into a DataFrame.
 
-    .. note::
-        Make sure to install connectorx>=0.2.2. Read the documentation
-        `here <https://sfu-db.github.io/connector-x/intro.html>`_.
-
     Reading a SQL query from the following data sources are supported:
 
         * Postgres
@@ -1023,6 +1019,11 @@ def read_sql(
     protocol
         Backend-specific transfer protocol directive; see connectorx documentation for
         details.
+
+    Notes
+    -----
+    Make sure to install connectorx>=0.2.2. Read the documentation
+    `here <https://sfu-db.github.io/connector-x/intro.html>`_.
 
     Examples
     --------
