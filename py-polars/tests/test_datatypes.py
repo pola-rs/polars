@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import pickle
+
 import polars as pl
 from polars import datatypes
 
@@ -39,4 +40,3 @@ def test_dtypes_picklable() -> None:
     singleton_type = pl.Float64
     assert pickle.loads(pickle.dumps(parametric_type)) == parametric_type
     assert pickle.loads(pickle.dumps(singleton_type)) == singleton_type
-
