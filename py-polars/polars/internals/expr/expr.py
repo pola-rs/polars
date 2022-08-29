@@ -1237,9 +1237,10 @@ class Expr:
         """
         Drop null values.
 
-        .. warning::
-            Note that null values are not floating point NaN values!
-            To drop NaN values, use :func:`drop_nans`.
+        Warnings
+        --------
+        Note that null values are not floating point NaN values!
+        To drop NaN values, use :func:`drop_nans`.
 
         Examples
         --------
@@ -1270,9 +1271,10 @@ class Expr:
         """
         Drop floating point NaN values
 
-        .. warning::
-            Note that NaN values are not null values!
-            To drop null values, use :func:`drop_nulls`.
+        Warnings
+        --------
+        Note that NaN values are not null values!
+        To drop null values, use :func:`drop_nulls`.
 
         Examples
         --------
@@ -3727,15 +3729,16 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define whether the temporal window interval is closed or not.
 
+        Warnings
+        --------
+        The dynamic windows functionality is still experimental and may change
+        without it considered being a breaking change.
 
-        .. warning::
-            The dynamic windows functionality is still experimental and may change
-            without it considered being a breaking change
-
-        .. note::
-            If you want to compute multiple aggregation statistics over the same dynamic
-            window, consider using `groupby_rolling` this method can cache the window
-            size computation.
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `groupby_rolling` this method can cache the window size
+        computation.
 
         Examples
         --------
@@ -3827,14 +3830,16 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define whether the temporal window interval is closed or not.
 
-        .. warning::
-            The dynamic windows functionality is still experimental and may change
-            without it considered being a breaking change
+        Warnings
+        --------
+        The dynamic windows functionality is still experimental and may change
+        without it considered being a breaking change.
 
-        .. note::
-            If you want to compute multiple aggregation statistics over the same dynamic
-            window, consider using `groupby_rolling` this method can cache the window
-            size computation.
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `groupby_rolling` this method can cache the window size
+        computation.
 
         Examples
         --------
@@ -3926,14 +3931,16 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define whether the temporal window interval is closed or not.
 
-        .. warning::
-            The dynamic windows functionality is still experimental and may change
-            without it considered being a breaking change
+        Warnings
+        --------
+        The dynamic windows functionality is still experimental and may change
+        without it considered being a breaking change.
 
-        .. note::
-            If you want to compute multiple aggregation statistics over the same dynamic
-            window, consider using `groupby_rolling` this method can cache the window
-            size computation.
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `groupby_rolling` this method can cache the window size
+        computation.
 
         Examples
         --------
@@ -4023,14 +4030,16 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define whether the temporal window interval is closed or not.
 
-        .. warning::
-            The dynamic windows functionality is still experimental and may change
-            without it considered being a breaking change
+        Warnings
+        --------
+        The dynamic windows functionality is still experimental and may change
+        without it considered being a breaking change.
 
-        .. note::
-            If you want to compute multiple aggregation statistics over the same dynamic
-            window, consider using `groupby_rolling` this method can cache the window
-            size computation.
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `groupby_rolling` this method can cache the window size
+        computation.
 
         Examples
         --------
@@ -4122,14 +4131,16 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define whether the temporal window interval is closed or not.
 
-        .. warning::
-            The dynamic windows functionality is still experimental and may change
-            without it considered being a breaking change
+        Warnings
+        --------
+        The dynamic windows functionality is still experimental and may change
+        without it considered being a breaking change.
 
-        .. note::
-            If you want to compute multiple aggregation statistics over the same dynamic
-            window, consider using `groupby_rolling` this method can cache the window
-            size computation.
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `groupby_rolling` this method can cache the window size
+        computation.
 
         Examples
         --------
@@ -4221,14 +4232,16 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define whether the temporal window interval is closed or not.
 
-        .. warning::
-            The dynamic windows functionality is still experimental and may change
-            without it considered being a breaking change
+        Warnings
+        --------
+        The dynamic windows functionality is still experimental and may change
+        without it considered being a breaking change.
 
-        .. note::
-            If you want to compute multiple aggregation statistics over the same dynamic
-            window, consider using `groupby_rolling` this method can cache the window
-            size computation.
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `groupby_rolling` this method can cache the window size
+        computation.
 
         Examples
         --------
@@ -4316,14 +4329,16 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define whether the temporal window interval is closed or not.
 
-        .. warning::
-            The dynamic windows functionality is still experimental and may change
-            without it considered being a breaking change
+        Warnings
+        --------
+        The dynamic windows functionality is still experimental and may change
+        without it considered being a breaking change.
 
-        .. note::
-            If you want to compute multiple aggregation statistics over the same dynamic
-            window, consider using `groupby_rolling` this method can cache the window
-            size computation.
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `groupby_rolling` this method can cache the window size
+        computation.
 
         Examples
         --------
@@ -4417,14 +4432,16 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define whether the temporal window interval is closed or not.
 
-        .. warning::
-            The dynamic windows functionality is still experimental and may change
-            without it considered being a breaking change
+        Warnings
+        --------
+        The dynamic windows functionality is still experimental and may change
+        without it considered being a breaking change.
 
-        .. note::
-            If you want to compute multiple aggregation statistics over the same dynamic
-            window, consider using `groupby_rolling` this method can cache the window
-            size computation.
+        Notes
+        -----
+        If you want to compute multiple aggregation statistics over the same dynamic
+        window, consider using `groupby_rolling` this method can cache the window size
+        computation.
 
         Examples
         --------
@@ -5803,14 +5820,6 @@ class Expr:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
 
-        .. warning::
-            This can be really slow as it can have `O(n^2)` complexity. Don't use this
-            for operations that visit all elements.
-
-        .. warning::
-            This API is experimental and may change without it being considered a
-            breaking change.
-
         Parameters
         ----------
         expr
@@ -5821,6 +5830,14 @@ class Expr:
         parallel
             Run in parallel. Don't do this in a groupby or another operation that
             already has much parallelization.
+
+        Warnings
+        --------
+        This API is experimental and may change without it being considered a
+        breaking change.
+
+        This can be really slow as it can have `O(n^2)` complexity. Don't use this
+        for operations that visit all elements.
 
         Examples
         --------
@@ -5859,14 +5876,15 @@ class Expr:
         Set this `Series` as `sorted` so that downstream code can use
         fast paths for sorted arrays.
 
-        .. warning::
-            This can lead to incorrect results if this `Series` is not sorted!!
-            Use with care!
-
         Parameters
         ----------
         reverse
             If the `Series` order is reversed, e.g. descending.
+
+        Warnings
+        --------
+        This can lead to incorrect results if this `Series` is not sorted!!
+        Use with care!
 
         Examples
         --------

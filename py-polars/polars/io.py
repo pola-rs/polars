@@ -1185,14 +1185,15 @@ def scan_ds(ds: pa.dataset.dataset) -> LazyFrame:
 
     This can be useful to connect to cloud or partitioned datasets.
 
-    .. warning::
-        This API is experimental and may change without it being considered a breaking
-        change.
-
     Parameters
     ----------
     ds
         Pyarrow dataset to scan.
+
+    Warnings
+    --------
+    This API is experimental and may change without it being considered a breaking
+    change.
 
     Examples
     --------

@@ -280,10 +280,6 @@ def cut(
     """
     Bin values into discrete values.
 
-    .. warning::
-        This function is experimental and might change without it being considered a
-        breaking change.
-
     Parameters
     ----------
     s
@@ -301,6 +297,11 @@ def cut(
     Returns
     -------
     DataFrame
+
+    Warnings
+    --------
+    This function is experimental and might change without it being considered a
+    breaking change.
 
     Examples
     --------

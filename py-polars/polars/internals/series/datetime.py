@@ -372,10 +372,6 @@ class DateTimeNameSpace:
         offset: str | timedelta | None = None,
     ) -> pli.Series:
         """
-        .. warning::
-            This API is experimental and may change without it being considered a
-            breaking change.
-
         Divide the date/ datetime range into buckets.
 
         The `every` and `offset` argument are created with the
@@ -404,6 +400,11 @@ class DateTimeNameSpace:
         Returns
         -------
         Date/Datetime series
+
+        Warnings
+        --------
+        This API is experimental and may change without it being considered a
+        breaking change.
 
         Examples
         --------

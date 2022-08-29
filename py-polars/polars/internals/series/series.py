@@ -1115,14 +1115,6 @@ class Series:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
 
-        .. warning::
-            This can be really slow as it can have `O(n^2)` complexity. Don't use this
-            for operations that visit all elements.
-
-        .. warning::
-            This API is experimental and may change without it being considered a
-            breaking change.
-
         Parameters
         ----------
         expr
@@ -1133,6 +1125,14 @@ class Series:
         parallel
             Run in parallel. Don't do this in a groupby or another operation that
             already has much parallelization.
+
+        Warnings
+        --------
+        This API is experimental and may change without it being considered a
+        breaking change.
+
+        This can be really slow as it can have `O(n^2)` complexity. Don't use this
+        for operations that visit all elements.
 
         Examples
         --------
@@ -4189,14 +4189,15 @@ class Series:
         Set this `Series` as `sorted` so that downstream code can use
         fast paths for sorted arrays.
 
-        .. warning::
-            This can lead to incorrect results if this `Series` is not sorted!!
-            Use with care!
-
         Parameters
         ----------
         reverse
             If the `Series` order is reversed, e.g. descending.
+
+        Warnings
+        --------
+        This can lead to incorrect results if this `Series` is not sorted!!
+        Use with care!
 
         """
         return wrap_s(self._s.set_sorted(reverse))
