@@ -4922,9 +4922,9 @@ class DataFrame:
         return pli.wrap_ldf(self._df.lazy())
 
     def select(
-        self,
+        self: DF,
         exprs: str | pli.Expr | pli.Series | Sequence[str | pli.Expr | pli.Series],
-    ) -> DataFrame:
+    ) -> DF:
         """
         Select columns from this DataFrame.
 
@@ -4957,8 +4957,11 @@ class DataFrame:
         └─────┘
 
         """
-        return (
-            self.lazy().select(exprs).collect(no_optimization=True, string_cache=False)
+        return self._from_pydf(
+            self.lazy()
+            .select(exprs)
+            .collect(no_optimization=True, string_cache=False)
+            ._df
         )
 
     def with_columns(
