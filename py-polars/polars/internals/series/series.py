@@ -1331,7 +1331,7 @@ class Series:
         """
         Get the first `n` rows.
 
-        Alias for :func:`head`.
+        Alias for :func:`Series.head`.
 
         Parameters
         ----------
@@ -1602,7 +1602,7 @@ class Series:
         """
         Get the index values that would sort this Series.
 
-        Alias for :func:`arg_sort`.
+        Alias for :func:`Series.arg_sort`.
 
         Parameters
         ----------

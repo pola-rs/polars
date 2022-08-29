@@ -2623,7 +2623,7 @@ class DataFrame:
         """
         Get the first `n` rows.
 
-        Alias for :func:`head`.
+        Alias for :func:`DataFrame.head`.
 
         Parameters
         ----------

@@ -3265,7 +3265,7 @@ class Expr:
         """
         Get the first `n` rows.
 
-        Alias for :func:`head`.
+        Alias for :func:`Expr.head`.
 
         Parameters
         ----------
@@ -4573,7 +4573,7 @@ class Expr:
         """
         Get the index values that would sort this column.
 
-        Alias for `arg_sort`.
+        Alias for :func:`Expr.arg_sort`.
 
         Parameters
         ----------
