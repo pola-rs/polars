@@ -82,4 +82,16 @@ html_theme_options = {
             "icon": "fab fa-github-square",
         },
     ],
+    "favicons": [
+        {
+            "rel": "icon",
+            "sizes": "32x32",
+            "href": "https://raw.githubusercontent.com/pola-rs/polars-static/master/icons/favicon-32x32.png",  # noqa: E501
+        },
+        {
+            "rel": "apple-touch-icon",
+            "sizes": "180x180",
+            "href": "https://raw.githubusercontent.com/pola-rs/polars-static/master/icons/touchicon-180x180.png",  # noqa: E501
+        },
+    ],
 }
