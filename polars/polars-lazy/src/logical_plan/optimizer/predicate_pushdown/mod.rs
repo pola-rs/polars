@@ -302,14 +302,31 @@ impl PredicatePushDown {
             } => {
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
-                let lp = CsvScan {
-                    path,
-                    schema,
-                    output_schema,
-                    options,
-                    predicate,
-                    aggregate,
+                let lp = if let (Some(predicate), Some(_)) = (predicate, options.n_rows) {
+                    let lp = CsvScan {
+                        path,
+                        schema,
+                        output_schema,
+                        options,
+                        predicate: None,
+                        aggregate,
+                    };
+                    let input = lp_arena.add(lp);
+                    Selection {
+                        input,
+                        predicate
+                    }
+                } else {
+                    CsvScan {
+                        path,
+                        schema,
+                        output_schema,
+                        options,
+                        predicate,
+                        aggregate,
+                    }
                 };
+
                 Ok(lp)
             }
             AnonymousScan {
