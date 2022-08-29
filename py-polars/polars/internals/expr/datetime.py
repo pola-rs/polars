@@ -669,7 +669,7 @@ class ExprDateTimeNameSpace:
 
     def epoch(self, tu: EpochTimeUnit = "us") -> pli.Expr:
         """
-        Get the time passed since the Unix EPOCH in the give time unit
+        Get the time passed since the Unix EPOCH in the give time unit.
 
         Parameters
         ----------

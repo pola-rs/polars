@@ -10,7 +10,7 @@ import polars as pl
 
 @pytest.fixture()
 def environ() -> Iterator[None]:
-    """Fixture to restore the environment variables after the test"""
+    """Fixture to restore the environment variables after the test."""
     old_environ = dict(os.environ)
     yield
     os.environ.clear()

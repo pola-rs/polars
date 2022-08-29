@@ -59,7 +59,7 @@ class ExprStructNameSpace:
 
     def rename_fields(self, names: list[str]) -> pli.Expr:
         """
-        Rename the fields of the struct
+        Rename the fields of the struct.
 
         Parameters
         ----------

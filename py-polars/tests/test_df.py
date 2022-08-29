@@ -2095,10 +2095,8 @@ def test_indexing_set() -> None:
 
 
 def test_set() -> None:
-    """
-    Setting a dataframe using indices is deprecated. We keep these tests because we
-    only generate a warning
-    """
+    # Setting a dataframe using indices is deprecated.
+    # We keep these tests because we only generate a warning.
     np.random.seed(1)
     df = pl.DataFrame(
         {"foo": np.random.rand(10), "bar": np.arange(10), "ham": ["h"] * 10}
