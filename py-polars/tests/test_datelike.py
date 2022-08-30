@@ -1426,3 +1426,29 @@ def test_date_timedelta() -> None:
         "date_plus_one": [date(2001, 1, 2), date(2001, 1, 3), date(2001, 1, 4)],
         "date_min_one": [date(2000, 12, 31), date(2001, 1, 1), date(2001, 1, 2)],
     }
+
+
+def test_datetime_string_casts() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [1661855445123],
+            "y": [1661855445123456],
+            "z": [1661855445123456789],
+        },
+        columns=[
+            ("x", pl.Datetime("ms")),
+            ("y", pl.Datetime("us")),
+            ("z", pl.Datetime("ns")),
+        ],
+    )
+    assert df.select(
+        [pl.col("x").dt.strftime("%F %T").alias("w")]
+        + [pl.col(d).cast(str) for d in df.columns]
+    ).rows() == [
+        (
+            "2022-08-30 10:30:45",
+            "2022-08-30 10:30:45.123",
+            "2022-08-30 10:30:45.123456",
+            "2022-08-30 10:30:45.123456789",
+        )
+    ]
