@@ -3972,19 +3972,20 @@ class Series:
 
     def reshape(self, dims: tuple[int, ...]) -> Series:
         """
-        Reshape this Series to a flat series, shape: (len,)
-        or a List series, shape: (rows, cols)
-
-        if a -1 is used in any of the dimensions, that dimension is inferred.
+        Reshape this Series to a flat Series or a Series of Lists.
 
         Parameters
         ----------
         dims
-            Tuple of the dimension sizes
+            Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
+            dimension is inferred.
 
         Returns
         -------
         Series
+            If a single dimension is given, results in a flat Series of shape (len,).
+            If a multiple dimensions are given, results in a Series of Lists with shape
+            (rows, cols).
 
         """
 
@@ -4188,8 +4189,9 @@ class Series:
 
     def set_sorted(self, reverse: bool = False) -> Series:
         """
-        Set this `Series` as `sorted` so that downstream code can use
-        fast paths for sorted arrays.
+        Flags the Series as 'sorted'.
+
+        Enables downstream code to user fast paths for sorted arrays.
 
         Parameters
         ----------

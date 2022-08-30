@@ -130,7 +130,7 @@ class ExprListNameSpace:
 
     def sort(self, reverse: bool = False) -> pli.Expr:
         """
-        Sort the arrays in the list
+        Sort the arrays in the list.
 
         Examples
         --------
@@ -156,7 +156,7 @@ class ExprListNameSpace:
 
     def reverse(self) -> pli.Expr:
         """
-        Reverse the arrays in the list
+        Reverse the arrays in the list.
 
         Examples
         --------
@@ -253,6 +253,7 @@ class ExprListNameSpace:
     def get(self, index: int) -> pli.Expr:
         """
         Get the value by index in the sublists.
+
         So index `0` would return the first item of every sublist
         and index `-1` would return the last item of every sublist
         if an index is out of bounds, it will return a `None`.
@@ -370,6 +371,7 @@ class ExprListNameSpace:
     def join(self, separator: str) -> pli.Expr:
         """
         Join all string items in a sublist and place a separator between them.
+
         This errors if inner type of list `!= Utf8`.
 
         Parameters
@@ -401,7 +403,7 @@ class ExprListNameSpace:
 
     def arg_min(self) -> pli.Expr:
         """
-        Retrieve the index of the minimal value in every sublist
+        Retrieve the index of the minimal value in every sublist.
 
         Returns
         -------
@@ -431,7 +433,7 @@ class ExprListNameSpace:
 
     def arg_max(self) -> pli.Expr:
         """
-        Retrieve the index of the maximum value in every sublist
+        Retrieve the index of the maximum value in every sublist.
 
         Returns
         -------
@@ -627,7 +629,7 @@ class ExprListNameSpace:
 
     def eval(self, expr: pli.Expr, parallel: bool = False) -> pli.Expr:
         """
-        Run any polars expression against the lists' elements
+        Run any polars expression against the lists' elements.
 
         Parameters
         ----------

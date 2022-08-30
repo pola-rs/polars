@@ -1049,6 +1049,7 @@ class Expr:
     def agg_groups(self) -> Expr:
         """
         Get the group indexes of the group by operation.
+
         Should be used in aggregation context only.
 
         Examples
@@ -1083,7 +1084,7 @@ class Expr:
 
     def count(self) -> Expr:
         """
-        Count the number of values in this expression
+        Count the number of values in this expression.
 
         Examples
         --------
@@ -1103,8 +1104,9 @@ class Expr:
 
     def len(self) -> Expr:
         """
+        Count the number of values in this expression.
+
         Alias for :func:`count`.
-        Count the number of values in this expression
 
         Examples
         --------
@@ -1269,7 +1271,7 @@ class Expr:
 
     def drop_nans(self) -> Expr:
         """
-        Drop floating point NaN values
+        Drop floating point NaN values.
 
         Warnings
         --------
@@ -1458,6 +1460,7 @@ class Expr:
     def cumcount(self, reverse: bool = False) -> Expr:
         """
         Get an array with the cumulative count computed at every element.
+
         Counting from 0 to len
 
         Parameters
@@ -1583,7 +1586,7 @@ class Expr:
 
     def dot(self, other: Expr | str) -> Expr:
         """
-        Compute the dot/inner product between two Expressions
+        Compute the dot/inner product between two Expressions.
 
         Parameters
         ----------
@@ -1615,6 +1618,7 @@ class Expr:
     def mode(self) -> Expr:
         """
         Compute the most occurring value(s).
+
         Can return multiple Values.
 
         Examples
@@ -1686,6 +1690,7 @@ class Expr:
     def sort(self, reverse: bool = False, nulls_last: bool = False) -> Expr:
         """
         Sort this column. In projection/ selection context the whole column is sorted.
+
         If used in a groupby context, the groups are sorted.
 
         Parameters
@@ -1894,6 +1899,7 @@ class Expr:
     ) -> Expr:
         """
         Sort this column by the ordering of another column, or multiple other columns.
+
         In projection/ selection context the whole column is sorted.
         If used in a groupby context, the groups are sorted.
 
@@ -2083,6 +2089,7 @@ class Expr:
     ) -> Expr:
         """
         Fill null values using the specified value or strategy.
+
         To interpolate over null values see interpolate
 
         Parameters
@@ -2149,7 +2156,7 @@ class Expr:
 
     def fill_nan(self, fill_value: str | int | float | bool | Expr | None) -> Expr:
         """
-        Fill floating point NaN value with a fill value
+        Fill floating point NaN value with a fill value.
 
         Examples
         --------
@@ -2442,7 +2449,7 @@ class Expr:
 
     def product(self) -> Expr:
         """
-        Compute the product of an expression
+        Compute the product of an expression.
 
         Examples
         --------
@@ -2800,7 +2807,6 @@ class Expr:
         """
         Get quantile value.
 
-
         Parameters
         ----------
         quantile
@@ -2904,7 +2910,9 @@ class Expr:
 
     def where(self, predicate: Expr) -> Expr:
         """
-        Alias for filter
+        Filter a single column.
+
+        Alias for :func:`filter`.
 
         Parameters
         ----------
@@ -3614,6 +3622,7 @@ class Expr:
     def interpolate(self) -> Expr:
         """
         Fill nulls with linear interpolation over missing values.
+
         Can also be used to regrid data to a new grid - see examples below
 
         Examples
@@ -4928,7 +4937,7 @@ class Expr:
 
     def clip_min(self, min_val: int | float) -> Expr:
         """
-        Clip (limit) the values in an array to a `min` boundary
+        Clip (limit) the values in an array to a `min` boundary.
 
         Only works for numerical types.
 
@@ -4945,7 +4954,7 @@ class Expr:
 
     def clip_max(self, max_val: int | float) -> Expr:
         """
-        Clip (limit) the values in an array to a `max` boundary
+        Clip (limit) the values in an array to a `max` boundary.
 
         Only works for numerical types.
 
@@ -5324,19 +5333,20 @@ class Expr:
 
     def reshape(self, dims: tuple[int, ...]) -> Expr:
         """
-        Reshape this Expr to a flat series, shape: (len,)
-        or a List series, shape: (rows, cols)
-
-        if a -1 is used in any of the dimensions, that dimension is inferred.
+        Reshape this Expr to a flat Series or a Series of Lists.
 
         Parameters
         ----------
         dims
-            Tuple of the dimension sizes
+            Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
+            dimension is inferred.
 
         Returns
         -------
         Expr
+            If a single dimension is given, results in a flat Series of shape (len,).
+            If a multiple dimensions are given, results in a Series of Lists with shape
+            (rows, cols).
 
         Examples
         --------
@@ -5671,7 +5681,7 @@ class Expr:
 
     def value_counts(self, multithreaded: bool = False, sort: bool = False) -> Expr:
         """
-        Count all unique values and create a struct mapping value to count
+        Count all unique values and create a struct mapping value to count.
 
         Parameters
         ----------
@@ -5750,7 +5760,7 @@ class Expr:
 
     def log(self, base: float = math.e) -> Expr:
         """
-        Compute the logarithm to a given base
+        Compute the logarithm to a given base.
 
         Parameters
         ----------
@@ -5779,8 +5789,9 @@ class Expr:
 
     def entropy(self, base: float = math.e, normalize: bool = True) -> Expr:
         """
-        Compute the entropy as `-sum(pk * log(pk)`.
-        where `pk` are discrete probabilities.
+        Computes the entropy.
+
+        Uses the formula ``-sum(pk * log(pk)`` where ``pk`` are discrete probabilities.
 
         Parameters
         ----------
@@ -5873,8 +5884,9 @@ class Expr:
 
     def set_sorted(self, reverse: bool = False) -> Expr:
         """
-        Set this `Series` as `sorted` so that downstream code can use
-        fast paths for sorted arrays.
+        Flags the expression as 'sorted'.
+
+        Enables downstream code to user fast paths for sorted arrays.
 
         Parameters
         ----------
@@ -5968,6 +5980,7 @@ class Expr:
     def arr(self) -> ExprListNameSpace:
         """
         Create an object namespace of all list related methods.
+
         See the individual method pages for full details
 
         """
@@ -6004,6 +6017,7 @@ class Expr:
     def struct(self) -> ExprStructNameSpace:
         """
         Create an object namespace of all struct related methods.
+
         See the individual method pages for full details
 
         Examples
@@ -6039,6 +6053,7 @@ class Expr:
     def meta(self) -> ExprMetaNameSpace:
         """
         Create an object namespace of all meta related expression methods.
+
         This can be used to modify and traverse existing expressions
 
         """
