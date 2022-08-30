@@ -8,6 +8,7 @@ pyarrow
 pandas
 pytz
 types-pytz
+xlsx2csv
 
 # Tooling
 maturin==0.13.2
