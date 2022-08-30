@@ -5377,7 +5377,7 @@ class Expr:
     @deprecated_alias(fraction="frac")
     def sample(
         self,
-        frac: float = 1.0,
+        frac: float | None = None,
         with_replacement: bool = True,
         shuffle: bool = False,
         seed: int | None = None,
@@ -5422,6 +5422,9 @@ class Expr:
             FutureWarning,
             stacklevel=2,
         )
+
+        if frac is None:
+            frac = 1.0
 
         return wrap_expr(
             self._pyexpr.sample_frac(frac, with_replacement, shuffle, seed)
