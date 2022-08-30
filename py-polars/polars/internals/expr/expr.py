@@ -5373,9 +5373,10 @@ class Expr:
             seed = random.randint(0, 10000)
         return wrap_expr(self._pyexpr.shuffle(seed))
 
+    @deprecated_alias(fraction="frac")
     def sample(
         self,
-        fraction: float = 1.0,
+        frac: float = 1.0,
         with_replacement: bool = True,
         shuffle: bool = False,
         seed: int | None = None,
@@ -5385,7 +5386,7 @@ class Expr:
 
         Parameters
         ----------
-        fraction
+        frac
             Fraction of items to return.
         with_replacement
             Allow values to be sampled more than once.
@@ -5414,7 +5415,7 @@ class Expr:
 
         """
         return wrap_expr(
-            self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
+            self._pyexpr.sample_frac(frac, with_replacement, shuffle, seed)
         )
 
     def ewm_mean(
