@@ -4,20 +4,6 @@
 extern crate core;
 extern crate polars;
 
-use pyo3::prelude::*;
-use pyo3::wrap_pyfunction;
-
-use crate::lazy::dsl::PyExpr;
-use crate::{
-    dataframe::PyDataFrame,
-    file::EitherRustPythonFile,
-    lazy::{
-        dataframe::{PyLazyFrame, PyLazyGroupBy},
-        dsl,
-    },
-    series::PySeries,
-};
-
 pub mod apply;
 pub mod arrow_interop;
 pub mod conversion;
@@ -46,7 +32,9 @@ use polars_core::prelude::IntoSeries;
 use polars_core::prelude::{DataFrame, IDX_DTYPE};
 use polars_core::POOL;
 use pyo3::panic::PanicException;
+use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
+use pyo3::wrap_pyfunction;
 
 use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};
 use crate::error::{
@@ -54,8 +42,18 @@ use crate::error::{
     SchemaError,
 };
 use crate::file::get_either_file;
+use crate::lazy::dsl::PyExpr;
 use crate::prelude::{
     vec_extract_wrapped, ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs,
+};
+use crate::{
+    dataframe::PyDataFrame,
+    file::EitherRustPythonFile,
+    lazy::{
+        dataframe::{PyLazyFrame, PyLazyGroupBy},
+        dsl,
+    },
+    series::PySeries,
 };
 
 #[global_allocator]
