@@ -5807,6 +5807,7 @@ class DataFrame:
         Shrink DataFrame memory usage.
 
         Shrinks to fit the exact capacity needed to hold the data.
+
         """
         if in_place:
             self._df.shrink_to_fit()

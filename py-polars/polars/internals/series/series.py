@@ -644,8 +644,9 @@ class Series:
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
-        Return an estimation of the total (heap) allocated size of the `Series` in
-        bytes (pass `unit` to return estimated size in kilobytes, megabytes, etc).
+        Return an estimation of the total (heap) allocated size of the Series.
+
+        Estimated size is given in the specified unit (bytes by default).
 
         This estimation is the sum of the size of its buffers, validity, including
         nested arrays. Multiple arrays may share buffers and bitmaps. Therefore, the
@@ -1875,8 +1876,7 @@ class Series:
 
     def is_in(self, other: Series | Sequence[Any]) -> Series:
         """
-        Check if elements of this Series are in the other Series, or
-        if this Series is itself a member of the other Series.
+        Check if elements of this Series are in the other Series.
 
         Returns
         -------
@@ -2288,9 +2288,10 @@ class Series:
 
     def view(self, ignore_nulls: bool = False) -> SeriesView:
         """
-        Get a view into this Series data with a numpy array. This operation doesn't
-        clone data, but does not include missing values. Don't use this unless you know
-        what you are doing.
+        Get a view into this Series data with a numpy array.
+
+        This operation doesn't clone data, but does not include missing values.
+        Don't use this unless you know what you are doing.
 
         """
         if not ignore_nulls:
@@ -2451,8 +2452,9 @@ class Series:
 
     def to_arrow(self) -> pa.Array:
         """
-        Get the underlying Arrow Array. If the Series contains only a single chunk
-        this operation is zero copy.
+        Get the underlying Arrow Array.
+
+        If the Series contains only a single chunk this operation is zero copy.
 
         Examples
         --------
@@ -2555,8 +2557,9 @@ class Series:
 
     def cleared(self) -> Series:
         """
-        Create an empty copy of the current Series, with identical name/dtype but no
-        data.
+        Create an empty copy of the current Series.
+
+        The copy has identical name/dtype but no data.
 
         See Also
         --------
@@ -3055,6 +3058,8 @@ class Series:
 
     def zip_with(self, mask: Series, other: Series) -> Series:
         """
+        Take values from self or other based on the given mask.
+
         Where mask evaluates true, take values from self. Where mask evaluates false,
         take values from other.
 
@@ -3641,8 +3646,10 @@ class Series:
 
     def shrink_to_fit(self, in_place: bool = False) -> Series | None:
         """
-        Shrink memory usage of this Series to fit the exact capacity needed to hold the
-        data.
+        Shrink Series memory usage.
+
+        Shrinks to fit the exact capacity needed to hold the data.
+
         """
         if in_place:
             self._s.shrink_to_fit()
@@ -3800,8 +3807,10 @@ class Series:
 
     def pct_change(self, n: int = 1) -> Series:
         """
+        Computes percentage change between values.
+
         Percentage change (as fraction) between current element and most-recent
-        non-null element at least n period(s) before the current element.
+        non-null element at least ``n`` period(s) before the current element.
 
         Computes the change from the previous row by default.
 
