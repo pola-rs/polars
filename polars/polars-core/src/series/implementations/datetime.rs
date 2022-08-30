@@ -378,8 +378,16 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     fn cast(&self, data_type: &DataType) -> Result<Series> {
-        match data_type {
-            DataType::Utf8 => Ok(self.0.strftime("%F %T").into_series()),
+        match (data_type, self.0.time_unit()) {
+            (DataType::Utf8, TimeUnit::Milliseconds) => {
+                Ok(self.0.strftime("%F %T%.3f").into_series())
+            }
+            (DataType::Utf8, TimeUnit::Microseconds) => {
+                Ok(self.0.strftime("%F %T%.6f").into_series())
+            }
+            (DataType::Utf8, TimeUnit::Nanoseconds) => {
+                Ok(self.0.strftime("%F %T%.9f").into_series())
+            }
             _ => self.0.cast(data_type),
         }
     }
