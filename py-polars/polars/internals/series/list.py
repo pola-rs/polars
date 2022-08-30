@@ -72,6 +72,7 @@ class ListNameSpace:
     def get(self, index: int) -> pli.Series:
         """
         Get the value by index in the sublists.
+
         So index `0` would return the first item of every sublist
         and index `-1` would return the last item of every sublist
         if an index is out of bounds, it will return a `None`.
@@ -86,6 +87,7 @@ class ListNameSpace:
     def join(self, separator: str) -> pli.Series:
         """
         Join all string items in a sublist and place a separator between them.
+
         This errors if inner type of list `!= Utf8`.
 
         Parameters
@@ -133,7 +135,7 @@ class ListNameSpace:
 
     def arg_min(self) -> pli.Series:
         """
-        Retrieve the index of the minimal value in every sublist
+        Retrieve the index of the minimal value in every sublist.
 
         Returns
         -------
@@ -143,7 +145,7 @@ class ListNameSpace:
 
     def arg_max(self) -> pli.Series:
         """
-        Retrieve the index of the maximum value in every sublist
+        Retrieve the index of the maximum value in every sublist.
 
         Returns
         -------
@@ -269,7 +271,7 @@ class ListNameSpace:
 
     def eval(self, expr: pli.Expr, parallel: bool = False) -> pli.Series:
         """
-        Run any polars expression against the lists' elements
+        Run any polars expression against the lists' elements.
 
         Parameters
         ----------

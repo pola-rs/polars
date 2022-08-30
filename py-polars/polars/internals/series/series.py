@@ -630,7 +630,7 @@ class Series:
     @property
     def flags(self) -> dict[str, bool]:
         """
-        Get flags that are set on the Series
+        Get flags that are set on the Series.
 
         Returns
         -------
@@ -677,7 +677,7 @@ class Series:
 
     def sqrt(self) -> Series:
         """
-        Compute the square root of the elements
+        Compute the square root of the elements.
 
         Syntactic sugar for
 
@@ -693,7 +693,7 @@ class Series:
 
     def any(self) -> bool:
         """
-        Check if any boolean value in the column is `True`
+        Check if any boolean value in the column is `True`.
 
         Returns
         -------
@@ -704,7 +704,7 @@ class Series:
 
     def all(self) -> bool:
         """
-        Check if all boolean values in the column are `True`
+        Check if all boolean values in the column are `True`.
 
         Returns
         -------
@@ -773,7 +773,7 @@ class Series:
     @property
     def inner_dtype(self) -> type[DataType] | None:
         """
-        Get the inner dtype in of a List typed Series
+        Get the inner dtype in of a List typed Series.
 
         Returns
         -------
@@ -784,8 +784,10 @@ class Series:
 
     def describe(self) -> pli.DataFrame:
         """
-        Quick summary statistics of a series. Series with mixed datatypes will return
-        summary statistics for the datatype of the first value.
+        Quick summary statistics of a series.
+
+        Series with mixed datatypes will return summary statistics for the datatype of
+        the first value.
 
         Returns
         -------
@@ -1085,10 +1087,9 @@ class Series:
 
     def entropy(self, base: float = math.e, normalize: bool = False) -> float | None:
         """
-        Compute the entropy as `-sum(pk * log(pk)`.
-        where `pk` are discrete probabilities.
+        Computes the entropy.
 
-        This routine will normalize pk if they don’t sum to 1.
+        Uses the formula ``-sum(pk * log(pk)`` where ``pk`` are discrete probabilities.
 
         Parameters
         ----------
@@ -2691,7 +2692,7 @@ class Series:
 
     def dot(self, other: Series) -> float | None:
         """
-        Compute the dot/inner product between two Series
+        Compute the dot/inner product between two Series.
 
         Examples
         --------
@@ -2710,7 +2711,9 @@ class Series:
 
     def mode(self) -> Series:
         """
-        Compute the most occurring value(s). Can return multiple Values
+        Compute the most occurring value(s).
+
+        Can return multiple Values.
 
         Examples
         --------
@@ -3212,6 +3215,7 @@ class Series:
     ) -> Series:
         """
         Apply a rolling mean (moving mean) over the values in this array.
+
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
@@ -3263,6 +3267,7 @@ class Series:
     ) -> Series:
         """
         Apply a rolling sum (moving sum) over the values in this array.
+
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
@@ -3313,7 +3318,7 @@ class Series:
         center: bool = False,
     ) -> Series:
         """
-        Compute a rolling std dev
+        Compute a rolling std dev.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -3439,7 +3444,7 @@ class Series:
         center: bool = False,
     ) -> Series:
         """
-        Compute a rolling median
+        Compute a rolling median.
 
         Parameters
         ----------
@@ -3478,7 +3483,7 @@ class Series:
         center: bool = False,
     ) -> Series:
         """
-        Compute a rolling quantile
+        Compute a rolling quantile.
 
         Parameters
         ----------
@@ -3513,7 +3518,7 @@ class Series:
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> Series:
         """
-        Compute a rolling skew
+        Compute a rolling skew.
 
         Parameters
         ----------
@@ -3909,7 +3914,7 @@ class Series:
 
     def clip(self, min_val: int | float, max_val: int | float) -> Series:
         """
-        Clip (limit) the values in an array to a `min` and `max` boundary
+        Clip (limit) the values in an array to a `min` and `max` boundary.
 
         Only works for numerical types.
 
@@ -3940,7 +3945,7 @@ class Series:
 
     def clip_min(self, min_val: int | float) -> Series:
         """
-        Clip (limit) the values in an array to a `min` boundary
+        Clip (limit) the values in an array to a `min` boundary.
 
         Only works for numerical types.
 
@@ -3956,7 +3961,7 @@ class Series:
 
     def clip_max(self, max_val: int | float) -> Series:
         """
-        Clip (limit) the values in an array to a `max` boundary
+        Clip (limit) the values in an array to a `max` boundary.
 
         Only works for numerical types.
 
@@ -4264,7 +4269,7 @@ class SeriesIter:
 def _resolve_datetime_dtype(
     dtype: PolarsDataType | None, ndtype: np.datetime64
 ) -> PolarsDataType | None:
-    """Given polars/numpy datetime dtypes, resolve to an explicit unit"""
+    """Given polars/numpy datetime dtypes, resolve to an explicit unit."""
     if dtype is None or (dtype == Datetime and not getattr(dtype, "tu", None)):
         tu = getattr(dtype, "tu", np.datetime_data(ndtype)[0])
         # explicit formulation is verbose, but keeps mypy happy

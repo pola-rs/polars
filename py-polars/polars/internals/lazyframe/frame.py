@@ -787,7 +787,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     @property
     def schema(self) -> Schema:
         """
-        Get a dict[column name, DataType]
+        Get a dict[column name, DataType].
 
         Examples
         --------
@@ -2108,6 +2108,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     ) -> LDF:
         """
         Drop duplicate rows from this DataFrame.
+
         Note that this fails if there is a column of type `List` in the DataFrame or
         subset.
 

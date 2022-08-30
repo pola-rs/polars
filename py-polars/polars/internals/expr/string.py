@@ -530,6 +530,7 @@ class ExprStringNameSpace:
     def json_path_match(self, json_path: str) -> pli.Expr:
         """
         Extract the first match of json string with provided JSONPath expression.
+
         Throw errors if encounter invalid json strings.
         All return value will be casted to Utf8 regardless of the original value.
 

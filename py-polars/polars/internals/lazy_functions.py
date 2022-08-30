@@ -179,7 +179,7 @@ def col(
 
 def element() -> pli.Expr:
     """
-    Alias for an element in evaluated in an `eval` expression
+    Alias for an element in evaluated in an `eval` expression.
 
     Examples
     --------
@@ -1051,7 +1051,10 @@ def arange(
     eager: bool = False,
 ) -> pli.Expr | pli.Series:
     """
-    Create a range expression. This can be used in a `select`, `with_column` etc.
+    Create a range expression.
+
+    This can be used in a `select`, `with_column` etc.
+
     Be sure that the range size is equal to the DataFrame you are collecting.
 
     Examples

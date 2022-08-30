@@ -259,7 +259,7 @@ class StringNameSpace:
 
     def encode(self, encoding: TransferEncoding) -> pli.Series:
         """
-        Encode a value using the provided encoding
+        Encode a value using the provided encoding.
 
         Parameters
         ----------
@@ -287,6 +287,7 @@ class StringNameSpace:
     def json_path_match(self, json_path: str) -> pli.Series:
         """
         Extract the first match of json string with provided JSONPath expression.
+
         Throw errors if encounter invalid json strings.
         All return value will be casted to Utf8 regardless of the original value.
 

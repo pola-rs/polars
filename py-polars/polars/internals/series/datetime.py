@@ -48,7 +48,7 @@ class DateTimeNameSpace:
 
     def strftime(self, fmt: str) -> pli.Series:
         """
-        Format Date/datetime with a formatting rule:
+        Format Date/datetime with a formatting rule.
 
         See `chrono strftime/strptime
         <https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html>`_.
@@ -62,6 +62,7 @@ class DateTimeNameSpace:
     def year(self) -> pli.Series:
         """
         Extract the year from the underlying date representation.
+
         Can be performed on Date and Datetime.
 
         Returns the year number in the calendar date.
@@ -75,6 +76,7 @@ class DateTimeNameSpace:
     def quarter(self) -> pli.Series:
         """
         Extract quarter from underlying Date representation.
+
         Can be performed on Date and Datetime.
 
         Returns the quarter ranging from 1 to 4.
@@ -88,6 +90,7 @@ class DateTimeNameSpace:
     def month(self) -> pli.Series:
         """
         Extract the month from the underlying date representation.
+
         Can be performed on Date and Datetime
 
         Returns the month number starting from 1.
@@ -102,6 +105,7 @@ class DateTimeNameSpace:
     def week(self) -> pli.Series:
         """
         Extract the week from the underlying date representation.
+
         Can be performed on Date and Datetime
 
         Returns the ISO week number starting from 1.
@@ -116,6 +120,7 @@ class DateTimeNameSpace:
     def weekday(self) -> pli.Series:
         """
         Extract the week day from the underlying date representation.
+
         Can be performed on Date and Datetime.
 
         Returns the weekday number where monday = 0 and sunday = 6
@@ -129,6 +134,7 @@ class DateTimeNameSpace:
     def day(self) -> pli.Series:
         """
         Extract the day from the underlying date representation.
+
         Can be performed on Date and Datetime.
 
         Returns the day of month starting from 1.
@@ -143,6 +149,7 @@ class DateTimeNameSpace:
     def ordinal_day(self) -> pli.Series:
         """
         Extract ordinal day from underlying date representation.
+
         Can be performed on Date and Datetime.
 
         Returns the day of year starting from 1.
@@ -157,6 +164,7 @@ class DateTimeNameSpace:
     def hour(self) -> pli.Series:
         """
         Extract the hour from the underlying DateTime representation.
+
         Can be performed on Datetime.
 
         Returns the hour number from 0 to 23.
@@ -170,6 +178,7 @@ class DateTimeNameSpace:
     def minute(self) -> pli.Series:
         """
         Extract the minutes from the underlying DateTime representation.
+
         Can be performed on Datetime.
 
         Returns the minute number from 0 to 59.
@@ -183,6 +192,7 @@ class DateTimeNameSpace:
     def second(self) -> pli.Series:
         """
         Extract the seconds the from underlying DateTime representation.
+
         Can be performed on Datetime.
 
         Returns the second number from 0 to 59.
@@ -196,6 +206,7 @@ class DateTimeNameSpace:
     def nanosecond(self) -> pli.Series:
         """
         Extract the nanoseconds from the underlying DateTime representation.
+
         Can be performed on Datetime.
 
         Returns the number of nanoseconds since the whole non-leap second.
@@ -220,7 +231,7 @@ class DateTimeNameSpace:
 
     def epoch(self, tu: EpochTimeUnit = "us") -> pli.Series:
         """
-        Get the time passed since the Unix EPOCH in the give time unit
+        Get the time passed since the Unix EPOCH in the give time unit.
 
         Parameters
         ----------

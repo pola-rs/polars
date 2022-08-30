@@ -34,8 +34,9 @@ def from_dict(
     columns: Sequence[str] | None = None,
 ) -> DataFrame:
     """
-    Construct a DataFrame from a dictionary of sequences. This operation clones data,
-    unless you pass in a `dict[str, pl.Series]`.
+    Construct a DataFrame from a dictionary of sequences.
+
+    This operation clones data, unless you pass in a `dict[str, pl.Series]`.
 
     Parameters
     ----------
@@ -318,6 +319,7 @@ def from_pandas(
 ) -> DataFrame | Series:
     """
     Construct a Polars DataFrame or Series from a pandas DataFrame or Series.
+
     This operation clones data.
 
     This requires that pandas and pyarrow are installed.

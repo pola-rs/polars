@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 
 def get_idx_type() -> type[DataType]:
     """
-    Get the datatype used for polars Indexing
+    Get the datatype used for polars Indexing.
 
     This is UInt32 in regulars polars and UInt64 in polars_u64_idx
 

@@ -55,7 +55,7 @@ def _is_empty_method(func: SeriesMethod) -> bool:
 
 
 def _expr_lookup(namespace: str | None) -> set[tuple[str | None, str, tuple[str, ...]]]:
-    """Create lookup of potential Expr methods (in the given namespace)"""
+    """Create lookup of potential Expr methods (in the given namespace)."""
     # dummy Expr object that we can introspect
     expr = pli.Expr()
     expr._pyexpr = None
@@ -98,6 +98,7 @@ def call_expr(func: SeriesMethod) -> SeriesMethod:
 def expr_dispatch(cls: type[T]) -> type[T]:
     """
     Series/NameSpace class decorator that sets up expression dispatch.
+
     * Applied to the Series class, and/or any Series 'NameSpace' classes.
     * Walks the class attributes, looking for methods that have empty function
       bodies, with signatures compatible with an existing Expr function.
