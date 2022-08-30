@@ -3561,14 +3561,13 @@ class Series:
 
         """
         if n is not None and frac is not None:
-            raise ValueError("n and frac were both supplied")
+            raise ValueError("cannot specify both `n` and `frac`")
 
         if n is None and frac is not None:
             return wrap_s(self._s.sample_frac(frac, with_replacement, shuffle, seed))
 
         if n is None:
             n = 1
-
         return wrap_s(self._s.sample_n(n, with_replacement, shuffle, seed))
 
     def peak_max(self) -> Series:
