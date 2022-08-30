@@ -1735,7 +1735,7 @@ class Series:
 
     def is_null(self) -> Series:
         """
-        Get mask of null values.
+        Returns a boolean Series indicating which values are null.
 
         Returns
         -------
@@ -1758,7 +1758,7 @@ class Series:
 
     def is_not_null(self) -> Series:
         """
-        Get mask of non null values.
+        Returns a boolean Series indicating which values are not null.
 
         Returns
         -------
@@ -1781,7 +1781,7 @@ class Series:
 
     def is_finite(self) -> Series:
         """
-        Get mask of finite values if Series dtype is Float.
+        Returns a boolean Series indicating which values are finite.
 
         Returns
         -------
@@ -1804,7 +1804,7 @@ class Series:
 
     def is_infinite(self) -> Series:
         """
-        Get mask of infinite values if Series dtype is Float.
+        Returns a boolean Series indicating which values are infinite.
 
         Returns
         -------
@@ -1827,7 +1827,7 @@ class Series:
 
     def is_nan(self) -> Series:
         """
-        Get mask of NaN values if Series dtype is Float.
+        Returns a boolean Series indicating which values are not NaN.
 
         Returns
         -------
@@ -1851,7 +1851,7 @@ class Series:
 
     def is_not_nan(self) -> Series:
         """
-        Get negated mask of NaN values if Series dtype is_not Float.
+        Returns a boolean Series indicating which values are not NaN.
 
         Returns
         -------
@@ -2651,19 +2651,17 @@ class Series:
 
     def floor(self) -> Series:
         """
-        Floor underlying floating point array to the lowest integers smaller or equal to
-        the float value.
+        Rounds down to the nearest integer value.
 
-        Only works on floating point Series
+        Only works on floating point Series.
 
         """
 
     def ceil(self) -> Series:
         """
-        Ceil underlying floating point array to the highest integers smaller or equal to
-        the float value.
+        Rounds up to the nearest integer value.
 
-        Only works on floating point Series
+        Only works on floating point Series.
 
         """
 
@@ -3013,8 +3011,7 @@ class Series:
 
     def shift(self, periods: int = 1) -> Series:
         """
-        Shift the values by a given period and fill the parts that will be empty due to
-        this operation with `Nones`.
+        Shift the values by a given period.
 
         Examples
         --------
@@ -3045,8 +3042,7 @@ class Series:
 
     def shift_and_fill(self, periods: int, fill_value: int | pli.Expr) -> Series:
         """
-        Shift the values by a given period and fill the parts that will be empty due to
-        this operation with the result of the `fill_value` expression.
+        Shift the values by a given period and fill the resulting null values.
 
         Parameters
         ----------

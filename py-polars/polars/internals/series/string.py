@@ -368,6 +368,8 @@ class StringNameSpace:
 
     def extract_all(self, pattern: str) -> pli.Series:
         r"""
+        Extracts all matches for the given regex pattern.
+
         Extract each successive non-overlapping regex match in an individual string as
         an array
 
@@ -634,10 +636,14 @@ class StringNameSpace:
 
     def zfill(self, alignment: int) -> pli.Series:
         """
+        Fills the string with zeroes.
+
         Return a copy of the string left filled with ASCII '0' digits to make a string
-        of length width. A leading sign prefix ('+'/'-') is handled by inserting the
-        padding after the sign character rather than before.
-        The original string is returned if width is less than or equal to ``len(s)``.
+        of length width.
+
+        A leading sign prefix ('+'/'-') is handled by inserting the padding after the
+        sign character rather than before. The original string is returned if width is
+        less than or equal to ``len(s)``.
 
         Parameters
         ----------

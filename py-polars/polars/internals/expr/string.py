@@ -265,6 +265,8 @@ class ExprStringNameSpace:
 
     def zfill(self, alignment: int) -> pli.Expr:
         """
+        Fills the string with zeroes.
+
         Return a copy of the string left filled with ASCII '0' digits to make a string
         of length width.
 
@@ -705,7 +707,9 @@ class ExprStringNameSpace:
 
     def extract_all(self, pattern: str) -> pli.Expr:
         r"""
-        Extract each successive non-overlapping regex match in an individual string as
+        Extracts all matches for the given regex pattern.
+
+        Extracts each successive non-overlapping regex match in an individual string as
         an array.
 
         Parameters

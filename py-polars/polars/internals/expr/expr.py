@@ -846,8 +846,7 @@ class Expr:
 
     def is_null(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression contains null
-        values.
+        Returns a boolean Series indicating which values are null.
 
         Examples
         --------
@@ -880,8 +879,7 @@ class Expr:
 
     def is_not_null(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression does not
-        contain null values.
+        Returns a boolean Series indicating which values are not null.
 
         Examples
         --------
@@ -914,8 +912,7 @@ class Expr:
 
     def is_finite(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression values are
-        finite.
+        Returns a boolean Series indicating which values are finite.
 
         Returns
         -------
@@ -947,8 +944,7 @@ class Expr:
 
     def is_infinite(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression values are
-        infinite.
+        Returns a boolean Series indicating which values are infinite.
 
         Returns
         -------
@@ -980,8 +976,7 @@ class Expr:
 
     def is_nan(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression values are NaN
-        (Not A Number).
+        Returns a boolean Series indicating which values are NaN.
 
         Examples
         --------
@@ -1014,8 +1009,7 @@ class Expr:
 
     def is_not_nan(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression values are not
-        NaN (Not A Number).
+        Returns a boolean Series indicating which values are not NaN.
 
         Examples
         --------
@@ -1170,8 +1164,9 @@ class Expr:
 
     def append(self, other: Expr, upcast: bool = True) -> Expr:
         """
-        Append expressions. This is done by adding the chunks of `other` to this
-        `Series`.
+        Append expressions.
+
+        This is done by adding the chunks of `other` to this `Series`.
 
         Parameters
         ----------
@@ -1497,10 +1492,9 @@ class Expr:
 
     def floor(self) -> Expr:
         """
-        Floor underlying floating point array to the lowest integers smaller or equal to
-        the float value.
+        Rounds down to the nearest integer value.
 
-        Only works on floating point Series
+        Only works on floating point Series.
 
         Examples
         --------
@@ -1526,10 +1520,9 @@ class Expr:
 
     def ceil(self) -> Expr:
         """
-        Ceil underlying floating point array to the highest integers smaller or equal to
-        the float value.
+        Rounds up to the nearest integer value.
 
-        Only works on floating point Series
+        Only works on floating point Series.
 
         Examples
         --------
@@ -2012,8 +2005,7 @@ class Expr:
 
     def shift(self, periods: int = 1) -> Expr:
         """
-        Shift the values by a given period and fill the parts that will be empty due to
-        this operation with nulls.
+        Shift the values by a given period.
 
         Parameters
         ----------
@@ -2048,8 +2040,7 @@ class Expr:
         fill_value: int | float | bool | str | Expr | list[Any],
     ) -> Expr:
         """
-        Shift the values by a given period and fill the parts that will be empty due to
-        this operation with the result of the ``fill_value`` expression.
+        Shift the values by a given period and fill the resulting null values.
 
         Parameters
         ----------
@@ -3376,8 +3367,9 @@ class Expr:
 
     def repeat_by(self, by: Expr | str) -> Expr:
         """
-        Repeat the elements in this Series `n` times by dictated by the number given by
-        `by`. The elements are expanded into a `List`
+        Repeat the elements in this Series as specified in the given expression.
+
+        The repeated elements are expanded into a `List`.
 
         Parameters
         ----------
@@ -4768,8 +4760,10 @@ class Expr:
 
     def pct_change(self, n: int = 1) -> Expr:
         """
+        Computes percentage change between values.
+
         Percentage change (as fraction) between current element and most-recent
-        non-null element at least n period(s) before the current element.
+        non-null element at least ``n`` period(s) before the current element.
 
         Computes the change from the previous row by default.
 
@@ -4898,10 +4892,9 @@ class Expr:
 
     def clip(self, min_val: int | float, max_val: int | float) -> Expr:
         """
-        Clip (limit) the values in an array to any value that fits in 64 floating point
-        range.
+        Clip (limit) the values in an array to a `min` and `max` boundary.
 
-        Only works for the following dtypes: {Int32, Int64, Float32, Float64, UInt32}.
+        Only works for numerical types.
 
         If you want to clip other dtypes, consider writing a "when, then, otherwise"
         expression. See :func:`when` for more information.
