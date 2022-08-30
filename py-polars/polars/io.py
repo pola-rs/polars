@@ -988,10 +988,6 @@ def read_sql(
     """
     Read a SQL query into a DataFrame.
 
-    .. note::
-        Make sure to install connectorx>=0.2.2. Read the documentation
-        `here <https://sfu-db.github.io/connector-x/intro.html>`_.
-
     Reading a SQL query from the following data sources are supported:
 
         * Postgres
@@ -1023,6 +1019,11 @@ def read_sql(
     protocol
         Backend-specific transfer protocol directive; see connectorx documentation for
         details.
+
+    Notes
+    -----
+    Make sure to install connectorx>=0.2.2. Read the documentation
+    `here <https://sfu-db.github.io/connector-x/intro.html>`_.
 
     Examples
     --------
@@ -1185,14 +1186,15 @@ def scan_ds(ds: pa.dataset.dataset) -> LazyFrame:
 
     This can be useful to connect to cloud or partitioned datasets.
 
-    .. warning::
-        This API is experimental and may change without it being considered a breaking
-        change.
-
     Parameters
     ----------
     ds
         Pyarrow dataset to scan.
+
+    Warnings
+    --------
+    This API is experimental and may change without it being considered a breaking
+    change.
 
     Examples
     --------

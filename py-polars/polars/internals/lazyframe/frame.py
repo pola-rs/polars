@@ -1016,11 +1016,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         individual values and are not of constant intervals. For constant intervals use
         *groupby_dynamic*
 
-        .. seealso::
-
-            groupby_dynamic
-
-
         The `period` and `offset` arguments are created with
         the following string language:
 
@@ -1063,6 +1058,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Define whether the temporal window interval is closed or not.
         by
             Also group by this column/these columns
+
+        See Also
+        --------
+        groupby_dynamic
 
         Examples
         --------
@@ -1134,10 +1133,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         window could be seen as a rolling window, with a window size determined by
         dates/times/values instead of slots in the DataFrame.
 
-        .. seealso::
-
-            groupby_rolling
-
         A window is defined by:
 
         - every: interval of the window
@@ -1195,6 +1190,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Define whether the temporal window interval is closed or not.
         by
             Also group by this column/these columns
+
+        See Also
+        --------
+        groupby_rolling
 
         """
         if offset is None:
@@ -1893,16 +1892,17 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         Add a column at index 0 that counts the rows.
 
-        .. warning::
-            This can have a negative effect on query performance.
-            This may, for instance, block predicate pushdown optimization.
-
         Parameters
         ----------
         name
             Name of the column to add.
         offset
             Start the row count at this offset.
+
+        Warnings
+        --------
+        This can have a negative effect on query performance.
+        This may, for instance, block predicate pushdown optimization.
 
         Examples
         --------
@@ -1977,14 +1977,15 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         Fill floating point NaN values.
 
-        .. warning::
-            Note that floating point NaN (Not a Number) are not missing values!
-            To replace missing values, use :func:`fill_null` instead.
-
         Parameters
         ----------
         fill_value
             Value to fill the NaN values with.
+
+        Warnings
+        --------
+        Note that floating point NaN (Not a Number) are not missing values!
+        To replace missing values, use :func:`fill_null` instead.
 
         """
         if not isinstance(fill_value, pli.Expr):
@@ -2298,18 +2299,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Apply a custom function. It is important that the function returns a Polars
         DataFrame.
 
-        .. warning::
-            The ``schema`` of a `LazyFrame` must always be correct.
-            It is up to the caller of this function to ensure that
-            this invariant is uphold.
-
-        .. warning::
-            It is important that the optimization flags are correct.
-            If the custom function for instance does an aggregation
-            of a column, ``predicate_pushdown`` should not be allowed,
-            as this prunes rows and will influence your aggregation
-            results.
-
         Parameters
         ----------
         f
@@ -2323,14 +2312,22 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         no_optimizations
             Turn off all optimizations past this point.
         schema
-            Output schema of the function, if set to ``None``
-            we assume that the schema will remain unchanged
-            by the applied function.
+            Output schema of the function, if set to ``None`` we assume that the schema
+            will remain unchanged by the applied function.
         validate_output_schema
-            It is paramount that polars' schema is correct. This flag
-            will ensure that the output schema of this function will
-            be checked with the expected schema. Setting this to ``False``
-            will not do this check, but may lead to hard to debug bugs.
+            It is paramount that polars' schema is correct. This flag will ensure that
+            the output schema of this function will be checked with the expected schema.
+            Setting this to ``False`` will not do this check, but may lead to hard to
+            debug bugs.
+
+        Warnings
+        --------
+        The ``schema`` of a `LazyFrame` must always be correct. It is up to the caller
+        of this function to ensure that this invariant is upheld.
+
+        It is important that the optimization flags are correct. If the custom function
+        for instance does an aggregation of a column, ``predicate_pushdown`` should not
+        be allowed, as this prunes rows and will influence your aggregation results.
 
         """
         if no_optimizations:
