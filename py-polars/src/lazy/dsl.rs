@@ -1432,6 +1432,19 @@ impl PyExpr {
         self.inner.clone().shuffle(seed).into()
     }
 
+    pub fn sample_n(
+        &self,
+        n: usize,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> Self {
+        self.inner
+            .clone()
+            .sample_n(n, with_replacement, shuffle, seed)
+            .into()
+    }
+
     pub fn sample_frac(
         &self,
         frac: f64,

@@ -2016,6 +2016,21 @@ impl Expr {
     }
 
     #[cfg(feature = "random")]
+    pub fn sample_n(
+        self,
+        n: usize,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> Self {
+        self.apply(
+            move |s| s.sample_n(n, with_replacement, shuffle, seed),
+            GetOutput::same_type(),
+        )
+        .with_fmt("sample_n")
+    }
+
+    #[cfg(feature = "random")]
     pub fn sample_frac(
         self,
         frac: f64,
