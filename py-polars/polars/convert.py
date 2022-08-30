@@ -324,8 +324,8 @@ def from_pandas(
 
     Parameters
     ----------
-    df : :class:`~pandas.DataFrame`, :class:`~pandas.Series`, or :class:`~pandas.DatetimeIndex`
-        Data represented as a pandas DataFrame`, Series or DatetimeIndex.
+    df : :class:`pandas.DataFrame`, :class:`pandas.Series` or :class:`pandas.DatetimeIndex`
+        Data represented as a pandas DataFrame, Series or DatetimeIndex.
     rechunk : bool, default True
         Make sure that all data is contiguous.
     nan_to_none : bool, default True

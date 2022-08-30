@@ -98,7 +98,7 @@ html_theme_options = {
 }
 
 intersphinx_mapping = {
-    "numpy": ("https://docs.scipy.org/doc/numpy/", None),
+    "numpy": ("https://numpy.org/doc/stable/objects.inv", None),
     "pandas": ("https://pandas.pydata.org/docs/", None),
     "pyarrow": ("https://arrow.apache.org/docs/", None),
     "python": ("https://docs.python.org/3", None),
