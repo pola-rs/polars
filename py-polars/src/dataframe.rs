@@ -19,8 +19,9 @@ use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use polars_core::utils::get_supertype;
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
 use crate::apply::dataframe::{
     apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
@@ -29,17 +30,12 @@ use crate::apply::dataframe::{
 #[cfg(feature = "parquet")]
 use crate::conversion::parse_parquet_compression;
 use crate::conversion::{ObjectValue, Wrap};
-use crate::file::get_mmap_bytes_reader;
+use crate::error::PyPolarsErr;
+use crate::file::{get_either_file, get_file_like, get_mmap_bytes_reader, EitherRustPythonFile};
 use crate::lazy::dataframe::PyLazyFrame;
 use crate::prelude::dicts_to_rows;
-use crate::{
-    arrow_interop,
-    error::PyPolarsErr,
-    file::{get_either_file, get_file_like, EitherRustPythonFile},
-    py_modules,
-    series::{to_pyseries_collection, to_series_collection, PySeries},
-    PyExpr,
-};
+use crate::series::{to_pyseries_collection, to_series_collection, PySeries};
+use crate::{arrow_interop, py_modules, PyExpr};
 
 #[pyclass]
 #[repr(transparent)]

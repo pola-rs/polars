@@ -22,7 +22,8 @@ use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::file::get_file_like;
-use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
+use crate::lazy::dsl::PyExpr;
+use crate::lazy::utils::py_exprs_to_exprs;
 use crate::prelude::*;
 use crate::py_modules::POLARS;
 

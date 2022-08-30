@@ -10,8 +10,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
 use super::apply::*;
-use crate::conversion::parse_fill_null_strategy;
-use crate::conversion::Wrap;
+use crate::conversion::{parse_fill_null_strategy, Wrap};
 use crate::lazy::map_single;
 use crate::lazy::utils::py_exprs_to_exprs;
 use crate::series::PySeries;

@@ -3,8 +3,9 @@ pub mod series;
 
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
+use polars_core::export::rayon::prelude::*;
 use polars_core::utils::CustomIterTools;
-use polars_core::{export::rayon::prelude::*, POOL};
+use polars_core::POOL;
 use pyo3::types::PyDict;
 use pyo3::{PyAny, PyResult};
 
