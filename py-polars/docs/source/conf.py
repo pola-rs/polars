@@ -10,6 +10,7 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
+import datetime
 import os
 import sys
 
@@ -19,8 +20,8 @@ sys.path.insert(0, os.path.abspath("../.."))
 # -- Project information -----------------------------------------------------
 
 project = "Polars"
-copyright = "2021, Ritchie Vink"
 author = "Ritchie Vink"
+copyright = f"{datetime.date.today().year}, {author}"
 
 
 # -- General configuration ---------------------------------------------------
@@ -94,4 +95,11 @@ html_theme_options = {
             "href": "https://raw.githubusercontent.com/pola-rs/polars-static/master/icons/touchicon-180x180.png",  # noqa: E501
         },
     ],
+}
+
+intersphinx_mapping = {
+    "numpy": ("https://docs.scipy.org/doc/numpy/", None),
+    "pandas": ("https://pandas.pydata.org/docs/", None),
+    "pyarrow": ("https://arrow.apache.org/docs/", None),
+    "python": ("https://docs.python.org/3", None),
 }

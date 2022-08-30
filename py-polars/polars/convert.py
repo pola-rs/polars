@@ -176,7 +176,7 @@ def from_numpy(
 
     Parameters
     ----------
-    data : numpy ndarray
+    data : :class:`numpy.ndarray`
         Two-dimensional data represented as a numpy ndarray.
     columns : Sequence of str, default None
         Column labels to use for resulting DataFrame. Must match data dimensions.
@@ -238,7 +238,7 @@ def from_arrow(
 
     Parameters
     ----------
-    a : Arrow Table or Array
+    a : :class:`pyarrow.Table` or :class:`pyarrow.Array`
         Data represented as Arrow Table or Array.
     rechunk : bool, default True
         Make sure that all data is contiguous.
@@ -320,12 +320,12 @@ def from_pandas(
     Construct a Polars DataFrame or Series from a pandas DataFrame or Series.
     This operation clones data.
 
-    This requires that pandas and pyarrow are installed.
+    This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
 
     Parameters
     ----------
-    df : pandas DataFrame, Series, or DatetimeIndex
-        Data represented as a pandas DataFrame, Series, or DatetimeIndex.
+    df : :class:`~pandas.DataFrame`, :class:`~pandas.Series`, or :class:`~pandas.DatetimeIndex`
+        Data represented as a pandas DataFrame`, Series or DatetimeIndex.
     rechunk : bool, default True
         Make sure that all data is contiguous.
     nan_to_none : bool, default True

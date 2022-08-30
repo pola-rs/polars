@@ -1076,11 +1076,15 @@ class DataFrame:
         Parameters
         ----------
         args
-            Arguments will be sent to pyarrow.Table.to_pandas.
+            Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
         date_as_object
-            Cast dates to objects. If False, convert to datetime64[ns] dtype.
+            Cast dates to objects. If False, convert to ``datetime64[ns]`` dtype.
         kwargs
-            Arguments will be sent to pyarrow.Table.to_pandas.
+            Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
+
+        Returns
+        -------
+        pd.DataFrame
 
         Examples
         --------

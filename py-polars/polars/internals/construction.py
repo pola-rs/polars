@@ -69,7 +69,7 @@ def series_to_pyseries(name: str, values: pli.Series) -> PySeries:
 
 
 def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySeries:
-    """Construct a PySeries from an Arrow array."""
+    """Construct a PySeries from a :class:`pa.Array`."""
     array = coerce_arrow(values)
     if hasattr(array, "num_chunks"):
         if array.num_chunks > 1:
@@ -93,7 +93,7 @@ def numpy_to_pyseries(
     strict: bool = True,
     nan_to_null: bool = False,
 ) -> PySeries:
-    """Construct a PySeries from a numpy array."""
+    """Construct a PySeries from a :class:`numpy.ndarray`."""
     if not values.flags["C_CONTIGUOUS"]:
         values = np.array(values)
 
@@ -337,11 +337,11 @@ def _pandas_series_to_arrow(
     min_len: int | None = None,
 ) -> pa.Array:
     """
-    Convert a pandas Series to an Arrow Array.
+    Convert a :class:`pandas.Series` to an :class:`pyarrow.Array`.
 
     Parameters
     ----------
-    values
+    values : :class:`pandas.Series`
         Series to convert to arrow
     nan_to_none
         Interpret `NaN` as missing values
@@ -351,7 +351,7 @@ def _pandas_series_to_arrow(
 
     Returns
     -------
-    Arrow Array
+    :class:`pyarrow.Array`
 
     """
     dtype = values.dtype
@@ -570,7 +570,7 @@ def numpy_to_pydf(
     columns: ColumnsType | None = None,
     orient: Orientation | None = None,
 ) -> PyDataFrame:
-    """Construct a PyDataFrame from a numpy ndarray."""
+    """Construct a PyDataFrame from a `:class:`numpy.ndarray`."""
     shape = data.shape
 
     # Unpack columns
@@ -641,7 +641,7 @@ def numpy_to_pydf(
 def arrow_to_pydf(
     data: pa.Table, columns: ColumnsType | None = None, rechunk: bool = True
 ) -> PyDataFrame:
-    """Construct a PyDataFrame from an Arrow Table."""
+    """Construct a PyDataFrame from a :class:`pyarrow.Table`."""
     if not _PYARROW_AVAILABLE:  # pragma: no cover
         raise ImportError(
             "'pyarrow' is required when constructing a PyDataFrame from an Arrow Table."
@@ -722,7 +722,7 @@ def pandas_to_pydf(
     rechunk: bool = True,
     nan_to_none: bool = True,
 ) -> PyDataFrame:
-    """Construct a PyDataFrame from a pandas DataFrame."""
+    """Construct a PyDataFrame from a :class:`pandas.DataFrame`."""
     if not _PYARROW_AVAILABLE:  # pragma: no cover
         raise ImportError(
             "'pyarrow' is required when constructing a PyDataFrame from a pandas"
