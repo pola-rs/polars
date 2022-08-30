@@ -4,7 +4,6 @@ use polars_core::series::ops::NullBehavior;
 use polars_time::prelude::DateMethods;
 
 use super::*;
-use crate::dsl::AggExpr::List;
 
 #[test]
 fn test_lazy_with_column() {
@@ -20,7 +19,7 @@ fn test_lazy_with_column() {
 #[test]
 fn test_lazy_exec() {
     let df = get_df();
-    let new = df
+    let _new = df
         .clone()
         .lazy()
         .select([col("sepal.width"), col("variety")])

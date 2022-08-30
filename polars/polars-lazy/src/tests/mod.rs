@@ -27,7 +27,6 @@ fn load_df() -> DataFrame {
 
 use std::io::Cursor;
 use std::iter::FromIterator;
-use std::sync::Mutex;
 
 use optimization_checks::*;
 use polars_core::chunked_array::builder::get_list_builder;

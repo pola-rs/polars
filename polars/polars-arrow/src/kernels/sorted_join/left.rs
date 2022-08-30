@@ -189,10 +189,4 @@ mod test {
             ]
         )
     }
-
-    #[test]
-    fn test_left_join_threaded() {
-        let lhs = &[0, 1, 1, 2, 3, 5];
-        let rhs = &[0, 1, 1, 3, 4];
-    }
 }

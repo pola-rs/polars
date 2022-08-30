@@ -182,6 +182,7 @@ impl<T: PolarsObject> ObjectChunked<T> {
 
 #[cfg(test)]
 mod test {
+    #[cfg(feature = "dtype-categorical")]
     use crate::prelude::*;
 
     #[test]
