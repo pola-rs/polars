@@ -46,6 +46,16 @@ def get_idx_type() -> type[DataType]:
     return _get_idx_type()
 
 
+def _custom_reconstruct(cls: type[Any], base: type[Any], state: Any) -> PolarsDataType:
+    if state:
+        obj = base.__new__(cls, state)
+        if base.__init__ != object.__init__:
+            base.__init__(obj, state)
+    else:
+        obj = object.__new__(cls)
+    return obj
+
+
 class DataType:
     """Base class for all Polars data types."""
 
@@ -55,6 +65,9 @@ class DataType:
         if args or kwargs:
             return super().__new__(cls)
         return cls
+
+    def __reduce__(self) -> Any:
+        return (_custom_reconstruct, (type(self), object, None), self.__dict__)
 
     @classmethod
     def string_repr(cls) -> str:
