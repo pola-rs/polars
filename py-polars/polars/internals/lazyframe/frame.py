@@ -1,7 +1,3 @@
-"""
-Module containing all expressions and classes needed for lazy computation/query
-execution.
-"""
 from __future__ import annotations
 
 import os
@@ -203,9 +199,12 @@ class LazyFrame:
         memory_map: bool = True,
     ) -> LDF:
         """
+        Lazily read from an Arrow IPC (Feather v2) file.
+
         See Also
         --------
         scan_parquet, scan_csv
+
         """
         if isinstance(file, (str, Path)):
             file = format_path(file)
@@ -267,9 +266,12 @@ class LazyFrame:
     @classmethod
     def from_json(cls, json: str) -> LazyFrame:
         """
+        Create a DataFrame from a JSON string.
+
         See Also
         --------
         read_json
+
         """
         f = StringIO(json)
         return cls.read_json(f)
@@ -546,9 +548,13 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def inspect(self: LDF, fmt: str = "{}") -> LDF:
         """
+        Inspect a node in the computation graph.
+
         Print the value that this node in the computation graph evaluates to and passes
         on the value.
 
+        Examples
+        --------
         >>> df = pl.DataFrame({"foo": [1, 1, -2, 3]}).lazy()
         >>> (
         ...     df.select(
@@ -576,11 +582,13 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         nulls_last: bool = False,
     ) -> LDF:
         """
-        Sort the DataFrame by:
+        Sort the DataFrame.
 
-            - A single column name
-            - An expression
-            - Multiple expressions
+        Sorting can be done by:
+
+        - A single column name
+        - An expression
+        - Multiple expressions
 
         Parameters
         ----------
@@ -671,6 +679,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         slice_pushdown: bool = True,
     ) -> pli.DataFrame:
         """
+        Collect a small number of rows for debugging purposes.
+
         Fetch is like a :func:`collect` operation, but it overwrites the number of rows
         read by every scan operation. This is a utility that helps debug a query on a
         smaller number of rows.
@@ -1009,8 +1019,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> LazyGroupBy[LDF]:
         """
-        Create rolling groups based on a time column (or index value of type Int32,
-        Int64).
+        Create rolling groups based on a time column.
+
+        Also works for index values of type Int32 or Int64.
 
         Different from a rolling groupby the windows are now determined by the
         individual values and are not of constant intervals. For constant intervals use
@@ -1232,8 +1243,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         force_parallel: bool = False,
     ) -> LDF:
         """
-        Perform an asof join. This is similar to a left-join except that we
-        match on nearest key rather than equal keys.
+        Perform an asof join.
+
+        This is similar to a left-join except that we match on nearest key rather than
+        equal keys.
 
         Both DataFrames must be sorted by the join_asof key.
 
@@ -1687,8 +1700,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def shift(self: LDF, periods: int) -> LDF:
         """
-        Shift the values by a given period and fill the parts that will be empty due to
-        this operation with `Nones`.
+        Shift the values by a given period.
 
         Parameters
         ----------
@@ -1739,8 +1751,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         fill_value: pli.Expr | int | str | float,
     ) -> LDF:
         """
-        Shift the values by a given period and fill the parts that will be empty due to
-        this operation with the result of the `fill_value` expression.
+        Shift the values by a given period and fill the resulting null values.
 
         Parameters
         ----------
@@ -2224,8 +2235,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         value_name: str | None = None,
     ) -> LDF:
         """
-        Unpivot a DataFrame from wide to long format, optionally leaving identifiers
-        set.
+        Unpivot a DataFrame from wide to long format.
+
+        Optionally leaves identifiers set.
 
         This function is useful to massage a DataFrame into a format where one or more
         columns are identifier variables (id_vars), while all other columns, considered
@@ -2297,8 +2309,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         validate_output_schema: bool = True,
     ) -> LDF:
         """
-        Apply a custom function. It is important that the function returns a Polars
-        DataFrame.
+        Apply a custom function.
+
+        It is important that the function returns a Polars DataFrame.
 
         Parameters
         ----------
