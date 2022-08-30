@@ -4,6 +4,7 @@ import math
 import random
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Callable, Sequence
+from warnings import warn
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -5414,6 +5415,14 @@ class Expr:
         └─────┘
 
         """
+        warn(
+            "The function signature for Expr.sample will change in a future"
+            " version. Explicitly set `frac` and `with_replacement` using keyword"
+            " arguments to retain the same behaviour.",
+            FutureWarning,
+            stacklevel=2,
+        )
+
         return wrap_expr(
             self._pyexpr.sample_frac(frac, with_replacement, shuffle, seed)
         )
