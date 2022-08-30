@@ -48,7 +48,15 @@ def show_versions() -> None:
 
 def _get_dependency_info() -> dict[str, str]:
     # see the list of dependencies in pyproject.toml
-    opt_deps = ["pyarrow", "pandas", "numpy", "fsspec", "connectorx", "xlsx2csv"]
+    opt_deps = [
+        "pyarrow",
+        "pandas",
+        "numpy",
+        "fsspec",
+        "connectorx",
+        "xlsx2csv",
+        "pytz",
+    ]
     return {name: _get_dep_version(name) for name in opt_deps}
 
 
