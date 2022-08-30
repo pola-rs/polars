@@ -5381,18 +5381,19 @@ class Expr:
         seed: int | None = None,
     ) -> Expr:
         """
-        Sample a fraction of the `Series`.
+        Sample from this expression.
 
         Parameters
         ----------
         fraction
-            Fraction 0.0 <= value <= 1.0
+            Fraction of items to return.
         with_replacement
             Allow values to be sampled more than once.
-        seed
-            Seed initialization. If None given a random seed is used.
         shuffle
             Shuffle the order of sampled data points.
+        seed
+            Seed for the random number generator. If set to None (default), a random
+            seed is used.
 
         Examples
         --------
