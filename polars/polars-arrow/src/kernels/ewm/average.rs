@@ -5,9 +5,6 @@ use num::Float;
 
 use crate::utils::CustomIterTools;
 
-// See:
-// https://github.com/pola-rs/polars/issues/2148
-// https://stackoverflow.com/a/51392341/6717054
 
 pub fn ewm_mean<T>(
     xs: &PrimitiveArray<T>,
@@ -22,7 +19,9 @@ where
 
     let mut opt_mean = None;
     let mut non_null_cnt = 0usize;
-    let mut wgt_sum = T::zero();
+
+    let wgt = if adjust { T::one() } else { alpha };
+    let mut wgt_sum = if adjust { T::zero() } else { T::one() };
 
     xs.iter()
         .map(|opt_x| {
@@ -31,19 +30,10 @@ where
 
                 let prev_mean = opt_mean.unwrap_or(x);
 
-                let curr_mean = if adjust {
-                    let pow = T::from(non_null_cnt - 1).unwrap();
-                    // TODO: introduce `ignore_na` parameter. We currently default to
-                    //  `ignore_na = True` but we can achieve `ignore_na = False` (for
-                    //  the adjusted case, at least) by setting `pow = T::from(i).unwrap();`
-                    let wgt = one_sub_alpha.powf(pow);
+                // TODO: this is `ignore_na = True`
+                wgt_sum = one_sub_alpha * wgt_sum + wgt;
 
-                    wgt_sum += wgt;
-                    prev_mean + (x - prev_mean) / wgt_sum
-                } else {
-                    prev_mean + alpha * (x - prev_mean)
-                };
-                opt_mean = Some(curr_mean);
+                opt_mean = Some(prev_mean + (x - prev_mean) * wgt / wgt_sum);
             }
             match non_null_cnt < min_periods {
                 true => None,

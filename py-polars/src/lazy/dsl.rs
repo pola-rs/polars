@@ -1467,6 +1467,7 @@ impl PyExpr {
         let options = EWMOptions {
             alpha,
             adjust,
+            bias: false,
             min_periods,
         };
         self.inner.clone().ewm_mean(options).into()
@@ -1475,6 +1476,7 @@ impl PyExpr {
         let options = EWMOptions {
             alpha,
             adjust,
+            bias: false,
             min_periods,
         };
         self.inner.clone().ewm_std(options).into()
@@ -1483,6 +1485,7 @@ impl PyExpr {
         let options = EWMOptions {
             alpha,
             adjust,
+            bias: false,
             min_periods,
         };
         self.inner.clone().ewm_var(options).into()

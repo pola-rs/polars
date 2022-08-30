@@ -68,17 +68,18 @@ where
                 };
 
                 // NOTE: this is correct for unadjusted_biased -- ref: https://fanf2.user.srcf.net/hermes/doc/antiforgery/stats.pdf
-                // let curr_var = one_sub_alpha * (prev_var + alpha * (x - prev_mean).powf(T::one() + T::one()));
+                let curr_var = one_sub_alpha * (prev_var + alpha * (x - prev_mean).powf(T::one() + T::one()));
 
                 // NOTE: this is correct for adjusted_biased -- ref: personal notes
-                let theta = wgt_sum;
-                let theta_sub_one = theta - T::one();
-                let mut curr_var = theta_sub_one / theta * prev_var + (theta_sub_one / theta / theta + theta_sub_one * theta_sub_one / theta / theta) * (x - prev_mean) * (x - prev_mean) / theta;
+                // let theta = wgt_sum;
+                // let theta_sub_one = theta - T::one();
+                // let mut curr_var = theta_sub_one / theta * prev_var + (theta_sub_one / theta / theta + theta_sub_one * theta_sub_one / theta / theta) * (x - prev_mean) * (x - prev_mean) / theta;
 
                 opt_mean_var = Some((curr_mean, curr_var));
             }
             // NOTE: this is correct for adjusted_unbiased -- ref: personal notes
-            let bias_correction = T::one() - wgt_sum_sqr / (wgt_sum * wgt_sum);
+            // let bias_correction = T::one() - wgt_sum_sqr / (wgt_sum * wgt_sum);
+            let bias_correction = T::one();
             match non_null_cnt < min_periods {
                 true => None,
                 false => opt_mean_var.map(|(_, var)| var / bias_correction),
