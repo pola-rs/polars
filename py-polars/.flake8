@@ -1,7 +1,7 @@
 [flake8]
 max-line-length = 88
 ban-relative-imports = true
-docstring-convention=all
+docstring-convention = all
 extend-ignore =
     # Satisfy black: https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html#flake8
     E203,
@@ -9,7 +9,7 @@ extend-ignore =
     # numpy convention with a few additional lints
     D107, D203, D212, D401, D402, D415, D416,
     # TODO: Remove errors below to further improve docstring linting
-    D1, D400, D205,
+    D1,
     # flake8-simplify
     SIM102, SIM117,
 
