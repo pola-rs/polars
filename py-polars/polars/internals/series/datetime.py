@@ -242,8 +242,10 @@ class DateTimeNameSpace:
 
     def with_time_unit(self, tu: TimeUnit) -> pli.Series:
         """
-        Set time unit a Series of dtype Datetime or Duration. This does not modify
-        underlying data, and should be used to fix an incorrect time unit.
+        Set time unit a Series of dtype Datetime or Duration.
+
+        This does not modify underlying data, and should be used to fix an incorrect
+        time unit.
 
         Parameters
         ----------

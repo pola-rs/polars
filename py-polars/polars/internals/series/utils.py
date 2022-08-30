@@ -44,9 +44,12 @@ _EMPTY_BYTECODE = _EmptyBytecodeHelper()
 
 def _is_empty_method(func: SeriesMethod) -> bool:
     """
-    Confirm that the given function has no implementation, eg:
-    * only has a docstring (body is empty)
-    * has no docstring and just contains 'pass' (or equivalent)
+    Confirm that the given function has no implementation.
+
+    Definitions of empty:
+
+    - only has a docstring (body is empty)
+    - has no docstring and just contains 'pass' (or equivalent)
     """
     fc = func.__code__
     return (fc.co_code in _EMPTY_BYTECODE) and (

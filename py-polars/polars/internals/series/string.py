@@ -442,8 +442,9 @@ class StringNameSpace:
 
     def split_exact(self, by: str, n: int, inclusive: bool = False) -> pli.Series:
         """
-        Split the string by a substring into a struct of ``n+1`` fields using
-        ``n`` splits.
+        Split the string by a substring using ``n`` splits.
+
+        Results in a struct of ``n+1`` fields.
 
         If it cannot make ``n`` splits, the remaining field elements will be null.
 

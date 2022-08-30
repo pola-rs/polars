@@ -752,8 +752,9 @@ def map(
     return_dtype: type[DataType] | None = None,
 ) -> pli.Expr:
     """
-    Map a custom function over multiple columns/expressions and produce a single Series
-    result.
+    Map a custom function over multiple columns/expressions.
+
+    Produces a single Series result.
 
     Parameters
     ----------

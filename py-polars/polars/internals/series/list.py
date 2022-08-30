@@ -179,8 +179,7 @@ class ListNameSpace:
 
     def shift(self, periods: int = 1) -> pli.Series:
         """
-        Shift the values by a given period and fill the parts that will be empty due to
-        this operation with nulls.
+        Shift values by the given period.
 
         Parameters
         ----------
