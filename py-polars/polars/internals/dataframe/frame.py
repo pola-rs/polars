@@ -1525,10 +1525,10 @@ class DataFrame:
         return combined.select(expr)
 
     def _compare_to_non_df(
-        self,
+        self: DF,
         other: Any,
         op: ComparisonOperator,
-    ) -> DataFrame:
+    ) -> DF:
         """Compare a DataFrame with a non-DataFrame object."""
         if op == "eq":
             return self.select(pli.all() == other)
@@ -2018,7 +2018,7 @@ class DataFrame:
             index = len(self.columns) + index
         return pli.wrap_s(self._df.select_at_idx(index))
 
-    def reverse(self) -> DataFrame:
+    def reverse(self: DF) -> DF:
         """
         Reverse the DataFrame.
 
@@ -4311,11 +4311,11 @@ class DataFrame:
         return self[name]
 
     def fill_null(
-        self,
+        self: DF,
         value: Any | None = None,
         strategy: FillNullStrategy | None = None,
         limit: int | None = None,
-    ) -> DataFrame:
+    ) -> DF:
         """
         Fill null values using the specified value or strategy.
 
@@ -4922,9 +4922,9 @@ class DataFrame:
         return pli.wrap_ldf(self._df.lazy())
 
     def select(
-        self,
+        self: DF,
         exprs: str | pli.Expr | pli.Series | Sequence[str | pli.Expr | pli.Series],
-    ) -> DataFrame:
+    ) -> DF:
         """
         Select columns from this DataFrame.
 
@@ -4957,8 +4957,11 @@ class DataFrame:
         └─────┘
 
         """
-        return (
-            self.lazy().select(exprs).collect(no_optimization=True, string_cache=False)
+        return self._from_pydf(
+            self.lazy()
+            .select(exprs)
+            .collect(no_optimization=True, string_cache=False)
+            ._df
         )
 
     def with_columns(
@@ -5397,7 +5400,7 @@ class DataFrame:
         """
         return self._from_pydf(self._df.median())
 
-    def product(self) -> DataFrame:
+    def product(self: DF) -> DF:
         """
         Aggregate the columns of this DataFrame to their product values.
 
@@ -5813,7 +5816,7 @@ class DataFrame:
             df._df.shrink_to_fit()
             return df
 
-    def take_every(self, n: int) -> DataFrame:
+    def take_every(self: DF, n: int) -> DF:
         """
         Take every nth row in the DataFrame and return as a new DataFrame.
 
@@ -5883,7 +5886,7 @@ class DataFrame:
         k3 = seed_3 if seed_3 is not None else seed
         return pli.wrap_s(self._df.hash_rows(k0, k1, k2, k3))
 
-    def interpolate(self) -> DataFrame:
+    def interpolate(self: DF) -> DF:
         """
         Interpolate intermediate values. The interpolation method is linear.
 
