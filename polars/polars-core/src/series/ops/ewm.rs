@@ -2,7 +2,6 @@ use std::convert::TryFrom;
 
 pub use polars_arrow::kernels::ewm::EWMOptions;
 use polars_arrow::kernels::ewm::{ewm_mean, ewm_std, ewm_var};
-use polars_utils::mem::to_mutable_slice;
 
 use crate::prelude::*;
 
@@ -57,7 +56,7 @@ impl Series {
                 );
                 Series::try_from((self.name(), Box::new(result) as ArrayRef))
             }
-            _ => self.cast(&DataType::Float64)?.ewm_mean(options),
+            _ => self.cast(&DataType::Float64)?.ewm_std(options),
         }
     }
 
@@ -85,7 +84,7 @@ impl Series {
                 );
                 Series::try_from((self.name(), Box::new(result) as ArrayRef))
             }
-            _ => self.cast(&DataType::Float64)?.ewm_mean(options),
+            _ => self.cast(&DataType::Float64)?.ewm_var(options),
         }
     }
 }

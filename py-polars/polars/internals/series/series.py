@@ -4090,6 +4090,7 @@ class Series:
         half_life: float | None = None,
         alpha: float | None = None,
         adjust: bool = True,
+        bias: bool = False,
         min_periods: int = 1,
     ) -> Series:
         r"""
@@ -4127,6 +4128,9 @@ class Series:
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
+        bias
+            When `bias=False`, apply a correction to make the estimate statistically
+            unbiased.
         min_periods
             Minimum number of observations in window required to have a value
             (otherwise result is null).
@@ -4140,6 +4144,7 @@ class Series:
         half_life: float | None = None,
         alpha: float | None = None,
         adjust: bool = True,
+        bias: bool = False,
         min_periods: int = 1,
     ) -> Series:
         r"""
@@ -4177,6 +4182,9 @@ class Series:
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
+        bias
+            When `bias=False`, apply a correction to make the estimate statistically
+            unbiased.
         min_periods
             Minimum number of observations in window required to have a value
             (otherwise result is null).

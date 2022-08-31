@@ -1730,24 +1730,27 @@ def test_ewm_mean_min_periods() -> None:
     assert ewm_mean.to_list() == [
         1.0,
         1.0,
-        1.6666666666666667,
-        1.6666666666666667,
+        1.6666666666666665,
+        1.6666666666666665,
         2.4285714285714284,
     ]
     ewm_mean = series.ewm_mean(alpha=0.5, min_periods=2)
     assert ewm_mean.to_list() == [
         None,
         None,
-        1.6666666666666667,
-        1.6666666666666667,
+        1.6666666666666665,
+        1.6666666666666665,
         2.4285714285714284,
     ]
 
 
 def test_ewm_std_var() -> None:
-    a = pl.Series("a", [2, 5, 3])
+    series = pl.Series("a", [2, 5, 3])
 
-    assert (a.ewm_std(alpha=0.5) ** 2).to_list() == a.ewm_var(alpha=0.5).to_list()
+    var = series.ewm_var(alpha=0.5)
+    std = series.ewm_std(alpha=0.5)
+
+    assert np.allclose(var, std**2, rtol=1e-16)
 
 
 def test_extend_constant() -> None:
