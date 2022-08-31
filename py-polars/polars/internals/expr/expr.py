@@ -4,7 +4,6 @@ import math
 import random
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Callable, Sequence
-from warnings import warn
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -5394,20 +5393,22 @@ class Expr:
             seed = random.randint(0, 10000)
         return wrap_expr(self._pyexpr.shuffle(seed))
 
-    @deprecated_alias(fraction="frac")
     def sample(
         self,
+        n: int | None = None,
         frac: float | None = None,
-        with_replacement: bool = True,
+        with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
-        n: int | None = None,
     ) -> Expr:
         """
         Sample from this expression.
 
         Parameters
         ----------
+        n
+            Number of items to return. Cannot be used with `frac`. Defaults to 1 if
+            `frac` is None.
         frac
             Fraction of items to return. Cannot be used with `n`.
         with_replacement
@@ -5416,9 +5417,7 @@ class Expr:
             Shuffle the order of sampled data points.
         seed
             Seed for the random number generator. If set to None (default), a random
-            seed is used.
-        n
-            Number of items to return. Cannot be used with `frac`.
+            seed is generated using the ``random`` module.
 
         Examples
         --------
@@ -5438,25 +5437,20 @@ class Expr:
         └─────┘
 
         """
-        warn(
-            "The function signature for Expr.sample will change in a future"
-            " version. Explicitly set `frac` and `with_replacement` using keyword"
-            " arguments to retain the same behaviour.",
-            FutureWarning,
-            stacklevel=2,
-        )
-
         if n is not None and frac is not None:
             raise ValueError("cannot specify both `n` and `frac`")
 
-        if n is not None and frac is None:
-            return wrap_expr(self._pyexpr.sample_n(n, with_replacement, shuffle, seed))
+        if seed is None:
+            seed = random.randint(0, 10000)
 
-        if frac is None:
-            frac = 1.0
-        return wrap_expr(
-            self._pyexpr.sample_frac(frac, with_replacement, shuffle, seed)
-        )
+        if frac is not None:
+            return wrap_expr(
+                self._pyexpr.sample_frac(frac, with_replacement, shuffle, seed)
+            )
+
+        if n is None:
+            n = 1
+        return wrap_expr(self._pyexpr.sample_n(n, with_replacement, shuffle, seed))
 
     def ewm_mean(
         self,
