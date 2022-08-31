@@ -4,6 +4,7 @@ use std::sync::Arc;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::series::unstable::UnstableSeries;
 use polars_core::{prelude::*, POOL};
+use rayon::prelude::*;
 
 use crate::physical_plan::state::{ExecutionState, StateFlags};
 use crate::prelude::*;
@@ -133,7 +134,12 @@ impl PhysicalExpr for BinaryExpr {
             ));
         }
 
-        match (ac_l.agg_state(), ac_r.agg_state(), self.op) {
+        match (
+            ac_l.agg_state(),
+            ac_r.agg_state(),
+            self.op,
+            state.overlapping_groups(),
+        ) {
             // Some aggregations must return boolean masks that fit the group. That's why not all literals can take this path.
             // only literals that are used in arithmetic
             (
@@ -145,6 +151,7 @@ impl PhysicalExpr for BinaryExpr {
                 | Operator::Multiply
                 | Operator::Modulus
                 | Operator::TrueDivide,
+                _,
             )
             | (
                 AggState::Literal(lhs),
@@ -155,6 +162,7 @@ impl PhysicalExpr for BinaryExpr {
                 | Operator::Multiply
                 | Operator::Modulus
                 | Operator::TrueDivide,
+                _,
             ) => {
                 // we want to be able to mutate in place
                 // so we take the lhs to make sure that we drop
@@ -175,8 +183,8 @@ impl PhysicalExpr for BinaryExpr {
             // the other is a literal value. In that case it is unlikely we want to expand this to the
             // group sizes.
             //
-            (AggState::AggregatedFlat(_), AggState::Literal(_), _)
-            | (AggState::Literal(_), AggState::AggregatedFlat(_), _) => {
+            (AggState::AggregatedFlat(_), AggState::Literal(_), _op, _overlapping_groups)
+            | (AggState::Literal(_), AggState::AggregatedFlat(_), _op, _overlapping_groups) => {
                 let l = ac_l.series().clone();
                 let r = ac_r.series().clone();
 
@@ -194,7 +202,7 @@ impl PhysicalExpr for BinaryExpr {
             // if the groups_len == df.len we can just apply all flat.
             // within an aggregation a `col().first() - lit(0)` must still produce a boolean array of group length,
             // that's why a literal also takes this branch
-            (AggState::AggregatedFlat(s), AggState::NotAggregated(_), _)
+            (AggState::AggregatedFlat(s), AggState::NotAggregated(_), _op, _overlapping_groups)
                 if s.len() != df.height() =>
             {
                 // this is a flat series of len eq to group tuples
@@ -245,7 +253,8 @@ impl PhysicalExpr for BinaryExpr {
             (
                 AggState::AggregatedList(_) | AggState::NotAggregated(_),
                 AggState::AggregatedFlat(s),
-                _,
+                _op,
+                _overlapping_groups,
             ) if s.len() != df.height() => {
                 // this is now a list
                 let l = ac_l.aggregated_arity_operation();
@@ -297,9 +306,27 @@ impl PhysicalExpr for BinaryExpr {
                 }
                 Ok(ac_l)
             }
-            (AggState::AggregatedList(_), AggState::NotAggregated(_) | AggState::Literal(_), _)
-            | (AggState::NotAggregated(_) | AggState::Literal(_), AggState::AggregatedList(_), _) =>
-            {
+
+            // # Align data in sort order and apply flattened.
+            // 1 we sort/aggregate by groups
+            // 2 then we flatten/explode and do the binary operation.
+            // 3 then we use the original groups length to restore the groups
+            //
+            // Overlapping groups may not take this branch.
+            // when groups overlap, step 2 creates more values than rows
+            // and the original group lengths will be incorrect
+            (
+                AggState::AggregatedList(_),
+                AggState::NotAggregated(_) | AggState::Literal(_),
+                _op,
+                false,
+            )
+            | (
+                AggState::NotAggregated(_) | AggState::Literal(_),
+                AggState::AggregatedList(_),
+                _op,
+                false,
+            ) => {
                 ac_l.sort_by_groups();
                 ac_r.sort_by_groups();
 
@@ -318,8 +345,11 @@ impl PhysicalExpr for BinaryExpr {
                 ac_l.with_series(out, false);
                 Ok(ac_l)
             }
-            // flatten the Series and apply the operators
-            (AggState::AggregatedList(_), AggState::AggregatedList(_), _) => {
+            // # Flatten the Series and apply the operators.
+            //
+            // Overlapping groups may not take this branch.
+            // the explode call would create more data and is expensive
+            (AggState::AggregatedList(_), AggState::AggregatedList(_), _op, false) => {
                 let lhs = ac_l.flat_naive().as_ref().clone();
                 let rhs = ac_r.flat_naive().as_ref().clone();
 
@@ -334,9 +364,9 @@ impl PhysicalExpr for BinaryExpr {
                 ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
                 Ok(ac_l)
             }
-            // Both are or a flat series
+            // Both are or a flat series (if groups do not overlap)
             // so we can flatten the Series and apply the operators
-            _ => {
+            (_l, _r, _op, false) => {
                 // Check if the group state of `ac_a` differs from the original `GroupTuples`.
                 // If this is the case we might need to align the groups. But only if `ac_b` is not a
                 // `Literal` as literals don't have any groups, the changed group order does not matter
@@ -379,6 +409,45 @@ impl PhysicalExpr for BinaryExpr {
 
                     Ok(ac_l)
                 }
+            }
+            // overlapping groups, we iterate the separate groups, so that we don't have to explode
+            // If both sides are aggregated to a list, we can apply in parallel
+            (AggState::AggregatedList(_), AggState::AggregatedList(_), _op, true) => {
+                let l = ac_l.aggregated();
+                let r = ac_r.aggregated();
+
+                let mut l = l.list()?.clone();
+                let mut r = r.list()?.clone();
+
+                let mut out = POOL.install(|| {
+                    l.par_iter_indexed()
+                        .zip(r.par_iter_indexed())
+                        .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
+                            (Some(l), Some(r)) => apply_operator(&l, &r, self.op).map(Some),
+                            _ => Ok(None),
+                        })
+                        .collect::<Result<ListChunked>>()
+                })?;
+
+                out.rename(ac_l.series().name());
+                ac_l.with_series(out.into_series(), true);
+                Ok(ac_l)
+            }
+            // overlapping groups, we iterate the separate groups, so that we don't have to explode
+            (_l, _r, _op, true) => {
+                let mut out = ac_l
+                    .iter_groups()
+                    .zip(ac_r.iter_groups())
+                    .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
+                        (Some(l), Some(r)) => {
+                            apply_operator(l.as_ref(), r.as_ref(), self.op).map(Some)
+                        }
+                        _ => Ok(None),
+                    })
+                    .collect::<Result<ListChunked>>()?;
+                out.rename(ac_l.series().name());
+                ac_l.with_series(out.into_series(), true);
+                Ok(ac_l)
             }
         }
     }
