@@ -4,6 +4,7 @@ import math
 import random
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Callable, Sequence
+from warnings import warn
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -5393,31 +5394,36 @@ class Expr:
             seed = random.randint(0, 10000)
         return wrap_expr(self._pyexpr.shuffle(seed))
 
+    @deprecated_alias(fraction="frac")
     def sample(
         self,
-        fraction: float = 1.0,
+        frac: float | None = None,
         with_replacement: bool = True,
         shuffle: bool = False,
         seed: int | None = None,
+        n: int | None = None,
     ) -> Expr:
         """
-        Sample a fraction of the `Series`.
+        Sample from this expression.
 
         Parameters
         ----------
-        fraction
-            Fraction 0.0 <= value <= 1.0
+        frac
+            Fraction of items to return. Cannot be used with `n`.
         with_replacement
             Allow values to be sampled more than once.
-        seed
-            Seed initialization. If None given a random seed is used.
         shuffle
             Shuffle the order of sampled data points.
+        seed
+            Seed for the random number generator. If set to None (default), a random
+            seed is used.
+        n
+            Number of items to return. Cannot be used with `frac`.
 
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").sample(seed=1))
+        >>> df.select(pl.col("a").sample(frac=1.0, with_replacement=True, seed=1))
         shape: (3, 1)
         ┌─────┐
         │ a   │
@@ -5432,8 +5438,24 @@ class Expr:
         └─────┘
 
         """
+        warn(
+            "The function signature for Expr.sample will change in a future"
+            " version. Explicitly set `frac` and `with_replacement` using keyword"
+            " arguments to retain the same behaviour.",
+            FutureWarning,
+            stacklevel=2,
+        )
+
+        if n is not None and frac is not None:
+            raise ValueError("cannot specify both `n` and `frac`")
+
+        if n is not None and frac is None:
+            return wrap_expr(self._pyexpr.sample_n(n, with_replacement, shuffle, seed))
+
+        if frac is None:
+            frac = 1.0
         return wrap_expr(
-            self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
+            self._pyexpr.sample_frac(frac, with_replacement, shuffle, seed)
         )
 
     def ewm_mean(

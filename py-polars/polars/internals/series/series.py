@@ -3539,20 +3539,22 @@ class Series:
         seed: int | None = None,
     ) -> Series:
         """
-        Sample from this Series by setting either `n` or `frac`.
+        Sample from this Series.
 
         Parameters
         ----------
         n
-            Number of samples < self.len().
+            Number of items to return. Cannot be used with `frac`. Defaults to 1 if
+            `frac` is None.
         frac
-            Fraction between 0.0 and 1.0 .
+            Fraction of items to return. Cannot be used with `n`.
         with_replacement
-            sample with replacement.
+            Allow values to be sampled more than once.
         shuffle
             Shuffle the order of sampled data points.
         seed
-            Initialization seed. If None is given a random seed is used.
+            Seed for the random number generator. If set to None (default), a random
+            seed is used.
 
         Examples
         --------
@@ -3567,14 +3569,13 @@ class Series:
 
         """
         if n is not None and frac is not None:
-            raise ValueError("n and frac were both supplied")
+            raise ValueError("cannot specify both `n` and `frac`")
 
         if n is None and frac is not None:
             return wrap_s(self._s.sample_frac(frac, with_replacement, shuffle, seed))
 
         if n is None:
             n = 1
-
         return wrap_s(self._s.sample_n(n, with_replacement, shuffle, seed))
 
     def peak_max(self) -> Series:

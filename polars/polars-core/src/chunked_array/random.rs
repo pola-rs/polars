@@ -65,7 +65,8 @@ impl Series {
     ) -> Result<Self> {
         if !with_replacement && n > self.len() {
             return Err(PolarsError::ShapeMisMatch(
-                "n is larger than the number of elements in this array".into(),
+                "cannot take a larger sample than the total population when `with_replacement=false`"
+                    .into(),
             ));
         }
         if n == 0 {
@@ -126,7 +127,8 @@ where
     ) -> Result<Self> {
         if !with_replacement && n > self.len() {
             return Err(PolarsError::ShapeMisMatch(
-                "n is larger than the number of elements in this array".into(),
+                "cannot take a larger sample than the total population when `with_replacement=false`"
+                    .into(),
             ));
         }
         let len = self.len();
@@ -171,7 +173,8 @@ impl DataFrame {
     ) -> Result<Self> {
         if !with_replacement && n > self.height() {
             return Err(PolarsError::ShapeMisMatch(
-                "n is larger than the number of elements in this array".into(),
+                "cannot take a larger sample than the total population when `with_replacement=false`"
+                    .into(),
             ));
         }
         // all columns should used the same indices. So we first create the indices.
