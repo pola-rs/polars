@@ -243,7 +243,7 @@ def date_range(
     if isinstance(interval, timedelta):
         interval = _timedelta_to_pl_duration(interval)
     elif " " in interval:
-        interval = interval.replace(" ","")
+        interval = interval.replace(" ", "")
 
     low, low_is_date = _ensure_datetime(low)
     high, high_is_date = _ensure_datetime(high)
