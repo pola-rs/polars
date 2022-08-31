@@ -148,3 +148,22 @@ def test_join_as_of_by_schema() -> None:
     b = pl.DataFrame({"a": [1], "b": [2], "d": [4]}).lazy()
     q = a.join_asof(b, on="a", by="b")
     assert q.collect().columns == q.columns
+
+
+def test_unknown_apply() -> None:
+    df = pl.DataFrame(
+        {"Amount": [10, 1, 1, 5], "Flour": ["1000g", "100g", "50g", "75g"]}
+    )
+
+    q = df.lazy().select(
+        [
+            pl.col("Amount"),
+            pl.col("Flour").apply(lambda x: 100.0) / pl.col("Amount"),
+        ]
+    )
+
+    assert q.collect().to_dict(False) == {
+        "Amount": [10, 1, 1, 5],
+        "Flour": [10.0, 100.0, 100.0, 20.0],
+    }
+    assert q.dtypes == [pl.Int64, pl.Unknown]

@@ -3025,6 +3025,8 @@ class Expr:
             Lambda/ function to apply.
         return_dtype
             Dtype of the output Series.
+            If not set, polars will assume that
+            the dtype remains unchanged.
 
         Examples
         --------

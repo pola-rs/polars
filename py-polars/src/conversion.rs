@@ -278,7 +278,7 @@ impl ToPyObject for Wrap<DataType> {
                 struct_class.call1((fields,)).unwrap().into()
             }
             DataType::Null => pl.getattr("Null").unwrap().into(),
-            dt => panic!("{} not supported", dt),
+            DataType::Unknown => pl.getattr("Unknown").unwrap().into(),
         }
     }
 }
@@ -321,6 +321,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Object" => DataType::Object("unknown"),
                     "List" => DataType::List(Box::new(DataType::Boolean)),
                     "Null" => DataType::Null,
+                    "Unknown" => DataType::Unknown,
                     dt => panic!("{} not expected as Python type for dtype conversion", dt),
                 }
             }

@@ -44,6 +44,7 @@ from polars.datatypes import (
     UInt16,
     UInt32,
     UInt64,
+    Unknown,
     Utf8,
     get_idx_type,
 )
@@ -169,6 +170,7 @@ __all__ = [
     "Field",
     "Struct",
     "Null",
+    "Unknown",
     "PolarsDataType",
     "get_idx_type",
     # polars.io

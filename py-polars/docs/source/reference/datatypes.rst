@@ -56,6 +56,7 @@ Other
     Null
     Object
     Utf8
+    Unknown
 
 Functions
 ~~~~~~~~~

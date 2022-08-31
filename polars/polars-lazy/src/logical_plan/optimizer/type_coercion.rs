@@ -185,8 +185,10 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let (left, type_left) = get_aexpr_and_type(expr_arena, node_left, &input_schema)?;
+
                 let (right, type_right) =
                     get_aexpr_and_type(expr_arena, node_right, &input_schema)?;
+                early_escape(&type_left, &type_right)?;
 
                 // don't coerce string with number comparisons. They must error
                 match (&type_left, &type_right, op) {
@@ -449,9 +451,6 @@ impl OptimizationRule for TypeCoercionRule {
                         get_aexpr_and_type(expr_arena, *other, &input_schema)?;
 
                     // early return until Unknown is set
-                    if let DataType::Unknown = &type_other {
-                        return None;
-                    }
                     early_escape(&super_type, &type_other)?;
                     let new_st = get_supertype(&super_type, &type_other).ok()?;
                     super_type = modify_supertype(new_st, self_ae, other, &type_self, &type_other)

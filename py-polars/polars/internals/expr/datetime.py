@@ -4,7 +4,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int32
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 from polars.utils import _timedelta_to_pl_duration
 
 if TYPE_CHECKING:
@@ -879,9 +879,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr).map(
-            lambda s: s.dt.with_time_zone(tz), return_dtype=Datetime
-        )
+        return pli.wrap_expr(self._pyexpr.dt_with_time_zone(tz))
 
     def days(self) -> pli.Expr:
         """

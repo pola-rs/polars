@@ -64,6 +64,23 @@ impl DateLikeNameSpace {
         )
     }
 
+    /// Change the underlying [`TimeZone`] of the [`Series`]. This does not modify the data.
+    pub fn with_time_zone(self, tz: Option<TimeZone>) -> Expr {
+        self.0.map(
+            move |s| match s.dtype() {
+                DataType::Datetime(_, _) => {
+                    let mut ca = s.datetime().unwrap().clone();
+                    ca.set_time_zone(tz.clone());
+                    Ok(ca.into_series())
+                }
+                dt => Err(PolarsError::ComputeError(
+                    format!("Series of dtype {:?} has got no time zone", dt).into(),
+                )),
+            },
+            GetOutput::same_type(),
+        )
+    }
+
     /// Get the year of a Date/Datetime
     pub fn year(self) -> Expr {
         let function = move |s: Series| s.year().map(|ca| ca.into_series());
