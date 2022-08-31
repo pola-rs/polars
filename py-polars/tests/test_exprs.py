@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from typing import cast
 
 import numpy as np
@@ -92,6 +93,16 @@ def test_count_expr() -> None:
     out = df.groupby("b", maintain_order=True).agg(pl.count())
     assert out["b"].to_list() == ["a", "b"]
     assert out["count"].to_list() == [4, 1]
+
+
+def test_shuffle() -> None:
+    # Setting random.seed should lead to reproducible results
+    s = pl.Series("a", range(20))
+    random.seed(1)
+    result1 = pl.select(pl.lit(s).shuffle()).to_series()
+    random.seed(1)
+    result2 = pl.select(pl.lit(s).shuffle()).to_series()
+    assert result1.series_equal(result2)
 
 
 @pytest.mark.filterwarnings("ignore::FutureWarning")
