@@ -558,6 +558,34 @@ impl PySeries {
         self.series.has_validity()
     }
 
+    pub fn sample_n(
+        &self,
+        n: usize,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let s = self
+            .series
+            .sample_n(n, with_replacement, shuffle, seed)
+            .map_err(PyPolarsErr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn sample_frac(
+        &self,
+        frac: f64,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let s = self
+            .series
+            .sample_frac(frac, with_replacement, shuffle, seed)
+            .map_err(PyPolarsErr::from)?;
+        Ok(s.into())
+    }
+
     pub fn series_equal(&self, other: &PySeries, null_equal: bool, strict: bool) -> bool {
         if strict {
             self.series.eq(&other.series)

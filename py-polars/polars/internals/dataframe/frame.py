@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import random
 import sys
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
@@ -5615,7 +5614,7 @@ class DataFrame:
             Shuffle the order of sampled data points.
         seed
             Seed for the random number generator. If set to None (default), a random
-            seed is generated using the ``random`` module.
+            seed is used.
 
         Examples
         --------
@@ -5641,9 +5640,6 @@ class DataFrame:
         """
         if n is not None and frac is not None:
             raise ValueError("cannot specify both `n` and `frac`")
-
-        if seed is None:
-            seed = random.randint(0, 10000)
 
         if n is None and frac is not None:
             return self._from_pydf(
