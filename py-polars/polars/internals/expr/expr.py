@@ -5381,6 +5381,7 @@ class Expr:
         with_replacement: bool = True,
         shuffle: bool = False,
         seed: int | None = None,
+        n: int | None = None,
     ) -> Expr:
         """
         Sample from this expression.
@@ -5388,7 +5389,7 @@ class Expr:
         Parameters
         ----------
         frac
-            Fraction of items to return.
+            Fraction of items to return. Cannot be used with `n`.
         with_replacement
             Allow values to be sampled more than once.
         shuffle
@@ -5396,6 +5397,8 @@ class Expr:
         seed
             Seed for the random number generator. If set to None (default), a random
             seed is used.
+        n
+            Number of items to return. Cannot be used with `frac`.
 
         Examples
         --------
@@ -5423,9 +5426,14 @@ class Expr:
             stacklevel=2,
         )
 
+        if n is not None and frac is not None:
+            raise ValueError("cannot specify both `n` and `frac`")
+
+        if n is not None and frac is None:
+            return wrap_expr(self._pyexpr.sample_n(n, with_replacement, shuffle, seed))
+
         if frac is None:
             frac = 1.0
-
         return wrap_expr(
             self._pyexpr.sample_frac(frac, with_replacement, shuffle, seed)
         )
