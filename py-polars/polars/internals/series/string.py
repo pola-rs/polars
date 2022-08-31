@@ -259,7 +259,7 @@ class StringNameSpace:
 
     def encode(self, encoding: TransferEncoding) -> pli.Series:
         """
-        Encode a value using the provided encoding
+        Encode a value using the provided encoding.
 
         Parameters
         ----------
@@ -287,6 +287,7 @@ class StringNameSpace:
     def json_path_match(self, json_path: str) -> pli.Series:
         """
         Extract the first match of json string with provided JSONPath expression.
+
         Throw errors if encounter invalid json strings.
         All return value will be casted to Utf8 regardless of the original value.
 
@@ -367,6 +368,8 @@ class StringNameSpace:
 
     def extract_all(self, pattern: str) -> pli.Series:
         r"""
+        Extracts all matches for the given regex pattern.
+
         Extract each successive non-overlapping regex match in an individual string as
         an array
 
@@ -439,8 +442,9 @@ class StringNameSpace:
 
     def split_exact(self, by: str, n: int, inclusive: bool = False) -> pli.Series:
         """
-        Split the string by a substring into a struct of ``n+1`` fields using
-        ``n`` splits.
+        Split the string by a substring using ``n`` splits.
+
+        Results in a struct of ``n+1`` fields.
 
         If it cannot make ``n`` splits, the remaining field elements will be null.
 
@@ -633,10 +637,14 @@ class StringNameSpace:
 
     def zfill(self, alignment: int) -> pli.Series:
         """
+        Fills the string with zeroes.
+
         Return a copy of the string left filled with ASCII '0' digits to make a string
-        of length width. A leading sign prefix ('+'/'-') is handled by inserting the
-        padding after the sign character rather than before.
-        The original string is returned if width is less than or equal to ``len(s)``.
+        of length width.
+
+        A leading sign prefix ('+'/'-') is handled by inserting the padding after the
+        sign character rather than before. The original string is returned if width is
+        less than or equal to ``len(s)``.
 
         Parameters
         ----------

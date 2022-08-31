@@ -48,7 +48,7 @@ class StructNameSpace:
 
     def rename_fields(self, names: list[str]) -> pli.Series:
         """
-        Rename the fields of the struct
+        Rename the fields of the struct.
 
         Parameters
         ----------

@@ -4801,10 +4801,7 @@ class DataFrame:
 
     def shift_and_fill(self, periods: int, fill_value: int | str | float) -> DataFrame:
         """
-        Shift values by the given period and fill resulting null values.
-
-        Fill the parts that will be empty due to this operation with the result of the
-        `fill_value` expression.
+        Shift the values by a given period and fill the resulting null values.
 
         Parameters
         ----------
@@ -5807,6 +5804,7 @@ class DataFrame:
         Shrink DataFrame memory usage.
 
         Shrinks to fit the exact capacity needed to hold the data.
+
         """
         if in_place:
             self._df.shrink_to_fit()

@@ -630,7 +630,7 @@ class Series:
     @property
     def flags(self) -> dict[str, bool]:
         """
-        Get flags that are set on the Series
+        Get flags that are set on the Series.
 
         Returns
         -------
@@ -644,8 +644,9 @@ class Series:
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
-        Return an estimation of the total (heap) allocated size of the `Series` in
-        bytes (pass `unit` to return estimated size in kilobytes, megabytes, etc).
+        Return an estimation of the total (heap) allocated size of the Series.
+
+        Estimated size is given in the specified unit (bytes by default).
 
         This estimation is the sum of the size of its buffers, validity, including
         nested arrays. Multiple arrays may share buffers and bitmaps. Therefore, the
@@ -677,7 +678,7 @@ class Series:
 
     def sqrt(self) -> Series:
         """
-        Compute the square root of the elements
+        Compute the square root of the elements.
 
         Syntactic sugar for
 
@@ -693,7 +694,7 @@ class Series:
 
     def any(self) -> bool:
         """
-        Check if any boolean value in the column is `True`
+        Check if any boolean value in the column is `True`.
 
         Returns
         -------
@@ -704,7 +705,7 @@ class Series:
 
     def all(self) -> bool:
         """
-        Check if all boolean values in the column are `True`
+        Check if all boolean values in the column are `True`.
 
         Returns
         -------
@@ -773,7 +774,7 @@ class Series:
     @property
     def inner_dtype(self) -> type[DataType] | None:
         """
-        Get the inner dtype in of a List typed Series
+        Get the inner dtype in of a List typed Series.
 
         Returns
         -------
@@ -784,8 +785,10 @@ class Series:
 
     def describe(self) -> pli.DataFrame:
         """
-        Quick summary statistics of a series. Series with mixed datatypes will return
-        summary statistics for the datatype of the first value.
+        Quick summary statistics of a series.
+
+        Series with mixed datatypes will return summary statistics for the datatype of
+        the first value.
 
         Returns
         -------
@@ -1085,10 +1088,9 @@ class Series:
 
     def entropy(self, base: float = math.e, normalize: bool = False) -> float | None:
         """
-        Compute the entropy as `-sum(pk * log(pk)`.
-        where `pk` are discrete probabilities.
+        Computes the entropy.
 
-        This routine will normalize pk if they don’t sum to 1.
+        Uses the formula ``-sum(pk * log(pk)`` where ``pk`` are discrete probabilities.
 
         Parameters
         ----------
@@ -1734,7 +1736,7 @@ class Series:
 
     def is_null(self) -> Series:
         """
-        Get mask of null values.
+        Returns a boolean Series indicating which values are null.
 
         Returns
         -------
@@ -1757,7 +1759,7 @@ class Series:
 
     def is_not_null(self) -> Series:
         """
-        Get mask of non null values.
+        Returns a boolean Series indicating which values are not null.
 
         Returns
         -------
@@ -1780,7 +1782,7 @@ class Series:
 
     def is_finite(self) -> Series:
         """
-        Get mask of finite values if Series dtype is Float.
+        Returns a boolean Series indicating which values are finite.
 
         Returns
         -------
@@ -1803,7 +1805,7 @@ class Series:
 
     def is_infinite(self) -> Series:
         """
-        Get mask of infinite values if Series dtype is Float.
+        Returns a boolean Series indicating which values are infinite.
 
         Returns
         -------
@@ -1826,7 +1828,7 @@ class Series:
 
     def is_nan(self) -> Series:
         """
-        Get mask of NaN values if Series dtype is Float.
+        Returns a boolean Series indicating which values are not NaN.
 
         Returns
         -------
@@ -1850,7 +1852,7 @@ class Series:
 
     def is_not_nan(self) -> Series:
         """
-        Get negated mask of NaN values if Series dtype is_not Float.
+        Returns a boolean Series indicating which values are not NaN.
 
         Returns
         -------
@@ -1874,8 +1876,7 @@ class Series:
 
     def is_in(self, other: Series | Sequence[Any]) -> Series:
         """
-        Check if elements of this Series are in the other Series, or
-        if this Series is itself a member of the other Series.
+        Check if elements of this Series are in the other Series.
 
         Returns
         -------
@@ -2287,9 +2288,10 @@ class Series:
 
     def view(self, ignore_nulls: bool = False) -> SeriesView:
         """
-        Get a view into this Series data with a numpy array. This operation doesn't
-        clone data, but does not include missing values. Don't use this unless you know
-        what you are doing.
+        Get a view into this Series data with a numpy array.
+
+        This operation doesn't clone data, but does not include missing values.
+        Don't use this unless you know what you are doing.
 
         """
         if not ignore_nulls:
@@ -2450,8 +2452,9 @@ class Series:
 
     def to_arrow(self) -> pa.Array:
         """
-        Get the underlying Arrow Array. If the Series contains only a single chunk
-        this operation is zero copy.
+        Get the underlying Arrow Array.
+
+        If the Series contains only a single chunk this operation is zero copy.
 
         Examples
         --------
@@ -2554,8 +2557,9 @@ class Series:
 
     def cleared(self) -> Series:
         """
-        Create an empty copy of the current Series, with identical name/dtype but no
-        data.
+        Create an empty copy of the current Series.
+
+        The copy has identical name/dtype but no data.
 
         See Also
         --------
@@ -2650,19 +2654,17 @@ class Series:
 
     def floor(self) -> Series:
         """
-        Floor underlying floating point array to the lowest integers smaller or equal to
-        the float value.
+        Rounds down to the nearest integer value.
 
-        Only works on floating point Series
+        Only works on floating point Series.
 
         """
 
     def ceil(self) -> Series:
         """
-        Ceil underlying floating point array to the highest integers smaller or equal to
-        the float value.
+        Rounds up to the nearest integer value.
 
-        Only works on floating point Series
+        Only works on floating point Series.
 
         """
 
@@ -2691,7 +2693,7 @@ class Series:
 
     def dot(self, other: Series) -> float | None:
         """
-        Compute the dot/inner product between two Series
+        Compute the dot/inner product between two Series.
 
         Examples
         --------
@@ -2710,7 +2712,9 @@ class Series:
 
     def mode(self) -> Series:
         """
-        Compute the most occurring value(s). Can return multiple Values
+        Compute the most occurring value(s).
+
+        Can return multiple Values.
 
         Examples
         --------
@@ -3010,8 +3014,7 @@ class Series:
 
     def shift(self, periods: int = 1) -> Series:
         """
-        Shift the values by a given period and fill the parts that will be empty due to
-        this operation with `Nones`.
+        Shift the values by a given period.
 
         Examples
         --------
@@ -3042,8 +3045,7 @@ class Series:
 
     def shift_and_fill(self, periods: int, fill_value: int | pli.Expr) -> Series:
         """
-        Shift the values by a given period and fill the parts that will be empty due to
-        this operation with the result of the `fill_value` expression.
+        Shift the values by a given period and fill the resulting null values.
 
         Parameters
         ----------
@@ -3056,6 +3058,8 @@ class Series:
 
     def zip_with(self, mask: Series, other: Series) -> Series:
         """
+        Take values from self or other based on the given mask.
+
         Where mask evaluates true, take values from self. Where mask evaluates false,
         take values from other.
 
@@ -3212,6 +3216,7 @@ class Series:
     ) -> Series:
         """
         Apply a rolling mean (moving mean) over the values in this array.
+
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
@@ -3263,6 +3268,7 @@ class Series:
     ) -> Series:
         """
         Apply a rolling sum (moving sum) over the values in this array.
+
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
@@ -3313,7 +3319,7 @@ class Series:
         center: bool = False,
     ) -> Series:
         """
-        Compute a rolling std dev
+        Compute a rolling std dev.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -3439,7 +3445,7 @@ class Series:
         center: bool = False,
     ) -> Series:
         """
-        Compute a rolling median
+        Compute a rolling median.
 
         Parameters
         ----------
@@ -3478,7 +3484,7 @@ class Series:
         center: bool = False,
     ) -> Series:
         """
-        Compute a rolling quantile
+        Compute a rolling quantile.
 
         Parameters
         ----------
@@ -3513,7 +3519,7 @@ class Series:
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> Series:
         """
-        Compute a rolling skew
+        Compute a rolling skew.
 
         Parameters
         ----------
@@ -3640,8 +3646,10 @@ class Series:
 
     def shrink_to_fit(self, in_place: bool = False) -> Series | None:
         """
-        Shrink memory usage of this Series to fit the exact capacity needed to hold the
-        data.
+        Shrink Series memory usage.
+
+        Shrinks to fit the exact capacity needed to hold the data.
+
         """
         if in_place:
             self._s.shrink_to_fit()
@@ -3799,8 +3807,10 @@ class Series:
 
     def pct_change(self, n: int = 1) -> Series:
         """
+        Computes percentage change between values.
+
         Percentage change (as fraction) between current element and most-recent
-        non-null element at least n period(s) before the current element.
+        non-null element at least ``n`` period(s) before the current element.
 
         Computes the change from the previous row by default.
 
@@ -3909,7 +3919,7 @@ class Series:
 
     def clip(self, min_val: int | float, max_val: int | float) -> Series:
         """
-        Clip (limit) the values in an array to a `min` and `max` boundary
+        Clip (limit) the values in an array to a `min` and `max` boundary.
 
         Only works for numerical types.
 
@@ -3940,7 +3950,7 @@ class Series:
 
     def clip_min(self, min_val: int | float) -> Series:
         """
-        Clip (limit) the values in an array to a `min` boundary
+        Clip (limit) the values in an array to a `min` boundary.
 
         Only works for numerical types.
 
@@ -3956,7 +3966,7 @@ class Series:
 
     def clip_max(self, max_val: int | float) -> Series:
         """
-        Clip (limit) the values in an array to a `max` boundary
+        Clip (limit) the values in an array to a `max` boundary.
 
         Only works for numerical types.
 
@@ -3972,19 +3982,20 @@ class Series:
 
     def reshape(self, dims: tuple[int, ...]) -> Series:
         """
-        Reshape this Series to a flat series, shape: (len,)
-        or a List series, shape: (rows, cols)
-
-        if a -1 is used in any of the dimensions, that dimension is inferred.
+        Reshape this Series to a flat Series or a Series of Lists.
 
         Parameters
         ----------
         dims
-            Tuple of the dimension sizes
+            Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
+            dimension is inferred.
 
         Returns
         -------
         Series
+            If a single dimension is given, results in a flat Series of shape (len,).
+            If a multiple dimensions are given, results in a Series of Lists with shape
+            (rows, cols).
 
         """
 
@@ -4188,8 +4199,9 @@ class Series:
 
     def set_sorted(self, reverse: bool = False) -> Series:
         """
-        Set this `Series` as `sorted` so that downstream code can use
-        fast paths for sorted arrays.
+        Flags the Series as 'sorted'.
+
+        Enables downstream code to user fast paths for sorted arrays.
 
         Parameters
         ----------
@@ -4262,7 +4274,7 @@ class SeriesIter:
 def _resolve_datetime_dtype(
     dtype: PolarsDataType | None, ndtype: np.datetime64
 ) -> PolarsDataType | None:
-    """Given polars/numpy datetime dtypes, resolve to an explicit unit"""
+    """Given polars/numpy datetime dtypes, resolve to an explicit unit."""
     if dtype is None or (dtype == Datetime and not getattr(dtype, "tu", None)):
         tu = getattr(dtype, "tu", np.datetime_data(ndtype)[0])
         # explicit formulation is verbose, but keeps mypy happy

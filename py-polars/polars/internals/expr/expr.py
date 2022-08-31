@@ -846,8 +846,7 @@ class Expr:
 
     def is_null(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression contains null
-        values.
+        Returns a boolean Series indicating which values are null.
 
         Examples
         --------
@@ -880,8 +879,7 @@ class Expr:
 
     def is_not_null(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression does not
-        contain null values.
+        Returns a boolean Series indicating which values are not null.
 
         Examples
         --------
@@ -914,8 +912,7 @@ class Expr:
 
     def is_finite(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression values are
-        finite.
+        Returns a boolean Series indicating which values are finite.
 
         Returns
         -------
@@ -947,8 +944,7 @@ class Expr:
 
     def is_infinite(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression values are
-        infinite.
+        Returns a boolean Series indicating which values are infinite.
 
         Returns
         -------
@@ -980,8 +976,7 @@ class Expr:
 
     def is_nan(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression values are NaN
-        (Not A Number).
+        Returns a boolean Series indicating which values are NaN.
 
         Examples
         --------
@@ -1014,8 +1009,7 @@ class Expr:
 
     def is_not_nan(self) -> Expr:
         """
-        Create a boolean expression returning `True` where the expression values are not
-        NaN (Not A Number).
+        Returns a boolean Series indicating which values are not NaN.
 
         Examples
         --------
@@ -1049,6 +1043,7 @@ class Expr:
     def agg_groups(self) -> Expr:
         """
         Get the group indexes of the group by operation.
+
         Should be used in aggregation context only.
 
         Examples
@@ -1083,7 +1078,7 @@ class Expr:
 
     def count(self) -> Expr:
         """
-        Count the number of values in this expression
+        Count the number of values in this expression.
 
         Examples
         --------
@@ -1103,8 +1098,9 @@ class Expr:
 
     def len(self) -> Expr:
         """
+        Count the number of values in this expression.
+
         Alias for :func:`count`.
-        Count the number of values in this expression
 
         Examples
         --------
@@ -1168,8 +1164,9 @@ class Expr:
 
     def append(self, other: Expr, upcast: bool = True) -> Expr:
         """
-        Append expressions. This is done by adding the chunks of `other` to this
-        `Series`.
+        Append expressions.
+
+        This is done by adding the chunks of `other` to this `Series`.
 
         Parameters
         ----------
@@ -1269,7 +1266,7 @@ class Expr:
 
     def drop_nans(self) -> Expr:
         """
-        Drop floating point NaN values
+        Drop floating point NaN values.
 
         Warnings
         --------
@@ -1458,6 +1455,7 @@ class Expr:
     def cumcount(self, reverse: bool = False) -> Expr:
         """
         Get an array with the cumulative count computed at every element.
+
         Counting from 0 to len
 
         Parameters
@@ -1494,10 +1492,9 @@ class Expr:
 
     def floor(self) -> Expr:
         """
-        Floor underlying floating point array to the lowest integers smaller or equal to
-        the float value.
+        Rounds down to the nearest integer value.
 
-        Only works on floating point Series
+        Only works on floating point Series.
 
         Examples
         --------
@@ -1523,10 +1520,9 @@ class Expr:
 
     def ceil(self) -> Expr:
         """
-        Ceil underlying floating point array to the highest integers smaller or equal to
-        the float value.
+        Rounds up to the nearest integer value.
 
-        Only works on floating point Series
+        Only works on floating point Series.
 
         Examples
         --------
@@ -1583,7 +1579,7 @@ class Expr:
 
     def dot(self, other: Expr | str) -> Expr:
         """
-        Compute the dot/inner product between two Expressions
+        Compute the dot/inner product between two Expressions.
 
         Parameters
         ----------
@@ -1615,6 +1611,7 @@ class Expr:
     def mode(self) -> Expr:
         """
         Compute the most occurring value(s).
+
         Can return multiple Values.
 
         Examples
@@ -1686,6 +1683,7 @@ class Expr:
     def sort(self, reverse: bool = False, nulls_last: bool = False) -> Expr:
         """
         Sort this column. In projection/ selection context the whole column is sorted.
+
         If used in a groupby context, the groups are sorted.
 
         Parameters
@@ -1894,6 +1892,7 @@ class Expr:
     ) -> Expr:
         """
         Sort this column by the ordering of another column, or multiple other columns.
+
         In projection/ selection context the whole column is sorted.
         If used in a groupby context, the groups are sorted.
 
@@ -2006,8 +2005,7 @@ class Expr:
 
     def shift(self, periods: int = 1) -> Expr:
         """
-        Shift the values by a given period and fill the parts that will be empty due to
-        this operation with nulls.
+        Shift the values by a given period.
 
         Parameters
         ----------
@@ -2042,8 +2040,7 @@ class Expr:
         fill_value: int | float | bool | str | Expr | list[Any],
     ) -> Expr:
         """
-        Shift the values by a given period and fill the parts that will be empty due to
-        this operation with the result of the ``fill_value`` expression.
+        Shift the values by a given period and fill the resulting null values.
 
         Parameters
         ----------
@@ -2083,6 +2080,7 @@ class Expr:
     ) -> Expr:
         """
         Fill null values using the specified value or strategy.
+
         To interpolate over null values see interpolate
 
         Parameters
@@ -2149,7 +2147,7 @@ class Expr:
 
     def fill_nan(self, fill_value: str | int | float | bool | Expr | None) -> Expr:
         """
-        Fill floating point NaN value with a fill value
+        Fill floating point NaN value with a fill value.
 
         Examples
         --------
@@ -2442,7 +2440,7 @@ class Expr:
 
     def product(self) -> Expr:
         """
-        Compute the product of an expression
+        Compute the product of an expression.
 
         Examples
         --------
@@ -2800,7 +2798,6 @@ class Expr:
         """
         Get quantile value.
 
-
         Parameters
         ----------
         quantile
@@ -2904,7 +2901,9 @@ class Expr:
 
     def where(self, predicate: Expr) -> Expr:
         """
-        Alias for filter
+        Filter a single column.
+
+        Alias for :func:`filter`.
 
         Parameters
         ----------
@@ -3368,8 +3367,9 @@ class Expr:
 
     def repeat_by(self, by: Expr | str) -> Expr:
         """
-        Repeat the elements in this Series `n` times by dictated by the number given by
-        `by`. The elements are expanded into a `List`
+        Repeat the elements in this Series as specified in the given expression.
+
+        The repeated elements are expanded into a `List`.
 
         Parameters
         ----------
@@ -3614,6 +3614,7 @@ class Expr:
     def interpolate(self) -> Expr:
         """
         Fill nulls with linear interpolation over missing values.
+
         Can also be used to regrid data to a new grid - see examples below
 
         Examples
@@ -4759,8 +4760,10 @@ class Expr:
 
     def pct_change(self, n: int = 1) -> Expr:
         """
+        Computes percentage change between values.
+
         Percentage change (as fraction) between current element and most-recent
-        non-null element at least n period(s) before the current element.
+        non-null element at least ``n`` period(s) before the current element.
 
         Computes the change from the previous row by default.
 
@@ -4889,10 +4892,9 @@ class Expr:
 
     def clip(self, min_val: int | float, max_val: int | float) -> Expr:
         """
-        Clip (limit) the values in an array to any value that fits in 64 floating point
-        range.
+        Clip (limit) the values in an array to a `min` and `max` boundary.
 
-        Only works for the following dtypes: {Int32, Int64, Float32, Float64, UInt32}.
+        Only works for numerical types.
 
         If you want to clip other dtypes, consider writing a "when, then, otherwise"
         expression. See :func:`when` for more information.
@@ -4928,7 +4930,7 @@ class Expr:
 
     def clip_min(self, min_val: int | float) -> Expr:
         """
-        Clip (limit) the values in an array to a `min` boundary
+        Clip (limit) the values in an array to a `min` boundary.
 
         Only works for numerical types.
 
@@ -4945,7 +4947,7 @@ class Expr:
 
     def clip_max(self, max_val: int | float) -> Expr:
         """
-        Clip (limit) the values in an array to a `max` boundary
+        Clip (limit) the values in an array to a `max` boundary.
 
         Only works for numerical types.
 
@@ -5324,19 +5326,20 @@ class Expr:
 
     def reshape(self, dims: tuple[int, ...]) -> Expr:
         """
-        Reshape this Expr to a flat series, shape: (len,)
-        or a List series, shape: (rows, cols)
-
-        if a -1 is used in any of the dimensions, that dimension is inferred.
+        Reshape this Expr to a flat Series or a Series of Lists.
 
         Parameters
         ----------
         dims
-            Tuple of the dimension sizes
+            Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
+            dimension is inferred.
 
         Returns
         -------
         Expr
+            If a single dimension is given, results in a flat Series of shape (len,).
+            If a multiple dimensions are given, results in a Series of Lists with shape
+            (rows, cols).
 
         Examples
         --------
@@ -5671,7 +5674,7 @@ class Expr:
 
     def value_counts(self, multithreaded: bool = False, sort: bool = False) -> Expr:
         """
-        Count all unique values and create a struct mapping value to count
+        Count all unique values and create a struct mapping value to count.
 
         Parameters
         ----------
@@ -5750,7 +5753,7 @@ class Expr:
 
     def log(self, base: float = math.e) -> Expr:
         """
-        Compute the logarithm to a given base
+        Compute the logarithm to a given base.
 
         Parameters
         ----------
@@ -5779,8 +5782,9 @@ class Expr:
 
     def entropy(self, base: float = math.e, normalize: bool = True) -> Expr:
         """
-        Compute the entropy as `-sum(pk * log(pk)`.
-        where `pk` are discrete probabilities.
+        Computes the entropy.
+
+        Uses the formula ``-sum(pk * log(pk)`` where ``pk`` are discrete probabilities.
 
         Parameters
         ----------
@@ -5873,8 +5877,9 @@ class Expr:
 
     def set_sorted(self, reverse: bool = False) -> Expr:
         """
-        Set this `Series` as `sorted` so that downstream code can use
-        fast paths for sorted arrays.
+        Flags the expression as 'sorted'.
+
+        Enables downstream code to user fast paths for sorted arrays.
 
         Parameters
         ----------
@@ -5968,6 +5973,7 @@ class Expr:
     def arr(self) -> ExprListNameSpace:
         """
         Create an object namespace of all list related methods.
+
         See the individual method pages for full details
 
         """
@@ -6004,6 +6010,7 @@ class Expr:
     def struct(self) -> ExprStructNameSpace:
         """
         Create an object namespace of all struct related methods.
+
         See the individual method pages for full details
 
         Examples
@@ -6039,6 +6046,7 @@ class Expr:
     def meta(self) -> ExprMetaNameSpace:
         """
         Create an object namespace of all meta related expression methods.
+
         This can be used to modify and traverse existing expressions
 
         """

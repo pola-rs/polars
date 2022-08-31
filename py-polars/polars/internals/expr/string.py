@@ -265,6 +265,8 @@ class ExprStringNameSpace:
 
     def zfill(self, alignment: int) -> pli.Expr:
         """
+        Fills the string with zeroes.
+
         Return a copy of the string left filled with ASCII '0' digits to make a string
         of length width.
 
@@ -530,6 +532,7 @@ class ExprStringNameSpace:
     def json_path_match(self, json_path: str) -> pli.Expr:
         """
         Extract the first match of json string with provided JSONPath expression.
+
         Throw errors if encounter invalid json strings.
         All return value will be casted to Utf8 regardless of the original value.
 
@@ -704,7 +707,9 @@ class ExprStringNameSpace:
 
     def extract_all(self, pattern: str) -> pli.Expr:
         r"""
-        Extract each successive non-overlapping regex match in an individual string as
+        Extracts all matches for the given regex pattern.
+
+        Extracts each successive non-overlapping regex match in an individual string as
         an array.
 
         Parameters
@@ -813,8 +818,9 @@ class ExprStringNameSpace:
 
     def split_exact(self, by: str, n: int, inclusive: bool = False) -> pli.Expr:
         """
-        Split the string by a substring into a struct of ``n+1`` fields using
-        ``n`` splits.
+        Split the string by a substring using ``n`` splits.
+
+        Results in a struct of ``n+1`` fields.
 
         If it cannot make ``n`` splits, the remaining field elements will be null.
 

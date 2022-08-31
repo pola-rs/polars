@@ -179,7 +179,7 @@ def col(
 
 def element() -> pli.Expr:
     """
-    Alias for an element in evaluated in an `eval` expression
+    Alias for an element in evaluated in an `eval` expression.
 
     Examples
     --------
@@ -752,8 +752,9 @@ def map(
     return_dtype: type[DataType] | None = None,
 ) -> pli.Expr:
     """
-    Map a custom function over multiple columns/expressions and produce a single Series
-    result.
+    Map a custom function over multiple columns/expressions.
+
+    Produces a single Series result.
 
     Parameters
     ----------
@@ -1051,7 +1052,10 @@ def arange(
     eager: bool = False,
 ) -> pli.Expr | pli.Series:
     """
-    Create a range expression. This can be used in a `select`, `with_column` etc.
+    Create a range expression.
+
+    This can be used in a `select`, `with_column` etc.
+
     Be sure that the range size is equal to the DataFrame you are collecting.
 
     Examples

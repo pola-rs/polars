@@ -44,9 +44,12 @@ _EMPTY_BYTECODE = _EmptyBytecodeHelper()
 
 def _is_empty_method(func: SeriesMethod) -> bool:
     """
-    Confirm that the given function has no implementation, eg:
-    * only has a docstring (body is empty)
-    * has no docstring and just contains 'pass' (or equivalent)
+    Confirm that the given function has no implementation.
+
+    Definitions of empty:
+
+    - only has a docstring (body is empty)
+    - has no docstring and just contains 'pass' (or equivalent)
     """
     fc = func.__code__
     return (fc.co_code in _EMPTY_BYTECODE) and (
@@ -55,7 +58,7 @@ def _is_empty_method(func: SeriesMethod) -> bool:
 
 
 def _expr_lookup(namespace: str | None) -> set[tuple[str | None, str, tuple[str, ...]]]:
-    """Create lookup of potential Expr methods (in the given namespace)"""
+    """Create lookup of potential Expr methods (in the given namespace)."""
     # dummy Expr object that we can introspect
     expr = pli.Expr()
     expr._pyexpr = None
@@ -98,6 +101,7 @@ def call_expr(func: SeriesMethod) -> SeriesMethod:
 def expr_dispatch(cls: type[T]) -> type[T]:
     """
     Series/NameSpace class decorator that sets up expression dispatch.
+
     * Applied to the Series class, and/or any Series 'NameSpace' classes.
     * Walks the class attributes, looking for methods that have empty function
       bodies, with signatures compatible with an existing Expr function.
