@@ -42,7 +42,6 @@ from polars.internals.construction import (
     sequence_to_pyseries,
     series_to_pyseries,
 )
-from polars.internals.series._numpy import SeriesView, _ptr_to_numpy
 from polars.internals.series.categorical import CatNameSpace
 from polars.internals.series.datetime import DateTimeNameSpace
 from polars.internals.series.list import ListNameSpace
@@ -69,6 +68,8 @@ except ImportError:
 
 try:
     import numpy as np
+
+    from polars.internals.series._numpy import SeriesView, _ptr_to_numpy
 
     _NUMPY_AVAILABLE = True
 except ImportError:
