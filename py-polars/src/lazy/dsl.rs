@@ -1427,7 +1427,7 @@ impl PyExpr {
             .into()
     }
 
-    pub fn shuffle(&self, seed: u64) -> Self {
+    pub fn shuffle(&self, seed: Option<u64>) -> Self {
         self.inner.clone().shuffle(seed).into()
     }
 
