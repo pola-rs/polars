@@ -4,20 +4,6 @@
 extern crate core;
 extern crate polars;
 
-use pyo3::prelude::*;
-use pyo3::wrap_pyfunction;
-
-use crate::lazy::dsl::PyExpr;
-use crate::{
-    dataframe::PyDataFrame,
-    file::EitherRustPythonFile,
-    lazy::{
-        dataframe::{PyLazyFrame, PyLazyGroupBy},
-        dsl,
-    },
-    series::PySeries,
-};
-
 pub mod apply;
 pub mod arrow_interop;
 pub mod conversion;
@@ -42,21 +28,27 @@ use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
 use polars::prelude::Null;
 use polars_core::datatypes::TimeUnit;
-use polars_core::prelude::IntoSeries;
-use polars_core::prelude::{DataFrame, IDX_DTYPE};
+use polars_core::prelude::{DataFrame, IntoSeries, IDX_DTYPE};
 use polars_core::POOL;
 use pyo3::panic::PanicException;
+use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
+use pyo3::wrap_pyfunction;
 
 use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};
+use crate::dataframe::PyDataFrame;
 use crate::error::{
     ArrowErrorException, ComputeError, DuplicateError, NoDataError, NotFoundError, PyPolarsErr,
     SchemaError,
 };
-use crate::file::get_either_file;
+use crate::file::{get_either_file, EitherRustPythonFile};
+use crate::lazy::dataframe::{PyLazyFrame, PyLazyGroupBy};
+use crate::lazy::dsl;
+use crate::lazy::dsl::PyExpr;
 use crate::prelude::{
     vec_extract_wrapped, ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs,
 };
+use crate::series::PySeries;
 
 #[global_allocator]
 #[cfg(target_os = "linux")]
@@ -256,7 +248,8 @@ fn py_duration(
 
 #[pyfunction]
 fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
-    use polars_core::{error::Result, utils::rayon::prelude::*};
+    use polars_core::error::Result;
+    use polars_core::utils::rayon::prelude::*;
 
     let (seq, _len) = get_pyseq(dfs)?;
     let mut iter = seq.iter()?;

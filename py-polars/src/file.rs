@@ -5,8 +5,7 @@ use std::io;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
 
 use polars::io::mmap::MmapBytesReader;
-use pyo3::exceptions::PyFileNotFoundError;
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyFileNotFoundError, PyTypeError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
 

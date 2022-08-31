@@ -3,8 +3,9 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
+use polars::frame::groupby::PivotAgg;
 use polars::frame::row::Row;
-use polars::frame::{groupby::PivotAgg, NullStrategy};
+use polars::frame::NullStrategy;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
 #[cfg(feature = "ipc")]

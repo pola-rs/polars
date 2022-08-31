@@ -2,20 +2,20 @@ use numpy::PyArray1;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::CustomIterTools;
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyTuple};
-use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
+use pyo3::Python;
 
 use crate::apply::series::{call_lambda_and_extract, ApplyLambda};
 use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::list_construction::py_seq_to_list;
+use crate::npy::{aligned_array, get_refcnt};
+use crate::prelude::*;
 use crate::set::set_at_idx;
-use crate::{
-    apply_method_all_arrow_series2, arrow_interop,
-    npy::{aligned_array, get_refcnt},
-    prelude::*,
-};
+use crate::{apply_method_all_arrow_series2, arrow_interop};
 #[pyclass]
 #[repr(transparent)]
 #[derive(Clone)]

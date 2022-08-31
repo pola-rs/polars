@@ -4,6 +4,7 @@ pub mod dsl;
 #[cfg(feature = "meta")]
 mod meta;
 pub mod utils;
+
 pub use apply::*;
 use dsl::*;
 use polars_lazy::prelude::*;
