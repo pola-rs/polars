@@ -6,27 +6,70 @@ use num::{Float, One};
 
 use crate::utils::CustomIterTools;
 
+pub fn ewm_std<T>(
+    xs: &PrimitiveArray<T>,
+    alpha: T,
+    adjust: bool,
+    bias: bool,
+    min_periods: usize,
+) -> PrimitiveArray<T>
+where
+    T: Float + NativeType + AddAssign,
+{
+    let one_sub_alpha = T::one() - alpha;
+    let two = T::one() + T::one();
 
-pub fn ewm_std<T: Float>(x_vals: &[T], ewma_vals: &mut [T], alpha: T) {
-    if !ewma_vals.is_empty() {
-        let mut emwa_prev = ewma_vals[0];
-        let mut emvar_prev = T::zero();
-        ewma_vals[0] = T::zero();
+    let mut opt_mean = None;
+    let mut opt_var = None;
+    let mut non_null_cnt = 0usize;
 
-        let one_sub_alpha = T::one() - alpha;
-        let two = T::one() + T::one();
+    let wgt = alpha;
 
-        let mut x_iter = x_vals.iter();
-        x_iter.next();
+    let (mut wgt_sum, mut wgt_sum_sqr) = if adjust {
+        (T::zero(), T::zero())
+    } else {
+        // NOTE: in the unadjusted case, we set these variables to ensure
+        // that in the first iteration, they are both equal to 1
+        let wgt_sum = T::one();
+        let wgt_sum_sqr = (T::one() - alpha.powf(two)) / one_sub_alpha.powf(two);
+        (wgt_sum, wgt_sum_sqr)
+    };
 
-        for (xi, ewma_i) in x_iter.zip(ewma_vals[1..].iter_mut()) {
-            let delta_i = *xi - emwa_prev;
-            emwa_prev = *ewma_i;
+    xs.iter()
+        .map(|opt_x| {
+            if let Some(&x) = opt_x {
+                non_null_cnt += 1;
 
-            emvar_prev = one_sub_alpha * (emvar_prev + alpha * delta_i.powf(two));
-            *ewma_i = emvar_prev.sqrt();
-        }
-    }
+                let prev_mean = opt_mean.unwrap_or(x);
+                let prev_var = opt_var.unwrap_or_else(T::zero);
+
+                wgt_sum = one_sub_alpha * wgt_sum + wgt;
+                wgt_sum_sqr = one_sub_alpha.powf(two) * wgt_sum_sqr + wgt.powf(two);
+
+                let curr_mean = prev_mean + (x - prev_mean) * wgt / wgt_sum;
+                let curr_var = (T::one() - wgt / wgt_sum)
+                    * (prev_var + wgt / wgt_sum * (x - prev_mean).powf(two));
+
+                opt_mean = Some(curr_mean);
+                opt_var = Some(curr_var);
+            }
+            match non_null_cnt < min_periods {
+                true => None,
+                false => opt_var.map(|var| {
+                    let result = if bias {
+                        var
+                    } else if non_null_cnt.is_one() {
+                        // NOTE: this is a bit of a hack to prevent a NaN from cropping up
+                        // in the first entry when computing unbiased variance
+                        T::zero()
+                    } else {
+                        var / (T::one() - wgt_sum_sqr / wgt_sum.powf(two))
+                    };
+                    result.sqrt()
+                }),
+            }
+        })
+        .collect_trusted()
 }
 
 pub fn ewm_var<T>(
@@ -64,7 +107,7 @@ where
                 non_null_cnt += 1;
 
                 let prev_mean = opt_mean.unwrap_or(x);
-                let prev_var = opt_var.unwrap_or(T::zero());
+                let prev_var = opt_var.unwrap_or_else(T::zero);
 
                 wgt_sum = one_sub_alpha * wgt_sum + wgt;
                 wgt_sum_sqr = one_sub_alpha.powf(two) * wgt_sum_sqr + wgt.powf(two);
@@ -133,11 +176,11 @@ mod test {
         // is inconsistent with the other var calculations.
         let pandas_result = PrimitiveArray::from([
             Some(0.0),
-            Some(8.000000000000002), // <-- pandas: 8.0
-            Some(7.42857142857143), // <-- pandas: 7.428571428571429
+            Some(8.000000000000002),  // <-- pandas: 8.0
+            Some(7.42857142857143),   // <-- pandas: 7.428571428571429
             Some(11.542857142857141), // <-- pandas: 11.542857142857143
             Some(5.8838709677419345),
-            Some(3.76036866359447), // <-- pandas: 3.7603686635944706
+            Some(3.76036866359447),  // <-- pandas: 3.7603686635944706
             Some(3.743532058492689), // <-- pandas: 3.7435320584926886
         ]);
         assert_eq!(polars_result, pandas_result);
