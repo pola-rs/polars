@@ -670,11 +670,10 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             #[cfg(all(feature = "dtype-date", feature = "dtype-time"))]
             (Date, Time) => Some(Int64),
 
-            // everything can be cast to a string
-            (_, Utf8) => Some(Utf8),
+            // every known type can be casted to a string
+            (dt, Utf8) if dt != &DataType::Unknown => Some(Utf8),
 
             (dt, Null) => Some(dt.clone()),
-            (Null, dt) => Some(dt.clone()),
 
             #[cfg(all(feature = "dtype-duration", feature = "dtype-datetime"))]
             (Duration(lu), Datetime(ru, Some(tz))) | (Datetime(lu, Some(tz)), Duration(ru)) => {
@@ -719,7 +718,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                 let st = _get_supertype(inner, other)?;
                 Some(DataType::List(Box::new(st)))
             }
-            (dt, Unknown) => Some(dt.clone()),
+            (_, Unknown) => Some(Unknown),
             _ => None,
         }
     }

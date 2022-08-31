@@ -4,6 +4,7 @@ use pyo3::types::PyList;
 
 use crate::lazy::dsl::PyExpr;
 use crate::prelude::PyDataType;
+use crate::py_modules::POLARS;
 use crate::series::PySeries;
 
 trait ToSeries {
@@ -117,29 +118,38 @@ pub(crate) fn binary_lambda(lambda: &PyObject, a: Series, b: Series) -> Result<S
 
 pub fn map_single(
     pyexpr: &PyExpr,
-    py: Python,
     lambda: PyObject,
     output_type: &PyAny,
     agg_list: bool,
 ) -> PyExpr {
     let output_type = get_output_type(output_type);
-    // get the pypolars module
-    // do the import outside of the function to prevent import side effects in a hot loop.
-    let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
 
+    let output_type2 = output_type.clone();
     let function = move |s: Series| {
         Python::with_gil(|py| {
-            // this is a python Series
-            let out = call_lambda_with_series(py, s.clone(), &lambda, &pypolars)
-                .map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
+            let output_type = output_type2.clone().unwrap_or_else(|| DataType::Unknown);
 
-            Ok(out.to_series(py, &pypolars, s.name()))
+            // this is a python Series
+            let out = call_lambda_with_series(py, s.clone(), &lambda, &POLARS)
+                .map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
+            let s = out.to_series(py, &POLARS, s.name());
+
+            if !matches!(output_type, DataType::Unknown) && s.dtype() != &output_type {
+                Err(PolarsError::SchemaMisMatch(
+                    format!("Expected output type: '{:?}', but got '{:?}'. Set 'return_dtype' to the proper datatype.", output_type, s.dtype()).into()))
+            } else {
+                Ok(s)
+            }
         })
     };
 
     let output_map = GetOutput::map_field(move |fld| match output_type {
         Some(ref dt) => Field::new(fld.name(), dt.clone()),
-        None => fld.clone(),
+        None => {
+            let mut fld = fld.clone();
+            fld.coerce(DataType::Unknown);
+            fld
+        }
     });
     if agg_list {
         pyexpr.clone().inner.map_list(function, output_map).into()

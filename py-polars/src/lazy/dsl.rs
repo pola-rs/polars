@@ -872,6 +872,10 @@ impl PyExpr {
         self.inner.clone().dt().with_time_unit(tu.0).into()
     }
 
+    pub fn dt_with_time_zone(&self, tz: Option<TimeZone>) -> PyExpr {
+        self.inner.clone().dt().with_time_zone(tz).into()
+    }
+
     pub fn dt_cast_time_unit(&self, tu: Wrap<TimeUnit>) -> PyExpr {
         self.inner.clone().dt().cast_time_unit(tu.0).into()
     }
@@ -1010,8 +1014,8 @@ impl PyExpr {
             .into()
     }
 
-    pub fn map(&self, py: Python, lambda: PyObject, output_type: &PyAny, agg_list: bool) -> PyExpr {
-        map_single(self, py, lambda, output_type, agg_list)
+    pub fn map(&self, lambda: PyObject, output_type: &PyAny, agg_list: bool) -> PyExpr {
+        map_single(self, lambda, output_type, agg_list)
     }
 
     pub fn dot(&self, other: PyExpr) -> PyExpr {

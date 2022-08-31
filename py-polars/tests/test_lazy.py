@@ -169,8 +169,12 @@ def test_apply_custom_function() -> None:
         .groupby("fruits")
         .agg(
             [
-                pl.col("cars").apply(lambda groups: groups.len()).alias("custom_1"),
-                pl.col("cars").apply(lambda groups: groups.len()).alias("custom_2"),
+                pl.col("cars")
+                .apply(lambda groups: groups.len(), return_dtype=pl.Int64)
+                .alias("custom_1"),
+                pl.col("cars")
+                .apply(lambda groups: groups.len(), return_dtype=pl.Int64)
+                .alias("custom_2"),
                 pl.count("cars").alias("cars_count"),
             ]
         )

@@ -138,6 +138,10 @@ class Null(DataType):
     """Type representing Null / None values."""
 
 
+class Unknown(DataType):
+    """Type representing Datatype values that could not be determined statically."""
+
+
 class List(DataType):
     def __init__(self, inner: type[DataType]):
         """
