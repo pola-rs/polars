@@ -2012,7 +2012,7 @@ impl Expr {
     }
 
     #[cfg(feature = "random")]
-    pub fn shuffle(self, seed: u64) -> Self {
+    pub fn shuffle(self, seed: Option<u64>) -> Self {
         self.apply(move |s| Ok(s.shuffle(seed)), GetOutput::same_type())
             .with_fmt("shuffle")
     }
