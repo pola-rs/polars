@@ -1,10 +1,10 @@
 use std::ops::AddAssign;
+
 use arrow::array::PrimitiveArray;
 use arrow::types::NativeType;
 use num::Float;
 
 use crate::utils::CustomIterTools;
-
 
 pub fn ewm_mean<T>(
     xs: &PrimitiveArray<T>,
@@ -20,7 +20,7 @@ where
     let mut opt_mean = None;
     let mut non_null_cnt = 0usize;
 
-    let wgt = if adjust { T::one() } else { alpha };
+    let wgt = alpha;
     let mut wgt_sum = if adjust { T::zero() } else { T::one() };
 
     xs.iter()
@@ -30,10 +30,11 @@ where
 
                 let prev_mean = opt_mean.unwrap_or(x);
 
-                // TODO: this is `ignore_na = True`
                 wgt_sum = one_sub_alpha * wgt_sum + wgt;
 
-                opt_mean = Some(prev_mean + (x - prev_mean) * wgt / wgt_sum);
+                let curr_mean = prev_mean + (x - prev_mean) * wgt / wgt_sum;
+
+                opt_mean = Some(curr_mean);
             }
             match non_null_cnt < min_periods {
                 true => None,
@@ -58,8 +59,8 @@ mod test {
                 false => PrimitiveArray::from([Some(1.0f32), Some(1.5f32), Some(2.25f32)]),
                 true => PrimitiveArray::from([
                     Some(1.0f32),
-                    Some(1.6666667f32), // <-- pandas gives 1.6666666666666667
-                    Some(2.4285714285714284f32),
+                    Some(1.6666667f32), // <-- pandas: 1.66666667
+                    Some(2.42857143),
                 ]),
             };
             assert_eq!(result, expected);
@@ -128,11 +129,11 @@ mod test {
             None,
             None,
             Some(5.0f32),
-            Some(6.333333333333333f32),
-            Some(6.333333333333333f32),
-            Some(3.857142857142857f32),
-            Some(2.3333333333333335f32),
-            Some(3.1935482f32), // <-- pandas gives 3.19354838...
+            Some(6.33333333f32),
+            Some(6.33333333f32),
+            Some(3.85714286f32),
+            Some(2.3333335f32), // <-- pandas: 2.33333333
+            Some(3.19354839f32),
         ]);
         assert_eq!(adjusted_result, adjusted_expected);
 
@@ -150,12 +151,12 @@ mod test {
         let expected = PrimitiveArray::from([
             None,
             Some(1.0f32),
-            Some(3.6666666666666665f32),
-            Some(5.571428571428571f32),
-            Some(5.571428571428571f32),
-            Some(3.6666665), // <-- pandas gives 3.6666666666666665
-            Some(2.2903225806451615f32),
-            Some(3.1587301587301586f32),
+            Some(3.66666667f32),
+            Some(5.57142857f32),
+            Some(5.57142857f32),
+            Some(3.66666667),
+            Some(2.2903228f32), // <-- pandas: 2.29032258
+            Some(3.15873016f32),
         ]);
         assert_eq!(result, expected);
     }
