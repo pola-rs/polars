@@ -14,9 +14,14 @@ pub type GroupsProxyCache = Arc<Mutex<PlHashMap<String, GroupsProxy>>>;
 
 bitflags! {
     pub(super) struct StateFlags: u8 {
+        /// More verbose logging
         const VERBOSE = 0x01;
+        /// Indicates that window expression's [`GroupTuples`] may be cached.
         const CACHE_WINDOW_EXPR = 0x02;
-        const FILTER_NODE = 0x03;
+        /// Indicates that a groupby operations groups may overlap.
+        /// If this is the case, an `explode` will yield more values than rows in original `df`,
+        /// this breaks some assumptions
+        const OVERLAPPING_GROUPS = 0x03;
     }
 }
 
@@ -152,10 +157,19 @@ impl ExecutionState {
         lock.clear();
     }
 
+    /// Indicates that window expression's [`GroupTuples`] may be cached.
     pub(super) fn cache_window(&self) -> bool {
         self.flags.contains(StateFlags::CACHE_WINDOW_EXPR)
     }
 
+    /// Indicates that a groupby operations groups may overlap.
+    /// If this is the case, an `explode` will yield more values than rows in original `df`,
+    /// this breaks some assumptions
+    pub(super) fn overlapping_groups(&self) -> bool {
+        self.flags.contains(StateFlags::OVERLAPPING_GROUPS)
+    }
+
+    /// More verbose logging
     pub(super) fn verbose(&self) -> bool {
         self.flags.contains(StateFlags::VERBOSE)
     }

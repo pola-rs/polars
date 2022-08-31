@@ -29,6 +29,13 @@ impl Executor for GroupByDynamicExec {
         let mut df = self.input.execute(state)?;
         df.as_single_chunk_par();
         state.set_schema(self.input_schema.clone());
+
+        // if the periods are larger than the intervals,
+        // the groups overlap
+        if self.options.every < self.options.period {
+            state.flags |= StateFlags::OVERLAPPING_GROUPS
+        }
+
         let keys = self
             .keys
             .iter()

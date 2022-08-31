@@ -155,9 +155,8 @@ impl WindowExpr {
                     if let GroupsProxy::Idx(g) = gb.get_groups() {
                         debug_assert!(g.is_sorted())
                     }
-                    else {
-                        debug_assert!(false)
-                    }
+                    // GroupsProxy::Slice is always sorted
+
                     // Note that group columns must be sorted for this to make sense!!!
                     Ok(MapStrategy::Explode)
                 } else {

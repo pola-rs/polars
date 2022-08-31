@@ -307,3 +307,38 @@ def test_groupby_dynamic_slice_pushdown() -> None:
         "a": [0, 2],
         "c": [1, 3],
     }
+
+
+def test_overlapping_groups_4628() -> None:
+    df = pl.DataFrame(
+        {
+            "index": [1, 2, 3, 4, 5, 6],
+            "val": [10, 20, 40, 70, 110, 160],
+        }
+    )
+    assert (
+        df.groupby_rolling(index_column="index", period="3i",).agg(
+            [
+                pl.col("val").diff(n=1).alias("val.diff"),
+                (pl.col("val") - pl.col("val").shift(1)).alias("val - val.shift"),
+            ]
+        )
+    ).to_dict(False) == {
+        "index": [1, 2, 3, 4, 5, 6],
+        "val.diff": [
+            [None],
+            [None, 10],
+            [None, 10, 20],
+            [None, 20, 30],
+            [None, 30, 40],
+            [None, 40, 50],
+        ],
+        "val - val.shift": [
+            [None],
+            [None, 10],
+            [None, 10, 20],
+            [None, 20, 30],
+            [None, 30, 40],
+            [None, 40, 50],
+        ],
+    }

@@ -28,4 +28,15 @@ impl ListChunked {
             })
             .flatten()
     }
+
+    // Get an indexed parallel iterator over the [`Series`] in this [`ListChunked`].
+    pub fn par_iter_indexed(&mut self) -> impl IndexedParallelIterator<Item = Option<Series>> + '_ {
+        *self = self.rechunk();
+        let arr = self.downcast_iter().next().unwrap();
+
+        let dtype = self.inner_dtype();
+        (0..arr.len())
+            .into_par_iter()
+            .map(move |idx| unsafe { idx_to_array(idx, arr, &dtype) })
+    }
 }

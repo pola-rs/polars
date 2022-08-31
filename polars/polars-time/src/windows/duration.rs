@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::ops::Mul;
 
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
@@ -28,6 +29,18 @@ pub struct Duration {
     pub(crate) negative: bool,
     // indicates if an integer string was passed. e.g. "2i"
     pub parsed_int: bool,
+}
+
+impl PartialOrd<Self> for Duration {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.duration_ns().partial_cmp(&other.duration_ns())
+    }
+}
+
+impl Ord for Duration {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.duration_ns().cmp(&other.duration_ns())
+    }
 }
 
 impl Duration {

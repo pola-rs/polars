@@ -57,6 +57,9 @@ impl Executor for GroupByRollingExec {
             }
         };
 
+        // a rolling groupby has overlapping windows
+        state.flags |= StateFlags::OVERLAPPING_GROUPS;
+
         let agg_columns = POOL.install(|| {
                     self.aggs
                         .par_iter()
