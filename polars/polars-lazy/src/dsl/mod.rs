@@ -1399,14 +1399,16 @@ impl Expr {
     pub fn is_in<E: Into<Expr>>(self, other: E) -> Self {
         let other = other.into();
         let has_literal = has_root_literal_expr(&other);
-        if has_literal {
-            if let Expr::Literal(LiteralValue::Series(s)) = &other {
-                // nothing is in an empty list return all False
-                if s.is_empty() {
-                    return Expr::Literal(LiteralValue::Boolean(false));
-                }
+        if has_literal
+            && match &other {
+                Expr::Literal(LiteralValue::Series(s)) if s.is_empty() => true,
+                Expr::Literal(LiteralValue::Null) => true,
+                _ => false,
             }
+        {
+            return Expr::Literal(LiteralValue::Boolean(false));
         }
+
         let arguments = &[other];
         // we don't have to apply on groups, so this is faster
         if has_literal {
