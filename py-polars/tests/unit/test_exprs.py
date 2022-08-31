@@ -106,7 +106,6 @@ def test_shuffle() -> None:
     assert result1.series_equal(result2)
 
 
-@pytest.mark.filterwarnings("ignore::FutureWarning")
 def test_sample() -> None:
     a = pl.Series("a", range(0, 20))
     out = pl.select(
