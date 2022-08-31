@@ -109,3 +109,7 @@ jobs:
         run: |
           pip uninstall pandas -y
           python -c "import polars"
+          pip uninstall numpy -y
+          python -c "import polars"
+          pip uninstall pyarrow -y
+          python -c "import polars"
