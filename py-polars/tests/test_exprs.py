@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import random
 from typing import cast
 
 import numpy as np
-import pytest
 
 import polars as pl
 from polars.testing import assert_series_equal, verify_series_and_expr_api
@@ -94,7 +94,6 @@ def test_count_expr() -> None:
     assert out["count"].to_list() == [4, 1]
 
 
-@pytest.mark.filterwarnings("ignore::FutureWarning")
 def test_sample() -> None:
     a = pl.Series("a", range(0, 20))
     out = pl.select(
