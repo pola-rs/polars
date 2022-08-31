@@ -529,6 +529,7 @@ impl IntoSeries for Series {
 
 #[cfg(test)]
 mod test {
+    #[cfg(feature = "dtype-u8")]
     use super::*;
 
     #[test]

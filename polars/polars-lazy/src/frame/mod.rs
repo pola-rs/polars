@@ -172,14 +172,6 @@ impl LazyFrame {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn into_alp(self) -> (Node, Arena<AExpr>, Arena<ALogicalPlan>) {
-        let mut expr_arena = Arena::with_capacity(64);
-        let mut lp_arena = Arena::with_capacity(32);
-        let root = to_alp(self.logical_plan, &mut expr_arena, &mut lp_arena).unwrap();
-        (root, expr_arena, lp_arena)
-    }
-
     /// Set allowed optimizations
     pub fn with_optimizations(mut self, opt_state: OptState) -> Self {
         self.opt_state = opt_state;

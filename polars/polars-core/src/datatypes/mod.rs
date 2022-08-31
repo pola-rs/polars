@@ -1305,6 +1305,7 @@ pub const NULL_DTYPE: DataType = DataType::Int32;
 
 #[cfg(test)]
 mod test {
+    #[cfg(feature = "dtype-categorical")]
     use super::*;
 
     #[test]
