@@ -5,8 +5,12 @@ on:
     paths:
       - 'polars/**'
       - '.github/workflows/build-test.yaml'
-jobs:
 
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
   examples:
     name: Examples
     runs-on: ubuntu-latest
