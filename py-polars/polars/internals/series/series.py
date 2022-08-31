@@ -3554,7 +3554,7 @@ class Series:
             Shuffle the order of sampled data points.
         seed
             Seed for the random number generator. If set to None (default), a random
-            seed is used.
+            seed is generated using the ``random`` module.
 
         Examples
         --------
@@ -3568,15 +3568,6 @@ class Series:
         ]
 
         """
-        if n is not None and frac is not None:
-            raise ValueError("cannot specify both `n` and `frac`")
-
-        if n is None and frac is not None:
-            return wrap_s(self._s.sample_frac(frac, with_replacement, shuffle, seed))
-
-        if n is None:
-            n = 1
-        return wrap_s(self._s.sample_n(n, with_replacement, shuffle, seed))
 
     def peak_max(self) -> Series:
         """
