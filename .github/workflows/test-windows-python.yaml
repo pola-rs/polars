@@ -5,6 +5,11 @@ on:
     paths:
       - 'py-polars/**'
       - '.github/workflows/test-windows-python.yaml'
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-python:
     name: Build and test Python

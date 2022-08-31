@@ -5,6 +5,11 @@ on:
     paths:
       - 'polars/**'
       - '.github/workflows/test-windows.yaml'
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-rust:
     runs-on: windows-latest

@@ -2,6 +2,11 @@ name: Check formatting
 
 on:
   - pull_request
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-fmt-all:
     name: Test global formatting
