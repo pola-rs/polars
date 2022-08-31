@@ -4007,7 +4007,7 @@ class Series:
         Parameters
         ----------
         seed
-            Seed initialization.
+            Seed for the random number generator.
 
         """
         if seed is None:

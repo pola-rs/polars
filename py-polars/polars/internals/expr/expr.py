@@ -5369,8 +5369,8 @@ class Expr:
         Parameters
         ----------
         seed
-            Seed initialization. If None given, the `random` module is used to generate
-            a random seed.
+            Seed for the random number generator. If set to None (default), a random
+            seed is generated using the ``random`` module.
 
         Examples
         --------
