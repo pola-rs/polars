@@ -813,23 +813,27 @@ impl ChunkAggSeries for BooleanChunked {
     }
 }
 
-macro_rules! one_null_utf8 {
-    ($self:ident) => {{
-        let mut builder = Utf8ChunkedBuilder::new($self.name(), 1, 0);
-        builder.append_null();
-        builder.finish().into_series()
-    }};
-}
-
 impl ChunkAggSeries for Utf8Chunked {
     fn sum_as_series(&self) -> Series {
-        one_null_utf8!(self)
+        Utf8Chunked::full_null(self.name(), 1).into_series()
     }
     fn max_as_series(&self) -> Series {
-        one_null_utf8!(self)
+        Series::new(
+            self.name(),
+            &[self
+                .downcast_iter()
+                .filter_map(compute::aggregate::max_string)
+                .fold_first_(|acc, v| if acc > v { acc } else { v })],
+        )
     }
     fn min_as_series(&self) -> Series {
-        one_null_utf8!(self)
+        Series::new(
+            self.name(),
+            &[self
+                .downcast_iter()
+                .filter_map(compute::aggregate::min_string)
+                .fold_first_(|acc, v| if acc < v { acc } else { v })],
+        )
     }
 }
 
