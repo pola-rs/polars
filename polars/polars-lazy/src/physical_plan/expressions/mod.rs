@@ -11,7 +11,6 @@ mod is_not_null;
 mod is_null;
 mod literal;
 mod not;
-mod shift;
 mod slice;
 mod sort;
 mod sortby;
@@ -29,8 +28,8 @@ use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
 pub(crate) use {
     aggregation::*, alias::*, apply::*, binary::*, cast::*, column::*, count::*, filter::*,
-    is_not_null::*, is_null::*, literal::*, not::*, shift::*, slice::*, sort::*, sortby::*,
-    take::*, ternary::*, window::*,
+    is_not_null::*, is_null::*, literal::*, not::*, slice::*, sort::*, sortby::*, take::*,
+    ternary::*, window::*,
 };
 
 use crate::physical_plan::state::ExecutionState;

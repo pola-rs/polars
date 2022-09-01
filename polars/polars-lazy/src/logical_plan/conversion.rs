@@ -116,10 +116,6 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             function,
             options,
         },
-        Expr::Shift { input, periods } => AExpr::Shift {
-            input: to_aexpr(*input, arena),
-            periods,
-        },
         Expr::Window {
             function,
             partition_by,
@@ -598,13 +594,6 @@ pub(crate) fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 AggExpr::Count(Box::new(exp)).into()
             }
         },
-        AExpr::Shift { input, periods } => {
-            let e = node_to_expr(input, expr_arena);
-            Expr::Shift {
-                input: Box::new(e),
-                periods,
-            }
-        }
         AExpr::Ternary {
             predicate,
             truthy,

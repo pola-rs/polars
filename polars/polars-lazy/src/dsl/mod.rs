@@ -847,10 +847,7 @@ impl Expr {
 
     /// Shift the values in the array by some period. See [the eager implementation](polars_core::series::SeriesTrait::shift).
     pub fn shift(self, periods: i64) -> Self {
-        Expr::Shift {
-            input: Box::new(self),
-            periods,
-        }
+        self.apply_private(FunctionExpr::Shift(periods), "shift")
     }
 
     /// Shift the values in the array by some period and fill the resulting empty values.

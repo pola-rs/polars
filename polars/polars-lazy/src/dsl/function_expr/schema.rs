@@ -154,6 +154,7 @@ impl FunctionExpr {
             }
             #[cfg(feature = "top_k")]
             TopK { .. } => same_type(),
+            Shift(..) => same_type(),
         }
     }
 }
