@@ -246,7 +246,38 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
         },
     }
 }
+/*
+#[cfg(feature = "format_str")]
+#[cfg_attr(docsrs, doc(cfg(feature = "format_str")))]
+pub fn format<E: AsRef<[Expr]>>(format: &str, args: E) -> Result<Expr> {
+    let mut args = args.as_ref().to_vec();
 
+    // Parse the format string, and seperate substrings between placeholders
+    let segments: Vec<&str> = format.split("{}").collect();
+
+    if segments.len() - 1 != args.len() {
+        return Err(PolarsError::InvalidOperation(
+            "number of placeholders should equal the number of arguments".into()
+        ));
+    }
+
+    let mut exprs: Vec<Expr> = Vec::new();
+
+    for (i, s) in segments.iter().enumerate() {
+        if i > 0 {
+            if let Some(arg) = args.pop() {
+                exprs.push(arg);
+            }
+        }
+
+        if s.len() > 0 {
+            exprs.push(lit(s.to_string()))
+        }
+    }
+
+    Ok(concat_str(exprs, ""))
+}
+*/
 /// Concat lists entries.
 #[cfg(feature = "list")]
 #[cfg_attr(docsrs, doc(cfg(feature = "list")))]
