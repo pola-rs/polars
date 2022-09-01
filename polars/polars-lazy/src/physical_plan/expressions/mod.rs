@@ -494,7 +494,18 @@ impl<'a> AggregationContext<'a> {
     pub(crate) fn flat_naive(&self) -> Cow<'_, Series> {
         match &self.state {
             AggState::NotAggregated(s) => Cow::Borrowed(s),
-            AggState::AggregatedList(s) => Cow::Owned(s.explode().unwrap()),
+            AggState::AggregatedList(s) => {
+                #[cfg(debug_assertions)]
+                {
+                    // panic so we find cases where we accidentally explode overlapping groups
+                    // we don't want this as this can create a lot of data
+                    if let GroupsProxy::Slice { rolling: true, .. } = self.groups.as_ref() {
+                        panic!("implementation error, polars should not hit this branch for overlapping groups")
+                    }
+                }
+
+                Cow::Owned(s.explode().unwrap())
+            }
             AggState::AggregatedFlat(s) => Cow::Borrowed(s),
             AggState::Literal(s) => Cow::Borrowed(s),
         }
