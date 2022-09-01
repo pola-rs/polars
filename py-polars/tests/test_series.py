@@ -1965,3 +1965,10 @@ def test_repr() -> None:
     assert "1001" in x_repr
     for n in x.to_list():
         assert str(n) in x_repr
+
+
+def test_abs() -> None:
+    s = pl.Series("s", [-1, 0, 1, None])
+    a = abs(s)
+
+    assert a.to_list() == [1, 0, 1, None]
