@@ -11,6 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 3.7
+          architecture: x64
       - name: Prepare maturin publish
         shell: bash
         run: |
@@ -23,14 +27,12 @@ jobs:
         run: |
           sed -i 's/name = "polars"/name = "polars-lts-cpu"/' py-polars/pyproject.toml
       - name: publish x64_64 lts-cpu
-        uses: messense/maturin-action@main
+        uses: messense/maturin-action@v1
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: '-C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt'
         with:
           rust-toolchain: nightly-2022-08-22
-          # don't use `2_17` it does not work: https://github.com/pola-rs/polars/runs/6107328960
-          manylinux: '2_24'
-          maturin-version: '0.13.0'
+          maturin-version: '0.13.2'
           command: publish
-          args: -m py-polars/Cargo.toml --skip-existing -o wheels -i python -u ritchie46
+          args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46

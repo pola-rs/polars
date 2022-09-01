@@ -134,10 +134,7 @@ impl<'a> AggregationContext<'a> {
                         })
                     }
                     // sliced groups are already in correct order
-                    GroupsProxy::Slice { groups, .. } => {
-                        dbg!(groups);
-                        dbg!("hree");
-                    }
+                    GroupsProxy::Slice { .. } => {}
                 }
                 self.update_groups = UpdateGroups::No;
             }
