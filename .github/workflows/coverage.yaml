@@ -1,13 +1,8 @@
 name: Coverage
 
 on:
-  push:
-    branches:
-      - master
   pull_request:
     paths:
-      - 'polars/**'
-      - 'py-polars/**'
       - '.github/workflows/coverage.yaml'
 
 concurrency:
