@@ -28,8 +28,8 @@ where
     let (mut wgt_sum, mut wgt_sum_sqr) = if adjust {
         (T::zero(), T::zero())
     } else {
-        // NOTE: in the unadjusted case, we set these variables to ensure
-        // that in the first iteration, they are both equal to 1
+        // NOTE: in the unadjusted case we must ensure that these quantities
+        // are identically 1 during the first iteration
         let wgt_sum = T::one();
         let wgt_sum_sqr = (T::one() - alpha.powf(two)) / one_sub_alpha.powf(two);
         (wgt_sum, wgt_sum_sqr)
@@ -94,8 +94,8 @@ where
     let (mut wgt_sum, mut wgt_sum_sqr) = if adjust {
         (T::zero(), T::zero())
     } else {
-        // NOTE: in the unadjusted case, we set these variables to ensure
-        // that in the first iteration, they are both equal to 1
+        // NOTE: in the unadjusted case we must ensure that these quantities
+        // are identically 1 during the first iteration
         let wgt_sum = T::one();
         let wgt_sum_sqr = (T::one() - alpha.powf(two)) / one_sub_alpha.powf(two);
         (wgt_sum, wgt_sum_sqr)

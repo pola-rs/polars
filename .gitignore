@@ -1,5 +1,6 @@
 *.iml
 *.so
+*.ipynb
 .DS_Store
 .ENV
 .coverage

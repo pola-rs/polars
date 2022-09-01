@@ -4129,7 +4129,7 @@ class Series:
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
         bias
-            When `bias=False`, apply a correction to make the estimate statistically
+            When ``bias=False``, apply a correction to make the estimate statistically
             unbiased.
         min_periods
             Minimum number of observations in window required to have a value
@@ -4183,7 +4183,7 @@ class Series:
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
         bias
-            When `bias=False`, apply a correction to make the estimate statistically
+            When ``bias=False``, apply a correction to make the estimate statistically
             unbiased.
         min_periods
             Minimum number of observations in window required to have a value
