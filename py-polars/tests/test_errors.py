@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import typing
+from datetime import date
 
 import numpy as np
 import pytest
@@ -147,3 +148,10 @@ def test_getitem_errs() -> None:
         r"'foo' of type: '<class 'str'>'",
     ):
         df[{"some"}] = "foo"
+
+
+def test_err_bubbling_up_to_lit() -> None:
+    df = pl.DataFrame({"date": [date(2020, 1, 1)], "value": [42]})
+
+    with pytest.raises(ValueError):
+        df.filter(pl.col("date") == pl.Date("2020-01-01"))

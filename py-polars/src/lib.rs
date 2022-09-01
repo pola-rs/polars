@@ -96,7 +96,7 @@ fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {
 }
 
 #[pyfunction]
-fn lit(value: &PyAny) -> dsl::PyExpr {
+fn lit(value: &PyAny) -> PyResult<dsl::PyExpr> {
     dsl::lit(value)
 }
 
