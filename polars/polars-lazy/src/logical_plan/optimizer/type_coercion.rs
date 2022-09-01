@@ -423,11 +423,15 @@ impl OptimizationRule for TypeCoercionRule {
                 let super_type = get_supertype(&type_left, &type_fill_value).ok()?;
                 let super_type =
                     modify_supertype(super_type, left, fill_value, &type_left, &type_fill_value);
-                Some(AExpr::Function {
-                    function: FunctionExpr::FillNull { super_type },
-                    input: input.clone(),
-                    options,
-                })
+                if super_type != DataType::Unknown {
+                    Some(AExpr::Function {
+                        function: FunctionExpr::FillNull { super_type },
+                        input: input.clone(),
+                        options,
+                    })
+                } else {
+                    None
+                }
             }
             // generic type coercion of any function.
             AExpr::Function {
