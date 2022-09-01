@@ -3733,7 +3733,11 @@ class Series:
         """
 
     def abs(self) -> Series:
-        """Compute absolute values."""
+        """
+        Compute absolute values.
+
+        Same as `abs(series)`.
+        """
 
     __abs__ = call_expr(abs)
 

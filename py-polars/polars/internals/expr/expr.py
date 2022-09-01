@@ -4587,6 +4587,8 @@ class Expr:
         """
         Compute absolute values.
 
+        Same as `abs(expr)`.
+
         Examples
         --------
         >>> df = pl.DataFrame(

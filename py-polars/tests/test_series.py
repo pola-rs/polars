@@ -1967,7 +1967,7 @@ def test_repr() -> None:
         assert str(n) in x_repr
 
 
-def test_abs() -> None:
+def test_builtin_abs() -> None:
     s = pl.Series("s", [-1, 0, 1, None])
     a = abs(s)
 
