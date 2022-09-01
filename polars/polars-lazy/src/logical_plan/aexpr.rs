@@ -118,6 +118,46 @@ impl Default for AExpr {
 }
 
 impl AExpr {
+    /// Any expression that is sensitive to the number of elements in a group
+    /// - Aggregations
+    /// - Sorts
+    /// - Counts
+    /// - ..
+    pub(crate) fn groups_sensitive(&self) -> bool {
+        use AExpr::*;
+        match self {
+            Function { options, .. } | AnonymousFunction { options, .. } => {
+                options.collect_groups == ApplyOptions::ApplyGroups
+            }
+            Sort { .. }
+            | SortBy { .. }
+            | Agg { .. }
+            | Shift { .. }
+            | Window { .. }
+            | Count
+            | Slice { .. }
+            | Duplicated(_)
+            | Take { .. }
+            | Nth(_)
+            | IsUnique(_) => true,
+            Reverse(_)
+            | Alias(_, _)
+            | Explode(_)
+            | Column(_)
+            | Literal(_)
+            // a caller should traverse binary and ternary
+            // to determine if the whole expr. is group sensitive
+            | BinaryExpr { .. }
+            | Ternary { .. }
+            | Not(_)
+            | IsNotNull(_)
+            | IsNull(_)
+            | Wildcard
+            | Cast { .. }
+            | Filter { .. } => false,
+        }
+    }
+
     /// This should be a 1 on 1 copy of the get_type method of Expr until Expr is completely phased out.
     pub(crate) fn get_type(
         &self,

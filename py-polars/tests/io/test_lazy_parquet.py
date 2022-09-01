@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pandas as pd
+from _pytest.capture import CaptureFixture
 
 import polars as pl
 
@@ -119,3 +120,37 @@ def test_row_count_schema(io_test_dir: str) -> None:
     assert (
         pl.scan_parquet(f, row_count_name="id").select(["id", "b"]).collect()
     ).dtypes == [pl.UInt32, pl.Utf8]
+
+
+def test_parquet_statistics(io_test_dir: str, capfd: CaptureFixture[str]) -> None:
+    os.environ["POLARS_VERBOSE"] = "1"
+    fname = os.path.join(io_test_dir, "stats.parquet")
+    df = pl.DataFrame({"idx": pl.arange(0, 100, eager=True)}).with_column(
+        (pl.col("idx") // 25).alias("part")
+    )
+    df = pl.concat(df.partition_by("part", as_dict=False), rechunk=False)
+    assert df.n_chunks("all") == [4, 4]
+
+    if not os.path.exists(fname):
+        df.write_parquet(fname, statistics=True)
+
+    for pred in [
+        pl.col("idx") < 50,
+        pl.col("idx") > 50,
+        pl.col("idx").null_count() != 0,
+        pl.col("idx").null_count() == 0,
+        pl.col("idx").min() == pl.col("part").null_count(),
+    ]:
+        assert (
+            pl.scan_parquet(fname).filter(pred).collect().frame_equal(df.filter(pred))
+        )
+
+    captured = capfd.readouterr().err
+    assert (
+        "parquet file must be read, statistics not sufficient for predicate."
+        in captured
+    )
+    assert (
+        "parquet file can be skipped, the statistics were sufficient"
+        " to apply the predicate." in captured
+    )

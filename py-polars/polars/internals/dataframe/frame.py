@@ -4638,7 +4638,7 @@ class DataFrame:
     def partition_by(
         self: DF,
         groups: str | list[str],
-        maintain_order: bool,
+        maintain_order: bool = False,
         *,
         as_dict: Literal[False] = ...,
     ) -> list[DF]:
@@ -4648,7 +4648,7 @@ class DataFrame:
     def partition_by(
         self: DF,
         groups: str | list[str],
-        maintain_order: bool,
+        maintain_order: bool = False,
         *,
         as_dict: Literal[True],
     ) -> dict[Any, DF]:
@@ -5039,9 +5039,28 @@ class DataFrame:
             .collect(no_optimization=True, string_cache=False)
         )
 
-    def n_chunks(self) -> int:
+    @overload
+    def n_chunks(self, strategy: Literal["first"]) -> int:
+        ...
+
+    @overload
+    def n_chunks(self, strategy: Literal["all"]) -> list[int]:
+        ...
+
+    @overload
+    def n_chunks(self, strategy: str = "first") -> int | list[int]:
+        ...
+
+    def n_chunks(self, strategy: str = "first") -> int | list[int]:
         """
         Get number of chunks used by the ChunkedArrays of this DataFrame.
+
+        Parameters
+        ----------
+        strategy : {'first', 'all'}
+            Return the number of chunks of the 'first' column,
+            or 'all' columns in this DataFrame.
+
 
         Examples
         --------
@@ -5056,7 +5075,15 @@ class DataFrame:
         1
 
         """
-        return self._df.n_chunks()
+        if strategy == "first":
+            return self._df.n_chunks()
+        elif strategy == "all":
+            return [s.n_chunks() for s in self.__iter__()]
+        else:
+            raise ValueError(
+                f"Strategy: '{strategy}' not understood. "
+                f"Choose one of {{'first',  'all'}}"
+            )
 
     @overload
     def max(self: DF, axis: Literal[0] = ...) -> DF:
