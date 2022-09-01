@@ -157,6 +157,9 @@ class Expr:
             "Hint: use '&' or '|' to chain Expr together, not and/or."
         )
 
+    def __abs__(self) -> Expr:
+        return wrap_expr(self._pyexpr.abs())
+
     def __invert__(self) -> Expr:
         return self.is_not()
 
@@ -4583,6 +4586,8 @@ class Expr:
     def abs(self) -> Expr:
         """
         Compute absolute values.
+
+        Same as `abs(expr)`.
 
         Examples
         --------

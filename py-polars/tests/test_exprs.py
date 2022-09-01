@@ -405,3 +405,10 @@ def test_search_sorted() -> None:
 
         for v in range(int(np.min(a)), int(np.max(a)), 20):
             assert np.searchsorted(a, v) == s.search_sorted(v)
+
+
+def test_abs_expr() -> None:
+    df = pl.DataFrame({"x": [-1, 0, 1]})
+    out = df.select(abs(pl.col("x")))
+
+    assert out["x"].to_list() == [1, 0, 1]
