@@ -911,7 +911,7 @@ class Series:
         """Reduce this Series to the product value."""
         return self.to_frame().select(pli.col(self.name).product()).to_series()[0]
 
-    def min(self) -> int | float | date | datetime | timedelta:
+    def min(self) -> int | float | date | datetime | timedelta | str:
         """
         Get the minimal value in this Series.
 
@@ -924,7 +924,7 @@ class Series:
         """
         return self._s.min()
 
-    def max(self) -> int | float | date | datetime | timedelta:
+    def max(self) -> int | float | date | datetime | timedelta | str:
         """
         Get the maximum value in this Series.
 
