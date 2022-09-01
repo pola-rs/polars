@@ -602,7 +602,7 @@ impl PhysicalPlanner {
                     vec![input],
                     function,
                     node_to_expr(expression, expr_arena),
-                    ApplyOptions::ApplyFlat,
+                    ApplyOptions::ApplyGroups,
                 )))
             }
             Wildcard => panic!("should be no wildcard at this point"),

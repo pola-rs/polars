@@ -165,7 +165,7 @@ impl PhysicalExpr for TakeExpr {
         let s = idx.cast(&DataType::List(Box::new(IDX_DTYPE)))?;
         let idx = s.list().unwrap();
 
-        let taken = ac
+        let mut taken = ac
             .aggregated()
             .list()
             .unwrap()
@@ -181,6 +181,8 @@ impl PhysicalExpr for TakeExpr {
                 .transpose()
             })
             .collect::<Result<ListChunked>>()?;
+
+        taken.rename(ac.series().name());
 
         ac.with_series(taken.into_series(), true);
         ac.with_update_groups(UpdateGroups::WithGroupsLen);

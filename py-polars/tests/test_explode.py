@@ -163,3 +163,23 @@ def test_utf8_explode() -> None:
         "a",
         "r",
     ]
+
+
+def test_explode_in_agg_context() -> None:
+    df = pl.DataFrame(
+        {"idxs": [[0], [1], [0, 2]], "array": [[0.0, 3.5], [4.6, 0.0], [0.0, 7.8, 0.0]]}
+    )
+
+    assert (
+        df.with_row_count("row_nr")
+        .explode("idxs")
+        .groupby("row_nr")
+        .agg(
+            [
+                pl.col("array").explode(),
+            ]
+        )
+    ).to_dict(False) == {
+        "row_nr": [0, 1, 2],
+        "array": [[0.0, 3.5], [4.6, 0.0], [0.0, 7.8, 0.0, 0.0, 7.8, 0.0]],
+    }
