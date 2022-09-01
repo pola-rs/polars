@@ -21,7 +21,7 @@ bitflags! {
         /// Indicates that a groupby operations groups may overlap.
         /// If this is the case, an `explode` will yield more values than rows in original `df`,
         /// this breaks some assumptions
-        const OVERLAPPING_GROUPS = 0x03;
+        const OVERLAPPING_GROUPS = 0x04;
     }
 }
 

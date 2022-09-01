@@ -114,8 +114,14 @@ impl PhysicalExpr for ApplyExpr {
         if self.inputs.len() == 1 {
             let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
-            match self.collect_groups {
-                ApplyOptions::ApplyGroups => {
+            match (state.overlapping_groups(), self.collect_groups) {
+                (_, ApplyOptions::ApplyList) => {
+                    let s = self.function.call_udf(&mut [ac.aggregated()])?;
+                    ac.with_series(s, true);
+                    Ok(ac)
+                }
+                // overlapping groups always take this branch as explode/flat_naive bloats data size
+                (_, ApplyOptions::ApplyGroups) | (true, _) => {
                     let s = ac.series();
 
                     // collection of empty list leads to a null dtype
@@ -152,7 +158,7 @@ impl PhysicalExpr for ApplyExpr {
                     ca.rename(&name);
                     Ok(self.finish_apply_groups(ac, ca))
                 }
-                ApplyOptions::ApplyFlat => {
+                (_, ApplyOptions::ApplyFlat) => {
                     // make sure the groups are updated because we are about to throw away
                     // the series' length information
                     let set_update_groups = match ac.update_groups {
@@ -167,6 +173,7 @@ impl PhysicalExpr for ApplyExpr {
                     if let UpdateGroups::WithSeriesLen = ac.update_groups {
                         ac.groups();
                     }
+
                     let input = ac.flat_naive().into_owned();
                     let input_len = input.len();
                     let s = self.function.call_udf(&mut [input])?;
@@ -182,17 +189,23 @@ impl PhysicalExpr for ApplyExpr {
                     }
                     Ok(ac)
                 }
-                ApplyOptions::ApplyList => {
-                    let s = self.function.call_udf(&mut [ac.aggregated()])?;
-                    ac.with_series(s, true);
-                    Ok(ac)
-                }
             }
         } else {
             let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
 
-            match self.collect_groups {
-                ApplyOptions::ApplyGroups => {
+            match (state.overlapping_groups(), self.collect_groups) {
+                (_, ApplyOptions::ApplyList) => {
+                    let mut s = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
+                    let s = self.function.call_udf(&mut s)?;
+                    // take the first aggregation context that as that is the input series
+                    let mut ac = acs.swap_remove(0);
+                    ac.with_update_groups(UpdateGroups::WithGroupsLen);
+                    ac.with_series(s, true);
+                    Ok(ac)
+                }
+
+                // overlapping groups always take this branch as explode bloats data size
+                (_, ApplyOptions::ApplyGroups) | (true, _) => {
                     let mut container = vec![Default::default(); acs.len()];
                     let name = acs[0].series().name().to_string();
 
@@ -226,7 +239,7 @@ impl PhysicalExpr for ApplyExpr {
                     let ac = self.finish_apply_groups(ac, ca);
                     Ok(ac)
                 }
-                ApplyOptions::ApplyFlat => {
+                (_, ApplyOptions::ApplyFlat) => {
                     let mut s = acs
                         .iter_mut()
                         .map(|ac| {
@@ -247,15 +260,6 @@ impl PhysicalExpr for ApplyExpr {
                     // take the first aggregation context that as that is the input series
                     let mut ac = acs.swap_remove(0);
                     ac.with_series(s, false);
-                    Ok(ac)
-                }
-                ApplyOptions::ApplyList => {
-                    let mut s = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
-                    let s = self.function.call_udf(&mut s)?;
-                    // take the first aggregation context that as that is the input series
-                    let mut ac = acs.swap_remove(0);
-                    ac.with_update_groups(UpdateGroups::WithGroupsLen);
-                    ac.with_series(s, true);
                     Ok(ac)
                 }
             }
