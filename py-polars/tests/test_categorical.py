@@ -225,3 +225,36 @@ def test_merge_lit_under_global_cache_4491() -> None:
             .then(pl.col("label"))
             .otherwise(pl.lit(None, pl.Categorical))
         ).to_dict(False) == {"label": [None, "bar"], "value": [3, 9]}
+
+
+def test_nested_cache_composition() -> None:
+    # very artificial example/test, but validates the behaviour
+    # of  ested StringCache scopes, which we want to play well
+    # with each other when composing more complex pipelines.
+
+    assert pl.using_string_cache() is False
+
+    # function representing a composable stage of a pipeline; it implements
+    # an inner scope for the case where it is called by itself, but when
+    # called as part of a larger series of ops it should not invalidate
+    # the string cache (the outermost scope should be respected).
+    def create_lazy(data: dict) -> pl.LazyFrame:  # type: ignore[type-arg]
+        with pl.StringCache():
+            df = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
+            lf = df.with_column(pl.col("a").cast(pl.Categorical)).lazy()
+
+        # confirm that scope-exit does NOT invalidate the
+        # cache yet, as an outer context is still active
+        assert pl.using_string_cache() is True
+        return lf
+
+    # this outer scope should be respected
+    with pl.StringCache():
+        lf1 = create_lazy({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
+        lf2 = create_lazy({"a": ["spam", "foo", "eggs"], "c": [3, 2, 2]})
+
+        res = lf1.join(lf2, on="a", how="inner").collect().rows()
+        assert sorted(res) == [("bar", 2, 2), ("foo", 1, 1), ("ham", 3, 3)]
+
+    # no other scope active; NOW we expect the cache to have been invalidated
+    assert pl.using_string_cache() is False

@@ -130,7 +130,7 @@ from polars.io import (
     scan_parquet,
 )
 from polars.show_versions import show_versions
-from polars.string_cache import StringCache, toggle_string_cache
+from polars.string_cache import StringCache, toggle_string_cache, using_string_cache
 from polars.utils import threadpool_size
 
 __all__ = [
@@ -191,6 +191,7 @@ __all__ = [
     # polars.stringcache
     "StringCache",
     "toggle_string_cache",
+    "using_string_cache",
     # polars.config
     "Config",
     # polars.internal.when

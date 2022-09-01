@@ -687,9 +687,9 @@ impl LazyFrame {
     pub fn collect(self) -> Result<DataFrame> {
         let file_caching = self.opt_state.file_caching;
         #[cfg(feature = "dtype-categorical")]
-        let use_string_cache = self.opt_state.global_string_cache;
+        let using_string_cache = self.opt_state.global_string_cache;
         #[cfg(feature = "dtype-categorical")]
-        if use_string_cache {
+        if using_string_cache {
             eprint!("global string cache in combination with LazyFrames is deprecated; please set the global string cache globally.")
         }
         let mut expr_arena = Arena::with_capacity(256);
@@ -698,8 +698,8 @@ impl LazyFrame {
 
         // if string cache was already set, we skip this and global settings are respected
         #[cfg(feature = "dtype-categorical")]
-        if use_string_cache {
-            toggle_string_cache(use_string_cache);
+        if using_string_cache {
+            toggle_string_cache(using_string_cache);
         }
 
         let finger_prints = if file_caching {
@@ -729,8 +729,8 @@ impl LazyFrame {
             state.file_cache.assert_empty();
         }
         #[cfg(feature = "dtype-categorical")]
-        if use_string_cache {
-            toggle_string_cache(!use_string_cache);
+        if using_string_cache {
+            toggle_string_cache(!using_string_cache);
         }
         out
     }
