@@ -381,3 +381,20 @@ where
     }
     local_predicates
 }
+
+/// predicates that need the full context should not be pushed down to the scans
+/// example: min(..) == null_count
+pub(super) fn partition_by_full_context(
+    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
+    expr_arena: &Arena<AExpr>,
+) -> Vec<Node> {
+    transfer_to_local_by_node(acc_predicates, |node| {
+        has_aexpr(node, expr_arena, |ae| match ae {
+            AExpr::BinaryExpr { left, right, .. } => {
+                expr_arena.get(*left).groups_sensitive()
+                    || expr_arena.get(*right).groups_sensitive()
+            }
+            ae => ae.groups_sensitive(),
+        })
+    })
+}

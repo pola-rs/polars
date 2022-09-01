@@ -258,6 +258,7 @@ impl PredicatePushDown {
                 aggregate,
                 options,
             } => {
+                let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
                 let lp = IpcScan {
@@ -268,7 +269,7 @@ impl PredicatePushDown {
                     aggregate,
                     options,
                 };
-                Ok(lp)
+                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
             #[cfg(feature = "parquet")]
             ParquetScan {
@@ -279,6 +280,8 @@ impl PredicatePushDown {
                 aggregate,
                 options,
             } => {
+                let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
+
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
                 let lp = ParquetScan {
@@ -289,7 +292,7 @@ impl PredicatePushDown {
                     aggregate,
                     options,
                 };
-                Ok(lp)
+                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
             #[cfg(feature = "csv-file")]
             CsvScan {
@@ -300,6 +303,7 @@ impl PredicatePushDown {
                 predicate,
                 aggregate,
             } => {
+                let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
                 let lp = if let (Some(predicate), Some(_)) = (predicate, options.n_rows) {
@@ -327,7 +331,7 @@ impl PredicatePushDown {
                     }
                 };
 
-                Ok(lp)
+                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
             AnonymousScan {
                 function,
@@ -338,6 +342,7 @@ impl PredicatePushDown {
                 aggregate
             } => {
                 if function.allows_predicate_pushdown() {
+                    let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
                     let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
                     let lp = AnonymousScan {
                         function,
@@ -347,7 +352,7 @@ impl PredicatePushDown {
                         predicate,
                         aggregate
                     };
-                    Ok(lp)
+                    Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
                 } else {
                     let lp = AnonymousScan {
                         function,

@@ -246,7 +246,7 @@ impl PhysicalExpr for ApplyExpr {
         }
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        self.inputs[0].to_field(input_schema)
+        self.expr.to_field(input_schema, Context::Default)
     }
     fn is_valid_aggregation(&self) -> bool {
         matches!(self.collect_groups, ApplyOptions::ApplyGroups)

@@ -94,7 +94,7 @@ fn rg_to_dfs(
         let md = &file_metadata.row_groups[rg];
         let current_row_count = md.num_rows() as IdxSize;
 
-        if !read_this_row_group(predicate.as_ref(), file_metadata, schema)? {
+        if !read_this_row_group(predicate.as_ref(), file_metadata, schema, rg)? {
             previous_row_count += current_row_count;
             continue;
         }
@@ -170,21 +170,23 @@ fn rg_to_dfs_par(
     let row_groups = file_metadata
         .row_groups
         .iter()
-        .map(|rg_md| {
+        .enumerate()
+        .map(|(rg_idx, rg_md)| {
             let row_count_start = previous_row_count;
             let num_rows = rg_md.num_rows();
             previous_row_count += num_rows;
             let local_limit = remaining_rows;
             remaining_rows = remaining_rows.saturating_sub(num_rows);
 
-            (rg_md, local_limit, row_count_start)
+            (rg_idx, rg_md, local_limit, row_count_start)
         })
         .collect::<Vec<_>>();
 
     let dfs = row_groups
         .into_par_iter()
-        .map(|(md, local_limit, row_count_start)| {
-            if local_limit == 0 || !read_this_row_group(predicate.as_ref(), file_metadata, schema)?
+        .map(|(rg_idx, md, local_limit, row_count_start)| {
+            if local_limit == 0
+                || !read_this_row_group(predicate.as_ref(), file_metadata, schema, rg_idx)?
             {
                 return Ok(None);
             }

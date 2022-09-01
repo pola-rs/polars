@@ -594,8 +594,8 @@ mod stats {
             let dummy = DataFrame::new_no_checks(vec![]);
             let state = ExecutionState::new();
 
-            let out = match (fld_l.name().as_str(), fld_r.name().as_str()) {
-                (_, "literal") => {
+            let out = match (self.left.is_literal(), self.right.is_literal()) {
+                (false, true) => {
                     let l = stats.get_stats(fld_l.name())?;
                     match l.to_min_max() {
                         None => Ok(true),
@@ -607,7 +607,7 @@ mod stats {
                         }
                     }
                 }
-                ("literal", _) => {
+                (true, false) => {
                     let r = stats.get_stats(fld_r.name())?;
                     match r.to_min_max() {
                         None => Ok(true),
@@ -624,7 +624,7 @@ mod stats {
             };
             out.map(|read| {
                 if state.verbose() && read {
-                    eprintln!("parquet file must be read, statistics not sufficient to for predicate.")
+                    eprintln!("parquet file must be read, statistics not sufficient for predicate.")
                 } else if state.verbose() && !read {
                     eprintln!("parquet file can be skipped, the statistics were sufficient to apply the predicate.")
                 };
