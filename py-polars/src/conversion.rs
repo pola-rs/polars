@@ -322,7 +322,12 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "List" => DataType::List(Box::new(DataType::Boolean)),
                     "Null" => DataType::Null,
                     "Unknown" => DataType::Unknown,
-                    dt => panic!("{} not expected as Python type for dtype conversion", dt),
+                    dt => {
+                        return Err(PyValueError::new_err(format!(
+                            "{} is not a correct polars DataType.",
+                            dt
+                        )))
+                    }
                 }
             }
             "Duration" => {
@@ -352,10 +357,11 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 DataType::Struct(fields)
             }
             dt => {
-                panic!(
-                    "{} not expected in Python dtype to Rust dtype conversion",
+                return Err(PyValueError::new_err(format!(
+                    "A {} object is not a correct polars DataType.\
+                 Hint: use the class without instantiating it.",
                     dt
-                )
+                )))
             }
         };
         Ok(Wrap(dtype))

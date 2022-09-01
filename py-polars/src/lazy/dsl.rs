@@ -6,6 +6,7 @@ use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_core::prelude::QuantileInterpolOptions;
 use pyo3::class::basic::CompareOp;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
@@ -1667,34 +1668,38 @@ pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     polars::lazy::dsl::fold_exprs(acc.inner, func, exprs).into()
 }
 
-pub fn lit(value: &PyAny) -> PyExpr {
+pub fn lit(value: &PyAny) -> PyResult<PyExpr> {
     if let Ok(true) = value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
-        dsl::lit(val).into()
+        Ok(dsl::lit(val).into())
     } else if let Ok(int) = value.downcast::<PyInt>() {
         let val = int.extract::<i64>().unwrap();
 
         if val > 0 && val < i32::MAX as i64 || val < 0 && val > i32::MIN as i64 {
-            dsl::lit(val as i32).into()
+            Ok(dsl::lit(val as i32).into())
         } else {
-            dsl::lit(val).into()
+            Ok(dsl::lit(val).into())
         }
     } else if let Ok(float) = value.downcast::<PyFloat>() {
         let val = float.extract::<f64>().unwrap();
-        dsl::lit(val).into()
+        Ok(dsl::lit(val).into())
     } else if let Ok(pystr) = value.downcast::<PyString>() {
-        dsl::lit(
+        Ok(dsl::lit(
             pystr
                 .to_str()
                 .expect("could not transform Python string to Rust Unicode"),
         )
-        .into()
+        .into())
     } else if let Ok(series) = value.extract::<PySeries>() {
-        dsl::lit(series.series).into()
+        Ok(dsl::lit(series.series).into())
     } else if value.is_none() {
-        dsl::lit(Null {}).into()
+        Ok(dsl::lit(Null {}).into())
     } else {
-        panic!("could not convert value {:?} as a Literal", value)
+        let value = value.str()?;
+        Err(PyValueError::new_err(format!(
+            "could not convert value {:?} as a Literal",
+            value
+        )))
     }
 }
 
