@@ -3,7 +3,8 @@ from __future__ import annotations
 from types import TracebackType
 
 try:
-    from polars.polars import toggle_string_cache as pytoggle_string_cache
+    from polars.polars import toggle_string_cache as _toggle_string_cache
+    from polars.polars import using_string_cache as _using_string_cache
 
     _DOCUMENTING = False
 except ImportError:
@@ -15,7 +16,8 @@ class StringCache:
     Context manager that allows data sources to share the same categorical features.
 
     This will temporarily cache the string categories until the context manager is
-    finished.
+    finished. If StringCaches are nested, the global cache will only be invalidated
+    when the outermost context exits.
 
     Examples
     --------
@@ -63,7 +65,9 @@ class StringCache:
         pass
 
     def __enter__(self) -> StringCache:
-        pytoggle_string_cache(True)
+        self._already_enabled = _using_string_cache()
+        if not self._already_enabled:
+            _toggle_string_cache(True)
         return self
 
     def __exit__(
@@ -72,7 +76,10 @@ class StringCache:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        pytoggle_string_cache(False)
+        # note: if global string cache was already enabled
+        # on __enter__, do NOT reset it on __exit__
+        if not self._already_enabled:
+            _toggle_string_cache(False)
 
 
 def toggle_string_cache(toggle: bool) -> None:
@@ -83,4 +90,9 @@ def toggle_string_cache(toggle: bool) -> None:
     are equal.
 
     """
-    pytoggle_string_cache(toggle)
+    _toggle_string_cache(toggle)
+
+
+def using_string_cache() -> bool:
+    """Return the current state of the global string cache (enabled/disabled)."""
+    return _using_string_cache()

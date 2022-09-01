@@ -184,6 +184,11 @@ fn toggle_string_cache(toggle: bool) {
 }
 
 #[pyfunction]
+fn using_string_cache() -> bool {
+    polars::using_string_cache()
+}
+
+#[pyfunction]
 fn concat_str(s: Vec<dsl::PyExpr>, sep: &str) -> dsl::PyExpr {
     let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
     polars::lazy::dsl::concat_str(s, sep).into()
@@ -505,6 +510,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(version)).unwrap();
     m.add_wrapped(wrap_pyfunction!(toggle_string_cache))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(using_string_cache)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_str)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_lst)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_df)).unwrap();
