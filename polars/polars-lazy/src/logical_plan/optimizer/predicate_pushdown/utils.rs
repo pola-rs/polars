@@ -114,7 +114,7 @@ pub(super) fn predicate_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExp
     let matches = |e: &AExpr| {
         matches!(
             e,
-            AExpr::Shift { .. } | AExpr::Sort { .. } | AExpr::SortBy { .. }
+            AExpr::Sort { .. } | AExpr::SortBy { .. }
             | AExpr::Agg(_) // an aggregation needs all rows
             | AExpr::Reverse(_)
             // Apply groups can be something like shift, sort, or an aggregation like skew
@@ -142,7 +142,7 @@ pub(super) fn project_other_column_is_predicate_pushdown_boundary(
     let matches = |e: &AExpr| {
         matches!(
             e,
-            AExpr::Shift { .. } | AExpr::Sort { .. } | AExpr::SortBy { .. }
+            AExpr::Sort { .. } | AExpr::SortBy { .. }
             | AExpr::Agg(_) // an aggregation needs all rows
             | AExpr::Reverse(_)
             // Apply groups can be something like shift, sort, or an aggregation like skew
@@ -175,7 +175,7 @@ pub(super) fn projection_column_is_predicate_pushdown_boundary(
     let matches = |e: &AExpr| {
         matches!(
             e,
-            AExpr::Shift { .. } | AExpr::Sort { .. } | AExpr::SortBy { .. }
+            AExpr::Sort { .. } | AExpr::SortBy { .. }
             | AExpr::Agg(_) // an aggregation needs all rows
             | AExpr::Reverse(_)
             // everything that works on groups likely changes to order of elements w/r/t the other columns

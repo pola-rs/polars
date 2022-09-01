@@ -530,14 +530,6 @@ impl PhysicalPlanner {
                     allow_rename: options.allow_rename,
                 }))
             }
-            Shift { input, periods } => {
-                let input = self.create_physical_expr(input, ctxt, expr_arena)?;
-                Ok(Arc::new(phys_expr::ShiftExpr {
-                    input,
-                    periods,
-                    expr: node_to_expr(expression, expr_arena),
-                }))
-            }
             Slice {
                 input,
                 offset,

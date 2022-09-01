@@ -91,10 +91,6 @@ pub enum AExpr {
         function: FunctionExpr,
         options: FunctionOptions,
     },
-    Shift {
-        input: Node,
-        periods: i64,
-    },
     Window {
         function: Node,
         partition_by: Vec<Node>,
@@ -132,7 +128,6 @@ impl AExpr {
             Sort { .. }
             | SortBy { .. }
             | Agg { .. }
-            | Shift { .. }
             | Window { .. }
             | Count
             | Slice { .. }
@@ -393,7 +388,6 @@ impl AExpr {
                     .collect::<Result<Vec<_>>>()?;
                 function.get_field(schema, ctxt, &fields)
             }
-            Shift { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
             Nth(_) => panic!("should be no nth at this point"),

@@ -284,7 +284,6 @@ impl fmt::Debug for Expr {
                     write!(f, "{:?}.{}()", input[0], options.fmt_str)
                 }
             }
-            Shift { input, periods, .. } => write!(f, "SHIFT {:?} by {}", input, periods),
             Slice {
                 input,
                 offset,

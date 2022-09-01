@@ -16,6 +16,7 @@ mod row_hash;
 mod schema;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
+mod shift;
 mod shift_and_fill;
 #[cfg(feature = "sign")]
 mod sign;
@@ -92,6 +93,7 @@ pub enum FunctionExpr {
         k: usize,
         reverse: bool,
     },
+    Shift(i64),
 }
 
 #[cfg(feature = "trigonometry")]
@@ -131,19 +133,6 @@ macro_rules! map_as_slice {
     }};
 }
 
-// Fn(&Series)
-#[macro_export(super)]
-macro_rules! map_without_args {
-    ($func:path) => {{
-        let f = move |s: &mut [Series]| {
-            let s = &s[0];
-            $func(s)
-        };
-
-        SpecialEq::new(Arc::new(f))
-    }};
-}
-
 // FnOnce(Series)
 // FnOnce(Series, args)
 #[macro_export(super)]
@@ -168,7 +157,17 @@ macro_rules! map_owned {
 }
 
 // Fn(&Series, args)
-macro_rules! map_with_args {
+#[macro_export(super)]
+macro_rules! map {
+    ($func:path) => {{
+        let f = move |s: &mut [Series]| {
+            let s = &s[0];
+            $func(s)
+        };
+
+        SpecialEq::new(Arc::new(f))
+    }};
+
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
             let s = &s[0];
@@ -195,7 +194,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             }
             #[cfg(feature = "row_hash")]
             Hash(k0, k1, k2, k3) => {
-                map_with_args!(row_hash::row_hash, k0, k1, k2, k3)
+                map!(row_hash::row_hash, k0, k1, k2, k3)
             }
             #[cfg(feature = "is_in")]
             IsIn => {
@@ -218,11 +217,11 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             }
             #[cfg(feature = "trigonometry")]
             Trigonometry(trig_function) => {
-                map_with_args!(trigonometry::apply_trigonometric_function, trig_function)
+                map!(trigonometry::apply_trigonometric_function, trig_function)
             }
             #[cfg(feature = "sign")]
             Sign => {
-                map_without_args!(sign::sign)
+                map!(sign::sign)
             }
             FillNull { super_type } => {
                 map_as_slice!(fill_null::fill_null, &super_type)
@@ -234,7 +233,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             }
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { window_size, bias } => {
-                map_with_args!(rolling::rolling_skew, window_size, bias)
+                map!(rolling::rolling_skew, window_size, bias)
             }
             ShiftAndFill { periods } => {
                 map_as_slice!(shift_and_fill::shift_and_fill, periods)
@@ -255,14 +254,15 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             StructExpr(sf) => {
                 use StructFunction::*;
                 match sf {
-                    FieldByIndex(index) => map_with_args!(struct_::get_by_index, index),
-                    FieldByName(name) => map_with_args!(struct_::get_by_name, name.clone()),
+                    FieldByIndex(index) => map!(struct_::get_by_index, index),
+                    FieldByName(name) => map!(struct_::get_by_name, name.clone()),
                 }
             }
             #[cfg(feature = "top_k")]
             TopK { k, reverse } => {
-                map_with_args!(top_k, k, reverse)
+                map!(top_k, k, reverse)
             }
+            Shift(periods) => map!(shift::shift, periods),
         }
     }
 }
@@ -273,45 +273,45 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
         use StringFunction::*;
         match func {
             Contains { pat, literal } => {
-                map_with_args!(strings::contains, &pat, literal)
+                map!(strings::contains, &pat, literal)
             }
             EndsWith(sub) => {
-                map_with_args!(strings::ends_with, &sub)
+                map!(strings::ends_with, &sub)
             }
             StartsWith(sub) => {
-                map_with_args!(strings::starts_with, &sub)
+                map!(strings::starts_with, &sub)
             }
             Extract { pat, group_index } => {
-                map_with_args!(strings::extract, &pat, group_index)
+                map!(strings::extract, &pat, group_index)
             }
             ExtractAll(pat) => {
-                map_with_args!(strings::extract_all, &pat)
+                map!(strings::extract_all, &pat)
             }
             CountMatch(pat) => {
-                map_with_args!(strings::count_match, &pat)
+                map!(strings::count_match, &pat)
             }
             #[cfg(feature = "string_justify")]
             Zfill(alignment) => {
-                map_with_args!(strings::zfill, alignment)
+                map!(strings::zfill, alignment)
             }
             #[cfg(feature = "string_justify")]
             LJust { width, fillchar } => {
-                map_with_args!(strings::ljust, width, fillchar)
+                map!(strings::ljust, width, fillchar)
             }
             #[cfg(feature = "string_justify")]
             RJust { width, fillchar } => {
-                map_with_args!(strings::rjust, width, fillchar)
+                map!(strings::rjust, width, fillchar)
             }
             #[cfg(feature = "temporal")]
             Strptime(options) => {
-                map_with_args!(strings::strptime, &options)
+                map!(strings::strptime, &options)
             }
             #[cfg(feature = "concat_str")]
-            Concat(delimiter) => map_with_args!(strings::concat, &delimiter),
+            Concat(delimiter) => map!(strings::concat, &delimiter),
             #[cfg(feature = "regex")]
             Replace { all, literal } => map_as_slice!(strings::replace, literal, all),
-            Uppercase => map_without_args!(strings::uppercase),
-            Lowercase => map_without_args!(strings::lowercase),
+            Uppercase => map!(strings::uppercase),
+            Lowercase => map!(strings::lowercase),
         }
     }
 }

@@ -154,7 +154,16 @@ impl PhysicalExpr for ApplyExpr {
                 }
                 ApplyOptions::ApplyFlat => {
                     // make sure the groups are updated because we are about to throw away
-                    // the series length information
+                    // the series' length information
+                    let set_update_groups = match ac.update_groups {
+                        UpdateGroups::WithSeriesLen => {
+                            ac.groups();
+                            true
+                        }
+                        UpdateGroups::WithSeriesLenOwned(_) => false,
+                        UpdateGroups::No | UpdateGroups::WithGroupsLen => false,
+                    };
+
                     if let UpdateGroups::WithSeriesLen = ac.update_groups {
                         ac.groups();
                     }
@@ -164,6 +173,13 @@ impl PhysicalExpr for ApplyExpr {
 
                     check_map_output_len(input_len, s.len())?;
                     ac.with_series(s, false);
+
+                    if set_update_groups {
+                        // The flat_naive orders by groups, so we must create new groups
+                        // not by series length as we don't have an agg_list, but by original
+                        // groups length
+                        ac.update_groups = UpdateGroups::WithGroupsLen;
+                    }
                     Ok(ac)
                 }
                 ApplyOptions::ApplyList => {

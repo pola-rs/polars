@@ -314,10 +314,6 @@ pub enum Expr {
         function: FunctionExpr,
         options: FunctionOptions,
     },
-    Shift {
-        input: Box<Expr>,
-        periods: i64,
-    },
     Reverse(Box<Expr>),
     Duplicated(Box<Expr>),
     IsUnique(Box<Expr>),
