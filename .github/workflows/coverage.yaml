@@ -10,6 +10,10 @@ on:
       - 'py-polars/**'
       - '.github/workflows/coverage.yaml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   coverage:
     name: Coverage for ${{ matrix.os }}

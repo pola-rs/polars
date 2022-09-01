@@ -6,6 +6,11 @@ on:
       - 'py-polars/**'
       - 'polars/**'
       - '.github/workflows/test-python.yaml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-python:
     name: Build and test Python
