@@ -2,7 +2,7 @@ SHELL=/bin/bash
 PYTHON=venv/bin/python
 PYTHON_BIN=venv/bin
 
-.PHONY: pre-commit test pip clean
+.PHONY: pre-commit test pip
 
 venv:
 	@python -m venv venv
@@ -10,8 +10,16 @@ venv:
 	@venv/bin/pip install -r build.requirements.txt
 	@unset CONDA_PREFIX && source venv/bin/activate && maturin develop
 
+.PHONY: clean
 clean:
-	@-rm -r venv
+	@rm -rf venv/
+	@rm -rf docs/build/
+	@rm -rf .hypothesis/
+	@rm -rf .mypy_cache/
+	@rm -rf .pytest_cache/
+	@rm -f .coverage
+	@rm -f coverage.xml
+	@find -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -delete
 	@cargo clean
 
 pre-commit: venv
