@@ -380,13 +380,89 @@ def sum(column: pli.Series) -> int | float:
 
 def sum(column: str | list[pli.Expr | str] | pli.Series | pli.Expr) -> pli.Expr | Any:
     """
-    Get the sum value.
+    Sum values in a column/Series, or horizontally across list of columns/expressions.
 
+    ``pl.sum(str)`` is syntactic sugar for:
+
+    >>> pl.col(str).sum()  # doctest: +SKIP
+
+    ``pl.sum(list)`` is syntactic sugar for:
+
+    >>> pl.fold(pl.lit(0), lambda x, y: x + y, list).alias("sum")  # doctest: +SKIP
+
+    Parameters
+    ----------
     column
-        Column(s) to be used in aggregation. Will lead to different behavior based on
-        the input:
-        - Union[str, Series] -> aggregate the sum value of that column.
-        - List[Expr] -> aggregate the sum value horizontally.
+        Column(s) to be used in aggregation.
+        This can be:
+
+        - a column name, or Series -> aggregate the sum value of that column/Series.
+        - a List[Expr] -> aggregate the sum value horizontally across the Expr result.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2],
+    ...         "b": [3, 4],
+    ...         "c": [5, 6],
+    ...     }
+    ... )
+    >>> df
+    shape: (2, 3)
+    ┌─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 3   ┆ 5   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 4   ┆ 6   │
+    └─────┴─────┴─────┘
+
+    Sum a column by name:
+
+    >>> df.select(pl.sum("a"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 3   │
+    └─────┘
+
+    Sum a list of columns/expressions horizontally:
+
+    >>> df.with_column(pl.sum(["a", "c"]))
+    shape: (2, 4)
+    ┌─────┬─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   ┆ sum │
+    │ --- ┆ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╪═════╡
+    │ 1   ┆ 3   ┆ 5   ┆ 6   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 4   ┆ 6   ┆ 8   │
+    └─────┴─────┴─────┴─────┘
+
+    Sum a series:
+
+    >>> pl.sum(df.get_column("a"))
+    3
+
+    To aggregate the sums for more than one column/expression use ``pl.col(list).sum()``
+    instead:
+
+    >>> df.select(pl.col(["a", "c"]).sum())
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ a   ┆ c   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 3   ┆ 11  │
+    └─────┴─────┘
 
     """
     if isinstance(column, pli.Series):
