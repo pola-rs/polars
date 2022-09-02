@@ -217,9 +217,6 @@ impl fmt::Debug for Expr {
                 }
             }
             BinaryExpr { left, op, right } => write!(f, "[({:?}) {:?} ({:?})]", left, op, right),
-            Not(expr) => write!(f, "not({:?})", expr),
-            IsNull(expr) => write!(f, "{:?}.is_null()", expr),
-            IsNotNull(expr) => write!(f, "{:?}.is_not_null()", expr),
             Sort { expr, options } => match options.descending {
                 true => write!(f, "{:?} DESC", expr),
                 false => write!(f, "{:?} ASC", expr),

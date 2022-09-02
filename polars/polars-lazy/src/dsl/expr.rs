@@ -268,9 +268,6 @@ pub enum Expr {
         op: Operator,
         right: Box<Expr>,
     },
-    Not(Box<Expr>),
-    IsNotNull(Box<Expr>),
-    IsNull(Box<Expr>),
     Cast {
         expr: Box<Expr>,
         data_type: DataType,

@@ -5,14 +5,11 @@ macro_rules! push_expr {
         match $current_expr {
             Nth(_) | Column(_) | Literal(_) | Wildcard | Columns(_) | DtypeColumn(_) | Count => {}
             Alias(e, _) => $push(e),
-            Not(e) => $push(e),
             BinaryExpr { left, op: _, right } => {
                 // reverse order so that left is popped first
                 $push(right);
                 $push(left);
             }
-            IsNull(e) => $push(e),
-            IsNotNull(e) => $push(e),
             Cast { expr, .. } => $push(expr),
             Sort { expr, .. } => $push(expr),
             Take { expr, idx } => {
@@ -171,14 +168,11 @@ impl AExpr {
         match self {
             Nth(_) | Column(_) | Literal(_) | Wildcard | Count => {}
             Alias(e, _) => push(e),
-            Not(e) => push(e),
             BinaryExpr { left, op: _, right } => {
                 // reverse order so that left is popped first
                 push(right);
                 push(left);
             }
-            IsNull(e) => push(e),
-            IsNotNull(e) => push(e),
             Cast { expr, .. } => push(expr),
             Sort { expr, .. } => push(expr),
             Take { expr, idx } => {

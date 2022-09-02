@@ -274,7 +274,7 @@ impl Expr {
     /// Negate `Expr`
     #[allow(clippy::should_implement_trait)]
     pub fn not(self) -> Expr {
-        Expr::Not(Box::new(self))
+        self.map_private(FunctionExpr::Not)
     }
 
     /// Rename Column.
@@ -285,13 +285,13 @@ impl Expr {
     /// Run is_null operation on `Expr`.
     #[allow(clippy::wrong_self_convention)]
     pub fn is_null(self) -> Self {
-        Expr::IsNull(Box::new(self))
+        self.map_private(FunctionExpr::IsNull)
     }
 
     /// Run is_not_null operation on `Expr`.
     #[allow(clippy::wrong_self_convention)]
     pub fn is_not_null(self) -> Self {
-        Expr::IsNotNull(Box::new(self))
+        self.map_private(FunctionExpr::IsNotNull)
     }
 
     /// Drop null values

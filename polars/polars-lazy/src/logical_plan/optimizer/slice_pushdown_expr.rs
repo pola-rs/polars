@@ -27,7 +27,7 @@ impl OptimizationRule for SlicePushDown {
 
             use AExpr::*;
             match expr_arena.get(*input) {
-                m @ Alias(..) | m @ IsNull(_) | m @ IsNotNull(_) | m @ Cast { .. } => {
+                m @ Alias(..) | m @ Cast { .. } => {
                     let m = m.clone();
                     let input = m.get_input();
                     let new_input = pushdown(input, offset, length, expr_arena);

@@ -155,6 +155,7 @@ impl FunctionExpr {
             #[cfg(feature = "top_k")]
             TopK { .. } => same_type(),
             Shift(..) | Reverse => same_type(),
+            IsNotNull | IsNull | Not => with_dtype(DataType::Boolean),
         }
     }
 }

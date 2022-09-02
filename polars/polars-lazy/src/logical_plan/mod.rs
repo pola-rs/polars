@@ -258,9 +258,13 @@ impl LogicalPlan {
             }
             Error { err, .. } => {
                 // We just take the error. The LogicalPlan should not be used anymore once this
-                // is taken.
                 let mut err = err.lock();
-                Err(err.take().unwrap())
+                match err.take() {
+                    Some(err) => Err(err),
+                    None => Err(PolarsError::ComputeError(
+                        "LogicalPlan already failed".into(),
+                    )),
+                }
             }
             ExtContext { schema, .. } => Ok(Cow::Borrowed(schema)),
         }

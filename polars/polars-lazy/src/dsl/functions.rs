@@ -801,17 +801,17 @@ pub fn all_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
 
 /// [Not](Expr::Not) expression.
 pub fn not(expr: Expr) -> Expr {
-    Expr::Not(Box::new(expr))
+    expr.not()
 }
 
 /// [IsNull](Expr::IsNotNull) expression
 pub fn is_null(expr: Expr) -> Expr {
-    Expr::IsNull(Box::new(expr))
+    expr.is_null()
 }
 
 /// [IsNotNull](Expr::IsNotNull) expression.
 pub fn is_not_null(expr: Expr) -> Expr {
-    Expr::IsNotNull(Box::new(expr))
+    expr.is_not_null()
 }
 
 /// [Cast](Expr::Cast) expression.

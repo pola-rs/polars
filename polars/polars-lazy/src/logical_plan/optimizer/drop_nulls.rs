@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use polars_core::prelude::*;
 
+use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::iterator::*;
 use crate::prelude::stack_opt::OptimizationRule;
 use crate::prelude::*;
@@ -37,7 +38,15 @@ impl OptimizationRule for ReplaceDropNulls {
                         }
                     )
                 };
-                let is_not_null = |e: &AExpr| matches!(e, &AExpr::IsNotNull(_));
+                let is_not_null = |e: &AExpr| {
+                    matches!(
+                        e,
+                        &AExpr::Function {
+                            function: FunctionExpr::IsNotNull,
+                            ..
+                        }
+                    )
+                };
                 let is_column = |e: &AExpr| matches!(e, &AExpr::Column(_));
                 let is_lit_true =
                     |e: &AExpr| matches!(e, &AExpr::Literal(LiteralValue::Boolean(true)));

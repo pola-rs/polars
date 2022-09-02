@@ -31,7 +31,7 @@
 //!     .select([col("ham"), col("spam")]);
 //!
 //! let df = lf1
-//!     .join(lf2, [col("reverse_group")], [col("foo")], JoinType::Left)
+//!     .join(lf2, [col("reverse")], [col("foo")], JoinType::Left)
 //!     // now we finally materialize the result.
 //!     .collect()?;
 //! # Ok(())

@@ -248,12 +248,20 @@ impl OptimizationRule for SimplifyBooleanRule {
                     Some(AExpr::Alias(*falsy, names[0].clone()))
                 }
             }
-            AExpr::Not(x) => {
-                let y = expr_arena.get(*x);
+            AExpr::Function {
+                input,
+                function: FunctionExpr::Not,
+                ..
+            } => {
+                let y = expr_arena.get(input[0]);
 
                 match y {
                     // not(not x) => x
-                    AExpr::Not(expr) => Some(expr_arena.get(*expr).clone()),
+                    AExpr::Function {
+                        input,
+                        function: FunctionExpr::Not,
+                        ..
+                    } => Some(expr_arena.get(input[0]).clone()),
                     // not(lit x) => !x
                     AExpr::Literal(LiteralValue::Boolean(b)) => {
                         Some(AExpr::Literal(LiteralValue::Boolean(!b)))
@@ -374,13 +382,41 @@ impl OptimizationRule for SimplifyExprRule {
                     // all null operation null -> null
                     (true, _, true) => Some(AExpr::Literal(LiteralValue::Null)),
                     // null == column -> column.is_null()
-                    (true, Eq, false) => Some(AExpr::IsNull(*right)),
+                    (true, Eq, false) => Some(AExpr::Function {
+                        input: vec![*right],
+                        function: FunctionExpr::IsNull,
+                        options: FunctionOptions {
+                            collect_groups: ApplyOptions::ApplyGroups,
+                            ..Default::default()
+                        },
+                    }),
                     // column == null -> column.is_null()
-                    (false, Eq, true) => Some(AExpr::IsNull(*left)),
+                    (false, Eq, true) => Some(AExpr::Function {
+                        input: vec![*left],
+                        function: FunctionExpr::IsNull,
+                        options: FunctionOptions {
+                            collect_groups: ApplyOptions::ApplyGroups,
+                            ..Default::default()
+                        },
+                    }),
                     // null != column -> column.is_not_null()
-                    (true, NotEq, false) => Some(AExpr::IsNotNull(*right)),
+                    (true, NotEq, false) => Some(AExpr::Function {
+                        input: vec![*right],
+                        function: FunctionExpr::IsNotNull,
+                        options: FunctionOptions {
+                            collect_groups: ApplyOptions::ApplyGroups,
+                            ..Default::default()
+                        },
+                    }),
                     // column != null -> column.is_not_null()
-                    (false, NotEq, true) => Some(AExpr::IsNotNull(*left)),
+                    (false, NotEq, true) => Some(AExpr::Function {
+                        input: vec![*left],
+                        function: FunctionExpr::IsNotNull,
+                        options: FunctionOptions {
+                            collect_groups: ApplyOptions::ApplyGroups,
+                            ..Default::default()
+                        },
+                    }),
                     _ => None,
                 }
             }

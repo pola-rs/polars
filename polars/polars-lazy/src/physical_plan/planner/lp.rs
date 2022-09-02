@@ -386,8 +386,9 @@ impl PhysicalPlanner {
                                                 | AAggExpr::Count(_)
                                         )
                                     },
-                                    Not(input) | IsNull(input) | IsNotNull(input) => {
-                                        !has_aggregation(*input)
+                                    Function {input, options, ..} => {
+                                        matches!(options.collect_groups, ApplyOptions::ApplyFlat) && input.len() == 1 &&
+                                            !has_aggregation(input[0])
                                     }
                                     BinaryExpr {left, right, ..} => {
                                         !has_aggregation(*left) && !has_aggregation(*right)
