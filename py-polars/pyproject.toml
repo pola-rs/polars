@@ -54,6 +54,7 @@ addopts = [
 ]
 
 [tool.coverage.report]
+fail_under = 85
 exclude_lines = [
   "pragma: no cover",
   "@overload",

@@ -34,10 +34,7 @@ test-all: venv
 	$(PYTHON) tests/docs/run_doc_examples.py
 
 test-with-cov: venv
-	$(PYTHON) -m pytest \
-		--cov=polars \
-		--cov-report xml \
-		--cov-fail-under=85
+	$(PYTHON) -m pytest --cov=polars --cov-report xml
 
 doctest:
 	$(PYTHON) tests/docs/run_doc_examples.py
