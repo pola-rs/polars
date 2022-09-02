@@ -138,7 +138,12 @@ fn create_serializer(
                     let pages = DynStreamingIterator::new(
                         Compressor::new_from_vec(
                             encoded_pages.map(|result| {
-                                result.map_err(|e| ParquetError::General(format!("{}", e)))
+                                result.map_err(|e| {
+                                    ParquetError::FeatureNotSupported(format!(
+                                        "reraised in polars: {}",
+                                        e
+                                    ))
+                                })
                             }),
                             options.compression,
                             vec![],
