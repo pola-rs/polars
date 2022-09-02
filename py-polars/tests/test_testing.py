@@ -33,10 +33,17 @@ def test_compare_series_nans_assert_equal() -> None:
         assert_series_equal(srs1, srs2, check_exact=True)
 
 
-def test_compare_series_nulls_are_equal() -> None:
+def test_compare_series_nulls() -> None:
     srs1 = pl.Series([1, 2, None])
     srs2 = pl.Series([1, 2, None])
     assert_series_equal(srs1, srs2)
+
+    srs1 = pl.Series([1, 2, 3])
+    srs2 = pl.Series([1, None, None])
+    with pytest.raises(AssertionError, match="Value mismatch"):
+        assert_series_equal(srs1, srs2)
+    with pytest.raises(AssertionError, match="Exact value mismatch"):
+        assert_series_equal(srs1, srs2, check_exact=True)
 
 
 def test_compare_series_value_mismatch_string() -> None:
