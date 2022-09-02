@@ -382,7 +382,7 @@ def sum(column: str | list[pli.Expr | str] | pli.Series | pli.Expr) -> pli.Expr 
     """
     Sum values in a column/Series, or horizontally across list of columns/expressions.
 
-    `pl.sum(str)` is syntactic sugar for:
+    ``pl.sum(str)`` is syntactic sugar for:
 
     >>> pl.col(str).sum()  # doctest: +SKIP
 
