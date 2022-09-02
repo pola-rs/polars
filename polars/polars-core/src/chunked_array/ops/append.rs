@@ -46,10 +46,28 @@ impl Utf8Chunked {
 
 #[doc(hidden)]
 impl ListChunked {
-    pub fn append(&mut self, other: &Self) {
+    pub fn append(&mut self, other: &Self) -> Result<()> {
+        // todo! there should be a merge-dtype function, that goes all the way down.
+
+        #[cfg(feature = "dtype-categorical")]
+        use DataType::*;
+        #[cfg(feature = "dtype-categorical")]
+        if let (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r))) =
+            (self.inner_dtype(), other.inner_dtype())
+        {
+            if !rev_map_l.same_src(rev_map_r.as_ref()) {
+                let rev_map = merge_categorical_map(&rev_map_l, &rev_map_r)?;
+                self.field = Arc::new(Field::new(
+                    self.name(),
+                    DataType::List(Box::new(DataType::Categorical(Some(rev_map)))),
+                ));
+            }
+        }
+
         let len = self.len();
         self.length += other.length;
         new_chunks(&mut self.chunks, &other.chunks, len);
+        Ok(())
     }
 }
 #[cfg(feature = "object")]

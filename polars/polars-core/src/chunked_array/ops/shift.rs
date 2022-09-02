@@ -84,10 +84,10 @@ impl ChunkShiftFill<ListType, Option<&Series>> for ListChunked {
         };
 
         if periods < 0 {
-            slice.append(&fill);
+            slice.append(&fill).unwrap();
             slice
         } else {
-            fill.append(&slice);
+            fill.append(&slice).unwrap();
             fill
         }
     }

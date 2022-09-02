@@ -215,7 +215,7 @@ def test_datetime_consistency() -> None:
             pl.lit(dt).cast(pl.Datetime("ns")).alias("dt_ns"),
         ]
     )
-    assert ddf.schema == {  # type: ignore[comparison-overlap]
+    assert ddf.schema == {
         "date": pl.Datetime("us"),
         "dt": pl.Datetime("us"),
         "dt_ms": pl.Datetime("ms"),
@@ -1109,7 +1109,7 @@ def test_datetime_instance_selection() -> None:
     )
     for tu in DTYPE_TEMPORAL_UNITS:
         res = df.select(pl.col([pl.Datetime(tu)])).dtypes
-        assert res == [pl.Datetime(tu)]  # type: ignore[comparison-overlap]
+        assert res == [pl.Datetime(tu)]
         assert len(df.filter(pl.col(tu) == test_data[tu][0])) == 1
 
 

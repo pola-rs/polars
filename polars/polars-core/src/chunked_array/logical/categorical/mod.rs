@@ -5,6 +5,7 @@ mod ops;
 pub mod stringcache;
 
 pub use builder::*;
+pub(crate) use merge::*;
 pub(crate) use ops::{CategoricalTakeRandomGlobal, CategoricalTakeRandomLocal};
 
 use super::*;
