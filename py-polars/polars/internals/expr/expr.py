@@ -158,7 +158,7 @@ class Expr:
         )
 
     def __abs__(self) -> Expr:
-        return wrap_expr(self._pyexpr.abs())
+        return self.abs()
 
     def __invert__(self) -> Expr:
         return self.is_not()
