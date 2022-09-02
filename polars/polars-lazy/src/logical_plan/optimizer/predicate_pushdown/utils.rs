@@ -165,7 +165,12 @@ pub(super) fn project_other_column_is_predicate_pushdown_boundary(
     has_aexpr(node, expr_arena, matches)
 }
 
-/// This checks the boundary of same columns. So that means columns that are referred in the predicate
+/// This checks the boundary of same columns.
+/// So that means columns that are referred in the predicate
+/// for instance `predicate = col(A) == col(B).`
+/// and `col().some_func().alias(B)` is projected.
+/// then the projection can not pass, as column `B` maybe
+/// changed by `some_func`
 pub(super) fn projection_column_is_predicate_pushdown_boundary(
     node: Node,
     expr_arena: &Arena<AExpr>,
