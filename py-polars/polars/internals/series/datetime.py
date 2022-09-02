@@ -265,7 +265,6 @@ class DateTimeNameSpace:
 
         """
 
-    # TODO: Dispatch to Expr
     def with_time_zone(self, tz: str | None) -> pli.Series:
         """
         Set time zone a Series of type Datetime.
@@ -276,7 +275,6 @@ class DateTimeNameSpace:
             Time zone for the `Datetime` Series.
 
         """
-        return pli.wrap_s(self._s.with_time_zone(tz))
 
     def days(self) -> pli.Series:
         """
