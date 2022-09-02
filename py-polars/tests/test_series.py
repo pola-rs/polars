@@ -1873,9 +1873,20 @@ def test_exp() -> None:
 
 def test_cumulative_eval() -> None:
     s = pl.Series("values", [1, 2, 3, 4, 5])
-    expr = pl.element().first() - pl.element().last() ** 2
-    expected = pl.Series("values", [None, -3.0, -8.0, -15.0, -24.0])
-    verify_series_and_expr_api(s, expected, "cumulative_eval", expr)
+
+    # evaluate expressions individually
+    expr1 = pl.element().first()
+    expr2 = pl.element().last() ** 2
+
+    expected1 = pl.Series("values", [1, 1, 1, 1, 1])
+    expected2 = pl.Series("values", [1.0, 4.0, 9.0, 16.0, 25.0])
+    verify_series_and_expr_api(s, expected1, "cumulative_eval", expr1)
+    verify_series_and_expr_api(s, expected2, "cumulative_eval", expr2)
+
+    # evaluate combined expressions and validate
+    expr3 = expr1 - expr2
+    expected3 = pl.Series("values", [0.0, -3.0, -8.0, -15.0, -24.0])
+    verify_series_and_expr_api(s, expected3, "cumulative_eval", expr3)
 
 
 def test_drop_nan_ignore_null_3525() -> None:
