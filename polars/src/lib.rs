@@ -342,9 +342,10 @@ pub mod docs;
 pub mod export;
 pub mod prelude;
 
-pub use polars_core::apply_method_all_arrow_series;
-pub use polars_core::df;
-pub use polars_core::{chunked_array, datatypes, doc, error, frame, functions, series, testing};
+pub use polars_core::{
+    apply_method_all_arrow_series, chunked_array, datatypes, df, doc, error, frame, functions,
+    series, testing,
+};
 #[cfg(feature = "dtype-categorical")]
 pub use polars_core::{toggle_string_cache, using_string_cache};
 #[cfg(feature = "polars-io")]

@@ -4,18 +4,13 @@ use std::ops::{BitAnd, BitOr, BitXor};
 use ahash::RandomState;
 use polars_arrow::prelude::QuantileInterpolOptions;
 
-use super::private;
-use super::IntoSeries;
-use super::SeriesTrait;
-use super::*;
+use super::{private, IntoSeries, SeriesTrait, *};
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::{
-    ops::{
-        compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
-        explode::ExplodeByOffsets,
-    },
-    AsSinglePtr, ChunkIdIter,
+use crate::chunked_array::ops::compare_inner::{
+    IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner,
 };
+use crate::chunked_array::ops::explode::ExplodeByOffsets;
+use crate::chunked_array::{AsSinglePtr, ChunkIdIter};
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::ZipOuterJoinColumn;

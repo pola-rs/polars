@@ -3,7 +3,9 @@ use std::io::Write;
 use arrow::temporal_conversions;
 use lexical_core::{FormattedSize, ToLexical};
 use memchr::{memchr, memchr2};
-use polars_core::{prelude::*, series::SeriesIter, POOL};
+use polars_core::prelude::*;
+use polars_core::series::SeriesIter;
+use polars_core::POOL;
 use polars_utils::contention_pool::LowContentionPool;
 use rayon::prelude::*;
 

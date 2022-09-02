@@ -2,7 +2,8 @@ mod agg_list;
 
 pub use agg_list::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::types::{simd::Simd, NativeType};
+use arrow::types::simd::Simd;
+use arrow::types::NativeType;
 use num::{Bounded, Num, NumCast, ToPrimitive, Zero};
 use polars_arrow::data_types::IsFloat;
 use polars_arrow::kernels::rolling;
@@ -15,7 +16,6 @@ use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::trusted_len::PushUnchecked;
 use rayon::prelude::*;
 
-use crate::apply_method_physical_integer;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
 use crate::frame::groupby::GroupsIdx;
@@ -24,7 +24,7 @@ use crate::frame::groupby::GroupsIndicator;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
-use crate::POOL;
+use crate::{apply_method_physical_integer, POOL};
 
 // if the windows overlap, we can use the rolling_<agg> kernels
 // they maintain state, which saves a lot of compute by not naively traversing all elements every

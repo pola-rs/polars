@@ -3,7 +3,8 @@ use std::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
 
 use ahash::{CallHasher, RandomState};
 use arrow::bitmap::utils::get_bit_unchecked;
-use hashbrown::{hash_map::RawEntryMut, HashMap};
+use hashbrown::hash_map::RawEntryMut;
+use hashbrown::HashMap;
 use polars_arrow::utils::CustomIterTools;
 use rayon::prelude::*;
 

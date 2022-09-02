@@ -1,7 +1,5 @@
-use arrow::{
-    array::{Array, BooleanArray, PrimitiveArray},
-    bitmap::{Bitmap, MutableBitmap},
-};
+use arrow::array::{Array, BooleanArray, PrimitiveArray};
+use arrow::bitmap::{Bitmap, MutableBitmap};
 
 use crate::index::IdxSize;
 

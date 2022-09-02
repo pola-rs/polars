@@ -9,7 +9,8 @@ use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use polars_extension::PolarsExtension;
 
-use crate::{prelude::*, PROCESS_ID};
+use crate::prelude::*;
+use crate::PROCESS_ID;
 
 /// Invariants
 /// `ptr` must point to start a `T` allocation

@@ -3,13 +3,11 @@ pub(crate) mod series;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
-pub use arrow;
 use arrow::bitmap::Bitmap;
-pub use polars_arrow::utils::TrustMyLength;
-pub use polars_arrow::utils::*;
-pub use rayon;
+pub use polars_arrow::utils::{TrustMyLength, *};
 use rayon::prelude::*;
 pub use series::*;
+pub use {arrow, rayon};
 
 #[cfg(feature = "private")]
 pub use crate::chunked_array::ops::sort::argsort_no_nulls;

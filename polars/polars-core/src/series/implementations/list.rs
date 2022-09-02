@@ -3,11 +3,10 @@ use std::borrow::Cow;
 
 use polars_arrow::prelude::QuantileInterpolOptions;
 
-use super::private;
-use super::IntoSeries;
-use super::SeriesTrait;
+use super::{private, IntoSeries, SeriesTrait};
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::{ops::explode::ExplodeByOffsets, AsSinglePtr};
+use crate::chunked_array::ops::explode::ExplodeByOffsets;
+use crate::chunked_array::AsSinglePtr;
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::prelude::*;

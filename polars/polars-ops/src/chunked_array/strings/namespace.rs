@@ -1,9 +1,8 @@
 use std::borrow::Cow;
 
-use polars_arrow::{
-    export::arrow::{self, compute::substring::substring},
-    kernels::string::*,
-};
+use polars_arrow::export::arrow::compute::substring::substring;
+use polars_arrow::export::arrow::{self};
+use polars_arrow::kernels::string::*;
 use polars_core::export::regex::{escape, Regex};
 
 use super::*;

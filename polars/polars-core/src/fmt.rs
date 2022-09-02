@@ -1,7 +1,5 @@
-use std::{
-    fmt,
-    fmt::{Debug, Display, Formatter},
-};
+use std::fmt;
+use std::fmt::{Debug, Display, Formatter};
 
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;

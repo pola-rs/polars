@@ -1,20 +1,21 @@
 use std::hash::{BuildHasher, Hash};
 
 use ahash::CallHasher;
-use hashbrown::hash_map::Entry;
-use hashbrown::{hash_map::RawEntryMut, HashMap};
+use hashbrown::hash_map::{Entry, RawEntryMut};
+use hashbrown::HashMap;
 use polars_utils::flatten;
 use rayon::prelude::*;
 
 use super::GroupsProxy;
+use crate::datatypes::PlHashMap;
 use crate::frame::groupby::{GroupsIdx, IdxItem};
 use crate::prelude::compare_inner::PartialEqInner;
 use crate::prelude::*;
-use crate::utils::CustomIterTools;
-use crate::vector_hasher::{df_rows_to_hashes_threaded, IdBuildHasher, IdxHash};
-use crate::vector_hasher::{this_partition, AsU64};
+use crate::utils::{split_df, CustomIterTools};
+use crate::vector_hasher::{
+    df_rows_to_hashes_threaded, this_partition, AsU64, IdBuildHasher, IdxHash,
+};
 use crate::POOL;
-use crate::{datatypes::PlHashMap, utils::split_df};
 
 fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
     if sorted {

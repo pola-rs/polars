@@ -1,5 +1,4 @@
-use base64;
-use hex;
+use {base64, hex};
 
 use crate::prelude::*;
 

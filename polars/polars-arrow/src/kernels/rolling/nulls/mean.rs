@@ -1,6 +1,5 @@
 use super::sum::SumWindow;
-use super::*;
-use super::{rolling_apply_agg_window, RollingAggWindowNulls};
+use super::{rolling_apply_agg_window, RollingAggWindowNulls, *};
 
 pub struct MeanWindow<'a, T> {
     sum: SumWindow<'a, T>,

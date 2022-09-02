@@ -3,14 +3,16 @@ use std::fs::File;
 use std::io::Cursor;
 use std::path::PathBuf;
 
-pub use arrow::{array::StructArray, io::ndjson as arrow_ndjson};
-use polars_core::{prelude::*, utils::accumulate_dataframes_vertical, POOL};
+pub use arrow::array::StructArray;
+pub use arrow::io::ndjson as arrow_ndjson;
+use polars_core::prelude::*;
+use polars_core::utils::accumulate_dataframes_vertical;
+use polars_core::POOL;
 use rayon::prelude::*;
 
 use crate::csv::parser::*;
 use crate::csv::utils::*;
-use crate::mmap::MmapBytesReader;
-use crate::mmap::ReaderBytes;
+use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::ndjson_core::buffer::*;
 use crate::prelude::*;
 const QUOTE_CHAR: u8 = b'"';

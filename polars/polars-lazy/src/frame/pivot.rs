@@ -6,8 +6,9 @@
 //! pivot is here, because we want to be able to pass expressions to the pivot operation.
 //!
 
+use polars_core::frame::groupby::expr::PhysicalAggExpr;
 use polars_core::frame::groupby::PivotAgg;
-use polars_core::{frame::groupby::expr::PhysicalAggExpr, prelude::*};
+use polars_core::prelude::*;
 
 use crate::physical_plan::exotic::{prepare_eval_expr, prepare_expression_for_context};
 use crate::physical_plan::state::ExecutionState;

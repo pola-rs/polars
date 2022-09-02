@@ -3,15 +3,15 @@ use std::ops::Add;
 
 use arrow::compute;
 use arrow::types::simd::Simd;
-use num::Float;
-use num::ToPrimitive;
+use num::{Float, ToPrimitive};
 use polars_arrow::prelude::QuantileInterpolOptions;
 
 use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::ChunkedArray;
-use crate::datatypes::BooleanChunked;
+use crate::datatypes::{BooleanChunked, PolarsNumericType};
+use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::{datatypes::PolarsNumericType, prelude::*, utils::CustomIterTools};
+use crate::utils::CustomIterTools;
 
 /// Aggregations that return Series of unit length. Those can be used in broadcasting operations.
 pub trait ChunkAggSeries {

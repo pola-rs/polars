@@ -20,17 +20,30 @@ mod window;
 
 use std::borrow::Cow;
 
+pub(crate) use aggregation::*;
+pub(crate) use alias::*;
+pub(crate) use apply::*;
+pub(crate) use binary::*;
+pub(crate) use cast::*;
+pub(crate) use column::*;
+pub(crate) use count::*;
+pub(crate) use filter::*;
+pub(crate) use is_not_null::*;
+pub(crate) use is_null::*;
+pub(crate) use literal::*;
+pub(crate) use not::*;
 use polars_arrow::export::arrow::array::ListArray;
 use polars_arrow::trusted_len::PushUnchecked;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
-pub(crate) use {
-    aggregation::*, alias::*, apply::*, binary::*, cast::*, column::*, count::*, filter::*,
-    is_not_null::*, is_null::*, literal::*, not::*, slice::*, sort::*, sortby::*, take::*,
-    ternary::*, window::*,
-};
+pub(crate) use slice::*;
+pub(crate) use sort::*;
+pub(crate) use sortby::*;
+pub(crate) use take::*;
+pub(crate) use ternary::*;
+pub(crate) use window::*;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;

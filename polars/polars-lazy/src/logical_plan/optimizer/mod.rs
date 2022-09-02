@@ -1,4 +1,5 @@
-use polars_core::{datatypes::PlHashMap, prelude::*};
+use polars_core::datatypes::PlHashMap;
+use polars_core::prelude::*;
 
 use crate::prelude::*;
 

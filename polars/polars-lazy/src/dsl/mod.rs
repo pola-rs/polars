@@ -23,16 +23,15 @@ pub mod string;
 mod struct_;
 
 use std::fmt::Debug;
-use std::{
-    ops::{Add, Div, Mul, Rem, Sub},
-    sync::Arc,
-};
+use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::sync::Arc;
 
 pub use expr::*;
 pub use functions::*;
 pub use options::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
+use polars_core::export::arrow::array::BooleanArray;
+use polars_core::export::arrow::bitmap::MutableBitmap;
 use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
@@ -42,10 +41,9 @@ use polars_ops::prelude::SeriesOps;
 #[cfg(feature = "rolling_window")]
 use polars_time::series::SeriesOpsTime;
 
-use crate::dsl::function_expr::FunctionExpr;
-use crate::dsl::function_expr::NanFunction;
 #[cfg(feature = "trigonometry")]
 use crate::dsl::function_expr::TrigonometricFunction;
+use crate::dsl::function_expr::{FunctionExpr, NanFunction};
 // reexport the lazy method
 pub use crate::frame::IntoLazy;
 pub use crate::logical_plan::lit;

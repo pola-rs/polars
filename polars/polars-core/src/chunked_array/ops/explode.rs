@@ -1,7 +1,8 @@
 use std::convert::TryFrom;
 
-use arrow::bitmap::Bitmap;
-use arrow::{array::*, bitmap::MutableBitmap, buffer::Buffer};
+use arrow::array::*;
+use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::buffer::Buffer;
 use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::prelude::{FromDataUtf8, ValueSize};

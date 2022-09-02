@@ -1,11 +1,12 @@
 use std::borrow::Cow;
 use std::fmt;
-use std::sync::atomic::Ordering;
-use std::sync::{atomic::AtomicUsize, Arc};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use polars_arrow::array::*;
+use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
-use polars_core::{prelude::*, POOL};
+use polars_core::POOL;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
 use polars_utils::flatten;
@@ -13,9 +14,10 @@ use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 
 use crate::aggregations::ScanAggregation;
+use crate::csv::buffer::*;
+use crate::csv::parser::*;
 use crate::csv::read::NullValuesCompiled;
 use crate::csv::utils::*;
-use crate::csv::{buffer::*, parser::*};
 use crate::csv::{CsvEncoding, NullValues};
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;

@@ -1,7 +1,8 @@
 use std::ops::BitOr;
 
 use arrow::array::*;
-use arrow::{datatypes::DataType, types::NativeType};
+use arrow::datatypes::DataType;
+use arrow::types::NativeType;
 
 use crate::array::default_arrays::FromData;
 use crate::error::{PolarsError, Result};
