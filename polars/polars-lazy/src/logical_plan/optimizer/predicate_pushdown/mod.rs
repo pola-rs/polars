@@ -4,6 +4,7 @@ use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 use utils::*;
 
+use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::{optimizer, Context};
 use crate::prelude::*;
 use crate::utils::{aexpr_to_root_names, aexprs_to_schema, check_input_node, has_aexpr};
@@ -428,7 +429,7 @@ impl PredicatePushDown {
                         |e: &AExpr| matches!(e, AExpr::IsUnique(_) | AExpr::Duplicated(_));
 
                     let checks_nulls =
-                        |e: &AExpr| matches!(e, AExpr::IsNull(_) | AExpr::IsNotNull(_)) ||
+                        |e: &AExpr| matches!(e, AExpr::Function{function: FunctionExpr::IsNotNull | FunctionExpr::IsNull, ..} ) ||
                             // any operation that checks for equality or ordering can be wrong because
                             // the join can produce null values
                             matches!(e, AExpr::BinaryExpr {op, ..} if !matches!(op, Operator::NotEq));

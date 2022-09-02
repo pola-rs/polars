@@ -99,53 +99,59 @@ pub enum FunctionExpr {
     },
     Shift(i64),
     Reverse,
+    IsNull,
+    IsNotNull,
+    Not,
 }
 
 impl Display for FunctionExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use self::*;
+        use FunctionExpr::*;
 
         match self {
-            FunctionExpr::NullCount => write!(f, "null_count"),
-            FunctionExpr::Pow => write!(f, "pow"),
+            NullCount => write!(f, "null_count"),
+            Pow => write!(f, "pow"),
             #[cfg(feature = "row_hash")]
-            FunctionExpr::Hash(_, _, _, _) => write!(f, "hash"),
+            Hash(_, _, _, _) => write!(f, "hash"),
             #[cfg(feature = "is_in")]
-            FunctionExpr::IsIn => write!(f, "is_in"),
+            IsIn => write!(f, "is_in"),
             #[cfg(feature = "arg_where")]
-            FunctionExpr::ArgWhere => write!(f, "arg_where"),
+            ArgWhere => write!(f, "arg_where"),
             #[cfg(feature = "search_sorted")]
-            FunctionExpr::SearchSorted => write!(f, "search_sorted"),
+            SearchSorted => write!(f, "search_sorted"),
             #[cfg(feature = "strings")]
-            FunctionExpr::StringExpr(s) => write!(f, "{}", s),
+            StringExpr(s) => write!(f, "{}", s),
             #[cfg(feature = "date_offset")]
-            FunctionExpr::DateOffset(_) => write!(f, "dt.offset_by"),
+            DateOffset(_) => write!(f, "dt.offset_by"),
             #[cfg(feature = "trigonometry")]
-            FunctionExpr::Trigonometry(func) => write!(f, "{}", func),
+            Trigonometry(func) => write!(f, "{}", func),
             #[cfg(feature = "sign")]
-            FunctionExpr::Sign => write!(f, "sign"),
-            FunctionExpr::FillNull { .. } => write!(f, "fill_null"),
+            Sign => write!(f, "sign"),
+            FillNull { .. } => write!(f, "fill_null"),
             #[cfg(feature = "is_in")]
-            FunctionExpr::ListContains => write!(f, "arr.contains"),
+            ListContains => write!(f, "arr.contains"),
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
-            FunctionExpr::RollingSkew { .. } => write!(f, "rolling_skew"),
-            FunctionExpr::ShiftAndFill { .. } => write!(f, "shift_and_fill"),
-            FunctionExpr::Nan(_) => write!(f, "nan"),
+            RollingSkew { .. } => write!(f, "rolling_skew"),
+            ShiftAndFill { .. } => write!(f, "shift_and_fill"),
+            Nan(_) => write!(f, "nan"),
             #[cfg(feature = "round_series")]
-            FunctionExpr::Clip { min, max } => match (min, max) {
+            Clip { min, max } => match (min, max) {
                 (Some(_), Some(_)) => write!(f, "clip"),
                 (None, Some(_)) => write!(f, "clip_max"),
                 (Some(_), None) => write!(f, "clip_min"),
                 _ => unreachable!(),
             },
             #[cfg(feature = "list")]
-            FunctionExpr::ListExpr(func) => write!(f, "{}", func),
+            ListExpr(func) => write!(f, "{}", func),
             #[cfg(feature = "dtype-struct")]
-            FunctionExpr::StructExpr(func) => write!(f, "{}", func),
+            StructExpr(func) => write!(f, "{}", func),
             #[cfg(feature = "top_k")]
-            FunctionExpr::TopK { .. } => write!(f, "top_k"),
-            FunctionExpr::Shift(_) => write!(f, "shift"),
-            FunctionExpr::Reverse => write!(f, "reverse"),
+            TopK { .. } => write!(f, "top_k"),
+            Shift(_) => write!(f, "shift"),
+            Reverse => write!(f, "reverse"),
+            Not => write!(f, "is_not"),
+            IsNull => write!(f, "is_null"),
+            IsNotNull => write!(f, "is_not_null"),
         }
     }
 }
@@ -300,6 +306,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             }
             Shift(periods) => map!(dispatch::shift, periods),
             Reverse => map!(dispatch::reverse),
+            IsNull => map!(dispatch::is_null),
+            IsNotNull => map!(dispatch::is_not_null),
+            Not => map!(dispatch::is_not),
         }
     }
 }

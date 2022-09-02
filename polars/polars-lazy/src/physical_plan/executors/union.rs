@@ -22,6 +22,10 @@ impl Executor for UnionExec {
         let mut inputs = std::mem::take(&mut self.inputs);
 
         if self.options.slice && self.options.slice_offset >= 0 {
+            if state.verbose() {
+                println!("SLICE AT UNION: union is run sequentially")
+            }
+
             let mut offset = self.options.slice_offset as usize;
             let mut len = self.options.slice_len as usize;
             let dfs = inputs
@@ -55,6 +59,10 @@ impl Executor for UnionExec {
 
             concat_df(dfs.iter().flatten())
         } else {
+            if state.verbose() {
+                println!("UNION: union is run in parallel")
+            }
+
             // we don't use par_iter directly because the LP may also start threads for every LP (for instance scan_csv)
             // this might then lead to a rayon SO. So we take a multitude of the threads to keep work stealing
             // within bounds

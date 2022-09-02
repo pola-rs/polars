@@ -122,32 +122,11 @@ impl PhysicalPlanner {
                     node_to_expr(expression, expr_arena),
                 )))
             }
-            Not(expr) => {
-                let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                Ok(Arc::new(NotExpr::new(
-                    phys_expr,
-                    node_to_expr(expression, expr_arena),
-                )))
-            }
             Alias(expr, name) => {
                 let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
                 Ok(Arc::new(AliasExpr::new(
                     phys_expr,
                     name,
-                    node_to_expr(expression, expr_arena),
-                )))
-            }
-            IsNull(expr) => {
-                let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                Ok(Arc::new(IsNullExpr::new(
-                    phys_expr,
-                    node_to_expr(expression, expr_arena),
-                )))
-            }
-            IsNotNull(expr) => {
-                let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                Ok(Arc::new(IsNotNullExpr::new(
-                    phys_expr,
                     node_to_expr(expression, expr_arena),
                 )))
             }

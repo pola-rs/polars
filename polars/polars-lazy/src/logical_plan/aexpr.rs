@@ -46,9 +46,6 @@ pub enum AExpr {
         op: Operator,
         right: Node,
     },
-    Not(Node),
-    IsNotNull(Node),
-    IsNull(Node),
     Cast {
         expr: Node,
         data_type: DataType,
@@ -142,9 +139,6 @@ impl AExpr {
             // to determine if the whole expr. is group sensitive
             | BinaryExpr { .. }
             | Ternary { .. }
-            | Not(_)
-            | IsNotNull(_)
-            | IsNull(_)
             | Wildcard
             | Cast { .. }
             | Filter { .. } => false,
@@ -166,8 +160,6 @@ impl AExpr {
         use AExpr::*;
         match self {
             Alias(_, name) => Alias(input, name),
-            IsNotNull(_) => IsNotNull(input),
-            IsNull(_) => IsNull(input),
             Cast {
                 expr: _,
                 data_type,
@@ -185,8 +177,6 @@ impl AExpr {
         use AExpr::*;
         match self {
             Alias(input, _) => *input,
-            IsNotNull(input) => *input,
-            IsNull(input) => *input,
             Cast { expr, .. } => *expr,
             _ => todo!(),
         }
@@ -282,9 +272,6 @@ impl AExpr {
 
                 Ok(Field::new(out_name, expr_type))
             }
-            Not(_) => Ok(Field::new("not", DataType::Boolean)),
-            IsNull(_) => Ok(Field::new("is_null", DataType::Boolean)),
-            IsNotNull(_) => Ok(Field::new("is_not_null", DataType::Boolean)),
             Sort { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
             Take { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
             SortBy { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),

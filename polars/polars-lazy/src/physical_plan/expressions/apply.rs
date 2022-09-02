@@ -4,8 +4,13 @@ use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
+#[cfg(feature = "parquet")]
+use polars_io::parquet::predicates::BatchStats;
+#[cfg(feature = "parquet")]
+use polars_io::predicates::StatsEvaluator;
 use rayon::prelude::*;
 
+use crate::dsl::function_expr::FunctionExpr;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -270,5 +275,85 @@ impl PhysicalExpr for ApplyExpr {
     }
     fn is_valid_aggregation(&self) -> bool {
         matches!(self.collect_groups, ApplyOptions::ApplyGroups)
+    }
+    #[cfg(feature = "parquet")]
+    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
+        if matches!(
+            self.expr,
+            Expr::Function {
+                function: FunctionExpr::IsNull,
+                ..
+            }
+        ) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        if self.inputs.len() == 1 && matches!(self.collect_groups, ApplyOptions::ApplyFlat) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(feature = "parquet")]
+impl StatsEvaluator for ApplyExpr {
+    fn should_read(&self, stats: &BatchStats) -> Result<bool> {
+        if matches!(
+            self.expr,
+            Expr::Function {
+                function: FunctionExpr::IsNull,
+                ..
+            }
+        ) {
+            let root = expr_to_root_column_name(&self.expr)?;
+
+            let read = true;
+            let skip = false;
+
+            match stats.get_stats(&root).ok() {
+                Some(st) => match st.null_count() {
+                    Some(0) => Ok(skip),
+                    _ => Ok(read),
+                },
+                None => Ok(read),
+            }
+        } else {
+            Ok(true)
+        }
+    }
+}
+
+impl PartitionedAggregation for ApplyExpr {
+    fn evaluate_partitioned(
+        &self,
+        df: &DataFrame,
+        groups: &GroupsProxy,
+        state: &ExecutionState,
+    ) -> Result<Series> {
+        let a = self.inputs[0].as_partitioned_aggregator().unwrap();
+        let s = a.evaluate_partitioned(df, groups, state)?;
+
+        if self.allow_rename {
+            return self.function.call_udf(&mut [s]);
+        }
+        let in_name = s.name().to_string();
+        let mut out = self.function.call_udf(&mut [s])?;
+        if in_name != out.name() {
+            out.rename(&in_name);
+        }
+        Ok(out)
+    }
+
+    fn finalize(
+        &self,
+        partitioned: Series,
+        _groups: &GroupsProxy,
+        _state: &ExecutionState,
+    ) -> Result<Series> {
+        Ok(partitioned)
     }
 }
