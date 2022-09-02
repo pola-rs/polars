@@ -271,6 +271,62 @@ class Series:
             pandas_to_pyseries(name, values, nan_to_none=nan_to_none)
         )
 
+    @property
+    def dtype(self) -> type[DataType]:
+        """
+        Get the data type of this Series.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.dtype
+        <class 'polars.datatypes.Int64'>
+
+        """
+        return self._s.dtype()
+
+    @property
+    def flags(self) -> dict[str, bool]:
+        """
+        Get flags that are set on the Series.
+
+        Returns
+        -------
+        Dictionary containing the flag name and the value
+
+        """
+        return {
+            "SORTED_ASC": self._s.is_sorted_flag(),
+            "SORTED_DESC": self._s.is_sorted_reverse_flag(),
+        }
+
+    @property
+    def inner_dtype(self) -> type[DataType] | None:
+        """
+        Get the inner dtype in of a List typed Series.
+
+        Returns
+        -------
+        DataType
+
+        """
+        return self._s.inner_dtype()
+
+    @property
+    def name(self) -> str:
+        """Get the name of this Series."""
+        return self._s.name()
+
+    @property
+    def shape(self) -> tuple[int]:
+        """Shape of this Series."""
+        return (self._s.len(),)
+
+    @property
+    def time_unit(self) -> TimeUnit | None:
+        """Get the time unit of underlying Datetime Series as {"ns", "us", "ms"}."""
+        return self._s.time_unit()
+
     def __getstate__(self) -> Any:
         return self._s.__getstate__()
 
@@ -284,6 +340,9 @@ class Series:
 
     def __repr__(self) -> str:
         return self.__str__()
+
+    def __len__(self) -> int:
+        return self.len()
 
     def __and__(self, other: Series) -> Series:
         if not isinstance(other, Series):
@@ -463,6 +522,18 @@ class Series:
     def __neg__(self) -> Series:
         return 0 - self
 
+    def __abs__(self) -> Series:
+        return self.abs()
+
+    def __copy__(self) -> Series:
+        return self.clone()
+
+    def __deepcopy__(self, memo: None = None) -> Series:
+        return self.clone()
+
+    def __iter__(self) -> SeriesIter:
+        return SeriesIter(self.len(), self)
+
     def _pos_idxs(self, idxs: np.ndarray[Any, Any] | Series) -> Series:
         # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
         idx_type = get_idx_type()
@@ -628,20 +699,83 @@ class Series:
         else:
             raise ValueError(f'cannot use "{key}" for indexing')
 
-    @property
-    def flags(self) -> dict[str, bool]:
-        """
-        Get flags that are set on the Series.
+    def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
+        if dtype:
+            return self.to_numpy().__array__(dtype)
+        else:
+            return self.to_numpy().__array__()
 
-        Returns
-        -------
-        Dictionary containing the flag name and the value
+    def __array_ufunc__(
+        self, ufunc: np.ufunc, method: str, *inputs: Any, **kwargs: Any
+    ) -> Series:
+        """Numpy universal functions."""
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
 
-        """
-        return {
-            "SORTED_ASC": self._s.is_sorted_flag(),
-            "SORTED_DESC": self._s.is_sorted_reverse_flag(),
-        }
+        if self._s.n_chunks() > 1:
+            self._s.rechunk(in_place=True)
+
+        s = self._s
+
+        if method == "__call__":
+            if not ufunc.nout == 1:
+                raise NotImplementedError(
+                    "Only ufuncs that return one 1D array, are supported."
+                )
+
+            args: list[int | float | np.ndarray[Any, Any]] = []
+
+            for arg in inputs:
+                if isinstance(arg, (int, float, np.ndarray)):
+                    args.append(arg)
+                elif isinstance(arg, Series):
+                    args.append(arg.view(ignore_nulls=True))
+                else:
+                    raise ValueError(f"Unsupported type {type(arg)} for {arg}.")
+
+            # Get minimum dtype needed to be able to cast all input arguments to the
+            # same dtype.
+            dtype_char_minimum = np.result_type(*args).char
+
+            # Get all possible output dtypes for ufunc.
+            # Input dtypes and output dtypes seem to always match for ufunc.types,
+            # so pick all the different output dtypes.
+            dtypes_ufunc = [
+                input_output_type[-1]
+                for input_output_type in ufunc.types
+                if supported_numpy_char_code(input_output_type[-1])
+            ]
+
+            # Get the first ufunc dtype from all possible ufunc dtypes for which
+            # the input arguments can be safely cast to that ufunc dtype.
+            for dtype_ufunc in dtypes_ufunc:
+                if np.can_cast(dtype_char_minimum, dtype_ufunc):
+                    dtype_char_minimum = dtype_ufunc
+                    break
+
+            # Override minimum dtype if requested.
+            dtype = (
+                np.dtype(kwargs.pop("dtype")).char
+                if "dtype" in kwargs
+                else dtype_char_minimum
+            )
+
+            f = get_ffi_func(
+                "apply_ufunc_<>", numpy_char_code_to_dtype(dtype_char_minimum), s
+            )
+
+            if f is None:
+                raise NotImplementedError(
+                    f"Could not find `apply_ufunc_{numpy_char_code_to_dtype(dtype)}`."
+                )
+
+            series = f(lambda out: ufunc(*args, out=out, **kwargs))
+            return wrap_s(series)
+        else:
+            raise NotImplementedError(
+                "Only `__call__` is implemented for numpy ufuncs on a Series, got"
+                f" `{method}`."
+            )
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
@@ -757,32 +891,6 @@ class Series:
 
         """
         return pli.wrap_df(PyDataFrame([self._s]))
-
-    @property
-    def dtype(self) -> type[DataType]:
-        """
-        Get the data type of this Series.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.dtype
-        <class 'polars.datatypes.Int64'>
-
-        """
-        return self._s.dtype()
-
-    @property
-    def inner_dtype(self) -> type[DataType] | None:
-        """
-        Get the inner dtype in of a List typed Series.
-
-        Returns
-        -------
-        DataType
-
-        """
-        return self._s.inner_dtype()
 
     def describe(self) -> pli.DataFrame:
         """
@@ -1152,11 +1260,6 @@ class Series:
         ]
 
         """
-
-    @property
-    def name(self) -> str:
-        """Get the name of this Series."""
-        return self._s.name()
 
     def alias(self, name: str) -> Series:
         """
@@ -2060,14 +2163,6 @@ class Series:
         """
         return self._s.len()
 
-    @property
-    def shape(self) -> tuple[int]:
-        """Shape of this Series."""
-        return (self._s.len(),)
-
-    def __len__(self) -> int:
-        return self.len()
-
     def cast(
         self,
         dtype: (
@@ -2160,9 +2255,6 @@ class Series:
         if use_pyarrow:
             return self.to_arrow().to_pylist()
         return self._s.to_list()
-
-    def __iter__(self) -> SeriesIter:
-        return SeriesIter(self.len(), self)
 
     @overload
     def rechunk(self, in_place: Literal[False] = ...) -> Series:
@@ -2303,84 +2395,6 @@ class Series:
         array = _ptr_to_numpy(ptr, self.len(), ptr_type)
         array.setflags(write=False)
         return SeriesView(array, self)
-
-    def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
-        if dtype:
-            return self.to_numpy().__array__(dtype)
-        else:
-            return self.to_numpy().__array__()
-
-    def __array_ufunc__(
-        self, ufunc: np.ufunc, method: str, *inputs: Any, **kwargs: Any
-    ) -> Series:
-        """Numpy universal functions."""
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-
-        if self._s.n_chunks() > 1:
-            self._s.rechunk(in_place=True)
-
-        s = self._s
-
-        if method == "__call__":
-            if not ufunc.nout == 1:
-                raise NotImplementedError(
-                    "Only ufuncs that return one 1D array, are supported."
-                )
-
-            args: list[int | float | np.ndarray[Any, Any]] = []
-
-            for arg in inputs:
-                if isinstance(arg, (int, float, np.ndarray)):
-                    args.append(arg)
-                elif isinstance(arg, Series):
-                    args.append(arg.view(ignore_nulls=True))
-                else:
-                    raise ValueError(f"Unsupported type {type(arg)} for {arg}.")
-
-            # Get minimum dtype needed to be able to cast all input arguments to the
-            # same dtype.
-            dtype_char_minimum = np.result_type(*args).char
-
-            # Get all possible output dtypes for ufunc.
-            # Input dtypes and output dtypes seem to always match for ufunc.types,
-            # so pick all the different output dtypes.
-            dtypes_ufunc = [
-                input_output_type[-1]
-                for input_output_type in ufunc.types
-                if supported_numpy_char_code(input_output_type[-1])
-            ]
-
-            # Get the first ufunc dtype from all possible ufunc dtypes for which
-            # the input arguments can be safely cast to that ufunc dtype.
-            for dtype_ufunc in dtypes_ufunc:
-                if np.can_cast(dtype_char_minimum, dtype_ufunc):
-                    dtype_char_minimum = dtype_ufunc
-                    break
-
-            # Override minimum dtype if requested.
-            dtype = (
-                np.dtype(kwargs.pop("dtype")).char
-                if "dtype" in kwargs
-                else dtype_char_minimum
-            )
-
-            f = get_ffi_func(
-                "apply_ufunc_<>", numpy_char_code_to_dtype(dtype_char_minimum), s
-            )
-
-            if f is None:
-                raise NotImplementedError(
-                    f"Could not find `apply_ufunc_{numpy_char_code_to_dtype(dtype)}`."
-                )
-
-            series = f(lambda out: ufunc(*args, out=out, **kwargs))
-            return wrap_s(series)
-        else:
-            raise NotImplementedError(
-                "Only `__call__` is implemented for numpy ufuncs on a Series, got"
-                f" `{method}`."
-            )
 
     def to_numpy(
         self, *args: Any, zero_copy_only: bool = False, writable: bool = False
@@ -2589,12 +2603,6 @@ class Series:
 
         """
         return wrap_s(self._s.clone())
-
-    def __copy__(self) -> Series:
-        return self.clone()
-
-    def __deepcopy__(self, memo: None = None) -> Series:
-        return self.clone()
 
     def fill_nan(
         self, fill_value: str | int | float | bool | pli.Expr | None
@@ -3739,9 +3747,6 @@ class Series:
         Same as `abs(series)`.
         """
 
-    def __abs__(self) -> Series:
-        return self.abs()
-
     def rank(self, method: RankMethod = "average", reverse: bool = False) -> Series:
         """
         Assign ranks to data, dealing with ties appropriately.
@@ -4224,11 +4229,6 @@ class Series:
 
         """
         return wrap_s(self._s.set_sorted(reverse))
-
-    @property
-    def time_unit(self) -> TimeUnit | None:
-        """Get the time unit of underlying Datetime Series as {"ns", "us", "ms"}."""
-        return self._s.time_unit()
 
     # Below are the namespaces defined. Do not move these up in the definition of
     # Series, as it confuses mypy between the type annotation `str` and the
