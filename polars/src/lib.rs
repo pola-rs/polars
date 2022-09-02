@@ -221,6 +221,7 @@
 //!     - `checked_arithmetic` - checked arithmetic/ returning `None` on invalid operations.
 //!     - `dot_product` - Dot/inner product on Series and Expressions.
 //!     - `concat_str` - Concat string data in linear time.
+//!     - `format_str` - Format the results of an array of expressions using a format string
 //!     - `reinterpret` - Utility to reinterpret bits to signed/unsigned
 //!     - `take_opt_iter` - Take from a Series with `Iterator<Item=Option<usize>>`
 //!     - `mode` - [Return the most occurring value(s)](crate::chunked_array::ops::ChunkUnique::mode)

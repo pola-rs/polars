@@ -246,26 +246,25 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
         },
     }
 }
-/*
+
 #[cfg(feature = "format_str")]
 #[cfg_attr(docsrs, doc(cfg(feature = "format_str")))]
-pub fn format<E: AsRef<[Expr]>>(format: &str, args: E) -> Result<Expr> {
-    let mut args = args.as_ref().to_vec();
+/// Format the results of an array of expressions using a format string
+pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> Expr {
+    let mut args: std::collections::VecDeque<Expr> = args.as_ref().to_vec().into();
 
     // Parse the format string, and seperate substrings between placeholders
     let segments: Vec<&str> = format.split("{}").collect();
 
     if segments.len() - 1 != args.len() {
-        return Err(PolarsError::InvalidOperation(
-            "number of placeholders should equal the number of arguments".into()
-        ));
+        panic!("number of placeholders should equal the number of arguments");
     }
 
     let mut exprs: Vec<Expr> = Vec::new();
 
     for (i, s) in segments.iter().enumerate() {
         if i > 0 {
-            if let Some(arg) = args.pop() {
+            if let Some(arg) = args.pop_front() {
                 exprs.push(arg);
             }
         }
@@ -275,9 +274,9 @@ pub fn format<E: AsRef<[Expr]>>(format: &str, args: E) -> Result<Expr> {
         }
     }
 
-    Ok(concat_str(exprs, ""))
+    concat_str(exprs, "")
 }
-*/
+
 /// Concat lists entries.
 #[cfg(feature = "list")]
 #[cfg_attr(docsrs, doc(cfg(feature = "list")))]
