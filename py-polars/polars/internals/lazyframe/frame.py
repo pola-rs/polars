@@ -296,6 +296,133 @@ class LazyFrame:
 
         return wrap_ldf(PyLazyFrame.read_json(file))
 
+    @classmethod
+    def _scan_python_function(
+        cls, schema: pa.schema | dict[str, type[DataType]], scan_fn: bytes
+    ) -> LazyFrame:
+        self = cls.__new__(cls)
+        if isinstance(schema, dict):
+            self._ldf = PyLazyFrame.scan_from_python_function_pl_schema(
+                [(name, dt) for name, dt in schema.items()], scan_fn
+            )
+        else:
+            self._ldf = PyLazyFrame.scan_from_python_function_arrow_schema(
+                list(schema), scan_fn
+            )
+        return self
+
+    @property
+    def columns(self) -> list[str]:
+        """
+        Get or set column names.
+
+        Examples
+        --------
+        >>> df = (
+        ...     pl.DataFrame(
+        ...         {
+        ...             "foo": [1, 2, 3],
+        ...             "bar": [6, 7, 8],
+        ...             "ham": ["a", "b", "c"],
+        ...         }
+        ...     )
+        ...     .lazy()
+        ...     .select(["foo", "bar"])
+        ... )
+
+        >>> df.columns
+        ['foo', 'bar']
+
+        """
+        return self._ldf.columns()
+
+    @property
+    def dtypes(self) -> list[type[DataType]]:
+        """
+        Get dtypes of columns in LazyFrame.
+
+        Examples
+        --------
+        >>> lf = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... ).lazy()
+        >>> lf.dtypes
+        [<class 'polars.datatypes.Int64'>, <class 'polars.datatypes.Float64'>, <class 'polars.datatypes.Utf8'>]
+
+        See Also
+        --------
+        schema : Returns a {colname:dtype} mapping.
+
+        """  # noqa: E501
+        return self._ldf.dtypes()
+
+    @property
+    def schema(self) -> Schema:
+        """
+        Get a dict[column name, DataType].
+
+        Examples
+        --------
+        >>> lf = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... ).lazy()
+        >>> lf.schema
+        {'foo': <class 'polars.datatypes.Int64'>, 'bar': <class 'polars.datatypes.Float64'>, 'ham': <class 'polars.datatypes.Utf8'>}
+
+        """  # noqa: E501
+        return self._ldf.schema()
+
+    def __contains__(self: LDF, key: str) -> bool:
+        return key in self.columns
+
+    def __copy__(self: LDF) -> LDF:
+        return self.clone()
+
+    def __deepcopy__(self: LDF, memo: None = None) -> LDF:
+        return self.clone()
+
+    def __getitem__(self: LDF, item: int | range | slice) -> LazyFrame:
+        if not isinstance(item, slice):
+            raise TypeError(
+                "'LazyFrame' object is not subscriptable (aside from slicing). Use"
+                " 'select()' or 'filter()' instead."
+            )
+        return LazyPolarsSlice(self).apply(item)
+
+    def __str__(self) -> str:
+        return f"""\
+naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
+
+{self.describe_plan()}\
+"""
+
+    def _repr_html_(self) -> str:
+        try:
+            dot = self._ldf.to_dot(optimized=False)
+            svg = subprocess.check_output(
+                ["dot", "-Nshape=box", "-Tsvg"], input=f"{dot}".encode()
+            )
+            return (
+                "<h4>NAIVE QUERY PLAN</h4><p>run <b>LazyFrame.show_graph()</b> to see"
+                f" the optimized version</p>{svg.decode()}"
+            )
+        except Exception:
+            insert = self.describe_plan().replace("\n", "<p></p>")
+
+            return f"""\
+<i>naive plan: (run <b>LazyFrame.describe_optimized_plan()</b> to see the optimized plan)</i>
+    <p></p>
+    <div>{insert}</div>\
+"""  # noqa: E501
+
     @overload
     def write_json(
         self,
@@ -361,32 +488,6 @@ class LazyFrame:
             self._ldf.write_json(file)
         return None
 
-    @classmethod
-    def _scan_python_function(
-        cls, schema: pa.schema | dict[str, type[DataType]], scan_fn: bytes
-    ) -> LazyFrame:
-        self = cls.__new__(cls)
-        if isinstance(schema, dict):
-            self._ldf = PyLazyFrame.scan_from_python_function_pl_schema(
-                [(name, dt) for name, dt in schema.items()], scan_fn
-            )
-        else:
-            self._ldf = PyLazyFrame.scan_from_python_function_arrow_schema(
-                list(schema), scan_fn
-            )
-        return self
-
-    def __getitem__(self: LDF, item: int | range | slice) -> LazyFrame:
-        if not isinstance(item, slice):
-            raise TypeError(
-                "'LazyFrame' object is not subscriptable (aside from slicing). Use"
-                " 'select()' or 'filter()' instead."
-            )
-        return LazyPolarsSlice(self).apply(item)
-
-    def __contains__(self: LDF, key: str) -> bool:
-        return key in self.columns
-
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
         Apply a function on Self.
@@ -424,32 +525,6 @@ class LazyFrame:
 
         """
         return func(self, *args, **kwargs)
-
-    def _repr_html_(self) -> str:
-        try:
-            dot = self._ldf.to_dot(optimized=False)
-            svg = subprocess.check_output(
-                ["dot", "-Nshape=box", "-Tsvg"], input=f"{dot}".encode()
-            )
-            return (
-                "<h4>NAIVE QUERY PLAN</h4><p>run <b>LazyFrame.show_graph()</b> to see"
-                f" the optimized version</p>{svg.decode()}"
-            )
-        except Exception:
-            insert = self.describe_plan().replace("\n", "<p></p>")
-
-            return f"""\
-<i>naive plan: (run <b>LazyFrame.describe_optimized_plan()</b> to see the optimized plan)</i>
-    <p></p>
-    <div>{insert}</div>\
-"""  # noqa: E501
-
-    def __str__(self) -> str:
-        return f"""\
-naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
-
-{self.describe_plan()}\
-"""
 
     def describe_plan(self) -> str:
         """Create a string representation of the unoptimized query plan."""
@@ -745,75 +820,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         return self
 
-    @property
-    def columns(self) -> list[str]:
-        """
-        Get or set column names.
-
-        Examples
-        --------
-        >>> df = (
-        ...     pl.DataFrame(
-        ...         {
-        ...             "foo": [1, 2, 3],
-        ...             "bar": [6, 7, 8],
-        ...             "ham": ["a", "b", "c"],
-        ...         }
-        ...     )
-        ...     .lazy()
-        ...     .select(["foo", "bar"])
-        ... )
-
-        >>> df.columns
-        ['foo', 'bar']
-
-        """
-        return self._ldf.columns()
-
-    @property
-    def dtypes(self) -> list[type[DataType]]:
-        """
-        Get dtypes of columns in LazyFrame.
-
-        Examples
-        --------
-        >>> lf = pl.DataFrame(
-        ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6.0, 7.0, 8.0],
-        ...         "ham": ["a", "b", "c"],
-        ...     }
-        ... ).lazy()
-        >>> lf.dtypes
-        [<class 'polars.datatypes.Int64'>, <class 'polars.datatypes.Float64'>, <class 'polars.datatypes.Utf8'>]
-
-        See Also
-        --------
-        schema : Returns a {colname:dtype} mapping.
-
-        """  # noqa: E501
-        return self._ldf.dtypes()
-
-    @property
-    def schema(self) -> Schema:
-        """
-        Get a dict[column name, DataType].
-
-        Examples
-        --------
-        >>> lf = pl.DataFrame(
-        ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6.0, 7.0, 8.0],
-        ...         "ham": ["a", "b", "c"],
-        ...     }
-        ... ).lazy()
-        >>> lf.schema
-        {'foo': <class 'polars.datatypes.Int64'>, 'bar': <class 'polars.datatypes.Float64'>, 'ham': <class 'polars.datatypes.Utf8'>}
-
-        """  # noqa: E501
-        return self._ldf.schema()
-
     def cache(self: LDF) -> LDF:
         """Cache the result once the execution of the physical plan hits this node."""
         return self._from_pyldf(self._ldf.cache())
@@ -860,12 +866,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """
         return self._from_pyldf(self._ldf.clone())
-
-    def __copy__(self: LDF) -> LDF:
-        return self.clone()
-
-    def __deepcopy__(self: LDF, memo: None = None) -> LDF:
-        return self.clone()
 
     def filter(self: LDF, predicate: pli.Expr | str | pli.Series | list[bool]) -> LDF:
         """
