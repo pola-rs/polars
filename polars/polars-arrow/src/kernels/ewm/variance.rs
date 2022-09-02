@@ -97,7 +97,7 @@ where
         // NOTE: in the unadjusted case we must ensure that these quantities
         // are identically 1 during the first iteration
         let wgt_sum = T::one();
-        let wgt_sum_sqr = (T::one() - alpha.powf(two)) / one_sub_alpha.powf(two);
+        let wgt_sum_sqr = (T::one() + alpha) / one_sub_alpha;
         (wgt_sum, wgt_sum_sqr)
     };
 
