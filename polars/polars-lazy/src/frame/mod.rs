@@ -457,14 +457,26 @@ impl LazyFrame {
             .into_iter()
             .map(|a| a.as_ref().to_string())
             .collect::<Vec<_>>();
-        // todo! make delayed
-        let schema = &*self.schema().unwrap();
-        // a column gets swapped
-        if new.iter().any(|name| schema.get(name).is_some()) {
-            self.rename_impl_swapping(existing, new)
-        } else {
-            self.rename_impl(existing, new)
+
+        fn inner(lf: LazyFrame, existing: Vec<String>, new: Vec<String>) -> LazyFrame {
+            // remove mappings that map to themselves.
+            let (existing, new): (Vec<_>, Vec<_>) = existing
+                .into_iter()
+                .zip(new)
+                .flat_map(|(a, b)| if a == b { None } else { Some((a, b)) })
+                .unzip();
+
+            // todo! make delayed
+            let schema = &*lf.schema().unwrap();
+            // a column gets swapped
+            if new.iter().any(|name| schema.get(name).is_some()) {
+                lf.rename_impl_swapping(existing, new)
+            } else {
+                lf.rename_impl(existing, new)
+            }
         }
+
+        inner(self, existing, new)
     }
 
     /// Removes columns from the DataFrame.

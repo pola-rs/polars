@@ -167,3 +167,10 @@ def test_unknown_apply() -> None:
         "Flour": [10.0, 100.0, 100.0, 20.0],
     }
     assert q.dtypes == [pl.Int64, pl.Unknown]
+
+
+def test_remove_redundant_mapping_4668() -> None:
+    df = pl.DataFrame([["a"]] * 2, ["A", "B "]).lazy()
+    clean_name_dict = {x: " ".join(x.split()) for x in df.columns}
+    df = df.rename(clean_name_dict)
+    assert df.columns == ["A", "B"]
