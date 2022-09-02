@@ -818,6 +818,156 @@ class DataFrame:
         self._df = PyDataFrame.read_json(file, json_lines)
         return self
 
+    @property
+    def shape(self) -> tuple[int, int]:
+        """
+        Get the shape of the DataFrame.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
+        >>> df.shape
+        (5, 1)
+
+        """
+        return self._df.shape()
+
+    @property
+    def height(self) -> int:
+        """
+        Get the height of the DataFrame.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
+        >>> df.height
+        5
+
+        """
+        return self._df.height()
+
+    @property
+    def width(self) -> int:
+        """
+        Get the width of the DataFrame.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
+        >>> df.width
+        1
+
+        """
+        return self._df.width()
+
+    @property
+    def columns(self) -> list[str]:
+        """
+        Get or set column names.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
+        >>> df.columns
+        ['foo', 'bar', 'ham']
+
+        Set column names:
+
+        >>> df.columns = ["apple", "banana", "orange"]
+        >>> df
+        shape: (3, 3)
+        ┌───────┬────────┬────────┐
+        │ apple ┆ banana ┆ orange │
+        │ ---   ┆ ---    ┆ ---    │
+        │ i64   ┆ i64    ┆ str    │
+        ╞═══════╪════════╪════════╡
+        │ 1     ┆ 6      ┆ a      │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ 7      ┆ b      │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 3     ┆ 8      ┆ c      │
+        └───────┴────────┴────────┘
+
+        """
+        return self._df.columns()
+
+    @columns.setter
+    def columns(self, columns: Sequence[str]) -> None:
+        """
+        Change the column names of the `DataFrame`.
+
+        Parameters
+        ----------
+        columns
+            A list with new names for the `DataFrame`.
+            The length of the list should be equal to the width of the `DataFrame`.
+
+        """
+        self._df.set_column_names(columns)
+
+    @property
+    def dtypes(self) -> list[PolarsDataType]:
+        """
+        Get dtypes of columns in DataFrame. Dtypes can also be found in column headers when printing the DataFrame.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
+        >>> df.dtypes
+        [<class 'polars.datatypes.Int64'>, <class 'polars.datatypes.Float64'>, <class 'polars.datatypes.Utf8'>]
+        >>> df
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ f64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6.0 ┆ a   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 7.0 ┆ b   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 8.0 ┆ c   │
+        └─────┴─────┴─────┘
+
+        See Also
+        --------
+        schema : Returns a {colname:dtype} mapping.
+
+        """  # noqa: E501
+        return self._df.dtypes()
+
+    @property
+    def schema(self) -> dict[str, PolarsDataType]:
+        """
+        Get a dict[column name, DataType].
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
+        >>> df.schema
+        {'foo': <class 'polars.datatypes.Int64'>, 'bar': <class 'polars.datatypes.Float64'>, 'ham': <class 'polars.datatypes.Utf8'>}
+
+        """  # noqa: E501
+        return dict(zip(self.columns, self.dtypes))
+
     def to_arrow(self) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.
@@ -2175,156 +2325,6 @@ class DataFrame:
             .filter(predicate)  # type: ignore[arg-type]
             .collect(no_optimization=True, string_cache=False)
         )
-
-    @property
-    def shape(self) -> tuple[int, int]:
-        """
-        Get the shape of the DataFrame.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
-        >>> df.shape
-        (5, 1)
-
-        """
-        return self._df.shape()
-
-    @property
-    def height(self) -> int:
-        """
-        Get the height of the DataFrame.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
-        >>> df.height
-        5
-
-        """
-        return self._df.height()
-
-    @property
-    def width(self) -> int:
-        """
-        Get the width of the DataFrame.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
-        >>> df.width
-        1
-
-        """
-        return self._df.width()
-
-    @property
-    def columns(self) -> list[str]:
-        """
-        Get or set column names.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
-        ...         "ham": ["a", "b", "c"],
-        ...     }
-        ... )
-        >>> df.columns
-        ['foo', 'bar', 'ham']
-
-        Set column names:
-
-        >>> df.columns = ["apple", "banana", "orange"]
-        >>> df
-        shape: (3, 3)
-        ┌───────┬────────┬────────┐
-        │ apple ┆ banana ┆ orange │
-        │ ---   ┆ ---    ┆ ---    │
-        │ i64   ┆ i64    ┆ str    │
-        ╞═══════╪════════╪════════╡
-        │ 1     ┆ 6      ┆ a      │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 2     ┆ 7      ┆ b      │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 3     ┆ 8      ┆ c      │
-        └───────┴────────┴────────┘
-
-        """
-        return self._df.columns()
-
-    @columns.setter
-    def columns(self, columns: Sequence[str]) -> None:
-        """
-        Change the column names of the `DataFrame`.
-
-        Parameters
-        ----------
-        columns
-            A list with new names for the `DataFrame`.
-            The length of the list should be equal to the width of the `DataFrame`.
-
-        """
-        self._df.set_column_names(columns)
-
-    @property
-    def dtypes(self) -> list[PolarsDataType]:
-        """
-        Get dtypes of columns in DataFrame. Dtypes can also be found in column headers when printing the DataFrame.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6.0, 7.0, 8.0],
-        ...         "ham": ["a", "b", "c"],
-        ...     }
-        ... )
-        >>> df.dtypes
-        [<class 'polars.datatypes.Int64'>, <class 'polars.datatypes.Float64'>, <class 'polars.datatypes.Utf8'>]
-        >>> df
-        shape: (3, 3)
-        ┌─────┬─────┬─────┐
-        │ foo ┆ bar ┆ ham │
-        │ --- ┆ --- ┆ --- │
-        │ i64 ┆ f64 ┆ str │
-        ╞═════╪═════╪═════╡
-        │ 1   ┆ 6.0 ┆ a   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 2   ┆ 7.0 ┆ b   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 3   ┆ 8.0 ┆ c   │
-        └─────┴─────┴─────┘
-
-        See Also
-        --------
-        schema : Returns a {colname:dtype} mapping.
-
-        """  # noqa: E501
-        return self._df.dtypes()
-
-    @property
-    def schema(self) -> dict[str, PolarsDataType]:
-        """
-        Get a dict[column name, DataType].
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6.0, 7.0, 8.0],
-        ...         "ham": ["a", "b", "c"],
-        ...     }
-        ... )
-        >>> df.schema
-        {'foo': <class 'polars.datatypes.Int64'>, 'bar': <class 'polars.datatypes.Float64'>, 'ham': <class 'polars.datatypes.Utf8'>}
-
-        """  # noqa: E501
-        return dict(zip(self.columns, self.dtypes))
 
     def describe(self: DF) -> DF:
         """
