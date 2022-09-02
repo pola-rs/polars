@@ -47,7 +47,7 @@ from polars.internals.series.datetime import DateTimeNameSpace
 from polars.internals.series.list import ListNameSpace
 from polars.internals.series.string import StringNameSpace
 from polars.internals.series.struct import StructNameSpace
-from polars.internals.series.utils import call_expr, expr_dispatch, get_ffi_func
+from polars.internals.series.utils import expr_dispatch, get_ffi_func
 from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _date_to_pl_date,
@@ -3739,7 +3739,8 @@ class Series:
         Same as `abs(series)`.
         """
 
-    __abs__ = call_expr(abs)
+    def __abs__(self) -> Series:
+        return self.abs()
 
     def rank(self, method: RankMethod = "average", reverse: bool = False) -> Series:
         """
