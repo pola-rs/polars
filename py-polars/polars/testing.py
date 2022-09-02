@@ -258,7 +258,7 @@ def _assert_series_inner(
             # apply check with tolerance, but only to the known-unequal matches
             left, right = left.filter(unequal), right.filter(unequal)
             if (((left - right).abs() > (atol + rtol * right.abs())).sum() != 0) or (
-                left.is_null() != right.is_null()
+                (left.is_null() != right.is_null()).any()
             ):
                 raise_assert_detail(
                     obj, "Value mismatch", left=list(left), right=list(right)
