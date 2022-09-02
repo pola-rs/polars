@@ -137,11 +137,11 @@ class Expr:
     def _repr_html_(self) -> str:
         return self._pyexpr.to_str()
 
-    @staticmethod
-    def _from_pyexpr(pyexpr: PyExpr) -> Expr:
-        self = Expr.__new__(Expr)
-        self._pyexpr = pyexpr
-        return self
+    @classmethod
+    def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
+        expr = cls.__new__(cls)
+        expr._pyexpr = pyexpr
+        return expr
 
     def _to_pyexpr(self, other: Any) -> PyExpr:
         return self._to_expr(other)._pyexpr
