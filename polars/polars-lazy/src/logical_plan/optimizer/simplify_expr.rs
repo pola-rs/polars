@@ -3,6 +3,7 @@ use polars_utils::arena::Arena;
 
 use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::*;
+use crate::prelude::function_expr::FunctionExpr;
 
 macro_rules! eval_binary_same_type {
     ($lhs:expr, $operand: tt, $rhs:expr) => {{
@@ -383,8 +384,14 @@ impl OptimizationRule for SimplifyExprRule {
                     _ => None,
                 }
             }
-            AExpr::Reverse(expr) => {
-                let input = expr_arena.get(*expr);
+            // sort().reverse() -> sort(reverse)
+            // sort_by().reverse() -> sort_by(reverse)
+            AExpr::Function {
+                input,
+                function: FunctionExpr::Reverse,
+                ..
+            } => {
+                let input = expr_arena.get(input[0]);
                 match input {
                     AExpr::Sort { expr, options } => {
                         let mut options = *options;

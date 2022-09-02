@@ -203,7 +203,6 @@ impl fmt::Debug for Expr {
             IsUnique(expr) => write!(f, "{:?}.unique()", expr),
             Explode(expr) => write!(f, "{:?}.explode()", expr),
             Duplicated(expr) => write!(f, "{:?}.is_duplicate()", expr),
-            Reverse(expr) => write!(f, "{:?}.reverse()", expr),
             Alias(expr, name) => write!(f, "{:?}.alias(\"{}\")", expr, name),
             Column(name) => write!(f, "col(\"{}\")", name),
             Literal(v) => {

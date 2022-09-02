@@ -314,7 +314,6 @@ pub enum Expr {
         function: FunctionExpr,
         options: FunctionOptions,
     },
-    Reverse(Box<Expr>),
     Duplicated(Box<Expr>),
     IsUnique(Box<Expr>),
     Explode(Box<Expr>),
