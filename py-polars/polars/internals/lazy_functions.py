@@ -395,6 +395,7 @@ def sum(column: str | list[pli.Expr | str] | pli.Series | pli.Expr) -> pli.Expr 
     column
         Column(s) to be used in aggregation.
         This can be:
+        
         - a column name, or Series -> aggregate the sum value of that column/Series.
         - a List[Expr] -> aggregate the sum value horizontally across the Expr result.
 
