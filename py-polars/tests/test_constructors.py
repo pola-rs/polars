@@ -29,7 +29,7 @@ def test_init_dict() -> None:
     # List of empty list/tuple
     df = pl.DataFrame({"a": [[]], "b": [()]})
     expected = {"a": pl.List(pl.Float64), "b": pl.List(pl.Float64)}
-    assert df.schema == expected  # type: ignore[comparison-overlap]
+    assert df.schema == expected
     assert df.rows() == [([], [])]
 
     # Mixed dtypes
@@ -389,7 +389,7 @@ def test_init_only_columns() -> None:
         assert df.shape == (0, 4)
         assert df.frame_equal(truth, null_equal=True)
         assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8, pl.List]
-        assert df.schema["d"].inner == pl.UInt8  # type: ignore[attr-defined]
+        assert df.schema["d"].inner == pl.UInt8  # type: ignore[union-attr]
 
         dfe = df.cleared()
         assert (df.schema == dfe.schema) and (dfe.shape == df.shape)

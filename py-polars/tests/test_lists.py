@@ -78,13 +78,13 @@ def test_dtype() -> None:
             ("dtm", pl.List(pl.Datetime)),
         ],
     )
-    assert df.schema == {  # type: ignore[comparison-overlap]
+    assert df.schema == {
         "i": pl.List(pl.Int8),
         "tm": pl.List(pl.Time),
         "dt": pl.List(pl.Date),
         "dtm": pl.List(pl.Datetime),
     }
-    assert df.schema["i"].inner == pl.Int8  # type: ignore[attr-defined]
+    assert df.schema["i"].inner == pl.Int8  # type: ignore[union-attr]
     assert df.rows() == [
         (
             [1, 2, 3],
@@ -447,3 +447,11 @@ def test_is_in_empty_list_4639() -> None:
     assert df.with_columns(
         [pl.lit(None).cast(pl.Int64).is_in(empty_list).alias("in_empty_list")]
     ).to_dict(False) == {"in_empty_list": [False]}
+
+
+def test_inner_type_categorical_on_rechunk() -> None:
+    df = pl.DataFrame({"cats": ["foo", "bar"]}).select(
+        pl.col(pl.Utf8).cast(pl.Categorical).list()
+    )
+
+    assert pl.concat([df, df], rechunk=True).dtypes == [pl.List(pl.Categorical)]

@@ -83,8 +83,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     fn append(&mut self, other: &Series) -> Result<()> {
         if self.0.dtype() == other.dtype() {
-            self.0.append(other.as_ref().as_ref());
-            Ok(())
+            self.0.append(other.as_ref().as_ref())
         } else {
             Err(PolarsError::SchemaMisMatch(
                 "cannot append Series; data types don't match".into(),
@@ -93,8 +92,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
     fn extend(&mut self, other: &Series) -> Result<()> {
         if self.0.dtype() == other.dtype() {
-            self.0.extend(other.as_ref().as_ref());
-            Ok(())
+            self.0.extend(other.as_ref().as_ref())
         } else {
             Err(PolarsError::SchemaMisMatch(
                 "cannot extend Series; data types don't match".into(),

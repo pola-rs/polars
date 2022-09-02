@@ -157,10 +157,10 @@ impl BooleanChunked {
 
 #[doc(hidden)]
 impl ListChunked {
-    pub fn extend(&mut self, other: &Self) {
+    pub fn extend(&mut self, other: &Self) -> Result<()> {
         // TODO! properly implement mutation
         // this is harder because we don't know the inner type of the list
-        self.append(other);
+        self.append(other)
     }
 }
 

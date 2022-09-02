@@ -2290,7 +2290,7 @@ class DataFrame:
         self._df.set_column_names(columns)
 
     @property
-    def dtypes(self) -> list[type[DataType]]:
+    def dtypes(self) -> list[PolarsDataType]:
         """
         Get dtypes of columns in DataFrame. Dtypes can also be found in column headers when printing the DataFrame.
 
@@ -2327,7 +2327,7 @@ class DataFrame:
         return self._df.dtypes()
 
     @property
-    def schema(self) -> dict[str, type[DataType]]:
+    def schema(self) -> dict[str, PolarsDataType]:
         """
         Get a dict[column name, DataType].
 

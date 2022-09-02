@@ -1,6 +1,7 @@
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::series::ops::NullBehavior;
+use polars_core::utils::{concat_df, concat_df_unchecked};
 use polars_time::prelude::DateMethods;
 
 use super::*;
@@ -2085,6 +2086,23 @@ fn test_partitioned_gb_ternary() -> Result<()> {
         "col" => [0],
         "sum" => [9],
     ]?));
+
+    Ok(())
+}
+
+#[test]
+fn test_foo() -> Result<()> {
+    let df = df![
+        "a" => ["a", "b"]
+    ]?;
+
+    let df = df
+        .lazy()
+        .select([all().cast(DataType::Categorical(None)).list()])
+        .collect()?;
+
+    let mut out = concat_df(&[df.clone(), df.clone()])?;
+    dbg!(out.agg_chunks());
 
     Ok(())
 }
