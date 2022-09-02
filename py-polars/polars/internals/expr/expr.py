@@ -137,12 +137,6 @@ class Expr:
         expr._pyexpr = pyexpr
         return expr
 
-    def __str__(self) -> str:
-        return self._pyexpr.to_str()
-
-    def _repr_html_(self) -> str:
-        return self._pyexpr.to_str()
-
     def _to_pyexpr(self, other: Any) -> PyExpr:
         return self._to_expr(other)._pyexpr
 
@@ -150,6 +144,12 @@ class Expr:
         if isinstance(other, Expr):
             return other
         return pli.lit(other)
+
+    def _repr_html_(self) -> str:
+        return self._pyexpr.to_str()
+
+    def __str__(self) -> str:
+        return self._pyexpr.to_str()
 
     def __bool__(self) -> Expr:
         raise ValueError(
