@@ -125,7 +125,6 @@ trigonometry = ["polars-lazy/trigonometry"]
 sign = ["polars-lazy/sign"]
 pivot = ["polars-lazy/pivot"]
 top_k = ["polars-lazy/top_k"]
-# algo = ["polars-algo"]
 
 test = [
   "lazy",
@@ -271,7 +270,6 @@ polars-io = { version = "0.23.0", path = "./polars-io", features = ["private"], 
 polars-lazy = { version = "0.23.0", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
 polars-ops = { version = "0.23.0", path = "./polars-ops" }
 polars-time = { version = "0.23.0", path = "./polars-time", default-features = false, optional = true }
-# polars-algo = { version = "0.23.0", path = "./polars-algo", optional = true}
 
 [dev-dependencies]
 ahash = "0.7"
