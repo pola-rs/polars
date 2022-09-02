@@ -446,6 +446,11 @@ def sum(column: str | list[pli.Expr | str] | pli.Series | pli.Expr) -> pli.Expr 
     │ 2   ┆ 4   ┆ 6   ┆ 8   │
     └─────┴─────┴─────┴─────┘
 
+    Sum a series:
+
+    >>> pl.sum(df.get_column("a"))
+    3
+
     To aggregate the sums for more than one column/expression use ``pl.col(list).sum()``
     instead:
 
