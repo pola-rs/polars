@@ -143,10 +143,10 @@ class Expr:
         self._pyexpr = pyexpr
         return self
 
-    def __to_pyexpr(self, other: Any) -> PyExpr:
-        return self.__to_expr(other)._pyexpr
+    def _to_pyexpr(self, other: Any) -> PyExpr:
+        return self._to_expr(other)._pyexpr
 
-    def __to_expr(self, other: Any) -> Expr:
+    def _to_expr(self, other: Any) -> Expr:
         if isinstance(other, Expr):
             return other
         return pli.lit(other)
@@ -164,58 +164,58 @@ class Expr:
         return self.is_not()
 
     def __xor__(self, other: Expr) -> Expr:
-        return wrap_expr(self._pyexpr._xor(self.__to_pyexpr(other)))
+        return wrap_expr(self._pyexpr._xor(self._to_pyexpr(other)))
 
     def __rxor__(self, other: Expr) -> Expr:
-        return wrap_expr(self._pyexpr._xor(self.__to_pyexpr(other)))
+        return wrap_expr(self._pyexpr._xor(self._to_pyexpr(other)))
 
     def __and__(self, other: Expr) -> Expr:
-        return wrap_expr(self._pyexpr._and(self.__to_pyexpr(other)))
+        return wrap_expr(self._pyexpr._and(self._to_pyexpr(other)))
 
     def __rand__(self, other: Any) -> Expr:
-        return wrap_expr(self._pyexpr._and(self.__to_pyexpr(other)))
+        return wrap_expr(self._pyexpr._and(self._to_pyexpr(other)))
 
     def __or__(self, other: Expr) -> Expr:
-        return wrap_expr(self._pyexpr._or(self.__to_pyexpr(other)))
+        return wrap_expr(self._pyexpr._or(self._to_pyexpr(other)))
 
     def __ror__(self, other: Any) -> Expr:
-        return wrap_expr(self.__to_pyexpr(other)._or(self._pyexpr))
+        return wrap_expr(self._to_pyexpr(other)._or(self._pyexpr))
 
     def __add__(self, other: Any) -> Expr:
-        return wrap_expr(self._pyexpr + self.__to_pyexpr(other))
+        return wrap_expr(self._pyexpr + self._to_pyexpr(other))
 
     def __radd__(self, other: Any) -> Expr:
-        return wrap_expr(self.__to_pyexpr(other) + self._pyexpr)
+        return wrap_expr(self._to_pyexpr(other) + self._pyexpr)
 
     def __sub__(self, other: Any) -> Expr:
-        return wrap_expr(self._pyexpr - self.__to_pyexpr(other))
+        return wrap_expr(self._pyexpr - self._to_pyexpr(other))
 
     def __rsub__(self, other: Any) -> Expr:
-        return wrap_expr(self.__to_pyexpr(other) - self._pyexpr)
+        return wrap_expr(self._to_pyexpr(other) - self._pyexpr)
 
     def __mul__(self, other: Any) -> Expr:
-        return wrap_expr(self._pyexpr * self.__to_pyexpr(other))
+        return wrap_expr(self._pyexpr * self._to_pyexpr(other))
 
     def __rmul__(self, other: Any) -> Expr:
-        return wrap_expr(self.__to_pyexpr(other) * self._pyexpr)
+        return wrap_expr(self._to_pyexpr(other) * self._pyexpr)
 
     def __truediv__(self, other: Any) -> Expr:
-        return wrap_expr(self._pyexpr / self.__to_pyexpr(other))
+        return wrap_expr(self._pyexpr / self._to_pyexpr(other))
 
     def __rtruediv__(self, other: Any) -> Expr:
-        return wrap_expr(self.__to_pyexpr(other) / self._pyexpr)
+        return wrap_expr(self._to_pyexpr(other) / self._pyexpr)
 
     def __floordiv__(self, other: Any) -> Expr:
-        return wrap_expr(self._pyexpr // self.__to_pyexpr(other))
+        return wrap_expr(self._pyexpr // self._to_pyexpr(other))
 
     def __rfloordiv__(self, other: Any) -> Expr:
-        return wrap_expr(self.__to_pyexpr(other) // self._pyexpr)
+        return wrap_expr(self._to_pyexpr(other) // self._pyexpr)
 
     def __mod__(self, other: Any) -> Expr:
-        return wrap_expr(self._pyexpr % self.__to_pyexpr(other))
+        return wrap_expr(self._pyexpr % self._to_pyexpr(other))
 
     def __rmod__(self, other: Any) -> Expr:
-        return wrap_expr(self.__to_pyexpr(other) % self._pyexpr)
+        return wrap_expr(self._to_pyexpr(other) % self._pyexpr)
 
     def __pow__(self, power: int | float | pli.Series | Expr) -> Expr:
         return self.pow(power)
@@ -224,22 +224,22 @@ class Expr:
         return pli.expr_to_lit_or_expr(base) ** self
 
     def __ge__(self, other: Any) -> Expr:
-        return wrap_expr(self._pyexpr.gt_eq(self.__to_expr(other)._pyexpr))
+        return wrap_expr(self._pyexpr.gt_eq(self._to_expr(other)._pyexpr))
 
     def __le__(self, other: Any) -> Expr:
-        return wrap_expr(self._pyexpr.lt_eq(self.__to_expr(other)._pyexpr))
+        return wrap_expr(self._pyexpr.lt_eq(self._to_expr(other)._pyexpr))
 
     def __eq__(self, other: Any) -> Expr:  # type: ignore[override]
-        return wrap_expr(self._pyexpr.eq(self.__to_expr(other)._pyexpr))
+        return wrap_expr(self._pyexpr.eq(self._to_expr(other)._pyexpr))
 
     def __ne__(self, other: Any) -> Expr:  # type: ignore[override]
-        return wrap_expr(self._pyexpr.neq(self.__to_expr(other)._pyexpr))
+        return wrap_expr(self._pyexpr.neq(self._to_expr(other)._pyexpr))
 
     def __lt__(self, other: Any) -> Expr:
-        return wrap_expr(self._pyexpr.lt(self.__to_expr(other)._pyexpr))
+        return wrap_expr(self._pyexpr.lt(self._to_expr(other)._pyexpr))
 
     def __gt__(self, other: Any) -> Expr:
-        return wrap_expr(self._pyexpr.gt(self.__to_expr(other)._pyexpr))
+        return wrap_expr(self._pyexpr.gt(self._to_expr(other)._pyexpr))
 
     def __neg__(self) -> Expr:
         return pli.lit(0) - self
