@@ -968,6 +968,493 @@ class DataFrame:
         """  # noqa: E501
         return dict(zip(self.columns, self.dtypes))
 
+    def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
+        """Compare a DataFrame with another object."""
+        if isinstance(other, DataFrame):
+            return self._compare_to_other_df(other, op)
+        else:
+            return self._compare_to_non_df(other, op)
+
+    def _compare_to_other_df(
+        self,
+        other: DataFrame,
+        op: ComparisonOperator,
+    ) -> DataFrame:
+        """Compare a DataFrame with another DataFrame."""
+        if self.columns != other.columns:
+            raise ValueError("DataFrame columns do not match")
+        if self.shape != other.shape:
+            raise ValueError("DataFrame dimensions do not match")
+
+        suffix = "__POLARS_CMP_OTHER"
+        other_renamed = other.select(pli.all().suffix(suffix))
+        combined = pli.concat([self, other_renamed], how="horizontal")
+
+        if op == "eq":
+            expr = [pli.col(n) == pli.col(f"{n}{suffix}") for n in self.columns]
+        elif op == "neq":
+            expr = [pli.col(n) != pli.col(f"{n}{suffix}") for n in self.columns]
+        elif op == "gt":
+            expr = [pli.col(n) > pli.col(f"{n}{suffix}") for n in self.columns]
+        elif op == "lt":
+            expr = [pli.col(n) < pli.col(f"{n}{suffix}") for n in self.columns]
+        elif op == "gt_eq":
+            expr = [pli.col(n) >= pli.col(f"{n}{suffix}") for n in self.columns]
+        elif op == "lt_eq":
+            expr = [pli.col(n) <= pli.col(f"{n}{suffix}") for n in self.columns]
+        else:
+            raise ValueError(f"got unexpected comparison operator: {op}")
+
+        return combined.select(expr)
+
+    def _compare_to_non_df(
+        self: DF,
+        other: Any,
+        op: ComparisonOperator,
+    ) -> DF:
+        """Compare a DataFrame with a non-DataFrame object."""
+        if op == "eq":
+            return self.select(pli.all() == other)
+        elif op == "neq":
+            return self.select(pli.all() != other)
+        elif op == "gt":
+            return self.select(pli.all() > other)
+        elif op == "lt":
+            return self.select(pli.all() < other)
+        elif op == "gt_eq":
+            return self.select(pli.all() >= other)
+        elif op == "lt_eq":
+            return self.select(pli.all() <= other)
+        else:
+            raise ValueError(f"got unexpected comparison operator: {op}")
+
+    def __eq__(self, other: Any) -> DataFrame:  # type: ignore[override]
+        return self._comp(other, "eq")
+
+    def __ne__(self, other: Any) -> DataFrame:  # type: ignore[override]
+        return self._comp(other, "neq")
+
+    def __gt__(self, other: Any) -> DataFrame:
+        return self._comp(other, "gt")
+
+    def __lt__(self, other: Any) -> DataFrame:
+        return self._comp(other, "lt")
+
+    def __ge__(self, other: Any) -> DataFrame:
+        return self._comp(other, "gt_eq")
+
+    def __le__(self, other: Any) -> DataFrame:
+        return self._comp(other, "lt_eq")
+
+    def __getstate__(self) -> list[pli.Series]:
+        return self.get_columns()
+
+    def __setstate__(self, state) -> None:  # type: ignore[no-untyped-def]
+        self._df = DataFrame(state)._df
+
+    def __mul__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
+        if isinstance(other, DataFrame):
+            return self._from_pydf(self._df.mul_df(other._df))
+
+        other = _prepare_other_arg(other)
+        return self._from_pydf(self._df.mul(other._s))
+
+    def __truediv__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
+        if isinstance(other, DataFrame):
+            return self._from_pydf(self._df.div_df(other._df))
+
+        other = _prepare_other_arg(other)
+        return self._from_pydf(self._df.div(other._s))
+
+    def __add__(
+        self: DF,
+        other: DataFrame | pli.Series | int | float | bool | str,
+    ) -> DF:
+        if isinstance(other, DataFrame):
+            return self._from_pydf(self._df.add_df(other._df))
+        other = _prepare_other_arg(other)
+        return self._from_pydf(self._df.add(other._s))
+
+    def __sub__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
+        if isinstance(other, DataFrame):
+            return self._from_pydf(self._df.sub_df(other._df))
+        other = _prepare_other_arg(other)
+        return self._from_pydf(self._df.sub(other._s))
+
+    def __mod__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
+        if isinstance(other, DataFrame):
+            return self._from_pydf(self._df.rem_df(other._df))
+        other = _prepare_other_arg(other)
+        return self._from_pydf(self._df.rem(other._s))
+
+    def __str__(self) -> str:
+        return self._df.as_str()
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.columns
+
+    def __iter__(self) -> Iterator[Any]:
+        return self.get_columns().__iter__()
+
+    def _pos_idx(self, idx: int, dim: int) -> int:
+        if idx >= 0:
+            return idx
+        else:
+            return self.shape[dim] + idx
+
+    def _pos_idxs(
+        self, idxs: np.ndarray[Any, Any] | pli.Series, dim: int
+    ) -> pli.Series:
+        # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
+        idx_type = get_idx_type()
+
+        if isinstance(idxs, pli.Series):
+            if idxs.dtype == idx_type:
+                return idxs
+            if idxs.dtype in {
+                UInt8,
+                UInt16,
+                UInt64 if idx_type == UInt32 else UInt32,
+                Int8,
+                Int16,
+                Int32,
+                Int64,
+            }:
+                if idx_type == UInt32:
+                    if idxs.dtype in {Int64, UInt64}:
+                        if idxs.max() >= 2**32:  # type: ignore[operator]
+                            raise ValueError(
+                                "Index positions should be smaller than 2^32."
+                            )
+                    if idxs.dtype == Int64:
+                        if idxs.min() < -(2**32):  # type: ignore[operator]
+                            raise ValueError(
+                                "Index positions should be bigger than -2^32 + 1."
+                            )
+                if idxs.dtype in {Int8, Int16, Int32, Int64}:
+                    if idxs.min() < 0:  # type: ignore[operator]
+                        if idx_type == UInt32:
+                            if idxs.dtype in {Int8, Int16}:
+                                idxs = idxs.cast(Int32)
+                        else:
+                            if idxs.dtype in {Int8, Int16, Int32}:
+                                idxs = idxs.cast(Int64)
+
+                        idxs = pli.select(
+                            pli.when(pli.lit(idxs) < 0)
+                            .then(self.shape[dim] + pli.lit(idxs))
+                            .otherwise(pli.lit(idxs))
+                        ).to_series()
+
+                return idxs.cast(idx_type)
+
+        if _NUMPY_AVAILABLE and isinstance(idxs, np.ndarray):
+            if idxs.ndim != 1:
+                raise ValueError("Only 1D numpy array is supported as index.")
+            if idxs.dtype.kind in ("i", "u"):
+                # Numpy array with signed or unsigned integers.
+
+                if idx_type == UInt32:
+                    if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2**32:
+                        raise ValueError("Index positions should be smaller than 2^32.")
+                    if idxs.dtype == np.int64 and idxs.min() < -(2**32):
+                        raise ValueError(
+                            "Index positions should be bigger than -2^32 + 1."
+                        )
+                if idxs.dtype.kind == "i" and idxs.min() < 0:
+                    if idx_type == UInt32:
+                        if idxs.dtype in (np.int8, np.int16):
+                            idxs = idxs.astype(np.int32)
+                    else:
+                        if idxs.dtype in (np.int8, np.int16, np.int32):
+                            idxs = idxs.astype(np.int64)
+
+                    # Update negative indexes to absolute indexes.
+                    idxs = np.where(idxs < 0, self.shape[dim] + idxs, idxs)
+
+                return pli.Series("", idxs, dtype=idx_type)
+
+        raise NotImplementedError("Unsupported idxs datatype.")
+
+    @overload
+    def __getitem__(self: DF, item: str) -> pli.Series:
+        ...
+
+    @overload
+    def __getitem__(
+        self: DF,
+        item: int
+        | np.ndarray[Any, Any]
+        | MultiColSelector
+        | tuple[int, MultiColSelector]
+        | tuple[MultiRowSelector, MultiColSelector],
+    ) -> DF:
+        ...
+
+    @overload
+    def __getitem__(self: DF, item: tuple[MultiRowSelector, int]) -> pli.Series:
+        ...
+
+    @overload
+    def __getitem__(self: DF, item: tuple[MultiRowSelector, str]) -> pli.Series:
+        ...
+
+    @overload
+    def __getitem__(self: DF, item: tuple[int, int]) -> Any:
+        ...
+
+    @overload
+    def __getitem__(self: DF, item: tuple[int, str]) -> Any:
+        ...
+
+    def __getitem__(
+        self,
+        item: (
+            str
+            | int
+            | np.ndarray[Any, Any]
+            | MultiColSelector
+            | tuple[int, MultiColSelector]
+            | tuple[MultiRowSelector, MultiColSelector]
+            | tuple[MultiRowSelector, int]
+            | tuple[MultiRowSelector, str]
+            | tuple[int, int]
+            | tuple[int, str]
+        ),
+    ) -> DataFrame | pli.Series:
+        """Get item. Does quite a lot. Read the comments."""
+        # select rows and columns at once
+        # every 2d selection, i.e. tuple is row column order, just like numpy
+        if isinstance(item, tuple) and len(item) == 2:
+            row_selection, col_selection = item
+
+            # df[:, unknown]
+            if isinstance(row_selection, slice):
+
+                # multiple slices
+                # df[:, :]
+                if isinstance(col_selection, slice):
+                    # slice can be
+                    # by index
+                    #   [1:8]
+                    # or by column name
+                    #   ["foo":"bar"]
+                    # first we make sure that the slice is by index
+                    start = col_selection.start
+                    stop = col_selection.stop
+                    if isinstance(col_selection.start, str):
+                        start = self.find_idx_by_name(col_selection.start)
+                    if isinstance(col_selection.stop, str):
+                        stop = self.find_idx_by_name(col_selection.stop) + 1
+
+                    col_selection = slice(start, stop, col_selection.step)
+
+                    df = self.__getitem__(self.columns[col_selection])
+                    return df[row_selection]
+
+                # df[:, [True, False]]
+                if is_bool_sequence(col_selection) or (
+                    isinstance(col_selection, pli.Series)
+                    and col_selection.dtype == Boolean
+                ):
+                    if len(col_selection) != self.width:
+                        raise ValueError(
+                            f"Expected {self.width} values when selecting columns by"
+                            f" boolean mask. Got {len(col_selection)}."
+                        )
+                    series_list = []
+                    for (i, val) in enumerate(col_selection):
+                        if val:
+                            series_list.append(self.to_series(i))
+
+                    df = self.__class__(series_list)
+                    return df[row_selection]
+
+                # single slice
+                # df[:, unknown]
+                series = self.__getitem__(col_selection)
+                # s[:]
+                pli.wrap_s(series[row_selection])
+
+            # df[2, :] (select row as df)
+            if isinstance(row_selection, int):
+                if isinstance(col_selection, (slice, list)) or (
+                    _NUMPY_AVAILABLE and isinstance(col_selection, np.ndarray)
+                ):
+                    df = self[:, col_selection]
+                    return df.slice(row_selection, 1)
+                # df[2, "a"]
+                if isinstance(col_selection, str):
+                    return self[col_selection][row_selection]
+
+            # column selection can be "a" and ["a", "b"]
+            if isinstance(col_selection, str):
+                col_selection = [col_selection]
+
+            # df[:, 1]
+            if isinstance(col_selection, int):
+                series = self.to_series(col_selection)
+                return series[row_selection]
+
+            if isinstance(col_selection, list):
+                # df[:, [1, 2]]
+                if is_int_sequence(col_selection):
+                    series_list = [self.to_series(i) for i in col_selection]
+                    df = self.__class__(series_list)
+                    return df[row_selection]
+
+            df = self.__getitem__(col_selection)
+            return df.__getitem__(row_selection)
+
+        # select single column
+        # df["foo"]
+        if isinstance(item, str):
+            return pli.wrap_s(self._df.column(item))
+
+        # df[idx]
+        if isinstance(item, int):
+            return self.slice(self._pos_idx(item, dim=0), 1)
+
+        # df[range(n)]
+        if isinstance(item, range):
+            return self[range_to_slice(item)]
+
+        # df[:]
+        if isinstance(item, slice):
+            return PolarsSlice(self).apply(item)
+
+        # select rows by numpy mask or index
+        # df[np.array([1, 2, 3])]
+        # df[np.array([True, False, True])]
+        if _NUMPY_AVAILABLE and isinstance(item, np.ndarray):
+            if item.ndim != 1:
+                raise ValueError("Only a 1D-Numpy array is supported as index.")
+            if item.dtype.kind in ("i", "u"):
+                # Numpy array with signed or unsigned integers.
+                return self._from_pydf(
+                    self._df.take_with_series(self._pos_idxs(item, dim=0)._s)
+                )
+            if isinstance(item[0], str):
+                return self._from_pydf(self._df.select(item))
+
+        if is_str_sequence(item, allow_str=False):
+            # select multiple columns
+            # df[["foo", "bar"]]
+            return self._from_pydf(self._df.select(item))
+        elif is_int_sequence(item):
+            item = pli.Series("", item)  # fall through to next if isinstance
+
+        if isinstance(item, pli.Series):
+            dtype = item.dtype
+            if dtype == Utf8:
+                return self._from_pydf(self._df.select(item))
+            if dtype == UInt32:
+                return self._from_pydf(self._df.take_with_series(item._s))
+            if dtype in {UInt8, UInt16, UInt64, Int8, Int16, Int32, Int64}:
+                return self._from_pydf(
+                    self._df.take_with_series(self._pos_idxs(item, dim=0)._s)
+                )
+
+        # if no data has been returned, the operation is not supported
+        raise ValueError(
+            f"Cannot __getitem__ on DataFrame with item: '{item}'"
+            f" of type: '{type(item)}'."
+        )
+
+    def __setitem__(
+        self, key: str | list[int] | list[str] | tuple[Any, str | int], value: Any
+    ) -> None:  # pragma: no cover
+        # df["foo"] = series
+        if isinstance(key, str):
+            raise TypeError(
+                "'DataFrame' object does not support 'Series' assignment by index. "
+                "Use 'DataFrame.with_columns'"
+            )
+
+        # df[["C", "D"]]
+        elif isinstance(key, list):
+            # TODO: Use python sequence constructors
+            if not _NUMPY_AVAILABLE:
+                raise ImportError("'numpy' is required for this functionality.")
+            value = np.array(value)
+            if value.ndim != 2:
+                raise ValueError("can only set multiple columns with 2D matrix")
+            if value.shape[1] != len(key):
+                raise ValueError(
+                    "matrix columns should be equal to list use to determine column"
+                    " names"
+                )
+
+            # todo! we can parallize this by calling from_numpy
+            columns = []
+            for (i, name) in enumerate(key):
+                columns.append(pli.Series(name, value[:, i]))
+            self._df = self.with_columns(columns)._df
+
+        # df[a, b]
+        elif isinstance(key, tuple):
+            row_selection, col_selection = key
+
+            if (
+                isinstance(row_selection, pli.Series) and row_selection.dtype == Boolean
+            ) or is_bool_sequence(row_selection):
+                raise ValueError(
+                    "Not allowed to set 'DataFrame' by boolean mask in the "
+                    "row position. Consider using 'DataFrame.with_columns'"
+                )
+
+            # get series column selection
+            if isinstance(col_selection, str):
+                s = self.__getitem__(col_selection)
+            elif isinstance(col_selection, int):
+                s = self[:, col_selection]
+            else:
+                raise ValueError(f"column selection not understood: {col_selection}")
+
+            # dispatch to __setitem__ of Series to do modification
+            s[row_selection] = value
+
+            # now find the location to place series
+            # df[idx]
+            if isinstance(col_selection, int):
+                self.replace_at_idx(col_selection, s)
+            # df["foo"]
+            elif isinstance(col_selection, str):
+                self.replace(col_selection, s)
+        else:
+            raise ValueError(
+                f"Cannot __setitem__ on DataFrame with key: '{key}' "
+                f"of type: '{type(key)}' and value: '{value}' "
+                f"of type: '{type(value)}'."
+            )
+
+    def __len__(self) -> int:
+        return self.height
+
+    def __copy__(self: DF) -> DF:
+        return self.clone()
+
+    def __deepcopy__(self: DF, memo: None = None) -> DF:
+        return self.clone()
+
+    def _repr_html_(self) -> str:
+        """
+        Format output data in HTML for display in Jupyter Notebooks.
+
+        Output rows and columns can be modified by setting the following ENVIRONMENT
+        variables:
+
+        * POLARS_FMT_MAX_COLS: set the number of columns
+        * POLARS_FMT_MAX_ROWS: set the number of rows
+
+        """
+        max_cols = int(os.environ.get("POLARS_FMT_MAX_COLS", default=75))
+        max_rows = int(os.environ.get("POLARS_FMT_MAX_ROWS", default=25))
+        return "\n".join(NotebookFormatter(self, max_cols, max_rows).render())
+
     def to_arrow(self) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.
@@ -1516,487 +2003,6 @@ class DataFrame:
             self._df.write_parquet(
                 file, compression, compression_level, statistics, row_group_size
             )
-
-    def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
-        """Compare a DataFrame with another object."""
-        if isinstance(other, DataFrame):
-            return self._compare_to_other_df(other, op)
-        else:
-            return self._compare_to_non_df(other, op)
-
-    def _compare_to_other_df(
-        self,
-        other: DataFrame,
-        op: ComparisonOperator,
-    ) -> DataFrame:
-        """Compare a DataFrame with another DataFrame."""
-        if self.columns != other.columns:
-            raise ValueError("DataFrame columns do not match")
-        if self.shape != other.shape:
-            raise ValueError("DataFrame dimensions do not match")
-
-        suffix = "__POLARS_CMP_OTHER"
-        other_renamed = other.select(pli.all().suffix(suffix))
-        combined = pli.concat([self, other_renamed], how="horizontal")
-
-        if op == "eq":
-            expr = [pli.col(n) == pli.col(f"{n}{suffix}") for n in self.columns]
-        elif op == "neq":
-            expr = [pli.col(n) != pli.col(f"{n}{suffix}") for n in self.columns]
-        elif op == "gt":
-            expr = [pli.col(n) > pli.col(f"{n}{suffix}") for n in self.columns]
-        elif op == "lt":
-            expr = [pli.col(n) < pli.col(f"{n}{suffix}") for n in self.columns]
-        elif op == "gt_eq":
-            expr = [pli.col(n) >= pli.col(f"{n}{suffix}") for n in self.columns]
-        elif op == "lt_eq":
-            expr = [pli.col(n) <= pli.col(f"{n}{suffix}") for n in self.columns]
-        else:
-            raise ValueError(f"got unexpected comparison operator: {op}")
-
-        return combined.select(expr)
-
-    def _compare_to_non_df(
-        self: DF,
-        other: Any,
-        op: ComparisonOperator,
-    ) -> DF:
-        """Compare a DataFrame with a non-DataFrame object."""
-        if op == "eq":
-            return self.select(pli.all() == other)
-        elif op == "neq":
-            return self.select(pli.all() != other)
-        elif op == "gt":
-            return self.select(pli.all() > other)
-        elif op == "lt":
-            return self.select(pli.all() < other)
-        elif op == "gt_eq":
-            return self.select(pli.all() >= other)
-        elif op == "lt_eq":
-            return self.select(pli.all() <= other)
-        else:
-            raise ValueError(f"got unexpected comparison operator: {op}")
-
-    def __eq__(self, other: Any) -> DataFrame:  # type: ignore[override]
-        return self._comp(other, "eq")
-
-    def __ne__(self, other: Any) -> DataFrame:  # type: ignore[override]
-        return self._comp(other, "neq")
-
-    def __gt__(self, other: Any) -> DataFrame:
-        return self._comp(other, "gt")
-
-    def __lt__(self, other: Any) -> DataFrame:
-        return self._comp(other, "lt")
-
-    def __ge__(self, other: Any) -> DataFrame:
-        return self._comp(other, "gt_eq")
-
-    def __le__(self, other: Any) -> DataFrame:
-        return self._comp(other, "lt_eq")
-
-    def __getstate__(self) -> list[pli.Series]:
-        return self.get_columns()
-
-    def __setstate__(self, state) -> None:  # type: ignore[no-untyped-def]
-        self._df = DataFrame(state)._df
-
-    def __mul__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
-        if isinstance(other, DataFrame):
-            return self._from_pydf(self._df.mul_df(other._df))
-
-        other = _prepare_other_arg(other)
-        return self._from_pydf(self._df.mul(other._s))
-
-    def __truediv__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
-        if isinstance(other, DataFrame):
-            return self._from_pydf(self._df.div_df(other._df))
-
-        other = _prepare_other_arg(other)
-        return self._from_pydf(self._df.div(other._s))
-
-    def __add__(
-        self: DF,
-        other: DataFrame | pli.Series | int | float | bool | str,
-    ) -> DF:
-        if isinstance(other, DataFrame):
-            return self._from_pydf(self._df.add_df(other._df))
-        other = _prepare_other_arg(other)
-        return self._from_pydf(self._df.add(other._s))
-
-    def __sub__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
-        if isinstance(other, DataFrame):
-            return self._from_pydf(self._df.sub_df(other._df))
-        other = _prepare_other_arg(other)
-        return self._from_pydf(self._df.sub(other._s))
-
-    def __mod__(self: DF, other: DataFrame | pli.Series | int | float | bool) -> DF:
-        if isinstance(other, DataFrame):
-            return self._from_pydf(self._df.rem_df(other._df))
-        other = _prepare_other_arg(other)
-        return self._from_pydf(self._df.rem(other._s))
-
-    def __str__(self) -> str:
-        return self._df.as_str()
-
-    def __repr__(self) -> str:
-        return self.__str__()
-
-    def __contains__(self, key: str) -> bool:
-        return key in self.columns
-
-    def __iter__(self) -> Iterator[Any]:
-        return self.get_columns().__iter__()
-
-    def _pos_idx(self, idx: int, dim: int) -> int:
-        if idx >= 0:
-            return idx
-        else:
-            return self.shape[dim] + idx
-
-    def _pos_idxs(
-        self, idxs: np.ndarray[Any, Any] | pli.Series, dim: int
-    ) -> pli.Series:
-        # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
-        idx_type = get_idx_type()
-
-        if isinstance(idxs, pli.Series):
-            if idxs.dtype == idx_type:
-                return idxs
-            if idxs.dtype in {
-                UInt8,
-                UInt16,
-                UInt64 if idx_type == UInt32 else UInt32,
-                Int8,
-                Int16,
-                Int32,
-                Int64,
-            }:
-                if idx_type == UInt32:
-                    if idxs.dtype in {Int64, UInt64}:
-                        if idxs.max() >= 2**32:  # type: ignore[operator]
-                            raise ValueError(
-                                "Index positions should be smaller than 2^32."
-                            )
-                    if idxs.dtype == Int64:
-                        if idxs.min() < -(2**32):  # type: ignore[operator]
-                            raise ValueError(
-                                "Index positions should be bigger than -2^32 + 1."
-                            )
-                if idxs.dtype in {Int8, Int16, Int32, Int64}:
-                    if idxs.min() < 0:  # type: ignore[operator]
-                        if idx_type == UInt32:
-                            if idxs.dtype in {Int8, Int16}:
-                                idxs = idxs.cast(Int32)
-                        else:
-                            if idxs.dtype in {Int8, Int16, Int32}:
-                                idxs = idxs.cast(Int64)
-
-                        idxs = pli.select(
-                            pli.when(pli.lit(idxs) < 0)
-                            .then(self.shape[dim] + pli.lit(idxs))
-                            .otherwise(pli.lit(idxs))
-                        ).to_series()
-
-                return idxs.cast(idx_type)
-
-        if _NUMPY_AVAILABLE and isinstance(idxs, np.ndarray):
-            if idxs.ndim != 1:
-                raise ValueError("Only 1D numpy array is supported as index.")
-            if idxs.dtype.kind in ("i", "u"):
-                # Numpy array with signed or unsigned integers.
-
-                if idx_type == UInt32:
-                    if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2**32:
-                        raise ValueError("Index positions should be smaller than 2^32.")
-                    if idxs.dtype == np.int64 and idxs.min() < -(2**32):
-                        raise ValueError(
-                            "Index positions should be bigger than -2^32 + 1."
-                        )
-                if idxs.dtype.kind == "i" and idxs.min() < 0:
-                    if idx_type == UInt32:
-                        if idxs.dtype in (np.int8, np.int16):
-                            idxs = idxs.astype(np.int32)
-                    else:
-                        if idxs.dtype in (np.int8, np.int16, np.int32):
-                            idxs = idxs.astype(np.int64)
-
-                    # Update negative indexes to absolute indexes.
-                    idxs = np.where(idxs < 0, self.shape[dim] + idxs, idxs)
-
-                return pli.Series("", idxs, dtype=idx_type)
-
-        raise NotImplementedError("Unsupported idxs datatype.")
-
-    @overload
-    def __getitem__(self: DF, item: str) -> pli.Series:
-        ...
-
-    @overload
-    def __getitem__(
-        self: DF,
-        item: int
-        | np.ndarray[Any, Any]
-        | MultiColSelector
-        | tuple[int, MultiColSelector]
-        | tuple[MultiRowSelector, MultiColSelector],
-    ) -> DF:
-        ...
-
-    @overload
-    def __getitem__(self: DF, item: tuple[MultiRowSelector, int]) -> pli.Series:
-        ...
-
-    @overload
-    def __getitem__(self: DF, item: tuple[MultiRowSelector, str]) -> pli.Series:
-        ...
-
-    @overload
-    def __getitem__(self: DF, item: tuple[int, int]) -> Any:
-        ...
-
-    @overload
-    def __getitem__(self: DF, item: tuple[int, str]) -> Any:
-        ...
-
-    def __getitem__(
-        self,
-        item: (
-            str
-            | int
-            | np.ndarray[Any, Any]
-            | MultiColSelector
-            | tuple[int, MultiColSelector]
-            | tuple[MultiRowSelector, MultiColSelector]
-            | tuple[MultiRowSelector, int]
-            | tuple[MultiRowSelector, str]
-            | tuple[int, int]
-            | tuple[int, str]
-        ),
-    ) -> DataFrame | pli.Series:
-        """Get item. Does quite a lot. Read the comments."""
-        # select rows and columns at once
-        # every 2d selection, i.e. tuple is row column order, just like numpy
-        if isinstance(item, tuple) and len(item) == 2:
-            row_selection, col_selection = item
-
-            # df[:, unknown]
-            if isinstance(row_selection, slice):
-
-                # multiple slices
-                # df[:, :]
-                if isinstance(col_selection, slice):
-                    # slice can be
-                    # by index
-                    #   [1:8]
-                    # or by column name
-                    #   ["foo":"bar"]
-                    # first we make sure that the slice is by index
-                    start = col_selection.start
-                    stop = col_selection.stop
-                    if isinstance(col_selection.start, str):
-                        start = self.find_idx_by_name(col_selection.start)
-                    if isinstance(col_selection.stop, str):
-                        stop = self.find_idx_by_name(col_selection.stop) + 1
-
-                    col_selection = slice(start, stop, col_selection.step)
-
-                    df = self.__getitem__(self.columns[col_selection])
-                    return df[row_selection]
-
-                # df[:, [True, False]]
-                if is_bool_sequence(col_selection) or (
-                    isinstance(col_selection, pli.Series)
-                    and col_selection.dtype == Boolean
-                ):
-                    if len(col_selection) != self.width:
-                        raise ValueError(
-                            f"Expected {self.width} values when selecting columns by"
-                            f" boolean mask. Got {len(col_selection)}."
-                        )
-                    series_list = []
-                    for (i, val) in enumerate(col_selection):
-                        if val:
-                            series_list.append(self.to_series(i))
-
-                    df = self.__class__(series_list)
-                    return df[row_selection]
-
-                # single slice
-                # df[:, unknown]
-                series = self.__getitem__(col_selection)
-                # s[:]
-                pli.wrap_s(series[row_selection])
-
-            # df[2, :] (select row as df)
-            if isinstance(row_selection, int):
-                if isinstance(col_selection, (slice, list)) or (
-                    _NUMPY_AVAILABLE and isinstance(col_selection, np.ndarray)
-                ):
-                    df = self[:, col_selection]
-                    return df.slice(row_selection, 1)
-                # df[2, "a"]
-                if isinstance(col_selection, str):
-                    return self[col_selection][row_selection]
-
-            # column selection can be "a" and ["a", "b"]
-            if isinstance(col_selection, str):
-                col_selection = [col_selection]
-
-            # df[:, 1]
-            if isinstance(col_selection, int):
-                series = self.to_series(col_selection)
-                return series[row_selection]
-
-            if isinstance(col_selection, list):
-                # df[:, [1, 2]]
-                if is_int_sequence(col_selection):
-                    series_list = [self.to_series(i) for i in col_selection]
-                    df = self.__class__(series_list)
-                    return df[row_selection]
-
-            df = self.__getitem__(col_selection)
-            return df.__getitem__(row_selection)
-
-        # select single column
-        # df["foo"]
-        if isinstance(item, str):
-            return pli.wrap_s(self._df.column(item))
-
-        # df[idx]
-        if isinstance(item, int):
-            return self.slice(self._pos_idx(item, dim=0), 1)
-
-        # df[range(n)]
-        if isinstance(item, range):
-            return self[range_to_slice(item)]
-
-        # df[:]
-        if isinstance(item, slice):
-            return PolarsSlice(self).apply(item)
-
-        # select rows by numpy mask or index
-        # df[np.array([1, 2, 3])]
-        # df[np.array([True, False, True])]
-        if _NUMPY_AVAILABLE and isinstance(item, np.ndarray):
-            if item.ndim != 1:
-                raise ValueError("Only a 1D-Numpy array is supported as index.")
-            if item.dtype.kind in ("i", "u"):
-                # Numpy array with signed or unsigned integers.
-                return self._from_pydf(
-                    self._df.take_with_series(self._pos_idxs(item, dim=0)._s)
-                )
-            if isinstance(item[0], str):
-                return self._from_pydf(self._df.select(item))
-
-        if is_str_sequence(item, allow_str=False):
-            # select multiple columns
-            # df[["foo", "bar"]]
-            return self._from_pydf(self._df.select(item))
-        elif is_int_sequence(item):
-            item = pli.Series("", item)  # fall through to next if isinstance
-
-        if isinstance(item, pli.Series):
-            dtype = item.dtype
-            if dtype == Utf8:
-                return self._from_pydf(self._df.select(item))
-            if dtype == UInt32:
-                return self._from_pydf(self._df.take_with_series(item._s))
-            if dtype in {UInt8, UInt16, UInt64, Int8, Int16, Int32, Int64}:
-                return self._from_pydf(
-                    self._df.take_with_series(self._pos_idxs(item, dim=0)._s)
-                )
-
-        # if no data has been returned, the operation is not supported
-        raise ValueError(
-            f"Cannot __getitem__ on DataFrame with item: '{item}'"
-            f" of type: '{type(item)}'."
-        )
-
-    def __setitem__(
-        self, key: str | list[int] | list[str] | tuple[Any, str | int], value: Any
-    ) -> None:  # pragma: no cover
-        # df["foo"] = series
-        if isinstance(key, str):
-            raise TypeError(
-                "'DataFrame' object does not support 'Series' assignment by index. "
-                "Use 'DataFrame.with_columns'"
-            )
-
-        # df[["C", "D"]]
-        elif isinstance(key, list):
-            # TODO: Use python sequence constructors
-            if not _NUMPY_AVAILABLE:
-                raise ImportError("'numpy' is required for this functionality.")
-            value = np.array(value)
-            if value.ndim != 2:
-                raise ValueError("can only set multiple columns with 2D matrix")
-            if value.shape[1] != len(key):
-                raise ValueError(
-                    "matrix columns should be equal to list use to determine column"
-                    " names"
-                )
-
-            # todo! we can parallize this by calling from_numpy
-            columns = []
-            for (i, name) in enumerate(key):
-                columns.append(pli.Series(name, value[:, i]))
-            self._df = self.with_columns(columns)._df
-
-        # df[a, b]
-        elif isinstance(key, tuple):
-            row_selection, col_selection = key
-
-            if (
-                isinstance(row_selection, pli.Series) and row_selection.dtype == Boolean
-            ) or is_bool_sequence(row_selection):
-                raise ValueError(
-                    "Not allowed to set 'DataFrame' by boolean mask in the "
-                    "row position. Consider using 'DataFrame.with_columns'"
-                )
-
-            # get series column selection
-            if isinstance(col_selection, str):
-                s = self.__getitem__(col_selection)
-            elif isinstance(col_selection, int):
-                s = self[:, col_selection]
-            else:
-                raise ValueError(f"column selection not understood: {col_selection}")
-
-            # dispatch to __setitem__ of Series to do modification
-            s[row_selection] = value
-
-            # now find the location to place series
-            # df[idx]
-            if isinstance(col_selection, int):
-                self.replace_at_idx(col_selection, s)
-            # df["foo"]
-            elif isinstance(col_selection, str):
-                self.replace(col_selection, s)
-        else:
-            raise ValueError(
-                f"Cannot __setitem__ on DataFrame with key: '{key}' "
-                f"of type: '{type(key)}' and value: '{value}' "
-                f"of type: '{type(value)}'."
-            )
-
-    def __len__(self) -> int:
-        return self.height
-
-    def _repr_html_(self) -> str:
-        """
-        Format output data in HTML for display in Jupyter Notebooks.
-
-        Output rows and columns can be modified by setting the following ENVIRONMENT
-        variables:
-
-        * POLARS_FMT_MAX_COLS: set the number of columns
-        * POLARS_FMT_MAX_ROWS: set the number of rows
-
-        """
-        max_cols = int(os.environ.get("POLARS_FMT_MAX_COLS", default=75))
-        max_rows = int(os.environ.get("POLARS_FMT_MAX_ROWS", default=25))
-        return "\n".join(NotebookFormatter(self, max_cols, max_rows).render())
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
@@ -4223,12 +4229,6 @@ class DataFrame:
 
         """
         return self._from_pydf(self._df.clone())
-
-    def __copy__(self: DF) -> DF:
-        return self.clone()
-
-    def __deepcopy__(self: DF, memo: None = None) -> DF:
-        return self.clone()
 
     def get_columns(self) -> list[pli.Series]:
         """
