@@ -985,6 +985,129 @@ class DataFrame:
         else:
             return {s.name: s.to_list() for s in self}
 
+    def to_dicts(self) -> list[dict[str, Any]]:
+        """
+        Convert every row to a dictionary.
+
+        Note that this is slow.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
+        >>> df.to_dicts()
+        [{'foo': 1, 'bar': 4}, {'foo': 2, 'bar': 5}, {'foo': 3, 'bar': 6}]
+
+        """
+        pydf = self._df
+        names = self.columns
+
+        return [
+            {k: v for k, v in zip(names, pydf.row_tuple(i))}
+            for i in range(0, self.height)
+        ]
+
+    def to_numpy(self) -> np.ndarray[Any, Any]:
+        """
+        Convert DataFrame to a 2D NumPy array.
+
+        This operation clones data.
+
+        Notes
+        -----
+        If you're attempting to convert Utf8 to an array you'll need to install
+        `pyarrow`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ... )
+        >>> numpy_array = df.to_numpy()
+        >>> type(numpy_array)
+        <class 'numpy.ndarray'>
+
+        """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
+        out = self._df.to_numpy()
+        if out is None:
+            return np.vstack(
+                [self.to_series(i).to_numpy() for i in range(self.width)]
+            ).T
+        else:
+            return out
+
+    def to_pandas(
+        self, *args: Any, date_as_object: bool = False, **kwargs: Any
+    ) -> pd.DataFrame:
+        """
+        Cast to a pandas DataFrame.
+
+        This requires that pandas and pyarrow are installed.
+        This operation clones data.
+
+        Parameters
+        ----------
+        args
+            Arguments will be sent to pyarrow.Table.to_pandas.
+        date_as_object
+            Cast dates to objects. If False, convert to datetime64[ns] dtype.
+        kwargs
+            Arguments will be sent to pyarrow.Table.to_pandas.
+
+        Examples
+        --------
+        >>> import pandas
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
+        >>> pandas_df = df.to_pandas()
+        >>> type(pandas_df)
+        <class 'pandas.core.frame.DataFrame'>
+
+        """
+        if not _PYARROW_AVAILABLE:  # pragma: no cover
+            raise ImportError("'pyarrow' is required when using to_pandas().")
+        record_batches = self._df.to_pandas()
+        tbl = pa.Table.from_batches(record_batches)
+        return tbl.to_pandas(*args, date_as_object=date_as_object, **kwargs)
+
+    def to_series(self, index: int = 0) -> pli.Series:
+        """
+        Select column as Series at index location.
+
+        Parameters
+        ----------
+        index
+            Location of selection.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
+        >>> df.to_series(1)
+        shape: (3,)
+        Series: 'bar' [i64]
+        [
+                6
+                7
+                8
+        ]
+
+        """
+        if index < 0:
+            index = len(self.columns) + index
+        return pli.wrap_s(self._df.select_at_idx(index))
+
     @overload
     def write_json(
         self,
@@ -1063,45 +1186,6 @@ class DataFrame:
         else:
             self._df.write_json(file, pretty, row_oriented, json_lines)
         return None
-
-    def to_pandas(
-        self, *args: Any, date_as_object: bool = False, **kwargs: Any
-    ) -> pd.DataFrame:
-        """
-        Cast to a pandas DataFrame.
-
-        This requires that pandas and pyarrow are installed.
-        This operation clones data.
-
-        Parameters
-        ----------
-        args
-            Arguments will be sent to pyarrow.Table.to_pandas.
-        date_as_object
-            Cast dates to objects. If False, convert to datetime64[ns] dtype.
-        kwargs
-            Arguments will be sent to pyarrow.Table.to_pandas.
-
-        Examples
-        --------
-        >>> import pandas
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
-        ...         "ham": ["a", "b", "c"],
-        ...     }
-        ... )
-        >>> pandas_df = df.to_pandas()
-        >>> type(pandas_df)
-        <class 'pandas.core.frame.DataFrame'>
-
-        """
-        if not _PYARROW_AVAILABLE:  # pragma: no cover
-            raise ImportError("'pyarrow' is required when using to_pandas().")
-        record_batches = self._df.to_pandas()
-        tbl = pa.Table.from_batches(record_batches)
-        return tbl.to_pandas(*args, date_as_object=date_as_object, **kwargs)
 
     def write_csv(
         self,
@@ -1242,26 +1326,87 @@ class DataFrame:
 
         self._df.write_ipc(file, compression)
 
-    def to_dicts(self) -> list[dict[str, Any]]:
+    def write_parquet(
+        self,
+        file: str | Path | BytesIO,
+        *,
+        compression: ParquetCompression = "lz4",
+        compression_level: int | None = None,
+        statistics: bool = False,
+        row_group_size: int | None = None,
+        use_pyarrow: bool = False,
+        pyarrow_options: dict[str, object] | None = None,
+    ) -> None:
         """
-        Convert every row to a dictionary.
+        Write to Apache Parquet file.
 
-        Note that this is slow.
+        Parameters
+        ----------
+        file
+            File path to which the file should be written.
+        compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
+            Compression method. The default compression "lz4" (actually lz4raw) has very
+            good performance, but may not yet been supported by older readers. If you
+            want more compatability guarantees, consider using "snappy".
+            Method "uncompressed" is not supported by pyarrow.
+        compression_level
+            The level of compression to use. Higher compression means smaller files on
+            disk.
 
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
-        >>> df.to_dicts()
-        [{'foo': 1, 'bar': 4}, {'foo': 2, 'bar': 5}, {'foo': 3, 'bar': 6}]
+            - "gzip" : min-level: 0, max-level: 10.
+            - "brotli" : min-level: 0, max-level: 11.
+            - "zstd" : min-level: 1, max-level: 22.
+        statistics
+            Write statistics to the parquet headers. This requires extra compute.
+        row_group_size
+            Size of the row groups in number of rows.
+            If None (default), the chunks of the `DataFrame` are
+            used. Writing in smaller chunks may reduce memory pressure and improve
+            writing speeds. This argument has no effect if 'pyarrow' is used.
+        use_pyarrow
+            Use C++ parquet implementation vs rust parquet implementation.
+            At the moment C++ supports more features.
+        pyarrow_options
+            Arguments passed to ``pyarrow.parquet.write_table``.
 
         """
-        pydf = self._df
-        names = self.columns
+        if compression is None:
+            compression = "uncompressed"
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
 
-        return [
-            {k: v for k, v in zip(names, pydf.row_tuple(i))}
-            for i in range(0, self.height)
-        ]
+        if use_pyarrow:
+            if not _PYARROW_AVAILABLE:  # pragma: no cover
+                raise ImportError(
+                    "'pyarrow' is required when using"
+                    " 'write_parquet(..., use_pyarrow=True)'."
+                )
+
+            tbl = self.to_arrow()
+
+            data = {}
+
+            for i, column in enumerate(tbl):
+                # extract the name before casting
+                if column._name is None:
+                    name = f"column_{i}"
+                else:
+                    name = column._name
+
+                data[name] = column
+            tbl = pa.table(data)
+
+            pa.parquet.write_table(
+                table=tbl,
+                where=file,
+                compression=compression,
+                write_statistics=statistics,
+                **(pyarrow_options or {}),
+            )
+        else:
+            self._df.write_parquet(
+                file, compression, compression_level, statistics, row_group_size
+            )
 
     def transpose(
         self: DF,
@@ -1371,119 +1516,6 @@ class DataFrame:
                 names.append(next(column_names))
             df.columns = names
         return df
-
-    def write_parquet(
-        self,
-        file: str | Path | BytesIO,
-        *,
-        compression: ParquetCompression = "lz4",
-        compression_level: int | None = None,
-        statistics: bool = False,
-        row_group_size: int | None = None,
-        use_pyarrow: bool = False,
-        pyarrow_options: dict[str, object] | None = None,
-    ) -> None:
-        """
-        Write to Apache Parquet file.
-
-        Parameters
-        ----------
-        file
-            File path to which the file should be written.
-        compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
-            Compression method. The default compression "lz4" (actually lz4raw) has very
-            good performance, but may not yet been supported by older readers. If you
-            want more compatability guarantees, consider using "snappy".
-            Method "uncompressed" is not supported by pyarrow.
-        compression_level
-            The level of compression to use. Higher compression means smaller files on
-            disk.
-
-            - "gzip" : min-level: 0, max-level: 10.
-            - "brotli" : min-level: 0, max-level: 11.
-            - "zstd" : min-level: 1, max-level: 22.
-        statistics
-            Write statistics to the parquet headers. This requires extra compute.
-        row_group_size
-            Size of the row groups in number of rows.
-            If None (default), the chunks of the `DataFrame` are
-            used. Writing in smaller chunks may reduce memory pressure and improve
-            writing speeds. This argument has no effect if 'pyarrow' is used.
-        use_pyarrow
-            Use C++ parquet implementation vs rust parquet implementation.
-            At the moment C++ supports more features.
-        pyarrow_options
-            Arguments passed to ``pyarrow.parquet.write_table``.
-
-        """
-        if compression is None:
-            compression = "uncompressed"
-        if isinstance(file, (str, Path)):
-            file = format_path(file)
-
-        if use_pyarrow:
-            if not _PYARROW_AVAILABLE:  # pragma: no cover
-                raise ImportError(
-                    "'pyarrow' is required when using"
-                    " 'write_parquet(..., use_pyarrow=True)'."
-                )
-
-            tbl = self.to_arrow()
-
-            data = {}
-
-            for i, column in enumerate(tbl):
-                # extract the name before casting
-                if column._name is None:
-                    name = f"column_{i}"
-                else:
-                    name = column._name
-
-                data[name] = column
-            tbl = pa.table(data)
-
-            pa.parquet.write_table(
-                table=tbl,
-                where=file,
-                compression=compression,
-                write_statistics=statistics,
-                **(pyarrow_options or {}),
-            )
-        else:
-            self._df.write_parquet(
-                file, compression, compression_level, statistics, row_group_size
-            )
-
-    def to_numpy(self) -> np.ndarray[Any, Any]:
-        """
-        Convert DataFrame to a 2D NumPy array.
-
-        This operation clones data.
-
-        Notes
-        -----
-        If you're attempting to convert Utf8 to an array you'll need to install
-        `pyarrow`.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
-        ... )
-        >>> numpy_array = df.to_numpy()
-        >>> type(numpy_array)
-        <class 'numpy.ndarray'>
-
-        """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        out = self._df.to_numpy()
-        if out is None:
-            return np.vstack(
-                [self.to_series(i).to_numpy() for i in range(self.width)]
-            ).T
-        else:
-            return out
 
     def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
         """Compare a DataFrame with another object."""
@@ -1985,38 +2017,6 @@ class DataFrame:
         max_cols = int(os.environ.get("POLARS_FMT_MAX_COLS", default=75))
         max_rows = int(os.environ.get("POLARS_FMT_MAX_ROWS", default=25))
         return "\n".join(NotebookFormatter(self, max_cols, max_rows).render())
-
-    def to_series(self, index: int = 0) -> pli.Series:
-        """
-        Select column as Series at index location.
-
-        Parameters
-        ----------
-        index
-            Location of selection.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
-        ...         "ham": ["a", "b", "c"],
-        ...     }
-        ... )
-        >>> df.to_series(1)
-        shape: (3,)
-        Series: 'bar' [i64]
-        [
-                6
-                7
-                8
-        ]
-
-        """
-        if index < 0:
-            index = len(self.columns) + index
-        return pli.wrap_s(self._df.select_at_idx(index))
 
     def reverse(self: DF) -> DF:
         """
