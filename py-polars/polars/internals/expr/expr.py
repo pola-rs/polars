@@ -131,17 +131,17 @@ class Expr:
     def __init__(self) -> None:
         self._pyexpr: PyExpr  # pragma: no cover
 
-    def __str__(self) -> str:
-        return self._pyexpr.to_str()
-
-    def _repr_html_(self) -> str:
-        return self._pyexpr.to_str()
-
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
         expr = cls.__new__(cls)
         expr._pyexpr = pyexpr
         return expr
+
+    def __str__(self) -> str:
+        return self._pyexpr.to_str()
+
+    def _repr_html_(self) -> str:
+        return self._pyexpr.to_str()
 
     def _to_pyexpr(self, other: Any) -> PyExpr:
         return self._to_expr(other)._pyexpr
