@@ -276,7 +276,7 @@ pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> Result<Expr> {
         }
     }
 
-    Ok(concat_str(exprs, ""))
+    concat_str(exprs, "")
 }
 
 /// Concat lists entries.
