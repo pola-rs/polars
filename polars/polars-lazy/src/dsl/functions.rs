@@ -269,7 +269,7 @@ pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> Expr {
             }
         }
 
-        if s.len() > 0 {
+        if !s.is_empty() {
             exprs.push(lit(s.to_string()))
         }
     }
