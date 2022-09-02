@@ -16,8 +16,7 @@ use crate::chunked_array::builder::{
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
-use crate::utils::NoNull;
-use crate::utils::{get_iter_capacity, CustomIterTools};
+use crate::utils::{get_iter_capacity, CustomIterTools, NoNull};
 
 impl<T: PolarsDataType> Default for ChunkedArray<T> {
     fn default() -> Self {
@@ -273,8 +272,7 @@ impl FromIterator<Option<Box<dyn Array>>> for ListChunked {
 #[cfg(feature = "object")]
 impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
     fn from_iter<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {
-        use arrow::bitmap::Bitmap;
-        use arrow::bitmap::MutableBitmap;
+        use arrow::bitmap::{Bitmap, MutableBitmap};
 
         let iter = iter.into_iter();
         let size = iter.size_hint().0;

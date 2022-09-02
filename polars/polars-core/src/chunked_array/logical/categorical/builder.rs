@@ -5,9 +5,10 @@ use arrow::array::*;
 use hashbrown::hash_map::RawEntryMut;
 use polars_arrow::trusted_len::PushUnchecked;
 
+use crate::datatypes::PlHashMap;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::*;
-use crate::{datatypes::PlHashMap, using_string_cache, StrHashGlobal, StringCache, POOL};
+use crate::{using_string_cache, StrHashGlobal, StringCache, POOL};
 
 pub enum RevMappingBuilder {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array

@@ -1,6 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use polars::prelude::*;
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 fn bench_collect_bool(v: &[bool]) {
     let f = || v.iter().copied().collect::<ChunkedArray<_>>();

@@ -1,16 +1,14 @@
 use std::ops::Not;
 
+use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
+use arrow::compute;
+use arrow::compute::comparison;
 use arrow::scalar::{PrimitiveScalar, Scalar, Utf8Scalar};
-use arrow::{
-    array::{BooleanArray, PrimitiveArray, Utf8Array},
-    compute,
-    compute::comparison,
-};
 use num::{NumCast, ToPrimitive};
 use polars_arrow::prelude::FromData;
 
-use crate::utils::align_chunks_binary;
-use crate::{prelude::*, utils::NoNull};
+use crate::prelude::*;
+use crate::utils::{align_chunks_binary, NoNull};
 
 impl<T> ChunkedArray<T>
 where
@@ -958,7 +956,8 @@ impl ChunkCompare<&StructChunked> for StructChunked {
 mod test {
     use std::iter::repeat;
 
-    use super::super::{arithmetic::test::create_two_chunked, test::get_chunked_array};
+    use super::super::arithmetic::test::create_two_chunked;
+    use super::super::test::get_chunked_array;
     use crate::prelude::*;
 
     #[test]

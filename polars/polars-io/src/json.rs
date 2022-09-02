@@ -66,7 +66,8 @@ use std::io::Write;
 use std::ops::Deref;
 
 use arrow::array::StructArray;
-pub use arrow::{error::Result as ArrowResult, io::json};
+pub use arrow::error::Result as ArrowResult;
+pub use arrow::io::json;
 use polars_arrow::conversion::chunk_to_struct;
 use polars_core::prelude::*;
 

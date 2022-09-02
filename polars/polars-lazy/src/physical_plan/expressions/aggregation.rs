@@ -1,12 +1,14 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use polars_arrow::export::arrow::{array::*, compute::concatenate::concatenate};
+use polars_arrow::export::arrow::array::*;
+use polars_arrow::export::arrow::compute::concatenate::concatenate;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::{GroupByMethod, GroupsProxy};
+use polars_core::prelude::*;
 use polars_core::utils::NoNull;
-use polars_core::{prelude::*, POOL};
+use polars_core::POOL;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PartitionedAggregation;

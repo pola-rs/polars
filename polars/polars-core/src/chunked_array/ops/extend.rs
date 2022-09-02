@@ -1,4 +1,5 @@
-use arrow::{compute::concatenate::concatenate, Either};
+use arrow::compute::concatenate::concatenate;
+use arrow::Either;
 
 use crate::prelude::*;
 

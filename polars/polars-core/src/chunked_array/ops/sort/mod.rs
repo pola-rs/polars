@@ -8,7 +8,8 @@ use std::cmp::Ordering;
 use std::hint::unreachable_unchecked;
 use std::iter::FromIterator;
 
-use arrow::{bitmap::MutableBitmap, buffer::Buffer};
+use arrow::bitmap::MutableBitmap;
+use arrow::buffer::Buffer;
 use num::Float;
 use polars_arrow::array::default_arrays::FromDataUtf8;
 use polars_arrow::kernels::rolling::compare_fn_nan_max;

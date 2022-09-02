@@ -1,4 +1,5 @@
-use num::{pow::Pow, Float};
+use num::pow::Pow;
+use num::Float;
 use polars_core::export::num;
 
 use super::*;

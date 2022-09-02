@@ -41,22 +41,22 @@ use serde::{Deserialize, Serialize};
 use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use crate::logical_plan::optimizer::file_caching::FileCacher;
+use crate::logical_plan::optimizer::predicate_pushdown::PredicatePushDown;
+use crate::logical_plan::optimizer::projection_pushdown::ProjectionPushDown;
 use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
-use crate::logical_plan::optimizer::{
-    predicate_pushdown::PredicatePushDown, projection_pushdown::ProjectionPushDown,
-};
 use crate::logical_plan::FETCH_ROWS;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::delay_rechunk::DelayRechunk;
+use crate::prelude::drop_nulls::ReplaceDropNulls;
+use crate::prelude::fast_projection::FastProjection;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use crate::prelude::file_caching::collect_fingerprints;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use crate::prelude::file_caching::find_column_union_and_fingerprints;
-use crate::prelude::{
-    drop_nulls::ReplaceDropNulls, fast_projection::FastProjection,
-    simplify_expr::SimplifyBooleanRule, slice_pushdown_lp::SlicePushDown, *,
-};
+use crate::prelude::simplify_expr::SimplifyBooleanRule;
+use crate::prelude::slice_pushdown_lp::SlicePushDown;
+use crate::prelude::*;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 
 #[derive(Clone, Debug)]

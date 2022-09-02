@@ -2,12 +2,10 @@ use std::io::Write;
 
 use arrow::array::Array;
 use arrow::chunk::Chunk;
-use arrow::datatypes::DataType as ArrowDataType;
-use arrow::datatypes::PhysicalType;
+use arrow::datatypes::{DataType as ArrowDataType, PhysicalType};
 use arrow::error::Error as ArrowError;
 use arrow::io::parquet::read::ParquetError;
-use arrow::io::parquet::write::{self, FileWriter, *};
-use arrow::io::parquet::write::{DynIter, DynStreamingIterator, Encoding};
+use arrow::io::parquet::write::{self, DynIter, DynStreamingIterator, Encoding, FileWriter, *};
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df};
 use rayon::prelude::*;

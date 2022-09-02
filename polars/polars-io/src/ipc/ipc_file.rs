@@ -42,7 +42,8 @@ use polars_core::prelude::*;
 
 use super::{finish_reader, ArrowReader, ArrowResult};
 use crate::predicates::PhysicalIoExpr;
-use crate::{prelude::*, WriterFactory};
+use crate::prelude::*;
+use crate::WriterFactory;
 
 /// Read Arrows IPC format into a DataFrame
 ///

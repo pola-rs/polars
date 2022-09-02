@@ -24,13 +24,26 @@ use std::path::PathBuf;
 use polars_core::POOL;
 use rayon::prelude::*;
 
+pub(super) use self::cache::*;
+pub(super) use self::drop_duplicates::*;
+pub(super) use self::explode::*;
+pub(super) use self::ext_context::*;
+pub(super) use self::filter::*;
+pub(super) use self::groupby::*;
+pub(super) use self::groupby_dynamic::*;
+pub(super) use self::groupby_partitioned::*;
+pub(super) use self::groupby_rolling::*;
+pub(super) use self::join::*;
+pub(super) use self::melt::*;
+pub(super) use self::projection::*;
 #[cfg(feature = "python")]
 pub(super) use self::python_scan::*;
-pub(super) use self::{
-    cache::*, drop_duplicates::*, explode::*, ext_context::*, filter::*, groupby::*,
-    groupby_dynamic::*, groupby_partitioned::*, groupby_rolling::*, join::*, melt::*,
-    projection::*, scan::*, slice::*, sort::*, stack::*, udf::*, union::*,
-};
+pub(super) use self::scan::*;
+pub(super) use self::slice::*;
+pub(super) use self::sort::*;
+pub(super) use self::stack::*;
+pub(super) use self::udf::*;
+pub(super) use self::union::*;
 use super::*;
 use crate::logical_plan::FETCH_ROWS;
 use crate::physical_plan::state::StateFlags;

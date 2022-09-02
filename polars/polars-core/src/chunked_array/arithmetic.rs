@@ -3,7 +3,8 @@ use std::borrow::Cow;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use arrow::array::PrimitiveArray;
-use arrow::compute::{arithmetics::basic, arity_assign};
+use arrow::compute::arithmetics::basic;
+use arrow::compute::arity_assign;
 use num::{Num, NumCast, ToPrimitive};
 
 use crate::prelude::*;

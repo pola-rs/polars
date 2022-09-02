@@ -2,8 +2,9 @@ use arrow::ffi;
 use polars::prelude::*;
 use polars_arrow::export::arrow;
 use pyo3::exceptions::PyValueError;
+use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
-use pyo3::{ffi::Py_uintptr_t, PyAny, PyObject, PyResult};
+use pyo3::{PyAny, PyObject, PyResult};
 
 /// Take an arrow array from python and convert it to a rust arrow array.
 /// This operation does not copy data.

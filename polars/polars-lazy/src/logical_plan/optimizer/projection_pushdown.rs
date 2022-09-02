@@ -1,4 +1,5 @@
-use polars_core::{datatypes::PlHashSet, prelude::*};
+use polars_core::datatypes::PlHashSet;
+use polars_core::prelude::*;
 
 use crate::logical_plan::Context;
 use crate::prelude::iterator::ArenaExprIter;

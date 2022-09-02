@@ -1,10 +1,8 @@
 use std::hash::Hash;
 
-use polars_core::export::{
-    _boost_hash_combine,
-    ahash::{self, CallHasher},
-    rayon::prelude::*,
-};
+use polars_core::export::_boost_hash_combine;
+use polars_core::export::ahash::{self, CallHasher};
+use polars_core::export::rayon::prelude::*;
 use polars_core::utils::NoNull;
 
 use super::*;

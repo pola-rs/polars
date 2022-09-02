@@ -3,7 +3,8 @@ use std::iter::Map;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use arrow::{array::*, bitmap::Bitmap};
+use arrow::array::*;
+use arrow::bitmap::Bitmap;
 use polars_arrow::prelude::ValueSize;
 
 use crate::prelude::*;
@@ -803,8 +804,7 @@ pub(crate) mod test {
     #[test]
     #[cfg(feature = "dtype-categorical")]
     fn test_iter_categorical() {
-        use crate::reset_string_cache;
-        use crate::SINGLE_LOCK;
+        use crate::{reset_string_cache, SINGLE_LOCK};
         let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
         let ca = Utf8Chunked::new("", &[Some("foo"), None, Some("bar"), Some("ham")]);

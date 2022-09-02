@@ -1,4 +1,5 @@
-use rayon::{prelude::*, ThreadPool};
+use rayon::prelude::*;
+use rayon::ThreadPool;
 
 use crate::IdxSize;
 

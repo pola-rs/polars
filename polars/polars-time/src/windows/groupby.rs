@@ -2,9 +2,10 @@ use std::cmp::Ordering;
 
 use polars_arrow::trusted_len::TrustedLen;
 use polars_arrow::utils::CustomIterTools;
+use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
+use polars_core::utils::split_offsets;
 use polars_core::POOL;
-use polars_core::{export::rayon::prelude::*, utils::split_offsets};
 use polars_utils::flatten;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

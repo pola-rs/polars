@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use polars_arrow::is_valid::IsValid;
 use polars_core::frame::groupby::GroupsProxy;
-use polars_core::{prelude::*, POOL};
+use polars_core::prelude::*;
+use polars_core::POOL;
 use rayon::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;

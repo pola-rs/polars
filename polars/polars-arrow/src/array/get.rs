@@ -1,7 +1,5 @@
-use arrow::{
-    array::{Array, BooleanArray, ListArray, PrimitiveArray, Utf8Array},
-    types::NativeType,
-};
+use arrow::array::{Array, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
+use arrow::types::NativeType;
 
 use crate::is_valid::IsValid;
 

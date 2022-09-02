@@ -1,4 +1,5 @@
-use polars_arrow::{array::list::AnonymousBuilder, prelude::*};
+use polars_arrow::array::list::AnonymousBuilder;
+use polars_arrow::prelude::*;
 
 use super::*;
 

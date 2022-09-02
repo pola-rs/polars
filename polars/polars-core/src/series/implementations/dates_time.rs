@@ -13,17 +13,13 @@ use std::ops::{Deref, DerefMut};
 use ahash::RandomState;
 use polars_arrow::prelude::QuantileInterpolOptions;
 
-use super::private;
-use super::IntoSeries;
-use super::SeriesTrait;
-use super::SeriesWrap;
-use super::*;
-use crate::chunked_array::{
-    ops::{explode::ExplodeByOffsets, ToBitRepr},
-    AsSinglePtr,
-};
+use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
+use crate::chunked_array::ops::explode::ExplodeByOffsets;
+use crate::chunked_array::ops::ToBitRepr;
+use crate::chunked_array::AsSinglePtr;
 use crate::fmt::FmtList;
-use crate::frame::{groupby::*, hash_join::*};
+use crate::frame::groupby::*;
+use crate::frame::hash_join::*;
 use crate::prelude::*;
 
 macro_rules! impl_dyn_series {

@@ -2,8 +2,9 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 use polars_core::frame::groupby::GroupsProxy;
+use polars_core::prelude::*;
 use polars_core::series::unstable::UnstableSeries;
-use polars_core::{prelude::*, POOL};
+use polars_core::POOL;
 use rayon::prelude::*;
 
 use crate::physical_plan::state::{ExecutionState, StateFlags};

@@ -1,11 +1,9 @@
-use std::hash::Hash;
-use std::hash::Hasher;
+use std::hash::{Hash, Hasher};
 
 use arrow::types::NativeType;
 use num::traits::NumCast;
 use polars_core::prelude::*;
-use polars_time::prelude::utf8::infer::infer_pattern_single;
-use polars_time::prelude::utf8::infer::DatetimeInfer;
+use polars_time::prelude::utf8::infer::{infer_pattern_single, DatetimeInfer};
 use polars_time::prelude::utf8::Pattern;
 use simd_json::{BorrowedValue as Value, KnownKey, StaticNode};
 

@@ -36,6 +36,7 @@ use sort_merge::*;
 
 #[cfg(feature = "private")]
 pub use self::multiple_keys::private_left_join_multiple_keys;
+use crate::datatypes::PlHashMap;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 use crate::frame::hash_join::multiple_keys::{
     inner_join_multiple_keys, left_join_multiple_keys, outer_join_multiple_keys,
@@ -49,7 +50,7 @@ use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded, this_partition,
     AsU64, StrHash,
 };
-use crate::{datatypes::PlHashMap, POOL};
+use crate::POOL;
 
 pub type LeftJoinIds = (JoinIds, JoinOptIds);
 

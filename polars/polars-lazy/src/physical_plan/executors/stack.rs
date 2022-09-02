@@ -1,4 +1,5 @@
-use polars_core::{prelude::*, POOL};
+use polars_core::prelude::*;
+use polars_core::POOL;
 use rayon::prelude::*;
 
 use crate::physical_plan::executors::execute_projection_cached_window_fns;

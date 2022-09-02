@@ -1,8 +1,7 @@
 //! DataFrame module.
 use std::borrow::Cow;
 use std::iter::{FromIterator, Iterator};
-use std::mem;
-use std::ops;
+use std::{mem, ops};
 
 use ahash::{AHashSet, RandomState};
 use polars_arrow::prelude::QuantileInterpolOptions;

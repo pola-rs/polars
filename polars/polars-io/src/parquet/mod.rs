@@ -30,7 +30,8 @@ mod test {
     use std::fs::File;
     use std::io::Cursor;
 
-    use polars_core::{df, prelude::*};
+    use polars_core::df;
+    use polars_core::prelude::*;
 
     use crate::prelude::*;
 

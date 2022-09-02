@@ -25,15 +25,13 @@ pub use from::*;
 pub use iterator::SeriesIter;
 use num::NumCast;
 use rayon::prelude::*;
-pub use series_trait::IsSorted;
-pub use series_trait::*;
+pub use series_trait::{IsSorted, *};
 
 #[cfg(feature = "rank")]
 use crate::prelude::unique::rank::rank;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
-use crate::utils::{split_ca, split_series};
-use crate::utils::{split_offsets, Wrap};
+use crate::utils::{split_ca, split_offsets, split_series, Wrap};
 use crate::POOL;
 
 /// # Series

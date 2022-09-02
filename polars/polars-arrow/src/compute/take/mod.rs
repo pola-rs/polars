@@ -6,9 +6,10 @@ use arrow::buffer::Buffer;
 use arrow::datatypes::{DataType, PhysicalType};
 use arrow::types::NativeType;
 
+use crate::bit_util::unset_bit_raw;
+use crate::prelude::*;
 use crate::trusted_len::{PushUnchecked, TrustedLen};
-use crate::utils::with_match_primitive_type;
-use crate::{bit_util::unset_bit_raw, prelude::*, utils::CustomIterTools};
+use crate::utils::{with_match_primitive_type, CustomIterTools};
 
 /// # Safety
 /// Does not do bounds checks

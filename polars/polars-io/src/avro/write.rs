@@ -1,8 +1,6 @@
 pub use arrow::io::avro::avro_schema::file::Compression;
-use arrow::io::avro::{
-    avro_schema::{self},
-    write,
-};
+use arrow::io::avro::avro_schema::{self};
+use arrow::io::avro::write;
 pub use Compression as AvroCompression;
 
 use super::*;

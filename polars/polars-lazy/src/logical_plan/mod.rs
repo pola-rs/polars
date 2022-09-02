@@ -1,7 +1,9 @@
 use std::borrow::Cow;
+use std::cell::Cell;
+use std::fmt::Debug;
 #[cfg(any(feature = "ipc", feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
-use std::{cell::Cell, fmt::Debug, sync::Arc};
+use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::prelude::*;

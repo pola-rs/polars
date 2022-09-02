@@ -1,4 +1,5 @@
-use std::{ffi::OsStr, io::Cursor};
+use std::ffi::OsStr;
+use std::io::Cursor;
 
 use super::*;
 
