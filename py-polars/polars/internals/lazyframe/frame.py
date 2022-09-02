@@ -76,7 +76,7 @@ class LazyFrame:
         return self
 
     @classmethod
-    def scan_csv(
+    def _scan_csv(
         cls: type[LDF],
         file: str,
         has_header: bool = True,
@@ -143,7 +143,7 @@ class LazyFrame:
         return self
 
     @classmethod
-    def scan_parquet(
+    def _scan_parquet(
         cls: type[LDF],
         file: str,
         n_rows: int | None = None,
@@ -187,7 +187,7 @@ class LazyFrame:
         return self
 
     @classmethod
-    def scan_ipc(
+    def _scan_ipc(
         cls: type[LDF],
         file: str | Path,
         n_rows: int | None = None,
@@ -201,9 +201,11 @@ class LazyFrame:
         """
         Lazily read from an Arrow IPC (Feather v2) file.
 
+        Use ``pl.scan_ipc`` to dispatch to this method.
+
         See Also
         --------
-        scan_parquet, scan_csv
+        polars.io.scan_ipc
 
         """
         if isinstance(file, (str, Path)):
@@ -230,7 +232,7 @@ class LazyFrame:
         return self
 
     @classmethod
-    def scan_ndjson(
+    def _scan_ndjson(
         cls: type[LDF],
         file: str,
         infer_schema_length: int | None = None,

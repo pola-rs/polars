@@ -564,7 +564,7 @@ def scan_csv(
     if isinstance(file, (str, Path)):
         file = format_path(file)
 
-    return LazyFrame.scan_csv(
+    return LazyFrame._scan_csv(
         file=file,
         has_header=has_header,
         sep=sep,
@@ -631,7 +631,7 @@ def scan_ipc(
         Only uncompressed IPC files can be memory mapped.
 
     """
-    return LazyFrame.scan_ipc(
+    return LazyFrame._scan_ipc(
         file=file,
         n_rows=n_rows,
         cache=cache,
@@ -691,7 +691,7 @@ def scan_parquet(
     if isinstance(file, (str, Path)):
         file = format_path(file)
 
-    return LazyFrame.scan_parquet(
+    return LazyFrame._scan_parquet(
         file=file,
         n_rows=n_rows,
         cache=cache,
@@ -744,7 +744,7 @@ def scan_ndjson(
     if isinstance(file, (str, Path)):
         file = format_path(file)
 
-    return LazyFrame.scan_ndjson(
+    return LazyFrame._scan_ndjson(
         file=file,
         infer_schema_length=infer_schema_length,
         batch_size=batch_size,
