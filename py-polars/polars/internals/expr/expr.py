@@ -128,8 +128,7 @@ def wrap_expr(pyexpr: PyExpr) -> Expr:
 class Expr:
     """Expressions that can be used in various contexts."""
 
-    def __init__(self) -> None:
-        self._pyexpr: PyExpr  # pragma: no cover
+    _pyexpr: PyExpr
 
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
