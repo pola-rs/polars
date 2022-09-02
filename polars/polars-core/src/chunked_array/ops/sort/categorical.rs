@@ -147,6 +147,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn test_cat_lexical_sort() -> Result<()> {
         let init = &["c", "b", "a", "d"];
 
