@@ -309,47 +309,6 @@ class DataFrame:
         else:
             raise ValueError("DataFrame constructor not called properly.")
 
-    def estimated_size(self, unit: SizeUnit = "b") -> int | float:
-        """
-        Return an estimation of the total (heap) allocated size of the `DataFrame`.
-
-        Estimated size is given in the specified unit (bytes by default).
-
-        This estimation is the sum of the size of its buffers, validity, including
-        nested arrays. Multiple arrays may share buffers and bitmaps. Therefore, the
-        size of 2 arrays is not the sum of the sizes computed from this function. In
-        particular, [`StructArray`]'s size is an upper bound.
-
-        When an array is sliced, its allocated size remains constant because the buffer
-        unchanged. However, this function will yield a smaller number. This is because
-        this function returns the visible size of the buffer, not its total capacity.
-
-        FFI buffers are included in this estimation.
-
-        Parameters
-        ----------
-        unit : {'b', 'kb', 'mb', 'gb', 'tb'}
-            Scale the returned size to the given unit.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "x": list(reversed(range(1_000_000))),
-        ...         "y": [v / 1000 for v in range(1_000_000)],
-        ...         "z": [str(v) for v in range(1_000_000)],
-        ...     },
-        ...     columns=[("x", pl.UInt32), ("y", pl.Float64), ("z", pl.Utf8)],
-        ... )
-        >>> df.estimated_size()
-        25888898
-        >>> df.estimated_size("mb")
-        24.689577102661133
-
-        """
-        sz = self._df.estimated_size()
-        return scale_bytes(sz, to=unit)
-
     @classmethod
     def _from_pydf(cls: type[DF], py_df: PyDataFrame) -> DF:
         """Construct Polars DataFrame from FFI PyDataFrame object."""
@@ -1408,115 +1367,6 @@ class DataFrame:
                 file, compression, compression_level, statistics, row_group_size
             )
 
-    def transpose(
-        self: DF,
-        include_header: bool = False,
-        header_name: str = "column",
-        column_names: Iterator[str] | Sequence[str] | None = None,
-    ) -> DF:
-        """
-        Transpose a DataFrame over the diagonal.
-
-        Parameters
-        ----------
-        include_header
-            If set, the column names will be added as first column.
-        header_name
-            If `include_header` is set, this determines the name of the column that will
-            be inserted.
-        column_names
-            Optional generator/iterator that yields column names. Will be used to
-            replace the columns in the DataFrame.
-
-        Notes
-        -----
-        This is a very expensive operation. Perhaps you can do it differently.
-
-        Returns
-        -------
-        DataFrame
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
-        >>> df.transpose(include_header=True)
-        shape: (2, 4)
-        ┌────────┬──────────┬──────────┬──────────┐
-        │ column ┆ column_0 ┆ column_1 ┆ column_2 │
-        │ ---    ┆ ---      ┆ ---      ┆ ---      │
-        │ str    ┆ i64      ┆ i64      ┆ i64      │
-        ╞════════╪══════════╪══════════╪══════════╡
-        │ a      ┆ 1        ┆ 2        ┆ 3        │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ b      ┆ 1        ┆ 2        ┆ 3        │
-        └────────┴──────────┴──────────┴──────────┘
-
-        Replace the auto-generated column names with a list
-
-        >>> df.transpose(include_header=False, column_names=["a", "b", "c"])
-        shape: (2, 3)
-        ┌─────┬─────┬─────┐
-        │ a   ┆ b   ┆ c   │
-        │ --- ┆ --- ┆ --- │
-        │ i64 ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╡
-        │ 1   ┆ 2   ┆ 3   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 1   ┆ 2   ┆ 3   │
-        └─────┴─────┴─────┘
-
-        Include the header as a separate column
-
-        >>> df.transpose(
-        ...     include_header=True, header_name="foo", column_names=["a", "b", "c"]
-        ... )
-        shape: (2, 4)
-        ┌─────┬─────┬─────┬─────┐
-        │ foo ┆ a   ┆ b   ┆ c   │
-        │ --- ┆ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╪═════╡
-        │ a   ┆ 1   ┆ 2   ┆ 3   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b   ┆ 1   ┆ 2   ┆ 3   │
-        └─────┴─────┴─────┴─────┘
-
-        Replace the auto-generated column with column names from a generator function
-
-        >>> def name_generator():
-        ...     base_name = "my_column_"
-        ...     count = 0
-        ...     while True:
-        ...         yield f"{base_name}{count}"
-        ...         count += 1
-        ...
-        >>> df.transpose(include_header=False, column_names=name_generator())
-        shape: (2, 3)
-        ┌─────────────┬─────────────┬─────────────┐
-        │ my_column_0 ┆ my_column_1 ┆ my_column_2 │
-        │ ---         ┆ ---         ┆ ---         │
-        │ i64         ┆ i64         ┆ i64         │
-        ╞═════════════╪═════════════╪═════════════╡
-        │ 1           ┆ 2           ┆ 3           │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 1           ┆ 2           ┆ 3           │
-        └─────────────┴─────────────┴─────────────┘
-
-        """
-        df = self._from_pydf(self._df.transpose(include_header, header_name))
-        if column_names is not None:
-            names = []
-            n = df.width
-            if include_header:
-                names.append(header_name)
-                n -= 1
-
-            column_names = iter(column_names)
-            for _ in range(n):
-                names.append(next(column_names))
-            df.columns = names
-        return df
-
     def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
         """Compare a DataFrame with another object."""
         if isinstance(other, DataFrame):
@@ -1647,26 +1497,6 @@ class DataFrame:
 
     def __iter__(self) -> Iterator[Any]:
         return self.get_columns().__iter__()
-
-    def find_idx_by_name(self, name: str) -> int:
-        """
-        Find the index of a column by name.
-
-        Parameters
-        ----------
-        name
-            Name of the column to find.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
-        ... )
-        >>> df.find_idx_by_name("ham")
-        2
-
-        """
-        return self._df.find_idx_by_name(name)
 
     def _pos_idx(self, idx: int, dim: int) -> int:
         if idx >= 0:
@@ -2017,6 +1847,156 @@ class DataFrame:
         max_cols = int(os.environ.get("POLARS_FMT_MAX_COLS", default=75))
         max_rows = int(os.environ.get("POLARS_FMT_MAX_ROWS", default=25))
         return "\n".join(NotebookFormatter(self, max_cols, max_rows).render())
+
+    def estimated_size(self, unit: SizeUnit = "b") -> int | float:
+        """
+        Return an estimation of the total (heap) allocated size of the `DataFrame`.
+
+        Estimated size is given in the specified unit (bytes by default).
+
+        This estimation is the sum of the size of its buffers, validity, including
+        nested arrays. Multiple arrays may share buffers and bitmaps. Therefore, the
+        size of 2 arrays is not the sum of the sizes computed from this function. In
+        particular, [`StructArray`]'s size is an upper bound.
+
+        When an array is sliced, its allocated size remains constant because the buffer
+        unchanged. However, this function will yield a smaller number. This is because
+        this function returns the visible size of the buffer, not its total capacity.
+
+        FFI buffers are included in this estimation.
+
+        Parameters
+        ----------
+        unit : {'b', 'kb', 'mb', 'gb', 'tb'}
+            Scale the returned size to the given unit.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "x": list(reversed(range(1_000_000))),
+        ...         "y": [v / 1000 for v in range(1_000_000)],
+        ...         "z": [str(v) for v in range(1_000_000)],
+        ...     },
+        ...     columns=[("x", pl.UInt32), ("y", pl.Float64), ("z", pl.Utf8)],
+        ... )
+        >>> df.estimated_size()
+        25888898
+        >>> df.estimated_size("mb")
+        24.689577102661133
+
+        """
+        sz = self._df.estimated_size()
+        return scale_bytes(sz, to=unit)
+
+    def transpose(
+        self: DF,
+        include_header: bool = False,
+        header_name: str = "column",
+        column_names: Iterator[str] | Sequence[str] | None = None,
+    ) -> DF:
+        """
+        Transpose a DataFrame over the diagonal.
+
+        Parameters
+        ----------
+        include_header
+            If set, the column names will be added as first column.
+        header_name
+            If `include_header` is set, this determines the name of the column that will
+            be inserted.
+        column_names
+            Optional generator/iterator that yields column names. Will be used to
+            replace the columns in the DataFrame.
+
+        Notes
+        -----
+        This is a very expensive operation. Perhaps you can do it differently.
+
+        Returns
+        -------
+        DataFrame
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+        >>> df.transpose(include_header=True)
+        shape: (2, 4)
+        ┌────────┬──────────┬──────────┬──────────┐
+        │ column ┆ column_0 ┆ column_1 ┆ column_2 │
+        │ ---    ┆ ---      ┆ ---      ┆ ---      │
+        │ str    ┆ i64      ┆ i64      ┆ i64      │
+        ╞════════╪══════════╪══════════╪══════════╡
+        │ a      ┆ 1        ┆ 2        ┆ 3        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ b      ┆ 1        ┆ 2        ┆ 3        │
+        └────────┴──────────┴──────────┴──────────┘
+
+        Replace the auto-generated column names with a list
+
+        >>> df.transpose(include_header=False, column_names=["a", "b", "c"])
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 2   ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 1   ┆ 2   ┆ 3   │
+        └─────┴─────┴─────┘
+
+        Include the header as a separate column
+
+        >>> df.transpose(
+        ...     include_header=True, header_name="foo", column_names=["a", "b", "c"]
+        ... )
+        shape: (2, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ foo ┆ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╡
+        │ a   ┆ 1   ┆ 2   ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ b   ┆ 1   ┆ 2   ┆ 3   │
+        └─────┴─────┴─────┴─────┘
+
+        Replace the auto-generated column with column names from a generator function
+
+        >>> def name_generator():
+        ...     base_name = "my_column_"
+        ...     count = 0
+        ...     while True:
+        ...         yield f"{base_name}{count}"
+        ...         count += 1
+        ...
+        >>> df.transpose(include_header=False, column_names=name_generator())
+        shape: (2, 3)
+        ┌─────────────┬─────────────┬─────────────┐
+        │ my_column_0 ┆ my_column_1 ┆ my_column_2 │
+        │ ---         ┆ ---         ┆ ---         │
+        │ i64         ┆ i64         ┆ i64         │
+        ╞═════════════╪═════════════╪═════════════╡
+        │ 1           ┆ 2           ┆ 3           │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 1           ┆ 2           ┆ 3           │
+        └─────────────┴─────────────┴─────────────┘
+
+        """
+        df = self._from_pydf(self._df.transpose(include_header, header_name))
+        if column_names is not None:
+            names = []
+            n = df.width
+            if include_header:
+                names.append(header_name)
+                n -= 1
+
+            column_names = iter(column_names)
+            for _ in range(n):
+                names.append(next(column_names))
+            df.columns = names
+        return df
 
     def reverse(self: DF) -> DF:
         """
@@ -2406,6 +2386,26 @@ class DataFrame:
             0, pli.Series("describe", ["mean", "std", "min", "max", "median"])
         )
         return summary
+
+    def find_idx_by_name(self, name: str) -> int:
+        """
+        Find the index of a column by name.
+
+        Parameters
+        ----------
+        name
+            Name of the column to find.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ... )
+        >>> df.find_idx_by_name("ham")
+        2
+
+        """
+        return self._df.find_idx_by_name(name)
 
     def replace_at_idx(self, index: int, series: pli.Series) -> None:
         """
