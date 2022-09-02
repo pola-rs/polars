@@ -250,14 +250,16 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
 #[cfg(feature = "format_str")]
 #[cfg_attr(docsrs, doc(cfg(feature = "format_str")))]
 /// Format the results of an array of expressions using a format string
-pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> Expr {
+pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> Result<Expr> {
     let mut args: std::collections::VecDeque<Expr> = args.as_ref().to_vec().into();
 
     // Parse the format string, and seperate substrings between placeholders
     let segments: Vec<&str> = format.split("{}").collect();
 
     if segments.len() - 1 != args.len() {
-        panic!("number of placeholders should equal the number of arguments");
+        return Err(PolarsError::ShapeMisMatch(
+            "number of placeholders should equal the number of arguments".into(),
+        ));
     }
 
     let mut exprs: Vec<Expr> = Vec::new();
@@ -274,7 +276,7 @@ pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> Expr {
         }
     }
 
-    concat_str(exprs, "")
+    Ok(concat_str(exprs, ""))
 }
 
 /// Concat lists entries.

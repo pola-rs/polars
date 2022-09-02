@@ -11,7 +11,7 @@ fn test_format_str() {
 
     let out = a
         .lazy()
-        .select([format_str("({}, {}]", [col("a"), col("b")]).alias("formatted")])
+        .select([format_str("({}, {}]", [col("a"), col("b")]).unwrap().alias("formatted")])
         .collect()
         .unwrap();
 

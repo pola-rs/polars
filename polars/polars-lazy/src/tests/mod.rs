@@ -2,8 +2,6 @@
 mod aggregations;
 #[cfg(feature = "test")]
 mod arity;
-#[cfg(feature = "test")]
-mod functions;
 #[cfg(feature = "parquet")]
 mod io;
 #[cfg(feature = "test")]
