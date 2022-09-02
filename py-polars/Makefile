@@ -26,24 +26,21 @@ pre-commit: venv
 
 test: venv
 	$(PYTHON_BIN)/maturin develop
-	$(PYTHON) -m pytest tests
+	$(PYTHON) -m pytest tests/unit/
 
 test-all: venv
 	$(PYTHON_BIN)/maturin develop
-	$(PYTHON) -m pytest tests
-	$(PYTHON) -m pytest tests_parametric
-	$(PYTHON) -m pytest tests_slower
-	$(PYTHON) tests/run_doc_examples.py
+	$(PYTHON) -m pytest
+	$(PYTHON) tests/docs/run_doc_examples.py
 
 test-with-cov: venv
 	$(PYTHON) -m pytest \
 		--cov=polars \
 		--cov-report xml \
-		--cov-fail-under=85 \
-		--import-mode=importlib
+		--cov-fail-under=85
 
 doctest:
-	cd tests && ../$(PYTHON) run_doc_examples.py
+	$(PYTHON) tests/docs/run_doc_examples.py
 
 install-wheel:
 	pip install --force-reinstall -U wheels/polars-*.whl
