@@ -545,19 +545,6 @@ impl PhysicalPlanner {
                     expr: node_to_expr(expression, expr_arena),
                 }))
             }
-            Reverse(expr) => {
-                let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                    let s = std::mem::take(&mut s[0]);
-                    Ok(s.reverse())
-                }) as Arc<dyn SeriesUdf>);
-                Ok(Arc::new(ApplyExpr::new_minimal(
-                    vec![input],
-                    function,
-                    node_to_expr(expression, expr_arena),
-                    ApplyOptions::ApplyGroups,
-                )))
-            }
             Duplicated(expr) => {
                 let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                 let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {

@@ -587,7 +587,7 @@ impl Expr {
 
     /// Reverse column
     pub fn reverse(self) -> Self {
-        Expr::Reverse(Box::new(self))
+        self.apply_private(FunctionExpr::Reverse)
     }
 
     /// Apply a function/closure once the logical plan get executed.

@@ -11,7 +11,6 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
     let v = match expr {
         Expr::IsUnique(expr) => AExpr::IsUnique(to_aexpr(*expr, arena)),
         Expr::Duplicated(expr) => AExpr::Duplicated(to_aexpr(*expr, arena)),
-        Expr::Reverse(expr) => AExpr::Reverse(to_aexpr(*expr, arena)),
         Expr::Explode(expr) => AExpr::Explode(to_aexpr(*expr, arena)),
         Expr::Alias(e, name) => AExpr::Alias(to_aexpr(*e, arena), name),
         Expr::Literal(value) => AExpr::Literal(value),
@@ -450,7 +449,6 @@ pub(crate) fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
     match expr {
         AExpr::Duplicated(node) => Expr::Duplicated(Box::new(node_to_expr(node, expr_arena))),
         AExpr::IsUnique(node) => Expr::IsUnique(Box::new(node_to_expr(node, expr_arena))),
-        AExpr::Reverse(node) => Expr::Reverse(Box::new(node_to_expr(node, expr_arena))),
         AExpr::Explode(node) => Expr::Explode(Box::new(node_to_expr(node, expr_arena))),
         AExpr::Alias(expr, name) => {
             let exp = node_to_expr(expr, expr_arena);

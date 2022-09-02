@@ -37,7 +37,6 @@ pub enum AAggExpr {
 pub enum AExpr {
     IsUnique(Node),
     Duplicated(Node),
-    Reverse(Node),
     Explode(Node),
     Alias(Node, Arc<str>),
     Column(Arc<str>),
@@ -135,7 +134,6 @@ impl AExpr {
             | Take { .. }
             | Nth(_)
             | IsUnique(_) => true,
-            Reverse(_)
             | Alias(_, _)
             | Explode(_)
             | Column(_)
@@ -216,7 +214,6 @@ impl AExpr {
                 let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                 Ok(Field::new(field.name(), DataType::Boolean))
             }
-            Reverse(expr) => arena.get(*expr).to_field(schema, ctxt, arena),
             Explode(expr) => {
                 let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
 

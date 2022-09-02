@@ -2,6 +2,7 @@
 mod arg_where;
 #[cfg(feature = "round_series")]
 mod clip;
+mod dispatch;
 mod fill_null;
 #[cfg(feature = "is_in")]
 mod is_in;
@@ -16,7 +17,6 @@ mod row_hash;
 mod schema;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
-mod shift;
 mod shift_and_fill;
 #[cfg(feature = "sign")]
 mod sign;
@@ -98,6 +98,7 @@ pub enum FunctionExpr {
         reverse: bool,
     },
     Shift(i64),
+    Reverse,
 }
 
 impl Display for FunctionExpr {
@@ -144,6 +145,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "top_k")]
             FunctionExpr::TopK { .. } => write!(f, "top_k"),
             FunctionExpr::Shift(_) => write!(f, "shift"),
+            FunctionExpr::Reverse => write!(f, "reverse"),
         }
     }
 }
@@ -296,7 +298,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             TopK { k, reverse } => {
                 map!(top_k, k, reverse)
             }
-            Shift(periods) => map!(shift::shift, periods),
+            Shift(periods) => map!(dispatch::shift, periods),
+            Reverse => map!(dispatch::reverse),
         }
     }
 }

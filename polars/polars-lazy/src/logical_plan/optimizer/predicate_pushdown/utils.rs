@@ -116,7 +116,6 @@ pub(super) fn predicate_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExp
             e,
             AExpr::Sort { .. } | AExpr::SortBy { .. }
             | AExpr::Agg(_) // an aggregation needs all rows
-            | AExpr::Reverse(_)
             // Apply groups can be something like shift, sort, or an aggregation like skew
             // both need all values
             | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
@@ -144,7 +143,6 @@ pub(super) fn project_other_column_is_predicate_pushdown_boundary(
             e,
             AExpr::Sort { .. } | AExpr::SortBy { .. }
             | AExpr::Agg(_) // an aggregation needs all rows
-            | AExpr::Reverse(_)
             // Apply groups can be something like shift, sort, or an aggregation like skew
             // both need all values
             | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
@@ -177,7 +175,6 @@ pub(super) fn projection_column_is_predicate_pushdown_boundary(
             e,
             AExpr::Sort { .. } | AExpr::SortBy { .. }
             | AExpr::Agg(_) // an aggregation needs all rows
-            | AExpr::Reverse(_)
             // everything that works on groups likely changes to order of elements w/r/t the other columns
             | AExpr::AnonymousFunction {..}
             | AExpr::Function {..}
