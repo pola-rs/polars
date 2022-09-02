@@ -29,6 +29,8 @@ mod temporal;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
 
+use std::fmt::{Display, Formatter};
+
 #[cfg(feature = "list")]
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
@@ -41,6 +43,8 @@ pub(super) use self::nan::NanFunction;
 pub(super) use self::strings::StringFunction;
 #[cfg(feature = "dtype-struct")]
 pub(super) use self::struct_::StructFunction;
+#[cfg(feature = "trigonometry")]
+pub(super) use self::trigonometry::TrigonometricFunction;
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -96,22 +100,52 @@ pub enum FunctionExpr {
     Shift(i64),
 }
 
-#[cfg(feature = "trigonometry")]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
-pub enum TrigonometricFunction {
-    Sin,
-    Cos,
-    Tan,
-    ArcSin,
-    ArcCos,
-    ArcTan,
-    Sinh,
-    Cosh,
-    Tanh,
-    ArcSinh,
-    ArcCosh,
-    ArcTanh,
+impl Display for FunctionExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use self::*;
+
+        match self {
+            FunctionExpr::NullCount => write!(f, "null_count"),
+            FunctionExpr::Pow => write!(f, "pow"),
+            #[cfg(feature = "row_hash")]
+            FunctionExpr::Hash(_, _, _, _) => write!(f, "hash"),
+            #[cfg(feature = "is_in")]
+            FunctionExpr::IsIn => write!(f, "is_in"),
+            #[cfg(feature = "arg_where")]
+            FunctionExpr::ArgWhere => write!(f, "arg_where"),
+            #[cfg(feature = "search_sorted")]
+            FunctionExpr::SearchSorted => write!(f, "search_sorted"),
+            #[cfg(feature = "strings")]
+            FunctionExpr::StringExpr(s) => write!(f, "{}", s),
+            #[cfg(feature = "date_offset")]
+            FunctionExpr::DateOffset(_) => write!(f, "dt.offset_by"),
+            #[cfg(feature = "trigonometry")]
+            FunctionExpr::Trigonometry(func) => write!(f, "{}", func),
+            #[cfg(feature = "sign")]
+            FunctionExpr::Sign => write!(f, "sign"),
+            FunctionExpr::FillNull { .. } => write!(f, "fill_null"),
+            #[cfg(feature = "is_in")]
+            FunctionExpr::ListContains => write!(f, "arr.contains"),
+            #[cfg(all(feature = "rolling_window", feature = "moment"))]
+            FunctionExpr::RollingSkew { .. } => write!(f, "rolling_skew"),
+            FunctionExpr::ShiftAndFill { .. } => write!(f, "shift_and_fill"),
+            FunctionExpr::Nan(_) => write!(f, "nan"),
+            #[cfg(feature = "round_series")]
+            FunctionExpr::Clip { min, max } => match (min, max) {
+                (Some(_), Some(_)) => write!(f, "clip"),
+                (None, Some(_)) => write!(f, "clip_max"),
+                (Some(_), None) => write!(f, "clip_min"),
+                _ => unreachable!(),
+            },
+            #[cfg(feature = "list")]
+            FunctionExpr::ListExpr(func) => write!(f, "{}", func),
+            #[cfg(feature = "dtype-struct")]
+            FunctionExpr::StructExpr(func) => write!(f, "{}", func),
+            #[cfg(feature = "top_k")]
+            FunctionExpr::TopK { .. } => write!(f, "top_k"),
+            FunctionExpr::Shift(_) => write!(f, "shift"),
+        }
+    }
 }
 
 macro_rules! wrap {

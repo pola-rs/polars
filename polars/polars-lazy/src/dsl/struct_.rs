@@ -7,10 +7,9 @@ pub struct StructNameSpace(pub(crate) Expr);
 impl StructNameSpace {
     pub fn field_by_index(self, index: i64) -> Expr {
         self.0
-            .map_private(
-                FunctionExpr::StructExpr(StructFunction::FieldByIndex(index)),
-                "struct.field_by_index",
-            )
+            .map_private(FunctionExpr::StructExpr(StructFunction::FieldByIndex(
+                index,
+            )))
             .with_function_options(|mut options| {
                 options.allow_rename = true;
                 options
@@ -20,10 +19,9 @@ impl StructNameSpace {
     /// Retrieve one of the fields of this [`StructChunked`] as a new Series.
     pub fn field_by_name(self, name: &str) -> Expr {
         self.0
-            .map_private(
-                FunctionExpr::StructExpr(StructFunction::FieldByName(Arc::from(name))),
-                "struct.field_by_name",
-            )
+            .map_private(FunctionExpr::StructExpr(StructFunction::FieldByName(
+                Arc::from(name),
+            )))
             .with_function_options(|mut options| {
                 options.allow_rename = true;
                 options

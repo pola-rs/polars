@@ -3,6 +3,43 @@ use polars_core::export::num;
 
 use super::*;
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+pub enum TrigonometricFunction {
+    Sin,
+    Cos,
+    Tan,
+    ArcSin,
+    ArcCos,
+    ArcTan,
+    Sinh,
+    Cosh,
+    Tanh,
+    ArcSinh,
+    ArcCosh,
+    ArcTanh,
+}
+
+impl Display for TrigonometricFunction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use self::*;
+        match self {
+            TrigonometricFunction::Sin => write!(f, "sin"),
+            TrigonometricFunction::Cos => write!(f, "cos"),
+            TrigonometricFunction::Tan => write!(f, "tan"),
+            TrigonometricFunction::ArcSin => write!(f, "arcsin"),
+            TrigonometricFunction::ArcCos => write!(f, "arccos"),
+            TrigonometricFunction::ArcTan => write!(f, "arctan"),
+            TrigonometricFunction::Sinh => write!(f, "sinh"),
+            TrigonometricFunction::Cosh => write!(f, "cosh"),
+            TrigonometricFunction::Tanh => write!(f, "tanh"),
+            TrigonometricFunction::ArcSinh => write!(f, "arcsinh"),
+            TrigonometricFunction::ArcCosh => write!(f, "arccosh"),
+            TrigonometricFunction::ArcTanh => write!(f, "arctanh"),
+        }
+    }
+}
+
 pub(super) fn apply_trigonometric_function(
     s: &Series,
     trig_function: TrigonometricFunction,

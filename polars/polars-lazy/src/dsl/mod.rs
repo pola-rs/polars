@@ -301,7 +301,7 @@ impl Expr {
 
     /// Drop NaN values
     pub fn drop_nans(self) -> Self {
-        self.apply_private(NanFunction::DropNans.into(), "drop_nans")
+        self.apply_private(NanFunction::DropNans.into())
     }
 
     /// Reduce groups to minimal value.
@@ -582,7 +582,7 @@ impl Expr {
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
     pub fn top_k(self, k: usize, reverse: bool) -> Self {
-        self.apply_private(FunctionExpr::TopK { k, reverse }, "top_k")
+        self.apply_private(FunctionExpr::TopK { k, reverse })
     }
 
     /// Reverse column
@@ -620,7 +620,7 @@ impl Expr {
         }
     }
 
-    fn map_private(self, function_expr: FunctionExpr, fmt_str: &'static str) -> Self {
+    fn map_private(self, function_expr: FunctionExpr) -> Self {
         Expr::Function {
             input: vec![self],
             function: function_expr,
@@ -628,9 +628,9 @@ impl Expr {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: false,
                 auto_explode: false,
-                fmt_str,
                 cast_to_supertypes: false,
                 allow_rename: false,
+                ..Default::default()
             },
         }
     }
@@ -729,13 +729,12 @@ impl Expr {
         }
     }
 
-    fn apply_private(self, function_expr: FunctionExpr, fmt_str: &'static str) -> Self {
+    fn apply_private(self, function_expr: FunctionExpr) -> Self {
         Expr::Function {
             input: vec![self],
             function: function_expr,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
-                fmt_str,
                 ..Default::default()
             },
         }
@@ -768,7 +767,6 @@ impl Expr {
         self,
         function_expr: FunctionExpr,
         arguments: &[Expr],
-        fmt_str: &'static str,
         auto_explode: bool,
         cast_to_supertypes: bool,
     ) -> Self {
@@ -782,7 +780,6 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
                 auto_explode,
-                fmt_str,
                 cast_to_supertypes,
                 ..Default::default()
             },
@@ -793,7 +790,6 @@ impl Expr {
         self,
         function_expr: FunctionExpr,
         arguments: &[Expr],
-        fmt_str: &'static str,
         cast_to_supertypes: bool,
     ) -> Self {
         let mut input = Vec::with_capacity(arguments.len() + 1);
@@ -806,7 +802,6 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 auto_explode: true,
-                fmt_str,
                 cast_to_supertypes,
                 ..Default::default()
             },
@@ -835,17 +830,17 @@ impl Expr {
 
     /// Get mask of NaN values if dtype is Float
     pub fn is_nan(self) -> Self {
-        self.map_private(NanFunction::IsNan.into(), "is_nan")
+        self.map_private(NanFunction::IsNan.into())
     }
 
     /// Get inverse mask of NaN values if dtype is Float
     pub fn is_not_nan(self) -> Self {
-        self.map_private(NanFunction::IsNotNan.into(), "is_not_nan")
+        self.map_private(NanFunction::IsNotNan.into())
     }
 
     /// Shift the values in the array by some period. See [the eager implementation](polars_core::series::SeriesTrait::shift).
     pub fn shift(self, periods: i64) -> Self {
-        self.apply_private(FunctionExpr::Shift(periods), "shift")
+        self.apply_private(FunctionExpr::Shift(periods))
     }
 
     /// Shift the values in the array by some period and fill the resulting empty values.
@@ -853,7 +848,6 @@ impl Expr {
         self.apply_many_private(
             FunctionExpr::ShiftAndFill { periods },
             &[fill_value.into()],
-            "shift_and_fill",
             false,
             true,
         )
@@ -983,39 +977,30 @@ impl Expr {
     #[cfg(feature = "round_series")]
     #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
     pub fn clip(self, min: AnyValue<'_>, max: AnyValue<'_>) -> Self {
-        self.map_private(
-            FunctionExpr::Clip {
-                min: Some(min.into_static().unwrap()),
-                max: Some(max.into_static().unwrap()),
-            },
-            "clip",
-        )
+        self.map_private(FunctionExpr::Clip {
+            min: Some(min.into_static().unwrap()),
+            max: Some(max.into_static().unwrap()),
+        })
     }
 
     /// Clip underlying values to a set boundary.
     #[cfg(feature = "round_series")]
     #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
     pub fn clip_max(self, max: AnyValue<'_>) -> Self {
-        self.map_private(
-            FunctionExpr::Clip {
-                min: None,
-                max: Some(max.into_static().unwrap()),
-            },
-            "clip_max",
-        )
+        self.map_private(FunctionExpr::Clip {
+            min: None,
+            max: Some(max.into_static().unwrap()),
+        })
     }
 
     /// Clip underlying values to a set boundary.
     #[cfg(feature = "round_series")]
     #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
     pub fn clip_min(self, min: AnyValue<'_>) -> Self {
-        self.map_private(
-            FunctionExpr::Clip {
-                min: Some(min.into_static().unwrap()),
-                max: None,
-            },
-            "clip_min",
-        )
+        self.map_private(FunctionExpr::Clip {
+            min: Some(min.into_static().unwrap()),
+            max: None,
+        })
     }
 
     /// Convert all values to their absolute/positive value.
@@ -1407,9 +1392,9 @@ impl Expr {
         let arguments = &[other];
         // we don't have to apply on groups, so this is faster
         if has_literal {
-            self.map_many_private(FunctionExpr::IsIn, arguments, "is_in_map", true)
+            self.map_many_private(FunctionExpr::IsIn, arguments, true)
         } else {
-            self.apply_many_private(FunctionExpr::IsIn, arguments, "is_in_apply", true, true)
+            self.apply_many_private(FunctionExpr::IsIn, arguments, true, true)
         }
     }
 
@@ -1751,10 +1736,7 @@ impl Expr {
     #[cfg(feature = "rolling_window")]
     #[cfg(feature = "moment")]
     pub fn rolling_skew(self, window_size: usize, bias: bool) -> Expr {
-        self.apply_private(
-            FunctionExpr::RollingSkew { window_size, bias },
-            "rolling_skew",
-        )
+        self.apply_private(FunctionExpr::RollingSkew { window_size, bias })
     }
 
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
@@ -2229,7 +2211,7 @@ impl Expr {
     }
     /// Get the null count of the column/group
     pub fn null_count(self) -> Expr {
-        self.apply_private(FunctionExpr::NullCount, "null_count")
+        self.apply_private(FunctionExpr::NullCount)
             .with_function_options(|mut options| {
                 options.auto_explode = true;
                 options
@@ -2254,7 +2236,7 @@ impl Expr {
     #[cfg(feature = "row_hash")]
     /// Compute the hash of every element
     pub fn hash(self, k0: u64, k1: u64, k2: u64, k3: u64) -> Expr {
-        self.map_private(FunctionExpr::Hash(k0, k1, k2, k3), "hash")
+        self.map_private(FunctionExpr::Hash(k0, k1, k2, k3))
     }
 
     #[cfg(feature = "strings")]

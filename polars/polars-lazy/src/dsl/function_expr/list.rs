@@ -6,6 +6,15 @@ pub enum ListFunction {
     Concat,
 }
 
+impl Display for ListFunction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use self::*;
+        match self {
+            ListFunction::Concat => write!(f, "concat"),
+        }
+    }
+}
+
 #[cfg(feature = "is_in")]
 pub(super) fn contains(args: &mut [Series]) -> Result<Series> {
     let list = &args[0];

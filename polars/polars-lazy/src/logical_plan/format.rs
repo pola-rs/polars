@@ -277,7 +277,16 @@ impl fmt::Debug for Expr {
                 "\nWHEN {:?}\nTHEN\n\t{:?}\nOTHERWISE\n\t{:?}",
                 predicate, truthy, falsy
             ),
-            AnonymousFunction { input, options, .. } | Function { input, options, .. } => {
+            Function {
+                input, function, ..
+            } => {
+                if input.len() >= 2 {
+                    write!(f, "{:?}.{}({:?})", input[0], function, &input[1..])
+                } else {
+                    write!(f, "{:?}.{}()", input[0], function)
+                }
+            }
+            AnonymousFunction { input, options, .. } => {
                 if input.len() >= 2 {
                     write!(f, "{:?}.{}({:?})", input[0], options.fmt_str, &input[1..])
                 } else {

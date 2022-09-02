@@ -9,6 +9,16 @@ pub enum StructFunction {
     FieldByName(Arc<str>),
 }
 
+impl Display for StructFunction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use self::*;
+        match self {
+            StructFunction::FieldByIndex(_) => write!(f, "struct.field_by_name"),
+            StructFunction::FieldByName(_) => write!(f, "struct.field_by_index"),
+        }
+    }
+}
+
 pub(super) fn get_by_index(s: &Series, index: i64) -> Result<Series> {
     let s = s.struct_()?;
     let (index, _) = slice_offsets(index, 0, s.fields().len());
