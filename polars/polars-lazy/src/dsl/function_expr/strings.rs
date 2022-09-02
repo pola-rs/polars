@@ -49,6 +49,34 @@ pub enum StringFunction {
     Lowercase,
 }
 
+impl Display for StringFunction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use self::*;
+        match self {
+            StringFunction::Contains { .. } => write!(f, "str.contains"),
+            StringFunction::StartsWith(_) => write!(f, "str.starts_with"),
+            StringFunction::EndsWith(_) => write!(f, "str.ends_with"),
+            StringFunction::Extract { .. } => write!(f, "str.extract"),
+            #[cfg(feature = "string_justify")]
+            StringFunction::Zfill(_) => write!(f, "str.zfill"),
+            #[cfg(feature = "string_justify")]
+            StringFunction::LJust { .. } => write!(f, "str.ljust"),
+            #[cfg(feature = "string_justify")]
+            StringFunction::RJust { .. } => write!(f, "str.rjust"),
+            StringFunction::ExtractAll(_) => write!(f, "str.extract_all"),
+            StringFunction::CountMatch(_) => write!(f, "str.count_match"),
+            #[cfg(feature = "temporal")]
+            StringFunction::Strptime(_) => write!(f, "str.strptime"),
+            #[cfg(feature = "concat_str")]
+            StringFunction::Concat(_) => write!(f, "str.concat"),
+            #[cfg(feature = "regex")]
+            StringFunction::Replace { .. } => write!(f, "str.replace"),
+            StringFunction::Uppercase => write!(f, "str.uppercase"),
+            StringFunction::Lowercase => write!(f, "str.lowercase"),
+        }
+    }
+}
+
 pub(super) fn uppercase(s: &Series) -> Result<Series> {
     let ca = s.utf8()?;
     Ok(ca.to_uppercase().into_series())

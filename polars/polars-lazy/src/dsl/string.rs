@@ -11,10 +11,8 @@ impl StringNameSpace {
     /// Check if a string value contains a literal substring.
     pub fn contains_literal<S: AsRef<str>>(self, pat: S) -> Expr {
         let pat = pat.as_ref().into();
-        self.0.map_private(
-            StringFunction::Contains { pat, literal: true }.into(),
-            "str.contains_literal",
-        )
+        self.0
+            .map_private(StringFunction::Contains { pat, literal: true }.into())
     }
 
     /// Check if a string value contains a Regex substring.
@@ -26,31 +24,26 @@ impl StringNameSpace {
                 literal: false,
             }
             .into(),
-            "str.contains",
         )
     }
 
     /// Check if a string value ends with the `sub` string.
     pub fn ends_with<S: AsRef<str>>(self, sub: S) -> Expr {
         let sub = sub.as_ref().into();
-        self.0
-            .map_private(StringFunction::EndsWith(sub).into(), "str.ends_with")
+        self.0.map_private(StringFunction::EndsWith(sub).into())
     }
 
     /// Check if a string value starts with the `sub` string.
     pub fn starts_with<S: AsRef<str>>(self, sub: S) -> Expr {
         let sub = sub.as_ref().into();
-        self.0
-            .map_private(StringFunction::StartsWith(sub).into(), "str.starts_with")
+        self.0.map_private(StringFunction::StartsWith(sub).into())
     }
 
     /// Extract a regex pattern from the a string value.
     pub fn extract(self, pat: &str, group_index: usize) -> Expr {
         let pat = pat.to_string();
-        self.0.map_private(
-            StringFunction::Extract { pat, group_index }.into(),
-            "str.extract",
-        )
+        self.0
+            .map_private(StringFunction::Extract { pat, group_index }.into())
     }
 
     /// Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
@@ -60,8 +53,7 @@ impl StringNameSpace {
     #[cfg(feature = "string_justify")]
     #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     pub fn zfill(self, alignment: usize) -> Expr {
-        self.0
-            .map_private(StringFunction::Zfill(alignment).into(), "str.zfill")
+        self.0.map_private(StringFunction::Zfill(alignment).into())
     }
 
     /// Return the string left justified in a string of length width.
@@ -70,10 +62,8 @@ impl StringNameSpace {
     #[cfg(feature = "string_justify")]
     #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     pub fn ljust(self, width: usize, fillchar: char) -> Expr {
-        self.0.map_private(
-            StringFunction::LJust { width, fillchar }.into(),
-            "str.ljust",
-        )
+        self.0
+            .map_private(StringFunction::LJust { width, fillchar }.into())
     }
 
     /// Return the string right justified in a string of length width.
@@ -82,30 +72,25 @@ impl StringNameSpace {
     #[cfg(feature = "string_justify")]
     #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     pub fn rjust(self, width: usize, fillchar: char) -> Expr {
-        self.0.map_private(
-            StringFunction::RJust { width, fillchar }.into(),
-            "str.rjust",
-        )
+        self.0
+            .map_private(StringFunction::RJust { width, fillchar }.into())
     }
 
     /// Extract each successive non-overlapping match in an individual string as an array
     pub fn extract_all(self, pat: &str) -> Expr {
         let pat = pat.to_string();
-        self.0
-            .map_private(StringFunction::ExtractAll(pat).into(), "str.extract_all")
+        self.0.map_private(StringFunction::ExtractAll(pat).into())
     }
 
     /// Count all successive non-overlapping regex matches.
     pub fn count_match(self, pat: &str) -> Expr {
         let pat = pat.to_string();
-        self.0
-            .map_private(StringFunction::CountMatch(pat).into(), "str.count_match")
+        self.0.map_private(StringFunction::CountMatch(pat).into())
     }
 
     #[cfg(feature = "temporal")]
     pub fn strptime(self, options: StrpTimeOptions) -> Expr {
-        self.0
-            .map_private(StringFunction::Strptime(options).into(), "str.strptime")
+        self.0.map_private(StringFunction::Strptime(options).into())
     }
 
     /// Concat the values into a string array.
@@ -343,7 +328,6 @@ impl StringNameSpace {
                 literal,
             }),
             &[pat, value],
-            "str.replace",
             true,
         )
     }
@@ -354,24 +338,19 @@ impl StringNameSpace {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::Replace { all: true, literal }),
             &[pat, value],
-            "str.replace_all",
             true,
         )
     }
 
     /// Convert all characters to lowercase.
     pub fn to_lowercase(self) -> Expr {
-        self.0.map_private(
-            FunctionExpr::StringExpr(StringFunction::Lowercase),
-            "str.lowercase",
-        )
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::Lowercase))
     }
 
     /// Convert all characters to uppercase.
     pub fn to_uppercase(self) -> Expr {
-        self.0.map_private(
-            FunctionExpr::StringExpr(StringFunction::Uppercase),
-            "str.uppercase",
-        )
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::Uppercase))
     }
 }
