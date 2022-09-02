@@ -1,7 +1,7 @@
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::{concat_df, concat_df_unchecked};
+use polars_core::utils::concat_df;
 use polars_time::prelude::DateMethods;
 
 use super::*;
@@ -2101,7 +2101,7 @@ fn test_foo() -> Result<()> {
         .select([all().cast(DataType::Categorical(None)).list()])
         .collect()?;
 
-    let mut out = concat_df(&[df.clone(), df.clone()])?;
+    let out = concat_df(&[df.clone(), df.clone()])?;
     dbg!(out.agg_chunks());
 
     Ok(())
