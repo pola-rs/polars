@@ -386,7 +386,7 @@ def sum(column: str | list[pli.Expr | str] | pli.Series | pli.Expr) -> pli.Expr 
 
     >>> pl.col(str).sum()  # doctest: +SKIP
 
-    `pl.sum(list)` is syntactic sugar for:
+    ``pl.sum(list)`` is syntactic sugar for:
 
     >>> pl.fold(pl.lit(0), lambda x, y: x + y, list).alias("sum")  # doctest: +SKIP
 
@@ -446,7 +446,7 @@ def sum(column: str | list[pli.Expr | str] | pli.Series | pli.Expr) -> pli.Expr 
     │ 2   ┆ 4   ┆ 6   ┆ 8   │
     └─────┴─────┴─────┴─────┘
 
-    To aggregate the sums for more than one column/expression use `pl.col(list).sum()`
+    To aggregate the sums for more than one column/expression use ``pl.col(list).sum()``
     instead:
 
     >>> df.select(pl.col(["a", "c"]).sum())
