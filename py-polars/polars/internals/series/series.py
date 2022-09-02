@@ -271,6 +271,62 @@ class Series:
             pandas_to_pyseries(name, values, nan_to_none=nan_to_none)
         )
 
+    @property
+    def dtype(self) -> type[DataType]:
+        """
+        Get the data type of this Series.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.dtype
+        <class 'polars.datatypes.Int64'>
+
+        """
+        return self._s.dtype()
+
+    @property
+    def flags(self) -> dict[str, bool]:
+        """
+        Get flags that are set on the Series.
+
+        Returns
+        -------
+        Dictionary containing the flag name and the value
+
+        """
+        return {
+            "SORTED_ASC": self._s.is_sorted_flag(),
+            "SORTED_DESC": self._s.is_sorted_reverse_flag(),
+        }
+
+    @property
+    def inner_dtype(self) -> type[DataType] | None:
+        """
+        Get the inner dtype in of a List typed Series.
+
+        Returns
+        -------
+        DataType
+
+        """
+        return self._s.inner_dtype()
+
+    @property
+    def name(self) -> str:
+        """Get the name of this Series."""
+        return self._s.name()
+
+    @property
+    def shape(self) -> tuple[int]:
+        """Shape of this Series."""
+        return (self._s.len(),)
+
+    @property
+    def time_unit(self) -> TimeUnit | None:
+        """Get the time unit of underlying Datetime Series as {"ns", "us", "ms"}."""
+        return self._s.time_unit()
+
     def __getstate__(self) -> Any:
         return self._s.__getstate__()
 
@@ -721,21 +777,6 @@ class Series:
                 f" `{method}`."
             )
 
-    @property
-    def flags(self) -> dict[str, bool]:
-        """
-        Get flags that are set on the Series.
-
-        Returns
-        -------
-        Dictionary containing the flag name and the value
-
-        """
-        return {
-            "SORTED_ASC": self._s.is_sorted_flag(),
-            "SORTED_DESC": self._s.is_sorted_reverse_flag(),
-        }
-
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
         Return an estimation of the total (heap) allocated size of the Series.
@@ -850,32 +891,6 @@ class Series:
 
         """
         return pli.wrap_df(PyDataFrame([self._s]))
-
-    @property
-    def dtype(self) -> type[DataType]:
-        """
-        Get the data type of this Series.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.dtype
-        <class 'polars.datatypes.Int64'>
-
-        """
-        return self._s.dtype()
-
-    @property
-    def inner_dtype(self) -> type[DataType] | None:
-        """
-        Get the inner dtype in of a List typed Series.
-
-        Returns
-        -------
-        DataType
-
-        """
-        return self._s.inner_dtype()
 
     def describe(self) -> pli.DataFrame:
         """
@@ -1245,11 +1260,6 @@ class Series:
         ]
 
         """
-
-    @property
-    def name(self) -> str:
-        """Get the name of this Series."""
-        return self._s.name()
 
     def alias(self, name: str) -> Series:
         """
@@ -2152,11 +2162,6 @@ class Series:
 
         """
         return self._s.len()
-
-    @property
-    def shape(self) -> tuple[int]:
-        """Shape of this Series."""
-        return (self._s.len(),)
 
     def cast(
         self,
@@ -4224,11 +4229,6 @@ class Series:
 
         """
         return wrap_s(self._s.set_sorted(reverse))
-
-    @property
-    def time_unit(self) -> TimeUnit | None:
-        """Get the time unit of underlying Datetime Series as {"ns", "us", "ms"}."""
-        return self._s.time_unit()
 
     # Below are the namespaces defined. Do not move these up in the definition of
     # Series, as it confuses mypy between the type annotation `str` and the
