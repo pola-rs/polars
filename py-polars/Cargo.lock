@@ -74,7 +74,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.13.0"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=0b345ae310e99729b2b48c56a2cb0a99027d1ac2#0b345ae310e99729b2b48c56a2cb0a99027d1ac2"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=f34eb9b09fab3d90c9053ab906ce1809ffa62f47#f34eb9b09fab3d90c9053ab906ce1809ffa62f47"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -174,15 +174,6 @@ name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
-
-[[package]]
-name = "bitpacking"
-version = "0.8.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8c7d2ac73c167c06af4a5f37e6e59d84148d57ccbe4480b76f0273eefea82d7"
-dependencies = [
- "crunchy",
-]
 
 [[package]]
 name = "brotli"
@@ -393,12 +384,6 @@ checksum = "2ae1b35a484aa10e07fe0638d02301c5ad24de82d310ccbd2f3693da5f09bf1c"
 dependencies = [
  "winapi",
 ]
-
-[[package]]
-name = "crunchy"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a81dae078cea95a014a339291cec439d2f232ebe854a9d672b796c6afafa9b7"
 
 [[package]]
 name = "csv-core"
@@ -1146,17 +1131,17 @@ dependencies = [
 
 [[package]]
 name = "parquet2"
-version = "0.15.1"
+version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2f03a6f84e35cb84862a95f13e31466c834576502e3e3793178a531f62b8621"
+checksum = "207d04fc21d705c3609427f5922627acf734ed5ea2616f94c7fecda77f7229b1"
 dependencies = [
  "async-stream",
- "bitpacking",
  "brotli",
  "flate2",
  "futures",
  "lz4",
  "parquet-format-safe",
+ "seq-macro",
  "snap",
  "streaming-decompression",
  "zstd",
@@ -1593,6 +1578,12 @@ name = "scopeguard"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
+
+[[package]]
+name = "seq-macro"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0772c5c30e1a0d91f6834f8e545c69281c099dfa9a3ac58d96a9fd629c8d4898"
 
 [[package]]
 name = "serde"
