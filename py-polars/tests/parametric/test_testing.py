@@ -62,10 +62,10 @@ def test_strategy_frame_columns(lf: pl.LazyFrame) -> None:
 
     # confirm uint cols bounds
     uint8_max = (2**8) - 1
-    assert df["a"].min() >= 0
-    assert df["b"].min() >= 0
-    assert df["a"].max() <= uint8_max
-    assert df["b"].max() <= uint8_max
+    assert df["a"].min() >= 0  # type: ignore[operator]
+    assert df["b"].min() >= 0  # type: ignore[operator]
+    assert df["a"].max() <= uint8_max  # type: ignore[operator]
+    assert df["b"].max() <= uint8_max  # type: ignore[operator]
 
     # confirm uint cols uniqueness
     assert df["a"].is_unique().all()
@@ -133,9 +133,9 @@ def test_strategy_null_probability(
     assert df2.null_count().fold(sum).sum() < df3.null_count().fold(sum).sum()
 
     nulls_col0, nulls_col1 = df2.null_count().rows()[0]
-    assert nulls_col0 > nulls_col1
-    assert nulls_col0 < 50
+    assert nulls_col0 > nulls_col1  # type: ignore[operator]
+    assert nulls_col0 < 50  # type: ignore[operator]
 
     nulls_col0, nulls_colx = df3.null_count().rows()[0]
-    assert nulls_col0 > nulls_colx
+    assert nulls_col0 > nulls_colx  # type: ignore[operator]
     assert nulls_col0 == 50
