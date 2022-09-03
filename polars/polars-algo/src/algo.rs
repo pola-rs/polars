@@ -23,30 +23,24 @@ pub fn cut(
     };
 
     let cuts_df = df![
-        breakpoint_str => Series::new(
-            breakpoint_str, &bins)
+        breakpoint_str => Series::new(breakpoint_str, &bins)
             .extend_constant(AnyValue::Float64(f64::INFINITY), 1)?
     ]?;
 
     let cuts_df = if let Some(labels) = labels {
         if labels.len() != (bins.len() + 1) {
-            panic!("Expected more labels");
+            return Err(PolarsError::ShapeMisMatch("Labels count must equal bins count".into()));
         }
 
         cuts_df.lazy().with_column(
             lit(Series::new(category_str, labels))
         )
     } else {
-        let labels = vec!["labels"; bins.len() + 1];
         cuts_df.lazy().with_column(
-            // TODO: Fix!
-            // format(
-        lit(Series::new(category_str, labels))
-
-            //     "({}, {}]",
-                // col(breakpoint_str).shift_and_fill(1, lit(f64::NEG_INFINITY)),
-                // col(breakpoint_str),
-            // ).alias(category_label)
+            format_str("({}, {}]",[
+                col(breakpoint_str).shift_and_fill(1, lit(f64::NEG_INFINITY)),
+                col(breakpoint_str)
+            ])?.alias(category_str)
         )
     }.collect()?;
 
@@ -64,4 +58,35 @@ pub fn cut(
             None,
             None
         )
+}
+
+#[test]
+fn test_cut() -> Result<()> {
+    let samples: Vec<f32> = (0..12).map(|i| -3.0 + i as f32 * 0.5).collect();
+    let series = Series::new("a", samples);
+
+    let out = cut(series, vec![-1.0, 1.0], None, None, None)?;
+
+    let expected = df!(
+        "a"           => [-3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5],
+        "break_point" => [-1.0, -1.0, -1.0, -1.0, -1.0,  1.0, 1.0, 1.0, 1.0, f64::INFINITY, f64::INFINITY, f64::INFINITY],
+        "category"    => [
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-inf, -1.0]",
+            "(-1.0, 1.0]",
+            "(-1.0, 1.0]",
+            "(-1.0, 1.0]",
+            "(-1.0, 1.0]",
+            "(1.0, inf]",
+            "(1.0, inf]",
+            "(1.0, inf]"
+        ]
+    )?;
+
+    assert!(out.frame_equal_missing(&expected));
+
+    Ok(())
 }
