@@ -5,14 +5,14 @@ PYTHON=venv/bin/python
 PYTHON_BIN=venv/bin
 
 .PHONY: venv
-venv:
+venv:  ## Set up virtual environment
 	@python -m venv venv
 	@venv/bin/pip install -U pip
 	@venv/bin/pip install -r build.requirements.txt
 	@unset CONDA_PREFIX && source venv/bin/activate && maturin develop
 
 .PHONY: clean
-clean:
+clean:  ## Clean up caches and build artifacts
 	@rm -rf venv/
 	@rm -rf docs/build/
 	@rm -rf .hypothesis/
@@ -24,7 +24,7 @@ clean:
 	@cargo clean
 
 .PHONY: pre-commit
-pre-commit: venv
+pre-commit: venv  ## Run autoformatting and linting
 	$(PYTHON_BIN)/isort .
 	$(PYTHON_BIN)/black .
 	$(PYTHON_BIN)/blackdoc .
@@ -35,22 +35,22 @@ pre-commit: venv
 	cargo fmt --all
 
 .PHONY: test
-test: venv
+test: venv  ## Run fast unittests
 	$(PYTHON_BIN)/maturin develop
 	$(PYTHON) -m pytest tests/unit/
 
 .PHONY: test-all
-test-all: venv
+test-all: venv  ## Run all tests
 	$(PYTHON_BIN)/maturin develop
 	$(PYTHON) -m pytest
 	$(PYTHON) tests/docs/run_doc_examples.py
 
 .PHONY: test-with-cov
-test-with-cov: venv
+test-with-cov: venv  ## Run tests and report coverage
 	$(PYTHON) -m pytest --cov=polars --cov-report xml
 
 .PHONY: doctest
-doctest:
+doctest:  ## Run doctests
 	$(PYTHON) tests/docs/run_doc_examples.py
 
 .PHONY: install-wheel
