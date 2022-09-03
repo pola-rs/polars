@@ -1082,12 +1082,6 @@ impl PySeries {
         }
     }
 
-    pub fn with_time_zone(&self, tz: Option<TimeZone>) -> PyResult<Self> {
-        let mut dt = self.series.datetime().map_err(PyPolarsErr::from)?.clone();
-        dt.set_time_zone(tz);
-        Ok(dt.into_series().into())
-    }
-
     pub fn set_at_idx(&mut self, idx: PySeries, values: PySeries) -> PyResult<()> {
         // we take the value because we want a ref count
         // of 1 so that we can have mutable access
