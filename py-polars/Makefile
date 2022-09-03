@@ -1,3 +1,5 @@
+.DEFAULT_GOAL := help
+
 SHELL=/bin/bash
 PYTHON=venv/bin/python
 PYTHON_BIN=venv/bin
@@ -64,3 +66,7 @@ build-and-test-no-venv:
 install-no-venv: build-no-venv install-wheel
 install-no-venv-release: build-no-venv-release install-wheel
 
+.PHONY: help
+help:  ## Display this help screen
+	@echo -e '\033[1mAvailable commands:\033[0m'
+	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
