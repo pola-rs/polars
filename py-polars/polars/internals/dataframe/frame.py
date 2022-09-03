@@ -309,47 +309,6 @@ class DataFrame:
         else:
             raise ValueError("DataFrame constructor not called properly.")
 
-    def estimated_size(self, unit: SizeUnit = "b") -> int | float:
-        """
-        Return an estimation of the total (heap) allocated size of the `DataFrame`.
-
-        Estimated size is given in the specified unit (bytes by default).
-
-        This estimation is the sum of the size of its buffers, validity, including
-        nested arrays. Multiple arrays may share buffers and bitmaps. Therefore, the
-        size of 2 arrays is not the sum of the sizes computed from this function. In
-        particular, [`StructArray`]'s size is an upper bound.
-
-        When an array is sliced, its allocated size remains constant because the buffer
-        unchanged. However, this function will yield a smaller number. This is because
-        this function returns the visible size of the buffer, not its total capacity.
-
-        FFI buffers are included in this estimation.
-
-        Parameters
-        ----------
-        unit : {'b', 'kb', 'mb', 'gb', 'tb'}
-            Scale the returned size to the given unit.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "x": list(reversed(range(1_000_000))),
-        ...         "y": [v / 1000 for v in range(1_000_000)],
-        ...         "z": [str(v) for v in range(1_000_000)],
-        ...     },
-        ...     columns=[("x", pl.UInt32), ("y", pl.Float64), ("z", pl.Utf8)],
-        ... )
-        >>> df.estimated_size()
-        25888898
-        >>> df.estimated_size("mb")
-        24.689577102661133
-
-        """
-        sz = self._df.estimated_size()
-        return scale_bytes(sz, to=unit)
-
     @classmethod
     def _from_pydf(cls: type[DF], py_df: PyDataFrame) -> DF:
         """Construct Polars DataFrame from FFI PyDataFrame object."""
@@ -859,232 +818,55 @@ class DataFrame:
         self._df = PyDataFrame.read_json(file, json_lines)
         return self
 
-    def to_arrow(self) -> pa.Table:
+    @property
+    def shape(self) -> tuple[int, int]:
         """
-        Collect the underlying arrow arrays in an Arrow Table.
-
-        This operation is mostly zero copy.
-
-        Data types that do copy:
-            - CategoricalType
-        """
-        if not _PYARROW_AVAILABLE:  # pragma: no cover
-            raise ImportError(
-                "'pyarrow' is required for converting a polars DataFrame to an Arrow"
-                " Table."
-            )
-        record_batches = self._df.to_arrow()
-        return pa.Table.from_batches(record_batches)
-
-    @overload
-    def to_dict(self, as_series: Literal[True] = ...) -> dict[str, pli.Series]:
-        ...
-
-    @overload
-    def to_dict(self, as_series: Literal[False]) -> dict[str, list[Any]]:
-        ...
-
-    @overload
-    def to_dict(
-        self, as_series: bool = True
-    ) -> dict[str, pli.Series] | dict[str, list[Any]]:
-        ...
-
-    def to_dict(
-        self, as_series: bool = True
-    ) -> dict[str, pli.Series] | dict[str, list[Any]]:
-        """
-        Convert DataFrame to a dictionary mapping column name to values.
-
-        Parameters
-        ----------
-        as_series
-            True -> Values are series
-            False -> Values are List[Any]
+        Get the shape of the DataFrame.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "A": [1, 2, 3, 4, 5],
-        ...         "fruits": ["banana", "banana", "apple", "apple", "banana"],
-        ...         "B": [5, 4, 3, 2, 1],
-        ...         "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
-        ...         "optional": [28, 300, None, 2, -30],
-        ...     }
-        ... )
-        >>> df
-        shape: (5, 5)
-        ┌─────┬────────┬─────┬────────┬──────────┐
-        │ A   ┆ fruits ┆ B   ┆ cars   ┆ optional │
-        │ --- ┆ ---    ┆ --- ┆ ---    ┆ ---      │
-        │ i64 ┆ str    ┆ i64 ┆ str    ┆ i64      │
-        ╞═════╪════════╪═════╪════════╪══════════╡
-        │ 1   ┆ banana ┆ 5   ┆ beetle ┆ 28       │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ 2   ┆ banana ┆ 4   ┆ audi   ┆ 300      │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ 3   ┆ apple  ┆ 3   ┆ beetle ┆ null     │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ 4   ┆ apple  ┆ 2   ┆ beetle ┆ 2        │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ 5   ┆ banana ┆ 1   ┆ beetle ┆ -30      │
-        └─────┴────────┴─────┴────────┴──────────┘
-        >>> df.to_dict(as_series=False)
-        {'A': [1, 2, 3, 4, 5],
-        'fruits': ['banana', 'banana', 'apple', 'apple', 'banana'],
-        'B': [5, 4, 3, 2, 1],
-        'cars': ['beetle', 'audi', 'beetle', 'beetle', 'beetle'],
-        'optional': [28, 300, None, 2, -30]}
-        >>> df.to_dict(as_series=True)
-        {'A': shape: (5,)
-        Series: 'A' [i64]
-        [
-            1
-            2
-            3
-            4
-            5
-        ], 'fruits': shape: (5,)
-        Series: 'fruits' [str]
-        [
-            "banana"
-            "banana"
-            "apple"
-            "apple"
-            "banana"
-        ], 'B': shape: (5,)
-        Series: 'B' [i64]
-        [
-            5
-            4
-            3
-            2
-            1
-        ], 'cars': shape: (5,)
-        Series: 'cars' [str]
-        [
-            "beetle"
-            "audi"
-            "beetle"
-            "beetle"
-            "beetle"
-        ], 'optional': shape: (5,)
-        Series: 'optional' [i64]
-        [
-            28
-            300
-            null
-            2
-            -30
-        ]}
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
+        >>> df.shape
+        (5, 1)
 
         """
-        if as_series:
-            return {s.name: s for s in self}
-        else:
-            return {s.name: s.to_list() for s in self}
+        return self._df.shape()
 
-    @overload
-    def write_json(
-        self,
-        file: IOBase | str | Path | None = ...,
-        pretty: bool = ...,
-        row_oriented: bool = ...,
-        json_lines: bool = ...,
-        *,
-        to_string: Literal[True],
-    ) -> str:
-        ...
-
-    @overload
-    def write_json(
-        self,
-        file: IOBase | str | Path | None = ...,
-        pretty: bool = ...,
-        row_oriented: bool = ...,
-        json_lines: bool = ...,
-        *,
-        to_string: Literal[False] = ...,
-    ) -> None:
-        ...
-
-    @overload
-    def write_json(
-        self,
-        file: IOBase | str | Path | None = ...,
-        pretty: bool = ...,
-        row_oriented: bool = ...,
-        json_lines: bool = ...,
-        *,
-        to_string: bool = ...,
-    ) -> str | None:
-        ...
-
-    def write_json(
-        self,
-        file: IOBase | str | Path | None = None,
-        pretty: bool = False,
-        row_oriented: bool = False,
-        json_lines: bool = False,
-        *,
-        to_string: bool = False,
-    ) -> str | None:
+    @property
+    def height(self) -> int:
         """
-        Serialize to JSON representation.
-
-        Parameters
-        ----------
-        file
-            Write to this file instead of returning a string.
-        pretty
-            Pretty serialize json.
-        row_oriented
-            Write to row oriented json. This is slower, but more common.
-        json_lines
-            Write to Json Lines format
-        to_string
-            Ignore file argument and return a string.
-
-        """
-        if isinstance(file, (str, Path)):
-            file = format_path(file)
-        to_string_io = (file is not None) and isinstance(file, StringIO)
-        if to_string or file is None or to_string_io:
-            with BytesIO() as buf:
-                self._df.write_json(buf, pretty, row_oriented, json_lines)
-                json_bytes = buf.getvalue()
-
-            json_str = json_bytes.decode("utf8")
-            if to_string_io:
-                file.write(json_str)  # type: ignore[union-attr]
-            else:
-                return json_str
-        else:
-            self._df.write_json(file, pretty, row_oriented, json_lines)
-        return None
-
-    def to_pandas(
-        self, *args: Any, date_as_object: bool = False, **kwargs: Any
-    ) -> pd.DataFrame:
-        """
-        Cast to a pandas DataFrame.
-
-        This requires that pandas and pyarrow are installed.
-        This operation clones data.
-
-        Parameters
-        ----------
-        args
-            Arguments will be sent to pyarrow.Table.to_pandas.
-        date_as_object
-            Cast dates to objects. If False, convert to datetime64[ns] dtype.
-        kwargs
-            Arguments will be sent to pyarrow.Table.to_pandas.
+        Get the height of the DataFrame.
 
         Examples
         --------
-        >>> import pandas
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
+        >>> df.height
+        5
+
+        """
+        return self._df.height()
+
+    @property
+    def width(self) -> int:
+        """
+        Get the width of the DataFrame.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
+        >>> df.width
+        1
+
+        """
+        return self._df.width()
+
+    @property
+    def columns(self) -> list[str]:
+        """
+        Get or set column names.
+
+        Examples
+        --------
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
@@ -1092,398 +874,99 @@ class DataFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> pandas_df = df.to_pandas()
-        >>> type(pandas_df)
-        <class 'pandas.core.frame.DataFrame'>
+        >>> df.columns
+        ['foo', 'bar', 'ham']
+
+        Set column names:
+
+        >>> df.columns = ["apple", "banana", "orange"]
+        >>> df
+        shape: (3, 3)
+        ┌───────┬────────┬────────┐
+        │ apple ┆ banana ┆ orange │
+        │ ---   ┆ ---    ┆ ---    │
+        │ i64   ┆ i64    ┆ str    │
+        ╞═══════╪════════╪════════╡
+        │ 1     ┆ 6      ┆ a      │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ 7      ┆ b      │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 3     ┆ 8      ┆ c      │
+        └───────┴────────┴────────┘
 
         """
-        if not _PYARROW_AVAILABLE:  # pragma: no cover
-            raise ImportError("'pyarrow' is required when using to_pandas().")
-        record_batches = self._df.to_pandas()
-        tbl = pa.Table.from_batches(record_batches)
-        return tbl.to_pandas(*args, date_as_object=date_as_object, **kwargs)
+        return self._df.columns()
 
-    def write_csv(
-        self,
-        file: TextIO | BytesIO | str | Path | None = None,
-        has_header: bool = True,
-        sep: str = ",",
-        quote: str = '"',
-        batch_size: int = 1024,
-        datetime_format: str | None = None,
-        date_format: str | None = None,
-        time_format: str | None = None,
-        float_precision: int | None = None,
-    ) -> str | None:
+    @columns.setter
+    def columns(self, columns: Sequence[str]) -> None:
         """
-        Write to comma-separated values (CSV) file.
+        Change the column names of the `DataFrame`.
 
         Parameters
         ----------
-        file
-            File path to which the file should be written.
-        has_header
-            Whether to include header in the CSV output.
-        sep
-            Separate CSV fields with this symbol.
-        quote
-            Byte to use as quoting character.
-        batch_size
-            Number of rows that will be processed per thread.
-        datetime_format
-            A format string, with the specifiers defined by the
-            `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            Rust crate.
-        date_format
-            A format string, with the specifiers defined by the
-            `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            Rust crate.
-        time_format
-            A format string, with the specifiers defined by the
-            `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            Rust crate.
-        float_precision
-            Number of decimal places to write, applied to both ``Float32`` and
-            ``Float64`` datatypes.
+        columns
+            A list with new names for the `DataFrame`.
+            The length of the list should be equal to the width of the `DataFrame`.
+
+        """
+        self._df.set_column_names(columns)
+
+    @property
+    def dtypes(self) -> list[PolarsDataType]:
+        """
+        Get dtypes of columns in DataFrame. Dtypes can also be found in column headers when printing the DataFrame.
 
         Examples
         --------
-        >>> import pathlib
-        >>>
         >>> df = pl.DataFrame(
         ...     {
-        ...         "foo": [1, 2, 3, 4, 5],
-        ...         "bar": [6, 7, 8, 9, 10],
-        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> path: pathlib.Path = dirpath / "new_file.csv"
-        >>> df.write_csv(path, sep=",")
-
-        """
-        if len(sep) > 1:
-            raise ValueError("only single byte separator is allowed")
-        if len(quote) > 1:
-            raise ValueError("only single byte quote char is allowed")
-        if file is None:
-            buffer = BytesIO()
-            self._df.write_csv(
-                buffer,
-                has_header,
-                ord(sep),
-                ord(quote),
-                batch_size,
-                datetime_format,
-                date_format,
-                time_format,
-                float_precision,
-            )
-            return str(buffer.getvalue(), encoding="utf-8")
-
-        if isinstance(file, (str, Path)):
-            file = format_path(file)
-
-        self._df.write_csv(
-            file,
-            has_header,
-            ord(sep),
-            ord(quote),
-            batch_size,
-            datetime_format,
-            date_format,
-            time_format,
-            float_precision,
-        )
-        return None
-
-    def write_avro(
-        self,
-        file: BinaryIO | BytesIO | str | Path,
-        compression: AvroCompression = "uncompressed",
-    ) -> None:
-        """
-        Write to Apache Avro file.
-
-        Parameters
-        ----------
-        file
-            File path to which the file should be written.
-        compression : {'uncompressed', 'snappy', 'deflate'}
-            Compression method. Defaults to "uncompressed".
-
-        """
-        if compression is None:
-            compression = "uncompressed"
-        if isinstance(file, (str, Path)):
-            file = format_path(file)
-
-        self._df.write_avro(file, compression)
-
-    def write_ipc(
-        self,
-        file: BinaryIO | BytesIO | str | Path,
-        compression: IpcCompression = "uncompressed",
-    ) -> None:
-        """
-        Write to Arrow IPC binary stream or Feather file.
-
-        Parameters
-        ----------
-        file
-            File path to which the file should be written.
-        compression : {'uncompressed', 'lz4', 'zstd'}
-            Compression method. Defaults to "uncompressed".
-
-        """
-        if compression is None:
-            compression = "uncompressed"
-        if isinstance(file, (str, Path)):
-            file = format_path(file)
-
-        self._df.write_ipc(file, compression)
-
-    def to_dicts(self) -> list[dict[str, Any]]:
-        """
-        Convert every row to a dictionary.
-
-        Note that this is slow.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
-        >>> df.to_dicts()
-        [{'foo': 1, 'bar': 4}, {'foo': 2, 'bar': 5}, {'foo': 3, 'bar': 6}]
-
-        """
-        pydf = self._df
-        names = self.columns
-
-        return [
-            {k: v for k, v in zip(names, pydf.row_tuple(i))}
-            for i in range(0, self.height)
-        ]
-
-    def transpose(
-        self: DF,
-        include_header: bool = False,
-        header_name: str = "column",
-        column_names: Iterator[str] | Sequence[str] | None = None,
-    ) -> DF:
-        """
-        Transpose a DataFrame over the diagonal.
-
-        Parameters
-        ----------
-        include_header
-            If set, the column names will be added as first column.
-        header_name
-            If `include_header` is set, this determines the name of the column that will
-            be inserted.
-        column_names
-            Optional generator/iterator that yields column names. Will be used to
-            replace the columns in the DataFrame.
-
-        Notes
-        -----
-        This is a very expensive operation. Perhaps you can do it differently.
-
-        Returns
-        -------
-        DataFrame
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
-        >>> df.transpose(include_header=True)
-        shape: (2, 4)
-        ┌────────┬──────────┬──────────┬──────────┐
-        │ column ┆ column_0 ┆ column_1 ┆ column_2 │
-        │ ---    ┆ ---      ┆ ---      ┆ ---      │
-        │ str    ┆ i64      ┆ i64      ┆ i64      │
-        ╞════════╪══════════╪══════════╪══════════╡
-        │ a      ┆ 1        ┆ 2        ┆ 3        │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ b      ┆ 1        ┆ 2        ┆ 3        │
-        └────────┴──────────┴──────────┴──────────┘
-
-        Replace the auto-generated column names with a list
-
-        >>> df.transpose(include_header=False, column_names=["a", "b", "c"])
-        shape: (2, 3)
+        >>> df.dtypes
+        [<class 'polars.datatypes.Int64'>, <class 'polars.datatypes.Float64'>, <class 'polars.datatypes.Utf8'>]
+        >>> df
+        shape: (3, 3)
         ┌─────┬─────┬─────┐
-        │ a   ┆ b   ┆ c   │
+        │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
-        │ i64 ┆ i64 ┆ i64 │
+        │ i64 ┆ f64 ┆ str │
         ╞═════╪═════╪═════╡
-        │ 1   ┆ 2   ┆ 3   │
+        │ 1   ┆ 6.0 ┆ a   │
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 1   ┆ 2   ┆ 3   │
+        │ 2   ┆ 7.0 ┆ b   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 8.0 ┆ c   │
         └─────┴─────┴─────┘
 
-        Include the header as a separate column
+        See Also
+        --------
+        schema : Returns a {colname:dtype} mapping.
 
-        >>> df.transpose(
-        ...     include_header=True, header_name="foo", column_names=["a", "b", "c"]
-        ... )
-        shape: (2, 4)
-        ┌─────┬─────┬─────┬─────┐
-        │ foo ┆ a   ┆ b   ┆ c   │
-        │ --- ┆ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╪═════╡
-        │ a   ┆ 1   ┆ 2   ┆ 3   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b   ┆ 1   ┆ 2   ┆ 3   │
-        └─────┴─────┴─────┴─────┘
+        """  # noqa: E501
+        return self._df.dtypes()
 
-        Replace the auto-generated column with column names from a generator function
-
-        >>> def name_generator():
-        ...     base_name = "my_column_"
-        ...     count = 0
-        ...     while True:
-        ...         yield f"{base_name}{count}"
-        ...         count += 1
-        ...
-        >>> df.transpose(include_header=False, column_names=name_generator())
-        shape: (2, 3)
-        ┌─────────────┬─────────────┬─────────────┐
-        │ my_column_0 ┆ my_column_1 ┆ my_column_2 │
-        │ ---         ┆ ---         ┆ ---         │
-        │ i64         ┆ i64         ┆ i64         │
-        ╞═════════════╪═════════════╪═════════════╡
-        │ 1           ┆ 2           ┆ 3           │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 1           ┆ 2           ┆ 3           │
-        └─────────────┴─────────────┴─────────────┘
-
+    @property
+    def schema(self) -> dict[str, PolarsDataType]:
         """
-        df = self._from_pydf(self._df.transpose(include_header, header_name))
-        if column_names is not None:
-            names = []
-            n = df.width
-            if include_header:
-                names.append(header_name)
-                n -= 1
-
-            column_names = iter(column_names)
-            for _ in range(n):
-                names.append(next(column_names))
-            df.columns = names
-        return df
-
-    def write_parquet(
-        self,
-        file: str | Path | BytesIO,
-        *,
-        compression: ParquetCompression = "lz4",
-        compression_level: int | None = None,
-        statistics: bool = False,
-        row_group_size: int | None = None,
-        use_pyarrow: bool = False,
-        pyarrow_options: dict[str, object] | None = None,
-    ) -> None:
-        """
-        Write to Apache Parquet file.
-
-        Parameters
-        ----------
-        file
-            File path to which the file should be written.
-        compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
-            Compression method. The default compression "lz4" (actually lz4raw) has very
-            good performance, but may not yet been supported by older readers. If you
-            want more compatability guarantees, consider using "snappy".
-            Method "uncompressed" is not supported by pyarrow.
-        compression_level
-            The level of compression to use. Higher compression means smaller files on
-            disk.
-
-            - "gzip" : min-level: 0, max-level: 10.
-            - "brotli" : min-level: 0, max-level: 11.
-            - "zstd" : min-level: 1, max-level: 22.
-        statistics
-            Write statistics to the parquet headers. This requires extra compute.
-        row_group_size
-            Size of the row groups in number of rows.
-            If None (default), the chunks of the `DataFrame` are
-            used. Writing in smaller chunks may reduce memory pressure and improve
-            writing speeds. This argument has no effect if 'pyarrow' is used.
-        use_pyarrow
-            Use C++ parquet implementation vs rust parquet implementation.
-            At the moment C++ supports more features.
-        pyarrow_options
-            Arguments passed to ``pyarrow.parquet.write_table``.
-
-        """
-        if compression is None:
-            compression = "uncompressed"
-        if isinstance(file, (str, Path)):
-            file = format_path(file)
-
-        if use_pyarrow:
-            if not _PYARROW_AVAILABLE:  # pragma: no cover
-                raise ImportError(
-                    "'pyarrow' is required when using"
-                    " 'write_parquet(..., use_pyarrow=True)'."
-                )
-
-            tbl = self.to_arrow()
-
-            data = {}
-
-            for i, column in enumerate(tbl):
-                # extract the name before casting
-                if column._name is None:
-                    name = f"column_{i}"
-                else:
-                    name = column._name
-
-                data[name] = column
-            tbl = pa.table(data)
-
-            pa.parquet.write_table(
-                table=tbl,
-                where=file,
-                compression=compression,
-                write_statistics=statistics,
-                **(pyarrow_options or {}),
-            )
-        else:
-            self._df.write_parquet(
-                file, compression, compression_level, statistics, row_group_size
-            )
-
-    def to_numpy(self) -> np.ndarray[Any, Any]:
-        """
-        Convert DataFrame to a 2D NumPy array.
-
-        This operation clones data.
-
-        Notes
-        -----
-        If you're attempting to convert Utf8 to an array you'll need to install
-        `pyarrow`.
+        Get a dict[column name, DataType].
 
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
         ... )
-        >>> numpy_array = df.to_numpy()
-        >>> type(numpy_array)
-        <class 'numpy.ndarray'>
+        >>> df.schema
+        {'foo': <class 'polars.datatypes.Int64'>, 'bar': <class 'polars.datatypes.Float64'>, 'ham': <class 'polars.datatypes.Utf8'>}
 
-        """
-        if not _NUMPY_AVAILABLE:
-            raise ImportError("'numpy' is required for this functionality.")
-        out = self._df.to_numpy()
-        if out is None:
-            return np.vstack(
-                [self.to_series(i).to_numpy() for i in range(self.width)]
-            ).T
-        else:
-            return out
+        """  # noqa: E501
+        return dict(zip(self.columns, self.dtypes))
 
     def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
         """Compare a DataFrame with another object."""
@@ -1615,26 +1098,6 @@ class DataFrame:
 
     def __iter__(self) -> Iterator[Any]:
         return self.get_columns().__iter__()
-
-    def find_idx_by_name(self, name: str) -> int:
-        """
-        Find the index of a column by name.
-
-        Parameters
-        ----------
-        name
-            Name of the column to find.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
-        ... )
-        >>> df.find_idx_by_name("ham")
-        2
-
-        """
-        return self._df.find_idx_by_name(name)
 
     def _pos_idx(self, idx: int, dim: int) -> int:
         if idx >= 0:
@@ -1971,6 +1434,12 @@ class DataFrame:
     def __len__(self) -> int:
         return self.height
 
+    def __copy__(self: DF) -> DF:
+        return self.clone()
+
+    def __deepcopy__(self: DF, memo: None = None) -> DF:
+        return self.clone()
+
     def _repr_html_(self) -> str:
         """
         Format output data in HTML for display in Jupyter Notebooks.
@@ -1985,6 +1454,223 @@ class DataFrame:
         max_cols = int(os.environ.get("POLARS_FMT_MAX_COLS", default=75))
         max_rows = int(os.environ.get("POLARS_FMT_MAX_ROWS", default=25))
         return "\n".join(NotebookFormatter(self, max_cols, max_rows).render())
+
+    def to_arrow(self) -> pa.Table:
+        """
+        Collect the underlying arrow arrays in an Arrow Table.
+
+        This operation is mostly zero copy.
+
+        Data types that do copy:
+            - CategoricalType
+        """
+        if not _PYARROW_AVAILABLE:  # pragma: no cover
+            raise ImportError(
+                "'pyarrow' is required for converting a polars DataFrame to an Arrow"
+                " Table."
+            )
+        record_batches = self._df.to_arrow()
+        return pa.Table.from_batches(record_batches)
+
+    @overload
+    def to_dict(self, as_series: Literal[True] = ...) -> dict[str, pli.Series]:
+        ...
+
+    @overload
+    def to_dict(self, as_series: Literal[False]) -> dict[str, list[Any]]:
+        ...
+
+    @overload
+    def to_dict(
+        self, as_series: bool = True
+    ) -> dict[str, pli.Series] | dict[str, list[Any]]:
+        ...
+
+    def to_dict(
+        self, as_series: bool = True
+    ) -> dict[str, pli.Series] | dict[str, list[Any]]:
+        """
+        Convert DataFrame to a dictionary mapping column name to values.
+
+        Parameters
+        ----------
+        as_series
+            True -> Values are series
+            False -> Values are List[Any]
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "A": [1, 2, 3, 4, 5],
+        ...         "fruits": ["banana", "banana", "apple", "apple", "banana"],
+        ...         "B": [5, 4, 3, 2, 1],
+        ...         "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
+        ...         "optional": [28, 300, None, 2, -30],
+        ...     }
+        ... )
+        >>> df
+        shape: (5, 5)
+        ┌─────┬────────┬─────┬────────┬──────────┐
+        │ A   ┆ fruits ┆ B   ┆ cars   ┆ optional │
+        │ --- ┆ ---    ┆ --- ┆ ---    ┆ ---      │
+        │ i64 ┆ str    ┆ i64 ┆ str    ┆ i64      │
+        ╞═════╪════════╪═════╪════════╪══════════╡
+        │ 1   ┆ banana ┆ 5   ┆ beetle ┆ 28       │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ banana ┆ 4   ┆ audi   ┆ 300      │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ apple  ┆ 3   ┆ beetle ┆ null     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 4   ┆ apple  ┆ 2   ┆ beetle ┆ 2        │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 5   ┆ banana ┆ 1   ┆ beetle ┆ -30      │
+        └─────┴────────┴─────┴────────┴──────────┘
+        >>> df.to_dict(as_series=False)
+        {'A': [1, 2, 3, 4, 5],
+        'fruits': ['banana', 'banana', 'apple', 'apple', 'banana'],
+        'B': [5, 4, 3, 2, 1],
+        'cars': ['beetle', 'audi', 'beetle', 'beetle', 'beetle'],
+        'optional': [28, 300, None, 2, -30]}
+        >>> df.to_dict(as_series=True)
+        {'A': shape: (5,)
+        Series: 'A' [i64]
+        [
+            1
+            2
+            3
+            4
+            5
+        ], 'fruits': shape: (5,)
+        Series: 'fruits' [str]
+        [
+            "banana"
+            "banana"
+            "apple"
+            "apple"
+            "banana"
+        ], 'B': shape: (5,)
+        Series: 'B' [i64]
+        [
+            5
+            4
+            3
+            2
+            1
+        ], 'cars': shape: (5,)
+        Series: 'cars' [str]
+        [
+            "beetle"
+            "audi"
+            "beetle"
+            "beetle"
+            "beetle"
+        ], 'optional': shape: (5,)
+        Series: 'optional' [i64]
+        [
+            28
+            300
+            null
+            2
+            -30
+        ]}
+
+        """
+        if as_series:
+            return {s.name: s for s in self}
+        else:
+            return {s.name: s.to_list() for s in self}
+
+    def to_dicts(self) -> list[dict[str, Any]]:
+        """
+        Convert every row to a dictionary.
+
+        Note that this is slow.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
+        >>> df.to_dicts()
+        [{'foo': 1, 'bar': 4}, {'foo': 2, 'bar': 5}, {'foo': 3, 'bar': 6}]
+
+        """
+        pydf = self._df
+        names = self.columns
+
+        return [
+            {k: v for k, v in zip(names, pydf.row_tuple(i))}
+            for i in range(0, self.height)
+        ]
+
+    def to_numpy(self) -> np.ndarray[Any, Any]:
+        """
+        Convert DataFrame to a 2D NumPy array.
+
+        This operation clones data.
+
+        Notes
+        -----
+        If you're attempting to convert Utf8 to an array you'll need to install
+        `pyarrow`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ... )
+        >>> numpy_array = df.to_numpy()
+        >>> type(numpy_array)
+        <class 'numpy.ndarray'>
+
+        """
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
+        out = self._df.to_numpy()
+        if out is None:
+            return np.vstack(
+                [self.to_series(i).to_numpy() for i in range(self.width)]
+            ).T
+        else:
+            return out
+
+    def to_pandas(
+        self, *args: Any, date_as_object: bool = False, **kwargs: Any
+    ) -> pd.DataFrame:
+        """
+        Cast to a pandas DataFrame.
+
+        This requires that pandas and pyarrow are installed.
+        This operation clones data.
+
+        Parameters
+        ----------
+        args
+            Arguments will be sent to pyarrow.Table.to_pandas.
+        date_as_object
+            Cast dates to objects. If False, convert to datetime64[ns] dtype.
+        kwargs
+            Arguments will be sent to pyarrow.Table.to_pandas.
+
+        Examples
+        --------
+        >>> import pandas
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
+        >>> pandas_df = df.to_pandas()
+        >>> type(pandas_df)
+        <class 'pandas.core.frame.DataFrame'>
+
+        """
+        if not _PYARROW_AVAILABLE:  # pragma: no cover
+            raise ImportError("'pyarrow' is required when using to_pandas().")
+        record_batches = self._df.to_pandas()
+        tbl = pa.Table.from_batches(record_batches)
+        return tbl.to_pandas(*args, date_as_object=date_as_object, **kwargs)
 
     def to_series(self, index: int = 0) -> pli.Series:
         """
@@ -2017,6 +1703,456 @@ class DataFrame:
         if index < 0:
             index = len(self.columns) + index
         return pli.wrap_s(self._df.select_at_idx(index))
+
+    @overload
+    def write_json(
+        self,
+        file: IOBase | str | Path | None = ...,
+        pretty: bool = ...,
+        row_oriented: bool = ...,
+        json_lines: bool = ...,
+        *,
+        to_string: Literal[True],
+    ) -> str:
+        ...
+
+    @overload
+    def write_json(
+        self,
+        file: IOBase | str | Path | None = ...,
+        pretty: bool = ...,
+        row_oriented: bool = ...,
+        json_lines: bool = ...,
+        *,
+        to_string: Literal[False] = ...,
+    ) -> None:
+        ...
+
+    @overload
+    def write_json(
+        self,
+        file: IOBase | str | Path | None = ...,
+        pretty: bool = ...,
+        row_oriented: bool = ...,
+        json_lines: bool = ...,
+        *,
+        to_string: bool = ...,
+    ) -> str | None:
+        ...
+
+    def write_json(
+        self,
+        file: IOBase | str | Path | None = None,
+        pretty: bool = False,
+        row_oriented: bool = False,
+        json_lines: bool = False,
+        *,
+        to_string: bool = False,
+    ) -> str | None:
+        """
+        Serialize to JSON representation.
+
+        Parameters
+        ----------
+        file
+            Write to this file instead of returning a string.
+        pretty
+            Pretty serialize json.
+        row_oriented
+            Write to row oriented json. This is slower, but more common.
+        json_lines
+            Write to Json Lines format
+        to_string
+            Ignore file argument and return a string.
+
+        """
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
+        to_string_io = (file is not None) and isinstance(file, StringIO)
+        if to_string or file is None or to_string_io:
+            with BytesIO() as buf:
+                self._df.write_json(buf, pretty, row_oriented, json_lines)
+                json_bytes = buf.getvalue()
+
+            json_str = json_bytes.decode("utf8")
+            if to_string_io:
+                file.write(json_str)  # type: ignore[union-attr]
+            else:
+                return json_str
+        else:
+            self._df.write_json(file, pretty, row_oriented, json_lines)
+        return None
+
+    def write_csv(
+        self,
+        file: TextIO | BytesIO | str | Path | None = None,
+        has_header: bool = True,
+        sep: str = ",",
+        quote: str = '"',
+        batch_size: int = 1024,
+        datetime_format: str | None = None,
+        date_format: str | None = None,
+        time_format: str | None = None,
+        float_precision: int | None = None,
+    ) -> str | None:
+        """
+        Write to comma-separated values (CSV) file.
+
+        Parameters
+        ----------
+        file
+            File path to which the file should be written.
+        has_header
+            Whether to include header in the CSV output.
+        sep
+            Separate CSV fields with this symbol.
+        quote
+            Byte to use as quoting character.
+        batch_size
+            Number of rows that will be processed per thread.
+        datetime_format
+            A format string, with the specifiers defined by the
+            `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            Rust crate.
+        date_format
+            A format string, with the specifiers defined by the
+            `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            Rust crate.
+        time_format
+            A format string, with the specifiers defined by the
+            `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            Rust crate.
+        float_precision
+            Number of decimal places to write, applied to both ``Float32`` and
+            ``Float64`` datatypes.
+
+        Examples
+        --------
+        >>> import pathlib
+        >>>
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
+        >>> path: pathlib.Path = dirpath / "new_file.csv"
+        >>> df.write_csv(path, sep=",")
+
+        """
+        if len(sep) > 1:
+            raise ValueError("only single byte separator is allowed")
+        if len(quote) > 1:
+            raise ValueError("only single byte quote char is allowed")
+        if file is None:
+            buffer = BytesIO()
+            self._df.write_csv(
+                buffer,
+                has_header,
+                ord(sep),
+                ord(quote),
+                batch_size,
+                datetime_format,
+                date_format,
+                time_format,
+                float_precision,
+            )
+            return str(buffer.getvalue(), encoding="utf-8")
+
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
+
+        self._df.write_csv(
+            file,
+            has_header,
+            ord(sep),
+            ord(quote),
+            batch_size,
+            datetime_format,
+            date_format,
+            time_format,
+            float_precision,
+        )
+        return None
+
+    def write_avro(
+        self,
+        file: BinaryIO | BytesIO | str | Path,
+        compression: AvroCompression = "uncompressed",
+    ) -> None:
+        """
+        Write to Apache Avro file.
+
+        Parameters
+        ----------
+        file
+            File path to which the file should be written.
+        compression : {'uncompressed', 'snappy', 'deflate'}
+            Compression method. Defaults to "uncompressed".
+
+        """
+        if compression is None:
+            compression = "uncompressed"
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
+
+        self._df.write_avro(file, compression)
+
+    def write_ipc(
+        self,
+        file: BinaryIO | BytesIO | str | Path,
+        compression: IpcCompression = "uncompressed",
+    ) -> None:
+        """
+        Write to Arrow IPC binary stream or Feather file.
+
+        Parameters
+        ----------
+        file
+            File path to which the file should be written.
+        compression : {'uncompressed', 'lz4', 'zstd'}
+            Compression method. Defaults to "uncompressed".
+
+        """
+        if compression is None:
+            compression = "uncompressed"
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
+
+        self._df.write_ipc(file, compression)
+
+    def write_parquet(
+        self,
+        file: str | Path | BytesIO,
+        *,
+        compression: ParquetCompression = "lz4",
+        compression_level: int | None = None,
+        statistics: bool = False,
+        row_group_size: int | None = None,
+        use_pyarrow: bool = False,
+        pyarrow_options: dict[str, object] | None = None,
+    ) -> None:
+        """
+        Write to Apache Parquet file.
+
+        Parameters
+        ----------
+        file
+            File path to which the file should be written.
+        compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
+            Compression method. The default compression "lz4" (actually lz4raw) has very
+            good performance, but may not yet been supported by older readers. If you
+            want more compatability guarantees, consider using "snappy".
+            Method "uncompressed" is not supported by pyarrow.
+        compression_level
+            The level of compression to use. Higher compression means smaller files on
+            disk.
+
+            - "gzip" : min-level: 0, max-level: 10.
+            - "brotli" : min-level: 0, max-level: 11.
+            - "zstd" : min-level: 1, max-level: 22.
+        statistics
+            Write statistics to the parquet headers. This requires extra compute.
+        row_group_size
+            Size of the row groups in number of rows.
+            If None (default), the chunks of the `DataFrame` are
+            used. Writing in smaller chunks may reduce memory pressure and improve
+            writing speeds. This argument has no effect if 'pyarrow' is used.
+        use_pyarrow
+            Use C++ parquet implementation vs rust parquet implementation.
+            At the moment C++ supports more features.
+        pyarrow_options
+            Arguments passed to ``pyarrow.parquet.write_table``.
+
+        """
+        if compression is None:
+            compression = "uncompressed"
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
+
+        if use_pyarrow:
+            if not _PYARROW_AVAILABLE:  # pragma: no cover
+                raise ImportError(
+                    "'pyarrow' is required when using"
+                    " 'write_parquet(..., use_pyarrow=True)'."
+                )
+
+            tbl = self.to_arrow()
+
+            data = {}
+
+            for i, column in enumerate(tbl):
+                # extract the name before casting
+                if column._name is None:
+                    name = f"column_{i}"
+                else:
+                    name = column._name
+
+                data[name] = column
+            tbl = pa.table(data)
+
+            pa.parquet.write_table(
+                table=tbl,
+                where=file,
+                compression=compression,
+                write_statistics=statistics,
+                **(pyarrow_options or {}),
+            )
+        else:
+            self._df.write_parquet(
+                file, compression, compression_level, statistics, row_group_size
+            )
+
+    def estimated_size(self, unit: SizeUnit = "b") -> int | float:
+        """
+        Return an estimation of the total (heap) allocated size of the `DataFrame`.
+
+        Estimated size is given in the specified unit (bytes by default).
+
+        This estimation is the sum of the size of its buffers, validity, including
+        nested arrays. Multiple arrays may share buffers and bitmaps. Therefore, the
+        size of 2 arrays is not the sum of the sizes computed from this function. In
+        particular, [`StructArray`]'s size is an upper bound.
+
+        When an array is sliced, its allocated size remains constant because the buffer
+        unchanged. However, this function will yield a smaller number. This is because
+        this function returns the visible size of the buffer, not its total capacity.
+
+        FFI buffers are included in this estimation.
+
+        Parameters
+        ----------
+        unit : {'b', 'kb', 'mb', 'gb', 'tb'}
+            Scale the returned size to the given unit.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "x": list(reversed(range(1_000_000))),
+        ...         "y": [v / 1000 for v in range(1_000_000)],
+        ...         "z": [str(v) for v in range(1_000_000)],
+        ...     },
+        ...     columns=[("x", pl.UInt32), ("y", pl.Float64), ("z", pl.Utf8)],
+        ... )
+        >>> df.estimated_size()
+        25888898
+        >>> df.estimated_size("mb")
+        24.689577102661133
+
+        """
+        sz = self._df.estimated_size()
+        return scale_bytes(sz, to=unit)
+
+    def transpose(
+        self: DF,
+        include_header: bool = False,
+        header_name: str = "column",
+        column_names: Iterator[str] | Sequence[str] | None = None,
+    ) -> DF:
+        """
+        Transpose a DataFrame over the diagonal.
+
+        Parameters
+        ----------
+        include_header
+            If set, the column names will be added as first column.
+        header_name
+            If `include_header` is set, this determines the name of the column that will
+            be inserted.
+        column_names
+            Optional generator/iterator that yields column names. Will be used to
+            replace the columns in the DataFrame.
+
+        Notes
+        -----
+        This is a very expensive operation. Perhaps you can do it differently.
+
+        Returns
+        -------
+        DataFrame
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+        >>> df.transpose(include_header=True)
+        shape: (2, 4)
+        ┌────────┬──────────┬──────────┬──────────┐
+        │ column ┆ column_0 ┆ column_1 ┆ column_2 │
+        │ ---    ┆ ---      ┆ ---      ┆ ---      │
+        │ str    ┆ i64      ┆ i64      ┆ i64      │
+        ╞════════╪══════════╪══════════╪══════════╡
+        │ a      ┆ 1        ┆ 2        ┆ 3        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ b      ┆ 1        ┆ 2        ┆ 3        │
+        └────────┴──────────┴──────────┴──────────┘
+
+        Replace the auto-generated column names with a list
+
+        >>> df.transpose(include_header=False, column_names=["a", "b", "c"])
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 2   ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 1   ┆ 2   ┆ 3   │
+        └─────┴─────┴─────┘
+
+        Include the header as a separate column
+
+        >>> df.transpose(
+        ...     include_header=True, header_name="foo", column_names=["a", "b", "c"]
+        ... )
+        shape: (2, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ foo ┆ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╡
+        │ a   ┆ 1   ┆ 2   ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ b   ┆ 1   ┆ 2   ┆ 3   │
+        └─────┴─────┴─────┴─────┘
+
+        Replace the auto-generated column with column names from a generator function
+
+        >>> def name_generator():
+        ...     base_name = "my_column_"
+        ...     count = 0
+        ...     while True:
+        ...         yield f"{base_name}{count}"
+        ...         count += 1
+        ...
+        >>> df.transpose(include_header=False, column_names=name_generator())
+        shape: (2, 3)
+        ┌─────────────┬─────────────┬─────────────┐
+        │ my_column_0 ┆ my_column_1 ┆ my_column_2 │
+        │ ---         ┆ ---         ┆ ---         │
+        │ i64         ┆ i64         ┆ i64         │
+        ╞═════════════╪═════════════╪═════════════╡
+        │ 1           ┆ 2           ┆ 3           │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 1           ┆ 2           ┆ 3           │
+        └─────────────┴─────────────┴─────────────┘
+
+        """
+        df = self._from_pydf(self._df.transpose(include_header, header_name))
+        if column_names is not None:
+            names = []
+            n = df.width
+            if include_header:
+                names.append(header_name)
+                n -= 1
+
+            column_names = iter(column_names)
+            for _ in range(n):
+                names.append(next(column_names))
+            df.columns = names
+        return df
 
     def reverse(self: DF) -> DF:
         """
@@ -2196,156 +2332,6 @@ class DataFrame:
             .collect(no_optimization=True, string_cache=False)
         )
 
-    @property
-    def shape(self) -> tuple[int, int]:
-        """
-        Get the shape of the DataFrame.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
-        >>> df.shape
-        (5, 1)
-
-        """
-        return self._df.shape()
-
-    @property
-    def height(self) -> int:
-        """
-        Get the height of the DataFrame.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
-        >>> df.height
-        5
-
-        """
-        return self._df.height()
-
-    @property
-    def width(self) -> int:
-        """
-        Get the width of the DataFrame.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
-        >>> df.width
-        1
-
-        """
-        return self._df.width()
-
-    @property
-    def columns(self) -> list[str]:
-        """
-        Get or set column names.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
-        ...         "ham": ["a", "b", "c"],
-        ...     }
-        ... )
-        >>> df.columns
-        ['foo', 'bar', 'ham']
-
-        Set column names:
-
-        >>> df.columns = ["apple", "banana", "orange"]
-        >>> df
-        shape: (3, 3)
-        ┌───────┬────────┬────────┐
-        │ apple ┆ banana ┆ orange │
-        │ ---   ┆ ---    ┆ ---    │
-        │ i64   ┆ i64    ┆ str    │
-        ╞═══════╪════════╪════════╡
-        │ 1     ┆ 6      ┆ a      │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 2     ┆ 7      ┆ b      │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 3     ┆ 8      ┆ c      │
-        └───────┴────────┴────────┘
-
-        """
-        return self._df.columns()
-
-    @columns.setter
-    def columns(self, columns: Sequence[str]) -> None:
-        """
-        Change the column names of the `DataFrame`.
-
-        Parameters
-        ----------
-        columns
-            A list with new names for the `DataFrame`.
-            The length of the list should be equal to the width of the `DataFrame`.
-
-        """
-        self._df.set_column_names(columns)
-
-    @property
-    def dtypes(self) -> list[PolarsDataType]:
-        """
-        Get dtypes of columns in DataFrame. Dtypes can also be found in column headers when printing the DataFrame.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6.0, 7.0, 8.0],
-        ...         "ham": ["a", "b", "c"],
-        ...     }
-        ... )
-        >>> df.dtypes
-        [<class 'polars.datatypes.Int64'>, <class 'polars.datatypes.Float64'>, <class 'polars.datatypes.Utf8'>]
-        >>> df
-        shape: (3, 3)
-        ┌─────┬─────┬─────┐
-        │ foo ┆ bar ┆ ham │
-        │ --- ┆ --- ┆ --- │
-        │ i64 ┆ f64 ┆ str │
-        ╞═════╪═════╪═════╡
-        │ 1   ┆ 6.0 ┆ a   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 2   ┆ 7.0 ┆ b   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 3   ┆ 8.0 ┆ c   │
-        └─────┴─────┴─────┘
-
-        See Also
-        --------
-        schema : Returns a {colname:dtype} mapping.
-
-        """  # noqa: E501
-        return self._df.dtypes()
-
-    @property
-    def schema(self) -> dict[str, PolarsDataType]:
-        """
-        Get a dict[column name, DataType].
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6.0, 7.0, 8.0],
-        ...         "ham": ["a", "b", "c"],
-        ...     }
-        ... )
-        >>> df.schema
-        {'foo': <class 'polars.datatypes.Int64'>, 'bar': <class 'polars.datatypes.Float64'>, 'ham': <class 'polars.datatypes.Utf8'>}
-
-        """  # noqa: E501
-        return dict(zip(self.columns, self.dtypes))
-
     def describe(self: DF) -> DF:
         """
         Summary statistics for a DataFrame.
@@ -2406,6 +2392,26 @@ class DataFrame:
             0, pli.Series("describe", ["mean", "std", "min", "max", "median"])
         )
         return summary
+
+    def find_idx_by_name(self, name: str) -> int:
+        """
+        Find the index of a column by name.
+
+        Parameters
+        ----------
+        name
+            Name of the column to find.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ... )
+        >>> df.find_idx_by_name("ham")
+        2
+
+        """
+        return self._df.find_idx_by_name(name)
 
     def replace_at_idx(self, index: int, series: pli.Series) -> None:
         """
@@ -4223,12 +4229,6 @@ class DataFrame:
 
         """
         return self._from_pydf(self._df.clone())
-
-    def __copy__(self: DF) -> DF:
-        return self.clone()
-
-    def __deepcopy__(self: DF, memo: None = None) -> DF:
-        return self.clone()
 
     def get_columns(self) -> list[pli.Series]:
         """
