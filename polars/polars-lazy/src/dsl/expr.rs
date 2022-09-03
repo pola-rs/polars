@@ -311,8 +311,6 @@ pub enum Expr {
         function: FunctionExpr,
         options: FunctionOptions,
     },
-    Duplicated(Box<Expr>),
-    IsUnique(Box<Expr>),
     Explode(Box<Expr>),
     Filter {
         input: Box<Expr>,

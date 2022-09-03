@@ -35,8 +35,6 @@ pub enum AAggExpr {
 // AExpr representation of Nodes which are allocated in an Arena
 #[derive(Clone, Debug)]
 pub enum AExpr {
-    IsUnique(Node),
-    Duplicated(Node),
     Explode(Node),
     Alias(Node, Arc<str>),
     Column(Arc<str>),
@@ -127,10 +125,9 @@ impl AExpr {
             | Window { .. }
             | Count
             | Slice { .. }
-            | Duplicated(_)
             | Take { .. }
             | Nth(_)
-            | IsUnique(_) => true,
+             => true,
             | Alias(_, _)
             | Explode(_)
             | Column(_)
@@ -195,14 +192,6 @@ impl AExpr {
             Window { function, .. } => {
                 let e = arena.get(*function);
                 e.to_field(schema, ctxt, arena)
-            }
-            IsUnique(expr) => {
-                let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                Ok(Field::new(field.name(), DataType::Boolean))
-            }
-            Duplicated(expr) => {
-                let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                Ok(Field::new(field.name(), DataType::Boolean))
             }
             Explode(expr) => {
                 let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
