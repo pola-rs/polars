@@ -39,6 +39,12 @@ def test_from_to_file(
                 assert_frame_equal_local_categoricals(df, df_read)
 
 
+def test_columns_arg(io_test_dir: str) -> None:
+    if os.name != "nt":
+        f_ipc = os.path.join(io_test_dir, "small.ipc")
+        assert pl.read_ipc(f_ipc, columns=["bools"]).columns == ["bools"]
+
+
 def test_select_columns() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
     expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
