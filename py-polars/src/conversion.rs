@@ -609,6 +609,7 @@ impl FromPyObject<'_> for Wrap<Schema> {
 }
 
 #[derive(Clone, Debug)]
+#[repr(transparent)]
 pub struct ObjectValue {
     pub inner: PyObject,
 }

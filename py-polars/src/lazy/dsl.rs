@@ -14,6 +14,7 @@ use super::apply::*;
 use crate::conversion::{parse_fill_null_strategy, Wrap};
 use crate::lazy::map_single;
 use crate::lazy::utils::py_exprs_to_exprs;
+use crate::prelude::ObjectValue;
 use crate::series::PySeries;
 use crate::utils::reinterpret;
 
@@ -1668,7 +1669,7 @@ pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     polars::lazy::dsl::fold_exprs(acc.inner, func, exprs).into()
 }
 
-pub fn lit(value: &PyAny) -> PyResult<PyExpr> {
+pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
     if let Ok(true) = value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
         Ok(dsl::lit(val).into())
@@ -1695,11 +1696,17 @@ pub fn lit(value: &PyAny) -> PyResult<PyExpr> {
     } else if value.is_none() {
         Ok(dsl::lit(Null {}).into())
     } else {
-        let value = value.str()?;
-        Err(PyValueError::new_err(format!(
-            "could not convert value {:?} as a Literal",
-            value
-        )))
+        if allow_object {
+            let s = Python::with_gil(|py| {
+                PySeries::new_object("", vec![ObjectValue::from(value.into_py(py))], false).series
+            });
+            Ok(dsl::lit(s).into())
+        } else {
+            Err(PyValueError::new_err(format!(
+                "could not convert value {:?} as a Literal",
+                value.str()?
+            )))
+        }
     }
 }
 

@@ -178,7 +178,7 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(c, rev_mapping) => Ok(Self::Utf8(rev_mapping.get(c).to_string())),
             _ => Err(PolarsError::ComputeError(
-                "Unsupporten AnyValue type variant, cannot convert to Literal".into(),
+                "Unsupported AnyValue type variant, cannot convert to Literal".into(),
             )),
         }
     }

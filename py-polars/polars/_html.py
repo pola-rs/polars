@@ -1,12 +1,11 @@
 """Module for formatting output data in HTML."""
 from __future__ import annotations
 
+import html
 import os
 from textwrap import dedent
 from types import TracebackType
 from typing import Iterable
-
-from polars.datatypes import Object
 
 
 class Tag:
@@ -104,12 +103,10 @@ class HTMLFormatter:
                                 self.elements.append("...")
                             else:
                                 series = self.df[:, c]
-                                if series.dtype == Object:
-                                    self.elements.append(f"{series[r]}")
-                                else:
-                                    self.elements.append(
-                                        f"{series._s.get_fmt(r, str_lengths)}"
-                                    )
+
+                                self.elements.append(
+                                    html.escape(series._s.get_fmt(r, str_lengths))
+                                )
 
     def write(self, inner: str) -> None:
         self.elements.append(inner)
