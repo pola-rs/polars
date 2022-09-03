@@ -72,10 +72,12 @@ def test_csv_null_values() -> None:
         """
     )
     f = io.StringIO(csv)
-
     df = pl.read_csv(f, null_values="na")
-    assert df[0, "a"] is None
-    assert df[1, "b"] is None
+    assert df.rows() == [(None, "b", "c"), ("a", None, "c")]
+
+    out = io.BytesIO()
+    df.write_csv(out, null_value="na")
+    assert csv == out.getvalue().decode("ascii")
 
     csv = textwrap.dedent(
         """\
@@ -86,20 +88,18 @@ def test_csv_null_values() -> None:
     )
     f = io.StringIO(csv)
     df = pl.read_csv(f, null_values=["na", "n/a"])
-    assert df[0, "a"] is None
-    assert df[1, "b"] is None
+    assert df.rows() == [(None, "b", "c"), ("a", None, "c")]
 
     csv = textwrap.dedent(
-        """\
+        r"""
         a,b,c
         na,b,c
-        a,n/a,c
+        a,\N,c
         """
     )
     f = io.StringIO(csv)
-    df = pl.read_csv(f, null_values={"a": "na", "b": "n/a"})
-    assert df[0, "a"] is None
-    assert df[1, "b"] is None
+    df = pl.read_csv(f, null_values={"a": "na", "b": r"\N"})
+    assert df.rows() == [(None, "b", "c"), ("a", None, "c")]
 
 
 def test_datetime_parsing() -> None:
@@ -517,11 +517,12 @@ def test_csv_schema_offset(foods_csv: str) -> None:
 
 def test_empty_string_missing_round_trip() -> None:
     df = pl.DataFrame({"varA": ["A", "", None], "varB": ["B", "", None]})
-    f = io.BytesIO()
-    df.write_csv(f)
-    f.seek(0)
-    df_read = pl.read_csv(f)
-    assert df.frame_equal(df_read)
+    for null in (None, "NA", "NULL", r"\N"):
+        f = io.BytesIO()
+        df.write_csv(f, null_value=null)
+        f.seek(0)
+        df_read = pl.read_csv(f, null_values=null)
+        assert df.frame_equal(df_read)
 
 
 def test_write_csv_delimiter() -> None:

@@ -430,7 +430,9 @@ impl PyDataFrame {
         date_format: Option<String>,
         time_format: Option<String>,
         float_precision: Option<usize>,
+        null_value: Option<String>,
     ) -> PyResult<()> {
+        let null = null_value.unwrap_or(String::new());
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
             // no need for a buffered writer, because the csv writer does internal buffering
@@ -443,6 +445,7 @@ impl PyDataFrame {
                 .with_date_format(date_format)
                 .with_time_format(time_format)
                 .with_float_precision(float_precision)
+                .with_null_value(null)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         } else {
@@ -456,6 +459,7 @@ impl PyDataFrame {
                 .with_date_format(date_format)
                 .with_time_format(time_format)
                 .with_float_precision(float_precision)
+                .with_null_value(null)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }
