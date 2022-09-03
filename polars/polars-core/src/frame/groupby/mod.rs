@@ -18,13 +18,9 @@ pub mod aggregations;
 pub mod expr;
 pub(crate) mod hashing;
 mod into_groups;
-#[cfg(feature = "rows")]
-pub(crate) mod pivot;
 mod proxy;
 
 pub use into_groups::*;
-#[cfg(feature = "rows")]
-pub use pivot::PivotAgg;
 use polars_arrow::array::ValueSize;
 pub use proxy::*;
 

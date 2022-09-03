@@ -13,7 +13,6 @@ use polars::io::RowCount;
 use polars::prelude::*;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::frame::explode::MeltArgs;
-use polars_core::frame::groupby::PivotAgg;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::compute::cast::CastOptions;
@@ -1058,30 +1057,6 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn pivot(
-        &self,
-        by: Vec<String>,
-        pivot_column: Vec<String>,
-        values_column: Vec<String>,
-        agg: Wrap<PivotAgg>,
-    ) -> PyResult<Self> {
-        let mut gb = self.df.groupby(&by).map_err(PyPolarsErr::from)?;
-        let pivot = gb.pivot(pivot_column, values_column);
-        let df = match agg.0 {
-            PivotAgg::First => pivot.first(),
-            PivotAgg::Min => pivot.min(),
-            PivotAgg::Max => pivot.max(),
-            PivotAgg::Mean => pivot.mean(),
-            PivotAgg::Median => pivot.median(),
-            PivotAgg::Sum => pivot.sum(),
-            PivotAgg::Count => pivot.count(),
-            PivotAgg::Last => pivot.last(),
-            PivotAgg::Expr(_) => unimplemented!(),
-        };
-        let df = df.map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
-    }
-
     pub fn clone(&self) -> Self {
         PyDataFrame::new(self.df.clone())
     }
@@ -1101,31 +1076,6 @@ impl PyDataFrame {
         };
 
         let df = self.df.melt2(args).map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
-    }
-
-    pub fn pivot2(
-        &self,
-        values: Vec<String>,
-        index: Vec<String>,
-        columns: Vec<String>,
-        aggregate_fn: Wrap<PivotAgg>,
-        maintain_order: bool,
-        sort_columns: bool,
-    ) -> PyResult<Self> {
-        let fun = match maintain_order {
-            true => DataFrame::pivot_stable,
-            false => DataFrame::pivot,
-        };
-        let df = fun(
-            &self.df,
-            values,
-            index,
-            columns,
-            aggregate_fn.0,
-            sort_columns,
-        )
-        .map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
 

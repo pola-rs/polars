@@ -3,7 +3,6 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
-use polars::frame::groupby::PivotAgg;
 use polars::frame::row::Row;
 use polars::frame::NullStrategy;
 #[cfg(feature = "avro")]
@@ -914,28 +913,6 @@ impl FromPyObject<'_> for Wrap<ParallelStrategy> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "parallel must be one of {{'auto', 'columns', 'row_groups', 'none'}}, got {}",
-                    v
-                )))
-            }
-        };
-        Ok(Wrap(parsed))
-    }
-}
-
-impl FromPyObject<'_> for Wrap<PivotAgg> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
-        let parsed = match ob.extract::<&str>()? {
-            "sum" => PivotAgg::Sum,
-            "min" => PivotAgg::Min,
-            "max" => PivotAgg::Max,
-            "first" => PivotAgg::First,
-            "mean" => PivotAgg::Mean,
-            "median" => PivotAgg::Median,
-            "count" => PivotAgg::Count,
-            "last" => PivotAgg::Last,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "aggregate_fn must be one of {{'sum', 'min', 'max', 'first', 'mean', 'median', 'count', 'last'}}, got {}",
                     v
                 )))
             }
