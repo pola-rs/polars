@@ -4,8 +4,7 @@ SHELL=/bin/bash
 PYTHON=venv/bin/python
 PYTHON_BIN=venv/bin
 
-.PHONY: pre-commit test pip
-
+.PHONY: venv
 venv:
 	@python -m venv venv
 	@venv/bin/pip install -U pip
@@ -24,6 +23,7 @@ clean:
 	@find -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -delete
 	@cargo clean
 
+.PHONY: pre-commit
 pre-commit: venv
 	$(PYTHON_BIN)/isort .
 	$(PYTHON_BIN)/black .
@@ -34,36 +34,47 @@ pre-commit: venv
 	make -C .. fmt_toml
 	cargo fmt --all
 
+.PHONY: test
 test: venv
 	$(PYTHON_BIN)/maturin develop
 	$(PYTHON) -m pytest tests/unit/
 
+.PHONY: test-all
 test-all: venv
 	$(PYTHON_BIN)/maturin develop
 	$(PYTHON) -m pytest
 	$(PYTHON) tests/docs/run_doc_examples.py
 
+.PHONY: test-with-cov
 test-with-cov: venv
 	$(PYTHON) -m pytest --cov=polars --cov-report xml
 
+.PHONY: doctest
 doctest:
 	$(PYTHON) tests/docs/run_doc_examples.py
 
+.PHONY: install-wheel
 install-wheel:
 	pip install --force-reinstall -U wheels/polars-*.whl
 
+.PHONY: build-no-venv
 build-no-venv:
 	maturin build -o wheels
 
+.PHONY: build-no-venv-release
 build-no-venv-release:
 	maturin build -o wheels --release
 
+.PHONY: build-and-test-no-venv
 build-and-test-no-venv:
 	maturin build -o wheels
 	pip install --force-reinstall -U wheels/polars-*.whl
 	pytest tests
 
+.PHONY: install-no-venv
 install-no-venv: build-no-venv install-wheel
+
+.PHONY: install-no-venv-release
 install-no-venv-release: build-no-venv-release install-wheel
 
 .PHONY: help
