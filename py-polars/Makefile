@@ -1,20 +1,30 @@
+.DEFAULT_GOAL := help
+
 SHELL=/bin/bash
 PYTHON=venv/bin/python
 PYTHON_BIN=venv/bin
 
-.PHONY: pre-commit test pip clean
-
-venv:
+.PHONY: venv
+venv:  ## Set up virtual environment
 	@python -m venv venv
 	@venv/bin/pip install -U pip
 	@venv/bin/pip install -r build.requirements.txt
 	@unset CONDA_PREFIX && source venv/bin/activate && maturin develop
 
-clean:
-	@-rm -r venv
+.PHONY: clean
+clean:  ## Clean up caches and build artifacts
+	@rm -rf venv/
+	@rm -rf docs/build/
+	@rm -rf .hypothesis/
+	@rm -rf .mypy_cache/
+	@rm -rf .pytest_cache/
+	@rm -f .coverage
+	@rm -f coverage.xml
+	@find -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -delete
 	@cargo clean
 
-pre-commit: venv
+.PHONY: pre-commit
+pre-commit: venv  ## Run autoformatting and linting
 	$(PYTHON_BIN)/isort .
 	$(PYTHON_BIN)/black .
 	$(PYTHON_BIN)/blackdoc .
@@ -24,35 +34,50 @@ pre-commit: venv
 	make -C .. fmt_toml
 	cargo fmt --all
 
-test: venv
+.PHONY: test
+test: venv  ## Run fast unittests
 	$(PYTHON_BIN)/maturin develop
 	$(PYTHON) -m pytest tests/unit/
 
-test-all: venv
+.PHONY: test-all
+test-all: venv  ## Run all tests
 	$(PYTHON_BIN)/maturin develop
 	$(PYTHON) -m pytest
 	$(PYTHON) tests/docs/run_doc_examples.py
 
-test-with-cov: venv
+.PHONY: test-with-cov
+test-with-cov: venv  ## Run tests and report coverage
 	$(PYTHON) -m pytest --cov=polars --cov-report xml
 
-doctest:
+.PHONY: doctest
+doctest:  ## Run doctests
 	$(PYTHON) tests/docs/run_doc_examples.py
 
+.PHONY: install-wheel
 install-wheel:
 	pip install --force-reinstall -U wheels/polars-*.whl
 
+.PHONY: build-no-venv
 build-no-venv:
 	maturin build -o wheels
 
+.PHONY: build-no-venv-release
 build-no-venv-release:
 	maturin build -o wheels --release
 
+.PHONY: build-and-test-no-venv
 build-and-test-no-venv:
 	maturin build -o wheels
 	pip install --force-reinstall -U wheels/polars-*.whl
 	pytest tests
 
+.PHONY: install-no-venv
 install-no-venv: build-no-venv install-wheel
+
+.PHONY: install-no-venv-release
 install-no-venv-release: build-no-venv-release install-wheel
 
+.PHONY: help
+help:  ## Display this help screen
+	@echo -e '\033[1mAvailable commands:\033[0m'
+	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
