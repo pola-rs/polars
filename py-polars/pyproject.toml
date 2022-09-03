@@ -48,7 +48,13 @@ module = ["polars.*"]
 # thin wrapper around the PyO3 api to start with.
 warn_return_any = false
 
+[tool.pytest.ini_options]
+addopts = [
+  "--import-mode=importlib",
+]
+
 [tool.coverage.report]
+fail_under = 85
 exclude_lines = [
   "pragma: no cover",
   "@overload",

@@ -409,7 +409,7 @@ if HYPOTHESIS_INSTALLED:
 
         name: str
         dtype: PolarsDataType | None = None
-        strategy: SearchStrategy[pli.Series] | None = None
+        strategy: SearchStrategy[pli.Series | int] | None = None
         null_probability: float | None = None
         unique: bool = False
 
