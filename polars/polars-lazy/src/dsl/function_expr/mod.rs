@@ -102,6 +102,8 @@ pub enum FunctionExpr {
     IsNull,
     IsNotNull,
     Not,
+    IsUnique,
+    IsDuplicated,
 }
 
 impl Display for FunctionExpr {
@@ -152,6 +154,8 @@ impl Display for FunctionExpr {
             Not => write!(f, "is_not"),
             IsNull => write!(f, "is_null"),
             IsNotNull => write!(f, "is_not_null"),
+            IsUnique => write!(f, "is_unique"),
+            IsDuplicated => write!(f, "is_duplicated"),
         }
     }
 }
@@ -309,6 +313,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsNull => map!(dispatch::is_null),
             IsNotNull => map!(dispatch::is_not_null),
             Not => map!(dispatch::is_not),
+            IsUnique => map!(dispatch::is_unique),
+            IsDuplicated => map!(dispatch::is_duplicated),
         }
     }
 }

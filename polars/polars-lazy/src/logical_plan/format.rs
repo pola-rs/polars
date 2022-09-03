@@ -200,9 +200,7 @@ impl fmt::Debug for Expr {
             } => write!(f, "{:?}.over({:?})", function, partition_by),
             Nth(i) => write!(f, "nth({})", i),
             Count => write!(f, "count()"),
-            IsUnique(expr) => write!(f, "{:?}.unique()", expr),
             Explode(expr) => write!(f, "{:?}.explode()", expr),
-            Duplicated(expr) => write!(f, "{:?}.is_duplicate()", expr),
             Alias(expr, name) => write!(f, "{:?}.alias(\"{}\")", expr, name),
             Column(name) => write!(f, "col(\"{}\")", name),
             Literal(v) => {
