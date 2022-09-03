@@ -31,6 +31,10 @@ where
         Cow::Borrowed(self.0.ref_field())
     }
 
+    fn _dtype(&self) -> &DataType {
+        self.0.dtype()
+    }
+
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
@@ -49,6 +53,12 @@ where
 
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
+    }
+    #[cfg(feature = "zip_with")]
+    fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
+        self.0
+            .zip_with(mask, other.as_ref().as_ref())
+            .map(|ca| ca.into_series())
     }
 }
 #[cfg_attr(docsrs, doc(cfg(feature = "object")))]

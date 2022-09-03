@@ -674,7 +674,9 @@ def tail(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
     return col(column).tail(n)
 
 
-def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
+def lit(
+    value: Any, dtype: type[DataType] | None = None, allow_object: bool = False
+) -> pli.Expr:
     """
     Return an expression representing a literal value.
 
@@ -684,6 +686,10 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
         Value that should be used as a `literal`.
     dtype
         Optionally define a dtype.
+    allow_object
+        If type is unknown use an 'object' type.
+        By default, we will raise a `ValueException`
+        if the type is unknown.
 
     Examples
     --------
@@ -724,7 +730,7 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
     elif isinstance(value, pli.Series):
         name = value.name
         value = value._s
-        e = pli.wrap_expr(pylit(value))
+        e = pli.wrap_expr(pylit(value, allow_object))
         if name == "":
             return e
         return e.alias(name)
@@ -733,7 +739,7 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
         return lit(pli.Series("", value))
 
     if dtype:
-        return pli.wrap_expr(pylit(value)).cast(dtype)
+        return pli.wrap_expr(pylit(value, allow_object)).cast(dtype)
 
     try:
         # numpy literals like np.float32(0) have item/dtype
@@ -755,7 +761,7 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
     except AttributeError:
         item = value
 
-    return pli.wrap_expr(pylit(item))
+    return pli.wrap_expr(pylit(item, allow_object))
 
 
 def spearman_rank_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Expr:

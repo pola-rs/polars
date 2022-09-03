@@ -30,6 +30,7 @@ use polars::prelude::Null;
 use polars_core::datatypes::TimeUnit;
 use polars_core::prelude::{DataFrame, IntoSeries, IDX_DTYPE};
 use polars_core::POOL;
+use pyo3::exceptions::PyValueError;
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
@@ -96,8 +97,8 @@ fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {
 }
 
 #[pyfunction]
-fn lit(value: &PyAny) -> PyResult<dsl::PyExpr> {
-    dsl::lit(value)
+fn lit(value: &PyAny, allow_object: bool) -> PyResult<dsl::PyExpr> {
+    dsl::lit(value, allow_object)
 }
 
 #[pyfunction]
@@ -116,30 +117,33 @@ fn arange(low: PyExpr, high: PyExpr, step: usize) -> PyExpr {
 }
 
 #[pyfunction]
-fn repeat(value: &PyAny, n_times: PyExpr) -> PyExpr {
+fn repeat(value: &PyAny, n_times: PyExpr) -> PyResult<PyExpr> {
     if let Ok(true) = value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
-        polars::lazy::dsl::repeat(val, n_times.inner).into()
+        Ok(polars::lazy::dsl::repeat(val, n_times.inner).into())
     } else if let Ok(int) = value.downcast::<PyInt>() {
         let val = int.extract::<i64>().unwrap();
 
         if val > 0 && val < i32::MAX as i64 || val < 0 && val > i32::MIN as i64 {
-            polars::lazy::dsl::repeat(val as i32, n_times.inner).into()
+            Ok(polars::lazy::dsl::repeat(val as i32, n_times.inner).into())
         } else {
-            polars::lazy::dsl::repeat(val, n_times.inner).into()
+            Ok(polars::lazy::dsl::repeat(val, n_times.inner).into())
         }
     } else if let Ok(float) = value.downcast::<PyFloat>() {
         let val = float.extract::<f64>().unwrap();
-        polars::lazy::dsl::repeat(val, n_times.inner).into()
+        Ok(polars::lazy::dsl::repeat(val, n_times.inner).into())
     } else if let Ok(pystr) = value.downcast::<PyString>() {
         let val = pystr
             .to_str()
             .expect("could not transform Python string to Rust Unicode");
-        polars::lazy::dsl::repeat(val, n_times.inner).into()
+        Ok(polars::lazy::dsl::repeat(val, n_times.inner).into())
     } else if value.is_none() {
-        polars::lazy::dsl::repeat(Null {}, n_times.inner).into()
+        Ok(polars::lazy::dsl::repeat(Null {}, n_times.inner).into())
     } else {
-        panic!("could not convert value {:?} as a Literal", value)
+        Err(PyValueError::new_err(format!(
+            "could not convert value {:?} as a Literal",
+            value.str()?
+        )))
     }
 }
 
