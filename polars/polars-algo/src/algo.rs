@@ -6,17 +6,17 @@ pub fn cut(
     bins: Vec<f32>,
     labels: Option<Vec<&str>>,
     break_point_label: Option<&str>,
-    category_label: Option<&str>
+    category_label: Option<&str>,
 ) -> Result<DataFrame> {
     let var_name = s.name();
 
-    let breakpoint_str = if let Some(label) = break_point_label { 
+    let breakpoint_str = if let Some(label) = break_point_label {
         label
     } else {
         &"break_point"
     };
 
-    let category_str = if let Some(label) = category_label { 
+    let category_str = if let Some(label) = category_label {
         label
     } else {
         &"category"
@@ -29,35 +29,41 @@ pub fn cut(
 
     let cuts_df = if let Some(labels) = labels {
         if labels.len() != (bins.len() + 1) {
-            return Err(PolarsError::ShapeMisMatch("Labels count must equal bins count".into()));
+            return Err(PolarsError::ShapeMisMatch(
+                "Labels count must equal bins count".into(),
+            ));
         }
 
-        cuts_df.lazy().with_column(
-            lit(Series::new(category_str, labels))
-        )
+        cuts_df
+            .lazy()
+            .with_column(lit(Series::new(category_str, labels)))
     } else {
         cuts_df.lazy().with_column(
-            format_str("({}, {}]",[
-                col(breakpoint_str).shift_and_fill(1, lit(f64::NEG_INFINITY)),
-                col(breakpoint_str)
-            ])?.alias(category_str)
+            format_str(
+                "({}, {}]",
+                [
+                    col(breakpoint_str).shift_and_fill(1, lit(f64::NEG_INFINITY)),
+                    col(breakpoint_str),
+                ],
+            )?
+            .alias(category_str),
         )
-    }.collect()?;
+    }
+    .collect()?;
 
-    let cuts = cuts_df.lazy().with_columns([
-        col(category_str).cast(DataType::Categorical(None))
-    ]).collect()?;
+    let cuts = cuts_df
+        .lazy()
+        .with_columns([col(category_str).cast(DataType::Categorical(None))])
+        .collect()?;
 
-    s.sort(false)
-        .into_frame()
-        .join_asof(
-            &cuts,
-            var_name,
-            breakpoint_str,
-            AsofStrategy::Forward,
-            None,
-            None
-        )
+    s.sort(false).into_frame().join_asof(
+        &cuts,
+        var_name,
+        breakpoint_str,
+        AsofStrategy::Forward,
+        None,
+        None,
+    )
 }
 
 #[test]
