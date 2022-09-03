@@ -114,7 +114,7 @@ pub fn argsort_by(by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
     first.argsort_multiple(&by, &reverse)
 }
 
-// utility to be able to also add literals ot concat_str function
+// utility to be able to also add literals to concat_str function
 #[cfg(feature = "concat_str")]
 enum IterBroadCast<'a> {
     Column(Box<dyn PolarsIterator<Item = Option<&'a str>> + 'a>),
