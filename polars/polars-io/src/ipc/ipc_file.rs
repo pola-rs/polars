@@ -69,7 +69,7 @@ pub struct IpcReader<R: MmapBytesReader> {
     rechunk: bool,
     pub(super) n_rows: Option<usize>,
     pub(super) projection: Option<Vec<usize>>,
-    columns: Option<Vec<String>>,
+    pub(crate) columns: Option<Vec<String>>,
     pub(super) row_count: Option<RowCount>,
     memmap: bool,
 }
@@ -216,7 +216,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
         let metadata = read::read_file_metadata(&mut self.reader)?;
         let schema = &metadata.schema;
 
-        if let Some(columns) = self.columns {
+        if let Some(columns) = &self.columns {
             let prj = columns_to_projection(columns, schema)?;
             self.projection = Some(prj);
         }

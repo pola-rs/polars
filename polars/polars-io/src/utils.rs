@@ -46,7 +46,7 @@ pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> Ar
     feature = "parquet"
 ))]
 pub(crate) fn columns_to_projection(
-    columns: Vec<String>,
+    columns: &[String],
     schema: &ArrowSchema,
 ) -> Result<Vec<usize>> {
     use ahash::AHashMap;

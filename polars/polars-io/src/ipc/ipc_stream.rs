@@ -162,7 +162,7 @@ where
         let schema = &metadata.schema;
 
         if let Some(columns) = self.columns {
-            let prj = columns_to_projection(columns, schema)?;
+            let prj = columns_to_projection(&columns, schema)?;
             self.projection = Some(prj);
         }
 

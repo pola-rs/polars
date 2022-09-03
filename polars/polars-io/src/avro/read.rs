@@ -101,7 +101,7 @@ where
             avro::avro_schema::read::read_metadata(&mut self.reader).map_err(convert_err)?;
         let schema = read::infer_schema(&metadata.record)?;
 
-        if let Some(columns) = self.columns {
+        if let Some(columns) = &self.columns {
             self.projection = Some(columns_to_projection(columns, &schema)?);
         }
 

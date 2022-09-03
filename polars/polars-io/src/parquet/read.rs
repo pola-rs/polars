@@ -151,7 +151,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
         let metadata = read::read_metadata(&mut self.reader)?;
         let schema = read::schema::infer_schema(&metadata)?;
 
-        if let Some(cols) = self.columns {
+        if let Some(cols) = &self.columns {
             self.projection = Some(columns_to_projection(cols, &schema)?);
         }
 
