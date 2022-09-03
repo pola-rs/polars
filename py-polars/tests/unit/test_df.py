@@ -1176,9 +1176,6 @@ def test_hashing_on_python_objects() -> None:
     df = pl.DataFrame({"a": [1, 1, 3, 4], "b": [1, 1, 2, 2]})
 
     class Foo:
-        def __init__(self) -> None:
-            pass
-
         def __hash__(self) -> int:
             return 0
 

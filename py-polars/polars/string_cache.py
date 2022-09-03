@@ -61,9 +61,6 @@ class StringCache:
 
     """
 
-    def __init__(self) -> None:
-        pass
-
     def __enter__(self) -> StringCache:
         self._already_enabled = _using_string_cache()
         if not self._already_enabled:
