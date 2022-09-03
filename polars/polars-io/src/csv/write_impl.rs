@@ -49,7 +49,7 @@ fn fast_float_write<N: ToLexical>(f: &mut Vec<u8>, n: N, write_size: usize) -> s
 
 fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) {
     match value {
-        AnyValue::Null => write!(f, ""),
+        AnyValue::Null => write!(f, "{}", &options.null),
         AnyValue::Int8(v) => write!(f, "{}", v),
         AnyValue::Int16(v) => write!(f, "{}", v),
         AnyValue::Int32(v) => write!(f, "{}", v),
@@ -133,6 +133,8 @@ pub struct SerializeOptions {
     pub delimiter: u8,
     /// quoting character
     pub quote: u8,
+    /// null value representation
+    pub null: String,
 }
 
 impl Default for SerializeOptions {
@@ -144,6 +146,7 @@ impl Default for SerializeOptions {
             float_precision: None,
             delimiter: b',',
             quote: b'"',
+            null: String::new(),
         }
     }
 }
@@ -171,9 +174,7 @@ pub(crate) fn write<W: Write>(
 
     let len = df.height();
     let n_threads = POOL.current_num_threads();
-
     let total_rows_per_pool_iter = n_threads * chunk_size;
-
     let any_value_iter_pool = LowContentionPool::<Vec<_>>::new(n_threads);
     let write_buffer_pool = LowContentionPool::<Vec<_>>::new(n_threads);
 
@@ -186,7 +187,6 @@ pub(crate) fn write<W: Write>(
             let thread_offset = thread_no * chunk_size;
             let total_offset = n_rows_finished + thread_offset;
             let df = df.slice(total_offset as i64, chunk_size);
-
             let cols = df.get_columns();
 
             // Safety:

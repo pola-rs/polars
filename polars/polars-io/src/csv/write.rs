@@ -100,4 +100,12 @@ where
         self.options.quote = char;
         self
     }
+
+    /// Set the CSV file's null value representation
+    pub fn with_null_value(mut self, null_value: Option<String>) -> Self {
+        if let Some(null) = null_value {
+            self.options.null = null
+        }
+        self
+    }
 }
