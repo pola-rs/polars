@@ -11,7 +11,7 @@ print(pl.__version__)
 
 x = pl.read_csv(
     "G1_1e7_1e2_5_0.csv",
-    dtype={
+    dtypes={
         "id4": pl.Int32,
         "id5": pl.Int32,
         "id6": pl.Int32,
