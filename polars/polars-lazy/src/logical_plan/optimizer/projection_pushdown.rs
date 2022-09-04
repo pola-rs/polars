@@ -6,7 +6,6 @@ use crate::prelude::iterator::ArenaExprIter;
 use crate::prelude::*;
 use crate::utils::{
     aexpr_assign_renamed_root, aexpr_to_root_names, aexpr_to_root_nodes, check_input_node,
-    has_aexpr,
 };
 
 fn init_vec() -> Vec<Node> {
@@ -311,7 +310,7 @@ impl ProjectionPushDown {
                     // only aliases should be projected locally in the rest of the projections.
                 } else {
                     for expr in expr {
-                        if has_aexpr(expr, expr_arena, |e| matches!(e, AExpr::Alias(_, _))) {
+                        if has_aexpr_alias(expr, expr_arena) {
                             local_projection.push(expr)
                         }
                     }
@@ -768,8 +767,32 @@ impl ProjectionPushDown {
                     left_side: bool,
                 ) {
                     add_expr_to_accumulated(expr, acc_projections, projected_names, expr_arena);
-                    if left_side && !local_projection.contains(&expr) {
-                        local_projection.push(expr)
+                    // the projections may do more than simply project.
+                    // e.g. col("foo").truncate().alias("bar")
+                    // that means we don't want to execute the projection as that is already done by
+                    // the JOIN executor
+                    // we only want to add the `col` and the `alias` as two `col()` expressions.
+                    if left_side {
+                        for node in aexpr_to_root_nodes(expr, expr_arena) {
+                            if !local_projection.contains(&node) {
+                                local_projection.push(node)
+                            }
+                        }
+                        if let AExpr::Alias(_, alias_name) = expr_arena.get(expr) {
+                            let mut add = true;
+                            for node in local_projection.as_slice() {
+                                if let AExpr::Column(col_name) = expr_arena.get(*node) {
+                                    if alias_name == col_name {
+                                        add = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if add {
+                                let node = expr_arena.add(AExpr::Column(alias_name.clone()));
+                                local_projection.push(node);
+                            }
+                        }
                     }
                 }
 

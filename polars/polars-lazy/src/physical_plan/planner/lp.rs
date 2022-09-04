@@ -163,7 +163,7 @@ impl PhysicalPlanner {
                 ..
             } => {
                 let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-                let has_windows = expr.iter().any(|node| has_window_aexpr(*node, expr_arena));
+                let has_windows = expr.iter().any(|node| has_aexpr_window(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
                     self.create_physical_expressions(&expr, Context::Default, expr_arena)?;
@@ -185,7 +185,7 @@ impl PhysicalPlanner {
             } => {
                 let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
 
-                let has_windows = expr.iter().any(|node| has_window_aexpr(*node, expr_arena));
+                let has_windows = expr.iter().any(|node| has_aexpr_window(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
                     self.create_physical_expressions(&expr, Context::Default, expr_arena)?;
@@ -207,7 +207,7 @@ impl PhysicalPlanner {
                 let has_windows = if let Some(projection) = &projection {
                     projection
                         .iter()
-                        .any(|node| has_window_aexpr(*node, expr_arena))
+                        .any(|node| has_aexpr_window(*node, expr_arena))
                 } else {
                     false
                 };
@@ -493,7 +493,7 @@ impl PhysicalPlanner {
             }
             HStack { input, exprs, .. } => {
                 let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-                let has_windows = exprs.iter().any(|node| has_window_aexpr(*node, expr_arena));
+                let has_windows = exprs.iter().any(|node| has_aexpr_window(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
                     self.create_physical_expressions(&exprs, Context::Default, expr_arena)?;

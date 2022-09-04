@@ -72,7 +72,11 @@ where
     arena.iter(current_node).any(|(_node, e)| matches(e))
 }
 
-pub(crate) fn has_window_aexpr(current_node: Node, arena: &Arena<AExpr>) -> bool {
+pub(crate) fn has_aexpr_alias(current_node: Node, arena: &Arena<AExpr>) -> bool {
+    has_aexpr(current_node, arena, |e| matches!(e, AExpr::Alias(_, _)))
+}
+
+pub(crate) fn has_aexpr_window(current_node: Node, arena: &Arena<AExpr>) -> bool {
     has_aexpr(current_node, arena, |e| matches!(e, AExpr::Window { .. }))
 }
 

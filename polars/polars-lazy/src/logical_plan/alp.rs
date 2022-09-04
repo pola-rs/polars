@@ -804,7 +804,19 @@ impl<'a> ALogicalPlanBuilder<'a> {
             })
             .collect::<Vec<_>>();
 
-        let schema = det_join_schema(&schema_left, &schema_right, &right_names, &options);
+        let left_on_exprs = left_on
+            .iter()
+            .map(|node| node_to_expr(*node, self.expr_arena))
+            .collect::<Vec<_>>();
+
+        let schema = det_join_schema(
+            &schema_left,
+            &schema_right,
+            &left_on_exprs,
+            &right_names,
+            &options,
+        )
+        .unwrap();
 
         let lp = ALogicalPlan::Join {
             input_left: self.root,
