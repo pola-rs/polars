@@ -4,7 +4,6 @@ SHELL=/bin/bash
 PYTHON=venv/bin/python
 PYTHON_BIN=venv/bin
 
-.PHONY: venv
 venv:  ## Set up virtual environment
 	@python -m venv venv
 	@venv/bin/pip install -U pip
