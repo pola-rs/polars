@@ -1,8 +1,10 @@
+mod positioning;
+
 use polars_core::export::rayon::prelude::*;
 use polars_core::frame::groupby::expr::PhysicalAggExpr;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
-use polars_core::POOL;
+use polars_core::{downcast_as_macro_arg_physical, POOL};
 
 const HASHMAP_INIT_SIZE: usize = 512;
 
@@ -125,133 +127,6 @@ where
     )
 }
 
-fn compute_col_idx(
-    pivot_df: &DataFrame,
-    column: &str,
-    groups: &GroupsProxy,
-) -> Result<(Vec<IdxSize>, Series)> {
-    let column_s = pivot_df.column(column)?;
-    let column_agg = unsafe { column_s.agg_first(groups) };
-    let column_agg_physical = column_agg.to_physical_repr();
-
-    let mut col_to_idx = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
-    let mut idx = 0 as IdxSize;
-    let col_locations = column_agg_physical
-        .iter()
-        .map(|v| {
-            let idx = *col_to_idx.entry(v).or_insert_with(|| {
-                let old_idx = idx;
-                idx += 1;
-                old_idx
-            });
-            idx
-        })
-        .collect();
-
-    drop(col_to_idx);
-    Ok((col_locations, column_agg))
-}
-
-fn compute_row_idx(
-    pivot_df: &DataFrame,
-    index: &[String],
-    groups: &GroupsProxy,
-    count: usize,
-) -> Result<(Vec<IdxSize>, usize, Option<Vec<Series>>)> {
-    let (row_locations, n_rows, row_index) = if index.len() == 1 {
-        let index_s = pivot_df.column(&index[0])?;
-        let index_agg = unsafe { index_s.agg_first(groups) };
-        let index_agg_physical = index_agg.to_physical_repr();
-
-        let mut row_to_idx =
-            PlIndexMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
-        let mut idx = 0 as IdxSize;
-        let row_locations = index_agg_physical
-            .iter()
-            .map(|v| {
-                let idx = *row_to_idx.entry(v).or_insert_with(|| {
-                    let old_idx = idx;
-                    idx += 1;
-                    old_idx
-                });
-                idx
-            })
-            .collect::<Vec<_>>();
-
-        let row_index = match count {
-            0 => {
-                let s = Series::new(
-                    &index[0],
-                    row_to_idx.into_iter().map(|(k, _)| k).collect::<Vec<_>>(),
-                );
-                let s = restore_logical_type(&s, index_s.dtype());
-                Some(vec![s])
-            }
-            _ => None,
-        };
-
-        (row_locations, idx as usize, row_index)
-    } else {
-        let index_s = pivot_df.columns(index)?;
-        let index_agg_physical = index_s
-            .iter()
-            .map(|s| unsafe { s.agg_first(groups).to_physical_repr().into_owned() })
-            .collect::<Vec<_>>();
-        let mut iters = index_agg_physical
-            .iter()
-            .map(|s| s.iter())
-            .collect::<Vec<_>>();
-        let mut row_to_idx =
-            PlIndexMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
-        let mut idx = 0 as IdxSize;
-
-        let mut row_locations = Vec::with_capacity(groups.len());
-        loop {
-            match iters
-                .iter_mut()
-                .map(|it| it.next())
-                .collect::<Option<Vec<_>>>()
-            {
-                None => break,
-                Some(items) => {
-                    let idx = *row_to_idx.entry(items).or_insert_with(|| {
-                        let old_idx = idx;
-                        idx += 1;
-                        old_idx
-                    });
-                    row_locations.push(idx)
-                }
-            }
-        }
-        let row_index = match count {
-            0 => Some(
-                index
-                    .iter()
-                    .enumerate()
-                    .map(|(i, name)| {
-                        let s = Series::new(
-                            name,
-                            row_to_idx
-                                .iter()
-                                .map(|(k, _)| {
-                                    debug_assert!(i < k.len());
-                                    unsafe { k.get_unchecked(i).clone() }
-                                })
-                                .collect::<Vec<_>>(),
-                        );
-                        restore_logical_type(&s, index_s[i].dtype())
-                    })
-                    .collect::<Vec<_>>(),
-            ),
-            _ => None,
-        };
-
-        (row_locations, idx as usize, row_index)
-    };
-
-    Ok((row_locations, n_rows, row_index))
-}
-
 fn pivot_impl(
     pivot_df: &DataFrame,
     // these columns will be aggregated in the nested groupby
@@ -288,17 +163,16 @@ fn pivot_impl(
             };
 
             let (col, row) = POOL.join(
-                || compute_col_idx(pivot_df, column, &groups),
-                || compute_row_idx(pivot_df, index, &groups, count),
+                || positioning::compute_col_idx(pivot_df, column, &groups),
+                || positioning::compute_row_idx(pivot_df, index, &groups, count),
             );
             let (col_locations, column_agg) = col?;
             let (row_locations, n_rows, mut row_index) = row?;
 
             for value_col_name in values {
-                let now = std::time::Instant::now();
-
                 let value_col = pivot_df.column(value_col_name)?;
 
+                let now = std::time::Instant::now();
                 use PivotAgg::*;
                 let value_agg = unsafe {
                     match agg_fn {
@@ -321,73 +195,47 @@ fn pivot_impl(
                         }
                     }
                 };
-
                 let ms = now.elapsed().as_millis();
-                println!("agg took: {ms}ms");
+                println!("agg took {ms}ms");
 
                 let headers = column_agg.unique_stable()?.cast(&DataType::Utf8)?;
                 let headers = headers.utf8().unwrap();
                 let n_cols = headers.len();
-
-                let mut buf = vec![AnyValue::Null; n_rows * n_cols];
-                let start_ptr = buf.as_mut_ptr() as usize;
-
-                //
-                // let end = self.as_mut_ptr().add(self.len);
-                // ptr::write(end, value);
-                // self.len += 1;
-
                 let value_agg_phys = value_agg.to_physical_repr();
-
-                let now = std::time::Instant::now();
+                let logical_type = value_agg.dtype();
 
                 debug_assert_eq!(row_locations.len(), col_locations.len());
                 debug_assert_eq!(value_agg_phys.len(), row_locations.len());
 
-                let n_threads = POOL.current_num_threads();
-                let split = _split_offsets(row_locations.len(), n_threads);
-
-                split.into_par_iter().for_each(|(offset, len)| {
-                    let start_ptr = start_ptr as *mut AnyValue;
-                    let row_locations = &row_locations[offset..offset + len];
-                    let col_locations = &col_locations[offset..offset + len];
-                    let value_agg_phys = value_agg_phys.slice(offset as i64, len);
-
-                    for ((row_idx, col_idx), val) in row_locations
-                        .iter()
-                        .zip(col_locations)
-                        .zip(value_agg_phys.iter())
-                    {
-                        // Safety:
-                        // in bounds
-                        unsafe {
-                            let idx = *row_idx as usize + *col_idx as usize * n_rows;
-                            debug_assert!(idx < buf.len());
-                            let pos = start_ptr.add(idx);
-                            std::ptr::write(pos, val)
-                        }
-                    }
-                });
-                let ms = now.elapsed().as_millis();
-                println!("positioning took: {ms}ms");
-
-                let headers_iter = headers.par_iter_indexed();
-
                 let now = std::time::Instant::now();
-                let mut cols = (0..n_cols)
-                    .into_par_iter()
-                    .zip(headers_iter)
-                    .map(|(i, opt_name)| {
-                        let offset = i * n_rows;
-                        let avs = &buf[offset..offset + n_rows];
-                        let name = opt_name.unwrap_or("null");
-                        let mut out = Series::new(name, avs);
-                        finish_logical_type(&mut out, value_agg.dtype());
-                        out
-                    })
-                    .collect::<Vec<_>>();
+                let mut cols = if value_agg_phys.dtype().is_numeric() && std::env::var("SPECIAL").is_ok() {
+                    macro_rules! dispatch {
+                        ($ca:expr) => {{
+                            positioning::position_aggregates_numeric(
+                                n_rows,
+                                n_cols,
+                                &row_locations,
+                                &col_locations,
+                                $ca,
+                                logical_type,
+                                headers,
+                            )
+                        }};
+                    }
+                    downcast_as_macro_arg_physical!(value_agg_phys, dispatch)
+                } else {
+                    positioning::position_aggregates(
+                        n_rows,
+                        n_cols,
+                        &row_locations,
+                        &col_locations,
+                        &value_agg_phys,
+                        logical_type,
+                        headers,
+                    )
+                };
                 let ms = now.elapsed().as_millis();
-                println!("init took: {ms}ms");
+                println!("positioning took {ms}ms");
 
                 if sort_columns {
                     cols.sort_unstable_by(|a, b| a.name().partial_cmp(b.name()).unwrap());
