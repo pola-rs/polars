@@ -4,6 +4,7 @@ from __future__ import annotations
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, BinaryIO, Callable, Mapping, TextIO
+from warnings import warn
 
 from polars.utils import deprecated_alias, format_path, handle_projection_columns
 
@@ -962,7 +963,7 @@ def read_parquet(
         )
 
 
-def read_json(source: str | IOBase, json_lines: bool = False) -> DataFrame:
+def read_json(source: str | Path | IOBase, json_lines: bool | None = None) -> DataFrame:
     """
     Read into a DataFrame from JSON format.
 
@@ -971,10 +972,40 @@ def read_json(source: str | IOBase, json_lines: bool = False) -> DataFrame:
     source
         Path to a file or a file-like object.
     json_lines
-        Toggle between "JSON" and "NDJSON" format
+        Deprecated argument. Toggle between `JSON` and `NDJSON` format.
+
+    See Also
+    --------
+    read_ndjson
 
     """
-    return DataFrame._read_json(source, json_lines)
+    if json_lines is not None:
+        warn(
+            "`json_lines` argument for `read_json` will be removed in a future version."
+            " Remove the argument or use `pl.read_ndjson`.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    else:
+        json_lines = False
+
+    if json_lines:
+        return read_ndjson(source)
+
+    return DataFrame._read_json(source)
+
+
+def read_ndjson(source: str | Path | IOBase) -> DataFrame:
+    """
+    Read into a DataFrame from newline delimited JSON format.
+
+    Parameters
+    ----------
+    source
+        Path to a file or a file-like object.
+
+    """
+    return DataFrame._read_ndjson(source)
 
 
 def read_sql(

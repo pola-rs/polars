@@ -796,11 +796,7 @@ class DataFrame:
         return self
 
     @classmethod
-    def _read_json(
-        cls: type[DF],
-        file: str | Path | IOBase,
-        json_lines: bool = False,
-    ) -> DF:
+    def _read_json(cls: type[DF], file: str | Path | IOBase) -> DF:
         """
         Read into a DataFrame from JSON format.
 
@@ -815,7 +811,26 @@ class DataFrame:
             file = format_path(file)
 
         self = cls.__new__(cls)
-        self._df = PyDataFrame.read_json(file, json_lines)
+        self._df = PyDataFrame.read_json(file, False)
+        return self
+
+    @classmethod
+    def _read_ndjson(cls: type[DF], file: str | Path | IOBase) -> DF:
+        """
+        Read into a DataFrame from JSON format.
+
+        See Also
+        --------
+        read_json
+
+        """
+        if isinstance(file, StringIO):
+            file = BytesIO(file.getvalue().encode())
+        elif isinstance(file, (str, Path)):
+            file = format_path(file)
+
+        self = cls.__new__(cls)
+        self._df = PyDataFrame.read_json(file, True)
         return self
 
     @property

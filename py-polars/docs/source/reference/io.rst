@@ -47,6 +47,7 @@ JSON
    :toctree: api/
 
    read_json
+   read_ndjson
    scan_ndjson
    DataFrame.write_json
 
