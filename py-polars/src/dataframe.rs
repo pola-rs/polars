@@ -425,13 +425,33 @@ impl PyDataFrame {
         sep: u8,
         quote: u8,
         batch_size: usize,
-        datetime_format: Option<String>,
+        mut datetime_format: Option<String>,
         date_format: Option<String>,
         time_format: Option<String>,
         float_precision: Option<usize>,
         null_value: Option<String>,
     ) -> PyResult<()> {
         let null = null_value.unwrap_or(String::new());
+
+        // if datetime format not specified, infer the maximum required precision
+        if datetime_format.is_none() {
+            for col in self.df.get_columns() {
+                match col.dtype() {
+                    DataType::Datetime(TimeUnit::Microseconds, _) if datetime_format.is_none() => {
+                        datetime_format = Some("%FT%H:%M:%S.%6f".to_string());
+                    }
+                    DataType::Datetime(TimeUnit::Nanoseconds, _) => {
+                        datetime_format = Some("%FT%H:%M:%S.%9f".to_string());
+                        break; // highest precision; no need to check further
+                    }
+                    _ => {}
+                }
+            }
+            if datetime_format.is_none() {
+                // if still not set, no cols require higher precision than "ms" (or no datetime cols)
+                datetime_format = Some("%FT%H:%M:%S.%3f".to_string());
+            }
+        }
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
             // no need for a buffered writer, because the csv writer does internal buffering

@@ -12,6 +12,7 @@ import pytest
 
 import polars as pl
 from polars import DataType
+from polars.internals.type_aliases import TimeUnit
 from polars.testing import assert_frame_equal_local_categoricals
 
 
@@ -692,7 +693,8 @@ def test_csv_dtype_overwrite_bool() -> None:
 @pytest.mark.parametrize(
     "fmt,expected",
     [
-        (None, "dt\n2022-01-02T00:00:00.000000000\n"),
+        (None, "dt\n2022-01-02T00:00:00.000000\n"),
+        ("%F %T%.3f", "dt\n2022-01-02 00:00:00.000\n"),
         ("%Y", "dt\n2022\n"),
         ("%m", "dt\n01\n"),
         ("%m$%d", "dt\n01$02\n"),
@@ -704,6 +706,31 @@ def test_datetime_format(fmt: str, expected: str) -> None:
     csv = df.write_csv(datetime_format=fmt)
     assert csv == expected
 
+
+@pytest.mark.parametrize(
+    "tu1,tu2,expected",
+    [
+        ("ns", "ns", "x,y\n2022-09-04T10:30:45.123000000,2022-09-04T10:30:45.123000000\n"),
+        ("ns", "us", "x,y\n2022-09-04T10:30:45.123000000,2022-09-04T10:30:45.123000000\n"),
+        ("ns", "ms", "x,y\n2022-09-04T10:30:45.123000000,2022-09-04T10:30:45.123000000\n"),
+        ("us", "us", "x,y\n2022-09-04T10:30:45.123000,2022-09-04T10:30:45.123000\n"),
+        ("us", "ms", "x,y\n2022-09-04T10:30:45.123000,2022-09-04T10:30:45.123000\n"),
+        ("ms", "us", "x,y\n2022-09-04T10:30:45.123000,2022-09-04T10:30:45.123000\n"),
+        ("ms", "ms", "x,y\n2022-09-04T10:30:45.123,2022-09-04T10:30:45.123\n"),
+    ],
+)
+def test_datetime_format_inferred_precision(tu1: TimeUnit, tu2: TimeUnit, expected: str) -> None:
+    df = pl.DataFrame(
+        data={
+            "x": [datetime(2022, 9, 4, 10, 30, 45, 123000)],
+            "y": [datetime(2022, 9, 4, 10, 30, 45, 123000)],
+        },
+        columns=[
+            ("x", pl.Datetime(tu1)),
+            ("y", pl.Datetime(tu2)),
+        ],
+    )
+    assert expected == df.write_csv()
 
 @pytest.mark.parametrize(
     "fmt,expected",
