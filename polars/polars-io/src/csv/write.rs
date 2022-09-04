@@ -20,7 +20,6 @@ where
         // 9f: all nanoseconds
         let options = write_impl::SerializeOptions {
             time_format: Some("%T%.9f".to_string()),
-            datetime_format: Some("%FT%H:%M:%S.%9f".to_string()),
             ..Default::default()
         };
 
@@ -38,7 +37,7 @@ where
         if self.header {
             write_impl::write_header(&mut self.buffer, &names, &self.options)?;
         }
-        write_impl::write(&mut self.buffer, df, self.batch_size, &self.options)
+        write_impl::write(&mut self.buffer, df, self.batch_size, &mut self.options)
     }
 }
 
