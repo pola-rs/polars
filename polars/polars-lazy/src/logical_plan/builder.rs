@@ -521,7 +521,17 @@ impl LogicalPlanBuilder {
             into
         );
 
-        let schema = det_join_schema(&schema_left, &schema_right, &right_names, &options);
+        let schema = try_delayed!(
+            det_join_schema(
+                &schema_left,
+                &schema_right,
+                &left_on,
+                &right_names,
+                &options
+            ),
+            self.0,
+            into
+        );
 
         LogicalPlan::Join {
             input_left: Box::new(self.0),
