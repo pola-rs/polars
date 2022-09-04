@@ -710,16 +710,30 @@ def test_datetime_format(fmt: str, expected: str) -> None:
 @pytest.mark.parametrize(
     "tu1,tu2,expected",
     [
-        ("ns", "ns", "x,y\n2022-09-04T10:30:45.123000000,2022-09-04T10:30:45.123000000\n"),
-        ("ns", "us", "x,y\n2022-09-04T10:30:45.123000000,2022-09-04T10:30:45.123000000\n"),
-        ("ns", "ms", "x,y\n2022-09-04T10:30:45.123000000,2022-09-04T10:30:45.123000000\n"),
+        (
+            "ns",
+            "ns",
+            "x,y\n2022-09-04T10:30:45.123000000,2022-09-04T10:30:45.123000000\n",
+        ),
+        (
+            "ns",
+            "us",
+            "x,y\n2022-09-04T10:30:45.123000000,2022-09-04T10:30:45.123000000\n",
+        ),
+        (
+            "ns",
+            "ms",
+            "x,y\n2022-09-04T10:30:45.123000000,2022-09-04T10:30:45.123000000\n",
+        ),
         ("us", "us", "x,y\n2022-09-04T10:30:45.123000,2022-09-04T10:30:45.123000\n"),
         ("us", "ms", "x,y\n2022-09-04T10:30:45.123000,2022-09-04T10:30:45.123000\n"),
         ("ms", "us", "x,y\n2022-09-04T10:30:45.123000,2022-09-04T10:30:45.123000\n"),
         ("ms", "ms", "x,y\n2022-09-04T10:30:45.123,2022-09-04T10:30:45.123\n"),
     ],
 )
-def test_datetime_format_inferred_precision(tu1: TimeUnit, tu2: TimeUnit, expected: str) -> None:
+def test_datetime_format_inferred_precision(
+    tu1: TimeUnit, tu2: TimeUnit, expected: str
+) -> None:
     df = pl.DataFrame(
         data={
             "x": [datetime(2022, 9, 4, 10, 30, 45, 123000)],
@@ -731,6 +745,7 @@ def test_datetime_format_inferred_precision(tu1: TimeUnit, tu2: TimeUnit, expect
         ],
     )
     assert expected == df.write_csv()
+
 
 @pytest.mark.parametrize(
     "fmt,expected",
