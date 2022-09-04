@@ -1,7 +1,7 @@
 mod groupby;
 mod joins;
 mod list;
-#[cfg(feature = "rows")]
+#[cfg(feature = "pivot")]
 mod pivot;
 #[cfg(feature = "rolling_window")]
 mod rolling_window;
