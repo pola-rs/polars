@@ -31,7 +31,7 @@ pub use series_trait::{IsSorted, *};
 use crate::prelude::unique::rank::rank;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
-use crate::utils::{split_ca, split_offsets, split_series, Wrap};
+use crate::utils::{_split_offsets, split_ca, split_series, Wrap};
 use crate::POOL;
 
 /// # Series
@@ -404,7 +404,7 @@ impl Series {
         func: &(dyn Fn(usize, usize) -> Result<Series> + Send + Sync),
     ) -> Result<Series> {
         let n_threads = POOL.current_num_threads();
-        let offsets = split_offsets(len, n_threads);
+        let offsets = _split_offsets(len, n_threads);
 
         let series: Result<Vec<_>> = POOL.install(|| {
             offsets

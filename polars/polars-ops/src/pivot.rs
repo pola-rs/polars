@@ -1,6 +1,7 @@
 use polars_core::export::rayon::prelude::*;
 use polars_core::frame::groupby::expr::PhysicalAggExpr;
 use polars_core::prelude::*;
+use polars_core::utils::_split_offsets;
 use polars_core::POOL;
 
 const HASHMAP_INIT_SIZE: usize = 512;
@@ -294,6 +295,8 @@ fn pivot_impl(
             let (row_locations, n_rows, mut row_index) = row?;
 
             for value_col_name in values {
+                let now = std::time::Instant::now();
+
                 let value_col = pivot_df.column(value_col_name)?;
 
                 use PivotAgg::*;
@@ -319,30 +322,58 @@ fn pivot_impl(
                     }
                 };
 
+                let ms = now.elapsed().as_millis();
+                println!("agg took: {ms}ms");
+
                 let headers = column_agg.unique_stable()?.cast(&DataType::Utf8)?;
                 let headers = headers.utf8().unwrap();
                 let n_cols = headers.len();
 
                 let mut buf = vec![AnyValue::Null; n_rows * n_cols];
+                let start_ptr = buf.as_mut_ptr() as usize;
+
+                //
+                // let end = self.as_mut_ptr().add(self.len);
+                // ptr::write(end, value);
+                // self.len += 1;
 
                 let value_agg_phys = value_agg.to_physical_repr();
 
-                for ((row_idx, col_idx), val) in row_locations
-                    .iter()
-                    .zip(&col_locations)
-                    .zip(value_agg_phys.iter())
-                {
-                    // Safety:
-                    // in bounds
-                    unsafe {
-                        let idx = *row_idx as usize + *col_idx as usize * n_rows;
-                        debug_assert!(idx < buf.len());
-                        *buf.get_unchecked_mut(idx) = val;
+                let now = std::time::Instant::now();
+
+                debug_assert_eq!(row_locations.len(), col_locations.len());
+                debug_assert_eq!(value_agg_phys.len(), row_locations.len());
+
+                let n_threads = POOL.current_num_threads();
+                let split = _split_offsets(row_locations.len(), n_threads);
+
+                split.into_par_iter().for_each(|(offset, len)| {
+                    let start_ptr = start_ptr as *mut AnyValue;
+                    let row_locations = &row_locations[offset..offset + len];
+                    let col_locations = &col_locations[offset..offset + len];
+                    let value_agg_phys = value_agg_phys.slice(offset as i64, len);
+
+                    for ((row_idx, col_idx), val) in row_locations
+                        .iter()
+                        .zip(col_locations)
+                        .zip(value_agg_phys.iter())
+                    {
+                        // Safety:
+                        // in bounds
+                        unsafe {
+                            let idx = *row_idx as usize + *col_idx as usize * n_rows;
+                            debug_assert!(idx < buf.len());
+                            let pos = start_ptr.add(idx);
+                            std::ptr::write(pos, val)
+                        }
                     }
-                }
+                });
+                let ms = now.elapsed().as_millis();
+                println!("positioning took: {ms}ms");
 
                 let headers_iter = headers.par_iter_indexed();
 
+                let now = std::time::Instant::now();
                 let mut cols = (0..n_cols)
                     .into_par_iter()
                     .zip(headers_iter)
@@ -355,6 +386,8 @@ fn pivot_impl(
                         out
                     })
                     .collect::<Vec<_>>();
+                let ms = now.elapsed().as_millis();
+                println!("init took: {ms}ms");
 
                 if sort_columns {
                     cols.sort_unstable_by(|a, b| a.name().partial_cmp(b.name()).unwrap());

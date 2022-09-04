@@ -10,7 +10,7 @@ use self::hashing::*;
 use crate::prelude::*;
 #[cfg(feature = "groupby_list")]
 use crate::utils::Wrap;
-use crate::utils::{accumulate_dataframes_vertical, set_partition_size, split_offsets};
+use crate::utils::{_split_offsets, accumulate_dataframes_vertical, set_partition_size};
 use crate::vector_hasher::{get_null_hash_value, AsU64, StrHash};
 use crate::POOL;
 
@@ -69,7 +69,7 @@ impl DataFrame {
                 // pack the bit values together and add a final byte that will be 0
                 // when there are no null values.
                 // otherwise we use two bits of this byte to represent null values.
-                let splits = split_offsets($ca0.len(), n_partitions);
+                let splits = _split_offsets($ca0.len(), n_partitions);
 
                 let keys = POOL.install(|| {
                     splits
