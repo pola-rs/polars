@@ -23,6 +23,13 @@ fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
         let mut out = if out.len() == 1 {
             out.pop().unwrap()
         } else {
+            // pre-sort every array
+            // this will make the final single threaded sort much faster
+            POOL.install(|| {
+                out.par_iter_mut()
+                    .for_each(|g| g.sort_unstable_by_key(|g| g.0))
+            });
+
             flatten(&out, None)
         };
         out.sort_unstable_by_key(|g| g.0);

@@ -110,8 +110,9 @@ where
 }
 
 // prefer this one over split_ca, as this can push the null_count into the thread pool
+// returns an `(offset, length)` tuple
 #[doc(hidden)]
-pub fn split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
+pub fn _split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
     if n == 1 {
         vec![(0, len)]
     } else {
@@ -809,7 +810,7 @@ where
     F: Fn(Series) -> Result<Series> + Send + Sync,
 {
     let n_threads = n_threads.unwrap_or_else(|| POOL.current_num_threads());
-    let splits = split_offsets(s.len(), n_threads);
+    let splits = _split_offsets(s.len(), n_threads);
 
     let chunks = POOL.install(|| {
         splits

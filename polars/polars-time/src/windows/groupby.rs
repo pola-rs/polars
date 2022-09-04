@@ -4,7 +4,7 @@ use polars_arrow::trusted_len::TrustedLen;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
-use polars_core::utils::split_offsets;
+use polars_core::utils::_split_offsets;
 use polars_core::POOL;
 use polars_utils::flatten;
 #[cfg(feature = "serde")]
@@ -387,7 +387,7 @@ pub fn groupby_values(
     tu: TimeUnit,
 ) -> GroupsSlice {
     partially_check_sorted(time);
-    let thread_offsets = split_offsets(time.len(), POOL.current_num_threads());
+    let thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
 
     // we have a (partial) lookbehind window
     if offset.negative {
