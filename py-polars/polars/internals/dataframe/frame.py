@@ -1814,7 +1814,9 @@ class DataFrame:
         datetime_format
             A format string, with the specifiers defined by the
             `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            Rust crate.
+            Rust crate. If no format specified, the default fractional-second
+            precision is inferred from the maximum timeunit found in the frame's
+            Datetime cols (if any).
         date_format
             A format string, with the specifiers defined by the
             `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_

@@ -165,12 +165,34 @@ pub(crate) fn write<W: Write>(
     writer: &mut W,
     df: &DataFrame,
     chunk_size: usize,
-    options: &SerializeOptions,
+    options: &mut SerializeOptions,
 ) -> Result<()> {
     // check that the double quote is valid utf8
     std::str::from_utf8(&[options.quote, options.quote])
         .map_err(|_| PolarsError::ComputeError("quote char leads invalid utf8".into()))?;
     let delimiter = char::from(options.delimiter);
+
+    // if datetime format not specified, infer the maximum required precision
+    if options.datetime_format.is_none() {
+        for col in df.get_columns() {
+            match col.dtype() {
+                DataType::Datetime(TimeUnit::Microseconds, _)
+                    if options.datetime_format.is_none() =>
+                {
+                    options.datetime_format = Some("%FT%H:%M:%S.%6f".to_string());
+                }
+                DataType::Datetime(TimeUnit::Nanoseconds, _) => {
+                    options.datetime_format = Some("%FT%H:%M:%S.%9f".to_string());
+                    break; // highest precision; no need to check further
+                }
+                _ => {}
+            }
+        }
+        // if still not set, no cols require higher precision than "ms" (or no datetime cols)
+        if options.datetime_format.is_none() {
+            options.datetime_format = Some("%FT%H:%M:%S.%3f".to_string());
+        }
+    }
 
     let len = df.height();
     let n_threads = POOL.current_num_threads();

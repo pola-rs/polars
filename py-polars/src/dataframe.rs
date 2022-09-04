@@ -432,6 +432,7 @@ impl PyDataFrame {
         null_value: Option<String>,
     ) -> PyResult<()> {
         let null = null_value.unwrap_or(String::new());
+
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
             // no need for a buffered writer, because the csv writer does internal buffering
