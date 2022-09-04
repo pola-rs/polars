@@ -28,11 +28,9 @@ where
     let (mut wgt_sum, mut wgt_sum_sqr) = if adjust {
         (T::zero(), T::zero())
     } else {
-        // NOTE: in the unadjusted case we must ensure that these quantities
-        // are identically 1 during the first iteration
-        let wgt_sum = T::one();
-        let wgt_sum_sqr = (T::one() - alpha.powf(two)) / one_sub_alpha.powf(two);
-        (wgt_sum, wgt_sum_sqr)
+        // NOTE: we must ensure `wgt_sum` and `wgt_sum_sqr` are equal
+        // to 1 during the first iteration
+        (T::one(), (T::one() + alpha) / one_sub_alpha)
     };
 
     xs.iter()
@@ -56,16 +54,14 @@ where
             match non_null_cnt < min_periods {
                 true => None,
                 false => opt_var.map(|var| {
-                    let result = if bias {
-                        var
-                    } else if non_null_cnt.is_one() {
-                        // NOTE: this is a bit of a hack to prevent a NaN from cropping up
-                        // in the first entry when computing unbiased variance
-                        T::zero()
+                    // NOTE: the `non_null_cnt.is_one()` condition prevents a NaN
+                    // from appearing in the first entry (it prevents a zero division)
+                    let correction = if bias || non_null_cnt.is_one() {
+                        T::one()
                     } else {
-                        var / (T::one() - wgt_sum_sqr / wgt_sum.powf(two))
+                        T::one() - wgt_sum_sqr / wgt_sum.powf(two)
                     };
-                    result.sqrt()
+                    (var / correction).sqrt()
                 }),
             }
         })
@@ -94,11 +90,9 @@ where
     let (mut wgt_sum, mut wgt_sum_sqr) = if adjust {
         (T::zero(), T::zero())
     } else {
-        // NOTE: in the unadjusted case we must ensure that these quantities
-        // are identically 1 during the first iteration
-        let wgt_sum = T::one();
-        let wgt_sum_sqr = (T::one() + alpha) / one_sub_alpha;
-        (wgt_sum, wgt_sum_sqr)
+        // NOTE: we must ensure `wgt_sum` and `wgt_sum_sqr` are equal
+        // to 1 during the first iteration
+        (T::one(), (T::one() + alpha) / one_sub_alpha)
     };
 
     xs.iter()
@@ -122,15 +116,14 @@ where
             match non_null_cnt < min_periods {
                 true => None,
                 false => opt_var.map(|var| {
-                    if bias {
-                        var
-                    } else if non_null_cnt.is_one() {
-                        // NOTE: this is a bit of a hack to prevent a NaN from cropping up
-                        // in the first entry when computing unbiased variance
-                        T::zero()
+                    // NOTE: the `non_null_cnt.is_one()` condition prevents a NaN
+                    // from appearing in the first entry (it prevents a zero division)
+                    let correction = if bias || non_null_cnt.is_one() {
+                        T::one()
                     } else {
-                        var / (T::one() - wgt_sum_sqr / wgt_sum.powf(two))
-                    }
+                        T::one() - wgt_sum_sqr / wgt_sum.powf(two)
+                    };
+                    var / correction
                 }),
             }
         })
