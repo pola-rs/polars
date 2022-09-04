@@ -4553,21 +4553,37 @@ class DataFrame:
             index = [index]
         if isinstance(columns, str):
             columns = [columns]
-        if isinstance(aggregate_fn, pli.Expr):
-            return self._from_pydf(
-                self._df.pivot_expr(
-                    values,
-                    index,
-                    columns,
-                    aggregate_fn._pyexpr,
-                    maintain_order,
-                    sort_columns,
+
+        if isinstance(aggregate_fn, str):
+            if aggregate_fn == "first":
+                aggregate_fn = pli.element().first()
+            elif aggregate_fn == "sum":
+                aggregate_fn = pli.element().sum()
+            elif aggregate_fn == "max":
+                aggregate_fn = pli.element().max()
+            elif aggregate_fn == "min":
+                aggregate_fn = pli.element().min()
+            elif aggregate_fn == "mean":
+                aggregate_fn = pli.element().mean()
+            elif aggregate_fn == "median":
+                aggregate_fn = pli.element().median()
+            elif aggregate_fn == "last":
+                aggregate_fn = pli.element().last()
+            elif aggregate_fn == "count":
+                aggregate_fn = pli.count()
+            else:
+                raise ValueError(
+                    f"Argument aggregate fn: '{aggregate_fn}' " f"was not expected."
                 )
-            )
 
         return self._from_pydf(
-            self._df.pivot2(
-                values, index, columns, aggregate_fn, maintain_order, sort_columns
+            self._df.pivot_expr(
+                values,
+                index,
+                columns,
+                aggregate_fn._pyexpr,
+                maintain_order,
+                sort_columns,
             )
         )
 

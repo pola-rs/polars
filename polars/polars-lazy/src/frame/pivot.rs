@@ -7,8 +7,8 @@
 //!
 
 use polars_core::frame::groupby::expr::PhysicalAggExpr;
-use polars_core::frame::groupby::PivotAgg;
 use polars_core::prelude::*;
+use polars_ops::pivot::PivotAgg;
 
 use crate::physical_plan::exotic::{prepare_eval_expr, prepare_expression_for_context};
 use crate::physical_plan::state::ExecutionState;
@@ -47,7 +47,8 @@ where
 {
     // make sure that the root column is replaced
     let expr = prepare_eval_expr(agg_expr);
-    df.pivot(
+    polars_ops::pivot::pivot(
+        df,
         values,
         index,
         columns,
@@ -74,7 +75,8 @@ where
 {
     // make sure that the root column is replaced
     let expr = prepare_eval_expr(agg_expr);
-    df.pivot_stable(
+    polars_ops::pivot::pivot_stable(
+        df,
         values,
         index,
         columns,

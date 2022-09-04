@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Generic, TypeVar
 
 import polars.internals as pli
+from polars.internals.type_aliases import PivotAgg
 
 if TYPE_CHECKING:
     from polars.polars import PyDataFrame
@@ -29,50 +30,46 @@ class PivotOps(Generic[DF]):
         self.values_column = values_column
         self._dataframe_class = dataframe_class
 
+    def _execute(self, aggregate_fn: PivotAgg) -> DF:
+        return self._dataframe_class._from_pydf(
+            pli.wrap_df(self._df)
+            .pivot(
+                index=self.by,
+                columns=self.pivot_column,
+                values=self.values_column,
+                aggregate_fn=aggregate_fn,
+            )
+            ._df
+        )
+
     def first(self) -> DF:
         """Get the first value per group."""
-        return self._dataframe_class._from_pydf(
-            self._df.pivot(self.by, self.pivot_column, self.values_column, "first")
-        )
+        return self._execute("first")
 
     def sum(self) -> DF:
         """Get the sum per group."""
-        return self._dataframe_class._from_pydf(
-            self._df.pivot(self.by, self.pivot_column, self.values_column, "sum")
-        )
+        return self._execute("sum")
 
     def min(self) -> DF:
         """Get the minimal value per group."""
-        return self._dataframe_class._from_pydf(
-            self._df.pivot(self.by, self.pivot_column, self.values_column, "min")
-        )
+        return self._execute("min")
 
     def max(self) -> DF:
         """Get the maximal value per group."""
-        return self._dataframe_class._from_pydf(
-            self._df.pivot(self.by, self.pivot_column, self.values_column, "max")
-        )
+        return self._execute("max")
 
     def mean(self) -> DF:
         """Get the mean value per group."""
-        return self._dataframe_class._from_pydf(
-            self._df.pivot(self.by, self.pivot_column, self.values_column, "mean")
-        )
+        return self._execute("mean")
 
     def count(self) -> DF:
         """Count the values per group."""
-        return self._dataframe_class._from_pydf(
-            self._df.pivot(self.by, self.pivot_column, self.values_column, "count")
-        )
+        return self._execute("count")
 
     def median(self) -> DF:
         """Get the median value per group."""
-        return self._dataframe_class._from_pydf(
-            self._df.pivot(self.by, self.pivot_column, self.values_column, "median")
-        )
+        return self._execute("median")
 
     def last(self) -> DF:
         """Get the last value per group."""
-        return self._dataframe_class._from_pydf(
-            self._df.pivot(self.by, self.pivot_column, self.values_column, "last")
-        )
+        return self._execute("last")
