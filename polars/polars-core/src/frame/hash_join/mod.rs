@@ -472,8 +472,9 @@ impl DataFrame {
             JoinType::Inner => {
                 let left = DataFrame::new_no_checks(selected_left_physical);
                 let right = DataFrame::new_no_checks(selected_right_physical);
-                let (left, right, swap) = det_hash_prone_order!(left, right);
-                let (join_idx_left, join_idx_right) = inner_join_multiple_keys(&left, &right, swap);
+                let (mut left, mut right, swap) = det_hash_prone_order!(left, right);
+                let (join_idx_left, join_idx_right) =
+                    inner_join_multiple_keys(&mut left, &mut right, swap);
                 let mut join_idx_left = &*join_idx_left;
                 let mut join_idx_right = &*join_idx_right;
 
@@ -494,9 +495,9 @@ impl DataFrame {
                 self.finish_join(df_left, df_right, suffix)
             }
             JoinType::Left => {
-                let left = DataFrame::new_no_checks(selected_left_physical);
-                let right = DataFrame::new_no_checks(selected_right_physical);
-                let ids = left_join_multiple_keys(&left, &right, None, None);
+                let mut left = DataFrame::new_no_checks(selected_left_physical);
+                let mut right = DataFrame::new_no_checks(selected_right_physical);
+                let ids = left_join_multiple_keys(&mut left, &mut right, None, None);
 
                 self.finish_left_join(ids, &remove_selected(other, &selected_right), suffix, slice)
             }
@@ -504,8 +505,8 @@ impl DataFrame {
                 let left = DataFrame::new_no_checks(selected_left_physical);
                 let right = DataFrame::new_no_checks(selected_right_physical);
 
-                let (left, right, swap) = det_hash_prone_order!(left, right);
-                let opt_join_tuples = outer_join_multiple_keys(&left, &right, swap);
+                let (mut left, mut right, swap) = det_hash_prone_order!(left, right);
+                let opt_join_tuples = outer_join_multiple_keys(&mut left, &mut right, swap);
 
                 let mut opt_join_tuples = &*opt_join_tuples;
 
@@ -547,13 +548,13 @@ impl DataFrame {
             )),
             #[cfg(feature = "semi_anti_join")]
             JoinType::Anti | JoinType::Semi => {
-                let left = DataFrame::new_no_checks(selected_left_physical);
-                let right = DataFrame::new_no_checks(selected_right_physical);
+                let mut left = DataFrame::new_no_checks(selected_left_physical);
+                let mut right = DataFrame::new_no_checks(selected_right_physical);
 
                 let idx = if matches!(how, JoinType::Anti) {
-                    left_anti_multiple_keys(&left, &right)
+                    left_anti_multiple_keys(&mut left, &mut right)
                 } else {
-                    left_semi_multiple_keys(&left, &right)
+                    left_semi_multiple_keys(&mut left, &mut right)
                 };
                 // Safety:
                 // indices are in bounds

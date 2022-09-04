@@ -39,7 +39,7 @@ impl PartitionGroupByExec {
 }
 
 fn run_partitions(
-    df: &DataFrame,
+    df: &mut DataFrame,
     exec: &PartitionGroupByExec,
     state: &ExecutionState,
     n_threads: usize,
@@ -201,7 +201,7 @@ impl Executor for PartitionGroupByExec {
             }
         }
         let dfs = {
-            let original_df = self.input.execute(state)?;
+            let mut original_df = self.input.execute(state)?;
 
             // already get the keys. This is the very last minute decision which groupby method we choose.
             // If the column is a categorical, we know the number of groups we have and can decide to continue
@@ -229,7 +229,13 @@ impl Executor for PartitionGroupByExec {
 
             // set it here, because `self.input.execute` will clear the schema cache.
             state.set_schema(self.input_schema.clone());
-            run_partitions(&original_df, self, state, n_threads, self.maintain_order)?
+            run_partitions(
+                &mut original_df,
+                self,
+                state,
+                n_threads,
+                self.maintain_order,
+            )?
         };
         state.clear_schema_cache();
 

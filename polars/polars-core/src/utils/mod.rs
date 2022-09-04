@@ -156,10 +156,13 @@ fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
 
 #[cfg(feature = "private")]
 #[doc(hidden)]
-pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
+/// Split a [`DataFrame`] into `n` parts. We take a `&mut` to be able to repartition/align chunks.
+pub fn split_df(df: &mut DataFrame, n: usize) -> Result<Vec<DataFrame>> {
     if n == 0 {
         return Ok(vec![df.clone()]);
     }
+    // make sure that chunks are aligned.
+    df.rechunk();
     let total_len = df.height();
     let chunk_size = total_len / n;
 

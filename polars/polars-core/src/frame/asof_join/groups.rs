@@ -355,8 +355,8 @@ where
 // TODO! optimize this. This does a full scan backwards. Use the same strategy as in the single `by`
 // implementations
 fn asof_join_by_multiple<T>(
-    a: &DataFrame,
-    b: &DataFrame,
+    a: &mut DataFrame,
+    b: &mut DataFrame,
     left_asof: &ChunkedArray<T>,
     right_asof: &ChunkedArray<T>,
     tolerance: Option<AnyValue<'static>>,
@@ -487,8 +487,8 @@ impl DataFrame {
 
         check_asof_columns(left_asof, right_asof)?;
 
-        let left_by = self.select(left_by)?;
-        let right_by = other.select(right_by)?;
+        let mut left_by = self.select(left_by)?;
+        let mut right_by = other.select(right_by)?;
 
         let left_by_s = &left_by.get_columns()[0];
         let right_by_s = &right_by.get_columns()[0];
@@ -531,7 +531,13 @@ impl DataFrame {
                     #[cfg(feature = "dtype-categorical")]
                     check_categorical_src(lhs.dtype(), rhs.dtype())?;
                 }
-                asof_join_by_multiple(&left_by, &right_by, left_asof, right_asof, tolerance)
+                asof_join_by_multiple(
+                    &mut left_by,
+                    &mut right_by,
+                    left_asof,
+                    right_asof,
+                    tolerance,
+                )
             }
         } else {
             // we cannot use bit repr as that loses ordering
@@ -566,7 +572,13 @@ impl DataFrame {
                     }
                 }
             } else {
-                asof_join_by_multiple(&left_by, &right_by, left_asof, right_asof, tolerance)
+                asof_join_by_multiple(
+                    &mut left_by,
+                    &mut right_by,
+                    left_asof,
+                    right_asof,
+                    tolerance,
+                )
             }
         };
 

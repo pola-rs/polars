@@ -1462,7 +1462,7 @@ impl DataFrame {
 
     /// Does a filter but splits thread chunks vertically instead of horizontally
     /// This yields a DataFrame with `n_chunks == n_threads`.
-    fn filter_vertical(&self, mask: &BooleanChunked) -> Result<Self> {
+    fn filter_vertical(&mut self, mask: &BooleanChunked) -> Result<Self> {
         let n_threads = POOL.current_num_threads();
 
         let masks = split_ca(mask, n_threads).unwrap();
@@ -1503,7 +1503,7 @@ impl DataFrame {
     /// ```
     pub fn filter(&self, mask: &BooleanChunked) -> Result<Self> {
         if std::env::var("POLARS_VERT_PAR").is_ok() {
-            return self.filter_vertical(mask);
+            return self.clone().filter_vertical(mask);
         }
         let new_col = self.try_apply_columns_par(&|s| match s.dtype() {
             DataType::Utf8 => s.filter_threaded(mask, true),
@@ -3060,7 +3060,7 @@ impl DataFrame {
 
     /// Hash and combine the row values
     #[cfg(feature = "row_hash")]
-    pub fn hash_rows(&self, hasher_builder: Option<RandomState>) -> Result<UInt64Chunked> {
+    pub fn hash_rows(&mut self, hasher_builder: Option<RandomState>) -> Result<UInt64Chunked> {
         let dfs = split_df(self, POOL.current_num_threads())?;
         let (cas, _) = df_rows_to_hashes_threaded(&dfs, hasher_builder);
 

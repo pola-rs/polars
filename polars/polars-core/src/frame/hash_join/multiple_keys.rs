@@ -175,8 +175,8 @@ pub(crate) fn get_offsets(probe_hashes: &[UInt64Chunked]) -> Vec<usize> {
 }
 
 pub(crate) fn inner_join_multiple_keys(
-    a: &DataFrame,
-    b: &DataFrame,
+    a: &mut DataFrame,
+    b: &mut DataFrame,
     swap: bool,
 ) -> (Vec<IdxSize>, Vec<IdxSize>) {
     // we assume that the b DataFrame is the shorter relation.
@@ -248,14 +248,14 @@ pub fn private_left_join_multiple_keys(
     chunk_mapping_left: Option<&[ChunkId]>,
     chunk_mapping_right: Option<&[ChunkId]>,
 ) -> LeftJoinIds {
-    let a = DataFrame::new_no_checks(to_physical_and_bit_repr(a.get_columns()));
-    let b = DataFrame::new_no_checks(to_physical_and_bit_repr(b.get_columns()));
-    left_join_multiple_keys(&a, &b, chunk_mapping_left, chunk_mapping_right)
+    let mut a = DataFrame::new_no_checks(to_physical_and_bit_repr(a.get_columns()));
+    let mut b = DataFrame::new_no_checks(to_physical_and_bit_repr(b.get_columns()));
+    left_join_multiple_keys(&mut a, &mut b, chunk_mapping_left, chunk_mapping_right)
 }
 
 pub(crate) fn left_join_multiple_keys(
-    a: &DataFrame,
-    b: &DataFrame,
+    a: &mut DataFrame,
+    b: &mut DataFrame,
     // map the global indices to [chunk_idx, array_idx]
     // only needed if we have non contiguous memory
     chunk_mapping_left: Option<&[ChunkId]>,
@@ -388,8 +388,8 @@ pub(crate) fn create_build_table_semi_anti(
 
 #[cfg(feature = "semi_anti_join")]
 pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
-    a: &'a DataFrame,
-    b: &'a DataFrame,
+    a: &'a mut DataFrame,
+    b: &'a mut DataFrame,
 ) -> impl ParallelIterator<Item = (IdxSize, bool)> + 'a {
     // we should not join on logical types
     debug_assert!(!a.iter().any(|s| s.is_logical()));
@@ -454,7 +454,7 @@ pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
 }
 
 #[cfg(feature = "semi_anti_join")]
-pub(super) fn left_anti_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<IdxSize> {
+pub(super) fn left_anti_multiple_keys(a: &mut DataFrame, b: &mut DataFrame) -> Vec<IdxSize> {
     semi_anti_join_multiple_keys_impl(a, b)
         .filter(|tpls| !tpls.1)
         .map(|tpls| tpls.0)
@@ -462,7 +462,7 @@ pub(super) fn left_anti_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<IdxSi
 }
 
 #[cfg(feature = "semi_anti_join")]
-pub(super) fn left_semi_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<IdxSize> {
+pub(super) fn left_semi_multiple_keys(a: &mut DataFrame, b: &mut DataFrame) -> Vec<IdxSize> {
     semi_anti_join_multiple_keys_impl(a, b)
         .filter(|tpls| tpls.1)
         .map(|tpls| tpls.0)
@@ -540,8 +540,8 @@ fn probe_outer<F, G, H>(
 }
 
 pub(crate) fn outer_join_multiple_keys(
-    a: &DataFrame,
-    b: &DataFrame,
+    a: &mut DataFrame,
+    b: &mut DataFrame,
     swap: bool,
 ) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
     // we assume that the b DataFrame is the shorter relation.

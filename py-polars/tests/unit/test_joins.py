@@ -314,3 +314,49 @@ def test_asof_join_projection_resolution_4606() -> None:
     assert joined_tbl.groupby("a").agg(
         [pl.col("c").sum().alias("c")]
     ).collect().columns == ["a", "c"]
+
+
+def test_join_chunks_alignment_4720() -> None:
+    df1 = pl.DataFrame(
+        {
+            "index1": pl.arange(0, 2, eager=True),
+            "index2": pl.arange(10, 12, eager=True),
+        }
+    )
+
+    df2 = pl.DataFrame(
+        {
+            "index3": pl.arange(100, 102, eager=True),
+        }
+    )
+
+    df3 = pl.DataFrame(
+        {
+            "index1": pl.arange(0, 2, eager=True),
+            "index2": pl.arange(10, 12, eager=True),
+            "index3": pl.arange(100, 102, eager=True),
+        }
+    )
+    assert (
+        df1.join(df2, how="cross").join(
+            df3,
+            on=["index1", "index2", "index3"],
+            how="left",
+        )
+    ).to_dict(False) == {
+        "index1": [0, 0, 1, 1],
+        "index2": [10, 10, 11, 11],
+        "index3": [100, 101, 100, 101],
+    }
+
+    assert (
+        df1.join(df2, how="cross").join(
+            df3,
+            on=["index3", "index1", "index2"],
+            how="left",
+        )
+    ).to_dict(False) == {
+        "index1": [0, 0, 1, 1],
+        "index2": [10, 10, 11, 11],
+        "index3": [100, 101, 100, 101],
+    }
