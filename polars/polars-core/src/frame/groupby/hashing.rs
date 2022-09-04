@@ -274,11 +274,11 @@ pub(crate) fn populate_multiple_key_hashmap2<'a, V, H, F, G>(
 }
 
 pub(crate) fn groupby_threaded_multiple_keys_flat(
-    keys: DataFrame,
+    mut keys: DataFrame,
     n_partitions: usize,
     sorted: bool,
 ) -> GroupsProxy {
-    let dfs = split_df(&keys, n_partitions).unwrap();
+    let dfs = split_df(&mut keys, n_partitions).unwrap();
     let (hashes, _random_state) = df_rows_to_hashes_threaded(&dfs, None);
     let n_partitions = n_partitions as u64;
 
