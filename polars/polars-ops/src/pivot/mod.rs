@@ -172,7 +172,6 @@ fn pivot_impl(
             for value_col_name in values {
                 let value_col = pivot_df.column(value_col_name)?;
 
-                let now = std::time::Instant::now();
                 use PivotAgg::*;
                 let value_agg = unsafe {
                     match agg_fn {
@@ -195,8 +194,6 @@ fn pivot_impl(
                         }
                     }
                 };
-                let ms = now.elapsed().as_millis();
-                println!("agg took {ms}ms");
 
                 let headers = column_agg.unique_stable()?.cast(&DataType::Utf8)?;
                 let headers = headers.utf8().unwrap();
@@ -207,8 +204,7 @@ fn pivot_impl(
                 debug_assert_eq!(row_locations.len(), col_locations.len());
                 debug_assert_eq!(value_agg_phys.len(), row_locations.len());
 
-                let now = std::time::Instant::now();
-                let mut cols = if value_agg_phys.dtype().is_numeric() && std::env::var("SPECIAL").is_ok() {
+                let mut cols = if value_agg_phys.dtype().is_numeric() {
                     macro_rules! dispatch {
                         ($ca:expr) => {{
                             positioning::position_aggregates_numeric(
@@ -234,8 +230,6 @@ fn pivot_impl(
                         headers,
                     )
                 };
-                let ms = now.elapsed().as_millis();
-                println!("positioning took {ms}ms");
 
                 if sort_columns {
                     cols.sort_unstable_by(|a, b| a.name().partial_cmp(b.name()).unwrap());

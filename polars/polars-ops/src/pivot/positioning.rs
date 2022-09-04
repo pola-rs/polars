@@ -77,7 +77,6 @@ where
 
     let n_threads = POOL.current_num_threads();
 
-
     let split = _split_offsets(row_locations.len(), n_threads);
 
     POOL.install(|| {
@@ -179,6 +178,49 @@ pub(super) fn compute_col_idx(
     Ok((col_locations, column_agg))
 }
 
+fn compute_row_idx_numeric<T>(
+    index: &[String],
+    index_agg_physical: &ChunkedArray<T>,
+    count: usize,
+    logical_type: &DataType,
+) -> (Vec<IdxSize>, usize, Option<Vec<Series>>)
+where
+    T: PolarsNumericType,
+    T::Native: Hash + Eq,
+    ChunkedArray<T>: IntoSeries,
+{
+    let mut row_to_idx =
+        PlIndexMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
+    let mut idx = 0 as IdxSize;
+    let row_locations = index_agg_physical
+        .into_iter()
+        .map(|v| {
+            let idx = *row_to_idx.entry(v).or_insert_with(|| {
+                let old_idx = idx;
+                idx += 1;
+                old_idx
+            });
+            idx
+        })
+        .collect::<Vec<_>>();
+
+    let row_index = match count {
+        0 => {
+            let mut s = row_to_idx
+                .into_iter()
+                .map(|(k, _)| k)
+                .collect::<ChunkedArray<T>>()
+                .into_series();
+            s.rename(&index[0]);
+            let s = restore_logical_type(&s, logical_type);
+            Some(vec![s])
+        }
+        _ => None,
+    };
+
+    (row_locations, idx as usize, row_index)
+}
+
 // TODO! Also create a specialized version for numerics.
 pub(super) fn compute_row_idx(
     pivot_df: &DataFrame,
@@ -191,34 +233,47 @@ pub(super) fn compute_row_idx(
         let index_agg = unsafe { index_s.agg_first(groups) };
         let index_agg_physical = index_agg.to_physical_repr();
 
-        let mut row_to_idx =
-            PlIndexMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
-        let mut idx = 0 as IdxSize;
-        let row_locations = index_agg_physical
-            .iter()
-            .map(|v| {
-                let idx = *row_to_idx.entry(v).or_insert_with(|| {
-                    let old_idx = idx;
-                    idx += 1;
-                    old_idx
-                });
-                idx
-            })
-            .collect::<Vec<_>>();
-
-        let row_index = match count {
-            0 => {
-                let s = Series::new(
-                    &index[0],
-                    row_to_idx.into_iter().map(|(k, _)| k).collect::<Vec<_>>(),
-                );
-                let s = restore_logical_type(&s, index_s.dtype());
-                Some(vec![s])
+        use DataType::*;
+        match index_agg_physical.dtype() {
+            Int32 | UInt32 | Float32 => {
+                let ca = index_agg_physical.bit_repr_small();
+                compute_row_idx_numeric(index, &ca, count, index_s.dtype())
             }
-            _ => None,
-        };
+            Int64 | UInt64 | Float64 => {
+                let ca = index_agg_physical.bit_repr_large();
+                compute_row_idx_numeric(index, &ca, count, index_s.dtype())
+            }
+            _ => {
+                let mut row_to_idx =
+                    PlIndexMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
+                let mut idx = 0 as IdxSize;
+                let row_locations = index_agg_physical
+                    .iter()
+                    .map(|v| {
+                        let idx = *row_to_idx.entry(v).or_insert_with(|| {
+                            let old_idx = idx;
+                            idx += 1;
+                            old_idx
+                        });
+                        idx
+                    })
+                    .collect::<Vec<_>>();
 
-        (row_locations, idx as usize, row_index)
+                let row_index = match count {
+                    0 => {
+                        let s = Series::new(
+                            &index[0],
+                            row_to_idx.into_iter().map(|(k, _)| k).collect::<Vec<_>>(),
+                        );
+                        let s = restore_logical_type(&s, index_s.dtype());
+                        Some(vec![s])
+                    }
+                    _ => None,
+                };
+
+                (row_locations, idx as usize, row_index)
+            }
+        }
     } else {
         let index_s = pivot_df.columns(index)?;
         let index_agg_physical = index_s
