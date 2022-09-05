@@ -835,7 +835,7 @@ class DataFrame:
             file = format_path(file)
 
         self = cls.__new__(cls)
-        self._df = PyDataFrame.read_json(file, True)
+        self._df = PyDataFrame.read_ndjson(file)
         return self
 
     @property
