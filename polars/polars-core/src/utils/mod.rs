@@ -468,19 +468,18 @@ pub fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to
 #[cfg(feature = "private")]
-pub fn get_supertype(l: &DataType, r: &DataType) -> Result<DataType> {
-    match _get_supertype(l, r) {
+pub fn try_get_supertype(l: &DataType, r: &DataType) -> Result<DataType> {
+    match get_supertype(l, r) {
         Some(dt) => Ok(dt),
-        None => _get_supertype(r, l).ok_or_else(|| {
-            PolarsError::ComputeError(
-                format!("Failed to determine supertype of {:?} and {:?}", l, r).into(),
-            )
-        }),
+        None => Err(PolarsError::ComputeError(
+            format!("Failed to determine supertype of {:?} and {:?}", l, r).into(),
+        )),
     }
 }
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to
-fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
+#[cfg(feature = "private")]
+pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
     fn inner(l: &DataType, r: &DataType) -> Option<DataType> {
         use DataType::*;
         if l == r {
@@ -712,12 +711,12 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                 Some(Datetime(tu, tz_r.clone()))
             }
             (List(inner_left), List(inner_right)) => {
-                let st = _get_supertype(inner_left, inner_right)?;
+                let st = get_supertype(inner_left, inner_right)?;
                 Some(DataType::List(Box::new(st)))
             }
             // todo! check if can be removed
             (List(inner), other) | (other, List(inner)) => {
-                let st = _get_supertype(inner, other)?;
+                let st = get_supertype(inner, other)?;
                 Some(DataType::List(Box::new(st)))
             }
             (_, Unknown) => Some(Unknown),

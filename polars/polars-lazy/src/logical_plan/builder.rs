@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use parking_lot::Mutex;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
-use polars_core::utils::get_supertype;
+use polars_core::utils::try_get_supertype;
 #[cfg(feature = "csv-file")]
 use polars_io::csv::utils::infer_file_schema;
 use polars_io::csv::CsvEncoding;
@@ -598,7 +598,7 @@ pub(crate) fn det_melt_schema(args: &MeltArgs, input_schema: &Schema) -> SchemaR
             if !id_vars.contains(name) {
                 match &st {
                     None => st = Some(dtype.clone()),
-                    Some(st_) => st = Some(get_supertype(st_, dtype).unwrap()),
+                    Some(st_) => st = Some(try_get_supertype(st_, dtype).unwrap()),
                 }
             }
         }
@@ -607,7 +607,7 @@ pub(crate) fn det_melt_schema(args: &MeltArgs, input_schema: &Schema) -> SchemaR
             let dtype = input_schema.get(name).unwrap();
             match &st {
                 None => st = Some(dtype.clone()),
-                Some(st_) => st = Some(get_supertype(st_, dtype).unwrap()),
+                Some(st_) => st = Some(try_get_supertype(st_, dtype).unwrap()),
             }
         }
     }

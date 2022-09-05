@@ -178,7 +178,7 @@ impl GetOutput {
         Self::map_dtypes(|dtypes| {
             let mut st = dtypes[0].clone();
             for dt in &dtypes[1..] {
-                st = get_supertype(&st, dt).unwrap()
+                st = get_supertype(&st, dt).unwrap();
             }
             st
         })

@@ -11,7 +11,7 @@ use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
 #[cfg(feature = "describe")]
 use crate::utils::concat_df_unchecked;
-use crate::utils::{get_supertype, split_ca, split_df, NoNull};
+use crate::utils::{split_ca, split_df, try_get_supertype, NoNull};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -3077,7 +3077,7 @@ impl DataFrame {
         self.columns
             .iter()
             .map(|s| Ok(s.dtype().clone()))
-            .reduce(|acc, b| get_supertype(&acc?, &b.unwrap()))
+            .reduce(|acc, b| try_get_supertype(&acc?, &b.unwrap()))
     }
 
     #[cfg(feature = "chunked_ids")]

@@ -331,7 +331,7 @@ pub(crate) fn coerce_lhs_rhs<'a>(
         (DataType::Struct(_), DataType::Struct(_)) => {
             return Ok((Cow::Borrowed(lhs), Cow::Borrowed(rhs)))
         }
-        _ => get_supertype(lhs.dtype(), rhs.dtype())?,
+        _ => try_get_supertype(lhs.dtype(), rhs.dtype())?,
     };
 
     let left = if lhs.dtype() == &dtype {

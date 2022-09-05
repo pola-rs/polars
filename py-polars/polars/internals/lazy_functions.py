@@ -12,6 +12,7 @@ from polars.datatypes import (
     Datetime,
     Duration,
     PolarsDataType,
+    UInt32,
     is_polars_dtype,
     py_type_to_dtype,
 )
@@ -41,6 +42,7 @@ try:
     from polars.polars import py_datetime, py_duration
     from polars.polars import repeat as _repeat
     from polars.polars import spearman_rank_corr as pyspearman_rank_corr
+    from polars.polars import sum_exprs as _sum_exprs
 
     _DOCUMENTING = False
 except ImportError:
@@ -468,12 +470,11 @@ def sum(column: str | list[pli.Expr | str] | pli.Series | pli.Expr) -> pli.Expr 
     if isinstance(column, pli.Series):
         return column.sum()
     elif isinstance(column, list):
-        first = column[0]
-        if isinstance(first, str):
-            first = col(first)
-        return fold(first, lambda a, b: a + b, column[1:]).alias("sum")
+        exprs = pli.selection_to_pyexpr_list(column)
+        return pli.wrap_expr(_sum_exprs(exprs))
     elif isinstance(column, pli.Expr):
-        return fold(lit(0), lambda a, b: a + b, column).alias("sum")
+        # use u32 as that is not cast to float as eagerly
+        return fold(lit(0).cast(UInt32), lambda a, b: a + b, column).alias("sum")
     else:
         return col(column).sum()
 

@@ -3,7 +3,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use rayon::prelude::*;
 
 use crate::prelude::*;
-use crate::utils::get_supertype;
+use crate::utils::try_get_supertype;
 
 /// Get the supertype that is valid for all columns in the DataFrame.
 /// This reduces casting of the rhs in arithmetic.
@@ -11,7 +11,7 @@ fn get_supertype_all(df: &DataFrame, rhs: &Series) -> Result<DataType> {
     df.columns
         .iter()
         .fold(Ok(rhs.dtype().clone()), |dt, s| match dt {
-            Ok(dt) => get_supertype(s.dtype(), &dt),
+            Ok(dt) => try_get_supertype(s.dtype(), &dt),
             e => e,
         })
 }
@@ -123,7 +123,7 @@ impl DataFrame {
                 let diff_l = max_len - l.len();
                 let diff_r = max_len - r.len();
 
-                let st = get_supertype(l.dtype(), r.dtype())?;
+                let st = try_get_supertype(l.dtype(), r.dtype())?;
                 let mut l = l.cast(&st)?;
                 let mut r = r.cast(&st)?;
 

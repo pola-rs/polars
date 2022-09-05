@@ -5,7 +5,7 @@ use arrow::bitmap::Bitmap;
 use rayon::prelude::*;
 
 use crate::prelude::*;
-use crate::utils::get_supertype;
+use crate::utils::try_get_supertype;
 use crate::POOL;
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Row<'a>(pub Vec<AnyValue<'a>>);
@@ -238,7 +238,7 @@ pub fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
     }
 
     let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());
-    get_supertype(lhs, rhs).unwrap_or(Utf8)
+    try_get_supertype(lhs, rhs).unwrap_or(Utf8)
 }
 
 fn is_nested_null(av: &AnyValue) -> bool {
@@ -292,7 +292,7 @@ pub fn rows_to_schema_supertypes(
             let dtype = types_set
                 .into_iter()
                 .map(Ok)
-                .fold_first_(|a, b| get_supertype(&a?, &b?))
+                .fold_first_(|a, b| try_get_supertype(&a?, &b?))
                 .unwrap()?;
             Ok(Field::new(format!("column_{}", i).as_ref(), dtype))
         })
