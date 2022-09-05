@@ -27,8 +27,8 @@ pub trait SeriesMethods: SeriesSealed {
         let s = self.as_series().to_physical_repr();
         match s.dtype() {
             DataType::List(_) => {
-                let ca = s.list().unwrap();
-                crate::chunked_array::hash::hash(ca, build_hasher)
+                let mut ca = s.list().unwrap().clone();
+                crate::chunked_array::hash::hash(&mut ca, build_hasher)
             }
             _ => UInt64Chunked::from_vec(s.name(), s.0.vec_hash(build_hasher)),
         }

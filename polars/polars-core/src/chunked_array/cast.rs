@@ -168,7 +168,7 @@ impl ChunkCast for ListChunked {
                 } else {
                     self.clone()
                 };
-                ca.with_inner_type(*child_type.clone());
+                ca.set_inner_dtype(*child_type.clone());
                 Ok(ca.into_series())
             }
             _ => Err(PolarsError::ComputeError("Cannot cast list type".into())),
