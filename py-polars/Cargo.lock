@@ -1250,11 +1250,20 @@ dependencies = [
 name = "polars"
 version = "0.23.0"
 dependencies = [
+ "polars-algo",
  "polars-core",
  "polars-io",
  "polars-lazy",
  "polars-ops",
  "polars-time",
+]
+
+[[package]]
+name = "polars-algo"
+version = "0.23.0"
+dependencies = [
+ "polars-core",
+ "polars-lazy",
 ]
 
 [[package]]
