@@ -1818,6 +1818,26 @@ class DataFrame:
             self._df.write_json(file, pretty, row_oriented, json_lines)
         return None
 
+    @overload
+    def write_ndjson(
+        self,
+        file: None = ...,
+        pretty: bool = ...,
+        row_oriented: bool = ...,
+        to_string: bool = ...,
+    ) -> str:
+        ...
+
+    @overload
+    def write_ndjson(
+        self,
+        file: IOBase | str | Path = ...,
+        pretty: bool = ...,
+        row_oriented: bool = ...,
+        to_string: bool = ...,
+    ) -> None:
+        ...
+
     def write_ndjson(
         self,
         file: IOBase | str | Path | None = None,
