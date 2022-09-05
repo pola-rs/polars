@@ -1817,28 +1817,15 @@ class DataFrame:
         return None
 
     @overload
-    def write_ndjson(
-        self,
-        file: None = None,
-        pretty: bool = ...,
-        row_oriented: bool = ...,
-    ) -> str:
+    def write_ndjson(self, file: None = None, pretty: bool = ...) -> str:
         ...
 
     @overload
-    def write_ndjson(
-        self,
-        file: IOBase | str | Path,
-        pretty: bool = ...,
-        row_oriented: bool = ...,
-    ) -> None:
+    def write_ndjson(self, file: IOBase | str | Path, pretty: bool = ...) -> None:
         ...
 
     def write_ndjson(
-        self,
-        file: IOBase | str | Path | None = None,
-        pretty: bool = False,
-        row_oriented: bool = False,
+        self, file: IOBase | str | Path | None = None, pretty: bool = False
     ) -> str | None:
         """
         Serialize to newline delimited JSON representation.
@@ -1861,7 +1848,7 @@ class DataFrame:
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
             with BytesIO() as buf:
-                self._df.write_json(buf, pretty, row_oriented, True)
+                self._df.write_json(buf, pretty, False, True)
                 json_bytes = buf.getvalue()
 
             json_str = json_bytes.decode("utf8")
@@ -1870,7 +1857,7 @@ class DataFrame:
             else:
                 return json_str
         else:
-            self._df.write_json(file, pretty, row_oriented, True)
+            self._df.write_json(file, pretty, False, True)
         return None
 
     @overload
