@@ -418,3 +418,14 @@ def test_join_inline_alias_4694() -> None:
             datetime(2021, 2, 6, 0, 0),
         ],
     }
+
+
+def test_sorted_flag_after_joins() -> None:
+    a = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 2, 1, 4]}).sort("a")
+
+    b = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 4, 1, 4]})
+
+    for how in ["inner", "left"]:
+        assert a.join(b, how=how, on="b")["a"].flags[  # type: ignore[arg-type]
+            "SORTED_ASC"
+        ]
