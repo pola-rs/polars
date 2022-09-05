@@ -963,13 +963,14 @@ def read_parquet(
         )
 
 
-def read_json(source: str | Path | IOBase, json_lines: bool | None = None) -> DataFrame:
+@deprecated_alias(source="file")
+def read_json(file: str | Path | IOBase, json_lines: bool | None = None) -> DataFrame:
     """
-    Read into a DataFrame from JSON format.
+    Read into a DataFrame from a JSON file.
 
     Parameters
     ----------
-    source
+    file
         Path to a file or a file-like object.
     json_lines
         Deprecated argument. Toggle between `JSON` and `NDJSON` format.
@@ -990,22 +991,22 @@ def read_json(source: str | Path | IOBase, json_lines: bool | None = None) -> Da
         json_lines = False
 
     if json_lines:
-        return read_ndjson(source)
+        return read_ndjson(file)
 
-    return DataFrame._read_json(source)
+    return DataFrame._read_json(file)
 
 
-def read_ndjson(source: str | Path | IOBase) -> DataFrame:
+def read_ndjson(file: str | Path | IOBase) -> DataFrame:
     """
-    Read into a DataFrame from newline delimited JSON format.
+    Read into a DataFrame from a newline delimited JSON file.
 
     Parameters
     ----------
-    source
+    file
         Path to a file or a file-like object.
 
     """
-    return DataFrame._read_ndjson(source)
+    return DataFrame._read_ndjson(file)
 
 
 def read_sql(

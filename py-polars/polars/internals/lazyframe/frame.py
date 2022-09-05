@@ -245,7 +245,7 @@ class LazyFrame:
         row_count_offset: int = 0,
     ) -> LDF:
         """
-        Lazily read from a JSON file.
+        Lazily read from a newline delimited JSON file.
 
         Use ``pl.scan_ndjson`` to dispatch to this method.
 

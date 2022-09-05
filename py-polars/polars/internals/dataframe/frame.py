@@ -799,11 +799,13 @@ class DataFrame:
     @classmethod
     def _read_json(cls: type[DF], file: str | Path | IOBase) -> DF:
         """
-        Read into a DataFrame from JSON format.
+        Read into a DataFrame from a JSON file.
+
+        Use ``pl.read_json`` to dispatch to this method.
 
         See Also
         --------
-        read_json
+        polars.io.read_json
 
         """
         if isinstance(file, StringIO):
@@ -818,11 +820,13 @@ class DataFrame:
     @classmethod
     def _read_ndjson(cls: type[DF], file: str | Path | IOBase) -> DF:
         """
-        Read into a DataFrame from JSON format.
+        Read into a DataFrame from a newline delimited JSON file.
+
+        Use ``pl.read_ndjson`` to dispatch to this method.
 
         See Also
         --------
-        read_json
+        polars.io.read_ndjson
 
         """
         if isinstance(file, StringIO):
@@ -1771,7 +1775,8 @@ class DataFrame:
         Parameters
         ----------
         file
-            Write to this file instead of returning a string.
+            File path to which the result should be written. If set to ``None``
+            (default), the output is returned as a string instead.
         pretty
             Pretty serialize json.
         row_oriented
@@ -1821,12 +1826,13 @@ class DataFrame:
         to_string: bool = False,
     ) -> str | None:
         """
-        Serialize to NDJSON representation.
+        Serialize to newline delimited JSON representation.
 
         Parameters
         ----------
         file
-            Write to this file instead of returning a string.
+            File path to which the result should be written. If set to ``None``
+            (default), the output is returned as a string instead.
         pretty
             Pretty serialize json.
         row_oriented
