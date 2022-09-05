@@ -70,7 +70,7 @@ def test_write_json() -> None:
 def test_write_json2(df: pl.DataFrame) -> None:
     # text-based conversion loses time info
     df = df.select(pl.all().exclude(["cat", "time"]))
-    s = df.write_json(to_string=True)
+    s = df.write_json()
     f = io.BytesIO()
     f.write(s.encode())
     f.seek(0)

@@ -1727,37 +1727,25 @@ class DataFrame:
     @overload
     def write_json(
         self,
-        file: IOBase | str | Path | None = ...,
+        file: None = ...,
         pretty: bool = ...,
         row_oriented: bool = ...,
         json_lines: bool = ...,
         *,
-        to_string: Literal[True],
+        to_string: bool = ...,
     ) -> str:
         ...
 
     @overload
     def write_json(
         self,
-        file: IOBase | str | Path | None = ...,
-        pretty: bool = ...,
-        row_oriented: bool = ...,
-        json_lines: bool = ...,
-        *,
-        to_string: Literal[False] = ...,
-    ) -> None:
-        ...
-
-    @overload
-    def write_json(
-        self,
-        file: IOBase | str | Path | None = ...,
+        file: IOBase | str | Path = ...,
         pretty: bool = ...,
         row_oriented: bool = ...,
         json_lines: bool = ...,
         *,
         to_string: bool = ...,
-    ) -> str | None:
+    ) -> None:
         ...
 
     def write_json(
@@ -1767,7 +1755,7 @@ class DataFrame:
         row_oriented: bool = False,
         json_lines: bool | None = None,
         *,
-        to_string: bool = False,
+        to_string: bool = None,
     ) -> str | None:
         """
         Serialize to JSON representation.
@@ -1801,6 +1789,16 @@ class DataFrame:
         else:
             json_lines = False
 
+        if to_string is not None:
+            warn(
+                "`to_string` argument for `DataFrame.write_json` will be removed in a"
+                " future version. Remove the argument and set `file=None`.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        else:
+            to_string = False
+
         if isinstance(file, (str, Path)):
             file = format_path(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
@@ -1824,7 +1822,6 @@ class DataFrame:
         file: None = ...,
         pretty: bool = ...,
         row_oriented: bool = ...,
-        to_string: bool = ...,
     ) -> str:
         ...
 
@@ -1834,7 +1831,6 @@ class DataFrame:
         file: IOBase | str | Path = ...,
         pretty: bool = ...,
         row_oriented: bool = ...,
-        to_string: bool = ...,
     ) -> None:
         ...
 
@@ -1843,7 +1839,6 @@ class DataFrame:
         file: IOBase | str | Path | None = None,
         pretty: bool = False,
         row_oriented: bool = False,
-        to_string: bool = False,
     ) -> str | None:
         """
         Serialize to newline delimited JSON representation.
@@ -1864,7 +1859,7 @@ class DataFrame:
         if isinstance(file, (str, Path)):
             file = format_path(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
-        if to_string or file is None or to_string_io:
+        if file is None or to_string_io:
             with BytesIO() as buf:
                 self._df.write_json(buf, pretty, row_oriented, True)
                 json_bytes = buf.getvalue()
