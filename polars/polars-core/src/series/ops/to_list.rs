@@ -19,7 +19,7 @@ fn reshape_fast_path(name: &str, s: &Series) -> Series {
     };
 
     let mut ca = ListChunked::from_chunks(name, chunks);
-    ca.with_inner_type(s.dtype().clone());
+    ca.set_inner_dtype(s.dtype().clone());
     ca.set_fast_explode();
     ca.into_series()
 }
