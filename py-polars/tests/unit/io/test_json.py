@@ -50,7 +50,7 @@ def test_write_json() -> None:
     df = pl.read_json(f)
     assert df.frame_equal(expected)
 
-    out = df.write_json(json_lines=True)
+    out = df.write_ndjson()
     assert (
         out
         == r"""{"a":1,"b":"a"}
@@ -60,7 +60,7 @@ def test_write_json() -> None:
     )
     # test round trip
     f = io.BytesIO()
-    f.write(out.encode())  # type: ignore[attr-defined]
+    f.write(out.encode())
     f.seek(0)
     df = pl.read_ndjson(f)
     expected = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})

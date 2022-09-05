@@ -17,6 +17,7 @@ from typing import (
     TypeVar,
     overload,
 )
+from warnings import warn
 
 from polars import internals as pli
 from polars._html import NotebookFormatter
@@ -1760,7 +1761,7 @@ class DataFrame:
         file: IOBase | str | Path | None = None,
         pretty: bool = False,
         row_oriented: bool = False,
-        json_lines: bool = False,
+        json_lines: bool | None = None,
         *,
         to_string: bool = False,
     ) -> str | None:
@@ -1776,11 +1777,25 @@ class DataFrame:
         row_oriented
             Write to row oriented json. This is slower, but more common.
         json_lines
-            Write to Json Lines format
+            Deprecated argument. Toggle between `JSON` and `NDJSON` format.
         to_string
             Ignore file argument and return a string.
 
+        See Also
+        --------
+        DataFrame.write_ndjson
+
         """
+        if json_lines is not None:
+            warn(
+                "`json_lines` argument for `DataFrame.write_json` will be removed in a"
+                " future version. Remove the argument or use `DataFrame.write_ndjson`.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        else:
+            json_lines = False
+
         if isinstance(file, (str, Path)):
             file = format_path(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
@@ -1796,6 +1811,45 @@ class DataFrame:
                 return json_str
         else:
             self._df.write_json(file, pretty, row_oriented, json_lines)
+        return None
+
+    def write_ndjson(
+        self,
+        file: IOBase | str | Path | None = None,
+        pretty: bool = False,
+        row_oriented: bool = False,
+        to_string: bool = False,
+    ) -> str | None:
+        """
+        Serialize to NDJSON representation.
+
+        Parameters
+        ----------
+        file
+            Write to this file instead of returning a string.
+        pretty
+            Pretty serialize json.
+        row_oriented
+            Write to row oriented json. This is slower, but more common.
+        to_string
+            Ignore file argument and return a string.
+
+        """
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
+        to_string_io = (file is not None) and isinstance(file, StringIO)
+        if to_string or file is None or to_string_io:
+            with BytesIO() as buf:
+                self._df.write_json(buf, pretty, row_oriented, True)
+                json_bytes = buf.getvalue()
+
+            json_str = json_bytes.decode("utf8")
+            if to_string_io:
+                file.write(json_str)  # type: ignore[union-attr]
+            else:
+                return json_str
+        else:
+            self._df.write_json(file, pretty, row_oriented, True)
         return None
 
     @overload

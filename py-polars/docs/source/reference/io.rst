@@ -50,6 +50,7 @@ JSON
    read_ndjson
    scan_ndjson
    DataFrame.write_json
+   DataFrame.write_ndjson
 
 AVRO
 ~~~~
