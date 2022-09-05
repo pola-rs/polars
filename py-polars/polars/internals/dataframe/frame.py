@@ -1727,7 +1727,7 @@ class DataFrame:
     @overload
     def write_json(
         self,
-        file: None = ...,
+        file: None = None,
         pretty: bool = ...,
         row_oriented: bool = ...,
         json_lines: bool = ...,
@@ -1739,7 +1739,7 @@ class DataFrame:
     @overload
     def write_json(
         self,
-        file: IOBase | str | Path = ...,
+        file: IOBase | str | Path,
         pretty: bool = ...,
         row_oriented: bool = ...,
         json_lines: bool = ...,
@@ -1755,7 +1755,7 @@ class DataFrame:
         row_oriented: bool = False,
         json_lines: bool | None = None,
         *,
-        to_string: bool = None,
+        to_string: bool | None = None,
     ) -> str | None:
         """
         Serialize to JSON representation.
@@ -1819,7 +1819,7 @@ class DataFrame:
     @overload
     def write_ndjson(
         self,
-        file: None = ...,
+        file: None = None,
         pretty: bool = ...,
         row_oriented: bool = ...,
     ) -> str:
@@ -1828,7 +1828,7 @@ class DataFrame:
     @overload
     def write_ndjson(
         self,
-        file: IOBase | str | Path = ...,
+        file: IOBase | str | Path,
         pretty: bool = ...,
         row_oriented: bool = ...,
     ) -> None:
