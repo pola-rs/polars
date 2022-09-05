@@ -36,7 +36,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
-use polars_core::utils::{get_supertype, NoNull};
+use polars_core::utils::{try_get_supertype, NoNull};
 use polars_ops::prelude::SeriesOps;
 #[cfg(feature = "rolling_window")]
 use polars_time::series::SeriesOpsTime;
@@ -424,7 +424,7 @@ impl Expr {
             other.into(),
             move |mut a, mut b| {
                 if upcast {
-                    let dtype = get_supertype(a.dtype(), b.dtype())?;
+                    let dtype = try_get_supertype(a.dtype(), b.dtype())?;
                     a = a.cast(&dtype)?;
                     b = b.cast(&dtype)?;
                 }

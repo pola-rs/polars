@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::prelude::*;
-use crate::utils::get_supertype;
+use crate::utils::try_get_supertype;
 
 fn get_exploded(series: &Series) -> Result<(Series, Buffer<i64>)> {
     match series.dtype() {
@@ -256,7 +256,7 @@ impl DataFrame {
         });
         let mut st = iter.next().unwrap()?.clone();
         for dt in iter {
-            st = get_supertype(&st, dt?)?;
+            st = try_get_supertype(&st, dt?)?;
         }
 
         let values_len = value_vars.iter().map(|name| name.len()).sum::<usize>();

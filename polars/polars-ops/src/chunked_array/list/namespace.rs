@@ -5,7 +5,7 @@ use polars_arrow::kernels::list::sublist_get;
 use polars_arrow::prelude::ValueSize;
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::{get_supertype, CustomIterTools};
+use polars_core::utils::{try_get_supertype, CustomIterTools};
 
 use super::*;
 
@@ -223,10 +223,10 @@ pub trait ListNameSpaceImpl: AsList {
         for s in &other {
             match s.dtype() {
                 DataType::List(inner_type) => {
-                    inner_super_type = get_supertype(&inner_super_type, inner_type)?;
+                    inner_super_type = try_get_supertype(&inner_super_type, inner_type)?;
                 }
                 dt => {
-                    inner_super_type = get_supertype(&inner_super_type, dt)?;
+                    inner_super_type = try_get_supertype(&inner_super_type, dt)?;
                 }
             }
         }

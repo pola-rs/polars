@@ -174,3 +174,17 @@ def test_remove_redundant_mapping_4668() -> None:
     clean_name_dict = {x: " ".join(x.split()) for x in df.columns}
     df = df.rename(clean_name_dict)
     assert df.columns == ["A", "B"]
+
+
+def test_fold_all_schema() -> None:
+    df = pl.DataFrame(
+        {
+            "A": [1, 2, 3, 4, 5],
+            "fruits": ["banana", "banana", "apple", "apple", "banana"],
+            "B": [5, 4, 3, 2, 1],
+            "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
+            "optional": [28, 300, None, 2, -30],
+        }
+    )
+    # divide because of overflow
+    assert df.select(pl.sum(pl.all().hash(seed=1) // int(1e8))).dtypes == [pl.UInt64]

@@ -16,7 +16,7 @@ use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::compute::cast::CastOptions;
-use polars_core::utils::get_supertype;
+use polars_core::utils::try_get_supertype;
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -544,7 +544,7 @@ impl PyDataFrame {
             match st {
                 None => st = Some(dt_i.clone()),
                 Some(ref mut st) => {
-                    *st = get_supertype(st, dt_i).ok()?;
+                    *st = try_get_supertype(st, dt_i).ok()?;
                 }
             }
         }

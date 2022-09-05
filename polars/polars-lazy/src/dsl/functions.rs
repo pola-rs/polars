@@ -762,9 +762,14 @@ where
 
 /// Get the the sum of the values per row
 pub fn sum_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let exprs = exprs.as_ref().to_vec();
+    let mut exprs = exprs.as_ref().to_vec();
     let func = |s1, s2| Ok(&s1 + &s2);
-    fold_exprs(lit(0), func, exprs)
+    let init = match exprs.pop() {
+        Some(e) => e,
+        // use u32 as that is not cast to float as eagerly
+        _ => lit(0u32),
+    };
+    fold_exprs(init, func, exprs).alias("sum")
 }
 
 /// Get the the maximum value per row

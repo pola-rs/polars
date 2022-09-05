@@ -145,7 +145,7 @@ impl OptimizationRule for TypeCoercionRule {
                     get_aexpr_and_type(expr_arena, falsy_node, &input_schema)?;
 
                 early_escape(&type_true, &type_false)?;
-                let st = get_supertype(&type_true, &type_false).expect("supertype");
+                let st = get_supertype(&type_true, &type_false)?;
                 let st = modify_supertype(st, truthy, falsy, &type_true, &type_false);
 
                 // only cast if the type is not already the super type.
@@ -303,8 +303,7 @@ impl OptimizationRule for TypeCoercionRule {
                 {
                     None
                 } else {
-                    let st = get_supertype(&type_left, &type_right)
-                        .expect("could not find supertype of binary expr");
+                    let st = get_supertype(&type_left, &type_right)?;
                     let mut st = modify_supertype(st, left, right, &type_left, &type_right);
 
                     #[allow(unused_mut, unused_assignments)]
@@ -420,7 +419,7 @@ impl OptimizationRule for TypeCoercionRule {
                 let (fill_value, type_fill_value) =
                     get_aexpr_and_type(expr_arena, other_node, &input_schema)?;
 
-                let super_type = get_supertype(&type_left, &type_fill_value).ok()?;
+                let super_type = get_supertype(&type_left, &type_fill_value)?;
                 let super_type =
                     modify_supertype(super_type, left, fill_value, &type_left, &type_fill_value);
                 if super_type != DataType::Unknown {
@@ -456,7 +455,7 @@ impl OptimizationRule for TypeCoercionRule {
 
                     // early return until Unknown is set
                     early_escape(&super_type, &type_other)?;
-                    let new_st = get_supertype(&super_type, &type_other).ok()?;
+                    let new_st = get_supertype(&super_type, &type_other)?;
                     super_type = modify_supertype(new_st, self_ae, other, &type_self, &type_other)
                 }
                 // only cast if the type is not already the super type.

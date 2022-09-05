@@ -9,4 +9,4 @@ pub use borrowed::*;
 use num::{Num, NumCast};
 
 use crate::prelude::*;
-use crate::utils::{get_supertype, get_time_units};
+use crate::utils::{get_time_units, try_get_supertype};

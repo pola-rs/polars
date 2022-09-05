@@ -43,7 +43,7 @@ impl FunctionExpr {
             let mut first = fields[0].clone();
             let mut st = first.data_type().clone();
             for field in &fields[1..] {
-                st = get_supertype(&st, field.data_type())?
+                st = try_get_supertype(&st, field.data_type())?
             }
             first.coerce(st);
             Ok(first)
@@ -60,12 +60,14 @@ impl FunctionExpr {
                         DataType::List(inner) => match super_type_inner {
                             None => super_type_inner = Some(*inner.clone()),
                             Some(st_inner) => {
-                                super_type_inner = get_supertype(&st_inner, inner).ok()
+                                super_type_inner = try_get_supertype(&st_inner, inner).ok()
                             }
                         },
                         dt => match super_type_inner {
                             None => super_type_inner = Some((*dt).clone()),
-                            Some(st_inner) => super_type_inner = get_supertype(&st_inner, dt).ok(),
+                            Some(st_inner) => {
+                                super_type_inner = try_get_supertype(&st_inner, dt).ok()
+                            }
                         },
                     }
                 }

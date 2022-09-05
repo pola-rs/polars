@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::prelude::*;
-use polars_core::utils::{get_supertype, get_time_units};
+use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
 
 use crate::dsl::function_expr::FunctionExpr;
@@ -246,9 +246,9 @@ impl AExpr {
                                     Duration(get_time_units(&tul, &tur))
                                 }
                                 (Date, Date) => Duration(TimeUnit::Milliseconds),
-                                (left, right) => get_supertype(&left, &right)?,
+                                (left, right) => try_get_supertype(&left, &right)?,
                             },
-                            _ => get_supertype(&left_type, &right_type)?,
+                            _ => try_get_supertype(&left_type, &right_type)?,
                         }
                     }
                 };
@@ -336,7 +336,7 @@ impl AExpr {
                     truthy.coerce(falsy.data_type().clone());
                     Ok(truthy)
                 } else {
-                    let st = get_supertype(truthy.data_type(), falsy.data_type())?;
+                    let st = try_get_supertype(truthy.data_type(), falsy.data_type())?;
                     truthy.coerce(st);
                     Ok(truthy)
                 }

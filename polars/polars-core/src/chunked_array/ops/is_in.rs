@@ -3,7 +3,7 @@ use std::hash::Hash;
 use hashbrown::hash_set::HashSet;
 
 use crate::prelude::*;
-use crate::utils::{get_supertype, CustomIterTools};
+use crate::utils::{try_get_supertype, CustomIterTools};
 
 unsafe fn is_in_helper<T, P>(ca: &ChunkedArray<T>, other: &Series) -> Result<BooleanChunked>
 where
@@ -46,7 +46,7 @@ where
         // We check implicitly cast to supertype here
         match other.dtype() {
             DataType::List(dt) => {
-                let st = get_supertype(self.dtype(), dt)?;
+                let st = try_get_supertype(self.dtype(), dt)?;
                 if &st != self.dtype() {
                     let left = self.cast(&st)?;
                     let right = other.cast(&DataType::List(Box::new(st)))?;
@@ -83,7 +83,7 @@ where
             }
             _ => {
                 // first make sure that the types are equal
-                let st = get_supertype(self.dtype(), other.dtype())?;
+                let st = try_get_supertype(self.dtype(), other.dtype())?;
                 if self.dtype() != other.dtype() {
                     let left = self.cast(&st)?;
                     let right = other.cast(&st)?;
