@@ -25,18 +25,6 @@ flake8-docstrings==1.6.0
 flake8-simplify==0.19.3
 flake8-tidy-imports==4.8.0
 pyupgrade==2.37.3
-ghp-import==2.1.0
-sphinx==5.1.1
-pydata-sphinx-theme==0.10.1
-sphinxcontrib-applehelp==1.0.2
-sphinxcontrib-devhelp==1.0.2
-sphinxcontrib-htmlhelp==2.0.0
-sphinxcontrib-jsmath==1.0.1
-sphinxcontrib-qthelp==1.0.3
-sphinxcontrib-serializinghtml==1.1.5
-sphinxcontrib-napoleon==0.7
-commonmark==0.9.1
-numpydoc==1.4.0
 
 # Stub files
 pandas-stubs==1.2.0.61
