@@ -366,6 +366,18 @@ impl PyDataFrame {
         Ok(())
     }
 
+    #[cfg(feature = "json")]
+    pub fn write_ndjson(&mut self, py_f: PyObject) -> PyResult<()> {
+        let file = BufWriter::new(get_file_like(py_f, true)?);
+
+        let r = JsonWriter::new(file)
+            .with_json_format(JsonFormat::JsonLines)
+            .finish(&mut self.df);
+
+        r.map_err(|e| PyPolarsErr::Other(format!("{:?}", e)))?;
+        Ok(())
+    }
+
     #[staticmethod]
     pub fn from_arrow_record_batches(rb: Vec<&PyAny>) -> PyResult<Self> {
         let df = arrow_interop::to_rust::to_rust_df(&rb)?;
