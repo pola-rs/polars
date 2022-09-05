@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.14.8"
+version = "0.14.9"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
 edition = "2021"
@@ -82,6 +82,9 @@ all = [
   "object",
   "pivot",
   "top_k",
+  # we need to add this, as maturin fails if we don't
+  # remove this once polars-algo is released
+  "polars/algo",
 ]
 
 # we cannot conditionaly activate simd
@@ -148,7 +151,7 @@ features = [
   "date_offset",
 ]
 
-# [patch.crates-io]
+[patch.crates-io]
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd" }
 
 [lib]
