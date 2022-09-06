@@ -499,7 +499,7 @@ class Expr:
         self,
         columns: (
             str
-            | list[str]
+            | Sequence[str]
             | DataType
             | type[DataType]
             | DataType

@@ -65,7 +65,7 @@ if TYPE_CHECKING:
 
 
 def col(
-    name: str | list[str] | Sequence[PolarsDataType] | pli.Series | PolarsDataType,
+    name: str | Sequence[str] | Sequence[PolarsDataType] | pli.Series | PolarsDataType,
 ) -> pli.Expr:
     """
     Return an expression representing a column in a DataFrame.
@@ -169,7 +169,7 @@ def col(
     if isinstance(name, DataType):
         return pli.wrap_expr(_dtype_cols([name]))
 
-    if isinstance(name, list):
+    elif not isinstance(name, str) and isinstance(name, Sequence):
         if len(name) == 0 or isinstance(name[0], str):
             return pli.wrap_expr(pycols(name))
         elif is_polars_dtype(name[0]):
@@ -309,7 +309,7 @@ def var(column: str | pli.Series, ddof: int = 1) -> pli.Expr | float | None:
 
 
 @overload
-def max(column: str | list[pli.Expr | str]) -> pli.Expr:
+def max(column: str | Sequence[pli.Expr | str]) -> pli.Expr:
     ...
 
 
@@ -318,7 +318,7 @@ def max(column: pli.Series) -> int | float:
     ...
 
 
-def max(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
+def max(column: str | Sequence[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     """
     Get the maximum value. Can be used horizontally or vertically.
 
@@ -333,15 +333,15 @@ def max(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     """
     if isinstance(column, pli.Series):
         return column.max()
-    elif isinstance(column, list):
+    elif isinstance(column, str):
+        return col(column).max()
+    else:
         exprs = pli.selection_to_pyexpr_list(column)
         return pli.wrap_expr(_max_exprs(exprs))
-    else:
-        return col(column).max()
 
 
 @overload
-def min(column: str | list[pli.Expr | str]) -> pli.Expr:
+def min(column: str | Sequence[pli.Expr | str]) -> pli.Expr:
     ...
 
 
@@ -350,7 +350,7 @@ def min(column: pli.Series) -> int | float:
     ...
 
 
-def min(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
+def min(column: str | Sequence[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     """
     Get the minimum value.
 
@@ -363,15 +363,15 @@ def min(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     """
     if isinstance(column, pli.Series):
         return column.min()
-    elif isinstance(column, list):
+    elif isinstance(column, str):
+        return col(column).min()
+    else:
         exprs = pli.selection_to_pyexpr_list(column)
         return pli.wrap_expr(_min_exprs(exprs))
-    else:
-        return col(column).min()
 
 
 @overload
-def sum(column: str | list[pli.Expr | str] | pli.Expr) -> pli.Expr:
+def sum(column: str | Sequence[pli.Expr | str] | pli.Expr) -> pli.Expr:
     ...
 
 
@@ -380,7 +380,9 @@ def sum(column: pli.Series) -> int | float:
     ...
 
 
-def sum(column: str | list[pli.Expr | str] | pli.Series | pli.Expr) -> pli.Expr | Any:
+def sum(
+    column: str | Sequence[pli.Expr | str] | pli.Series | pli.Expr,
+) -> pli.Expr | Any:
     """
     Sum values in a column/Series, or horizontally across list of columns/expressions.
 
@@ -469,14 +471,14 @@ def sum(column: str | list[pli.Expr | str] | pli.Series | pli.Expr) -> pli.Expr 
     """
     if isinstance(column, pli.Series):
         return column.sum()
-    elif isinstance(column, list):
+    elif isinstance(column, str):
+        return col(column).sum()
+    elif isinstance(column, Sequence):
         exprs = pli.selection_to_pyexpr_list(column)
         return pli.wrap_expr(_sum_exprs(exprs))
-    elif isinstance(column, pli.Expr):
-        # use u32 as that is not cast to float as eagerly
-        return fold(lit(0).cast(UInt32), lambda a, b: a + b, column).alias("sum")
     else:
-        return col(column).sum()
+        # (Expr): use u32 as that will not cast to float as eagerly
+        return fold(lit(0).cast(UInt32), lambda a, b: a + b, column).alias("sum")
 
 
 @overload
@@ -830,8 +832,8 @@ def cov(
 
 
 def map(
-    exprs: list[str] | list[pli.Expr],
-    f: Callable[[list[pli.Series]], pli.Series],
+    exprs: Sequence[str] | Sequence[pli.Expr],
+    f: Callable[[Sequence[pli.Series]], pli.Series],
     return_dtype: type[DataType] | None = None,
 ) -> pli.Expr:
     """
@@ -858,8 +860,8 @@ def map(
 
 
 def apply(
-    exprs: list[str | pli.Expr],
-    f: Callable[[list[pli.Series]], pli.Series | Any],
+    exprs: Sequence[str | pli.Expr],
+    f: Callable[[Sequence[pli.Series]], pli.Series | Any],
     return_dtype: type[DataType] | None = None,
 ) -> pli.Expr:
     """
@@ -920,19 +922,20 @@ def fold(
     return pli.wrap_expr(pyfold(acc._pyexpr, f, exprs))
 
 
-def any(name: str | list[str] | list[pli.Expr] | pli.Expr) -> pli.Expr:
+def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:
     """Evaluate columnwise or elementwise with a bitwise OR operation."""
-    if isinstance(name, (list, pli.Expr)):
+    if isinstance(name, str):
+        return col(name).any()
+    else:
         return fold(lit(False), lambda a, b: a.cast(bool) | b.cast(bool), name).alias(
             "any"
         )
-    return col(name).any()
 
 
 def exclude(
     columns: (
         str
-        | list[str]
+        | Sequence[str]
         | DataType
         | type[DataType]
         | DataType
@@ -1031,7 +1034,7 @@ def exclude(
     return col("*").exclude(columns)
 
 
-def all(name: str | list[pli.Expr] | pli.Expr | None = None) -> pli.Expr:
+def all(name: str | Sequence[pli.Expr] | pli.Expr | None = None) -> pli.Expr:
     """
     Do one of two things.
 
@@ -1063,11 +1066,12 @@ def all(name: str | list[pli.Expr] | pli.Expr | None = None) -> pli.Expr:
     """
     if name is None:
         return col("*")
-    if isinstance(name, (list, pli.Expr)):
+    elif isinstance(name, str):
+        return col(name).all()
+    else:
         return fold(lit(True), lambda a, b: a.cast(bool) & b.cast(bool), name).alias(
             "all"
         )
-    return col(name).all()
 
 
 def groups(column: str) -> pli.Expr:
@@ -1169,7 +1173,7 @@ def arange(
 
 def argsort_by(
     exprs: pli.Expr | str | Sequence[pli.Expr | str],
-    reverse: list[bool] | bool = False,
+    reverse: Sequence[bool] | bool = False,
 ) -> pli.Expr:
     """
     Find the indexes that would sort the columns.
@@ -1507,7 +1511,7 @@ def concat_list(exprs: Sequence[str | pli.Expr | pli.Series] | pli.Expr) -> pli.
 
 
 def collect_all(
-    lazy_frames: list[pli.LazyFrame],
+    lazy_frames: Sequence[pli.LazyFrame],
     type_coercion: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
