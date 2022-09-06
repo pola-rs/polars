@@ -28,6 +28,12 @@ class Config:
         return cls
 
     @classmethod
+    def set_no_separator_tables(cls) -> type[Config]:
+        """Don’t draw any borders or other lines."""
+        os.environ["POLARS_FMT_NO_SEPARATOR_TABLES"] = "1"
+        return cls
+
+    @classmethod
     def set_tbl_width_chars(cls, width: int) -> type[Config]:
         """
         Set the number of character used to draw the table.

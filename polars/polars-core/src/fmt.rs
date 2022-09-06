@@ -20,7 +20,7 @@ use std::borrow::Cow;
 ))]
 use arrow::temporal_conversions::*;
 #[cfg(feature = "fmt")]
-use comfy_table::presets::{ASCII_FULL, UTF8_FULL};
+use comfy_table::presets::{ASCII_FULL, NOTHING, UTF8_FULL};
 #[cfg(feature = "fmt")]
 use comfy_table::*;
 
@@ -359,7 +359,10 @@ impl Display for DataFrame {
             let field_to_str = |f: &Field| {
                 let name = make_str_val(f.name(), str_truncate);
                 let lower_bounds = std::cmp::max(5, std::cmp::min(12, name.len()));
-                let s = format!("{}\n---\n{}", name, f.data_type());
+                let mut s = format!("{}\n---\n{}", name, f.data_type());
+                if std::env::var("POLARS_FMT_NO_SEPARATOR_TABLES").is_ok() {
+                    s = format!("{}\n{}\n---", name, f.data_type());
+                }
                 (s, lower_bounds)
             };
             let tbl_lower_bounds = |l: usize| {
@@ -383,9 +386,17 @@ impl Display for DataFrame {
             }
             let mut table = Table::new();
             let preset = if std::env::var("POLARS_FMT_NO_UTF8").is_ok() {
-                ASCII_FULL
+                if std::env::var("POLARS_FMT_NO_SEPARATOR_TABLES").is_ok() {
+                    NOTHING
+                } else {
+                    ASCII_FULL
+                }
             } else {
-                UTF8_FULL
+                if std::env::var("POLARS_FMT_NO_SEPARATOR_TABLES").is_ok() {
+                    NOTHING
+                } else {
+                    UTF8_FULL
+                }
             };
 
             table
@@ -437,6 +448,14 @@ impl Display for DataFrame {
             // this is needed to support non-tty applications
             if !table.is_tty() && table.get_table_width().is_none() {
                 table.set_table_width(100);
+            }
+
+            // set alignment of cells to right if table is drawn without borders / lines
+            if std::env::var("POLARS_FMT_NO_SEPARATOR_TABLES").is_ok() {
+                // for (column_index, column) in table.column_iter_mut().enumerate() {
+                for column in table.column_iter_mut() {
+                    column.set_cell_alignment(CellAlignment::Right);
+                }
             }
 
             write!(f, "shape: {:?}\n{}", self.shape(), table)?;
