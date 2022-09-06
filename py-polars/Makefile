@@ -14,6 +14,7 @@ venv:  ## Set up virtual environment
 clean:  ## Clean up caches and build artifacts
 	@rm -rf venv/
 	@rm -rf docs/build/
+	@rm -rf docs/source/reference/api/
 	@rm -rf .hypothesis/
 	@rm -rf .mypy_cache/
 	@rm -rf .pytest_cache/
