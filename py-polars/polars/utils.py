@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Iterable, Sequence, TypeVar
 
 import polars.internals as pli
-from polars.datatypes import DataType, Date, Datetime
+from polars.datatypes import DataType, Date, Datetime, PolarsDataType, is_polars_dtype
 
 try:
     from polars.polars import PyExpr
@@ -76,41 +76,34 @@ def _date_to_pl_date(d: date) -> int:
     return int(dt.timestamp()) // (3600 * 24)
 
 
-def _is_iterable_of(val: Iterable[object], eltype: type) -> bool:
-    """Check whether the given iterable is of a certain type."""
+def _is_iterable_of(val: Iterable[object], eltype: type | tuple[type, ...]) -> bool:
+    """Check whether the given iterable is of the given type(s)."""
     return all(isinstance(x, eltype) for x in val)
 
 
 def is_bool_sequence(val: object) -> TypeGuard[Sequence[bool]]:
     """Check whether the given sequence is a sequence of booleans."""
-    if isinstance(val, Sequence):
-        return _is_iterable_of(val, bool)
-    else:
-        return False
+    return isinstance(val, Sequence) and _is_iterable_of(val, bool)
+
+
+def is_dtype_sequence(val: object) -> TypeGuard[Sequence[PolarsDataType]]:
+    """Check whether the given object is a sequence of polars DataTypes."""
+    return isinstance(val, Sequence) and all(is_polars_dtype(x) for x in val)
 
 
 def is_int_sequence(val: object) -> TypeGuard[Sequence[int]]:
     """Check whether the given sequence is a sequence of integers."""
-    if isinstance(val, Sequence):
-        return _is_iterable_of(val, int)
-    else:
-        return False
+    return isinstance(val, Sequence) and _is_iterable_of(val, int)
 
 
 def is_expr_sequence(val: object) -> TypeGuard[Sequence[pli.Expr]]:
     """Check whether the given object is a sequence of Exprs."""
-    if isinstance(val, Sequence):
-        return _is_iterable_of(val, pli.Expr)
-    else:
-        return False
+    return isinstance(val, Sequence) and _is_iterable_of(val, pli.Expr)
 
 
 def is_pyexpr_sequence(val: object) -> TypeGuard[Sequence[PyExpr]]:
     """Check whether the given object is a sequence of PyExprs."""
-    if isinstance(val, Sequence):
-        return _is_iterable_of(val, PyExpr)
-    else:
-        return False
+    return isinstance(val, Sequence) and _is_iterable_of(val, PyExpr)
 
 
 def is_str_sequence(
@@ -124,10 +117,7 @@ def is_str_sequence(
     """
     if allow_str is False and isinstance(val, str):
         return False
-    if isinstance(val, Sequence):
-        return _is_iterable_of(val, str)
-    else:
-        return False
+    return isinstance(val, Sequence) and _is_iterable_of(val, str)
 
 
 def range_to_slice(rng: range) -> slice:
