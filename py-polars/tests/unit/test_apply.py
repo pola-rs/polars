@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import typing
 from datetime import date, datetime, timedelta
 from functools import reduce
+from typing import Sequence, no_type_check
 
 import numpy as np
 
@@ -33,7 +33,7 @@ def test_apply_none() -> None:
     assert out_df["a"].to_list() == (df["a"] * df["b"]).to_list()
 
     # check if we can return None
-    def func(s: list[pl.Series]) -> pl.Series | None:
+    def func(s: Sequence[pl.Series]) -> pl.Series | None:
         if s[0][0] == 190:
             return None
         else:
@@ -57,7 +57,7 @@ def test_apply_return_py_object() -> None:
     assert out.shape == (1, 2)
 
 
-@typing.no_type_check
+@no_type_check
 def test_agg_objects() -> None:
     df = pl.DataFrame(
         {

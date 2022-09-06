@@ -177,11 +177,10 @@ def sequence_to_pyseries(
 
     value = _get_first_non_none(values)
     if value is not None:
-        # this branch is for dtypes set with python types.
-        # eg. 'datetime.date/datetime.datetime'
-        # and values that are integers
-        # if this holds we take the physical branch
-        # if the values are also python types we take the temporal branch
+        # for temporal dtypes:
+        # * if the values are integer, we take the physical branch.
+        # * if the values are python types, take the temporal branch.
+        # * if the values are ISO-8601 strings, init then convert via strptime.
         if dtype in py_temporal_types and isinstance(value, int):
             dtype = py_type_to_dtype(dtype)  # construct from integer
         elif (
