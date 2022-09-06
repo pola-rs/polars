@@ -333,11 +333,11 @@ def max(column: str | Sequence[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     """
     if isinstance(column, pli.Series):
         return column.max()
-    elif not isinstance(column, str) and isinstance(column, Sequence):
+    elif isinstance(column, str):
+        return col(column).max()
+    else:
         exprs = pli.selection_to_pyexpr_list(column)
         return pli.wrap_expr(_max_exprs(exprs))
-    else:
-        return col(column).max()
 
 
 @overload
@@ -363,11 +363,11 @@ def min(column: str | Sequence[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     """
     if isinstance(column, pli.Series):
         return column.min()
-    elif not isinstance(column, str) and isinstance(column, Sequence):
+    elif isinstance(column, str):
+        return col(column).min()
+    else:
         exprs = pli.selection_to_pyexpr_list(column)
         return pli.wrap_expr(_min_exprs(exprs))
-    else:
-        return col(column).min()
 
 
 @overload
@@ -471,14 +471,14 @@ def sum(
     """
     if isinstance(column, pli.Series):
         return column.sum()
-    elif not isinstance(column, str) and isinstance(column, Sequence):
+    elif isinstance(column, str):
+        return col(column).sum()
+    elif isinstance(column, Sequence):
         exprs = pli.selection_to_pyexpr_list(column)
         return pli.wrap_expr(_sum_exprs(exprs))
-    elif isinstance(column, pli.Expr):
-        # use u32 as that is not cast to float as eagerly
-        return fold(lit(0).cast(UInt32), lambda a, b: a + b, column).alias("sum")
     else:
-        return col(column).sum()
+        # (Expr): use u32 as that will not cast to float as eagerly
+        return fold(lit(0).cast(UInt32), lambda a, b: a + b, column).alias("sum")
 
 
 @overload
@@ -924,11 +924,12 @@ def fold(
 
 def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:
     """Evaluate columnwise or elementwise with a bitwise OR operation."""
-    if not isinstance(name, str) and isinstance(name, (Sequence, pli.Expr)):
+    if isinstance(name, str):
+        return col(name).any()
+    else:
         return fold(lit(False), lambda a, b: a.cast(bool) | b.cast(bool), name).alias(
             "any"
         )
-    return col(name).any()
 
 
 def exclude(
@@ -1065,11 +1066,12 @@ def all(name: str | Sequence[pli.Expr] | pli.Expr | None = None) -> pli.Expr:
     """
     if name is None:
         return col("*")
-    elif not isinstance(name, str) and isinstance(name, (Sequence, pli.Expr)):
+    elif isinstance(name, str):
+        return col(name).all()
+    else:
         return fold(lit(True), lambda a, b: a.cast(bool) & b.cast(bool), name).alias(
             "all"
         )
-    return col(name).all()
 
 
 def groups(column: str) -> pli.Expr:
