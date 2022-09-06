@@ -728,9 +728,9 @@ def pandas_to_pydf(
             "'pyarrow' is required when constructing a PyDataFrame from a pandas"
             " DataFrame."
         )
-    length = data.shape[0]
-    if len(set(data.columns)) < length:
+    if len(set(data.columns)) < data.shape[1]:
         raise AttributeError("Multiple columns with the same name detected.")
+    length = data.shape[0]
     arrow_dict = {
         str(col): _pandas_series_to_arrow(
             data[col], nan_to_none=nan_to_none, min_len=length

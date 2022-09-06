@@ -5,6 +5,7 @@ import typing
 from datetime import date
 
 import numpy as np
+import pandas as pd
 import pytest
 
 import polars as pl
@@ -155,3 +156,11 @@ def test_err_bubbling_up_to_lit() -> None:
 
     with pytest.raises(ValueError):
         df.filter(pl.col("date") == pl.Date("2020-01-01"))
+
+
+def test_err_duplicated_pandas_column() -> None:
+    df = pd.DataFrame({"a": [1, 2, 3]})
+    with pytest.raises(
+        AttributeError, match="Multiple columns with the same name detected."
+    ):
+        pl.DataFrame(pd.concat((df, df), axis=1))
