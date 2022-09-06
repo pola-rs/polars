@@ -137,6 +137,7 @@ You have to follow these steps:
   - from [./py-polars](./py-polars) run `$ pip3 install -r build.requirements.txt`
   - **tests:** from [./py-polars](./py-polars) run `$ make test`
   - **formatting + linting:** from [./py-polars](./py-polars) run `$ make pre-commit` before committing.
+  - **docs:** from [./py-polars/docs](./py-polars/docs) run `$ pip3 install -r requirements-docs.txt` followed by `make html`
 
 `make test` installs a (slow) development build in your current environment and runs `pytest`.
 
