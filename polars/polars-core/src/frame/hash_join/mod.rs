@@ -304,7 +304,12 @@ impl DataFrame {
             self.clone()
         } else {
             // left join keys are in ascending order
-            self.take_chunked_unchecked(chunk_ids, IsSorted::Ascending)
+            let sorted = if left_join {
+                IsSorted::Ascending
+            } else {
+                IsSorted::Not
+            };
+            self.take_chunked_unchecked(chunk_ids, sorted)
         }
     }
 
@@ -314,12 +319,19 @@ impl DataFrame {
         &self,
         join_tuples: &[IdxSize],
         left_join: bool,
+        sorted: bool,
     ) -> DataFrame {
         if left_join && join_tuples.len() == self.height() {
             self.clone()
         } else {
+            let sorted = if left_join || sorted {
+                IsSorted::Ascending
+            } else {
+                IsSorted::Not
+            };
+
             // left join tuples are always in ascending order
-            self._take_unchecked_slice2(join_tuples, true, IsSorted::Ascending)
+            self._take_unchecked_slice2(join_tuples, true, sorted)
         }
     }
 
@@ -486,7 +498,7 @@ impl DataFrame {
 
                 let (df_left, df_right) = POOL.join(
                     // safety: join indices are known to be in bounds
-                    || unsafe { self.create_left_df_from_slice(join_idx_left, false) },
+                    || unsafe { self.create_left_df_from_slice(join_idx_left, false, !swap) },
                     || unsafe {
                         // remove join columns
                         remove_selected(other, &selected_right)
@@ -659,10 +671,10 @@ impl DataFrame {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
-        let (join_tuples_left, join_tuples_right) = if use_sort_merge(s_left, s_right) {
+        let ((join_tuples_left, join_tuples_right), sorted) = if use_sort_merge(s_left, s_right) {
             #[cfg(feature = "performant")]
             {
-                par_sorted_merge_inner(s_left, s_right)
+                (par_sorted_merge_inner(s_left, s_right), true)
             }
             #[cfg(not(feature = "performant"))]
             {
@@ -682,7 +694,7 @@ impl DataFrame {
 
         let (df_left, df_right) = POOL.join(
             // safety: join indices are known to be in bounds
-            || unsafe { self.create_left_df_from_slice(join_tuples_left, false) },
+            || unsafe { self.create_left_df_from_slice(join_tuples_left, false, sorted) },
             || unsafe {
                 other
                     .drop(s_right.name())
@@ -749,7 +761,7 @@ impl DataFrame {
             if let Some((offset, len)) = slice {
                 left_idx = slice_slice(left_idx, offset, len);
             }
-            unsafe { self.create_left_df_from_slice(left_idx, true) }
+            unsafe { self.create_left_df_from_slice(left_idx, true, true) }
         };
 
         let materialize_right = || {
@@ -783,7 +795,7 @@ impl DataFrame {
                 if let Some((offset, len)) = slice {
                     left_idx = slice_slice(left_idx, offset, len);
                 }
-                unsafe { self.create_left_df_from_slice(left_idx, true) }
+                unsafe { self.create_left_df_from_slice(left_idx, true, true) }
             }
             JoinIds::Right(left_idx) => {
                 let mut left_idx = &*left_idx;
@@ -866,7 +878,7 @@ impl DataFrame {
         if let Some((offset, len)) = slice {
             idx = slice_slice(idx, offset, len);
         }
-        // idx from anti-semi join should alwasy be sorted
+        // idx from anti-semi join should always be sorted
         self._take_unchecked_slice2(idx, true, IsSorted::Ascending)
     }
 

@@ -3114,16 +3114,26 @@ impl DataFrame {
         allow_threads: bool,
         sorted: IsSorted,
     ) -> Self {
+        #[cfg(debug_assertions)]
+        {
+            if idx.len() > 2 {
+                match sorted {
+                    IsSorted::Ascending => {
+                        assert!(idx[0] <= idx[idx.len() - 1]);
+                    }
+                    IsSorted::Descending => {
+                        assert!(idx[0] >= idx[idx.len() - 1]);
+                    }
+                    _ => {}
+                }
+            }
+        }
         let ptr = idx.as_ptr() as *mut IdxSize;
         let len = idx.len();
 
         // create a temporary vec. we will not drop it.
         let mut ca = IdxCa::from_vec("", Vec::from_raw_parts(ptr, len, len));
-        match sorted {
-            IsSorted::Not => {}
-            IsSorted::Ascending => ca.set_sorted(false),
-            IsSorted::Descending => ca.set_sorted(true),
-        }
+        ca.set_sorted2(sorted);
         let out = self.take_unchecked_impl(&ca, allow_threads);
 
         // ref count of buffers should be one because we dropped all allocations

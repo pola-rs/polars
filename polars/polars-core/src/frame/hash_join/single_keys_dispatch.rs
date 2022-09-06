@@ -54,7 +54,8 @@ impl Series {
         }
     }
 
-    pub(super) fn hash_join_inner(&self, other: &Series) -> (Vec<IdxSize>, Vec<IdxSize>) {
+    // returns the join tuples and whether or not the lhs tuples are sorted
+    pub(super) fn hash_join_inner(&self, other: &Series) -> ((Vec<IdxSize>, Vec<IdxSize>), bool) {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
 
         use DataType::*;
@@ -133,10 +134,11 @@ where
         .collect()
 }
 
+// returns the join tuples and whether or not the lhs tuples are sorted
 fn num_group_join_inner<T>(
     left: &ChunkedArray<T>,
     right: &ChunkedArray<T>,
-) -> (Vec<IdxSize>, Vec<IdxSize>)
+) -> ((Vec<IdxSize>, Vec<IdxSize>), bool)
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64 + Copy,
@@ -155,17 +157,17 @@ where
         (true, true, 1, 1) => {
             let keys_a = splitted_to_slice(&splitted_a);
             let keys_b = splitted_to_slice(&splitted_b);
-            hash_join_tuples_inner(keys_a, keys_b, swap)
+            (hash_join_tuples_inner(keys_a, keys_b, swap), !swap)
         }
         (true, true, _, _) => {
             let keys_a = splitted_by_chunks(&splitted_a);
             let keys_b = splitted_by_chunks(&splitted_b);
-            hash_join_tuples_inner(keys_a, keys_b, swap)
+            (hash_join_tuples_inner(keys_a, keys_b, swap), !swap)
         }
         _ => {
             let keys_a = splitted_to_opt_vec(&splitted_a);
             let keys_b = splitted_to_opt_vec(&splitted_b);
-            hash_join_tuples_inner(keys_a, keys_b, swap)
+            (hash_join_tuples_inner(keys_a, keys_b, swap), !swap)
         }
     }
 }
@@ -335,11 +337,15 @@ impl Utf8Chunked {
         (splitted_a, splitted_b, swap, hb)
     }
 
-    fn hash_join_inner(&self, other: &Utf8Chunked) -> (Vec<IdxSize>, Vec<IdxSize>) {
+    // returns the join tuples and whether or not the lhs tuples are sorted
+    fn hash_join_inner(&self, other: &Utf8Chunked) -> ((Vec<IdxSize>, Vec<IdxSize>), bool) {
         let (splitted_a, splitted_b, swap, hb) = self.prepare(other, true);
         let str_hashes_a = prepare_strs(&splitted_a, &hb);
         let str_hashes_b = prepare_strs(&splitted_b, &hb);
-        hash_join_tuples_inner(str_hashes_a, str_hashes_b, swap)
+        (
+            hash_join_tuples_inner(str_hashes_a, str_hashes_b, swap),
+            !swap,
+        )
     }
 
     fn hash_join_left(&self, other: &Utf8Chunked) -> LeftJoinIds {
