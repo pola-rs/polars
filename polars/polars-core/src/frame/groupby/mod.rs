@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
 use ahash::{CallHasher, RandomState};
@@ -909,6 +909,29 @@ pub enum GroupByMethod {
     List,
     Std(u8),
     Var(u8),
+}
+
+impl Display for GroupByMethod {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use GroupByMethod::*;
+        let s = match self {
+            Min => "min",
+            Max => "max",
+            Median => "median",
+            Mean => "mean",
+            First => "first",
+            Last => "last",
+            Sum => "sum",
+            Groups => "groups",
+            NUnique => "n_unique",
+            Quantile(_, _) => "quantile",
+            Count => "count",
+            List => "list",
+            Std(_) => "std",
+            Var(_) => "var",
+        };
+        write!(f, "{}", s)
+    }
 }
 
 // Formatting functions used in eager and lazy code for renaming grouped columns

@@ -155,3 +155,30 @@ def test_err_bubbling_up_to_lit() -> None:
 
     with pytest.raises(ValueError):
         df.filter(pl.col("date") == pl.Date("2020-01-01"))
+
+
+def test_error_on_double_agg() -> None:
+    for e in [
+        "mean",
+        "max",
+        "min",
+        "sum",
+        "std",
+        "var",
+        "n_unique",
+        "last",
+        "first",
+        "median",
+        "skew",  # this one is comes from Apply
+    ]:
+        with pytest.raises(pl.ComputeError, match="The column is already aggregated"):
+            (
+                pl.DataFrame(
+                    {
+                        "a": [1, 1, 1, 2, 2],
+                        "b": [1, 2, 3, 4, 5],
+                    }
+                )
+                .groupby("a")
+                .agg([getattr(pl.col("b").min(), e)()])
+            )

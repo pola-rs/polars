@@ -846,12 +846,16 @@ impl Series {
     }
 
     pub fn mean_as_series(&self) -> Series {
-        let val = [self.mean()];
-        let s = Series::new(self.name(), val);
-        if !self.dtype().is_numeric() {
-            Series::full_null(self.name(), 1, self.dtype())
-        } else {
-            s
+        match self.dtype() {
+            DataType::Float32 => {
+                let val = &[self.mean().map(|m| m as f32)];
+                Series::new(self.name(), val)
+            }
+            dt if dt.is_numeric() => {
+                let val = &[self.mean()];
+                Series::new(self.name(), val)
+            }
+            _ => return Series::full_null(self.name(), 1, self.dtype()),
         }
     }
 
