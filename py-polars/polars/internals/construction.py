@@ -729,6 +729,8 @@ def pandas_to_pydf(
             " DataFrame."
         )
     length = data.shape[0]
+    if len(set(data.columns)) < length:
+        raise AttributeError("Multiple columns with the same name detected.")
     arrow_dict = {
         str(col): _pandas_series_to_arrow(
             data[col], nan_to_none=nan_to_none, min_len=length
