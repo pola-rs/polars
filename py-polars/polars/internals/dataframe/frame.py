@@ -17,6 +17,7 @@ from typing import (
     TypeVar,
     overload,
 )
+from warnings import warn
 
 from polars import internals as pli
 from polars._html import NotebookFormatter
@@ -796,17 +797,15 @@ class DataFrame:
         return self
 
     @classmethod
-    def _read_json(
-        cls: type[DF],
-        file: str | Path | IOBase,
-        json_lines: bool = False,
-    ) -> DF:
+    def _read_json(cls: type[DF], file: str | Path | IOBase) -> DF:
         """
-        Read into a DataFrame from JSON format.
+        Read into a DataFrame from a JSON file.
+
+        Use ``pl.read_json`` to dispatch to this method.
 
         See Also
         --------
-        read_json
+        polars.io.read_json
 
         """
         if isinstance(file, StringIO):
@@ -815,7 +814,28 @@ class DataFrame:
             file = format_path(file)
 
         self = cls.__new__(cls)
-        self._df = PyDataFrame.read_json(file, json_lines)
+        self._df = PyDataFrame.read_json(file, False)
+        return self
+
+    @classmethod
+    def _read_ndjson(cls: type[DF], file: str | Path | IOBase) -> DF:
+        """
+        Read into a DataFrame from a newline delimited JSON file.
+
+        Use ``pl.read_ndjson`` to dispatch to this method.
+
+        See Also
+        --------
+        polars.io.read_ndjson
+
+        """
+        if isinstance(file, StringIO):
+            file = BytesIO(file.getvalue().encode())
+        elif isinstance(file, (str, Path)):
+            file = format_path(file)
+
+        self = cls.__new__(cls)
+        self._df = PyDataFrame.read_ndjson(file)
         return self
 
     @property
@@ -1707,37 +1727,25 @@ class DataFrame:
     @overload
     def write_json(
         self,
-        file: IOBase | str | Path | None = ...,
+        file: None = None,
         pretty: bool = ...,
         row_oriented: bool = ...,
         json_lines: bool = ...,
         *,
-        to_string: Literal[True],
+        to_string: bool = ...,
     ) -> str:
         ...
 
     @overload
     def write_json(
         self,
-        file: IOBase | str | Path | None = ...,
-        pretty: bool = ...,
-        row_oriented: bool = ...,
-        json_lines: bool = ...,
-        *,
-        to_string: Literal[False] = ...,
-    ) -> None:
-        ...
-
-    @overload
-    def write_json(
-        self,
-        file: IOBase | str | Path | None = ...,
+        file: IOBase | str | Path,
         pretty: bool = ...,
         row_oriented: bool = ...,
         json_lines: bool = ...,
         *,
         to_string: bool = ...,
-    ) -> str | None:
+    ) -> None:
         ...
 
     def write_json(
@@ -1745,9 +1753,9 @@ class DataFrame:
         file: IOBase | str | Path | None = None,
         pretty: bool = False,
         row_oriented: bool = False,
-        json_lines: bool = False,
+        json_lines: bool | None = None,
         *,
-        to_string: bool = False,
+        to_string: bool | None = None,
     ) -> str | None:
         """
         Serialize to JSON representation.
@@ -1755,17 +1763,42 @@ class DataFrame:
         Parameters
         ----------
         file
-            Write to this file instead of returning a string.
+            File path to which the result should be written. If set to ``None``
+            (default), the output is returned as a string instead.
         pretty
             Pretty serialize json.
         row_oriented
             Write to row oriented json. This is slower, but more common.
         json_lines
-            Write to Json Lines format
+            Deprecated argument. Toggle between `JSON` and `NDJSON` format.
         to_string
             Ignore file argument and return a string.
 
+        See Also
+        --------
+        DataFrame.write_ndjson
+
         """
+        if json_lines is not None:
+            warn(
+                "`json_lines` argument for `DataFrame.write_json` will be removed in a"
+                " future version. Remove the argument or use `DataFrame.write_ndjson`.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        else:
+            json_lines = False
+
+        if to_string is not None:
+            warn(
+                "`to_string` argument for `DataFrame.write_json` will be removed in a"
+                " future version. Remove the argument and set `file=None`.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        else:
+            to_string = False
+
         if isinstance(file, (str, Path)):
             file = format_path(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
@@ -1781,6 +1814,42 @@ class DataFrame:
                 return json_str
         else:
             self._df.write_json(file, pretty, row_oriented, json_lines)
+        return None
+
+    @overload
+    def write_ndjson(self, file: None = None) -> str:
+        ...
+
+    @overload
+    def write_ndjson(self, file: IOBase | str | Path) -> None:
+        ...
+
+    def write_ndjson(self, file: IOBase | str | Path | None = None) -> str | None:
+        """
+        Serialize to newline delimited JSON representation.
+
+        Parameters
+        ----------
+        file
+            File path to which the result should be written. If set to ``None``
+            (default), the output is returned as a string instead.
+
+        """
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
+        to_string_io = (file is not None) and isinstance(file, StringIO)
+        if file is None or to_string_io:
+            with BytesIO() as buf:
+                self._df.write_ndjson(buf)
+                json_bytes = buf.getvalue()
+
+            json_str = json_bytes.decode("utf8")
+            if to_string_io:
+                file.write(json_str)  # type: ignore[union-attr]
+            else:
+                return json_str
+        else:
+            self._df.write_ndjson(file)
         return None
 
     @overload

@@ -339,6 +339,18 @@ impl PyDataFrame {
         }
     }
 
+    #[staticmethod]
+    #[cfg(feature = "json")]
+    pub fn read_ndjson(py_f: &PyAny) -> PyResult<Self> {
+        let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
+
+        let out = JsonReader::new(mmap_bytes_r)
+            .with_json_format(JsonFormat::JsonLines)
+            .finish()
+            .map_err(|e| PyPolarsErr::Other(format!("{:?}", e)))?;
+        Ok(out.into())
+    }
+
     #[cfg(feature = "json")]
     pub fn write_json(
         &mut self,
@@ -362,6 +374,18 @@ impl PyDataFrame {
             (false, _, _) => serde_json::to_writer(file, &self.df)
                 .map_err(|e| PolarsError::ComputeError(format!("{:?}", e).into())),
         };
+        r.map_err(|e| PyPolarsErr::Other(format!("{:?}", e)))?;
+        Ok(())
+    }
+
+    #[cfg(feature = "json")]
+    pub fn write_ndjson(&mut self, py_f: PyObject) -> PyResult<()> {
+        let file = BufWriter::new(get_file_like(py_f, true)?);
+
+        let r = JsonWriter::new(file)
+            .with_json_format(JsonFormat::JsonLines)
+            .finish(&mut self.df);
+
         r.map_err(|e| PyPolarsErr::Other(format!("{:?}", e)))?;
         Ok(())
     }

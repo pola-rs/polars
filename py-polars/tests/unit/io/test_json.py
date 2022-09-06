@@ -45,12 +45,12 @@ def test_write_json() -> None:
     assert out == r"""[{"a":1,"b":"a"},{"a":2,"b":"b"},{"a":3,"b":null}]"""
     # test round trip
     f = io.BytesIO()
-    f.write(out.encode())  # type: ignore[attr-defined]
+    f.write(out.encode())
     f.seek(0)
-    df = pl.read_json(f, json_lines=False)
+    df = pl.read_json(f)
     assert df.frame_equal(expected)
 
-    out = df.write_json(json_lines=True)
+    out = df.write_ndjson()
     assert (
         out
         == r"""{"a":1,"b":"a"}
@@ -60,9 +60,9 @@ def test_write_json() -> None:
     )
     # test round trip
     f = io.BytesIO()
-    f.write(out.encode())  # type: ignore[attr-defined]
+    f.write(out.encode())
     f.seek(0)
-    df = pl.read_json(f, json_lines=True)
+    df = pl.read_ndjson(f)
     expected = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
     assert df.frame_equal(expected)
 
@@ -70,7 +70,7 @@ def test_write_json() -> None:
 def test_write_json2(df: pl.DataFrame) -> None:
     # text-based conversion loses time info
     df = df.select(pl.all().exclude(["cat", "time"]))
-    s = df.write_json(to_string=True)
+    s = df.write_json()
     f = io.BytesIO()
     f.write(s.encode())
     f.seek(0)
