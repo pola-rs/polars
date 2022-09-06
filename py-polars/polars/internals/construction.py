@@ -354,7 +354,7 @@ def _pandas_series_to_arrow(
     Arrow Array
 
     """
-    dtype = values.dtype
+    dtype = getattr(values, "dtype", None)
     if dtype == "object" and len(values) > 0:
         first_non_none = _get_first_non_none(values.values)  # type: ignore[arg-type]
 
@@ -364,8 +364,15 @@ def _pandas_series_to_arrow(
             return pa.nulls(min_len, pa.large_utf8())
 
         return pa.array(values, from_pandas=nan_to_none)
-    else:
+    elif dtype:
         return pa.array(values, from_pandas=nan_to_none)
+    else:
+        # Pandas Series is actually a Pandas DataFrame when the original dataframe
+        # contains duplicated columns and a duplicated column is requested with df["a"].
+        raise ValueError(
+            "Duplicate column names found: "
+            + f"{str(values.columns.tolist())}"  # type: ignore[union-attr]
+        )
 
 
 def pandas_to_pyseries(
