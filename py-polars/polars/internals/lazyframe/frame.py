@@ -1576,7 +1576,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         if named_exprs and not Config.with_columns_kwargs:
             raise RuntimeError(
                 "**kwargs support is experimental; requires opt-in via"
-                " `pl.Config.set_with_columns_kwargs(True)`"
+                " `pl.Config.with_columns_kwargs = True`"
             )
         elif exprs is None and not named_exprs:
             raise ValueError("Expected at least one of 'exprs' or **named_exprs")
