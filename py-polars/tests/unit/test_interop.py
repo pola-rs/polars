@@ -153,6 +153,12 @@ def test_from_pandas_datetime() -> None:
     pl.from_pandas(df)
 
 
+def test_from_pandas_duplicated_columns() -> None:
+    df = pd.DataFrame([[1, 2, 3, 4], [5, 6, 7, 8]], columns=["a", "b", "c", "b"])
+    with pytest.raises(ValueError, match="Duplicate column names found: "):
+        pl.from_pandas(df)
+
+
 def test_arrow_list_roundtrip() -> None:
     # https://github.com/pola-rs/polars/issues/1064
     tbl = pa.table({"a": [1], "b": [[1, 2]]})
