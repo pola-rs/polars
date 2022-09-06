@@ -1783,6 +1783,38 @@ class DataFrame:
             self._df.write_json(file, pretty, row_oriented, json_lines)
         return None
 
+    @overload
+    def write_csv(
+        self,
+        file: None = None,
+        has_header: bool = ...,
+        sep: str = ...,
+        quote: str = ...,
+        batch_size: int = ...,
+        datetime_format: str | None = ...,
+        date_format: str | None = ...,
+        time_format: str | None = ...,
+        float_precision: int | None = ...,
+        null_value: str | None = ...,
+    ) -> str:
+        ...
+
+    @overload
+    def write_csv(
+        self,
+        file: TextIO | BytesIO | str | Path,
+        has_header: bool = ...,
+        sep: str = ...,
+        quote: str = ...,
+        batch_size: int = ...,
+        datetime_format: str | None = ...,
+        date_format: str | None = ...,
+        time_format: str | None = ...,
+        float_precision: int | None = ...,
+        null_value: str | None = ...,
+    ) -> None:
+        ...
+
     def write_csv(
         self,
         file: TextIO | BytesIO | str | Path | None = None,
@@ -1802,7 +1834,8 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path to which the file should be written.
+            File path to which the result should be written. If set to ``None``
+            (default), the output is returned as a string instead.
         has_header
             Whether to include header in the CSV output.
         sep
