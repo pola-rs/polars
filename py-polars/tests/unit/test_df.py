@@ -214,20 +214,22 @@ def test_assignment() -> None:
 
 
 def test_insert_at_idx() -> None:
-    df = pl.DataFrame({"z": [3, 4, 5]})
-    df.insert_at_idx(0, pl.Series("x", [1, 2, 3]))
-    df.insert_at_idx(-1, pl.Series("y", [2, 3, 4]))
-
+    df = (
+        pl.DataFrame({"z": [3, 4, 5]})
+        .insert_at_idx(0, pl.Series("x", [1, 2, 3]))
+        .insert_at_idx(-1, pl.Series("y", [2, 3, 4]))
+    )
     expected_df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
     assert_frame_equal(expected_df, df)
 
 
 def test_replace_at_idx() -> None:
-    df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
-    df.replace_at_idx(0, pl.Series("a", [4, 5, 6]))
-    df.replace_at_idx(-2, pl.Series("b", [5, 6, 7]))
-    df.replace_at_idx(-1, pl.Series("c", [6, 7, 8]))
-
+    df = (
+        pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
+        .replace_at_idx(0, pl.Series("a", [4, 5, 6]))
+        .replace_at_idx(-2, pl.Series("b", [5, 6, 7]))
+        .replace_at_idx(-1, pl.Series("c", [6, 7, 8]))
+    )
     expected_df = pl.DataFrame({"a": [4, 5, 6], "b": [5, 6, 7], "c": [6, 7, 8]})
     assert_frame_equal(expected_df, df)
 
@@ -524,7 +526,7 @@ def test_vstack(in_place: bool) -> None:
     if in_place:
         assert df1.frame_equal(expected)
     else:
-        assert out.frame_equal(expected)  # type: ignore[union-attr]
+        assert out.frame_equal(expected)
 
 
 def test_extend() -> None:
@@ -1558,14 +1560,12 @@ def test_sample() -> None:
     assert df.sample(frac=0.4, seed=0).shape == (1, 3)
 
 
-@pytest.mark.parametrize("in_place", [True, False])
-def test_shrink_to_fit(in_place: bool) -> None:
+def test_shrink_to_fit() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
 
-    if in_place:
-        assert df.shrink_to_fit(in_place) is None
-    else:
-        assert df.shrink_to_fit(in_place).frame_equal(df)
+    assert df.shrink_to_fit(in_place=True) is df
+    assert df.shrink_to_fit(in_place=False) is not df
+    assert df.shrink_to_fit(in_place=False).frame_equal(df)
 
 
 def test_arithmetic() -> None:
