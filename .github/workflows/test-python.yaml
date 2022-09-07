@@ -42,9 +42,12 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements-dev.txt
       - name: Install Polars
-        run: maturin build && pip install target/wheels/polars-*.whl
+        run: |
+          maturin build
+          pip install target/wheels/polars-*.whl
         env:
           RUSTFLAGS: -C debuginfo=0
+        shell: bash
       - name: Run tests
         run: pytest  # --cov=polars --cov-report xml
       - name: Run doctests
