@@ -411,7 +411,7 @@ impl DataFrame {
         DataFrame::new_no_checks(cols)
     }
 
-    /// Shrink the capacity of this DataFrame to fit it's length.
+    /// Shrink the capacity of this DataFrame to fit its length.
     pub fn shrink_to_fit(&mut self) {
         // Don't parallelize this. Memory overhead
         for s in &mut self.columns {
@@ -938,7 +938,7 @@ impl DataFrame {
     /// Extend the memory backed by this [`DataFrame`] with the values from `other`.
     ///
     /// Different from [`vstack`](Self::vstack) which adds the chunks from `other` to the chunks of this [`DataFrame`]
-    /// `extent` appends the data from `other` to the underlying memory locations and thus may cause a reallocation.
+    /// `extend` appends the data from `other` to the underlying memory locations and thus may cause a reallocation.
     ///
     /// If this does not cause a reallocation, the resulting data structure will not have any extra chunks
     /// and thus will yield faster queries.
