@@ -15,78 +15,95 @@ jobs:
   test-python:
     name: Build and test Python
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: py-polars
     strategy:
       matrix:
         python-version: [ "3.10" ]
     steps:
       - uses: actions/checkout@v3
-      - name: Install latest Rust nightly
+      - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly-2022-08-22
           override: true
-          components: rustfmt, clippy
+          components: clippy
       - name: Set up Python
         uses: actions/setup-python@v3
         with:
           python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: '**/requirements-dev.txt'
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r py-polars/requirements-dev.txt
-      - name: Run type checking
-        run: |
-          cd py-polars && mypy && cd ..
-      - name: Run tests
+          pip install -r requirements-dev.txt
+      - name: Install Polars
         run: |
           export RUSTFLAGS="-C debuginfo=0"
-          cd py-polars && rustup override set nightly-2022-08-22 && make venv && make test-with-cov
-          cargo clippy
-      - name: Check doc examples
-        run: |
-          cd py-polars && make doctest
-      # test if we can import polars without any requirements
-      - name: Import polars
+          maturin build && pip install target/wheels/polars-*.whl
+      - name: Run tests
+        run: pytest --cov=polars --cov-report xml
+      - name: Run doctests
+        run: python tests/docs/run_doc_examples.py
+      - name: Run mypy
+        run: mypy
+      - name: Run clippy
+        run: cargo clippy
+      # Test if we can import polars without optional requirements
+      - name: Check optional dependencies
         run: |
           pip uninstall pandas -y
           python -c "import polars"
+          pip uninstall numpy -y
+          python -c "import polars"
+          pip uninstall pyarrow -y
+          python -c "import polars"
+
 
   test-python-37:
     name: Build and test Python 3.7
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: py-polars
     strategy:
       matrix:
         python-version: [ "3.7" ]
     steps:
       - uses: actions/checkout@v3
-      - name: Install latest Rust nightly
+      - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly-2022-08-22
           override: true
-          components: rustfmt, clippy
+          components: clippy
       - name: Set up Python
         uses: actions/setup-python@v3
         with:
           python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: '**/requirements-dev.txt'
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r py-polars/requirements-dev.txt
-      # this step is different, note the flag
-      - name: Run type checking
-        run: |
-          cd py-polars && mypy --allow-untyped-calls && cd ..
-      - name: Run tests
+          pip install -r requirements-dev.txt
+      - name: Install Polars
         run: |
           export RUSTFLAGS="-C debuginfo=0"
-          cd py-polars && rustup override set nightly-2022-08-22 && make venv && make test-with-cov
-          cargo clippy
-      - name: Check doc examples
-        run: |
-          cd py-polars && make doctest
-      # test if we can import polars without any requirements
-      - name: Import polars
+          maturin build && pip install target/wheels/polars-*.whl
+      - name: Run tests
+        run: pytest --cov=polars --cov-report xml
+      - name: Run doctests
+        run: python tests/docs/run_doc_examples.py
+      # This step is different, note the flag
+      - name: Run mypy
+        run: mypy --allow-untyped-calls
+      - name: Run clippy
+        run: cargo clippy
+      # Test if we can import polars without optional requirements
+      - name: Check optional dependencies
         run: |
           pip uninstall pandas -y
           python -c "import polars"
