@@ -370,11 +370,17 @@ def test_from_empty_arrow() -> None:
     tbl = pa.Table.from_pandas(df1)
     out = pl.from_arrow(tbl)
     assert out.columns == ["b", "__index_level_0__"]
-    assert out.dtypes == [pl.Float64, pl.Utf8]
+    assert out.dtypes == [pl.Float64, pl.Int8]
     tbl = pa.Table.from_pandas(df1, preserve_index=False)
     out = pl.from_arrow(tbl)
     assert out.columns == ["b"]
     assert out.dtypes == [pl.Float64]
+
+    # 4568
+    tbl = pa.table({"l": []}, schema=pa.schema([("l", pa.large_list(pa.uint8()))]))
+
+    df = pl.from_arrow(tbl)
+    assert df.schema["l"] == pl.List(pl.UInt8)
 
 
 def test_from_null_column() -> None:
