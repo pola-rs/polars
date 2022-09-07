@@ -192,17 +192,13 @@ fn can_run_partitioned(keys: &[Series], original_df: &DataFrame, state: &Executi
     }
 }
 
-impl Executor for PartitionGroupByExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
-        #[cfg(debug_assertions)]
-        {
-            if state.verbose() {
-                println!("run PartititonGroupbyExec")
-            }
-        }
+impl PartitionGroupByExec {
+    fn execute_impl(
+        &mut self,
+        state: &mut ExecutionState,
+        mut original_df: DataFrame,
+    ) -> Result<DataFrame> {
         let dfs = {
-            let mut original_df = self.input.execute(state)?;
-
             // already get the keys. This is the very last minute decision which groupby method we choose.
             // If the column is a categorical, we know the number of groups we have and can decide to continue
             // partitioned or go for the standard groupby. The partitioned is likely to be faster on a small number
@@ -280,5 +276,35 @@ impl Executor for PartitionGroupByExec {
         state.clear_schema_cache();
 
         Ok(DataFrame::new(columns).unwrap())
+    }
+}
+
+impl Executor for PartitionGroupByExec {
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run PartititonGroupbyExec")
+            }
+        }
+        let original_df = self.input.execute(state)?;
+
+        let profile_name = if state.has_node_timer() {
+            let by = self
+                .keys
+                .iter()
+                .map(|s| Ok(s.to_field(&self.input_schema)?.name))
+                .collect::<Result<Vec<_>>>()?;
+            let name = column_delimited("groupby_paritioned".to_string(), &by);
+            Cow::Owned(name)
+        } else {
+            Cow::Borrowed("")
+        };
+        if state.has_node_timer() {
+            let new_state = state.clone();
+            new_state.record(|| self.execute_impl(state, original_df), profile_name)
+        } else {
+            self.execute_impl(state, original_df)
+        }
     }
 }

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use polars_core::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;
@@ -9,15 +11,8 @@ pub(crate) struct SortExec {
     pub(crate) args: SortArguments,
 }
 
-impl Executor for SortExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
-        #[cfg(debug_assertions)]
-        {
-            if state.verbose() {
-                println!("run SortExec")
-            }
-        }
-        let mut df = self.input.execute(state)?;
+impl SortExec {
+    fn execute_impl(&mut self, state: &mut ExecutionState, mut df: DataFrame) -> Result<DataFrame> {
         df.as_single_chunk_par();
 
         let by_columns = self
@@ -43,5 +38,36 @@ impl Executor for SortExec {
             self.args.nulls_last,
             self.args.slice,
         )
+    }
+}
+
+impl Executor for SortExec {
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run SortExec")
+            }
+        }
+        let df = self.input.execute(state)?;
+
+        let profile_name = if state.has_node_timer() {
+            let by = self
+                .by_column
+                .iter()
+                .map(|s| Ok(s.to_field(&df.schema())?.name))
+                .collect::<Result<Vec<_>>>()?;
+            let name = column_delimited("sort".to_string(), &by);
+            Cow::Owned(name)
+        } else {
+            Cow::Borrowed("")
+        };
+
+        if state.has_node_timer() {
+            let new_state = state.clone();
+            new_state.record(|| self.execute_impl(state, df), profile_name)
+        } else {
+            self.execute_impl(state, df)
+        }
     }
 }
