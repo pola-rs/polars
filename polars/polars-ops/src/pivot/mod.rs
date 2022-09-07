@@ -53,24 +53,15 @@ pub fn pivot<I0, S0, I1, S1, I2, S2>(
 ) -> Result<DataFrame>
 where
     I0: IntoIterator<Item = S0>,
-    S0: AsRef<str>,
+    S0: Into<String>,
     I1: IntoIterator<Item = S1>,
-    S1: AsRef<str>,
+    S1: Into<String>,
     I2: IntoIterator<Item = S2>,
-    S2: AsRef<str>,
+    S2: Into<String>,
 {
-    let values = values
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
-    let index = index
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
-    let columns = columns
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
+    let values = values.into_iter().map(|s| s.into()).collect::<Vec<_>>();
+    let index = index.into_iter().map(|s| s.into()).collect::<Vec<_>>();
+    let columns = columns.into_iter().map(|s| s.into()).collect::<Vec<_>>();
     pivot_impl(
         pivot_df,
         &values,
@@ -97,24 +88,15 @@ pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
 ) -> Result<DataFrame>
 where
     I0: IntoIterator<Item = S0>,
-    S0: AsRef<str>,
+    S0: Into<String>,
     I1: IntoIterator<Item = S1>,
-    S1: AsRef<str>,
+    S1: Into<String>,
     I2: IntoIterator<Item = S2>,
-    S2: AsRef<str>,
+    S2: Into<String>,
 {
-    let values = values
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
-    let index = index
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
-    let columns = columns
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
+    let values = values.into_iter().map(|s| s.into()).collect::<Vec<_>>();
+    let index = index.into_iter().map(|s| s.into()).collect::<Vec<_>>();
+    let columns = columns.into_iter().map(|s| s.into()).collect::<Vec<_>>();
 
     pivot_impl(
         pivot_df,

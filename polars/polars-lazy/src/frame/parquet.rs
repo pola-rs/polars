@@ -61,7 +61,7 @@ impl LazyFrame {
     }
 
     fn concat_impl(lfs: Vec<LazyFrame>, args: ScanArgsParquet) -> Result<LazyFrame> {
-        concat(&lfs, args.rechunk).map(|mut lf| {
+        concat(lfs, args.rechunk).map(|mut lf| {
             if let Some(n_rows) = args.n_rows {
                 lf = lf.slice(0, n_rows as IdxSize)
             };

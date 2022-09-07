@@ -1246,7 +1246,7 @@ impl DataFrame {
     ///     "2" => &[2, 2, 2]
     /// }?;
     ///
-    /// assert!(df.select(&["0", "1"])?.frame_equal(&df.select_by_range(0..=1)?));
+    /// assert!(df.select(["0", "1"])?.frame_equal(&df.select_by_range(0..=1)?));
     /// assert!(df.frame_equal(&df.select_by_range(..)?));
     /// # Ok::<(), PolarsError>(())
     /// ```

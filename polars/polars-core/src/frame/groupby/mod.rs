@@ -396,7 +396,7 @@ impl<'df> GroupBy<'df> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby(["date"])?.select(&["temp", "rain"]).mean()
+    ///     df.groupby(["date"])?.select(["temp", "rain"]).mean()
     /// }
     /// ```
     /// Returns:
@@ -967,7 +967,7 @@ mod test {
         // Select multiple
         let out = df
             .groupby_stable(["date"])?
-            .select(&["temp", "rain"])
+            .select(["temp", "rain"])
             .mean()?;
         assert_eq!(
             out.column("temp_mean")?,

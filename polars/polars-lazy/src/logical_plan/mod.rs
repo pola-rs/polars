@@ -295,7 +295,7 @@ mod test {
         let df = get_df();
         let lf = df
             .lazy()
-            .select(&[((col("sepal.width") * lit(100)).alias("super_wide"))])
+            .select([((col("sepal.width") * lit(100)).alias("super_wide"))])
             .sort("super_wide", SortOptions::default());
 
         print_plans(&lf);
@@ -315,7 +315,7 @@ mod test {
         let lf = df
             .lazy()
             .filter(col("sepal.width").lt(lit(3.5)))
-            .select(&[col("variety").alias("foo")]);
+            .select([col("variety").alias("foo")]);
 
         print_plans(&lf);
         let df = lf.collect().unwrap();
@@ -328,7 +328,7 @@ mod test {
         let lp = df
             .clone()
             .lazy()
-            .select(&[col("variety").alias("foo")])
+            .select([col("variety").alias("foo")])
             .logical_plan;
 
         assert!(lp.schema().unwrap().get("foo").is_some());
@@ -373,7 +373,7 @@ mod test {
                 .clone()
                 .lazy()
                 .left_join(right.clone().lazy(), col("days"), col("days"))
-                .select(&[col("temp")]);
+                .select([col("temp")]);
 
             let _df = lf.collect().unwrap();
         }
@@ -383,7 +383,7 @@ mod test {
             let lf = left
                 .lazy()
                 .left_join(right.lazy(), col("days"), col("days"))
-                .select(&[col("temp"), col("rain_right")]);
+                .select([col("temp"), col("rain_right")]);
 
             print_plans(&lf);
             let _df = lf.collect().unwrap();
@@ -400,7 +400,7 @@ mod test {
         .unwrap();
         let mut s = String::new();
         left.lazy()
-            .select(&[col("days")])
+            .select([col("days")])
             .logical_plan
             .dot(&mut s, (0, 0), "")
             .unwrap();

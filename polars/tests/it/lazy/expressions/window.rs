@@ -22,7 +22,7 @@ fn test_lazy_window_functions() {
     let _ = df
         .clone()
         .lazy()
-        .select(&[avg("values").over([col("groups")]).alias("part")])
+        .select([avg("values").over([col("groups")]).alias("part")])
         .collect()
         .unwrap();
     // test if partition aggregation is correct

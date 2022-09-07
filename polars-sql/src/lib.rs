@@ -5,8 +5,9 @@ mod sql_expr;
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use polars::prelude::*;
+
+    use super::*;
 
     fn create_sample_df() -> Result<DataFrame> {
         let a = Series::new("a", (1..10000i64).map(|i| i / 100).collect::<Vec<_>>());
@@ -32,7 +33,7 @@ mod test {
         let df_pl = df
             .lazy()
             .filter(col("a").gt(lit(10)).and(col("a").lt(lit(20))))
-            .select(&[col("a"), col("b"), (col("a") + col("b")).alias("c")])
+            .select([col("a"), col("b"), (col("a") + col("b")).alias("c")])
             .limit(100)
             .collect()?;
         assert_eq!(df_sql, df_pl);

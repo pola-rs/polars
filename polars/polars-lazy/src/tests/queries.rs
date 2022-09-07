@@ -450,7 +450,7 @@ fn test_lazy_query_10() {
     let df = DataFrame::new(vec![x, y]).unwrap();
     let out = df
         .lazy()
-        .select(&[(col("x") - col("y")).alias("z")])
+        .select([(col("x") - col("y")).alias("z")])
         .collect()
         .unwrap();
     let z: Series = DurationChunked::from_duration(
@@ -487,7 +487,7 @@ fn test_lazy_query_10() {
     let df = DataFrame::new(vec![x, y]).unwrap();
     let out = df
         .lazy()
-        .select(&[(col("x") - col("y")).alias("z")])
+        .select([(col("x") - col("y")).alias("z")])
         .collect()
         .unwrap();
     assert!(out
@@ -566,7 +566,7 @@ fn test_simplify_expr() {
 
     let plan = df
         .lazy()
-        .select(&[lit(1.0f32) + lit(1.0f32) + col("sepal.width")])
+        .select([lit(1.0f32) + lit(1.0f32) + col("sepal.width")])
         .logical_plan;
 
     let mut expr_arena = Arena::new();

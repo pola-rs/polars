@@ -286,17 +286,17 @@ impl LazyFrame {
     /// /// Sort DataFrame by 'sepal.width' column
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .sort_by_exprs(vec![col("sepal.width")], vec![false], false)
+    ///         .sort_by_exprs([col("sepal.width")], [false], false)
     /// }
     /// ```
-    pub fn sort_by_exprs<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
+    pub fn sort_by_exprs<E: Into<Vec<Expr>>, B: Into<Vec<bool>>>(
         self,
         by_exprs: E,
         reverse: B,
         nulls_last: bool,
     ) -> Self {
-        let by_exprs = by_exprs.as_ref().to_vec();
-        let reverse = reverse.as_ref().to_vec();
+        let by_exprs = by_exprs.into();
+        let reverse = reverse.into();
         if by_exprs.is_empty() {
             self
         } else {
@@ -442,21 +442,15 @@ impl LazyFrame {
     where
         I: IntoIterator<Item = T>,
         J: IntoIterator<Item = S>,
-        T: AsRef<str>,
-        S: AsRef<str>,
+        T: Into<String>,
+        S: Into<String>,
     {
         // We dispatch to 2 implementations.
         // 1 is swapping eg. rename a -> b and b -> a
         // 2 is non-swapping eg. rename a -> new_name
         // the latter allows predicate pushdown.
-        let existing = existing
-            .into_iter()
-            .map(|a| a.as_ref().to_string())
-            .collect::<Vec<_>>();
-        let new = new
-            .into_iter()
-            .map(|a| a.as_ref().to_string())
-            .collect::<Vec<_>>();
+        let existing = existing.into_iter().map(|a| a.into()).collect::<Vec<_>>();
+        let new = new.into_iter().map(|a| a.into()).collect::<Vec<_>>();
 
         fn inner(lf: LazyFrame, existing: Vec<String>, new: Vec<String>) -> LazyFrame {
             // remove mappings that map to themselves.
@@ -485,12 +479,9 @@ impl LazyFrame {
     pub fn drop_columns<I, T>(self, columns: I) -> Self
     where
         I: IntoIterator<Item = T>,
-        T: AsRef<str>,
+        T: Into<String>,
     {
-        let columns: Vec<String> = columns
-            .into_iter()
-            .map(|name| name.as_ref().to_string())
-            .collect();
+        let columns: Vec<String> = columns.into_iter().map(|name| name.into()).collect();
         self.drop_columns_impl(&columns)
     }
 
@@ -758,7 +749,7 @@ impl LazyFrame {
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
     ///         .filter(col("sepal.width").is_not_null())
-    ///         .select(&[col("sepal.width"), col("sepal.length")])
+    ///         .select([col("sepal.width"), col("sepal.length")])
     /// }
     /// ```
     pub fn filter(self, predicate: Expr) -> Self {
@@ -782,22 +773,19 @@ impl LazyFrame {
     /// /// Column "bar" is renamed to "ham".
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .select(&[col("foo"),
+    ///         .select([col("foo"),
     ///                   col("bar").alias("ham")])
     /// }
     ///
     /// /// This function selects all columns except "foo"
     /// fn exclude_a_column(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .select(&[col("*").exclude(["foo"])])
+    ///         .select([col("*").exclude(["foo"])])
     /// }
     /// ```
-    pub fn select<E: AsRef<[Expr]>>(self, exprs: E) -> Self {
+    pub fn select<E: Into<Vec<Expr>>>(self, exprs: E) -> Self {
         let opt_state = self.get_opt_state();
-        let lp = self
-            .get_plan_builder()
-            .project(exprs.as_ref().to_vec())
-            .build();
+        let lp = self.get_plan_builder().project(exprs.into()).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -828,12 +816,8 @@ impl LazyFrame {
     ///        ])
     /// }
     /// ```
-    pub fn groupby<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
-        let keys = by
-            .as_ref()
-            .iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<_>>();
+    pub fn groupby<E: IntoIterator<Item = IE>, IE: Into<Expr>>(self, by: E) -> LazyGroupBy {
+        let keys = by.into_iter().map(|e| e.into()).collect::<Vec<_>>();
         let opt_state = self.get_opt_state();
         LazyGroupBy {
             logical_plan: self.logical_plan,
@@ -845,7 +829,7 @@ impl LazyFrame {
         }
     }
 
-    pub fn groupby_rolling<E: AsRef<[Expr]>>(
+    pub fn groupby_rolling<E: Into<Vec<Expr>>>(
         self,
         by: E,
         options: RollingGroupOptions,
@@ -854,14 +838,14 @@ impl LazyFrame {
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
-            keys: by.as_ref().to_vec(),
+            keys: by.into(),
             maintain_order: true,
             dynamic_options: None,
             rolling_options: Some(options),
         }
     }
 
-    pub fn groupby_dynamic<E: AsRef<[Expr]>>(
+    pub fn groupby_dynamic<E: Into<Vec<Expr>>>(
         self,
         by: E,
         options: DynamicGroupOptions,
@@ -870,7 +854,7 @@ impl LazyFrame {
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
-            keys: by.as_ref().to_vec(),
+            keys: by.into(),
             maintain_order: true,
             dynamic_options: Some(options),
             rolling_options: None,
@@ -878,12 +862,8 @@ impl LazyFrame {
     }
 
     /// Similar to groupby, but order of the DataFrame is maintained.
-    pub fn groupby_stable<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
-        let keys = by
-            .as_ref()
-            .iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<_>>();
+    pub fn groupby_stable<E: IntoIterator<Item = IE>, IE: Into<Expr>>(self, by: E) -> LazyGroupBy {
+        let keys = by.into_iter().map(|e| e.into()).collect::<Vec<_>>();
         let opt_state = self.get_opt_state();
         LazyGroupBy {
             logical_plan: self.logical_plan,
@@ -907,7 +887,12 @@ impl LazyFrame {
     ///         .left_join(other, col("foo"), col("bar"))
     /// }
     /// ```
-    pub fn left_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
+    pub fn left_join<L: Into<Expr>, R: Into<Expr>>(
+        self,
+        other: LazyFrame,
+        left_on: L,
+        right_on: R,
+    ) -> LazyFrame {
         self.join(other, [left_on.into()], [right_on.into()], JoinType::Left)
     }
 
@@ -923,7 +908,12 @@ impl LazyFrame {
     ///         .outer_join(other, col("foo"), col("bar"))
     /// }
     /// ```
-    pub fn outer_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
+    pub fn outer_join<L: Into<Expr>, R: Into<Expr>>(
+        self,
+        other: LazyFrame,
+        left_on: L,
+        right_on: R,
+    ) -> LazyFrame {
         self.join(other, [left_on.into()], [right_on.into()], JoinType::Outer)
     }
 
@@ -939,7 +929,12 @@ impl LazyFrame {
     ///         .inner_join(other, col("foo"), col("bar").cast(DataType::Utf8))
     /// }
     /// ```
-    pub fn inner_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
+    pub fn inner_join<L: Into<Expr>, R: Into<Expr>>(
+        self,
+        other: LazyFrame,
+        left_on: L,
+        right_on: R,
+    ) -> LazyFrame {
         self.join(other, [left_on.into()], [right_on.into()], JoinType::Inner)
     }
 
@@ -962,18 +957,16 @@ impl LazyFrame {
     ///         .join(other, [col("foo"), col("bar")], [col("foo"), col("bar")], JoinType::Inner)
     /// }
     /// ```
-    pub fn join<E: AsRef<[Expr]>>(
+    pub fn join<L: Into<Vec<Expr>>, R: Into<Vec<Expr>>>(
         mut self,
         other: LazyFrame,
-        left_on: E,
-        right_on: E,
+        left_on: L,
+        right_on: R,
         how: JoinType,
     ) -> LazyFrame {
         // if any of the nodes reads from files we must activate this this plan as well.
         self.opt_state.file_caching |= other.opt_state.file_caching;
 
-        let left_on = left_on.as_ref().to_vec();
-        let right_on = right_on.as_ref().to_vec();
         self.join_builder()
             .with(other)
             .left_on(left_on)
@@ -1024,8 +1017,8 @@ impl LazyFrame {
     ///          )
     /// }
     /// ```
-    pub fn with_columns<E: AsRef<[Expr]>>(self, exprs: E) -> LazyFrame {
-        let exprs = exprs.as_ref().to_vec();
+    pub fn with_columns<E: Into<Vec<Expr>>>(self, exprs: E) -> LazyFrame {
+        let exprs = exprs.into();
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().with_columns(exprs).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1083,12 +1076,8 @@ impl LazyFrame {
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
-    pub fn explode<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, columns: E) -> LazyFrame {
-        let columns = columns
-            .as_ref()
-            .iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<_>>();
+    pub fn explode<E: IntoIterator<Item = IE>, IE: Into<Expr>>(self, columns: E) -> LazyFrame {
+        let columns = columns.into_iter().map(|e| e.into()).collect::<Vec<_>>();
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().explode(columns).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1443,14 +1432,14 @@ impl JoinBuilder {
     }
 
     /// The columns you want to join the left table on.
-    pub fn left_on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
-        self.left_on = on.as_ref().to_vec();
+    pub fn left_on<L: Into<Vec<Expr>>>(mut self, on: L) -> Self {
+        self.left_on = on.into();
         self
     }
 
     /// The columns you want to join the right table on.
-    pub fn right_on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
-        self.right_on = on.as_ref().to_vec();
+    pub fn right_on<R: Into<Vec<Expr>>>(mut self, on: R) -> Self {
+        self.right_on = on.into();
         self
     }
     /// Allow parallel table evaluation.

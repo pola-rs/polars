@@ -205,14 +205,14 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
 /// That means that the first `Series` will be used to determine the ordering
 /// until duplicates are found. Once duplicates are found, the next `Series` will
 /// be used and so on.
-pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
+pub fn argsort_by<E: Into<Vec<Expr>>>(by: E, reverse: &[bool]) -> Expr {
     let reverse = reverse.to_vec();
     let function = SpecialEq::new(Arc::new(move |by: &mut [Series]| {
         polars_core::functions::argsort_by(by, &reverse).map(|ca| ca.into_series())
     }) as Arc<dyn SeriesUdf>);
 
     Expr::AnonymousFunction {
-        input: by.as_ref().to_vec(),
+        input: by.into(),
         function,
         output_type: GetOutput::from_type(IDX_DTYPE),
         options: FunctionOptions {
@@ -227,14 +227,14 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
 #[cfg(feature = "concat_str")]
 #[cfg_attr(docsrs, doc(cfg(feature = "concat_str")))]
 /// Horizontally concat string columns in linear time
-pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
-    let s = s.as_ref().to_vec();
+pub fn concat_str<E: Into<Vec<Expr>>>(s: E, sep: &str) -> Expr {
+    let input = s.into();
     let sep = sep.to_string();
     let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
         polars_core::functions::concat_str(s, &sep).map(|ca| ca.into_series())
     }) as Arc<dyn SeriesUdf>);
     Expr::AnonymousFunction {
-        input: s,
+        input,
         function,
         output_type: GetOutput::from_type(DataType::Utf8),
         options: FunctionOptions {
@@ -250,8 +250,8 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
 #[cfg(feature = "format_str")]
 #[cfg_attr(docsrs, doc(cfg(feature = "format_str")))]
 /// Format the results of an array of expressions using a format string
-pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> Result<Expr> {
-    let mut args: std::collections::VecDeque<Expr> = args.as_ref().to_vec().into();
+pub fn format_str<E: IntoIterator<Item = Expr>>(format: &str, args: E) -> Result<Expr> {
+    let mut args: std::collections::VecDeque<Expr> = args.into_iter().collect();
 
     // Parse the format string, and seperate substrings between placeholders
     let segments: Vec<&str> = format.split("{}").collect();
@@ -282,11 +282,9 @@ pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> Result<Expr> {
 /// Concat lists entries.
 #[cfg(feature = "list")]
 #[cfg_attr(docsrs, doc(cfg(feature = "list")))]
-pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
-    let s = s.as_ref().iter().map(|e| e.clone().into()).collect();
-
+pub fn concat_lst<E: Into<Vec<Expr>>>(s: E) -> Expr {
     Expr::Function {
-        input: s,
+        input: s.into(),
         function: FunctionExpr::ListExpr(ListFunction::Concat),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
@@ -563,8 +561,8 @@ pub fn duration(args: DurationArgs) -> Expr {
 }
 
 /// Concat multiple
-pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, rechunk: bool) -> Result<LazyFrame> {
-    let mut inputs = inputs.as_ref().to_vec();
+pub fn concat<L: Into<Vec<LazyFrame>>>(inputs: L, rechunk: bool) -> Result<LazyFrame> {
+    let mut inputs = inputs.into();
     let lf = std::mem::take(
         inputs
             .get_mut(0)
@@ -729,11 +727,12 @@ where
 }
 
 /// Accumulate over multiple columns horizontally / row wise.
-pub fn fold_exprs<F: 'static, E: AsRef<[Expr]>>(acc: Expr, f: F, exprs: E) -> Expr
+pub fn fold_exprs<F, E>(acc: Expr, f: F, exprs: E) -> Expr
 where
-    F: Fn(Series, Series) -> Result<Series> + Send + Sync + Clone,
+    E: Into<Vec<Expr>>,
+    F: Fn(Series, Series) -> Result<Series> + Send + Sync + Clone + 'static,
 {
-    let mut exprs = exprs.as_ref().to_vec();
+    let mut exprs = exprs.into();
     exprs.push(acc);
 
     let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
@@ -761,8 +760,8 @@ where
 }
 
 /// Get the the sum of the values per row
-pub fn sum_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let mut exprs = exprs.as_ref().to_vec();
+pub fn sum_exprs<E: Into<Vec<Expr>>>(exprs: E) -> Expr {
+    let mut exprs = exprs.into();
     let func = |s1, s2| Ok(&s1 + &s2);
     let init = match exprs.pop() {
         Some(e) => e,
@@ -773,9 +772,8 @@ pub fn sum_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
 }
 
 /// Get the the maximum value per row
-pub fn max_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let exprs = exprs.as_ref().to_vec();
-    max_exprs_impl(exprs)
+pub fn max_exprs<E: Into<Vec<Expr>>>(exprs: E) -> Expr {
+    max_exprs_impl(exprs.into())
 }
 
 fn max_exprs_impl(mut exprs: Vec<Expr>) -> Expr {
@@ -798,9 +796,8 @@ fn max_exprs_impl(mut exprs: Vec<Expr>) -> Expr {
 }
 
 /// Get the the minimum value per row
-pub fn min_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let exprs = exprs.as_ref().to_vec();
-    min_exprs_impl(exprs)
+pub fn min_exprs<E: Into<Vec<Expr>>>(exprs: E) -> Expr {
+    min_exprs_impl(exprs.into())
 }
 
 fn min_exprs_impl(mut exprs: Vec<Expr>) -> Expr {
@@ -823,15 +820,13 @@ fn min_exprs_impl(mut exprs: Vec<Expr>) -> Expr {
 }
 
 /// Evaluate all the expressions with a bitwise or
-pub fn any_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let exprs = exprs.as_ref().to_vec();
+pub fn any_exprs<E: Into<Vec<Expr>>>(exprs: E) -> Expr {
     let func = |s1: Series, s2: Series| Ok(s1.bool()?.bitor(s2.bool()?).into_series());
     fold_exprs(lit(false), func, exprs)
 }
 
 /// Evaluate all the expressions with a bitwise and
-pub fn all_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let exprs = exprs.as_ref().to_vec();
+pub fn all_exprs<E: Into<Vec<Expr>>>(exprs: E) -> Expr {
     let func = |s1: Series, s2: Series| Ok(s1.bool()?.bitand(s2.bool()?).into_series());
     fold_exprs(lit(true), func, exprs)
 }

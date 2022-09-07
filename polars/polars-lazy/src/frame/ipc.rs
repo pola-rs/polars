@@ -67,7 +67,7 @@ impl LazyFrame {
                 })
                 .collect::<Result<Vec<_>>>()?;
 
-            concat(&lfs, args.rechunk)
+            concat(lfs, args.rechunk)
                 .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
                 .map(|mut lf| {
                     if let Some(n_rows) = args.n_rows {

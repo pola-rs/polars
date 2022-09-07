@@ -1030,7 +1030,7 @@ impl Expr {
     ///
     ///     let out = df
     ///      .lazy()
-    ///      .select(&[
+    ///      .select([
     ///          col("groups"),
     ///          sum("values").over([col("groups")]),
     ///      ])
@@ -1070,12 +1070,8 @@ impl Expr {
     /// │ 1      ┆ 16     │
     /// ╰────────┴────────╯
     /// ```
-    pub fn over<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, partition_by: E) -> Self {
-        let partition_by = partition_by
-            .as_ref()
-            .iter()
-            .map(|e| e.clone().into())
-            .collect();
+    pub fn over<E: IntoIterator<Item = IE>, IE: Into<Expr>>(self, partition_by: E) -> Self {
+        let partition_by = partition_by.into_iter().map(|e| e.into()).collect();
         Expr::Window {
             function: Box::new(self),
             partition_by,
@@ -1400,12 +1396,12 @@ impl Expr {
 
     /// Sort this column by the ordering of another column.
     /// Can also be used in a groupby context to sort the groups.
-    pub fn sort_by<E: AsRef<[IE]>, IE: Into<Expr> + Clone, R: AsRef<[bool]>>(
+    pub fn sort_by<E: IntoIterator<Item = IE>, IE: Into<Expr>, R: AsRef<[bool]>>(
         self,
         by: E,
         reverse: R,
     ) -> Expr {
-        let by = by.as_ref().iter().map(|e| e.clone().into()).collect();
+        let by = by.into_iter().map(|e| e.into()).collect();
         let reverse = reverse.as_ref().to_vec();
         Expr::SortBy {
             expr: Box::new(self),
@@ -1531,8 +1527,8 @@ impl Expr {
     /// // Select all columns except foo.
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .select(&[
-    ///                 col("*").exclude(&["foo"])
+    ///         .select([
+    ///                  col("*").exclude(&["foo"])
     ///                 ])
     /// }
     /// ```
@@ -2319,9 +2315,9 @@ impl Rem for Expr {
 pub fn map_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
 where
     F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
-    E: AsRef<[Expr]>,
+    E: Into<Vec<Expr>>,
 {
-    let input = expr.as_ref().to_vec();
+    let input = expr.into();
 
     Expr::AnonymousFunction {
         input,

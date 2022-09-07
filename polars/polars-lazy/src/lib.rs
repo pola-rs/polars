@@ -167,7 +167,7 @@
 //!     .agg(
 //!         vec![col("b").first(), col("c").first()]
 //!      )
-//!     .select(&[col("b"), col("c_first")])
+//!     .select([col("b"), col("c_first")])
 //! }
 //! ```
 //!
