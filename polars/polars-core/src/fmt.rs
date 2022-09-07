@@ -359,7 +359,7 @@ impl Display for DataFrame {
             let field_to_str = |f: &Field| {
                 let name = make_str_val(f.name(), str_truncate);
                 let lower_bounds = std::cmp::max(5, std::cmp::min(12, name.len()));
-                let s = format!("{}\n{}\n---", name, f.data_type());
+                let s = format!("{}\n({})\n---", name, f.data_type());
                 (s, lower_bounds)
             };
             let tbl_lower_bounds = |l: usize| {
