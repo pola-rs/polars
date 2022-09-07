@@ -53,6 +53,9 @@ addopts = [
   "--import-mode=importlib",
 ]
 
+[tool.coverage.run]
+source = ["polars"]
+
 [tool.coverage.report]
 fail_under = 85
 exclude_lines = [

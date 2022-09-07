@@ -23,7 +23,7 @@ jobs:
         with:
           toolchain: nightly-2022-08-22
           override: true
-          components: rustfmt
+          components: rustfmt, clippy
       - name: Set up Python
         id: cp310
         uses: actions/setup-python@v3
@@ -44,4 +44,8 @@ jobs:
           isort --check .
           pyupgrade --py37-plus `find . -name "*.py" -type f`
           flake8
+      - name: Python-Rust lints
+        working-directory: py-polars
+        run: |
           cargo fmt --all -- --check
+          cargo clippy -- --allow clippy::borrow_deref_ref

@@ -41,23 +41,31 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements-dev.txt
-      - name: Install Polars
+      # - name: Install Polars
+      #   run: |
+      #     maturin build
+      #     pip install target/wheels/polars-*.whl
+      #   env:
+      #     RUSTFLAGS: -C debuginfo=0
+      #   shell: bash
+      - name: Run tests and report coverage
+        if: ${{ matrix.os == 'ubuntu-latest'}}
         run: |
-          maturin build
-          pip install target/wheels/polars-*.whl
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r requirements-dev.txt
+          maturin develop
+          pytest --cov=polars
         env:
           RUSTFLAGS: -C debuginfo=0
-        shell: bash
-      - name: Run tests
-        run: pytest  # --cov=polars --cov-report xml
       - name: Run doctests
-        if: ${{ matrix. == 'ubuntu-latest'}}
+        if: ${{ matrix.os == 'ubuntu-latest'}}
         run: python tests/docs/run_doc_examples.py
       # Allow untyped calls for older Python versions
       - name: Run mypy
         run: mypy ${{ (matrix.python-version == '3.7') && '--allow-untyped-calls' || '' }}
       - name: Run clippy
-        run: cargo clippy
+        run: cargo clippy -- --allow clippy::borrow_deref_ref
       # Test if we can import polars without optional requirements
       - name: Check optional dependencies
         run: |
