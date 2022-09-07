@@ -17,6 +17,8 @@ impl Executor for ExplodeExec {
             }
         }
         let df = self.input.execute(state)?;
-        df.explode(&self.columns)
+        state.record(|| {
+            df.explode(&self.columns)
+        }, "explode")
     }
 }

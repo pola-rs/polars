@@ -91,18 +91,9 @@ pub(super) fn groupby_helper(
     DataFrame::new(columns)
 }
 
-impl Executor for GroupByExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
-        #[cfg(debug_assertions)]
-        {
-            if state.verbose() {
-                println!("run GroupbyExec")
-            }
-        }
-        if state.verbose() {
-            eprintln!("keys/aggregates are not partitionable: running default HASH AGGREGATION")
-        }
-        let df = self.input.execute(state)?;
+impl GroupByExec {
+    fn execute_impl(&mut self, state: &mut ExecutionState, df: DataFrame) -> Result<DataFrame> {
+
         state.set_schema(self.input_schema.clone());
         let keys = self
             .keys
@@ -118,5 +109,31 @@ impl Executor for GroupByExec {
             self.maintain_order,
             self.slice,
         )
+
+    }
+}
+
+impl Executor for GroupByExec {
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run GroupbyExec")
+            }
+        }
+        if state.verbose() {
+            eprintln!("keys/aggregates are not partitionable: running default HASH AGGREGATION")
+        }
+        let df = self.input.execute(state)?;
+
+        if state.has_node_timer() {
+            let new_state = state.clone();
+            new_state.record(|| {
+                self.execute_impl(state, df)
+            }, "groupby")
+        } else {
+            self.execute_impl(state, df)
+        }
+
     }
 }

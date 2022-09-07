@@ -10,21 +10,10 @@ pub(crate) struct GroupByRollingExec {
     pub(crate) slice: Option<(i64, usize)>,
 }
 
-impl Executor for GroupByRollingExec {
-    #[cfg(not(feature = "dynamic_groupby"))]
-    fn execute(&mut self, _state: &mut ExecutionState) -> Result<DataFrame> {
-        panic!("activate feature dynamic_groupby")
-    }
+impl GroupByRollingExec {
 
     #[cfg(feature = "dynamic_groupby")]
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
-        #[cfg(debug_assertions)]
-        {
-            if state.verbose() {
-                println!("run GroupbyRollingExec")
-            }
-        }
-        let mut df = self.input.execute(state)?;
+    fn execute_impl(&mut self, state: &mut ExecutionState, mut df: DataFrame) -> Result<DataFrame> {
         df.as_single_chunk_par();
         state.set_schema(self.input_schema.clone());
 
@@ -38,8 +27,8 @@ impl Executor for GroupByRollingExec {
 
         let mut groups = &groups;
         #[allow(unused_assignments)]
-        // it is unused because we only use it to keep the lifetime of sliced_group valid
-        let mut sliced_groups = None;
+            // it is unused because we only use it to keep the lifetime of sliced_group valid
+            let mut sliced_groups = None;
 
         if let Some((offset, len)) = self.slice {
             sliced_groups = Some(groups.slice(offset, len));
@@ -61,21 +50,21 @@ impl Executor for GroupByRollingExec {
         state.flags |= StateFlags::OVERLAPPING_GROUPS;
 
         let agg_columns = POOL.install(|| {
-                    self.aggs
-                        .par_iter()
-                        .map(|expr| {
-                            let agg = expr.evaluate_on_groups(&df, groups, state)?.aggregated();
-                            if agg.len() != groups.len() {
-                                return Err(PolarsError::ComputeError(
-                                    format!("returned aggregation is a different length: {} than the group lengths: {}",
-                                            agg.len(),
-                                            groups.len()).into()
-                                ))
-                            }
-                            Ok(agg)
-                        })
-                        .collect::<Result<Vec<_>>>()
-                })?;
+            self.aggs
+                .par_iter()
+                .map(|expr| {
+                    let agg = expr.evaluate_on_groups(&df, groups, state)?.aggregated();
+                    if agg.len() != groups.len() {
+                        return Err(PolarsError::ComputeError(
+                            format!("returned aggregation is a different length: {} than the group lengths: {}",
+                                    agg.len(),
+                                    groups.len()).into()
+                        ))
+                    }
+                    Ok(agg)
+                })
+                .collect::<Result<Vec<_>>>()
+        })?;
 
         state.clear_schema_cache();
         let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());
@@ -84,5 +73,33 @@ impl Executor for GroupByRollingExec {
         columns.extend_from_slice(&agg_columns);
 
         DataFrame::new(columns)
+
+    }
+}
+
+impl Executor for GroupByRollingExec {
+    #[cfg(not(feature = "dynamic_groupby"))]
+    fn execute(&mut self, _state: &mut ExecutionState) -> Result<DataFrame> {
+        panic!("activate feature dynamic_groupby")
+    }
+
+    #[cfg(feature = "dynamic_groupby")]
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run GroupbyRollingExec")
+            }
+        }
+        let df = self.input.execute(state)?;
+
+        if state.has_node_timer() {
+            let new_state = state.clone();
+            new_state.record(|| {
+                self.execute_impl(state, df)
+            }, "groupby_rolling")
+        } else {
+            self.execute_impl(state, df)
+        }
     }
 }

@@ -13,16 +13,9 @@ pub struct StackExec {
     pub(crate) input_schema: SchemaRef,
 }
 
-impl Executor for StackExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
-        #[cfg(debug_assertions)]
-        {
-            if state.verbose() {
-                println!("run StackExec")
-            }
-        }
-        let mut df = self.input.execute(state)?;
+impl StackExec {
 
+    fn execute_impl(&mut self, state: &mut ExecutionState, mut df: DataFrame) -> Result<DataFrame> {
         state.set_schema(self.input_schema.clone());
         let res = if self.has_windows {
             // we have a different run here
@@ -51,5 +44,27 @@ impl Executor for StackExec {
         }
 
         Ok(df)
+
+    }
+}
+
+impl Executor for StackExec {
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run StackExec")
+            }
+        }
+        let df = self.input.execute(state)?;
+
+        if state.has_node_timer() {
+            let new_state = state.clone();
+            new_state.record(|| {
+                self.execute_impl(state, df)
+            }, "stack")
+        } else {
+            self.execute_impl(state, df)
+        }
     }
 }

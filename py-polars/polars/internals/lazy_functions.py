@@ -1538,12 +1538,7 @@ def collect_all(
     simplify_expression
         Run simplify expressions optimization.
     string_cache
-        Use a global string cache in this query.
-        This is needed if you want to join on categorical columns.
-
-        Caution!
-            If you already have set a global string cache, set this to `False` as this
-            will reset the global cache when the query is finished.
+        This argument is deprecated and will be ignored
     no_optimization
         Turn off optimizations.
     slice_pushdown
@@ -1567,7 +1562,6 @@ def collect_all(
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
-            string_cache,
             slice_pushdown,
         )
         prepared.append(ldf)

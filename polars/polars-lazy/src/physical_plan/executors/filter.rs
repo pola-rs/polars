@@ -25,10 +25,13 @@ impl Executor for FilterExec {
         let df = self.input.execute(state)?;
         let s = self.predicate.evaluate(&df, state)?;
         let mask = s.bool().expect("filter predicate wasn't of type boolean");
-        let df = df.filter(mask)?;
-        if state.verbose() {
-            eprintln!("dataframe filtered");
-        }
-        Ok(df)
+
+        state.record(|| {
+            let df = df.filter(mask)?;
+            if state.verbose() {
+                eprintln!("dataframe filtered");
+            }
+            Ok(df)
+        }, "filter")
     }
 }

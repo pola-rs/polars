@@ -17,6 +17,9 @@ impl Executor for UdfExec {
             }
         }
         let df = self.input.execute(state)?;
-        self.function.call_udf(df)
+
+        state.record(|| {
+            self.function.call_udf(df)
+        }, "udf")
     }
 }

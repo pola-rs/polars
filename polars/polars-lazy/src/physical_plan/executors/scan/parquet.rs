@@ -60,8 +60,11 @@ impl Executor for ParquetExec {
                 .map(|ae| ae.as_expression().unwrap().clone()),
             slice: (0, self.options.n_rows),
         };
-        state
-            .file_cache
-            .read(finger_print, self.options.file_counter, &mut || self.read())
+        state.record(|| {
+            state
+                .file_cache
+                .read(finger_print, self.options.file_counter, &mut || self.read())
+
+        }, "parquet_scan")
     }
 }

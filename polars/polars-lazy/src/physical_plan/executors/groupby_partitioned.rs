@@ -192,16 +192,14 @@ fn can_run_partitioned(keys: &[Series], original_df: &DataFrame, state: &Executi
     }
 }
 
-impl Executor for PartitionGroupByExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
-        #[cfg(debug_assertions)]
-        {
-            if state.verbose() {
-                println!("run PartititonGroupbyExec")
-            }
-        }
+impl PartitionGroupByExec {
+
+    fn execute_impl(&mut self,
+                    state: &mut ExecutionState,
+                    mut original_df: DataFrame
+    ) -> Result<DataFrame> {
+
         let dfs = {
-            let mut original_df = self.input.execute(state)?;
 
             // already get the keys. This is the very last minute decision which groupby method we choose.
             // If the column is a categorical, we know the number of groups we have and can decide to continue
@@ -250,8 +248,8 @@ impl Executor for PartitionGroupByExec {
         let mut groups = gb.get_groups();
 
         #[allow(unused_assignments)]
-        // it is unused because we only use it to keep the lifetime of sliced_group valid
-        let mut sliced_groups = None;
+            // it is unused because we only use it to keep the lifetime of sliced_group valid
+            let mut sliced_groups = None;
 
         if let Some((offset, len)) = self.slice {
             sliced_groups = Some(groups.slice(offset, len));
@@ -280,5 +278,27 @@ impl Executor for PartitionGroupByExec {
         state.clear_schema_cache();
 
         Ok(DataFrame::new(columns).unwrap())
+
+    }
+}
+
+impl Executor for PartitionGroupByExec {
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run PartititonGroupbyExec")
+            }
+        }
+        let original_df = self.input.execute(state)?;
+
+        if state.has_node_timer() {
+            let new_state = state.clone();
+            new_state.record(|| {
+                self.execute_impl(state, original_df)
+            }, "groupby_partitioned")
+        } else {
+            self.execute_impl(state, original_df)
+        }
     }
 }

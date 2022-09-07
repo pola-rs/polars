@@ -559,7 +559,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
-            string_cache=False,
             slice_pushdown=slice_pushdown,
         )
 
@@ -698,6 +697,55 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         by = pli.selection_to_pyexpr_list(by)
         return self._from_pyldf(self._ldf.sort_by_exprs(by, reverse, nulls_last))
 
+    def collect_and_time(
+            self,
+            type_coercion: bool = True,
+            predicate_pushdown: bool = True,
+            projection_pushdown: bool = True,
+            simplify_expression: bool = True,
+            no_optimization: bool = False,
+            slice_pushdown: bool = True,
+    ) -> tuple[pli.DataFrame, pli.DataFrame]:
+        """
+        Collect into a DataFrame.
+
+        Note: use :func:`fetch` if you want to run your query on the first `n` rows
+        only. This can be a huge time saver in debugging queries.
+
+        Parameters
+        ----------
+        type_coercion
+            Do type coercion optimization.
+        predicate_pushdown
+            Do predicate pushdown optimization.
+        projection_pushdown
+            Do projection pushdown optimization.
+        simplify_expression
+            Run simplify expressions optimization.
+        no_optimization
+            Turn off (certain) optimizations.
+        slice_pushdown
+            Slice pushdown optimization.
+
+        Returns
+        -------
+        DataFrame
+
+        """
+        if no_optimization:
+            predicate_pushdown = False
+            projection_pushdown = False
+
+        ldf = self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+        )
+        df, timings = ldf.collect_and_time()
+        return pli.wrap_df(df), pli.wrap_df(timings)
+
     def collect(
         self,
         type_coercion: bool = True,
@@ -726,13 +774,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Run simplify expressions optimization.
         string_cache
             This argument is deprecated. Please set the string cache globally.
-
-            Use a global string cache in this query.
-            This is needed if you want to join on categorical columns.
-
-            Caution!
-                If you already have set a global string cache, set this to `False` as
-                this will reset the global cache when the query is finished.
+            The argument will be ignored
         no_optimization
             Turn off (certain) optimizations.
         slice_pushdown
@@ -752,7 +794,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
-            string_cache,
             slice_pushdown,
         )
         return pli.wrap_df(ldf.collect())
@@ -793,9 +834,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Run simplify expressions optimization.
         string_cache
             This argument is deprecated. Please set the string cache globally.
-
-            Use a global string cache in this query.
-            This is needed if you want to join on categorical columns.
+            The argument will be ignored
         no_optimization
             Turn off optimizations.
         slice_pushdown
@@ -816,7 +855,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
-            string_cache,
             slice_pushdown,
         )
         return pli.wrap_df(ldf.fetch(n_rows))

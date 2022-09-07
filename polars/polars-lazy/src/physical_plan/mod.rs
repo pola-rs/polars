@@ -6,6 +6,7 @@ pub mod expressions;
 mod file_cache;
 pub mod planner;
 pub(crate) mod state;
+mod node_timer;
 
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;

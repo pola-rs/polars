@@ -20,9 +20,11 @@ impl Executor for DropDuplicatesExec {
         let subset = self.options.subset.as_ref().map(|v| &***v);
         let keep = self.options.keep_strategy;
 
-        match self.options.maintain_order {
-            true => df.unique_stable(subset, keep),
-            false => df.unique(subset, keep),
-        }
+        state.record(|| {
+            match self.options.maintain_order {
+                true => df.unique_stable(subset, keep),
+                false => df.unique(subset, keep),
+            }
+        }, "unique_node")
     }
 }

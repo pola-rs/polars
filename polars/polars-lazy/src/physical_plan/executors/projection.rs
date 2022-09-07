@@ -15,15 +15,9 @@ pub struct ProjectionExec {
     pub(crate) schema: SchemaRef,
 }
 
-impl Executor for ProjectionExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
-        #[cfg(debug_assertions)]
-        {
-            if state.verbose() {
-                println!("run ProjectionExec")
-            }
-        }
-        let df = self.input.execute(state)?;
+impl ProjectionExec {
+
+    fn execute_impl(&mut self, state: &mut ExecutionState, df: DataFrame) -> Result<DataFrame> {
         state.set_schema(self.input_schema.clone());
 
         let df = evaluate_physical_expressions(&df, &self.expr, state, self.has_windows);
@@ -42,5 +36,27 @@ impl Executor for ProjectionExec {
 
         state.clear_expr_cache();
         df
+    }
+}
+
+impl Executor for ProjectionExec {
+    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run ProjectionExec")
+            }
+        }
+        let df = self.input.execute(state)?;
+
+        if state.has_node_timer() {
+            let new_state = state.clone();
+            new_state.record(|| {
+                self.execute_impl(state, df)
+            }, "projection")
+        } else {
+            self.execute_impl(state, df)
+        }
+
     }
 }

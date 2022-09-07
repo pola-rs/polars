@@ -68,8 +68,10 @@ impl Executor for CsvExec {
                 .map(|ae| ae.as_expression().unwrap().clone()),
             slice: (self.options.skip_rows, self.options.n_rows),
         };
-        state
-            .file_cache
-            .read(finger_print, self.options.file_counter, &mut || self.read())
+        state.record(|| {
+            state
+                .file_cache
+                .read(finger_print, self.options.file_counter, &mut || self.read())
+        }, "csv_scan")
     }
 }
