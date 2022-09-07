@@ -4,6 +4,11 @@ import os
 
 from polars.string_cache import toggle_string_cache
 
+import sys
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 class Config:
     """Configure polars."""
@@ -11,6 +16,30 @@ class Config:
     # class-local boolean flags can be used for options that don't have
     # a Rust component (so no need to register environment variables).
     with_columns_kwargs: bool = False
+
+    @classmethod
+    def set_tbl_hide_column_names(cls) -> type[Config]:
+        """Hide column names of tables"""
+        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_NAMES"] = "1"
+        return cls
+
+    @classmethod
+    def set_tbl_hide_column_data_types(cls) -> type[Config]:
+        """Hide column data types (i64, f64, str etc.) of tables"""
+        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES"] = "1"
+        return cls
+
+    @classmethod
+    def set_tbl_hide_column_separator(cls) -> type[Config]:
+        """Hide the '---' separator that separates column names from the table rows"""
+        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR"] = "1"
+        return cls
+
+    @classmethod
+    def set_tbl_hide_dataframe_shape(cls) -> type[Config]:
+        """Hide the shape information of the dataframe when displaying tables"""
+        os.environ["POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION"] = "1"
+        return cls
 
     @classmethod
     def set_utf8_tables(cls) -> type[Config]:
@@ -28,23 +57,33 @@ class Config:
         return cls
 
     @classmethod
-    def set_tbl_formatting(cls, format: str) -> type[Config]:
+    def set_tbl_formatting(cls, format: Literal["ASCII_FULL",
+                "ASCII_NO_BORDERS",
+                "ASCII_BORDERS_ONLY",
+                "ASCII_BORDERS_ONLY_CONDENSED",
+                "ASCII_HORIZONTAL_ONLY",
+                "ASCII_MARKDOWN",
+                "UTF8_FULL",
+                "UTF8_NO_BORDERS",
+                "UTF8_BORDERS_ONLY",
+                "UTF8_HORIZONTAL_ONLY",
+                "NOTHING"
+                ]) -> type[Config]:
         """ Set table formatting style.
 
         Parameters:
         -----------
-
-        ASCII_FULL
-        ASCII_NO_BORDERS
-        ASCII_BORDERS_ONLY
-        ASCII_BORDERS_ONLY_CONDENSED
-        ASCII_HORIZONTAL_ONLY
-        ASCII_MARKDOWN
-        UTF8_FULL
-        UTF8_NO_BORDERS
-        UTF8_BORDERS_ONLY
-        UTF8_HORIZONTAL_ONLY
-        NOTHING
+        "ASCII_FULL",
+        "ASCII_NO_BORDERS",
+        "ASCII_BORDERS_ONLY",
+        "ASCII_BORDERS_ONLY_CONDENSED",
+        "ASCII_HORIZONTAL_ONLY",
+        "ASCII_MARKDOWN",
+        "UTF8_FULL",
+        "UTF8_NO_BORDERS",
+        "UTF8_BORDERS_ONLY",
+        "UTF8_HORIZONTAL_ONLY",
+        "NOTHING"
 
         These are defined by comfy-table which provides examples for each parameter at:
 
@@ -52,23 +91,23 @@ class Config:
 
         """
 
-        os.environ["POLARS_FMT_TABLE_FORMATTING"] = str(format)
+        os.environ["POLARS_FMT_TABLE_FORMATTING"] = format
         return cls
 
     @classmethod
-    def set_tbl_cell_alignment(cls, format: str) -> type[Config]:
+    def set_tbl_cell_alignment(cls, format: Literal["LEFT","CENTER",
+        "RIGHT"]) -> type[Config]:
         """
         Set table cell alignment.
 
         Parameters:
         -----------
-
-        LEFT
-        CENTER
-        RIGHT
+        "LEFT"
+        "CENTER"
+        "RIGHT"
 
         """
-        os.environ["POLARS_FMT_TABLE_CELL_ALIGNMENT"] = str(format)
+        os.environ["POLARS_FMT_TABLE_CELL_ALIGNMENT"] = format
         return cls
 
     @classmethod
