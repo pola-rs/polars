@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::time::Instant;
+
 use parking_lot::Mutex;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
@@ -7,23 +8,20 @@ use polars_core::utils::NoNull;
 type StartInstant = Instant;
 type EndInstant = Instant;
 
-type Nodes= Vec<String>;
-type Ticks= Vec<(StartInstant, EndInstant)>;
+type Nodes = Vec<String>;
+type Ticks = Vec<(StartInstant, EndInstant)>;
 
 #[derive(Clone)]
 pub(super) struct NodeTimer {
     query_start: Instant,
-    data: Arc<Mutex<(Nodes, Ticks)>>
+    data: Arc<Mutex<(Nodes, Ticks)>>,
 }
 
 impl NodeTimer {
     pub(super) fn new() -> Self {
         Self {
             query_start: Instant::now(),
-            data: Arc::new(Mutex::new((
-                Vec::with_capacity(16),
-                Vec::with_capacity(16),
-                )))
+            data: Arc::new(Mutex::new((Vec::with_capacity(16), Vec::with_capacity(16)))),
         }
     }
 
@@ -43,28 +41,27 @@ impl NodeTimer {
         let mut ticks = std::mem::take(&mut data.1);
         // first value is end of optimization
         if ticks.is_empty() {
-            return Err(PolarsError::ComputeError("no data to time".into()))
+            return Err(PolarsError::ComputeError("no data to time".into()));
         } else {
             let start = ticks[0].0;
             ticks.push((self.query_start, start))
         }
         let nodes_s = Series::new("node", nodes);
-        let start: NoNull<UInt64Chunked> = ticks.iter().map(|(start, _)| {
-            (start.duration_since(self.query_start)).as_micros() as u64
-        }).collect();
+        let start: NoNull<UInt64Chunked> = ticks
+            .iter()
+            .map(|(start, _)| (start.duration_since(self.query_start)).as_micros() as u64)
+            .collect();
         let mut start = start.into_inner();
-        start.rename("start");
+        start.rename("start[us]");
 
-        let end: NoNull<UInt64Chunked> = ticks.iter().map(|(_, end)| {
-            (end.duration_since(self.query_start)).as_micros() as u64
-        }).collect();
+        let end: NoNull<UInt64Chunked> = ticks
+            .iter()
+            .map(|(_, end)| (end.duration_since(self.query_start)).as_micros() as u64)
+            .collect();
         let mut end = end.into_inner();
-        end.rename("end");
+        end.rename("end[us]");
 
-        DataFrame::new(vec![
-            nodes_s,
-            start.into_series(),
-            end.into_series()
-        ])
+        DataFrame::new_no_checks(vec![nodes_s, start.into_series(), end.into_series()])
+            .sort(vec!["start[us]"], vec![false])
     }
 }

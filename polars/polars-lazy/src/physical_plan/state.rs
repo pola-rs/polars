@@ -1,12 +1,14 @@
+use std::borrow::Cow;
+
 use bitflags::bitflags;
 use parking_lot::Mutex;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::frame::hash_join::JoinOptIds;
 use polars_core::prelude::*;
-use crate::physical_plan::node_timer::NodeTimer;
 
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use super::file_cache::FileCache;
+use crate::physical_plan::node_timer::NodeTimer;
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use crate::prelude::file_caching::FileFingerPrint;
 
@@ -59,7 +61,7 @@ pub struct ExecutionState {
     pub(super) branch_idx: usize,
     pub(super) flags: StateFlags,
     pub(super) ext_contexts: Arc<Vec<DataFrame>>,
-    node_timer: Option<NodeTimer>
+    node_timer: Option<NodeTimer>,
 }
 
 impl ExecutionState {
@@ -75,7 +77,7 @@ impl ExecutionState {
         self.node_timer.unwrap().finish()
     }
 
-    pub(super) fn record<T, F: FnOnce() -> T>(&self, func: F, name: &str) -> T{
+    pub(super) fn record<T, F: FnOnce() -> T>(&self, func: F, name: Cow<'static, str>) -> T {
         match &self.node_timer {
             None => func(),
             Some(timer) => {
@@ -83,7 +85,7 @@ impl ExecutionState {
                 let out = func();
                 let end = std::time::Instant::now();
 
-                timer.store(start, end, name.to_string());
+                timer.store(start, end, name.as_ref().to_string());
                 out
             }
         }
@@ -137,7 +139,7 @@ impl ExecutionState {
             branch_idx: 0,
             flags: StateFlags::init(),
             ext_contexts: Default::default(),
-            node_timer: None
+            node_timer: None,
         }
     }
 
@@ -157,7 +159,7 @@ impl ExecutionState {
             branch_idx: 0,
             flags: StateFlags::init(),
             ext_contexts: Default::default(),
-            node_timer: None
+            node_timer: None,
         }
     }
     pub(crate) fn set_schema(&mut self, schema: SchemaRef) {

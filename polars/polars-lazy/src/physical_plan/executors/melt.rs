@@ -20,8 +20,6 @@ impl Executor for MeltExec {
         let df = self.input.execute(state)?;
         let args = std::mem::take(Arc::make_mut(&mut self.args));
 
-        state.record(|| {
-            df.melt2(args)
-        }, "melt")
+        state.record(|| df.melt2(args), "melt()".into())
     }
 }

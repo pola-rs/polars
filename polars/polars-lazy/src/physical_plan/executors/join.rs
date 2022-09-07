@@ -78,9 +78,22 @@ impl Executor for JoinExec {
             (input_left.execute(state), input_right.execute(state))
         };
 
+        let mut df_left = df_left?;
+        let mut df_right = df_right?;
+
+        let profile_name = if state.has_node_timer() {
+            let by = self
+                .left_on
+                .iter()
+                .map(|s| Ok(s.to_field(&df_left.schema())?.name))
+                .collect::<Result<Vec<_>>>()?;
+            let name = column_delimited("join".to_string(), &by);
+            Cow::Owned(name)
+        } else {
+            Cow::Borrowed("")
+        };
+
         state.record(|| {
-            let mut df_left = df_left?;
-            let mut df_right = df_right?;
 
             let left_on_series = self
                 .left_on
@@ -156,7 +169,6 @@ impl Executor for JoinExec {
             };
             df
 
-        }, "join")
-
+        }, profile_name)
     }
 }

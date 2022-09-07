@@ -19,6 +19,7 @@ mod stack;
 mod udf;
 mod union;
 
+use std::borrow::Cow;
 use std::path::PathBuf;
 
 use polars_core::POOL;

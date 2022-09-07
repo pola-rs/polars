@@ -691,12 +691,10 @@ impl LazyFrame {
         };
 
         let planner = PhysicalPlanner::default();
-        let physical_plan =
-            planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
+        let physical_plan = planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
         let state = ExecutionState::with_finger_prints(finger_prints);
         Ok((state, physical_plan))
-
     }
 
     /// Execute all the lazy operations and collect them into a [DataFrame](polars_core::frame::DataFrame).
@@ -726,7 +724,7 @@ impl LazyFrame {
         out
     }
 
-    pub fn collect_and_time(self) -> Result<(DataFrame, DataFrame)> {
+    pub fn profile(self) -> Result<(DataFrame, DataFrame)> {
         let (mut state, mut physical_plan) = self.prepare_collect()?;
         state.time_nodes();
         let out = physical_plan.execute(&mut state)?;

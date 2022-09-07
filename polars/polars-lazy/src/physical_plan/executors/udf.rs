@@ -18,8 +18,6 @@ impl Executor for UdfExec {
         }
         let df = self.input.execute(state)?;
 
-        state.record(|| {
-            self.function.call_udf(df)
-        }, "udf")
+        state.record(|| self.function.call_udf(df), "udf".into())
     }
 }

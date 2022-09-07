@@ -193,14 +193,12 @@ fn can_run_partitioned(keys: &[Series], original_df: &DataFrame, state: &Executi
 }
 
 impl PartitionGroupByExec {
-
-    fn execute_impl(&mut self,
-                    state: &mut ExecutionState,
-                    mut original_df: DataFrame
+    fn execute_impl(
+        &mut self,
+        state: &mut ExecutionState,
+        mut original_df: DataFrame,
     ) -> Result<DataFrame> {
-
         let dfs = {
-
             // already get the keys. This is the very last minute decision which groupby method we choose.
             // If the column is a categorical, we know the number of groups we have and can decide to continue
             // partitioned or go for the standard groupby. The partitioned is likely to be faster on a small number
@@ -248,8 +246,8 @@ impl PartitionGroupByExec {
         let mut groups = gb.get_groups();
 
         #[allow(unused_assignments)]
-            // it is unused because we only use it to keep the lifetime of sliced_group valid
-            let mut sliced_groups = None;
+        // it is unused because we only use it to keep the lifetime of sliced_group valid
+        let mut sliced_groups = None;
 
         if let Some((offset, len)) = self.slice {
             sliced_groups = Some(groups.slice(offset, len));
@@ -278,7 +276,6 @@ impl PartitionGroupByExec {
         state.clear_schema_cache();
 
         Ok(DataFrame::new(columns).unwrap())
-
     }
 }
 
@@ -292,11 +289,20 @@ impl Executor for PartitionGroupByExec {
         }
         let original_df = self.input.execute(state)?;
 
+        let profile_name = if state.has_node_timer() {
+            let by = self
+                .keys
+                .iter()
+                .map(|s| Ok(s.to_field(&self.input_schema)?.name))
+                .collect::<Result<Vec<_>>>()?;
+            let name = column_delimited("groupby_paritioned".to_string(), &by);
+            Cow::Owned(name)
+        } else {
+            Cow::Borrowed("")
+        };
         if state.has_node_timer() {
             let new_state = state.clone();
-            new_state.record(|| {
-                self.execute_impl(state, original_df)
-            }, "groupby_partitioned")
+            new_state.record(|| self.execute_impl(state, original_df), profile_name)
         } else {
             self.execute_impl(state, original_df)
         }

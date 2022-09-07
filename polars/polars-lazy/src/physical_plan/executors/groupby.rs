@@ -93,7 +93,6 @@ pub(super) fn groupby_helper(
 
 impl GroupByExec {
     fn execute_impl(&mut self, state: &mut ExecutionState, df: DataFrame) -> Result<DataFrame> {
-
         state.set_schema(self.input_schema.clone());
         let keys = self
             .keys
@@ -109,7 +108,6 @@ impl GroupByExec {
             self.maintain_order,
             self.slice,
         )
-
     }
 }
 
@@ -126,14 +124,23 @@ impl Executor for GroupByExec {
         }
         let df = self.input.execute(state)?;
 
+        let profile_name = if state.has_node_timer() {
+            let by = self
+                .keys
+                .iter()
+                .map(|s| Ok(s.to_field(&self.input_schema)?.name))
+                .collect::<Result<Vec<_>>>()?;
+            let name = column_delimited("groupby".to_string(), &by);
+            Cow::Owned(name)
+        } else {
+            Cow::Borrowed("")
+        };
+
         if state.has_node_timer() {
             let new_state = state.clone();
-            new_state.record(|| {
-                self.execute_impl(state, df)
-            }, "groupby")
+            new_state.record(|| self.execute_impl(state, df), profile_name)
         } else {
             self.execute_impl(state, df)
         }
-
     }
 }

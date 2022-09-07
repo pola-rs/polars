@@ -40,14 +40,26 @@ impl Executor for IpcExec {
             slice: (0, self.options.n_rows),
         };
 
-        state.record(|| {
+        let profile_name = if state.has_node_timer() {
+            let mut ids = vec![self.path.to_string_lossy().to_string()];
+            if self.predicate.is_some() {
+                ids.push("predicate".to_string())
+            }
+            let name = column_delimited("ipc".to_string(), &ids);
+            Cow::Owned(name)
+        } else {
+            Cow::Borrowed("")
+        };
 
-            state
-                .file_cache
-                .read(finger_print, self.options.file_counter, &mut || {
-                    self.read(state.verbose())
-                })
-
-        }, "ipc_scan")
+        state.record(
+            || {
+                state
+                    .file_cache
+                    .read(finger_print, self.options.file_counter, &mut || {
+                        self.read(state.verbose())
+                    })
+            },
+            profile_name,
+        )
     }
 }

@@ -697,14 +697,14 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         by = pli.selection_to_pyexpr_list(by)
         return self._from_pyldf(self._ldf.sort_by_exprs(by, reverse, nulls_last))
 
-    def collect_and_time(
-            self,
-            type_coercion: bool = True,
-            predicate_pushdown: bool = True,
-            projection_pushdown: bool = True,
-            simplify_expression: bool = True,
-            no_optimization: bool = False,
-            slice_pushdown: bool = True,
+    def profile(
+        self,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
     ) -> tuple[pli.DataFrame, pli.DataFrame]:
         """
         Collect into a DataFrame.
@@ -743,7 +743,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             simplify_expression,
             slice_pushdown,
         )
-        df, timings = ldf.collect_and_time()
+        df, timings = ldf.profile()
         return pli.wrap_df(df), pli.wrap_df(timings)
 
     def collect(

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use polars_core::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;
@@ -20,11 +22,12 @@ impl Executor for DropDuplicatesExec {
         let subset = self.options.subset.as_ref().map(|v| &***v);
         let keep = self.options.keep_strategy;
 
-        state.record(|| {
-            match self.options.maintain_order {
+        state.record(
+            || match self.options.maintain_order {
                 true => df.unique_stable(subset, keep),
                 false => df.unique(subset, keep),
-            }
-        }, "unique_node")
+            },
+            Cow::Borrowed("unique()"),
+        )
     }
 }

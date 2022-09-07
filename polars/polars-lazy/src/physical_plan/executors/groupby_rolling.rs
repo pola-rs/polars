@@ -11,7 +11,6 @@ pub(crate) struct GroupByRollingExec {
 }
 
 impl GroupByRollingExec {
-
     #[cfg(feature = "dynamic_groupby")]
     fn execute_impl(&mut self, state: &mut ExecutionState, mut df: DataFrame) -> Result<DataFrame> {
         df.as_single_chunk_par();
@@ -27,8 +26,8 @@ impl GroupByRollingExec {
 
         let mut groups = &groups;
         #[allow(unused_assignments)]
-            // it is unused because we only use it to keep the lifetime of sliced_group valid
-            let mut sliced_groups = None;
+        // it is unused because we only use it to keep the lifetime of sliced_group valid
+        let mut sliced_groups = None;
 
         if let Some((offset, len)) = self.slice {
             sliced_groups = Some(groups.slice(offset, len));
@@ -73,7 +72,6 @@ impl GroupByRollingExec {
         columns.extend_from_slice(&agg_columns);
 
         DataFrame::new(columns)
-
     }
 }
 
@@ -92,12 +90,21 @@ impl Executor for GroupByRollingExec {
             }
         }
         let df = self.input.execute(state)?;
+        let profile_name = if state.has_node_timer() {
+            let by = self
+                .keys
+                .iter()
+                .map(|s| Ok(s.to_field(&self.input_schema)?.name))
+                .collect::<Result<Vec<_>>>()?;
+            let name = column_delimited("groupby_rolling".to_string(), &by);
+            Cow::Owned(name)
+        } else {
+            Cow::Borrowed("")
+        };
 
         if state.has_node_timer() {
             let new_state = state.clone();
-            new_state.record(|| {
-                self.execute_impl(state, df)
-            }, "groupby_rolling")
+            new_state.record(|| self.execute_impl(state, df), profile_name)
         } else {
             self.execute_impl(state, df)
         }

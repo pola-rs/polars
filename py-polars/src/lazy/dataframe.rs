@@ -386,12 +386,12 @@ impl PyLazyFrame {
         ldf.cache().into()
     }
 
-    pub fn collect_and_time(&self, py: Python) -> PyResult<(PyDataFrame, PyDataFrame)> {
+    pub fn profile(&self, py: Python) -> PyResult<(PyDataFrame, PyDataFrame)> {
         // if we don't allow threads and we have udfs trying to acquire the gil from different
         // threads we deadlock.
         let (df, time_df) = py.allow_threads(|| {
             let ldf = self.ldf.clone();
-            ldf.collect_and_time().map_err(PyPolarsErr::from)
+            ldf.profile().map_err(PyPolarsErr::from)
         })?;
         Ok((df.into(), time_df.into()))
     }

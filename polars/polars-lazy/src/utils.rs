@@ -8,6 +8,19 @@ use crate::logical_plan::Context;
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
 
+// write some thing
+pub(crate) fn column_delimited(mut s: String, items: &[String]) -> String {
+    s.push('(');
+    for c in items {
+        s.push_str(c);
+        s.push_str(", ");
+    }
+    s.pop();
+    s.pop();
+    s.push(')');
+    s
+}
+
 pub(crate) trait PushNode {
     fn push_node(&mut self, value: Node);
 }
