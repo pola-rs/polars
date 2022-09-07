@@ -129,6 +129,16 @@ impl PhysicalExpr for ApplyExpr {
                 (_, ApplyOptions::ApplyGroups) | (true, _) => {
                     let s = ac.series();
 
+                    if matches!(ac.agg_state(), AggState::AggregatedFlat(_)) {
+                        return Err(PolarsError::ComputeError(
+                            format!(
+                                "Cannot aggregate {:?}. The column is already aggregated.",
+                                self.expr
+                            )
+                            .into(),
+                        ));
+                    }
+
                     // collection of empty list leads to a null dtype
                     // see: #3687
                     if s.len() == 0 {

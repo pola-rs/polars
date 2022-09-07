@@ -993,11 +993,10 @@ mod test {
     fn test_mean() {
         let ca = Float32Chunked::new("", &[Some(1.0), Some(2.0), None]);
         assert_eq!(ca.mean().unwrap(), 1.5);
-        // all mean_as_series are cast to f64.
         assert_eq!(
             ca.into_series()
                 .mean_as_series()
-                .f64()
+                .f32()
                 .unwrap()
                 .get(0)
                 .unwrap(),
@@ -1007,7 +1006,7 @@ mod test {
         let ca = Float32Chunked::full_null("", 3);
         assert_eq!(ca.mean(), None);
         assert_eq!(
-            ca.into_series().mean_as_series().f64().unwrap().get(0),
+            ca.into_series().mean_as_series().f32().unwrap().get(0),
             None
         );
     }

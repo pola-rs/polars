@@ -47,27 +47,46 @@ impl PhysicalExpr for AggregationExpr {
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.series().name().to_string();
 
+        let check_flat = || {
+            if matches!(ac.agg_state(), AggState::AggregatedFlat(_)) {
+                Err(PolarsError::ComputeError(
+                    format!(
+                        "Cannot aggregate as {}. The column is already aggregated.",
+                        self.agg_type
+                    )
+                    .into(),
+                ))
+            } else {
+                Ok(())
+            }
+        };
+
         // Safety:
         // groups must always be in bounds.
         let out = unsafe {
             match self.agg_type {
                 GroupByMethod::Min => {
+                    check_flat()?;
                     let agg_s = ac.flat_naive().into_owned().agg_min(ac.groups());
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Max => {
+                    check_flat()?;
                     let agg_s = ac.flat_naive().into_owned().agg_max(ac.groups());
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Median => {
+                    check_flat()?;
                     let agg_s = ac.flat_naive().into_owned().agg_median(ac.groups());
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Mean => {
+                    check_flat()?;
                     let agg_s = ac.flat_naive().into_owned().agg_mean(ac.groups());
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Sum => {
+                    check_flat()?;
                     let agg_s = ac.flat_naive().into_owned().agg_sum(ac.groups());
                     rename_series(agg_s, &keep_name)
                 }
@@ -130,16 +149,19 @@ impl PhysicalExpr for AggregationExpr {
                     }
                 }
                 GroupByMethod::First => {
+                    check_flat()?;
                     let mut agg_s = ac.flat_naive().into_owned().agg_first(ac.groups());
                     agg_s.rename(&keep_name);
                     agg_s
                 }
                 GroupByMethod::Last => {
+                    check_flat()?;
                     let mut agg_s = ac.flat_naive().into_owned().agg_last(ac.groups());
                     agg_s.rename(&keep_name);
                     agg_s
                 }
                 GroupByMethod::NUnique => {
+                    check_flat()?;
                     let agg_s = ac.flat_naive().into_owned().agg_n_unique(ac.groups());
                     rename_series(agg_s, &keep_name)
                 }
@@ -153,10 +175,12 @@ impl PhysicalExpr for AggregationExpr {
                     column.into_series()
                 }
                 GroupByMethod::Std(ddof) => {
+                    check_flat()?;
                     let agg_s = ac.flat_naive().into_owned().agg_std(ac.groups(), ddof);
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Var(ddof) => {
+                    check_flat()?;
                     let agg_s = ac.flat_naive().into_owned().agg_var(ac.groups(), ddof);
                     rename_series(agg_s, &keep_name)
                 }
