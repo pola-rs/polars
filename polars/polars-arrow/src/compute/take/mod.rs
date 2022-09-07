@@ -18,10 +18,10 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
     match arr.data_type().to_physical_type() {
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let arr: &PrimitiveArray<$T> = arr.as_any().downcast_ref().unwrap();
-            if arr.validity().is_some() {
+            if arr.null_count() > 0 {
                 take_primitive_unchecked::<$T>(arr, idx)
             } else {
-                take_no_null_primitive::<$T>(arr, idx)
+                take_no_null_primitive_unchecked::<$T>(arr, idx)
             }
         }),
         LargeUtf8 => {
@@ -98,11 +98,11 @@ pub unsafe fn take_primitive_unchecked<T: NativeType>(
 /// Take kernel for single chunk without nulls and arrow array as index.
 /// # Safety
 /// caller must ensure indices are in bounds
-pub unsafe fn take_no_null_primitive<T: NativeType>(
+pub unsafe fn take_no_null_primitive_unchecked<T: NativeType>(
     arr: &PrimitiveArray<T>,
     indices: &IdxArr,
 ) -> Box<PrimitiveArray<T>> {
-    debug_assert!(!arr.has_validity());
+    debug_assert!(arr.null_count() == 0);
     let array_values = arr.values().as_slice();
     let index_values = indices.values().as_slice();
 
