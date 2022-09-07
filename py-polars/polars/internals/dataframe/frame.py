@@ -2341,8 +2341,7 @@ class DataFrame:
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
         >>> s = pl.Series("baz", [97, 98, 99])
-        >>> df.insert_at_idx(1, s)  # returns None
-        >>> df
+        >>> df.insert_at_idx(1, s)
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ baz ┆ bar │
@@ -2365,7 +2364,6 @@ class DataFrame:
         ... )
         >>> s = pl.Series("d", [-2.5, 15, 20.5, 0])
         >>> df.insert_at_idx(3, s)
-        >>> df
         shape: (4, 4)
         ┌─────┬──────┬───────┬──────┐
         │ a   ┆ b    ┆ c     ┆ d    │
@@ -2546,9 +2544,8 @@ class DataFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> x = pl.Series("apple", [10, 20, 30])
-        >>> df.replace_at_idx(0, x)
-        >>> df
+        >>> s = pl.Series("apple", [10, 20, 30])
+        >>> df.replace_at_idx(0, s)
         shape: (3, 3)
         ┌───────┬─────┬─────┐
         │ apple ┆ bar ┆ ham │
@@ -2690,7 +2687,6 @@ class DataFrame:
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
         >>> s = pl.Series([10, 20, 30])
         >>> df.replace("foo", s)  # works in-place!
-        >>> df
         shape: (3, 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
@@ -4153,8 +4149,7 @@ class DataFrame:
         --------
         >>> df1 = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
         >>> df2 = pl.DataFrame({"foo": [10, 20, 30], "bar": [40, 50, 60]})
-        >>> df1.extend(df2)  # returns None
-        >>> df1
+        >>> df1.extend(df2)
         shape: (6, 2)
         ┌─────┬─────┐
         │ foo ┆ bar │

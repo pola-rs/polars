@@ -1492,7 +1492,6 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s2 = pl.Series("b", [4, 5, 6])
         >>> s.append(s2)
-        >>> s
         shape: (6,)
         Series: 'a' [i64]
         [
