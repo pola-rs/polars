@@ -9,9 +9,9 @@ description = "Arrow interfaces for Polars DataFrame library"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "f34eb9b09fab3d90c9053ab906ce1809ffa62f47", features = ["compute_concatenate"], default-features = false }
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "6c102a0c3e2dbeb185360dd3d5c3637b5e2028fd", features = ["compute_concatenate"], default-features = false }
 # arrow = { package = "arrow2", path = "../../../arrow2", features = ["compute_concatenate"], default-features = false }
-arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "comparison_and_validity", features = ["compute_concatenate"], default-features = false }
+# arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "comparison_and_validity", features = ["compute_concatenate"], default-features = false }
 # arrow = { package = "arrow2", version = "0.12", default-features = false, features = ["compute_concatenate"] }
 hashbrown = "0.12"
 num = "^0.4"
