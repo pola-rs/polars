@@ -14,7 +14,6 @@ def test_date_datetime() -> None:
             "hour": [23, 12, 8],
         }
     )
-
     out = df.select(
         [
             pl.all(),
@@ -22,7 +21,6 @@ def test_date_datetime() -> None:
             pl.date("year", "month", "day").dt.day().cast(int).alias("date"),
         ]
     )
-
     assert out["date"].series_equal(df["day"].rename("date"))
     assert out["h2"].series_equal(df["hour"].rename("h2"))
 
@@ -73,14 +71,12 @@ def test_all_any_horizontally() -> None:
         ],
         columns=["var1", "var2", "var3"],
     )
-
     expected = pl.DataFrame(
         {
             "any": [True, True, False, True, None],
             "all": [False, False, False, None, False],
         }
     )
-
     assert df.select(
         [
             pl.any([pl.col("var2"), pl.col("var3")]),
@@ -122,3 +118,68 @@ def test_null_handling_correlation() -> None:
     )
     assert out["pearson"][0] == pytest.approx(1.0)
     assert out["spearman"][0] == pytest.approx(1.0)
+
+
+def test_align_frames() -> None:
+    import numpy as np
+    import pandas as pd
+
+    # setup some test frames
+    df1 = pd.DataFrame(
+        {
+            "date": pd.date_range(start="2019-01-02", periods=9),
+            "a": np.array([0, 1, 2, np.nan, 4, 5, 6, 7, 8], dtype=np.float64),
+            "b": np.arange(9, 18, dtype=np.float64),
+        }
+    ).set_index("date")
+
+    df2 = pd.DataFrame(
+        {
+            "date": pd.date_range(start="2019-01-04", periods=7),
+            "a": np.arange(9, 16, dtype=np.float64),
+            "b": np.arange(10, 17, dtype=np.float64),
+        }
+    ).set_index("date")
+
+    # calculate dot-product in pandas
+    pd_dot = (df1 * df2).sum(axis="columns").to_frame("dot").reset_index()
+
+    # use "align_frames" to calculate dot-product from disjoint rows. pandas uses an
+    # index to automatically infer the correct frame-alignment for the calculation;
+    # we need to do it explicitly (which also makes it clearer what is happening)
+    pf1, pf2 = pl.align_frames(
+        pl.from_pandas(df1.reset_index()),
+        pl.from_pandas(df2.reset_index()),
+        on="date",
+    )
+    # (note: feels like we should be able to streamline dot-product further)
+    pl_dot = (
+        (pf1[["a", "b"]] * pf2[["a", "b"]])
+        .fill_null(0)
+        .select(pl.sum(pl.col("*")).alias("dot"))
+        .insert_at_idx(0, pf1["date"])
+    )
+    # confirm we match the same operation in pandas
+    assert pl_dot.frame_equal(pl.from_pandas(pd_dot))
+    pd.testing.assert_frame_equal(pd_dot, pl_dot.to_pandas())
+
+    # (also: confirm alignment function works with lazyframes)
+    lf1, lf2 = pl.align_frames(
+        pl.from_pandas(df1.reset_index()).lazy(),
+        pl.from_pandas(df2.reset_index()).lazy(),
+        on="date",
+    )
+    assert isinstance(lf1, pl.LazyFrame)
+    assert lf1.collect().frame_equal(pf1)
+    assert lf2.collect().frame_equal(pf2)
+
+    # misc
+    assert [] == pl.align_frames(on="date")
+
+    # expected error condition
+    with pytest.raises(TypeError):
+        pl.align_frames(  # type: ignore[call-overload]
+            pl.from_pandas(df1.reset_index()).lazy(),
+            pl.from_pandas(df2.reset_index()),
+            on="date",
+        )
