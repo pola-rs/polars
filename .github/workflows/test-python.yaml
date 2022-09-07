@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r py-polars/build.requirements.txt
+          pip install -r py-polars/requirements-dev.txt
       - name: Run type checking
         run: |
           cd py-polars && mypy && cd ..
@@ -72,7 +72,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r py-polars/build.requirements.txt
+          pip install -r py-polars/requirements-dev.txt
       # this step is different, note the flag
       - name: Run type checking
         run: |

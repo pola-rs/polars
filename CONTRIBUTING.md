@@ -134,7 +134,7 @@ You have to follow these steps:
 
   - Install Rust nightly via [rustup](https://www.rust-lang.org/tools/install)
   - run `$ rustup override set nightly` from the root of the repo.
-  - from [./py-polars](./py-polars) run `$ pip3 install -r build.requirements.txt`
+  - from [./py-polars](./py-polars) run `$ pip3 install -r requirements-dev.txt`
   - **tests:** from [./py-polars](./py-polars) run `$ make test`
   - **formatting + linting:** from [./py-polars](./py-polars) run `$ make pre-commit` before committing.
   - **docs:** from [./py-polars/docs](./py-polars/docs) run `$ pip3 install -r requirements-docs.txt` followed by `make html`

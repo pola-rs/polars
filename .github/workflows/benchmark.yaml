@@ -37,7 +37,7 @@ jobs:
           pip install virtualenv
           python -m venv venv
           source venv/bin/activate
-          pip install -r py-polars/build.requirements.txt
+          pip install -r py-polars/requirements-dev.txt
           cd py-polars
           rustup override set nightly-2022-08-22 && RUSTFLAGS="-C embed-bitcode" maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
           cd tests/db-benchmark
