@@ -51,6 +51,7 @@ jobs:
       - name: Run tests
         run: pytest  # --cov=polars --cov-report xml
       - name: Run doctests
+        if: ${{ matrix. == 'ubuntu-latest'}}
         run: python tests/docs/run_doc_examples.py
       # Allow untyped calls for older Python versions
       - name: Run mypy
