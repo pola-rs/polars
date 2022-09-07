@@ -14,13 +14,15 @@ concurrency:
 jobs:
   test-python:
     name: Build and test Python
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10"]
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: py-polars
-    strategy:
-      matrix:
-        python-version: [ "3.10" ]
+
     steps:
       - uses: actions/checkout@v3
       - name: Set up Rust
@@ -64,13 +66,15 @@ jobs:
 
   test-python-37:
     name: Build and test Python 3.7
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.7"]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: py-polars
-    strategy:
-      matrix:
-        python-version: [ "3.7" ]
+
     steps:
       - uses: actions/checkout@v3
       - name: Set up Rust

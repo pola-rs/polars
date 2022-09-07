@@ -1,42 +1,42 @@
-name: Windows tests python
+# name: Windows tests python
 
-on:
-  pull_request:
-    paths:
-      - 'py-polars/**'
-      - '.github/workflows/test-windows-python.yaml'
+# on:
+#   pull_request:
+#     paths:
+#       - 'py-polars/**'
+#       - '.github/workflows/test-windows-python.yaml'
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+# concurrency:
+#   group: ${{ github.workflow }}-${{ github.ref }}
+#   cancel-in-progress: true
 
-jobs:
-  test-python:
-    name: Build and test Python
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install latest Rust nightly
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly-2022-08-22
-          override: true
-          components: rustfmt
-      - name: Set up Python
-        uses: actions/setup-python@v3
-        with:
-          python-version: "3.9"
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r py-polars/requirements-dev.txt
-      - name: Run tests
-        shell: bash
-        run: |
-          export RUSTFLAGS="-C debuginfo=0"
-          cd py-polars && rustup override set nightly-2022-08-22 && make build-and-test-no-venv
-      # test if we can import polars without any requirements
-      - name: Import polars
-        run: |
-          pip uninstall pandas -y
-          python -c "import polars"
+# jobs:
+#   test-python:
+#     name: Build and test Python
+#     runs-on: windows-latest
+#     steps:
+#       - uses: actions/checkout@v3
+#       - name: Install latest Rust nightly
+#         uses: actions-rs/toolchain@v1
+#         with:
+#           toolchain: nightly-2022-08-22
+#           override: true
+#           components: rustfmt
+#       - name: Set up Python
+#         uses: actions/setup-python@v3
+#         with:
+#           python-version: "3.9"
+#       - name: Install dependencies
+#         run: |
+#           python -m pip install --upgrade pip
+#           pip install -r py-polars/requirements-dev.txt
+#       - name: Run tests
+#         shell: bash
+#         run: |
+#           export RUSTFLAGS="-C debuginfo=0"
+#           cd py-polars && rustup override set nightly-2022-08-22 && make build-and-test-no-venv
+#       # test if we can import polars without any requirements
+#       - name: Import polars
+#         run: |
+#           pip uninstall pandas -y
+#           python -c "import polars"
