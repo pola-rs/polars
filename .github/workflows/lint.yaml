@@ -8,8 +8,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
-    name: Lint
+  main:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
