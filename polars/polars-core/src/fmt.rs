@@ -400,7 +400,7 @@ impl Display for DataFrame {
             let preset = match str_preset.as_str() {
                 "ASCII_FULL" => ASCII_FULL,
                 "ASCII_NO_BORDERS" => ASCII_NO_BORDERS,
-                "ASCII_BORDERS_ONLY" => ASCII_NO_BORDERS,
+                "ASCII_BORDERS_ONLY" => ASCII_BORDERS_ONLY,
                 "ASCII_BORDERS_ONLY_CONDENSED" => ASCII_BORDERS_ONLY_CONDENSED,
                 "ASCII_HORIZONTAL_ONLY" => ASCII_HORIZONTAL_ONLY,
                 "ASCII_MARKDOWN" => ASCII_MARKDOWN,
