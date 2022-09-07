@@ -264,7 +264,7 @@ pub trait SeriesTrait:
         self.chunks().len()
     }
 
-    /// Shrink the capacity of this array to fit it's length.
+    /// Shrink the capacity of this array to fit its length.
     fn shrink_to_fit(&mut self) {
         panic!("shrink to fit not supported for dtype {:?}", self.dtype())
     }

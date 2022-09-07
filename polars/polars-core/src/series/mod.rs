@@ -191,7 +191,7 @@ impl Series {
         self
     }
 
-    /// Shrink the capacity of this array to fit it's length.
+    /// Shrink the capacity of this array to fit its length.
     pub fn shrink_to_fit(&mut self) {
         self._get_inner_mut().shrink_to_fit()
     }

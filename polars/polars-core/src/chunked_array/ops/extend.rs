@@ -22,7 +22,7 @@ where
 {
     /// Extend the memory backed by this array with the values from `other`.
     ///
-    /// Different from [`ChunkedArray::append`] which adds chunks to this [`ChunkedArray`] `extent`
+    /// Different from [`ChunkedArray::append`] which adds chunks to this [`ChunkedArray`] `extend`
     /// appends the data from `other` to the underlying `PrimitiveArray` and thus may cause a reallocation.
     ///
     /// However if this does not cause a reallocation, the resulting data structure will not have any extra chunks
