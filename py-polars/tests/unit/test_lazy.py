@@ -129,8 +129,14 @@ def test_or() -> None:
 
 def test_groupby_apply() -> None:
     df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 3.0]})
-    ldf = df.lazy().groupby("a").apply(lambda df: df)
-    assert ldf.collect().sort("b").frame_equal(df)
+    ldf = (
+        df.lazy()
+        .groupby("a")
+        .apply(lambda df: df * 2.0, schema={"a": pl.Float64, "b": pl.Float64})
+    )
+    out = ldf.collect()
+    assert out.schema == ldf.schema
+    assert out.shape == (3, 2)
 
 
 def test_filter_str() -> None:
