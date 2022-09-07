@@ -16,7 +16,7 @@ jobs:
     name: Build and test Python
     strategy:
       matrix:
-        python-version: ["3.10"]
+        python-version: ["3.7", "3.10"]
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     defaults:
@@ -42,68 +42,15 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements-dev.txt
       - name: Install Polars
-        run: |
-          export RUSTFLAGS="-C debuginfo=0"
-          maturin build && pip install target/wheels/polars-*.whl
-      - name: Run tests
-        run: pytest --cov=polars --cov-report xml
-      - name: Run doctests
-        run: python tests/docs/run_doc_examples.py
+        run: maturin build && pip install target/wheels/polars-*.whl
+        env:
+          RUSTFLAGS: -C debuginfo=0
+      # - name: Run tests
+      #   run: pytest --cov=polars --cov-report xml
+      # - name: Run doctests
+      #   run: python tests/docs/run_doc_examples.py
       - name: Run mypy
-        run: mypy
-      - name: Run clippy
-        run: cargo clippy
-      # Test if we can import polars without optional requirements
-      - name: Check optional dependencies
-        run: |
-          pip uninstall pandas -y
-          python -c "import polars"
-          pip uninstall numpy -y
-          python -c "import polars"
-          pip uninstall pyarrow -y
-          python -c "import polars"
-
-
-  test-python-37:
-    name: Build and test Python 3.7
-    strategy:
-      matrix:
-        python-version: ["3.7"]
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: py-polars
-
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly-2022-08-22
-          override: true
-          components: clippy
-      - name: Set up Python
-        uses: actions/setup-python@v3
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: 'pip'
-          cache-dependency-path: '**/requirements-dev.txt'
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-dev.txt
-      - name: Install Polars
-        run: |
-          export RUSTFLAGS="-C debuginfo=0"
-          maturin build && pip install target/wheels/polars-*.whl
-      - name: Run tests
-        run: pytest --cov=polars --cov-report xml
-      - name: Run doctests
-        run: python tests/docs/run_doc_examples.py
-      # This step is different, note the flag
-      - name: Run mypy
-        run: mypy --allow-untyped-calls
+        run: mypy {{ matrix.python-version == "3.7" && "--allow-untyped-calls" || "" }}
       - name: Run clippy
         run: cargo clippy
       # Test if we can import polars without optional requirements
