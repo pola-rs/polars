@@ -687,7 +687,12 @@ def arrow_to_pydf(
 
         # path for table without rows that keeps datatype
         if tbl.shape[0] == 0:
-            pydf = pli.DataFrame._from_pandas(tbl.to_pandas())._df
+            pydf = pli.DataFrame(
+                [
+                    pli.Series(name, c)
+                    for (name, c) in zip(tbl.column_names, tbl.columns)
+                ]
+            )._df
         else:
             pydf = PyDataFrame.from_arrow_record_batches(tbl.to_batches())
     else:
