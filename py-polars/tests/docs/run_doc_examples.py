@@ -55,7 +55,7 @@ if __name__ == "__main__":
     # Will still report errors if the code is invalid
     IGNORE_RESULT_ALL = False
 
-    # Below the implementation if the IGNORE_RESULT directive
+    # Below the implementation of the IGNORE_RESULT directive
     # You can ignore the result of a doctest by adding "doctest: +IGNORE_RESULT" into
     # the code block. The difference with SKIP is that if the code errors on running,
     # that will still be reported.
