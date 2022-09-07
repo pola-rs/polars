@@ -1381,10 +1381,12 @@ def test_peak_max_peak_min() -> None:
 
 def test_shrink_to_fit() -> None:
     s = pl.Series("a", [4, 1, 3, 2, 5])
-    assert s.shrink_to_fit(in_place=True) is None
+    sf = s.shrink_to_fit(in_place=True)
+    assert sf is s
 
     s = pl.Series("a", [4, 1, 3, 2, 5])
-    assert isinstance(s.shrink_to_fit(in_place=False), pl.Series)
+    sf = s.shrink_to_fit(in_place=False)
+    assert s is not sf
 
 
 def test_str_concat() -> None:
@@ -1920,8 +1922,7 @@ def test_clip() -> None:
 
 def test_mutable_borrowed_append_3915() -> None:
     s = pl.Series("s", [1, 2, 3])
-    s.append(s)
-    assert s.to_list() == [1, 2, 3, 1, 2, 3]
+    assert s.append(s).to_list() == [1, 2, 3, 1, 2, 3]
 
 
 def test_set_at_idx() -> None:

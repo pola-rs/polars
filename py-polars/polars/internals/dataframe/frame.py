@@ -2295,7 +2295,7 @@ class DataFrame:
         """
         return self.select(pli.col("*").reverse())
 
-    def rename(self, mapping: dict[str, str]) -> DataFrame:
+    def rename(self: DF, mapping: dict[str, str]) -> DF | DataFrame:
         """
         Rename column names.
 
@@ -2326,7 +2326,7 @@ class DataFrame:
         """
         return self.lazy().rename(mapping).collect(no_optimization=True)
 
-    def insert_at_idx(self, index: int, series: pli.Series) -> None:
+    def insert_at_idx(self: DF, index: int, series: pli.Series) -> DF:
         """
         Insert a Series at a certain column index. This operation is in place.
 
@@ -2385,6 +2385,7 @@ class DataFrame:
         if index < 0:
             index = len(self.columns) + index
         self._df.insert_at_idx(index, series._s)
+        return self
 
     def filter(
         self,
@@ -2525,7 +2526,7 @@ class DataFrame:
         """
         return self._df.find_idx_by_name(name)
 
-    def replace_at_idx(self, index: int, series: pli.Series) -> None:
+    def replace_at_idx(self: DF, index: int, series: pli.Series) -> DF:
         """
         Replace a column at an index location.
 
@@ -2565,13 +2566,14 @@ class DataFrame:
         if index < 0:
             index = len(self.columns) + index
         self._df.replace_at_idx(index, series._s)
+        return self
 
     def sort(
-        self,
+        self: DF,
         by: str | pli.Expr | list[str] | list[pli.Expr],
         reverse: bool | list[bool] = False,
         nulls_last: bool = False,
-    ) -> DataFrame:
+    ) -> DF | DataFrame:
         """
         Sort the DataFrame by column.
 
@@ -2672,7 +2674,7 @@ class DataFrame:
         """
         return self._df.frame_equal(other._df, null_equal)
 
-    def replace(self, column: str, new_col: pli.Series) -> None:
+    def replace(self: DF, column: str, new_col: pli.Series) -> DF:
         """
         Replace a column by a new Series.
 
@@ -2704,6 +2706,7 @@ class DataFrame:
 
         """
         self._df.replace(column, new_col._s)
+        return self
 
     def slice(self: DF, offset: int, length: int | None = None) -> DF:
         """
@@ -4024,27 +4027,11 @@ class DataFrame:
         else:
             return self._from_pydf(self._df.with_column(column._s))
 
-    @overload
-    def hstack(
-        self: DF,
-        columns: list[pli.Series] | DataFrame,
-        in_place: Literal[False] = False,
-    ) -> DF:
-        ...
-
-    @overload
-    def hstack(
-        self: DF,
-        columns: list[pli.Series] | DataFrame,
-        in_place: Literal[True],
-    ) -> None:
-        ...
-
     def hstack(
         self: DF,
         columns: list[pli.Series] | DataFrame,
         in_place: bool = False,
-    ) -> DF | None:
+    ) -> DF:
         """
         Return a new DataFrame grown horizontally by stacking multiple Series to it.
 
@@ -4084,23 +4071,11 @@ class DataFrame:
             columns = columns.get_columns()
         if in_place:
             self._df.hstack_mut([s._s for s in columns])
-            return None
+            return self
         else:
             return self._from_pydf(self._df.hstack([s._s for s in columns]))
 
-    @overload
-    def vstack(self, df: DataFrame, in_place: Literal[True]) -> None:
-        ...
-
-    @overload
-    def vstack(self: DF, df: DataFrame, in_place: Literal[False] = ...) -> DF:
-        ...
-
-    @overload
-    def vstack(self: DF, df: DataFrame, in_place: bool) -> DF | None:
-        ...
-
-    def vstack(self: DF, df: DataFrame, in_place: bool = False) -> DF | None:
+    def vstack(self: DF, df: DataFrame, in_place: bool = False) -> DF:
         """
         Grow this DataFrame vertically by stacking a DataFrame to it.
 
@@ -4146,16 +4121,16 @@ class DataFrame:
         """
         if in_place:
             self._df.vstack_mut(df._df)
-            return None
+            return self
         else:
             return self._from_pydf(self._df.vstack(df._df))
 
-    def extend(self, other: DataFrame) -> None:
+    def extend(self: DF, other: DF) -> DF:
         """
         Extend the memory backed by this `DataFrame` with the values from `other`.
 
         Different from `vstack` which adds the chunks from `other` to the chunks of this
-        `DataFrame` `extent` appends the data from `other` to the underlying memory
+        `DataFrame` `extend` appends the data from `other` to the underlying memory
         locations and thus may cause a reallocation.
 
         If this does not cause a reallocation, the resulting data structure will not
@@ -4201,6 +4176,7 @@ class DataFrame:
 
         """
         self._df.extend(other._df)
+        return self
 
     def drop(self: DF, name: str | list[str]) -> DF:
         """
@@ -5943,19 +5919,7 @@ class DataFrame:
         """
         return self._df.row_tuples()
 
-    @overload
-    def shrink_to_fit(self: DF, in_place: Literal[False] = ...) -> DF:
-        ...
-
-    @overload
-    def shrink_to_fit(self, in_place: Literal[True]) -> None:
-        ...
-
-    @overload
-    def shrink_to_fit(self: DF, in_place: bool) -> DF | None:
-        ...
-
-    def shrink_to_fit(self: DF, in_place: bool = False) -> DF | None:
+    def shrink_to_fit(self: DF, in_place: bool = False) -> DF:
         """
         Shrink DataFrame memory usage.
 
@@ -5964,7 +5928,7 @@ class DataFrame:
         """
         if in_place:
             self._df.shrink_to_fit()
-            return None
+            return self
         else:
             df = self.clone()
             df._df.shrink_to_fit()

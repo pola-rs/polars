@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import math
-import sys
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Sequence, Union, overload
+from typing import TYPE_CHECKING, Any, Callable, Sequence, Union
 from warnings import warn
 
 from polars import internals as pli
@@ -88,11 +87,6 @@ try:
     _PANDAS_AVAILABLE = True
 except ImportError:
     _PANDAS_AVAILABLE = False
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
@@ -1280,19 +1274,7 @@ class Series:
         s._s.rename(name)
         return s
 
-    @overload
-    def rename(self, name: str, in_place: Literal[False] = ...) -> Series:
-        ...
-
-    @overload
-    def rename(self, name: str, in_place: Literal[True]) -> None:
-        ...
-
-    @overload
-    def rename(self, name: str, in_place: bool) -> Series | None:
-        ...
-
-    def rename(self, name: str, in_place: bool = False) -> Series | None:
+    def rename(self, name: str, in_place: bool = False) -> Series:
         """
         Rename this Series.
 
@@ -1318,7 +1300,7 @@ class Series:
         """
         if in_place:
             self._s.rename(name)
-            return None
+            return self
         else:
             return self.alias(name)
 
@@ -1472,7 +1454,7 @@ class Series:
 
         """
 
-    def append(self, other: Series, append_chunks: bool = True) -> None:
+    def append(self, other: Series, append_chunks: bool = True) -> Series:
         """
         Append a Series to this one.
 
@@ -1488,7 +1470,7 @@ class Series:
             `DataFrame.extend` which extends the memory backed by this `Series` with
             the values from `other`.
 
-            Different from `append chunks`, `extent` appends the data from `other` to
+            Different from `append chunks`, `extend` appends the data from `other` to
             the underlying memory locations and thus may cause a reallocation (which are
             expensive).
 
@@ -1530,9 +1512,10 @@ class Series:
                 self._s.extend(other._s)
         except RuntimeError as e:
             if str(e) == "Already mutably borrowed":
-                return self.append(other.clone(), append_chunks)
+                self.append(other.clone(), append_chunks)
             else:
                 raise e
+        return self
 
     def filter(self, predicate: Series | list[bool]) -> Series:
         """
@@ -1625,19 +1608,7 @@ class Series:
 
         """
 
-    @overload
-    def sort(self, reverse: bool = False, *, in_place: Literal[False] = ...) -> Series:
-        ...
-
-    @overload
-    def sort(self, reverse: bool = False, *, in_place: Literal[True]) -> None:
-        ...
-
-    @overload
-    def sort(self, reverse: bool = False, *, in_place: bool = False) -> Series | None:
-        ...
-
-    def sort(self, reverse: bool = False, *, in_place: bool = False) -> Series | None:
+    def sort(self, reverse: bool = False, *, in_place: bool = False) -> Series:
         """
         Sort this Series.
 
@@ -1673,7 +1644,7 @@ class Series:
         """
         if in_place:
             self._s = self._s.sort(reverse)
-            return None
+            return self
         else:
             return wrap_s(self._s.sort(reverse))
 
@@ -2256,19 +2227,7 @@ class Series:
             return self.to_arrow().to_pylist()
         return self._s.to_list()
 
-    @overload
-    def rechunk(self, in_place: Literal[False] = ...) -> Series:
-        ...
-
-    @overload
-    def rechunk(self, in_place: Literal[True]) -> None:
-        ...
-
-    @overload
-    def rechunk(self, in_place: bool) -> Series | None:
-        ...
-
-    def rechunk(self, in_place: bool = False) -> Series | None:
+    def rechunk(self, in_place: bool = False) -> Series:
         """
         Create a single chunk of memory for this Series.
 
@@ -2279,10 +2238,7 @@ class Series:
 
         """
         opt_s = self._s.rechunk(in_place)
-        if in_place:
-            return None
-        else:
-            return wrap_s(opt_s)
+        return self if in_place else wrap_s(opt_s)
 
     def reverse(self) -> Series:
         """
@@ -3642,28 +3598,17 @@ class Series:
         """
         return self._s.n_unique()
 
-    @overload
-    def shrink_to_fit(self, in_place: Literal[False] = ...) -> Series:
-        ...
-
-    @overload
-    def shrink_to_fit(self, in_place: Literal[True]) -> None:
-        ...
-
-    @overload
-    def shrink_to_fit(self, in_place: bool = False) -> Series | None:
-        ...
-
-    def shrink_to_fit(self, in_place: bool = False) -> Series | None:
+    def shrink_to_fit(self, in_place: bool = False) -> Series:
         """
         Shrink Series memory usage.
 
-        Shrinks to fit the exact capacity needed to hold the data.
+        Shrinks the underlying array capacity to exactly fit the actual data.
+        (Note that this function does not change the Series data type).
 
         """
         if in_place:
             self._s.shrink_to_fit()
-            return None
+            return self
         else:
             series = self.clone()
             series._s.shrink_to_fit()
