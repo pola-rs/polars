@@ -1,4 +1,4 @@
-name: Test python
+name: Test Python
 
 on:
   pull_request:
@@ -16,7 +16,7 @@ jobs:
     name: Build and test Python
     strategy:
       matrix:
-        python-version: ["3.7", "3.10"]
+        python-version: ['3.7', '3.10']
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     defaults:
