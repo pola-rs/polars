@@ -52,8 +52,18 @@ impl PyLazyGroupBy {
         lgb.tail(Some(n)).into()
     }
 
-    pub fn apply(&mut self, lambda: PyObject) -> PyLazyFrame {
+    pub fn apply(
+        &mut self,
+        lambda: PyObject,
+        schema: Option<Wrap<Schema>>,
+    ) -> PyResult<PyLazyFrame> {
         let lgb = self.lgb.take().unwrap();
+        let schema = match schema {
+            Some(schema) => Arc::new(schema.0),
+            None => LazyFrame::from(lgb.logical_plan.clone())
+                .schema()
+                .map_err(PyPolarsErr::from)?,
+        };
 
         let function = move |df: DataFrame| {
             Python::with_gil(|py| {
@@ -82,7 +92,7 @@ impl PyLazyGroupBy {
                 Ok(pydf.df)
             })
         };
-        lgb.apply(function).into()
+        Ok(lgb.apply(function, schema).into())
     }
 }
 

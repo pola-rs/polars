@@ -1148,19 +1148,6 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_groupby_apply() {
-        let df = df! {
-            "a" => [1, 1, 2, 2, 2],
-            "b" => [1, 2, 3, 4, 5]
-        }
-        .unwrap();
-
-        let out = df.groupby(["a"]).unwrap().apply(Ok).unwrap();
-        assert!(out.sort(["b"], false).unwrap().frame_equal(&df));
-    }
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
     fn test_groupby_threaded() {
         for slice in &[
             vec![1, 2, 3, 4, 4, 4, 2, 1],

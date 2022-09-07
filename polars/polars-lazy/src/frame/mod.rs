@@ -1316,7 +1316,7 @@ impl LazyFrame {
 /// Utility struct for lazy groupby operation.
 #[derive(Clone)]
 pub struct LazyGroupBy {
-    pub(crate) logical_plan: LogicalPlan,
+    pub logical_plan: LogicalPlan,
     opt_state: OptState,
     keys: Vec<Expr>,
     maintain_order: bool,
@@ -1386,21 +1386,24 @@ impl LazyGroupBy {
     }
 
     /// Apply a function over the groups as a new `DataFrame`. It is not recommended that you use
-    /// this as materializing the `DataFrame` is quite expensive.
-    pub fn apply<F>(self, f: F) -> LazyFrame
+    /// this as materializing the `DataFrame` is very expensive.
+    pub fn apply<F>(self, f: F, schema: SchemaRef) -> LazyFrame
     where
         F: 'static + Fn(DataFrame) -> Result<DataFrame> + Send + Sync,
     {
-        let lp = LogicalPlanBuilder::from(self.logical_plan)
-            .groupby(
-                Arc::new(self.keys),
-                vec![],
-                Some(Arc::new(f)),
-                self.maintain_order,
-                None,
-                None,
-            )
-            .build();
+        let lp = LogicalPlan::Aggregate {
+            input: Box::new(self.logical_plan),
+            keys: Arc::new(self.keys),
+            aggs: vec![],
+            schema,
+            apply: Some(Arc::new(f)),
+            maintain_order: self.maintain_order,
+            options: GroupbyOptions {
+                dynamic: None,
+                rolling: None,
+                slice: None,
+            },
+        };
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
 }
