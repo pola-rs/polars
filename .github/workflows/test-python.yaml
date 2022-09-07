@@ -41,16 +41,16 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements-dev.txt
+      - name: Run mypy
+        run: mypy ${{ matrix.python-version == "3.7" && "--allow-untyped-calls" || "" }}
       - name: Install Polars
         run: maturin build && pip install target/wheels/polars-*.whl
         env:
           RUSTFLAGS: -C debuginfo=0
-      # - name: Run tests
-      #   run: pytest --cov=polars --cov-report xml
-      # - name: Run doctests
-      #   run: python tests/docs/run_doc_examples.py
-      - name: Run mypy
-        run: mypy {{ matrix.python-version == "3.7" && "--allow-untyped-calls" || "" }}
+      - name: Run tests
+        run: pytest  # --cov=polars --cov-report xml
+      - name: Run doctests
+        run: python tests/docs/run_doc_examples.py
       - name: Run clippy
         run: cargo clippy
       # Test if we can import polars without optional requirements
