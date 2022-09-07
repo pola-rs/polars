@@ -12,7 +12,7 @@ Attributes
 ----------
 
 .. autosummary::
-   :toctree: api/
+   :toctree: apimut /
 
     LazyFrame.columns
     LazyFrame.dtypes
@@ -107,6 +107,7 @@ Various
     LazyFrame.collect
     LazyFrame.fetch
     LazyFrame.pipe
+    LazyFrame.profile
 
 GroupBy
 -------

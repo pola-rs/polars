@@ -707,10 +707,13 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         slice_pushdown: bool = True,
     ) -> tuple[pli.DataFrame, pli.DataFrame]:
         """
-        Collect into a DataFrame.
+        Profile a LazyFrame.
 
-        Note: use :func:`fetch` if you want to run your query on the first `n` rows
-        only. This can be a huge time saver in debugging queries.
+        This will run the query and return a tuple
+        containing the materialized DataFrame and a DataFrame that
+        contains profiling information of each node that is executed.
+
+        The units of the timings are microseconds.
 
         Parameters
         ----------

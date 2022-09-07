@@ -52,16 +52,16 @@ impl NodeTimer {
             .map(|(start, _)| (start.duration_since(self.query_start)).as_micros() as u64)
             .collect();
         let mut start = start.into_inner();
-        start.rename("start[us]");
+        start.rename("start");
 
         let end: NoNull<UInt64Chunked> = ticks
             .iter()
             .map(|(_, end)| (end.duration_since(self.query_start)).as_micros() as u64)
             .collect();
         let mut end = end.into_inner();
-        end.rename("end[us]");
+        end.rename("end");
 
         DataFrame::new_no_checks(vec![nodes_s, start.into_series(), end.into_series()])
-            .sort(vec!["start[us]"], vec![false])
+            .sort(vec!["start"], vec![false])
     }
 }
