@@ -1,9 +1,9 @@
 name: Coverage
 
-on:
-  pull_request:
-    paths:
-      - '.github/workflows/coverage.yaml'
+# on:
+#   pull_request:
+#     paths:
+#       - '.github/workflows/coverage.yaml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

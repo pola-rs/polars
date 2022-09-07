@@ -1,10 +1,10 @@
 name: Docs check
 
-on:
-  pull_request:
-    paths:
-    - 'py-polars/**'
-    - '.github/workflows/docs_check.yaml'
+# on:
+#   pull_request:
+#     paths:
+#     - 'py-polars/**'
+#     - '.github/workflows/docs_check.yaml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

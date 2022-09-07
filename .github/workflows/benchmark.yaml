@@ -1,11 +1,11 @@
 name: Benchmark
 
-on:
-  pull_request:
-    paths:
-      - 'polars/**'
-      - 'py-polars/tests/db-benchmark/**'
-      - '.github/workflows/benchmark.yaml'
+# on:
+#   pull_request:
+#     paths:
+#       - 'polars/**'
+#       - 'py-polars/tests/db-benchmark/**'
+#       - '.github/workflows/benchmark.yaml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
