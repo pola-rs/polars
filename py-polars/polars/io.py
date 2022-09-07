@@ -4,21 +4,13 @@ from __future__ import annotations
 import sys
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
-<<<<<<< HEAD
-<<<<<<< HEAD
-from typing import TYPE_CHECKING, BinaryIO, Callable, Mapping, TextIO
-from warnings import warn
-=======
-from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, TextIO
->>>>>>> de44c93b7 (Type as any)
-=======
 from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, TextIO, overload
+from warnings import warn
 
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
     from typing_extensions import Literal
->>>>>>> 91f5ac55d (Add tests on read_excel)
 
 from polars.utils import deprecated_alias, format_path, handle_projection_columns
 
