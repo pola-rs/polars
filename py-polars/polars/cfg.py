@@ -18,19 +18,57 @@ class Config:
         # os.unsetenv is automatically called if we remove a key from os.environ,
         # see https://docs.python.org/3/library/os.html#os.environ. However, we cannot
         # call os.unsetenv directly, as that fails on Windows
-        os.environ.pop("POLARS_FMT_NO_UTF8", None)
+        os.environ["POLARS_FMT_TABLE_FORMATTING"] = "UTF8_FULL"
         return cls
 
     @classmethod
     def set_ascii_tables(cls) -> type[Config]:
         """Use ascii characters to print tables."""
-        os.environ["POLARS_FMT_NO_UTF8"] = "1"
+        os.environ["POLARS_FMT_TABLE_FORMATTING"] = "ASCII_FULL"
         return cls
 
     @classmethod
-    def set_no_separator_tables(cls) -> type[Config]:
-        """Don’t draw any borders or other lines."""
-        os.environ["POLARS_FMT_NO_SEPARATOR_TABLES"] = "1"
+    def set_tbl_formatting(cls, format: str) -> type[Config]:
+        """ Set table formatting style.
+
+        Parameters:
+        -----------
+
+        ASCII_FULL
+        ASCII_NO_BORDERS
+        ASCII_BORDERS_ONLY
+        ASCII_BORDERS_ONLY_CONDENSED
+        ASCII_HORIZONTAL_ONLY
+        ASCII_MARKDOWN
+        UTF8_FULL
+        UTF8_NO_BORDERS
+        UTF8_BORDERS_ONLY
+        UTF8_HORIZONTAL_ONLY
+        NOTHING
+
+        These are defined by comfy-table which provides examples for each parameter at:
+
+        https://github.com/Nukesor/comfy-table/blob/main/src/style/presets.rs
+
+        """
+
+        os.environ["POLARS_FMT_TABLE_FORMATTING"] = str(format)
+        return cls
+
+    @classmethod
+    def set_tbl_cell_alignment(cls, format: str) -> type[Config]:
+        """
+        Set table cell alignment.
+
+        Parameters:
+        -----------
+
+        LEFT
+        CENTER
+        RIGHT
+
+        """
+        os.environ["POLARS_FMT_TABLE_CELL_ALIGNMENT"] = str(format)
         return cls
 
     @classmethod
