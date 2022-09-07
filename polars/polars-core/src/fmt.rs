@@ -20,7 +20,7 @@ use std::borrow::Cow;
 ))]
 use arrow::temporal_conversions::*;
 #[cfg(feature = "fmt")]
-use comfy_table::presets::{ASCII_FULL, NOTHING, UTF8_FULL};
+use comfy_table::presets::*;
 #[cfg(feature = "fmt")]
 use comfy_table::*;
 
@@ -359,10 +359,7 @@ impl Display for DataFrame {
             let field_to_str = |f: &Field| {
                 let name = make_str_val(f.name(), str_truncate);
                 let lower_bounds = std::cmp::max(5, std::cmp::min(12, name.len()));
-                let mut s = format!("{}\n---\n{}", name, f.data_type());
-                if std::env::var("POLARS_FMT_NO_SEPARATOR_TABLES").is_ok() {
-                    s = format!("{}\n{}\n---", name, f.data_type());
-                }
+                let s = format!("{}\n{}\n---", name, f.data_type());
                 (s, lower_bounds)
             };
             let tbl_lower_bounds = |l: usize| {
@@ -385,18 +382,50 @@ impl Display for DataFrame {
                 constraints.push(tbl_lower_bounds(l));
             }
             let mut table = Table::new();
-            let preset = if std::env::var("POLARS_FMT_NO_UTF8").is_ok() {
-                if std::env::var("POLARS_FMT_NO_SEPARATOR_TABLES").is_ok() {
-                    NOTHING
-                } else {
+            // let preset = if std::env::var("POLARS_FMT_NO_UTF8").is_ok() {
+            //     if std::env::var("POLARS_FMT_NO_SEPARATOR_TABLES").is_ok() {
+            //         NOTHING
+            //     } else {
+            //         ASCII_FULL
+            //     }
+            // } else {
+            //     if std::env::var("POLARS_FMT_NO_SEPARATOR_TABLES").is_ok() {
+            //         NOTHING
+            //     } else {
+            //         UTF8_FULL
+            //     }
+            // };
+
+            let preset = if std::env::var("POLARS_FMT_TABLE_FORMATTING").is_ok() {
+                let str_preset =
+                    std::env::var("POLARS_FMT_TABLE_FORMATTING").unwrap_or("none".to_string());
+                if str_preset == "ASCII_FULL" {
                     ASCII_FULL
-                }
-            } else {
-                if std::env::var("POLARS_FMT_NO_SEPARATOR_TABLES").is_ok() {
+                } else if str_preset == "ASCII_NO_BORDERS" {
+                    ASCII_NO_BORDERS
+                } else if str_preset == "ASCII_BORDERS_ONLY" {
+                    ASCII_BORDERS_ONLY
+                } else if str_preset == "ASCII_BORDERS_ONLY_CONDENSED" {
+                    ASCII_BORDERS_ONLY_CONDENSED
+                } else if str_preset == "ASCII_HORIZONTAL_ONLY" {
+                    ASCII_HORIZONTAL_ONLY
+                } else if str_preset == "ASCII_MARKDOWN" {
+                    ASCII_MARKDOWN
+                } else if str_preset == "UTF8_FULL" {
+                    UTF8_FULL
+                } else if str_preset == "UTF8_NO_BORDERS" {
+                    UTF8_NO_BORDERS
+                } else if str_preset == "UTF8_BORDERS_ONLY" {
+                    UTF8_BORDERS_ONLY
+                } else if str_preset == "UTF8_HORIZONTAL_ONLY" {
+                    UTF8_HORIZONTAL_ONLY
+                } else if str_preset == "NOTHING" {
                     NOTHING
                 } else {
                     UTF8_FULL
                 }
+            } else {
+                UTF8_FULL
             };
 
             table
@@ -450,11 +479,22 @@ impl Display for DataFrame {
                 table.set_table_width(100);
             }
 
-            // set alignment of cells to right if table is drawn without borders / lines
-            if std::env::var("POLARS_FMT_NO_SEPARATOR_TABLES").is_ok() {
+            // set alignment of cells if defined
+
+            if std::env::var("POLARS_FMT_TABLE_CELL_ALIGNMENT").is_ok() {
                 // for (column_index, column) in table.column_iter_mut().enumerate() {
+                let str_preset =
+                std::env::var("POLARS_FMT_TABLE_CELL_ALIGNMENT").unwrap_or("none".to_string());
                 for column in table.column_iter_mut() {
-                    column.set_cell_alignment(CellAlignment::Right);
+                    if str_preset == "RIGHT" {
+                        column.set_cell_alignment(CellAlignment::Right);
+                    } else if str_preset == "LEFT" {
+                        column.set_cell_alignment(CellAlignment::Left);
+                    } else if str_preset == "CENTER" {
+                        column.set_cell_alignment(CellAlignment::Center);
+                    } else {
+                        column.set_cell_alignment(CellAlignment::Left);
+                    }
                 }
             }
 
