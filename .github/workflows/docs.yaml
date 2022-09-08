@@ -25,9 +25,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r py-polars/docs/requirements-docs.txt
       - name: Build python reference
-        run: |
-          cd py-polars/docs
-          make html
+        working-directory: py-polars/docs
+        run: make html
       - name: deploy docs
         env:
           RUSTFLAGS: --cfg docsrs

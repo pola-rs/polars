@@ -225,15 +225,20 @@ pub(crate) fn aexpr_to_root_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Node>
 /// In some cases we can have multiple roots.
 /// For instance in predicate pushdown the predicates are combined by their root column
 /// When combined they may be a binary expression with the same root columns
-pub(crate) fn rename_aexpr_root_names(node: Node, arena: &mut Arena<AExpr>, new_name: Arc<str>) {
-    let roots = aexpr_to_root_nodes(node, arena);
-
-    for node in roots {
-        arena.replace_with(node, |ae| match ae {
-            AExpr::Column(_) => AExpr::Column(new_name.clone()),
-            _ => panic!("should be only a column"),
-        });
-    }
+pub(crate) fn rename_aexpr_root_names(
+    node: Node,
+    arena: &mut Arena<AExpr>,
+    new_name: Arc<str>,
+) -> Node {
+    // we convert to expression as we cannot easily copy the aexpr.
+    let mut new_expr = node_to_expr(node, arena);
+    new_expr.mutate().apply(|e| {
+        if let Expr::Column(name) = e {
+            *name = new_name.clone()
+        }
+        true
+    });
+    to_aexpr(new_expr, arena)
 }
 
 /// Rename the root of the expression from `current` to `new` and assign to new node in arena.

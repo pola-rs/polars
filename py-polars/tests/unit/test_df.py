@@ -2153,3 +2153,21 @@ def test_set() -> None:
     # we cannot index with any type, such as bool
     with pytest.raises(ValueError):
         df[True] = 1  # type: ignore[index]
+
+
+def test_union_with_aliases_4770() -> None:
+    lf = pl.DataFrame(
+        {
+            "a": [1, None],
+            "b": [3, 4],
+        }
+    ).lazy()
+
+    lf = pl.concat(
+        [
+            lf.select([pl.col("a").alias("x")]),
+            lf.select([pl.col("b").alias("x")]),
+        ]
+    ).filter(pl.col("x").is_not_null())
+
+    assert lf.collect()["x"].to_list() == [1, 3, 4]

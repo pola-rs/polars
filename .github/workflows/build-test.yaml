@@ -20,7 +20,8 @@ jobs:
         run: rustup update stable
       - uses: Swatinem/rust-cache@v1
       - name: "check"
-        run: cd examples && cargo check
+        working-directory: examples
+        run: cargo check
 
   features:
     name: Features
@@ -37,8 +38,8 @@ jobs:
         run: |
           cargo install cargo-hack
       - name: Feature test
-        run: |
-          cd polars && cargo hack check --each-feature --no-dev-deps --features private
+        working-directory: polars
+        run: cargo hack check --each-feature --no-dev-deps --features private
 
   test-rust:
     name: Build and test Rust
@@ -74,8 +75,9 @@ jobs:
       - name: Run linting checks
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+        working-directory: polars
         run : |
-          cd polars && cargo clippy --all-features \
+          cargo clippy --all-features \
           -p polars-core \
           -p polars-io \
           -p polars-lazy \
@@ -84,10 +86,11 @@ jobs:
       - name: Run tests
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
-        run: cd polars && make test && make integration-tests
+        working-directory: polars
+        run: make test && make integration-tests
       - name: Run miri
+        working-directory: polars
         run: |
-          cd polars
           cargo miri setup
           cargo clean
           make miri

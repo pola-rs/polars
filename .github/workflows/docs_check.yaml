@@ -27,6 +27,5 @@ jobs:
       - name: Build python reference
         env:
           SPHINXOPTS: -W
-        run: |
-          cd py-polars/docs
-          make html
+        working-directory: py-polars/docs
+        run: make html
