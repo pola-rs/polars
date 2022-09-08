@@ -918,16 +918,6 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn filter(&self, mask: &PySeries) -> PyResult<Self> {
-        let filter_series = &mask.series;
-        if let Ok(ca) = filter_series.bool() {
-            let df = self.df.filter(ca).map_err(PyPolarsErr::from)?;
-            Ok(PyDataFrame::new(df))
-        } else {
-            Err(PyRuntimeError::new_err("Expected a boolean mask"))
-        }
-    }
-
     pub fn take(&self, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
         let indices = indices.0;
         let indices = IdxCa::from_vec("", indices);
@@ -959,11 +949,6 @@ impl PyDataFrame {
         self.df
             .replace(column, new_col.series)
             .map_err(PyPolarsErr::from)?;
-        Ok(())
-    }
-
-    pub fn rename(&mut self, column: &str, new_col: &str) -> PyResult<()> {
-        self.df.rename(column, new_col).map_err(PyPolarsErr::from)?;
         Ok(())
     }
 
