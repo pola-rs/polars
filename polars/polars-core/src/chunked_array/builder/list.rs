@@ -363,8 +363,6 @@ pub fn get_list_builder(
             list_capacity,
             Some(physical_type),
         ))),
-        #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_) => _err(),
         _ => {
             macro_rules! get_primitive_builder {
                 ($type:ty) => {{

@@ -159,10 +159,11 @@ impl ChunkCast for ListChunked {
     fn cast(&self, data_type: &DataType) -> Result<Series> {
         match data_type {
             DataType::List(child_type) => {
-                let mut ca = if child_type.to_physical() != self.inner_dtype() {
+                let phys_child = child_type.to_physical();
+                let mut ca = if child_type.to_physical() != self.inner_dtype().to_physical() {
                     let chunks = self
                         .downcast_iter()
-                        .map(|list| cast_inner_list_type(list, child_type))
+                        .map(|list| cast_inner_list_type(list, &phys_child))
                         .collect::<Result<_>>()?;
                     ListChunked::from_chunks(self.name(), chunks)
                 } else {
