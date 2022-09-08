@@ -258,3 +258,13 @@ def test_nested_cache_composition() -> None:
 
     # no other scope active; NOW we expect the cache to have been invalidated
     assert pl.using_string_cache() is False
+
+
+def test_categorical_list_concat_4762() -> None:
+    df = pl.DataFrame({"x": "a"})
+    expected = {"x": [["a", "a"]]}
+
+    q = df.lazy().select([pl.concat_list([pl.col("x").cast(pl.Categorical)] * 2)])
+    with pl.StringCache():
+        assert q.collect().to_dict(False) == expected
+    assert q.collect().to_dict(False) == expected
