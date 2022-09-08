@@ -29,9 +29,11 @@ jobs:
           cd py-polars/docs
           make html
       - name: deploy docs
+        env:
+          RUSTFLAGS: --cfg docsrs
         run: |
           set -e
-          RUSTFLAGS="--cfg docsrs" cargo doc --features=docs-selection --package polars && \
+          cargo doc --features=docs-selection --package polars && \
           echo '<meta http-equiv=refresh content=0;url=polars/index.html>' > target/doc/index.html && \
           mkdir target/doc/py-polars
           cp -r py-polars/docs/build/html target/doc/py-polars

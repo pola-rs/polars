@@ -25,6 +25,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r py-polars/docs/requirements-docs.txt
       - name: Build python reference
+        env:
+          SPHINXOPTS: -W
         run: |
           cd py-polars/docs
-          make html SPHINXOPTS="-W"
+          make html
