@@ -20,12 +20,12 @@ jobs:
         with:
           toolchain: nightly-2022-08-22
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install maturin==0.13.2
       - name: Publish wheel
         shell: bash
