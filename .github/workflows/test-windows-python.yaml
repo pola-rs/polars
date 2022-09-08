@@ -24,7 +24,6 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           override: true
-          components: rustfmt
       - name: Set up Python
         uses: actions/setup-python@v3
         with:
