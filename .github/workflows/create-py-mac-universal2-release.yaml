@@ -20,6 +20,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           override: true
+          profile: minimal
       - name: Setup universal2 targets for Rust
         run: |
           rustup target add aarch64-apple-darwin

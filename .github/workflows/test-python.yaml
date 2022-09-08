@@ -29,6 +29,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           override: true
+          profile: minimal
           components: rustfmt, clippy
       - name: Set up Python
         uses: actions/setup-python@v3

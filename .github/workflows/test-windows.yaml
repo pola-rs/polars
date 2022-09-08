@@ -18,6 +18,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           override: true
+          profile: minimal
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v1
       - name: Run tests
