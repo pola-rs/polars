@@ -666,8 +666,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def sort(
         self: LDF,
-        by: str | pli.Expr | list[str] | list[pli.Expr],
-        reverse: bool | list[bool] = False,
+        by: str
+        | pli.Expr
+        | Sequence[str]
+        | Sequence[pli.Expr]
+        | Sequence[str | pli.Expr],
+        reverse: bool | Sequence[bool] = False,
         nulls_last: bool = False,
     ) -> LDF:
         """

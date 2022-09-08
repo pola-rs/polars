@@ -242,7 +242,7 @@ def from_arrow(
     a : Arrow Table or Array
         Data represented as Arrow Table or Array.
     rechunk : bool, default True
-        Make sure that all data is contiguous.
+        Make sure that all data is in contiguous memory.
 
     Returns
     -------
@@ -329,7 +329,7 @@ def from_pandas(
     df : pandas DataFrame, Series, or DatetimeIndex
         Data represented as a pandas DataFrame, Series, or DatetimeIndex.
     rechunk : bool, default True
-        Make sure that all data is contiguous.
+        Make sure that all data is in contiguous memory.
     nan_to_none : bool, default True
         If data contains NaN values PyArrow will convert the NaN to None
 

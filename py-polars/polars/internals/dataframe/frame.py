@@ -441,7 +441,7 @@ class DataFrame:
             If not specified, existing Array table columns are used, with missing names
             named as `column_0`, `column_1`, etc.
         rechunk : bool, default True
-            Make sure that all data is contiguous.
+            Make sure that all data is in contiguous memory.
 
         Returns
         -------
@@ -469,7 +469,7 @@ class DataFrame:
             Column labels to use for resulting DataFrame. If specified, overrides any
             labels already present in the data. Must match data dimensions.
         rechunk : bool, default True
-            Make sure that all data is contiguous.
+            Make sure that all data is in contiguous memory.
         nan_to_none : bool, default True
             If data contains NaN values PyArrow will convert the NaN to None
 
