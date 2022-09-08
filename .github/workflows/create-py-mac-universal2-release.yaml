@@ -19,7 +19,6 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-08-22
           override: true
       - name: Setup universal2 targets for Rust
         run: |

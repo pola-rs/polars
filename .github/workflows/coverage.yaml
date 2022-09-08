@@ -25,7 +25,6 @@ jobs:
           cache-dependency-path: "py-polars/build.requirements.txt"
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-08-22
           override: true
           profile: minimal
           components: llvm-tools-preview

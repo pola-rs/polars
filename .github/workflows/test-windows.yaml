@@ -17,7 +17,6 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-08-22
           override: true
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v1
