@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Install Rust nightly
+      - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
           override: true
@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Install latest Rust nightly
+      - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
           override: true
