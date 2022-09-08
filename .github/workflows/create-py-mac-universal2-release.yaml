@@ -33,7 +33,6 @@ jobs:
           rm py-polars/README.md
           cp README.md py-polars/README.md
           cd py-polars
-          rustup override set nightly-2022-08-22
       - name: maturin publish
         uses: messense/maturin-action@v1
         env:

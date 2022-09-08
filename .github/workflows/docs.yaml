@@ -15,6 +15,7 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2022-08-22
+          components: rust-docs
       - name: Set up Python
         uses: actions/setup-python@v3
         with:

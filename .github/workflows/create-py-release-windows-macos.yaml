@@ -36,7 +36,6 @@ jobs:
           rm py-polars/README.md
           cp README.md py-polars/README.md
           cd py-polars
-          rustup override set nightly-2022-08-22
           maturin publish \
           --no-sdist \
           --skip-existing \

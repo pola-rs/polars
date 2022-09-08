@@ -44,7 +44,7 @@ jobs:
           blackdoc --check .
           isort --check .
           pyupgrade --py37-plus `find . -name "*.py" -type f`
-          rustup override set nightly-2022-08-22 && cargo fmt --all -- --check
+          cargo fmt --all -- --check
       - name: Run linting
         run: flake8
       # Allow untyped calls for older Python versions
@@ -54,7 +54,7 @@ jobs:
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
         run: |
-          rustup override set nightly-2022-08-22 && make venv && make test-with-cov
+          make venv && make test-with-cov
           make clippy
       - name: Check doc examples
         run: make doctest
