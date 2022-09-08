@@ -24,4 +24,5 @@ jobs:
       - name: Run tests
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
-        run: cd polars && make test && make integration-tests
+        working-directory: polars
+        run: make test && make integration-tests
