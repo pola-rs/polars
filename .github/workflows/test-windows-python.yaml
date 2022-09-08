@@ -37,7 +37,7 @@ jobs:
         shell: bash
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
-        run: rustup override set nightly-2022-08-22 && make build-and-test-no-venv
+        run: make build-and-test-no-venv
       # test if we can import polars without any requirements
       - name: Import polars
         run: |
