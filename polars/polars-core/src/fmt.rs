@@ -66,7 +66,7 @@ macro_rules! format_array {
             Ok(())
         };
 
-        if limit < $a.len() {
+        if limit < $a.len() { 
             for i in 0..limit / 2 {
                 let v = $a.get_any_value(i);
                 write_fn(v, $f)?;
@@ -367,7 +367,7 @@ impl Display for DataFrame {
                 if std::env::var("POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES").is_ok() {
                     column_data_type = "".to_string();
                 }
-                let mut column_separator = "\n---";
+                let mut column_separator = "\n---"; 
                 if std::env::var("POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR").is_ok() {
                     column_separator = ""
                 }
@@ -489,7 +489,7 @@ impl Display for DataFrame {
             }
 
             if std::env::var("POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION").is_ok() {
-                write!(f, "{}", table)?;
+                write!(f, "\n{}", table)?;
             } else {
                 write!(f, "shape: {:?}\n{}", self.shape(), table)?;
             }
