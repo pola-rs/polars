@@ -53,7 +53,7 @@ jobs:
         run: |
           export RUSTFLAGS="-C debuginfo=0"
           cd py-polars && rustup override set nightly-2022-08-22 && make venv && make test-with-cov
-          cargo clippy -- -D warnings -A clippy::borrow_deref_ref
+          make clippy
       - name: Check doc examples
         run: |
           cd py-polars && make doctest
@@ -105,7 +105,7 @@ jobs:
         run: |
           export RUSTFLAGS="-C debuginfo=0"
           cd py-polars && rustup override set nightly-2022-08-22 && make venv && make test-with-cov
-          cargo clippy -- -D warnings -A clippy::borrow_deref_ref
+          make clippy
       - name: Check doc examples
         run: |
           cd py-polars && make doctest
