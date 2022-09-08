@@ -25,20 +25,21 @@ jobs:
         uses: actions/setup-python@v3
         with:
           python-version: 3.9
-      - name: Install dependencies
-        shell: bash
-        run: |
-      - uses: r-lib/actions/setup-r@v1
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v1
         with:
-          r-version: '3.5.3' # The R version to download (if necessary) and use.
-      - run: |
+          r-version: '3.5.3'
+      - name: Run benchmark tests
+        env:
+          RUSTFLAGS: -C embed-bitcode
+        run: |
           python -m pip install --upgrade pip
           pip install virtualenv
           python -m venv venv
           source venv/bin/activate
           pip install -r py-polars/build.requirements.txt
           cd py-polars
-          rustup override set nightly-2022-08-22 && RUSTFLAGS="-C embed-bitcode" maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
+          rustup override set nightly-2022-08-22 && maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
           cd tests/db-benchmark
           Rscript -e 'install.packages("data.table", repos="https://Rdatatable.github.io/data.table")'
           Rscript groupby-datagen.R 1e7 1e2 5 0
