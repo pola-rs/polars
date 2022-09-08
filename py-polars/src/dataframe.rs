@@ -18,7 +18,6 @@ use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use polars_core::utils::try_get_supertype;
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
-use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
 
@@ -817,12 +816,6 @@ impl PyDataFrame {
             .set_column_names(&names)
             .map_err(PyPolarsErr::from)?;
         Ok(())
-    }
-
-    pub fn with_column(&mut self, s: PySeries) -> PyResult<Self> {
-        let mut df = self.df.clone();
-        df.with_column(s.series).map_err(PyPolarsErr::from)?;
-        Ok(df.into())
     }
 
     /// Get datatypes

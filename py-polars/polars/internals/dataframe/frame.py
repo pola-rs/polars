@@ -4016,15 +4016,11 @@ class DataFrame:
         └──────┴─────┘
 
         """
-        if isinstance(column, list):
-            raise ValueError(
-                "`with_column` expects a single expression, not a list. Consider using"
-                " `with_columns`"
-            )
-        if isinstance(column, pli.Expr):
-            return self.with_columns([column])
-        else:
-            return self._from_pydf(self._df.with_column(column._s))
+        return (
+            self.lazy()
+            .with_column(column)
+            .collect(no_optimization=True, string_cache=False)
+        )
 
     def hstack(
         self: DF,
