@@ -27,6 +27,7 @@ from polars.internals.io import (
 )
 from polars.internals.lazy_functions import (
     all,
+    arange,
     arg_where,
     argsort_by,
     col,
@@ -47,6 +48,7 @@ __all__ = [
     "LazyFrame",
     "Series",
     "all",
+    "arange",
     "arg_where",
     "argsort_by",
     "col",
