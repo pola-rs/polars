@@ -83,7 +83,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.13.0"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=6c102a0c3e2dbeb185360dd3d5c3637b5e2028fd#6c102a0c3e2dbeb185360dd3d5c3637b5e2028fd"
+source = "git+https://github.com/ritchie46/arrow2?branch=comparison_and_validity#2dcb35d7236f03c0551ad9cbdf3e56f92603c91d"
 dependencies = [
  "ahash",
  "arrow-format",

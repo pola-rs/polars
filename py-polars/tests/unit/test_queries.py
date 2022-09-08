@@ -377,3 +377,13 @@ def test_query_4538() -> None:
     assert df.select([pl.col("value").str.to_uppercase().is_in(["AAA"])])[
         "value"
     ].to_list() == [True, False]
+
+
+def test_none_comparison_4773() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [0, 1, None, 2],
+            "y": [1, 2, None, 3],
+        }
+    ).filter(pl.col("x") != pl.col("y"))
+    assert df.shape == (3, 2)
