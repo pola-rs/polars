@@ -455,7 +455,7 @@ impl PyDataFrame {
         float_precision: Option<usize>,
         null_value: Option<String>,
     ) -> PyResult<()> {
-        let null = null_value.unwrap_or(String::new());
+        let null = null_value.unwrap_or_default();
 
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
