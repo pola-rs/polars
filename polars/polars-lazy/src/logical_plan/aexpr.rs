@@ -224,7 +224,7 @@ impl AExpr {
             BinaryExpr { left, right, op } => {
                 use DataType::*;
 
-                let expr_type = match op {
+                let field = match op {
                     Operator::Lt
                     | Operator::Gt
                     | Operator::Eq
@@ -232,34 +232,41 @@ impl AExpr {
                     | Operator::And
                     | Operator::LtEq
                     | Operator::GtEq
-                    | Operator::Or => DataType::Boolean,
+                    | Operator::Or => {
+                        let out_field;
+                        let out_name = {
+                            out_field = arena.get(*left).to_field(schema, ctxt, arena)?;
+                            out_field.name().as_str()
+                        };
+                        Field::new(out_name, DataType::Boolean)
+                    }
                     _ => {
                         // don't traverse tree until strictly needed. Can have terrible performance.
                         // # 3210
-                        let left_type = arena.get(*left).get_type(schema, ctxt, arena)?;
+
+                        // take the left field as a whole.
+                        // don't take dtype and name separate as that splits the tree every node
+                        // leading to quadratic behavior. # 4736
+                        let mut left_field = arena.get(*left).to_field(schema, ctxt, arena)?;
                         let right_type = arena.get(*right).get_type(schema, ctxt, arena)?;
 
-                        match op {
-                            Operator::Minus => match (left_type, right_type) {
+                        let super_type = match op {
+                            Operator::Minus => match (&left_field.dtype, right_type) {
                                 // T - T != T if T is a datetime / date
                                 (Datetime(tul, _), Datetime(tur, _)) => {
-                                    Duration(get_time_units(&tul, &tur))
+                                    Duration(get_time_units(tul, &tur))
                                 }
                                 (Date, Date) => Duration(TimeUnit::Milliseconds),
-                                (left, right) => try_get_supertype(&left, &right)?,
+                                (left, right) => try_get_supertype(left, &right)?,
                             },
-                            _ => try_get_supertype(&left_type, &right_type)?,
-                        }
+                            _ => try_get_supertype(&left_field.dtype, &right_type)?,
+                        };
+                        left_field.coerce(super_type);
+                        left_field
                     }
                 };
 
-                let out_field;
-                let out_name = {
-                    out_field = arena.get(*left).to_field(schema, ctxt, arena)?;
-                    out_field.name().as_str()
-                };
-
-                Ok(Field::new(out_name, expr_type))
+                Ok(field)
             }
             Sort { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
             Take { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),

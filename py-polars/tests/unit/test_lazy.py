@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+from functools import reduce
+from operator import add
+from string import ascii_letters
 from typing import Any, cast
 
 import numpy as np
@@ -1462,3 +1465,11 @@ def test_lazy_cache_hit(capfd: Any) -> None:
     ).collect().to_dict(False) == {"a": [0, 0, 0], "c": ["x", "y", "z"]}
     (out, _) = capfd.readouterr()
     assert "CACHE HIT" in out
+
+
+def test_quadratic_behavior_4736() -> None:
+    # we don't assert anything.
+    # If this function does not stall
+    # our tests it has passed.
+    df = pl.DataFrame(columns=list(ascii_letters))
+    df.lazy().select(reduce(add, (pl.col(fld) for fld in df.columns)))
