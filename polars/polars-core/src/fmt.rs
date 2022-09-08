@@ -489,7 +489,7 @@ impl Display for DataFrame {
             }
 
             if std::env::var("POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION").is_ok() {
-                write!(f, "\n{}", table)?;
+                write!(f, "{}", table)?;
             } else {
                 write!(f, "shape: {:?}\n{}", self.shape(), table)?;
             }
