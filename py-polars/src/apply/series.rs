@@ -238,7 +238,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
-                let arg = PyTuple::new(py, &[v]);
+                let arg = PyTuple::new(py, [v]);
                 let out = lambda.call1(arg)?;
                 if out.is_none() {
                     null_count += 1;
@@ -534,7 +534,7 @@ where
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
-                let arg = PyTuple::new(py, &[v]);
+                let arg = PyTuple::new(py, [v]);
                 let out = lambda.call1(arg)?;
                 if out.is_none() {
                     null_count += 1;
@@ -825,7 +825,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
-                let arg = PyTuple::new(py, &[v]);
+                let arg = PyTuple::new(py, [v]);
                 let out = lambda.call1(arg)?;
                 if out.is_none() {
                     null_count += 1;
@@ -1651,7 +1651,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
-                let arg = PyTuple::new(py, &[v]);
+                let arg = PyTuple::new(py, [v]);
                 let out = lambda.call1(arg)?;
                 if out.is_none() {
                     null_count += 1;

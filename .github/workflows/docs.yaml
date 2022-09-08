@@ -16,7 +16,6 @@ jobs:
         with:
           toolchain: nightly-2022-08-22
           override: true
-          components: rustfmt, clippy
       - name: Set up Python
         uses: actions/setup-python@v3
         with:

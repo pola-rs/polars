@@ -34,6 +34,10 @@ pre-commit: venv  ## Run autoformatting and linting
 	make -C .. fmt_toml
 	cargo fmt --all
 
+.PHONY: clippy
+clippy:  ## Run clippy
+	cargo clippy -- -D warnings -A clippy::borrow_deref_ref
+
 .PHONY: test
 test: venv  ## Run fast unittests
 	$(PYTHON_BIN)/maturin develop
