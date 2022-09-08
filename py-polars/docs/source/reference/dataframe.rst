@@ -124,6 +124,7 @@ Manipulation/ selection
     DataFrame.transpose
     DataFrame.unique
     DataFrame.unnest
+    DataFrame.unstack
     DataFrame.upsample
     DataFrame.vstack
     DataFrame.with_column

@@ -29,6 +29,7 @@ FillNullStrategy: TypeAlias = Literal[
 IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
 NullStrategy: TypeAlias = Literal["ignore", "propagate"]
+UnstackDirection: TypeAlias = Literal["vertical", "horizontal"]
 ParallelStrategy: TypeAlias = Literal["auto", "columns", "row_groups", "none"]
 ParquetCompression: TypeAlias = Literal[
     "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
