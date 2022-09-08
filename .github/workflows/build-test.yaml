@@ -72,9 +72,9 @@ jobs:
         run: |
           cargo fmt --all -- --check
       - name: Run linting checks
+        env:
+          RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
         run : |
-          # do not produce debug symbols to keep memory usage down
-          export RUSTFLAGS="-C debuginfo=0"
           cd polars && cargo clippy --all-features \
           -p polars-core \
           -p polars-io \
@@ -82,9 +82,9 @@ jobs:
           -- -D warnings
           cargo clippy -- -D warnings
       - name: Run tests
-        run: |
-          export RUSTFLAGS="-C debuginfo=0"
-          cd polars && make test && make integration-tests
+        env:
+          RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+        run: cd polars && make test && make integration-tests
       - name: Run miri
         run: |
           cd polars

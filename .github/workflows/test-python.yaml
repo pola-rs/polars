@@ -52,8 +52,9 @@ jobs:
         run: |
           cd py-polars && mypy  ${{ (matrix.python-version == '3.7') && '--allow-untyped-calls' || '' }} && cd ..
       - name: Run tests
+        env:
+          RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
         run: |
-          export RUSTFLAGS="-C debuginfo=0"
           cd py-polars && rustup override set nightly-2022-08-22 && make venv && make test-with-cov
           make clippy
       - name: Check doc examples

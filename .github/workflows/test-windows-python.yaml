@@ -32,9 +32,9 @@ jobs:
           pip install -r py-polars/build.requirements.txt
       - name: Run tests
         shell: bash
-        run: |
-          export RUSTFLAGS="-C debuginfo=0"
-          cd py-polars && rustup override set nightly-2022-08-22 && make build-and-test-no-venv
+        env:
+          RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+        run: cd py-polars && rustup override set nightly-2022-08-22 && make build-and-test-no-venv
       # test if we can import polars without any requirements
       - name: Import polars
         run: |
