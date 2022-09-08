@@ -39,6 +39,7 @@ from polars.datatypes import (
     get_idx_type,
     py_type_to_dtype,
 )
+from polars.exceptions import NoRowsReturned, TooManyRowsReturned
 from polars.internals.construction import (
     arrow_to_pydf,
     dict_to_pydf,
@@ -6013,14 +6014,27 @@ class DataFrame:
             acc = operation(acc, self.to_series(i))
         return acc
 
-    def row(self, index: int) -> tuple[Any]:
+    def row(
+        self, index: int | None = None, *, by_predicate: pli.Expr | None = None
+    ) -> tuple[Any, ...]:
         """
-        Get a row as tuple.
+        Get a row as tuple, either by index or by predicate.
 
         Parameters
         ----------
         index
             Row index.
+        by_predicate
+            Select the row according to a given expression/predicate.
+
+        Notes
+        -----
+        The `index` and `by_predicate` params are mutually exclusive. Additionally,
+        to ensure clarity, the `by_predicate` parameter must be supplied by keyword.
+
+        When using `by_predicate` it is an error condition if anything other than
+        one row is returned; more than one row raises `TooManyRowsReturned`, and
+        zero rows will raise `NoRowsReturned` (both inherit from `RowsException`).
 
         Examples
         --------
@@ -6031,13 +6045,36 @@ class DataFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
+        >>> # return the row at the given index
         >>> df.row(2)
         (3, 8, 'c')
+        >>> # return the row that matches the given predicate
+        >>> df.row(by_predicate=(pl.col("ham") == "b"))
+        (2, 7, 'b')
 
         """
-        return self._df.row_tuple(index)
+        if index is not None and by_predicate is not None:
+            raise ValueError(
+                "Cannot set both 'index' and 'by_predicate'; mutually exclusive"
+            )
+        elif isinstance(index, pli.Expr):
+            raise TypeError("Expressions should be passed to the 'by_predicate' param")
+        elif isinstance(index, int):
+            return self._df.row_tuple(index)
+        elif isinstance(by_predicate, pli.Expr):
+            rows = self.filter(by_predicate).rows()
+            n_rows = len(rows)
+            if n_rows > 1:
+                raise TooManyRowsReturned(
+                    f"Predicate <{by_predicate!s}> returned {n_rows} rows"
+                )
+            elif n_rows == 0:
+                raise NoRowsReturned(f"Predicate <{by_predicate!s}> returned no rows")
+            return rows[0]
+        else:
+            raise ValueError("One of 'index' or 'by_predicate' must be set")
 
-    def rows(self) -> list[tuple[object, ...]]:
+    def rows(self) -> list[tuple[Any, ...]]:
         """
         Convert columnar data to rows as python tuples.
 

@@ -12,6 +12,9 @@ Exceptions
     DuplicateError
     NoDataError
     NotFoundError
+    NoRowsReturned
     PanicException
+    RowsException
     SchemaError
     ShapeError
+    TooManyRowsReturned

@@ -133,9 +133,9 @@ def test_strategy_null_probability(
     assert df2.null_count().fold(sum).sum() < df3.null_count().fold(sum).sum()
 
     nulls_col0, nulls_col1 = df2.null_count().rows()[0]
-    assert nulls_col0 > nulls_col1  # type: ignore[operator]
-    assert nulls_col0 < 50  # type: ignore[operator]
+    assert nulls_col0 > nulls_col1
+    assert nulls_col0 < 50
 
     nulls_col0, nulls_colx = df3.null_count().rows()[0]
-    assert nulls_col0 > nulls_colx  # type: ignore[operator]
+    assert nulls_col0 > nulls_colx
     assert nulls_col0 == 50
