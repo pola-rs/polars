@@ -78,6 +78,7 @@ search_sorted = ["polars-ops/search_sorted"]
 meta = []
 pivot = ["polars-core/rows", "polars-ops/pivot"]
 top_k = ["polars-ops/top_k"]
+semi_anti_join = ["polars-core/semi_anti_join"]
 
 # no guarantees whatsoever
 private = ["polars-time/private"]
