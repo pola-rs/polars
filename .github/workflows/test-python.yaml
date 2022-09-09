@@ -1,4 +1,4 @@
-name: Test python
+name: Test Python
 
 on:
   pull_request:
@@ -12,8 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-python:
-    name: Build and test Python
+  main:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: true
@@ -44,23 +43,22 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements-dev.txt
       # Allow untyped calls for older Python versions
-      - name: Run type checking
+      - name: Run mypy
         run: mypy ${{ (matrix.python-version == '3.7') && '--allow-untyped-calls' || '' }}
-      - name: Run tests
+      - name: Run tests and report coverage
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
         run: |
           source activate
           maturin develop
           pytest --cov=polars
-      - name: Check doc examples
+      - name: Run doctests
         run: python tests/docs/run_doc_examples.py
-      # Test whether Polars can be imported without optional dependencies
-      - name: Check optional dependencies
+      - name: Check import without optional dependencies
         run: |
           pip uninstall pandas -y
-          python -c "import polars"
+          python -c 'import polars'
           pip uninstall numpy -y
-          python -c "import polars"
+          python -c 'import polars'
           pip uninstall pyarrow -y
-          python -c "import polars"
+          python -c 'import polars'
