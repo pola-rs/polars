@@ -104,16 +104,21 @@ def numpy_to_pyseries(
             dtype = values.dtype.type
         elif (
             dtype == np.datetime64
-            and np.datetime_data(values.dtype)[0] not in DTYPE_TEMPORAL_UNITS
         ):
-            dtype = object
+            unit = np.datetime_data(values.dtype)[0]
+            if unit not in DTYPE_TEMPORAL_UNITS:
+                values = values.astype("datetime64[us]")
+            dtype = values.dtype.type
+            print(dtype)
 
         constructor = numpy_type_to_constructor(dtype)
 
         if dtype == np.float32 or dtype == np.float64:
             return constructor(name, values, nan_to_null)
         elif dtype == np.datetime64:
-            return constructor(name, values.astype(np.int64), strict)
+            unit = np.datetime_data(values.dtype)[0]
+            s = constructor(name, values.astype(np.int64), strict)
+            return pli.wrap_s(s).cast(Datetime(time_unit=unit))._s
         else:
             return constructor(name, values, strict)
     else:

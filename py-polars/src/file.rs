@@ -264,19 +264,17 @@ pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesR
         }
         // don't really know what we got here, just read.
         else {
-            let gil = Python::acquire_gil();
-            let py = gil.python();
-
-            let f = PyFileLikeObject::with_requirements(py_f.to_object(py), true, false, true)?;
+            let f = Python::with_gil(|py| {
+                PyFileLikeObject::with_requirements(py_f.to_object(py), true, false, true)
+            })?;
             Ok(Box::new(f))
         }
     }
     // don't really know what we got here, just read.
     else {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
-        let f = PyFileLikeObject::with_requirements(py_f.to_object(py), true, false, true)?;
+        let f = Python::with_gil(|py| {
+            PyFileLikeObject::with_requirements(py_f.to_object(py), true, false, true)
+        })?;
         Ok(Box::new(f))
     }
 }

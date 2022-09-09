@@ -605,7 +605,7 @@ impl FromPyObject<'_> for Wrap<Schema> {
                 .collect::<PyResult<Schema>>()?,
         ))
     }
-}
+
 
 #[derive(Clone, Debug)]
 #[repr(transparent)]
