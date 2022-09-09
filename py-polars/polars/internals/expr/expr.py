@@ -5495,7 +5495,7 @@ class Expr:
                     \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
                     \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
@@ -5540,6 +5540,7 @@ class Expr:
         half_life: float | None = None,
         alpha: float | None = None,
         adjust: bool = True,
+        bias: bool = False,
         min_periods: int = 1,
     ) -> Expr:
         r"""
@@ -5564,7 +5565,7 @@ class Expr:
                     \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
                     \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
@@ -5577,6 +5578,9 @@ class Expr:
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
+        bias
+            When ``bias=False``, apply a correction to make the estimate statistically
+            unbiased.
         min_periods
             Minimum number of observations in window required to have a value
             (otherwise result is null).
@@ -5593,14 +5597,14 @@ class Expr:
         ╞══════════╡
         │ 0.0      │
         ├╌╌╌╌╌╌╌╌╌╌┤
-        │ 0.5      │
+        │ 0.707107 │
         ├╌╌╌╌╌╌╌╌╌╌┤
-        │ 0.754615 │
+        │ 0.963624 │
         └──────────┘
 
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
-        return wrap_expr(self._pyexpr.ewm_std(alpha, adjust, min_periods))
+        return wrap_expr(self._pyexpr.ewm_std(alpha, adjust, bias, min_periods))
 
     def ewm_var(
         self,
@@ -5609,6 +5613,7 @@ class Expr:
         half_life: float | None = None,
         alpha: float | None = None,
         adjust: bool = True,
+        bias: bool = False,
         min_periods: int = 1,
     ) -> Expr:
         r"""
@@ -5633,7 +5638,7 @@ class Expr:
                     \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
                     \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
@@ -5646,6 +5651,9 @@ class Expr:
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
+        bias
+            When ``bias=False``, apply a correction to make the estimate statistically
+            unbiased.
         min_periods
             Minimum number of observations in window required to have a value
             (otherwise result is null).
@@ -5662,14 +5670,14 @@ class Expr:
         ╞══════════╡
         │ 0.0      │
         ├╌╌╌╌╌╌╌╌╌╌┤
-        │ 0.25     │
+        │ 0.5      │
         ├╌╌╌╌╌╌╌╌╌╌┤
-        │ 0.569444 │
+        │ 0.928571 │
         └──────────┘
 
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
-        return wrap_expr(self._pyexpr.ewm_var(alpha, adjust, min_periods))
+        return wrap_expr(self._pyexpr.ewm_var(alpha, adjust, bias, min_periods))
 
     def extend_constant(self, value: int | float | str | bool | None, n: int) -> Expr:
         """

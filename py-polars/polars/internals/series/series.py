@@ -4008,7 +4008,7 @@ class Series:
                     \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
                     \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
@@ -4034,6 +4034,7 @@ class Series:
         half_life: float | None = None,
         alpha: float | None = None,
         adjust: bool = True,
+        bias: bool = False,
         min_periods: int = 1,
     ) -> Series:
         r"""
@@ -4058,7 +4059,7 @@ class Series:
                     \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
                     \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
@@ -4071,6 +4072,9 @@ class Series:
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
+        bias
+            When ``bias=False``, apply a correction to make the estimate statistically
+            unbiased.
         min_periods
             Minimum number of observations in window required to have a value
             (otherwise result is null).
@@ -4084,6 +4088,7 @@ class Series:
         half_life: float | None = None,
         alpha: float | None = None,
         adjust: bool = True,
+        bias: bool = False,
         min_periods: int = 1,
     ) -> Series:
         r"""
@@ -4108,7 +4113,7 @@ class Series:
                     \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
                     \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
@@ -4121,6 +4126,9 @@ class Series:
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
+        bias
+            When ``bias=False``, apply a correction to make the estimate statistically
+            unbiased.
         min_periods
             Minimum number of observations in window required to have a value
             (otherwise result is null).
