@@ -24,10 +24,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2022-08-22
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -45,13 +41,21 @@ jobs:
       # Allow untyped calls for older Python versions
       - name: Run mypy
         run: mypy ${{ (matrix.python-version == '3.7') && '--allow-untyped-calls' || '' }}
-      - name: Run tests and report coverage
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2022-08-22
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: py-polars
+      - name: Install Polars
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
         run: |
           source activate
           maturin develop
-          pytest --cov=polars
+      - name: Run tests and report coverage
+        run: pytest --cov=polars
       - name: Run doctests
         run: python tests/docs/run_doc_examples.py
       - name: Check import without optional dependencies
