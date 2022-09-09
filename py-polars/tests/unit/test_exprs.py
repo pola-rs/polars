@@ -352,7 +352,7 @@ def test_regex_in_filter() -> None:
         pl.fold(acc=False, f=lambda acc, s: acc | s, exprs=(pl.col("^nrs|flt*$") < 3))
     ).row(0)
     expected = (1, "foo", 1.0)
-    assert res == expected  # type: ignore[comparison-overlap]
+    assert res == expected
 
 
 def test_arr_contains() -> None:

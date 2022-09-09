@@ -472,8 +472,8 @@ def test_csv_globbing(examples_dir: str) -> None:
 
     df = pl.read_csv(path, columns=["category", "sugars_g"])
     assert df.shape == (135, 2)
-    assert df.row(-1) == ("seafood", 1)  # type: ignore[comparison-overlap]
-    assert df.row(0) == ("vegetables", 2)  # type: ignore[comparison-overlap]
+    assert df.row(-1) == ("seafood", 1)
+    assert df.row(0) == ("vegetables", 2)
 
     with pytest.raises(ValueError):
         _ = pl.read_csv(path, dtypes=[pl.Utf8, pl.Int64, pl.Int64, pl.Int64])
@@ -581,7 +581,7 @@ def test_fallback_chrono_parser() -> None:
     """
     )
     df = pl.read_csv(data.encode(), parse_dates=True)
-    assert df.null_count().row(0) == (0, 0)  # type: ignore[comparison-overlap]
+    assert df.null_count().row(0) == (0, 0)
 
 
 def test_csv_string_escaping() -> None:
