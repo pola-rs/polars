@@ -21,9 +21,11 @@ jobs:
         with:
           toolchain: nightly-2022-08-22
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v4
         with:
-          python-version: 3.9
+          python-version: '3.10'
+          cache: 'pip'
+          cache-dependency-path: 'py-polars/build.requirements.txt'
       - name: Set up R
         uses: r-lib/actions/setup-r@v1
         with:
@@ -32,8 +34,7 @@ jobs:
         env:
           RUSTFLAGS: -C embed-bitcode
         run: |
-          python -m pip install --upgrade pip
-          pip install virtualenv
+          pip install --upgrade pip
           python -m venv venv
           source venv/bin/activate
           pip install -r py-polars/build.requirements.txt
@@ -50,4 +51,3 @@ jobs:
           python main.py on_strings
           echo "ON CATEGORICALS"
           python main.py
-

@@ -24,7 +24,7 @@ jobs:
         run: |
           rustup target add aarch64-apple-darwin
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
       - name: Prepare maturin publish

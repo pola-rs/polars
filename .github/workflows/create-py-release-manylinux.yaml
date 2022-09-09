@@ -17,9 +17,9 @@ jobs:
           rm py-polars/README.md
           cp README.md py-polars/README.md
 
-      - uses: actions/setup-python@v2
+      - uses: actions/setup-python@v4
         with:
-          python-version: 3.7
+          python-version: '3.7'
           architecture: x64
 
       - name: publish x64_64
