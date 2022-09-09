@@ -77,6 +77,8 @@ def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySe
             pys = PySeries.from_arrow(name, next(it))
             for a in it:
                 pys.append(PySeries.from_arrow(name, a))
+        elif array.num_chunks == 0:
+            pys = PySeries.from_arrow(name, pa.array([], array.type))
         else:
             pys = PySeries.from_arrow(name, array.combine_chunks())
 
