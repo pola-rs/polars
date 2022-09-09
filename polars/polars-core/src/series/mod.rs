@@ -673,13 +673,19 @@ impl Series {
     pub fn strict_cast(&self, data_type: &DataType) -> Result<Series> {
         let s = self.cast(data_type)?;
         if self.null_count() != s.null_count() {
+            let failure_mask = !self.is_null() & s.is_null();
+            let failures = self
+                .filter_threaded(&failure_mask, false)?
+                .unique()?
+                .head(Some(10));
             Err(PolarsError::ComputeError(
                 format!(
-                    "Strict conversion from {:?} to {:?} failed, consider a non-strict \
-                        cast instead. If you were trying to cast Utf8 to Date, Time, or \
-                        Datetime, consider using `strptime`.",
+                    "Strict conversion from {:?} to {:?} failed for values {}. \
+                    If you were trying to cast Utf8 to Date, Time, or Datetime, \
+                    consider instead using `strptime`.",
                     self.dtype(),
-                    data_type
+                    data_type,
+                    failures.fmt_list(),
                 )
                 .into(),
             ))
