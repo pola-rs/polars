@@ -35,11 +35,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
-          cache-dependency-path: 'py-polars/build.requirements.txt'
+          cache-dependency-path: 'py-polars/requirements-dev.txt'
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r build.requirements.txt
+          pip install -r requirements-dev.txt
       - name: Run formatting checks
         run: |
           black --check .
