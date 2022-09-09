@@ -451,7 +451,6 @@ pub fn is_compressed(bytes: &[u8]) -> bool {
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 fn decompress_impl<R: Read>(
     decoder: &mut R,
-    bytes: &[u8],
     n_rows: Option<usize>,
     delimiter: u8,
     quote_char: Option<u8>,
@@ -460,8 +459,9 @@ fn decompress_impl<R: Read>(
     let chunk_size = 4096;
     Some(match n_rows {
         None => {
-            // decompression will likely be an order of magnitude larger
-            let mut out = Vec::with_capacity(bytes.len() * 10);
+            // decompression in a preallocated buffer does not work with zlib-ng
+            // and will put the original compressed data in the buffer.
+            let mut out = Vec::new();
             decoder.read_to_end(&mut out).ok()?;
             out
         }
@@ -532,10 +532,10 @@ pub(crate) fn decompress(
 ) -> Option<Vec<u8>> {
     if bytes.starts_with(&GZIP) {
         let mut decoder = flate2::read::MultiGzDecoder::new(bytes);
-        decompress_impl(&mut decoder, bytes, n_rows, delimiter, quote_char, eol_char)
+        decompress_impl(&mut decoder, n_rows, delimiter, quote_char, eol_char)
     } else if bytes.starts_with(&ZLIB0) || bytes.starts_with(&ZLIB1) || bytes.starts_with(&ZLIB2) {
         let mut decoder = flate2::read::ZlibDecoder::new(bytes);
-        decompress_impl(&mut decoder, bytes, n_rows, delimiter, quote_char, eol_char)
+        decompress_impl(&mut decoder, n_rows, delimiter, quote_char, eol_char)
     } else {
         None
     }
