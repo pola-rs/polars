@@ -177,7 +177,38 @@ def test_from_arrow() -> None:
             "decimal1": pa.array([1, 2], pa.decimal128(2, 1)),
         }
     )
-    assert pl.from_arrow(tbl).shape == (2, 5)
+    expected_schema = {
+        "a": pl.Datetime("ms"),
+        "b": pl.Datetime("ms"),
+        "c": pl.Datetime("us"),
+        "d": pl.Datetime("ns"),
+        "decimal1": pl.Float64,
+    }
+    expected_data = [
+        (
+            datetime(1970, 1, 1, 0, 0, 1),
+            datetime(1970, 1, 1, 0, 0, 0, 1000),
+            datetime(1970, 1, 1, 0, 0, 0, 1),
+            datetime(1970, 1, 1, 0, 0),
+            1.0,
+        ),
+        (
+            datetime(1970, 1, 1, 0, 0, 2),
+            datetime(1970, 1, 1, 0, 0, 0, 2000),
+            datetime(1970, 1, 1, 0, 0, 0, 2),
+            datetime(1970, 1, 1, 0, 0),
+            2.0,
+        ),
+    ]
+
+    df = pl.from_arrow(tbl)
+    assert df.schema == expected_schema
+    assert df.rows() == expected_data
+
+    empty_tbl = tbl[:0]  # no rows
+    df = pl.from_arrow(empty_tbl)
+    assert df.schema == expected_schema
+    assert df.rows() == []
 
 
 def test_dataframe_membership_operator() -> None:
@@ -813,8 +844,9 @@ def test_column_names() -> None:
             "b": pa.array([1, 2, 3, 4, 5], pa.int64()),
         }
     )
-    df = pl.from_arrow(tbl)
-    assert df.columns == ["a", "b"]
+    for a in (tbl, tbl[:0]):
+        df = pl.from_arrow(a)
+        assert df.columns == ["a", "b"]
 
 
 def test_lazy_functions() -> None:
@@ -1912,9 +1944,13 @@ def test_partition_by() -> None:
 def test_list_of_list_of_struct() -> None:
     expected = [{"list_of_list_of_struct": [[{"a": 1}, {"a": 2}]]}]
     pa_df = pa.Table.from_pylist(expected)
+
     df = pl.from_arrow(pa_df)
     assert df.rows() == [([[{"a": 1}, {"a": 2}]],)]
     assert df.to_dicts() == expected
+
+    df = pl.from_arrow(pa_df)[:0]
+    assert df.to_dicts() == []
 
 
 def test_concat_to_empty() -> None:
