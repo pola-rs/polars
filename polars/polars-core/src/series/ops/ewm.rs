@@ -7,6 +7,11 @@ use crate::prelude::*;
 
 impl Series {
     pub fn ewm_mean(&self, options: EWMOptions) -> Result<Self> {
+        if options.alpha <= 0. || options.alpha > 1. {
+            return Err(PolarsError::ComputeError(
+                "alpha must satisfy: 0 < alpha <= 1".into(),
+            ));
+        };
         match self.dtype() {
             DataType::Float32 => {
                 let xs = self.f32().unwrap().downcast_iter().next().unwrap();
@@ -33,6 +38,11 @@ impl Series {
     }
 
     pub fn ewm_std(&self, options: EWMOptions) -> Result<Self> {
+        if options.alpha <= 0. || options.alpha > 1. {
+            return Err(PolarsError::ComputeError(
+                "alpha must satisfy: 0 < alpha <= 1".into(),
+            ));
+        };
         match self.dtype() {
             DataType::Float32 => {
                 let xs = self.f32().unwrap().downcast_iter().next().unwrap();
@@ -61,6 +71,11 @@ impl Series {
     }
 
     pub fn ewm_var(&self, options: EWMOptions) -> Result<Self> {
+        if options.alpha <= 0. || options.alpha > 1. {
+            return Err(PolarsError::ComputeError(
+                "alpha must satisfy: 0 < alpha <= 1".into(),
+            ));
+        };
         match self.dtype() {
             DataType::Float32 => {
                 let xs = self.f32().unwrap().downcast_iter().next().unwrap();

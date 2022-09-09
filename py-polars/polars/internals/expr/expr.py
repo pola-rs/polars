@@ -5495,7 +5495,7 @@ class Expr:
                     \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
                     \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
@@ -5565,7 +5565,7 @@ class Expr:
                     \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
                     \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
@@ -5638,7 +5638,7 @@ class Expr:
                     \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
                     \forall \; \lambda > 0
         alpha
-            Specify smoothing factor alpha directly, :math:`0 < \alpha < 1`.
+            Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
