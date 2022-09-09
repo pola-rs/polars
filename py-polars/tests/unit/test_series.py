@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import math
-from datetime import date, datetime
-from typing import Any, cast
+from datetime import date, datetime, time
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -10,8 +10,11 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import Date, Datetime, Float64, Int32, Int64, UInt32, UInt64
+from polars.datatypes import Date, Datetime, Float64, Int32, Int64, Time, UInt32, UInt64
 from polars.testing import assert_series_equal, verify_series_and_expr_api
+
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import TimeUnit
 
 
 def test_cum_agg() -> None:
@@ -1540,6 +1543,32 @@ def test_dt_datetimes() -> None:
         "dt.epoch",
         tu="ms",
     )
+
+
+@pytest.mark.parametrize("unit", ["ns", "us", "ms"])
+def test_cast_datetime_to_time(unit: TimeUnit) -> None:
+    a = pl.Series(
+        "a",
+        [
+            datetime(2022, 9, 7, 0, 0),
+            datetime(2022, 9, 6, 12, 0),
+            datetime(2022, 9, 7, 23, 59, 59),
+            datetime(2022, 9, 7, 23, 59, 59, 201),
+        ],
+        dtype=Datetime(unit),
+    )
+    if unit == "ms":
+        # NOTE: microseconds are lost for `unit=ms`
+        expected_values = [time(0, 0), time(12, 0), time(23, 59, 59), time(23, 59, 59)]
+    else:
+        expected_values = [
+            time(0, 0),
+            time(12, 0),
+            time(23, 59, 59),
+            time(23, 59, 59, 201),
+        ]
+    expected = pl.Series("a", expected_values)
+    assert_series_equal(a.cast(Time), expected)
 
 
 def test_reshape() -> None:
