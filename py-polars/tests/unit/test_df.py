@@ -1979,7 +1979,7 @@ def test_list_of_list_of_struct() -> None:
     assert df.rows() == [([[{"a": 1}, {"a": 2}]],)]
     assert df.to_dicts() == expected
 
-    df = pl.from_arrow(pa_df)[:0]
+    df = pl.from_arrow(pa_df[:0])
     assert df.to_dicts() == []
 
 
