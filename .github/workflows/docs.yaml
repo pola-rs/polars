@@ -11,11 +11,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Install latest Rust nightly
-        uses: actions-rs/toolchain@v1
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2022-08-22
-          override: true
+          components: rust-docs
       - name: Set up Python
         uses: actions/setup-python@v3
         with:

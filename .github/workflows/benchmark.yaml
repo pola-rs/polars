@@ -16,11 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Install latest Rust nightly
-        uses: actions-rs/toolchain@v1
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2022-08-22
-          override: true
       - name: Set up Python
         uses: actions/setup-python@v3
         with:
@@ -39,7 +38,7 @@ jobs:
           source venv/bin/activate
           pip install -r py-polars/build.requirements.txt
           cd py-polars
-          rustup override set nightly-2022-08-22 && maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
+          maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
           cd tests/db-benchmark
           Rscript -e 'install.packages("data.table", repos="https://Rdatatable.github.io/data.table")'
           Rscript groupby-datagen.R 1e7 1e2 5 0
