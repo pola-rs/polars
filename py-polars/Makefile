@@ -14,6 +14,7 @@ venv:  ## Set up virtual environment
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
 	@rm -rf venv/
+	@rm -rf target/
 	@rm -rf docs/build/
 	@rm -rf docs/source/reference/api/
 	@rm -rf .hypothesis/
@@ -21,6 +22,7 @@ clean:  ## Clean up caches and build artifacts
 	@rm -rf .pytest_cache/
 	@rm -f .coverage
 	@rm -f coverage.xml
+	@rm -f polars/polars.abi3.so
 	@find -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -delete
 	@cargo clean
 
