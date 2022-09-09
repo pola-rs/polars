@@ -29,7 +29,6 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2022-08-22
-          components: rustfmt, clippy
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -40,15 +39,6 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements-dev.txt
-      - name: Run formatting checks
-        run: |
-          black --check .
-          blackdoc --check .
-          isort --check .
-          pyupgrade --py37-plus `find . -name "*.py" -type f`
-          cargo fmt --all -- --check
-      - name: Run linting
-        run: flake8
       # Allow untyped calls for older Python versions
       - name: Run type checking
         run: mypy  ${{ (matrix.python-version == '3.7') && '--allow-untyped-calls' || '' }}
@@ -57,11 +47,10 @@ jobs:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
         run: |
           make venv && make test-with-cov
-          make clippy
       - name: Check doc examples
         run: make doctest
-      # test if we can import polars without any requirements
-      - name: Import polars
+      # Test whether Polars can be imported without optional dependencies
+      - name: Check optional dependencies
         run: |
           pip uninstall pandas -y
           python -c "import polars"
