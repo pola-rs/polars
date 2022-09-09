@@ -1678,14 +1678,14 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         return self._from_pyldf(self._ldf.with_context([lf._ldf for lf in other]))
 
-    def with_column(self: LDF, expr: pli.Expr) -> LDF:
+    def with_column(self: LDF, column: pli.Series | pli.Expr) -> LDF:
         """
         Add or overwrite column in a DataFrame.
 
         Parameters
         ----------
-        expr
-            Expression that evaluates to column.
+        column
+            Expression that evaluates to column or a Series to use.
 
         Examples
         --------
@@ -1723,7 +1723,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         └──────┴─────┘
 
         """
-        return self.with_columns([expr])
+        if not isinstance(column, (pli.Expr, pli.Series)):
+            raise TypeError(
+                "`with_column` expects a single Expr or Series. "
+                "Consider using `with_columns` if you need multiple columns."
+            )
+        return self.with_columns([column])
 
     def drop(self: LDF, columns: str | list[str]) -> LDF:
         """

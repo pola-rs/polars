@@ -18,7 +18,6 @@ use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use polars_core::utils::try_get_supertype;
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
-use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
 
@@ -819,12 +818,6 @@ impl PyDataFrame {
         Ok(())
     }
 
-    pub fn with_column(&mut self, s: PySeries) -> PyResult<Self> {
-        let mut df = self.df.clone();
-        df.with_column(s.series).map_err(PyPolarsErr::from)?;
-        Ok(df.into())
-    }
-
     /// Get datatypes
     pub fn dtypes(&self, py: Python) -> PyObject {
         let iter = self
@@ -918,16 +911,6 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn filter(&self, mask: &PySeries) -> PyResult<Self> {
-        let filter_series = &mask.series;
-        if let Ok(ca) = filter_series.bool() {
-            let df = self.df.filter(ca).map_err(PyPolarsErr::from)?;
-            Ok(PyDataFrame::new(df))
-        } else {
-            Err(PyRuntimeError::new_err("Expected a boolean mask"))
-        }
-    }
-
     pub fn take(&self, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
         let indices = indices.0;
         let indices = IdxCa::from_vec("", indices);
@@ -959,11 +942,6 @@ impl PyDataFrame {
         self.df
             .replace(column, new_col.series)
             .map_err(PyPolarsErr::from)?;
-        Ok(())
-    }
-
-    pub fn rename(&mut self, column: &str, new_col: &str) -> PyResult<()> {
-        self.df.rename(column, new_col).map_err(PyPolarsErr::from)?;
         Ok(())
     }
 

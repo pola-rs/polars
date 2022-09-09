@@ -961,7 +961,7 @@ def test_literal_series() -> None:
     )
     out = (
         df.lazy()
-        .with_column(pl.Series("e", [2, 1, 3], pl.Int32))  # type: ignore[arg-type]
+        .with_column(pl.Series("e", [2, 1, 3], pl.Int32))
         .with_column(pl.col("e").cast(pl.Float32))
         .collect()
     )
