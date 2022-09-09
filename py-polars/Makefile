@@ -6,8 +6,9 @@ PYTHON_BIN=venv/bin
 
 venv:  ## Set up virtual environment
 	@python -m venv venv
-	@venv/bin/pip install -U pip
-	@venv/bin/pip install -r build.requirements.txt
+	@venv/bin/pip install --upgrade pip
+	@venv/bin/pip install -r requirements-dev.txt
+	@venv/bin/pip install -r requirements-lint.txt
 	@unset CONDA_PREFIX && source venv/bin/activate && maturin develop
 
 .PHONY: clean
