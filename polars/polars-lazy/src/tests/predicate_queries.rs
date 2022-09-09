@@ -237,3 +237,30 @@ fn test_predicate_pd_apply() -> Result<()> {
     assert!(predicate_at_scan(q.clone()));
     Ok(())
 }
+#[test]
+fn test_predicate_on_join_suffix_4788() -> Result<()> {
+    let lf = df![
+      "x" => [1, 2],
+      "y" => [1, 1],
+    ]?
+    .lazy();
+
+    let q = (lf.clone().join_builder().with(lf))
+        .left_on([col("y")])
+        .right_on([col("y")])
+        .suffix("_")
+        .finish()
+        .filter(col("x").eq(1));
+
+    // the left hand side should have a predicate
+    assert!(predicate_at_scan(q.clone()));
+
+    let expected = df![
+        "x" => [1, 1],
+        "y" => [1, 1],
+        "x_" => [1, 2],
+    ]?;
+    assert_eq!(q.collect()?, expected);
+
+    Ok(())
+}
