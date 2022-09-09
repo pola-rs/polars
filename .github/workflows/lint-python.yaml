@@ -41,6 +41,9 @@ jobs:
         with:
           toolchain: nightly-2022-08-22
           components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: py-polars
       - name: Lint Rust
         run: |
           cargo fmt --all -- --check
