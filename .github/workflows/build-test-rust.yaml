@@ -1,10 +1,10 @@
-name: Build and test rust
+name: Build and test Rust
 
 on:
   pull_request:
     paths:
       - 'polars/**'
-      - '.github/workflows/test-rust.yaml'
+      - '.github/workflows/build-test-rust.yaml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -36,66 +36,65 @@ jobs:
         with:
           toolchain: nightly-2022-08-22
 
-      # - name: Cache Rust
-      #   uses: Swatinem/rust-cache@v2
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install dependencies
+        run: cargo install cargo-hack
 
       - name: Run cargo hack
         working-directory: polars
         run: cargo hack check --each-feature --no-dev-deps --features private
 
   lint:
-    if: false
-    name: Build and test Rust
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: polars
+
     steps:
       - uses: actions/checkout@v3
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2022-08-22
           components: rustfmt, clippy, miri
-      - name: Cache Cargo
-        uses: actions/cache@v3
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
         with:
-          # these represent dependencies downloaded by cargo
-          # and thus do not depend on the OS, arch nor rust version.
-          path: /github/home/.cargo
-          key: cargo-cache-
-      - name: Cache Rust dependencies
-        uses: actions/cache@v3
-        with:
-          # these represent compiled steps of both dependencies and arrow
-          # and thus are specific for a particular OS, arch and rust version.
-          path: /github/home/target
-          key: ubuntu-x86-64-target-cache-nightly
-      - name: Run formatting checks
-        run: |
-          cargo fmt --all -- --check
-      - name: Run linting checks
+          workspaces: polars
+
+      - name: Run rustfmt
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
-        working-directory: polars
         run : |
           cargo clippy --all-features \
-          -p polars-core \
-          -p polars-io \
-          -p polars-lazy \
-          -- -D warnings
+            -p polars-core \
+            -p polars-io \
+            -p polars-lazy \
+            -- -D warnings
           cargo clippy -- -D warnings
+
       - name: Run miri
-        working-directory: polars
         run: |
           cargo miri setup
           cargo clean
           make miri
 
   test:
-    if: false
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: true
       matrix:
         os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: polars
 
     steps:
       - uses: actions/checkout@v3
@@ -113,7 +112,9 @@ jobs:
       - name: Run tests
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
-        working-directory: polars
-        run: |
-          make test
-          make integration-tests
+        run: make test
+
+      - name: Run integration tests
+        env:
+          RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+        run: make integration-tests
