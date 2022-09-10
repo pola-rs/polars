@@ -488,9 +488,13 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                     let kwargs = PyDict::new(py);
                     kwargs.set_item("tzinfo", py.None())?;
                     let dt = ob.call_method("replace", (), Some(kwargs))?;
-                    
+
                     let pypolars = PyModule::import(py, "polars").unwrap();
-                    let localize = pypolars.getattr("utils").unwrap().getattr("_localize").unwrap();
+                    let localize = pypolars
+                        .getattr("utils")
+                        .unwrap()
+                        .getattr("_localize")
+                        .unwrap();
                     let loc_tz = localize.call1((dt, "UTC"));
 
                     loc_tz.call_method0("timestamp")?;
