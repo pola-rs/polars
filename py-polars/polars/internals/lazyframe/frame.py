@@ -14,10 +14,10 @@ from warnings import warn
 from polars import internals as pli
 from polars.cfg import Config
 from polars.datatypes import DataType, PolarsDataType, Schema, py_type_to_dtype
+from polars.internals import selection_to_pyexpr_list
 from polars.internals.lazyframe.groupby import LazyGroupBy
 from polars.internals.slice import LazyPolarsSlice
 from polars.utils import (
-    _convert_to_pyexprs,
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
@@ -25,7 +25,7 @@ from polars.utils import (
 )
 
 try:
-    from polars.polars import PyExpr, PyLazyFrame
+    from polars.polars import PyLazyFrame
 
     _DOCUMENTING = False
 except ImportError:
@@ -1067,8 +1067,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         └─────┴─────┘
 
         """
-        new_by = _prepare_groupby_inputs(by)
-        lgb = self._ldf.groupby(new_by, maintain_order)
+        pyexprs_by = selection_to_pyexpr_list(by)
+        lgb = self._ldf.groupby(pyexprs_by, maintain_order)
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
     def groupby_rolling(
@@ -1181,9 +1181,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         if offset is None:
             offset = f"-{period}"
-        by = _prepare_groupby_inputs(by)
+        pyexprs_by = [] if by is None else selection_to_pyexpr_list(by)
 
-        lgb = self._ldf.groupby_rolling(index_column, period, offset, closed, by)
+        lgb = self._ldf.groupby_rolling(
+            index_column, period, offset, closed, pyexprs_by
+        )
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
     def groupby_dynamic(
@@ -1275,7 +1277,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 offset = "0ns"
         if period is None:
             period = every
-        by = _prepare_groupby_inputs(by)
+        pyexprs_by = [] if by is None else selection_to_pyexpr_list(by)
         lgb = self._ldf.groupby_dynamic(
             index_column,
             every,
@@ -1284,7 +1286,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             truncate,
             include_boundaries,
             closed,
-            by,
+            pyexprs_by,
         )
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
@@ -1517,14 +1519,13 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             )
 
         if on is not None:
-            pyexprs = _convert_to_pyexprs(on)
+            pyexprs = selection_to_pyexpr_list(on)
             pyexprs_left = pyexprs
             pyexprs_right = pyexprs
+        elif left_on is not None and right_on is not None:
+            pyexprs_left = selection_to_pyexpr_list(left_on)
+            pyexprs_right = selection_to_pyexpr_list(right_on)
         else:
-            pyexprs_left = _convert_to_pyexprs(left_on)
-            pyexprs_right = _convert_to_pyexprs(right_on)
-
-        if pyexprs_left is None or pyexprs_right is None:
             raise ValueError("must specify `on` OR `left_on` and `right_on`")
 
         return self._from_pyldf(
@@ -2492,21 +2493,3 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         if isinstance(names, str):
             names = [names]
         return self._from_pyldf(self._ldf.unnest(names))
-
-
-def _prepare_groupby_inputs(
-    by: str | list[str] | pli.Expr | list[pli.Expr] | None,
-) -> list[PyExpr]:
-    if isinstance(by, list):
-        new_by = []
-        for e in by:
-            if isinstance(e, str):
-                e = pli.col(e)
-            new_by.append(e._pyexpr)
-    elif isinstance(by, str):
-        new_by = [pli.col(by)._pyexpr]
-    elif isinstance(by, pli.Expr):
-        new_by = [by._pyexpr]
-    elif by is None:
-        return []
-    return new_by
