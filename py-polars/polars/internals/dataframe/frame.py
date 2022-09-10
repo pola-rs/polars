@@ -1734,9 +1734,9 @@ class DataFrame:
         file: None = None,
         pretty: bool = ...,
         row_oriented: bool = ...,
-        json_lines: bool = ...,
+        json_lines: bool | None = ...,
         *,
-        to_string: bool = ...,
+        to_string: bool | None = ...,
     ) -> str:
         ...
 
@@ -1746,9 +1746,9 @@ class DataFrame:
         file: IOBase | str | Path,
         pretty: bool = ...,
         row_oriented: bool = ...,
-        json_lines: bool = ...,
+        json_lines: bool | None = ...,
         *,
-        to_string: bool = ...,
+        to_string: bool | None = ...,
     ) -> None:
         ...
 
