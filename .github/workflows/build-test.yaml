@@ -64,9 +64,6 @@ jobs:
           # and thus are specific for a particular OS, arch and rust version.
           path: /github/home/target
           key: ubuntu-x86-64-target-cache-nightly
-      - name: Install dependencies
-        run: |
-          rm -f dprint-x86_64-unknown-linux-gnu.zip
       - name: Run formatting checks
         run: |
           cargo fmt --all -- --check
