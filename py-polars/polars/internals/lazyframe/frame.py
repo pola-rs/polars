@@ -288,22 +288,11 @@ class LazyFrame:
         """
         Read into a DataFrame from JSON format.
 
-        .. deprecated:: 0.14.8
-          `LazyFrame.read_json` will be removed in a future version.
-          Use the equivalent `pl.read_json(...).lazy()` instead.
-
         See Also
         --------
         polars.io.read_json
 
         """
-        warn(
-            "`LazyFrame.read_json` will be removed in a future version."
-            " Use the equivalent `pl.read_json(...).lazy()` instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
         if isinstance(file, StringIO):
             file = BytesIO(file.getvalue().encode())
         elif isinstance(file, (str, Path)):
