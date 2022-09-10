@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import typing
 from io import BytesIO, IOBase, StringIO
@@ -37,10 +36,6 @@ try:
 except ImportError:
     _PYARROW_AVAILABLE = False
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
@@ -269,7 +264,12 @@ class LazyFrame:
     @classmethod
     def from_json(cls, json: str) -> LazyFrame:
         """
-        Create a DataFrame from a JSON string.
+        Read a logical plan from a JSON string to construct a LazyFrame.
+
+        Parameters
+        ----------
+        json
+            String in JSON format.
 
         See Also
         --------
@@ -286,24 +286,18 @@ class LazyFrame:
         file: str | Path | IOBase,
     ) -> LazyFrame:
         """
-        Read into a DataFrame from JSON format.
+        Read a logical plan from a JSON file to construct a LazyFrame.
 
-        .. deprecated:: 0.14.8
-          `LazyFrame.read_json` will be removed in a future version.
-          Use the equivalent `pl.read_json(...).lazy()` instead.
+        Parameters
+        ----------
+        file
+            Path to a file or a file-like object.
 
         See Also
         --------
-        polars.io.read_json
+        LazyFrame.from_json, LazyFrame.write_json
 
         """
-        warn(
-            "`LazyFrame.read_json` will be removed in a future version."
-            " Use the equivalent `pl.read_json(...).lazy()` instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
         if isinstance(file, StringIO):
             file = BytesIO(file.getvalue().encode())
         elif isinstance(file, (str, Path)):
@@ -441,51 +435,53 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     @overload
     def write_json(
         self,
-        file: IOBase | str | Path | None = ...,
+        file: None = None,
         *,
-        to_string: Literal[True],
+        to_string: bool | None = ...,
     ) -> str:
         ...
 
     @overload
     def write_json(
         self,
-        file: IOBase | str | Path | None = ...,
+        file: IOBase | str | Path,
         *,
-        to_string: Literal[False] = ...,
+        to_string: bool | None = ...,
     ) -> None:
-        ...
-
-    @overload
-    def write_json(
-        self,
-        file: IOBase | str | Path | None = ...,
-        *,
-        to_string: bool = ...,
-    ) -> str | None:
         ...
 
     def write_json(
         self,
         file: IOBase | str | Path | None = None,
         *,
-        to_string: bool = False,
+        to_string: bool | None = None,
     ) -> str | None:
         """
-        Serialize LogicalPlan to JSON representation.
+        Write the logical plan of this LazyFrame to a file or string in JSON format.
 
         Parameters
         ----------
         file
-            Write to this file instead of returning a string.
+            File path to which the result should be written. If set to ``None``
+            (default), the output is returned as a string instead.
         to_string
-            Ignore file argument and return a string.
+            Deprecated argument. Ignore file argument and return a string.
 
         See Also
         --------
-        read_json
+        LazyFrame.read_json
 
         """
+        if to_string is not None:
+            warn(
+                "`to_string` argument for `LazyFrame.write_json` will be removed in a"
+                " future version. Remove the argument and set `file=None` (default).",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        else:
+            to_string = False
+
         if isinstance(file, (str, Path)):
             file = format_path(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
