@@ -120,8 +120,8 @@ $ pip3 install -U 'polars[connectorx]'
 # Install Polars and xlsx2csv (read data from Excel).
 $ pip3 install -U 'polars[xlsx2csv]'
 
-# Install Polars and pytz (for timezone support).
-$ pip3 install -U 'polars[pytz]'
+# Install Polars and zoneinfo (for timezone support in Python < 3.9, Python 3.9+ has this in stdlib).
+$ pip3 install -U 'polars[zoneinfo]'
 ```
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.

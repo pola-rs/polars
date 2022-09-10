@@ -8,7 +8,11 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-import pytz
+
+try:
+    import zoneinfo
+except ImportError:  # in Python 3.8 and earlier we would hit this
+    from backports import zoneinfo  # type: ignore[import,no-redef]
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
@@ -660,8 +664,8 @@ def test_read_utc_times_parquet() -> None:
     df.to_parquet(f)
     f.seek(0)
     df_in = pl.read_parquet(f)
-    tz = pytz.timezone("UTC")
-    assert df_in["Timestamp"][0] == tz.localize(datetime(2022, 1, 1, 0, 0))
+    tz = zoneinfo.ZoneInfo("UTC")
+    assert df_in["Timestamp"][0] == datetime(2022, 1, 1, 0, 0).astimezone(tz)
 
 
 def test_epoch() -> None:
@@ -1369,7 +1373,7 @@ def test_weekday() -> None:
 
 
 def test_from_dict_tu_consistency() -> None:
-    tz = pytz.timezone("PRC")
+    tz = zoneinfo.ZoneInfo("PRC")
     dt = datetime(2020, 8, 1, 12, 0, 0, tzinfo=tz)
     from_dict = pl.from_dict({"dt": [dt]})
     from_dicts = pl.from_dicts([{"dt": dt}])
