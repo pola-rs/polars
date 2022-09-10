@@ -1,4 +1,4 @@
-name: Test python
+name: Test Python
 
 on:
   pull_request:
@@ -12,8 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-python:
-    name: Build and test Python
+  main:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: true
@@ -25,47 +24,46 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2022-08-22
-          components: rustfmt, clippy
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
-          cache-dependency-path: 'py-polars/build.requirements.txt'
+          cache-dependency-path: 'py-polars/requirements-dev.txt'
+      - name: Create virtual environment
+        run: |
+          python -m venv venv
+          echo "$GITHUB_WORKSPACE/py-polars/venv/bin" >> $GITHUB_PATH
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r build.requirements.txt
-      - name: Run formatting checks
-        run: |
-          black --check .
-          blackdoc --check .
-          isort --check .
-          pyupgrade --py37-plus `find . -name "*.py" -type f`
-          cargo fmt --all -- --check
-      - name: Run linting
-        run: flake8
+          pip install -r requirements-dev.txt
       # Allow untyped calls for older Python versions
-      - name: Run type checking
-        run: mypy  ${{ (matrix.python-version == '3.7') && '--allow-untyped-calls' || '' }}
-      - name: Run tests
+      - name: Run mypy
+        run: mypy ${{ (matrix.python-version == '3.7') && '--allow-untyped-calls' || '' }}
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2022-08-22
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: py-polars
+      - name: Install Polars
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
         run: |
-          make venv && make test-with-cov
-          make clippy
-      - name: Check doc examples
-        run: make doctest
-      # test if we can import polars without any requirements
-      - name: Import polars
+          source activate
+          maturin develop
+      - name: Run tests and report coverage
+        run: pytest --cov=polars
+      - name: Run doctests
+        run: python tests/docs/run_doc_examples.py
+      - name: Check import without optional dependencies
         run: |
           pip uninstall pandas -y
-          python -c "import polars"
+          python -c 'import polars'
           pip uninstall numpy -y
-          python -c "import polars"
+          python -c 'import polars'
           pip uninstall pyarrow -y
-          python -c "import polars"
+          python -c 'import polars'
