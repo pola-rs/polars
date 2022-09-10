@@ -11,54 +11,116 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    working-directory: py-polars
+
 jobs:
-  main:
+  ubuntu:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: true
       matrix:
         python-version: ['3.7', '3.10']
-    defaults:
-      run:
-        working-directory: py-polars
 
     steps:
       - uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
           cache-dependency-path: 'py-polars/requirements-dev.txt'
+
       - name: Create virtual environment
         run: |
           python -m venv venv
           echo "$GITHUB_WORKSPACE/py-polars/venv/bin" >> $GITHUB_PATH
+
       - name: Install dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements-dev.txt
+
       # Allow untyped calls for older Python versions
       - name: Run mypy
         run: mypy ${{ (matrix.python-version == '3.7') && '--allow-untyped-calls' || '' }}
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2022-08-22
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: py-polars
+
       - name: Install Polars
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
         run: |
           source activate
           maturin develop
+
       - name: Run tests and report coverage
         run: pytest --cov=polars
+
       - name: Run doctests
         run: python tests/docs/run_doc_examples.py
+
+      - name: Check import without optional dependencies
+        run: |
+          pip uninstall pandas -y
+          python -c 'import polars'
+          pip uninstall numpy -y
+          python -c 'import polars'
+          pip uninstall pyarrow -y
+          python -c 'import polars'
+
+  windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python-version: ['3.10']
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: 'py-polars/requirements-dev.txt'
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2022-08-22
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: py-polars
+
+      - name: Install Polars
+        shell: bash
+        env:
+          RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+        run: |
+          maturin build
+          pip install target/wheels/polars-*.whl
+
+      - name: Run tests
+        run: pytest
+
       - name: Check import without optional dependencies
         run: |
           pip uninstall pandas -y
