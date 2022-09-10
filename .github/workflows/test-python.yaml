@@ -40,7 +40,7 @@ jobs:
           pip install -r requirements-dev.txt
       # Allow untyped calls for older Python versions
       - name: Run mypy
-        run: mypy ${{ (matrix.python-version == '3.7') && '--allow-untyped-calls' && '--no-warn-unused-ignores' || '' }}
+        run: mypy ${{ (matrix.python-version == '3.7') && '--allow-untyped-calls --no-warn-unused-ignores' || '' }}
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
