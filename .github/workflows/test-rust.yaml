@@ -1,25 +1,36 @@
-name: Windows tests rust
+name: Test Rust
 
 on:
   pull_request:
     paths:
       - 'polars/**'
-      - '.github/workflows/test-windows.yaml'
+      - '.github/workflows/test-rust.yaml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test-rust:
-    runs-on: windows-latest
+  main:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
     steps:
+      - uses: actions/checkout@v3
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2022-08-22
-      - uses: actions/checkout@v3
-      - uses: Swatinem/rust-cache@v1
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: polars
+
       - name: Run tests
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down

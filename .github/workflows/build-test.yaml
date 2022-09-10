@@ -81,11 +81,6 @@ jobs:
           -p polars-lazy \
           -- -D warnings
           cargo clippy -- -D warnings
-      - name: Run tests
-        env:
-          RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
-        working-directory: polars
-        run: make test && make integration-tests
       - name: Run miri
         working-directory: polars
         run: |
