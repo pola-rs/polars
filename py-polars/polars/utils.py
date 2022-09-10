@@ -204,17 +204,21 @@ def _to_python_datetime(
         else:
             raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
         if tz is not None and len(tz) > 0:
-            try:
-                import pytz
-            except ImportError:
-                raise ImportError(
-                    "pytz is not installed. Please run `pip install pytz`."
-                ) from None
-
-            return pytz.timezone(tz).localize(dt)
+            return _localize(dt, tz)
         return dt
     else:
         raise NotImplementedError  # pragma: no cover
+
+
+def _localize(dt: datetime, tz: str) -> datetime:
+    try:
+        import pytz
+    except ImportError:
+        raise ImportError(
+            "pytz is not installed. Please run `pip install pytz`."
+        ) from None
+
+    return pytz.timezone(tz).localize(dt, is_dst=None)
 
 
 def _in_notebook() -> bool:
