@@ -1776,7 +1776,7 @@ class DataFrame:
         json_lines
             Deprecated argument. Toggle between `JSON` and `NDJSON` format.
         to_string
-            Ignore file argument and return a string.
+            Deprecated argument. Ignore file argument and return a string.
 
         See Also
         --------

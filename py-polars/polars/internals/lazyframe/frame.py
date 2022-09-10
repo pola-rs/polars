@@ -441,35 +441,26 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     @overload
     def write_json(
         self,
-        file: IOBase | str | Path | None = ...,
+        file: None = None,
         *,
-        to_string: Literal[True],
+        to_string: bool | None = ...,
     ) -> str:
         ...
 
     @overload
     def write_json(
         self,
-        file: IOBase | str | Path | None = ...,
+        file: IOBase | str | Path,
         *,
-        to_string: Literal[False] = ...,
+        to_string: bool | None = ...,
     ) -> None:
-        ...
-
-    @overload
-    def write_json(
-        self,
-        file: IOBase | str | Path | None = ...,
-        *,
-        to_string: bool = ...,
-    ) -> str | None:
         ...
 
     def write_json(
         self,
         file: IOBase | str | Path | None = None,
         *,
-        to_string: bool = False,
+        to_string: bool | None = None,
     ) -> str | None:
         """
         Serialize LogicalPlan to JSON representation.
@@ -479,13 +470,23 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         file
             Write to this file instead of returning a string.
         to_string
-            Ignore file argument and return a string.
+            Deprecated argument. Ignore file argument and return a string.
 
         See Also
         --------
         read_json
 
         """
+        if to_string is not None:
+            warn(
+                "`to_string` argument for `LazyFrame.write_json` will be removed in a"
+                " future version. Remove the argument and set `file=None` (default).",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        else:
+            to_string = False
+
         if isinstance(file, (str, Path)):
             file = format_path(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
