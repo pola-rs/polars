@@ -41,7 +41,7 @@ test:
 	    --test-threads=2
 
 integration-tests:
-	cargo test --all-features --test it -- --test-threads=2
+	cargo t --all-features --test it -- --test-threads=2
 
 miri:
 	# not tested on all features because miri does not support SIMD
