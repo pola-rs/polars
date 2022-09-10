@@ -197,7 +197,7 @@ class Datetime(DataType):
             Time unit.
         time_zone
             Timezone string as defined in zoneinfo (run
-            `import zoneinfo; zoneinfo.available_timezones()` for a full list).
+            ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
 
         """
         self.tu = time_unit
