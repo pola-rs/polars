@@ -36,7 +36,7 @@ enable_error_code = [
 ]
 
 [[tool.mypy.overrides]]
-module = ["pyarrow.*", "polars.polars", "matplotlib.*", "fsspec.*", "connectorx", "IPython.*"]
+module = ["backports", "pyarrow.*", "polars.polars", "matplotlib.*", "fsspec.*", "connectorx", "IPython.*", "zoneinfo"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

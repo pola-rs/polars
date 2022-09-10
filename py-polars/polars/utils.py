@@ -31,7 +31,7 @@ try:
     ZONEINFO_AVAILABLE = True
 except ImportError:  # in Python 3.8 and earlier we would hit this
     try:
-        from backports import zoneinfo  # type: ignore[import, no-redef]
+        from backports import zoneinfo
 
         ZONEINFO_AVAILABLE = True
     except ImportError:

@@ -12,7 +12,7 @@ import pytest
 try:
     import zoneinfo
 except ImportError:  # in Python 3.8 and earlier we would hit this
-    from backports import zoneinfo  # type: ignore[import,no-redef]
+    from backports import zoneinfo
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
