@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import sys
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, no_type_check
 
@@ -9,10 +10,10 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-try:
+if sys.version_info >= (3, 9):
     import zoneinfo
-except ImportError:  # in Python 3.8 and earlier we would hit this
-    from backports import zoneinfo  # type: ignore[no-redef]
+else:
+    from backports import zoneinfo
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS

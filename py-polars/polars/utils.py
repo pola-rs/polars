@@ -25,17 +25,18 @@ if sys.version_info >= (3, 10):
 else:
     from typing_extensions import ParamSpec, TypeGuard
 
-try:
+
+if sys.version_info >= (3, 9):
     import zoneinfo
 
-    ZONEINFO_AVAILABLE = True
-except ImportError:  # in Python 3.8 and earlier we would hit this
+    _ZONEINFO_AVAILABLE = True
+else:
     try:
-        from backports import zoneinfo  # type: ignore[no-redef]
+        from backports import zoneinfo
 
-        ZONEINFO_AVAILABLE = True
+        _ZONEINFO_AVAILABLE = True
     except ImportError:
-        ZONEINFO_AVAILABLE = False
+        _ZONEINFO_AVAILABLE = False
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import SizeUnit, TimeUnit
@@ -223,7 +224,7 @@ def _to_python_datetime(
 
 
 def _localize(dt: datetime, tz: str) -> datetime:
-    if not ZONEINFO_AVAILABLE:
+    if not _ZONEINFO_AVAILABLE:
         raise ImportError(
             "backports.zoneinfo is not installed. Please run "
             "`pip install backports.zoneinfo`."
