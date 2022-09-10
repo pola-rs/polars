@@ -13,6 +13,7 @@ from warnings import warn
 from polars import internals as pli
 from polars.cfg import Config
 from polars.datatypes import DataType, PolarsDataType, Schema, py_type_to_dtype
+from polars.internals import selection_to_pyexpr_list
 from polars.internals.lazyframe.groupby import LazyGroupBy
 from polars.internals.slice import LazyPolarsSlice
 from polars.utils import (
@@ -23,7 +24,7 @@ from polars.utils import (
 )
 
 try:
-    from polars.polars import PyExpr, PyLazyFrame
+    from polars.polars import PyLazyFrame
 
     _DOCUMENTING = False
 except ImportError:
@@ -1062,8 +1063,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         └─────┴─────┘
 
         """
-        new_by = _prepare_groupby_inputs(by)
-        lgb = self._ldf.groupby(new_by, maintain_order)
+        pyexprs_by = selection_to_pyexpr_list(by)
+        lgb = self._ldf.groupby(pyexprs_by, maintain_order)
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
     def groupby_rolling(
@@ -1176,9 +1177,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         if offset is None:
             offset = f"-{period}"
-        by = _prepare_groupby_inputs(by)
+        pyexprs_by = [] if by is None else selection_to_pyexpr_list(by)
 
-        lgb = self._ldf.groupby_rolling(index_column, period, offset, closed, by)
+        lgb = self._ldf.groupby_rolling(
+            index_column, period, offset, closed, pyexprs_by
+        )
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
     def groupby_dynamic(
@@ -1270,7 +1273,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 offset = "0ns"
         if period is None:
             period = every
-        by = _prepare_groupby_inputs(by)
+        pyexprs_by = [] if by is None else selection_to_pyexpr_list(by)
         lgb = self._ldf.groupby_dynamic(
             index_column,
             every,
@@ -1279,7 +1282,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             truncate,
             include_boundaries,
             closed,
-            by,
+            pyexprs_by,
         )
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
@@ -1421,9 +1424,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def join(
         self: LDF,
         other: LazyFrame,
-        left_on: str | pli.Expr | list[str | pli.Expr] | None = None,
-        right_on: str | pli.Expr | list[str | pli.Expr] | None = None,
-        on: str | pli.Expr | list[str | pli.Expr] | None = None,
+        left_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        right_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
         how: JoinStrategy = "inner",
         suffix: str = "_right",
         allow_parallel: bool = True,
@@ -1511,44 +1514,21 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 )
             )
 
-        left_on_: list[str | pli.Expr] | None
-        if isinstance(left_on, (str, pli.Expr)):
-            left_on_ = [left_on]
+        if on is not None:
+            pyexprs = selection_to_pyexpr_list(on)
+            pyexprs_left = pyexprs
+            pyexprs_right = pyexprs
+        elif left_on is not None and right_on is not None:
+            pyexprs_left = selection_to_pyexpr_list(left_on)
+            pyexprs_right = selection_to_pyexpr_list(right_on)
         else:
-            left_on_ = left_on
-
-        right_on_: list[str | pli.Expr] | None
-        if isinstance(right_on, (str, pli.Expr)):
-            right_on_ = [right_on]
-        else:
-            right_on_ = right_on
-
-        if isinstance(on, (str, pli.Expr)):
-            left_on_ = [on]
-            right_on_ = [on]
-        elif isinstance(on, list):
-            left_on_ = on
-            right_on_ = on
-
-        if left_on_ is None or right_on_ is None:
-            raise ValueError("You should pass the column to join on as an argument.")
-
-        new_left_on = []
-        for column in left_on_:
-            if isinstance(column, str):
-                column = pli.col(column)
-            new_left_on.append(column._pyexpr)
-        new_right_on = []
-        for column in right_on_:
-            if isinstance(column, str):
-                column = pli.col(column)
-            new_right_on.append(column._pyexpr)
+            raise ValueError("must specify `on` OR `left_on` and `right_on`")
 
         return self._from_pyldf(
             self._ldf.join(
                 other._ldf,
-                new_left_on,
-                new_right_on,
+                pyexprs_left,
+                pyexprs_right,
                 allow_parallel,
                 force_parallel,
                 how,
@@ -2509,21 +2489,3 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         if isinstance(names, str):
             names = [names]
         return self._from_pyldf(self._ldf.unnest(names))
-
-
-def _prepare_groupby_inputs(
-    by: str | list[str] | pli.Expr | list[pli.Expr] | None,
-) -> list[PyExpr]:
-    if isinstance(by, list):
-        new_by = []
-        for e in by:
-            if isinstance(e, str):
-                e = pli.col(e)
-            new_by.append(e._pyexpr)
-    elif isinstance(by, str):
-        new_by = [pli.col(by)._pyexpr]
-    elif isinstance(by, pli.Expr):
-        new_by = [by._pyexpr]
-    elif by is None:
-        return []
-    return new_by
