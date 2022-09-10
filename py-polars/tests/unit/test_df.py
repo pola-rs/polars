@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import typing
 from datetime import datetime, timedelta
+from decimal import Decimal
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, Iterator
 
@@ -220,26 +221,26 @@ def test_dataclasses_and_namedtuple() -> None:
     class TradeDC:
         timestamp: datetime
         ticker: str
-        price: float
+        price: Decimal
         size: int | None = None
 
     class TradeNT(NamedTuple):
         timestamp: datetime
         ticker: str
-        price: float
+        price: Decimal
         size: int | None = None
 
     raw_data = [
-        (datetime(2022, 9, 8, 14, 30, 45), "AAPL", 157.5, 125),
-        (datetime(2022, 9, 9, 10, 15, 12), "FLSY", 10.0, 1500),
-        (datetime(2022, 9, 7, 15, 30), "MU", 55.5, 400),
+        (datetime(2022, 9, 8, 14, 30, 45), "AAPL", Decimal("157.5"), 125),
+        (datetime(2022, 9, 9, 10, 15, 12), "FLSY", Decimal("10.0"), 1500),
+        (datetime(2022, 9, 7, 15, 30), "MU", Decimal("55.5"), 400),
     ]
 
     for TradeClass in (TradeDC, TradeNT):
         trades = [TradeClass(*values) for values in raw_data]
 
-        for df_init in (pl.DataFrame, pl.from_records):
-            df = df_init(data=trades)  # type: ignore[operator]
+        for DF in (pl.DataFrame, pl.from_records):
+            df = DF(data=trades)  # type: ignore[operator]
             assert df.schema == {
                 "timestamp": pl.Datetime("us"),
                 "ticker": pl.Utf8,

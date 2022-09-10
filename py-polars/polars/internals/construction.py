@@ -4,6 +4,7 @@ from contextlib import suppress
 from dataclasses import astuple, is_dataclass
 from datetime import date, datetime, time, timedelta
 from itertools import zip_longest
+from sys import version_info
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, get_type_hints
 
 from polars import internals as pli
@@ -30,6 +31,17 @@ from polars.datatypes_constructor import (
     py_type_to_constructor,
 )
 from polars.utils import threadpool_size
+
+if version_info >= (3, 10):
+
+    def dataclass_type_hints(obj: type) -> dict[str, Any]:
+        return get_type_hints(obj)
+
+else:
+
+    def dataclass_type_hints(obj: type) -> dict[str, Any]:
+        return obj.__annotations__
+
 
 try:
     from polars.polars import PyDataFrame, PySeries
@@ -576,8 +588,8 @@ def sequence_to_pydf(
             )
     elif is_dataclass(data[0]):
         columns = columns or [
-            (col, py_type_to_dtype(tp))
-            for col, tp in get_type_hints(data[0].__class__).items()
+            (col, py_type_to_dtype(tp, raise_unmatched=False))
+            for col, tp in dataclass_type_hints(data[0].__class__).items()
         ]
         pydf = _post_apply_columns(
             PyDataFrame.read_rows([astuple(dc) for dc in data], infer_schema_length),
