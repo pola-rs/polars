@@ -36,7 +36,6 @@ where
         "%y/%m/%d %H:%M:%S",
         //210319 23:58:50
         "%y%m%d %H:%M:%S",
-        // 2019-04-18T02:45:55
         // 2021/12/31 12:54:98
         "%Y/%m/%d %H:%M:%S",
         // 2021-12-31 24:58:01
@@ -45,13 +44,18 @@ where
         "%Y/%m/%d %H:%M:%S",
         // 20210319 23:58:50
         "%Y%m%d %H:%M:%S",
+        // note: '%F' cannot be parsed by polars native parser
         // 2019-04-18T02:45:55
-        // %F cannot be parse by polars native parser
         "%Y-%m-%dT%H:%M:%S",
-        // 2019-04-18T02:45:55.555000000
+        // 2019-04-18T02:45:55[...]
+        // milliseconds
+        "%Y-%m-%d %H:%M:%S.%3f",
+        "%Y-%m-%dT%H:%M:%S.%3f",
         // microseconds
+        "%Y-%m-%d %H:%M:%S.%6f",
         "%Y-%m-%dT%H:%M:%S.%6f",
         // nanoseconds
+        "%Y-%m-%d %H:%M:%S.%9f",
         "%Y-%m-%dT%H:%M:%S.%9f",
     ]
     .into_iter()

@@ -514,11 +514,27 @@ impl PyExpr {
     }
 
     pub fn str_parse_datetime(&self, fmt: Option<String>, strict: bool, exact: bool) -> PyExpr {
+        let tu = match fmt {
+            Some(ref fmt) => {
+                if fmt.contains("%.9f")
+                    || fmt.contains("%9f")
+                    || fmt.contains("%f")
+                    || fmt.contains("%.f")
+                {
+                    TimeUnit::Nanoseconds
+                } else if fmt.contains("%.3f") || fmt.contains("%3f") {
+                    TimeUnit::Milliseconds
+                } else {
+                    TimeUnit::Microseconds
+                }
+            }
+            None => TimeUnit::Microseconds,
+        };
         self.inner
             .clone()
             .str()
             .strptime(StrpTimeOptions {
-                date_dtype: DataType::Datetime(TimeUnit::Microseconds, None),
+                date_dtype: DataType::Datetime(tu, None),
                 fmt,
                 strict,
                 exact,

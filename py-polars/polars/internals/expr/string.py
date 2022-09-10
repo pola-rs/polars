@@ -3,7 +3,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
-from polars.datatypes import DataType, Date, Datetime, Time, is_polars_dtype
+from polars.datatypes import (
+    DataType,
+    Date,
+    Datetime,
+    TemporalDataType,
+    Time,
+    is_polars_dtype,
+)
 from polars.utils import deprecated_alias
 
 if TYPE_CHECKING:
@@ -20,7 +27,7 @@ class ExprStringNameSpace:
 
     def strptime(
         self,
-        datatype: type[Date] | type[Datetime] | type[Time],
+        datatype: TemporalDataType,
         fmt: str | None = None,
         strict: bool = True,
         exact: bool = True,
@@ -31,7 +38,7 @@ class ExprStringNameSpace:
         Parameters
         ----------
         datatype
-            Date | Datetime | Time.
+            Date | Datetime | Time
         fmt
             Format to use, refer to the `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
@@ -41,6 +48,12 @@ class ExprStringNameSpace:
         exact
             - If True, require an exact format match.
             - If False, allow the format to match anywhere in the target string.
+
+        Notes
+        -----
+        When parsing a Datetime the column precision will be inferred from
+        the format string, if given, eg: "%F %T%.3f" => Datetime("ms"). If
+        no fractional second component is found then the default is "us".
 
         Examples
         --------
@@ -88,7 +101,9 @@ class ExprStringNameSpace:
         if datatype == Date:
             return pli.wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact))
         elif datatype == Datetime:
-            return pli.wrap_expr(self._pyexpr.str_parse_datetime(fmt, strict, exact))
+            tu = datatype.tu  # type: ignore[union-attr]
+            dtcol = pli.wrap_expr(self._pyexpr.str_parse_datetime(fmt, strict, exact))
+            return dtcol if (tu is None) else dtcol.dt.cast_time_unit(tu)
         elif datatype == Time:
             return pli.wrap_expr(self._pyexpr.str_parse_time(fmt, strict, exact))
         else:  # pragma: no cover
