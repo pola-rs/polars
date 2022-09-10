@@ -304,3 +304,36 @@ def scale_bytes(sz: int, to: SizeUnit) -> int | float:
     if scaling_factor > 1:
         return sz / scaling_factor
     return sz
+
+
+def _convert_to_pyexpr(obj: str | pli.Expr | None) -> PyExpr | None:
+    """
+    Transform the passed argument to a PyExpr representation.
+
+    Performs the following transformations:
+        - obj: None -> None
+        - obj: str -> pl.col(obj)._pyexpr
+        - obj: Expr -> obj._pyexpr
+    """
+    if obj is None:
+        return None
+    if isinstance(obj, str):
+        return pli.col(obj)._pyexpr
+    if isinstance(obj, pli.Expr):
+        return obj._pyexpr
+    raise TypeError(f"encountered unexpected type: {type(obj)}")
+
+
+def _convert_to_pyexprs(
+    obj: str | pli.Expr | Sequence[str | pli.Expr] | None,
+) -> list[PyExpr] | None:
+    """Transform the passed argument to a list of PyExpr."""
+    if obj is None:
+        return None
+
+    if isinstance(obj, (str, pli.Expr)):
+        obj_as_seq = [obj]
+    else:
+        obj_as_seq = list(obj)
+
+    return [_convert_to_pyexpr(x) for x in obj_as_seq]

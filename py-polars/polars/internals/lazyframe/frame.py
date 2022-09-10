@@ -17,6 +17,7 @@ from polars.datatypes import DataType, PolarsDataType, Schema, py_type_to_dtype
 from polars.internals.lazyframe.groupby import LazyGroupBy
 from polars.internals.slice import LazyPolarsSlice
 from polars.utils import (
+    _convert_to_pyexprs,
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
@@ -1425,9 +1426,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def join(
         self: LDF,
         other: LazyFrame,
-        left_on: str | pli.Expr | list[str | pli.Expr] | None = None,
-        right_on: str | pli.Expr | list[str | pli.Expr] | None = None,
-        on: str | pli.Expr | list[str | pli.Expr] | None = None,
+        left_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        right_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
         how: JoinStrategy = "inner",
         suffix: str = "_right",
         allow_parallel: bool = True,
@@ -1515,44 +1516,22 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 )
             )
 
-        left_on_: list[str | pli.Expr] | None
-        if isinstance(left_on, (str, pli.Expr)):
-            left_on_ = [left_on]
+        if on is not None:
+            pyexprs = _convert_to_pyexprs(on)
+            pyexprs_left = pyexprs
+            pyexprs_right = pyexprs
         else:
-            left_on_ = left_on
+            pyexprs_left = _convert_to_pyexprs(left_on)
+            pyexprs_right = _convert_to_pyexprs(right_on)
 
-        right_on_: list[str | pli.Expr] | None
-        if isinstance(right_on, (str, pli.Expr)):
-            right_on_ = [right_on]
-        else:
-            right_on_ = right_on
-
-        if isinstance(on, (str, pli.Expr)):
-            left_on_ = [on]
-            right_on_ = [on]
-        elif isinstance(on, list):
-            left_on_ = on
-            right_on_ = on
-
-        if left_on_ is None or right_on_ is None:
-            raise ValueError("You should pass the column to join on as an argument.")
-
-        new_left_on = []
-        for column in left_on_:
-            if isinstance(column, str):
-                column = pli.col(column)
-            new_left_on.append(column._pyexpr)
-        new_right_on = []
-        for column in right_on_:
-            if isinstance(column, str):
-                column = pli.col(column)
-            new_right_on.append(column._pyexpr)
+        if pyexprs_left is None or pyexprs_right is None:
+            raise ValueError("must specify `on` OR `left_on` and `right_on`")
 
         return self._from_pyldf(
             self._ldf.join(
                 other._ldf,
-                new_left_on,
-                new_right_on,
+                pyexprs_left,
+                pyexprs_right,
                 allow_parallel,
                 force_parallel,
                 how,

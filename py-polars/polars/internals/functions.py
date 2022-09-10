@@ -540,7 +540,7 @@ def align_frames(
     aligned_frames = [
         alignment_frame.join(
             other=df.lazy(),
-            on=alignment_frame.columns,  # type: ignore[arg-type]
+            on=alignment_frame.columns,
             how="left",
         )
         .select(df.columns)
