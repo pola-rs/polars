@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import sys
 from datetime import date, datetime, time, timedelta
+from types import UnionType
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -13,6 +14,7 @@ from typing import (
     Tuple,
     Type,
     Union,
+    get_args,
 )
 
 try:
@@ -84,6 +86,7 @@ ColumnsType = Union[
     Mapping[str, PolarsDataType],
     Sequence[Tuple[str, Optional[PolarsDataType]]],
 ]
+NoneType = type(None)
 
 
 class Int8(DataType):
@@ -498,6 +501,11 @@ def py_type_to_dtype(data_type: Any) -> PolarsDataType:
     # when the passed in is already a Polars datatype, return that
     if is_polars_dtype(data_type):
         return data_type
+    elif isinstance(data_type, UnionType):
+        # extract bare 'type' from "'type' | None" dataclass definitions
+        possible_types = [tp for tp in get_args(data_type) if tp is not NoneType]
+        if len(possible_types) == 1:
+            data_type = possible_types[0]
     try:
         return _PY_TYPE_TO_DTYPE[data_type]
     except KeyError:  # pragma: no cover

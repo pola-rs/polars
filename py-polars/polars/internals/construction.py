@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from contextlib import suppress
+from dataclasses import astuple, is_dataclass
 from datetime import date, datetime, time, timedelta
 from itertools import zip_longest
-from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, get_type_hints
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -545,7 +546,16 @@ def sequence_to_pydf(
         return pydf
 
     elif isinstance(data[0], Sequence) and not isinstance(data[0], str):
-        # Infer orientation
+        # infer orientation
+        if all(
+            hasattr(data[0], attr)
+            for attr in ("_fields", "_field_defaults", "_replace")
+        ):  # namedtuple
+            if columns is None:
+                columns = data[0]._fields  # type: ignore[attr-defined]
+            elif orient is None:
+                orient = "row"
+
         if orient is None and columns is not None:
             orient = "col" if len(columns) == len(data) else "row"
 
@@ -564,7 +574,16 @@ def sequence_to_pydf(
             raise ValueError(
                 f"orient must be one of {{'col', 'row', None}}, got {orient} instead."
             )
-
+    elif is_dataclass(data[0]):
+        columns = columns or [
+            (col, py_type_to_dtype(tp))
+            for col, tp in get_type_hints(data[0].__class__).items()
+        ]
+        pydf = _post_apply_columns(
+            PyDataFrame.read_rows([astuple(dc) for dc in data], infer_schema_length),
+            columns=columns,
+        )
+        return pydf
     else:
         columns, dtypes = _unpack_columns(columns, n_expected=1)
         data_series = [pli.Series(columns[0], data, dtypes.get(columns[0]))._s]
