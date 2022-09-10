@@ -51,8 +51,7 @@ repeat_by = ["polars/repeat_by"]
 simd = ["polars/simd"]
 meta = ["polars/meta"]
 search_sorted = ["polars/search_sorted"]
-# Use "decompress" instead of "decompress-fast" till zlib-ng is fixed.
-decompress = ["polars/decompress"]
+decompress-fast = ["polars/decompress-fast"]
 lazy_regex = ["polars/lazy_regex"]
 csv-file = ["polars/csv-file"]
 object = ["polars/object"]
@@ -74,7 +73,7 @@ all = [
   "pct_change",
   "search_sorted",
   "meta",
-  "decompress",
+  "decompress-fast",
   "lazy_regex",
   "csv-file",
   "extract_jsonpath",
