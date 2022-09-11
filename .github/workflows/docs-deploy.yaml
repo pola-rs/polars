@@ -46,10 +46,13 @@ jobs:
       - name: Prepare deployment
         run: |
           echo '<meta http-equiv=refresh content=0;url=polars/index.html>' > target/doc/index.html
-          mkdir target/doc/py-polars
-          cp -r py-polars/docs/build/html target/doc/py-polars
+          mv py-polars/docs/build/html target/doc/py-polars
 
       - name: Deploy
         run: |
           ghp-import -n target/doc
           git push -qf https://${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git gh-pages
+
+      # Make sure documentation artifacts are not cached
+      - name: Clean up docs
+        run: rm -rf target/docs
