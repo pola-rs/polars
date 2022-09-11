@@ -196,7 +196,8 @@ class Datetime(DataType):
         time_unit : {'us', 'ns', 'ms'}
             Time unit.
         time_zone
-            Timezone string as defined in pytz.
+            Timezone string as defined in zoneinfo (run
+            ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
 
         """
         self.tu = time_unit

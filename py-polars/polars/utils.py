@@ -25,6 +25,19 @@ if sys.version_info >= (3, 10):
 else:
     from typing_extensions import ParamSpec, TypeGuard
 
+
+if sys.version_info >= (3, 9):
+    import zoneinfo
+
+    _ZONEINFO_AVAILABLE = True
+else:
+    try:
+        from backports import zoneinfo
+
+        _ZONEINFO_AVAILABLE = True
+    except ImportError:
+        _ZONEINFO_AVAILABLE = False
+
 if TYPE_CHECKING:
     from polars.internals.type_aliases import SizeUnit, TimeUnit
 
@@ -204,17 +217,20 @@ def _to_python_datetime(
         else:
             raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
         if tz is not None and len(tz) > 0:
-            try:
-                import pytz
-            except ImportError:
-                raise ImportError(
-                    "pytz is not installed. Please run `pip install pytz`."
-                ) from None
-
-            return pytz.timezone(tz).localize(dt)
+            return _localize(dt, tz)
         return dt
     else:
         raise NotImplementedError  # pragma: no cover
+
+
+def _localize(dt: datetime, tz: str) -> datetime:
+    if not _ZONEINFO_AVAILABLE:
+        raise ImportError(
+            "backports.zoneinfo is not installed. Please run "
+            "`pip install backports.zoneinfo`."
+        )
+
+    return dt.astimezone(zoneinfo.ZoneInfo(tz))
 
 
 def _in_notebook() -> bool:

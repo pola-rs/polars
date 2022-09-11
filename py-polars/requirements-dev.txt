@@ -6,7 +6,8 @@
 numpy
 pandas
 pyarrow
-pytz
+backports.zoneinfo; python_version < '3.9'
+tzdata; platform_system == 'Windows'
 xlsx2csv
 
 # Tooling
@@ -18,4 +19,3 @@ pytest-cov==3.0.0
 
 # Stub files
 pandas-stubs==1.2.0.61
-types-pytz==2022.2.1.0

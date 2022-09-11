@@ -19,7 +19,7 @@ numpy = ["numpy >= 1.16.0"]
 fsspec = ["fsspec"]
 connectorx = ["connectorx"]
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
-pytz = ["pytz"]
+timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 
 [tool.isort]
 profile = "black"
@@ -36,7 +36,7 @@ enable_error_code = [
 ]
 
 [[tool.mypy.overrides]]
-module = ["pyarrow.*", "polars.polars", "matplotlib.*", "fsspec.*", "connectorx", "IPython.*"]
+module = ["backports", "pyarrow.*", "polars.polars", "matplotlib.*", "fsspec.*", "connectorx", "IPython.*", "zoneinfo"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
