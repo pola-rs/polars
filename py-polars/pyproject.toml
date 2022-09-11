@@ -19,14 +19,10 @@ numpy = ["numpy >= 1.16.0"]
 fsspec = ["fsspec"]
 connectorx = ["connectorx"]
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
-<<<<<<< HEAD
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
-=======
-pytz = ["pytz"]
 all = [
   "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,timezone]",
 ]
->>>>>>> 27c108f03 (Add "all" optional dependency)
 
 [tool.isort]
 profile = "black"
