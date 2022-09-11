@@ -186,6 +186,7 @@ impl LogicalPlanBuilder {
                 has_header,
                 schema_overwrite,
                 &mut skip_rows,
+                skip_rows_after_header,
                 comment_char,
                 quote_char,
                 eol_char,

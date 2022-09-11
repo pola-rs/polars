@@ -171,6 +171,7 @@ pub fn infer_file_schema(
     // we take &mut because we maybe need to skip more rows dependent
     // on the schema inference
     skip_rows: &mut usize,
+    skip_rows_after_header: usize,
     comment_char: Option<u8>,
     quote_char: Option<u8>,
     eol_char: u8,
@@ -269,6 +270,7 @@ pub fn infer_file_schema(
             has_header,
             schema_overwrite,
             skip_rows,
+            skip_rows_after_header,
             comment_char,
             quote_char,
             eol_char,
@@ -296,7 +298,10 @@ pub fn infer_file_schema(
     // needed to prevent ownership going into the iterator loop
     let records_ref = &mut lines;
 
-    for mut line in records_ref.take(max_read_lines.unwrap_or(usize::MAX)) {
+    for mut line in records_ref
+        .take(max_read_lines.unwrap_or(usize::MAX))
+        .skip(skip_rows_after_header)
+    {
         rows_count += 1;
 
         if let Some(c) = comment_char {
@@ -423,6 +428,7 @@ pub fn infer_file_schema(
             has_header,
             schema_overwrite,
             skip_rows,
+            skip_rows_after_header,
             comment_char,
             quote_char,
             eol_char,
