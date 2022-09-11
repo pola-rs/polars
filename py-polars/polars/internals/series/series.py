@@ -3777,6 +3777,8 @@ class Series:
         n
             periods to shift for forming percent change.
 
+        Examples
+        --------
         >>> pl.Series(range(10)).pct_change()
         shape: (10,)
         Series: '' [f64]
