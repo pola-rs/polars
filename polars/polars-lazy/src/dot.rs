@@ -414,8 +414,10 @@ impl LogicalPlan {
                 input_left.dot(acc_str, (branch + 10, id + 1), &current_node)?;
                 input_right.dot(acc_str, (branch + 20, id + 1), &current_node)
             }
-            Udf { input, options, .. } => {
-                let current_node = format!("{} [{:?}]", options.fmt_str, (branch, id));
+            MapFunction {
+                input, function, ..
+            } => {
+                let current_node = format!("{} [{:?}]", function, (branch, id));
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, (branch, id + 1), &current_node)
             }

@@ -1,3 +1,4 @@
+use std::fmt::Formatter;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -19,6 +20,23 @@ pub(crate) fn column_delimited(mut s: String, items: &[String]) -> String {
     s.pop();
     s.push(')');
     s
+}
+
+// write some thing
+pub(crate) fn fmt_column_delimited<S: AsRef<str>>(
+    f: &mut Formatter<'_>,
+    items: &[S],
+    container_start: &str,
+    container_end: &str,
+) -> std::fmt::Result {
+    write!(f, "{}", container_start)?;
+    for (i, c) in items.iter().enumerate() {
+        write!(f, "{}", c.as_ref())?;
+        if i != (items.len() - 1) {
+            write!(f, ", ")?;
+        }
+    }
+    write!(f, "{}", container_end)
 }
 
 pub(crate) trait PushNode {

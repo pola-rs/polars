@@ -7,6 +7,7 @@ use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
+use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::schema::det_join_schema;
 #[cfg(feature = "ipc")]
 use crate::logical_plan::IpcScanOptionsInner;
@@ -133,11 +134,9 @@ pub enum ALogicalPlan {
         input: Node,
         options: DistinctOptions,
     },
-    Udf {
+    MapFunction {
         input: Node,
-        function: Arc<dyn DataFrameUdf>,
-        options: LogicalPlanUdfOptions,
-        schema: Option<Arc<dyn UdfSchema>>,
+        function: FunctionNode,
     },
     Union {
         inputs: Vec<Node>,
@@ -223,11 +222,13 @@ impl ALogicalPlan {
             Distinct { input, .. } => return arena.get(*input).schema(arena),
             Slice { input, .. } => return arena.get(*input).schema(arena),
             Melt { schema, .. } => schema,
-            Udf { input, schema, .. } => {
+            MapFunction { input, function } => {
                 let input_schema = arena.get(*input).schema(arena);
-                return match schema {
-                    Some(schema) => Cow::Owned(schema.get_schema(&input_schema).unwrap()),
-                    None => input_schema,
+                return match input_schema {
+                    Cow::Owned(schema) => {
+                        Cow::Owned(function.schema(&schema).unwrap().into_owned())
+                    }
+                    Cow::Borrowed(schema) => function.schema(schema).unwrap(),
                 };
             }
             ExtContext { schema, .. } => schema,
@@ -447,16 +448,9 @@ impl ALogicalPlan {
                     options: options.clone(),
                 }
             }
-            Udf {
-                function,
-                options,
-                schema,
-                ..
-            } => Udf {
+            MapFunction { function, .. } => MapFunction {
                 input: inputs[0],
                 function: function.clone(),
-                options: *options,
-                schema: schema.clone(),
             },
             ExtContext { schema, .. } => ExtContext {
                 input: inputs.pop().unwrap(),
@@ -477,7 +471,7 @@ impl ALogicalPlan {
             | Cache { .. }
             | Distinct { .. }
             | Union { .. }
-            | Udf { .. } => {}
+            | MapFunction { .. } => {}
             Selection { predicate, .. } => container.push(*predicate),
             Projection { expr, .. } => container.extend_from_slice(expr),
             LocalProjection { expr, .. } => container.extend_from_slice(expr),
@@ -595,7 +589,7 @@ impl ALogicalPlan {
             }
             HStack { input, .. } => *input,
             Distinct { input, .. } => *input,
-            Udf { input, .. } => *input,
+            MapFunction { input, .. } => *input,
             ExtContext {
                 input, contexts, ..
             } => {

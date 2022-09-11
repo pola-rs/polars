@@ -1,6 +1,7 @@
 use polars_core::prelude::*;
 
 use crate::logical_plan::alp::ALogicalPlan;
+use crate::logical_plan::functions::FunctionNode;
 use crate::prelude::stack_opt::OptimizationRule;
 use crate::prelude::*;
 
@@ -18,7 +19,6 @@ pub(crate) struct FastProjection {}
 fn impl_fast_projection(
     input: Node,
     expr: &[Node],
-    schema: Option<SchemaRef>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<ALogicalPlan> {
     let mut columns = Vec::with_capacity(expr.len());
@@ -30,19 +30,11 @@ fn impl_fast_projection(
         }
     }
     if columns.len() == expr.len() {
-        let function = move |df: DataFrame| df.select(&columns);
-
-        let options = LogicalPlanUdfOptions {
-            predicate_pd: true,
-            projection_pd: true,
-            fmt_str: "FAST PROJECTION",
-        };
-
-        let lp = ALogicalPlan::Udf {
+        let lp = ALogicalPlan::MapFunction {
             input,
-            function: Arc::new(function),
-            schema: schema.map(|s| Arc::new(move |_: &Schema| Ok(s.clone())) as Arc<dyn UdfSchema>),
-            options,
+            function: FunctionNode::FastProjection {
+                columns: Arc::new(columns),
+            },
         };
 
         Some(lp)
@@ -61,27 +53,15 @@ impl OptimizationRule for FastProjection {
         let lp = lp_arena.get(node);
 
         match lp {
-            ALogicalPlan::Projection {
-                input,
-                expr,
-                schema,
-                ..
-            } => {
+            ALogicalPlan::Projection { input, expr, .. } => {
                 if !matches!(lp_arena.get(*input), ALogicalPlan::ExtContext { .. }) {
-                    let schema = Some(schema.clone());
-                    impl_fast_projection(*input, expr, schema, expr_arena)
+                    impl_fast_projection(*input, expr, expr_arena)
                 } else {
                     None
                 }
             }
-            ALogicalPlan::LocalProjection {
-                input,
-                expr,
-                schema,
-                ..
-            } => {
-                let schema = Some(schema.clone());
-                impl_fast_projection(*input, expr, schema, expr_arena)
+            ALogicalPlan::LocalProjection { input, expr, .. } => {
+                impl_fast_projection(*input, expr, expr_arena)
             }
             _ => None,
         }

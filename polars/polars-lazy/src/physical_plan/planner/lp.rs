@@ -504,7 +504,7 @@ impl PhysicalPlanner {
                     input_schema,
                 }))
             }
-            Udf {
+            MapFunction {
                 input, function, ..
             } => {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
