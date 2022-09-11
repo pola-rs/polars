@@ -396,19 +396,9 @@ pub(crate) fn to_alp(
             let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Distinct { input, options }
         }
-        LogicalPlan::Udf {
-            input,
-            function,
-            options,
-            schema,
-        } => {
+        LogicalPlan::MapFunction { input, function } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::Udf {
-                input,
-                function,
-                options,
-                schema,
-            }
+            ALogicalPlan::MapFunction { input, function }
         }
         LogicalPlan::Error { err, .. } => {
             // We just take the error. The LogicalPlan should not be used anymore once this
@@ -876,19 +866,9 @@ pub(crate) fn node_to_lp(
                 schema,
             }
         }
-        ALogicalPlan::Udf {
-            input,
-            function,
-            options,
-            schema,
-        } => {
+        ALogicalPlan::MapFunction { input, function } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
-            LogicalPlan::Udf {
-                input,
-                function,
-                options,
-                schema,
-            }
+            LogicalPlan::MapFunction { input, function }
         }
         ALogicalPlan::ExtContext {
             input,

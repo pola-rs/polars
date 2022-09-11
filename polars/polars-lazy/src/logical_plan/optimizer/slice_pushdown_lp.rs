@@ -306,15 +306,23 @@ impl SlicePushDown {
             | m @ (Melt {..}, _)
             | m @ (Cache {..}, _)
             | m @ (Distinct {..}, _)
-            | m @ (Udf {options: LogicalPlanUdfOptions{ predicate_pd: false, ..}, ..}, _)
             | m @ (HStack {..},_)
             => {
                 let (lp, state) = m;
                 self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
             }
             // [Pushdown]
+            (MapFunction {input, function}, _) if function.allow_predicate_pd() => {
+                let lp = MapFunction {input, function};
+                self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
+            },
+            // [NO Pushdown]
+            m @ (MapFunction {..}, _) => {
+                let (lp, state) = m;
+                self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
+            }
+            // [Pushdown]
             // these nodes will be pushed down.
-             m @(Udf{options: LogicalPlanUdfOptions{ predicate_pd: true, ..}, .. }, _) |
              // State is None, we can continue
              m @(Projection{..}, None)
             => {

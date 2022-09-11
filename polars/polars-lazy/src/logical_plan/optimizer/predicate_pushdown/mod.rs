@@ -505,13 +505,8 @@ impl PredicatePushDown {
                 };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
-
-            lp @ Udf { .. } => {
-                if let ALogicalPlan::Udf {
-                    options: LogicalPlanUdfOptions {
-                        predicate_pd: true, ..
-                    }, ..
-                } = lp
+            MapFunction { ref function, .. } => {
+                if function.allow_predicate_pd()
                 {
                     self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
                 } else {

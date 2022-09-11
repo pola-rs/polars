@@ -174,7 +174,9 @@ FROM
             Slice { input, offset, len } => {
                 write!(f, "{:?}\nSLICE[offset: {}, len: {}]", input, offset, len)
             }
-            Udf { input, options, .. } => write!(f, "{} \n{:?}", options.fmt_str, input),
+            MapFunction {
+                input, function, ..
+            } => write!(f, "{} \n{:?}", function, input),
             Error { input, err } => write!(f, "{:?}\n{:?}", err, input),
             ExtContext { input, .. } => {
                 write!(f, "{:?}\nExtContext", input)
