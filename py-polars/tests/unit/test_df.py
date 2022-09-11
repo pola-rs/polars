@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 import typing
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, Iterator
@@ -1011,13 +1011,26 @@ def test_describe() -> None:
     df = pl.DataFrame(
         {
             "a": [1.0, 2.8, 3.0],
-            "b": [4, 5, 6],
+            "b": [4, 5, None],
             "c": [True, False, True],
-            "d": ["a", "b", "c"],
+            "d": [None, "b", "c"],
+            "e": ["usd", "eur", None],
+            "f": [date(2020, 1, 1), date(2021, 1, 1), date(2022, 1, 1)],
         }
     )
-    assert df.describe().shape != df.shape
-    assert set(df.describe().to_series(2)) == {1.0, 4.0, 5.0, 6.0}
+    df = df.with_column(pl.col("e").cast(pl.Categorical))
+    expected = pl.DataFrame(
+        {
+            "describe": ["count", "null_count", "mean", "std", "min", "max", "median"],
+            "a": [3.0, 0.0, 2.2666667, 1.101514, 1.0, 3.0, 2.8],
+            "b": [3.0, 1.0, 4.5, 0.7071067811865476, 4.0, 5.0, 4.5],
+            "c": [3.0, 0.0, None, None, 0.0, 1.0, None],
+            "d": ["3", "1", None, None, "b", "c", None],
+            "e": ["3", "1", None, None, None, None, None],
+            "f": ["3", "0", None, None, "2020-01-01", "2022-01-01", None],
+        }
+    )
+    pl.testing.assert_frame_equal(df.describe(), expected)
 
 
 def test_string_cache_eager_lazy() -> None:
