@@ -153,3 +153,20 @@ def test_unique_order() -> None:
         "row_nr": [0, 1],
         "a": [1, 2],
     }
+
+
+def test_groupby_dynamic_flat_agg_4814() -> None:
+    df = pl.DataFrame({"a": [1, 2, 2], "b": [1, 8, 12]})
+
+    assert df.groupby_dynamic("a", every="1i", period="2i").agg(
+        [
+            (pl.col("b").sum() / pl.col("a").sum()).alias("sum_ratio_1"),
+            (pl.col("b").last() / pl.col("a").last()).alias("last_ratio_1"),
+            (pl.col("b") / pl.col("a")).last().alias("last_ratio_2"),
+        ]
+    ).to_dict(False) == {
+        "a": [1, 2],
+        "sum_ratio_1": [4.2, 5.0],
+        "last_ratio_1": [6.0, 6.0],
+        "last_ratio_2": [6.0, 6.0],
+    }
