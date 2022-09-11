@@ -331,6 +331,10 @@ def test_cast() -> None:
     assert a.cast(pl.Datetime).dtype == pl.Datetime
     assert a.cast(pl.Date).dtype == pl.Date
 
+    # display failed values, GH#4706
+    with pytest.raises(pl.ComputeError, match="foobar"):
+        pl.Series(["1", "2", "3", "4", "foobar"]).cast(int)
+
 
 def test_to_python() -> None:
     a = pl.Series("a", range(20))
