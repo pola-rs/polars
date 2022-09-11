@@ -3105,7 +3105,7 @@ class DataFrame:
 
         Also works for index values of type Int32 or Int64.
 
-        Different from a rolling groupby the windows are now determined by the
+        Different from a ``dynamic_groupby`` the windows are now determined by the
         individual values and are not of constant intervals. For constant intervals use
         *groupby_dynamic*
 

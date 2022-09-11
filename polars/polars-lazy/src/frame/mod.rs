@@ -837,6 +837,13 @@ impl LazyFrame {
         }
     }
 
+    /// Create rolling groups based on a time column.
+    ///
+    /// Also works for index values of type Int32 or Int64.
+    ///
+    /// Different from a [`dynamic_groupby`] the windows are now determined by the
+    /// individual values and are not of constant intervals. For constant intervals use
+    /// *groupby_dynamic*
     pub fn groupby_rolling<E: AsRef<[Expr]>>(
         self,
         by: E,
@@ -853,6 +860,21 @@ impl LazyFrame {
         }
     }
 
+    /// Group based on a time value (or index value of type Int32, Int64).
+    ///
+    /// Time windows are calculated and rows are assigned to windows. Different from a
+    /// normal groupby is that a row can be member of multiple groups. The time/index
+    /// window could be seen as a rolling window, with a window size determined by
+    /// dates/times/values instead of slots in the DataFrame.
+    ///
+    /// A window is defined by:
+    ///
+    /// - every: interval of the window
+    /// - period: length of the window
+    /// - offset: offset of the window
+    ///
+    /// The `by` argument should be empty `[]` if you don't want to combine this
+    /// with a ordinary groupby on these keys.
     pub fn groupby_dynamic<E: AsRef<[Expr]>>(
         self,
         by: E,
@@ -869,7 +891,7 @@ impl LazyFrame {
         }
     }
 
-    /// Similar to groupby, but order of the DataFrame is maintained.
+    /// Similar to [`groupby`], but order of the DataFrame is maintained.
     pub fn groupby_stable<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
         let keys = by
             .as_ref()
