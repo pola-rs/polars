@@ -50,18 +50,35 @@ impl OptimizationRule for FastProjection {
         expr_arena: &mut Arena<AExpr>,
         node: Node,
     ) -> Option<ALogicalPlan> {
+        use ALogicalPlan::*;
         let lp = lp_arena.get(node);
 
         match lp {
-            ALogicalPlan::Projection { input, expr, .. } => {
-                if !matches!(lp_arena.get(*input), ALogicalPlan::ExtContext { .. }) {
+            Projection { input, expr, .. } => {
+                if !matches!(lp_arena.get(*input), ExtContext { .. }) {
                     impl_fast_projection(*input, expr, expr_arena)
                 } else {
                     None
                 }
             }
-            ALogicalPlan::LocalProjection { input, expr, .. } => {
-                impl_fast_projection(*input, expr, expr_arena)
+            LocalProjection { input, expr, .. } => impl_fast_projection(*input, expr, expr_arena),
+            // if there are 2 subsequent fast projections, flatten them and only take the last
+            MapFunction {
+                input,
+                function: projection,
+            } if matches!(projection, FunctionNode::FastProjection { .. }) => {
+                if let MapFunction {
+                    function: FunctionNode::FastProjection { .. },
+                    input: prev_input,
+                } = lp_arena.get(*input)
+                {
+                    Some(MapFunction {
+                        input: *prev_input,
+                        function: projection.clone(),
+                    })
+                } else {
+                    None
+                }
             }
             _ => None,
         }
