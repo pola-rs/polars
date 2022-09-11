@@ -2396,11 +2396,11 @@ impl DataFrame {
     /// ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
     /// │ min      ┆ null        ┆ 1.0     ┆ null   │
     /// ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-    /// │ 0.25%    ┆ null        ┆ 1.5     ┆ null   │
+    /// │ 25%      ┆ null        ┆ 1.5     ┆ null   │
     /// ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-    /// │ 0.5%     ┆ null        ┆ 2.0     ┆ null   │
+    /// │ 50%      ┆ null        ┆ 2.0     ┆ null   │
     /// ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-    /// │ 0.75%    ┆ null        ┆ 2.5     ┆ null   │
+    /// │ 75%      ┆ null        ┆ 2.5     ┆ null   │
     /// ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
     /// │ max      ┆ null        ┆ 3.0     ┆ null   │
     /// └──────────┴─────────────┴─────────┴────────┘
@@ -2423,7 +2423,7 @@ impl DataFrame {
             DataFrame::new_no_checks(columns)
         }
 
-        let percentiles = percentiles.unwrap_or(&[0.25, 0.5, 0.75]);
+        let percentiles = percentiles.unwrap_or(&[25, 50, 75]);
 
         let mut headers: Vec<String> = vec![
             "count".to_string(),
