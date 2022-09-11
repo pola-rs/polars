@@ -391,21 +391,4 @@ mod test {
             let _df = lf.collect().unwrap();
         }
     }
-
-    #[test]
-    #[cfg(feature = "dot_diagram")]
-    fn test_dot() {
-        let left = df!("days" => &[0, 1, 2, 3, 4],
-        "temp" => [22.1, 19.9, 7., 2., 3.],
-        "rain" => &[0.1, 0.2, 0.3, 0.4, 0.5]
-        )
-        .unwrap();
-        let mut s = String::new();
-        left.lazy()
-            .select(&[col("days")])
-            .logical_plan
-            .dot(&mut s, (0, 0), "")
-            .unwrap();
-        println!("{}", s);
-    }
 }
