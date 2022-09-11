@@ -69,7 +69,11 @@ pub enum LogicalPlan {
         predicate: Expr,
     },
     /// Cache the input at this point in the LP
-    Cache { input: Box<LogicalPlan>, id: usize },
+    Cache {
+        input: Box<LogicalPlan>,
+        id: usize,
+        count: usize,
+    },
     /// Scan a CSV file
     #[cfg(feature = "csv-file")]
     CsvScan {

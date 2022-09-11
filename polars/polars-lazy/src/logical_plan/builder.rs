@@ -229,7 +229,12 @@ impl LogicalPlanBuilder {
     pub fn cache(self) -> Self {
         let input = Box::new(self.0);
         let id = input.as_ref() as *const LogicalPlan as usize;
-        LogicalPlan::Cache { input, id }.into()
+        LogicalPlan::Cache {
+            input,
+            id,
+            count: usize::MAX,
+        }
+        .into()
     }
 
     pub fn project(self, exprs: Vec<Expr>) -> Self {

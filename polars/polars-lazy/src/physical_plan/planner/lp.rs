@@ -260,9 +260,9 @@ impl PhysicalPlanner {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 Ok(Box::new(executors::ExplodeExec { input, columns }))
             }
-            Cache { input, id } => {
+            Cache { input, id, count } => {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
-                Ok(Box::new(executors::CacheExec { id, input }))
+                Ok(Box::new(executors::CacheExec { id, input, count }))
             }
             Distinct { input, options } => {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;

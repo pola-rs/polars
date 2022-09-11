@@ -107,6 +107,7 @@ pub enum ALogicalPlan {
     Cache {
         input: Node,
         id: usize,
+        count: usize,
     },
     Aggregate {
         input: Node,
@@ -322,9 +323,10 @@ impl ALogicalPlan {
                 columns: columns.clone(),
                 schema: schema.clone(),
             },
-            Cache { id, .. } => Cache {
+            Cache { id, count, .. } => Cache {
                 input: inputs[0],
                 id: *id,
+                count: *count,
             },
             Distinct { options, .. } => Distinct {
                 input: inputs[0],

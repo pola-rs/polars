@@ -320,9 +320,9 @@ pub(crate) fn to_alp(
                 schema,
             }
         }
-        LogicalPlan::Cache { input, id } => {
+        LogicalPlan::Cache { input, id, count } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::Cache { input, id }
+            ALogicalPlan::Cache { input, id, count }
         }
         LogicalPlan::Aggregate {
             input,
@@ -789,9 +789,9 @@ pub(crate) fn node_to_lp(
                 schema,
             }
         }
-        ALogicalPlan::Cache { input, id } => {
+        ALogicalPlan::Cache { input, id, count } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
-            LogicalPlan::Cache { input, id }
+            LogicalPlan::Cache { input, id, count }
         }
         ALogicalPlan::Aggregate {
             input,

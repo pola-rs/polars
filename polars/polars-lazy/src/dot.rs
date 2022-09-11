@@ -200,6 +200,7 @@ impl LogicalPlan {
             Cache {
                 input,
                 id: cache_id,
+                ..
             } => {
                 let current_node = DotNode {
                     branch: *cache_id,
