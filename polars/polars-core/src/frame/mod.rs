@@ -2423,7 +2423,7 @@ impl DataFrame {
             DataFrame::new_no_checks(columns)
         }
 
-        let percentiles = percentiles.unwrap_or(&[25.0, 50.0, 75.0]);
+        let percentiles = percentiles.unwrap_or(&[0.25, 0.5, 0.75]);
 
         let mut headers: Vec<String> = vec![
             "count".to_string(),
@@ -2445,7 +2445,7 @@ impl DataFrame {
                     .quantile(*p, QuantileInterpolOptions::Linear)
                     .expect("quantile failed"),
             ));
-            headers.push(format!("{}%", *p));
+            headers.push(format!("{}%", *p * 100.0));
         }
 
         // Keep order same as pandas
