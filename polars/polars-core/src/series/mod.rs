@@ -674,15 +674,12 @@ impl Series {
         let s = self.cast(data_type)?;
         if self.null_count() != s.null_count() {
             let failure_mask = !self.is_null() & s.is_null();
-            let failures = self
-                .filter_threaded(&failure_mask, false)?
-                .unique()?
-                .head(Some(10));
+            let failures = self.filter_threaded(&failure_mask, false)?.unique()?;
             Err(PolarsError::ComputeError(
                 format!(
                     "Strict conversion from {:?} to {:?} failed for values {}. \
                     If you were trying to cast Utf8 to Date, Time, or Datetime, \
-                    consider instead using `strptime`.",
+                    consider using `strptime`.",
                     self.dtype(),
                     data_type,
                     failures.fmt_list(),
