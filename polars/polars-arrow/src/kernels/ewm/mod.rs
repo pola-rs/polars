@@ -9,6 +9,7 @@ pub use variance::*;
 pub struct EWMOptions {
     pub alpha: f64,
     pub adjust: bool,
+    pub bias: bool,
     pub min_periods: usize,
 }
 
@@ -17,6 +18,7 @@ impl Default for EWMOptions {
         Self {
             alpha: 0.5,
             adjust: true,
+            bias: false,
             min_periods: 1,
         }
     }

@@ -17,16 +17,16 @@ jobs:
           rm py-polars/README.md
           cp README.md py-polars/README.md
 
-      - uses: actions/setup-python@v2
+      - uses: actions/setup-python@v4
         with:
-          python-version: 3.7
+          python-version: '3.7'
           architecture: x64
 
       - name: publish x64_64
         uses: messense/maturin-action@v1
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
-          RUSTFLAGS: '-C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma'
+          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
         with:
           rust-toolchain: nightly-2022-08-22
           maturin-version: '0.13.2'
@@ -55,7 +55,7 @@ jobs:
         uses: messense/maturin-action@v1
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
-          RUSTFLAGS: '-C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma'
+          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
         with:
           rust-toolchain: nightly-2022-08-22
           maturin-version: '0.13.2'

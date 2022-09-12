@@ -6,13 +6,15 @@ PYTHON_BIN=venv/bin
 
 venv:  ## Set up virtual environment
 	@python -m venv venv
-	@venv/bin/pip install -U pip
-	@venv/bin/pip install -r build.requirements.txt
+	@venv/bin/pip install --upgrade pip
+	@venv/bin/pip install -r requirements-dev.txt
+	@venv/bin/pip install -r requirements-lint.txt
 	@unset CONDA_PREFIX && source venv/bin/activate && maturin develop
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
 	@rm -rf venv/
+	@rm -rf target/
 	@rm -rf docs/build/
 	@rm -rf docs/source/reference/api/
 	@rm -rf .hypothesis/
@@ -20,6 +22,7 @@ clean:  ## Clean up caches and build artifacts
 	@rm -rf .pytest_cache/
 	@rm -f .coverage
 	@rm -f coverage.xml
+	@rm -f polars/polars.abi3.so
 	@find -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -delete
 	@cargo clean
 
@@ -33,6 +36,10 @@ pre-commit: venv  ## Run autoformatting and linting
 	$(PYTHON_BIN)/flake8
 	make -C .. fmt_toml
 	cargo fmt --all
+
+.PHONY: clippy
+clippy:  ## Run clippy
+	cargo clippy -- -D warnings -A clippy::borrow_deref_ref
 
 .PHONY: test
 test: venv  ## Run fast unittests

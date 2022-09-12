@@ -243,7 +243,11 @@ where
                     if projection_roots.len() == 1 {
                         // we were able to rename the alias column with the root column name
                         // before pushing down the predicate
-                        rename_aexpr_root_names(predicate, expr_arena, projection_roots[0].clone());
+                        let predicate = rename_aexpr_root_names(
+                            predicate,
+                            expr_arena,
+                            projection_roots[0].clone(),
+                        );
 
                         insert_and_combine_predicate(
                             acc_predicates,

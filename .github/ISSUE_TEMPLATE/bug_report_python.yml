@@ -67,9 +67,9 @@ body:
       value: >
         <details>
 
-
-        Replace this line with the output of pl.show_versions()
-
+        ```
+        Replace this line with the output of pl.show_versions(), leave the backticks in place
+        ```
 
         </details>
     validations:

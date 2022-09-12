@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import math
-from datetime import date, datetime
-from typing import Any, cast
+from datetime import date, datetime, time
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -10,8 +10,11 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import Date, Datetime, Float64, Int32, Int64, UInt32, UInt64
+from polars.datatypes import Date, Datetime, Float64, Int32, Int64, Time, UInt32, UInt64
 from polars.testing import assert_series_equal, verify_series_and_expr_api
+
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import TimeUnit
 
 
 def test_cum_agg() -> None:
@@ -327,6 +330,10 @@ def test_cast() -> None:
     assert a.cast(pl.UInt32).dtype == pl.UInt32
     assert a.cast(pl.Datetime).dtype == pl.Datetime
     assert a.cast(pl.Date).dtype == pl.Date
+
+    # display failed values, GH#4706
+    with pytest.raises(pl.ComputeError, match="foobar"):
+        pl.Series(["1", "2", "3", "4", "foobar"]).cast(int)
 
 
 def test_to_python() -> None:
@@ -1381,10 +1388,12 @@ def test_peak_max_peak_min() -> None:
 
 def test_shrink_to_fit() -> None:
     s = pl.Series("a", [4, 1, 3, 2, 5])
-    assert s.shrink_to_fit(in_place=True) is None
+    sf = s.shrink_to_fit(in_place=True)
+    assert sf is s
 
     s = pl.Series("a", [4, 1, 3, 2, 5])
-    assert isinstance(s.shrink_to_fit(in_place=False), pl.Series)
+    sf = s.shrink_to_fit(in_place=False)
+    assert s is not sf
 
 
 def test_str_concat() -> None:
@@ -1538,6 +1547,32 @@ def test_dt_datetimes() -> None:
         "dt.epoch",
         tu="ms",
     )
+
+
+@pytest.mark.parametrize("unit", ["ns", "us", "ms"])
+def test_cast_datetime_to_time(unit: TimeUnit) -> None:
+    a = pl.Series(
+        "a",
+        [
+            datetime(2022, 9, 7, 0, 0),
+            datetime(2022, 9, 6, 12, 0),
+            datetime(2022, 9, 7, 23, 59, 59),
+            datetime(2022, 9, 7, 23, 59, 59, 201),
+        ],
+        dtype=Datetime(unit),
+    )
+    if unit == "ms":
+        # NOTE: microseconds are lost for `unit=ms`
+        expected_values = [time(0, 0), time(12, 0), time(23, 59, 59), time(23, 59, 59)]
+    else:
+        expected_values = [
+            time(0, 0),
+            time(12, 0),
+            time(23, 59, 59),
+            time(23, 59, 59, 201),
+        ]
+    expected = pl.Series("a", expected_values)
+    assert_series_equal(a.cast(Time), expected)
 
 
 def test_reshape() -> None:
@@ -1730,24 +1765,27 @@ def test_ewm_mean_min_periods() -> None:
     assert ewm_mean.to_list() == [
         1.0,
         1.0,
-        1.6666666666666667,
-        1.6666666666666667,
+        1.6666666666666665,
+        1.6666666666666665,
         2.4285714285714284,
     ]
     ewm_mean = series.ewm_mean(alpha=0.5, min_periods=2)
     assert ewm_mean.to_list() == [
         None,
         None,
-        1.6666666666666667,
-        1.6666666666666667,
+        1.6666666666666665,
+        1.6666666666666665,
         2.4285714285714284,
     ]
 
 
 def test_ewm_std_var() -> None:
-    a = pl.Series("a", [2, 5, 3])
+    series = pl.Series("a", [2, 5, 3])
 
-    assert (a.ewm_std(alpha=0.5) ** 2).to_list() == a.ewm_var(alpha=0.5).to_list()
+    var = series.ewm_var(alpha=0.5)
+    std = series.ewm_std(alpha=0.5)
+
+    assert np.allclose(var, std**2, rtol=1e-16)
 
 
 def test_extend_constant() -> None:
@@ -1920,8 +1958,7 @@ def test_clip() -> None:
 
 def test_mutable_borrowed_append_3915() -> None:
     s = pl.Series("s", [1, 2, 3])
-    s.append(s)
-    assert s.to_list() == [1, 2, 3, 1, 2, 3]
+    assert s.append(s).to_list() == [1, 2, 3, 1, 2, 3]
 
 
 def test_set_at_idx() -> None:

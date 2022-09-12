@@ -1,10 +1,16 @@
 """Functions for reading and writing data."""
 from __future__ import annotations
 
+import sys
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO, Callable, Mapping, TextIO
+from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, TextIO, overload
 from warnings import warn
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 from polars.utils import deprecated_alias, format_path, handle_projection_columns
 
@@ -1102,13 +1108,46 @@ def read_sql(
         )
 
 
+@overload
+def read_excel(
+    file: str | BytesIO | Path | BinaryIO | bytes,
+    sheet_id: Literal[None],
+    sheet_name: Literal[None],
+    xlsx2csv_options: dict[str, object] | None,
+    read_csv_options: dict[str, object] | None,
+) -> dict[str, DataFrame]:
+    ...
+
+
+@overload
+def read_excel(
+    file: str | BytesIO | Path | BinaryIO | bytes,
+    sheet_id: Literal[None],
+    sheet_name: str,
+    xlsx2csv_options: dict[str, object] | None = None,
+    read_csv_options: dict[str, object] | None = None,
+) -> DataFrame:
+    ...
+
+
+@overload
+def read_excel(
+    file: str | BytesIO | Path | BinaryIO | bytes,
+    sheet_id: int,
+    sheet_name: Literal[None],
+    xlsx2csv_options: dict[str, object] | None = None,
+    read_csv_options: dict[str, object] | None = None,
+) -> DataFrame:
+    ...
+
+
 def read_excel(
     file: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: int | None = 1,
     sheet_name: str | None = None,
     xlsx2csv_options: dict[str, object] | None = None,
     read_csv_options: dict[str, object] | None = None,
-) -> DataFrame:
+) -> DataFrame | dict[str, DataFrame]:
     """
     Read Excel (XLSX) sheet into a DataFrame.
 
@@ -1198,12 +1237,30 @@ def read_excel(
     if not read_csv_options:
         read_csv_options = {}
 
+    # Convert sheets from XSLX document to CSV.
+    parser = xlsx2csv.Xlsx2csv(file, **xlsx2csv_options)
+
+    if (sheet_name is not None) or ((sheet_id is not None) and (sheet_id > 0)):
+        return _read_excel_sheet(parser, sheet_id, sheet_name, read_csv_options)
+    else:
+        return {
+            sheet["name"]: _read_excel_sheet(
+                parser, sheet["index"], None, read_csv_options
+            )
+            for sheet in parser.workbook.sheets
+        }
+
+
+def _read_excel_sheet(
+    parser: Any,
+    sheet_id: int | None,
+    sheet_name: str | None,
+    read_csv_options: dict[str, object] | None,
+) -> DataFrame:
     csv_buffer = StringIO()
 
-    # Convert sheet from XSLX document to CSV.
-    xlsx2csv.Xlsx2csv(file, **xlsx2csv_options).convert(
-        outfile=csv_buffer, sheetid=sheet_id, sheetname=sheet_name
-    )
+    # Parse XLSX sheet to CSV.
+    parser.convert(outfile=csv_buffer, sheetid=sheet_id, sheetname=sheet_name)
 
     # Rewind buffer to start.
     csv_buffer.seek(0)

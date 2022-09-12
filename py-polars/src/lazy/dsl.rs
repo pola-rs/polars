@@ -1467,22 +1467,25 @@ impl PyExpr {
         let options = EWMOptions {
             alpha,
             adjust,
+            bias: false,
             min_periods,
         };
         self.inner.clone().ewm_mean(options).into()
     }
-    pub fn ewm_std(&self, alpha: f64, adjust: bool, min_periods: usize) -> Self {
+    pub fn ewm_std(&self, alpha: f64, adjust: bool, bias: bool, min_periods: usize) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
+            bias,
             min_periods,
         };
         self.inner.clone().ewm_std(options).into()
     }
-    pub fn ewm_var(&self, alpha: f64, adjust: bool, min_periods: usize) -> Self {
+    pub fn ewm_var(&self, alpha: f64, adjust: bool, bias: bool, min_periods: usize) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
+            bias,
             min_periods,
         };
         self.inner.clone().ewm_var(options).into()
@@ -1695,18 +1698,16 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
         Ok(dsl::lit(series.series).into())
     } else if value.is_none() {
         Ok(dsl::lit(Null {}).into())
+    } else if allow_object {
+        let s = Python::with_gil(|py| {
+            PySeries::new_object("", vec![ObjectValue::from(value.into_py(py))], false).series
+        });
+        Ok(dsl::lit(s).into())
     } else {
-        if allow_object {
-            let s = Python::with_gil(|py| {
-                PySeries::new_object("", vec![ObjectValue::from(value.into_py(py))], false).series
-            });
-            Ok(dsl::lit(s).into())
-        } else {
-            Err(PyValueError::new_err(format!(
-                "could not convert value {:?} as a Literal",
-                value.str()?
-            )))
-        }
+        Err(PyValueError::new_err(format!(
+            "could not convert value {:?} as a Literal",
+            value.str()?
+        )))
     }
 }
 

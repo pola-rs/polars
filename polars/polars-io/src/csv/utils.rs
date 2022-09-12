@@ -171,6 +171,7 @@ pub fn infer_file_schema(
     // we take &mut because we maybe need to skip more rows dependent
     // on the schema inference
     skip_rows: &mut usize,
+    skip_rows_after_header: usize,
     comment_char: Option<u8>,
     quote_char: Option<u8>,
     eol_char: u8,
@@ -269,6 +270,7 @@ pub fn infer_file_schema(
             has_header,
             schema_overwrite,
             skip_rows,
+            skip_rows_after_header,
             comment_char,
             quote_char,
             eol_char,
@@ -296,7 +298,10 @@ pub fn infer_file_schema(
     // needed to prevent ownership going into the iterator loop
     let records_ref = &mut lines;
 
-    for mut line in records_ref.take(max_read_lines.unwrap_or(usize::MAX)) {
+    for mut line in records_ref
+        .take(max_read_lines.unwrap_or(usize::MAX))
+        .skip(skip_rows_after_header)
+    {
         rows_count += 1;
 
         if let Some(c) = comment_char {
@@ -423,6 +428,7 @@ pub fn infer_file_schema(
             has_header,
             schema_overwrite,
             skip_rows,
+            skip_rows_after_header,
             comment_char,
             quote_char,
             eol_char,
@@ -451,7 +457,6 @@ pub fn is_compressed(bytes: &[u8]) -> bool {
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 fn decompress_impl<R: Read>(
     decoder: &mut R,
-    bytes: &[u8],
     n_rows: Option<usize>,
     delimiter: u8,
     quote_char: Option<u8>,
@@ -460,8 +465,9 @@ fn decompress_impl<R: Read>(
     let chunk_size = 4096;
     Some(match n_rows {
         None => {
-            // decompression will likely be an order of magnitude larger
-            let mut out = Vec::with_capacity(bytes.len() * 10);
+            // decompression in a preallocated buffer does not work with zlib-ng
+            // and will put the original compressed data in the buffer.
+            let mut out = Vec::new();
             decoder.read_to_end(&mut out).ok()?;
             out
         }
@@ -532,10 +538,10 @@ pub(crate) fn decompress(
 ) -> Option<Vec<u8>> {
     if bytes.starts_with(&GZIP) {
         let mut decoder = flate2::read::MultiGzDecoder::new(bytes);
-        decompress_impl(&mut decoder, bytes, n_rows, delimiter, quote_char, eol_char)
+        decompress_impl(&mut decoder, n_rows, delimiter, quote_char, eol_char)
     } else if bytes.starts_with(&ZLIB0) || bytes.starts_with(&ZLIB1) || bytes.starts_with(&ZLIB2) {
         let mut decoder = flate2::read::ZlibDecoder::new(bytes);
-        decompress_impl(&mut decoder, bytes, n_rows, delimiter, quote_char, eol_char)
+        decompress_impl(&mut decoder, n_rows, delimiter, quote_char, eol_char)
     } else {
         None
     }

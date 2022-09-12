@@ -489,11 +489,14 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                     kwargs.set_item("tzinfo", py.None())?;
                     let dt = ob.call_method("replace", (), Some(kwargs))?;
 
-                    let pytz = PyModule::import(py, "pytz")?;
-                    let tz = pytz.call_method("timezone", ("UTC",), None)?;
-                    let kwargs = PyDict::new(py);
-                    kwargs.set_item("is_dst", py.None())?;
-                    let loc_tz = tz.call_method("localize", (dt,), Some(kwargs))?;
+                    let pypolars = PyModule::import(py, "polars").unwrap();
+                    let localize = pypolars
+                        .getattr("utils")
+                        .unwrap()
+                        .getattr("_localize")
+                        .unwrap();
+                    let loc_tz = localize.call1((dt, "UTC"));
+
                     loc_tz.call_method0("timestamp")?;
                     // s to us
                     let v = (ts.extract::<f64>()? * 1000_000.0) as i64;

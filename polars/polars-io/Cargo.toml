@@ -21,7 +21,7 @@ avro = ["arrow/io_avro", "arrow/io_avro_compression"]
 # ipc = []
 csv-file = ["csv-core", "memmap", "lexical", "polars-core/rows", "lexical-core"]
 decompress = ["flate2/miniz_oxide"]
-decompress-fast = ["flate2/zlib-ng-compat"]
+decompress-fast = ["flate2/zlib-ng"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
 dtype-datetime = ["polars-core/dtype-datetime", "polars-core/temporal", "polars-time/dtype-datetime"]
@@ -38,8 +38,8 @@ private = ["polars-time/private"]
 [dependencies]
 ahash = "0.7"
 anyhow = "1.0"
-arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "6c102a0c3e2dbeb185360dd3d5c3637b5e2028fd", default-features = false }
-# arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "comparison_and_validity", default-features = false }
+# arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "6c102a0c3e2dbeb185360dd3d5c3637b5e2028fd", default-features = false }
+arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "comparison_and_validity", default-features = false }
 # arrow = { package = "arrow2", version = "0.12", default-features = false }
 # arrow = { package = "arrow2", path = "../../../arrow2", default-features = false }
 csv-core = { version = "0.1.10", optional = true }

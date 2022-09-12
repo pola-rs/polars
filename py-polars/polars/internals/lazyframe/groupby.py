@@ -4,7 +4,7 @@ from typing import Callable, Generic, Sequence, TypeVar
 
 import polars.internals as pli
 from polars.datatypes import Schema
-from polars.internals.expr import ensure_list_of_pyexpr
+from polars.internals import selection_to_pyexpr_list
 from polars.utils import is_expr_sequence
 
 try:
@@ -54,7 +54,7 @@ class LazyGroupBy(Generic[LDF]):
             msg = f"expected 'Expr | Sequence[Expr]', got '{type(aggs)}'"
             raise TypeError(msg)
 
-        pyexprs = ensure_list_of_pyexpr(aggs)
+        pyexprs = selection_to_pyexpr_list(aggs)
         return self._lazyframe_class._from_pyldf(self.lgb.agg(pyexprs))
 
     def head(self, n: int = 5) -> LDF:

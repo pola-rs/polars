@@ -16,6 +16,7 @@ mod ternary;
 mod window;
 
 use std::borrow::Cow;
+use std::fmt::{Display, Formatter};
 
 pub(crate) use aggregation::*;
 pub(crate) use alias::*;
@@ -590,6 +591,15 @@ pub trait PhysicalExpr: Send + Sync {
 
     fn is_literal(&self) -> bool {
         false
+    }
+}
+
+impl Display for &dyn PhysicalExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.as_expression() {
+            None => Ok(()),
+            Some(e) => write!(f, "{}", e),
+        }
     }
 }
 

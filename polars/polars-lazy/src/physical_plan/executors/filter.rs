@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use polars_core::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;
@@ -25,10 +27,22 @@ impl Executor for FilterExec {
         let df = self.input.execute(state)?;
         let s = self.predicate.evaluate(&df, state)?;
         let mask = s.bool().expect("filter predicate wasn't of type boolean");
-        let df = df.filter(mask)?;
-        if state.verbose() {
-            eprintln!("dataframe filtered");
-        }
-        Ok(df)
+
+        let profile_name = if state.has_node_timer() {
+            Cow::Owned(format!(".filter({})", &self.predicate.as_ref()))
+        } else {
+            Cow::Borrowed("")
+        };
+
+        state.record(
+            || {
+                let df = df.filter(mask)?;
+                if state.verbose() {
+                    eprintln!("dataframe filtered");
+                }
+                Ok(df)
+            },
+            profile_name,
+        )
     }
 }

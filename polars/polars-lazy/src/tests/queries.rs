@@ -2089,20 +2089,3 @@ fn test_partitioned_gb_ternary() -> Result<()> {
 
     Ok(())
 }
-
-#[test]
-fn test_foo() -> Result<()> {
-    let df = df![
-        "a" => ["a", "b"]
-    ]?;
-
-    let df = df
-        .lazy()
-        .select([all().cast(DataType::Categorical(None)).list()])
-        .collect()?;
-
-    let out = concat_df(&[df.clone(), df.clone()])?;
-    dbg!(out.agg_chunks());
-
-    Ok(())
-}

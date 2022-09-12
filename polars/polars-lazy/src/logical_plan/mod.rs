@@ -20,6 +20,7 @@ mod apply;
 mod builder;
 pub(crate) mod conversion;
 mod format;
+mod functions;
 pub(crate) mod iterator;
 mod lit;
 pub(crate) mod optimizer;
@@ -34,6 +35,8 @@ pub use lit::*;
 use polars_core::frame::explode::MeltArgs;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+pub(crate) use crate::logical_plan::functions::FunctionNode;
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
@@ -173,13 +176,10 @@ pub enum LogicalPlan {
         args: Arc<MeltArgs>,
         schema: SchemaRef,
     },
-    /// A User Defined Function
-    #[cfg_attr(feature = "serde", serde(skip))]
-    Udf {
+    /// A (User Defined) Function
+    MapFunction {
         input: Box<LogicalPlan>,
-        function: Arc<dyn DataFrameUdf>,
-        options: LogicalPlanUdfOptions,
-        schema: Option<Arc<dyn UdfSchema>>,
+        function: FunctionNode,
     },
     Union {
         inputs: Vec<LogicalPlan>,
@@ -249,11 +249,13 @@ impl LogicalPlan {
             Distinct { input, .. } => input.schema(),
             Slice { input, .. } => input.schema(),
             Melt { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Udf { input, schema, .. } => {
+            MapFunction {
+                input, function, ..
+            } => {
                 let input_schema = input.schema()?;
-                match schema {
-                    Some(schema) => schema.get_schema(&input_schema).map(Cow::Owned),
-                    None => Ok(input_schema),
+                match input_schema {
+                    Cow::Owned(schema) => Ok(Cow::Owned(function.schema(&schema)?.into_owned())),
+                    Cow::Borrowed(schema) => function.schema(schema),
                 }
             }
             Error { err, .. } => {
@@ -388,22 +390,5 @@ mod test {
             print_plans(&lf);
             let _df = lf.collect().unwrap();
         }
-    }
-
-    #[test]
-    #[cfg(feature = "dot_diagram")]
-    fn test_dot() {
-        let left = df!("days" => &[0, 1, 2, 3, 4],
-        "temp" => [22.1, 19.9, 7., 2., 3.],
-        "rain" => &[0.1, 0.2, 0.3, 0.4, 0.5]
-        )
-        .unwrap();
-        let mut s = String::new();
-        left.lazy()
-            .select(&[col("days")])
-            .logical_plan
-            .dot(&mut s, (0, 0), "")
-            .unwrap();
-        println!("{}", s);
     }
 }

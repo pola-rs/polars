@@ -63,7 +63,13 @@ from polars.exceptions import (
 from polars.internals.dataframe import wrap_df  # noqa: F401
 from polars.internals.dataframe import DataFrame
 from polars.internals.expr import Expr
-from polars.internals.functions import concat, cut, date_range, get_dummies
+from polars.internals.functions import (
+    align_frames,
+    concat,
+    cut,
+    date_range,
+    get_dummies,
+)
 from polars.internals.io import read_ipc_schema, read_parquet_schema
 from polars.internals.lazy_functions import _date as date
 from polars.internals.lazy_functions import _datetime as datetime
@@ -196,11 +202,12 @@ __all__ = [
     "using_string_cache",
     # polars.config
     "Config",
-    # polars.internal.when
+    # polars.internals.whenthen
     "when",
-    # polars.internal.expr
+    # polars.internals.expr
     "Expr",
-    # polars.internal.functions
+    # polars.internals.functions
+    "align_frames",
     "arg_where",
     "concat",
     "date_range",
@@ -208,7 +215,7 @@ __all__ = [
     "repeat",
     "element",
     "cut",
-    # polars.internal.lazy_functions
+    # polars.internals.lazy_functions
     "col",
     "count",
     "std",

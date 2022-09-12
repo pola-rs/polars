@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import typing
 from datetime import datetime, timedelta
+from decimal import Decimal
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, Iterator
 
@@ -11,6 +12,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
+from polars.exceptions import NoRowsReturned, TooManyRowsReturned
 from polars.testing import assert_frame_equal, assert_series_equal, columns
 
 if TYPE_CHECKING:
@@ -177,7 +179,93 @@ def test_from_arrow() -> None:
             "decimal1": pa.array([1, 2], pa.decimal128(2, 1)),
         }
     )
-    assert pl.from_arrow(tbl).shape == (2, 5)
+    expected_schema = {
+        "a": pl.Datetime("ms"),
+        "b": pl.Datetime("ms"),
+        "c": pl.Datetime("us"),
+        "d": pl.Datetime("ns"),
+        "decimal1": pl.Float64,
+    }
+    expected_data = [
+        (
+            datetime(1970, 1, 1, 0, 0, 1),
+            datetime(1970, 1, 1, 0, 0, 0, 1000),
+            datetime(1970, 1, 1, 0, 0, 0, 1),
+            datetime(1970, 1, 1, 0, 0),
+            1.0,
+        ),
+        (
+            datetime(1970, 1, 1, 0, 0, 2),
+            datetime(1970, 1, 1, 0, 0, 0, 2000),
+            datetime(1970, 1, 1, 0, 0, 0, 2),
+            datetime(1970, 1, 1, 0, 0),
+            2.0,
+        ),
+    ]
+
+    df = pl.from_arrow(tbl)
+    assert df.schema == expected_schema
+    assert df.rows() == expected_data
+
+    empty_tbl = tbl[:0]  # no rows
+    df = pl.from_arrow(empty_tbl)
+    assert df.schema == expected_schema
+    assert df.rows() == []
+
+
+def test_dataclasses_and_namedtuple() -> None:
+    from dataclasses import dataclass
+    from typing import NamedTuple
+
+    @dataclass
+    class TradeDC:
+        timestamp: datetime
+        ticker: str
+        price: Decimal
+        size: int | None = None
+
+    class TradeNT(NamedTuple):
+        timestamp: datetime
+        ticker: str
+        price: Decimal
+        size: int | None = None
+
+    raw_data = [
+        (datetime(2022, 9, 8, 14, 30, 45), "AAPL", Decimal("157.5"), 125),
+        (datetime(2022, 9, 9, 10, 15, 12), "FLSY", Decimal("10.0"), 1500),
+        (datetime(2022, 9, 7, 15, 30), "MU", Decimal("55.5"), 400),
+    ]
+
+    for TradeClass in (TradeDC, TradeNT):
+        trades = [TradeClass(*values) for values in raw_data]
+
+        for DF in (pl.DataFrame, pl.from_records):
+            df = DF(data=trades)  # type: ignore[operator]
+            assert df.schema == {
+                "timestamp": pl.Datetime("us"),
+                "ticker": pl.Utf8,
+                "price": pl.Float64,
+                "size": pl.Int64,
+            }
+            assert df.rows() == raw_data
+
+        # in conjunction with 'columns' override (rename/downcast)
+        df = pl.DataFrame(
+            data=trades,
+            columns=[  # type: ignore[arg-type]
+                ("ts", pl.Datetime("ms")),
+                ("tk", pl.Utf8),
+                ("pc", pl.Float32),
+                ("sz", pl.UInt16),
+            ],
+        )
+        assert df.schema == {
+            "ts": pl.Datetime("ms"),
+            "tk": pl.Utf8,
+            "pc": pl.Float32,
+            "sz": pl.UInt16,
+        }
+        assert df.rows() == raw_data
 
 
 def test_dataframe_membership_operator() -> None:
@@ -214,20 +302,22 @@ def test_assignment() -> None:
 
 
 def test_insert_at_idx() -> None:
-    df = pl.DataFrame({"z": [3, 4, 5]})
-    df.insert_at_idx(0, pl.Series("x", [1, 2, 3]))
-    df.insert_at_idx(-1, pl.Series("y", [2, 3, 4]))
-
+    df = (
+        pl.DataFrame({"z": [3, 4, 5]})
+        .insert_at_idx(0, pl.Series("x", [1, 2, 3]))
+        .insert_at_idx(-1, pl.Series("y", [2, 3, 4]))
+    )
     expected_df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
     assert_frame_equal(expected_df, df)
 
 
 def test_replace_at_idx() -> None:
-    df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
-    df.replace_at_idx(0, pl.Series("a", [4, 5, 6]))
-    df.replace_at_idx(-2, pl.Series("b", [5, 6, 7]))
-    df.replace_at_idx(-1, pl.Series("c", [6, 7, 8]))
-
+    df = (
+        pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
+        .replace_at_idx(0, pl.Series("a", [4, 5, 6]))
+        .replace_at_idx(-2, pl.Series("b", [5, 6, 7]))
+        .replace_at_idx(-1, pl.Series("c", [6, 7, 8]))
+    )
     expected_df = pl.DataFrame({"a": [4, 5, 6], "b": [5, 6, 7], "c": [6, 7, 8]})
     assert_frame_equal(expected_df, df)
 
@@ -524,7 +614,7 @@ def test_vstack(in_place: bool) -> None:
     if in_place:
         assert df1.frame_equal(expected)
     else:
-        assert out.frame_equal(expected)  # type: ignore[union-attr]
+        assert out.frame_equal(expected)
 
 
 def test_extend() -> None:
@@ -793,9 +883,38 @@ def test_df_fold() -> None:
 
 def test_row_tuple() -> None:
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
-    assert df.row(0) == ("foo", 1, 1.0)  # type: ignore[comparison-overlap]
-    assert df.row(1) == ("bar", 2, 2.0)  # type: ignore[comparison-overlap]
-    assert df.row(-1) == ("2", 3, 3.0)  # type: ignore[comparison-overlap]
+
+    # return row by index
+    assert df.row(0) == ("foo", 1, 1.0)
+    assert df.row(1) == ("bar", 2, 2.0)
+    assert df.row(-1) == ("2", 3, 3.0)
+
+    # return row by predicate
+    assert df.row(by_predicate=pl.col("a") == "bar") == ("bar", 2, 2.0)
+    assert df.row(by_predicate=pl.col("b").is_in([2, 4, 6])) == ("bar", 2, 2.0)
+
+    # expected error conditions
+    with pytest.raises(TooManyRowsReturned):
+        df.row(by_predicate=pl.col("b").is_in([1, 3, 5]))
+
+    with pytest.raises(NoRowsReturned):
+        df.row(by_predicate=pl.col("a") == "???")
+
+    # cannot set both 'index' and 'by_predicate'
+    with pytest.raises(ValueError):
+        df.row(0, by_predicate=pl.col("a") == "bar")
+
+    # must call 'by_predicate' by keyword
+    with pytest.raises(TypeError):
+        df.row(None, pl.col("a") == "bar")  # type: ignore[misc]
+
+    # cannot pass predicate into 'index'
+    with pytest.raises(TypeError):
+        df.row(pl.col("a") == "bar")  # type: ignore[arg-type]
+
+    # at least one of 'index' and 'by_predicate' must be set
+    with pytest.raises(ValueError):
+        df.row()
 
 
 def test_df_apply() -> None:
@@ -811,8 +930,9 @@ def test_column_names() -> None:
             "b": pa.array([1, 2, 3, 4, 5], pa.int64()),
         }
     )
-    df = pl.from_arrow(tbl)
-    assert df.columns == ["a", "b"]
+    for a in (tbl, tbl[:0]):
+        df = pl.from_arrow(a)
+        assert df.columns == ["a", "b"]
 
 
 def test_lazy_functions() -> None:
@@ -959,7 +1079,7 @@ def test_literal_series() -> None:
     )
     out = (
         df.lazy()
-        .with_column(pl.Series("e", [2, 1, 3], pl.Int32))  # type: ignore[arg-type]
+        .with_column(pl.Series("e", [2, 1, 3], pl.Int32))
         .with_column(pl.col("e").cast(pl.Float32))
         .collect()
     )
@@ -1558,14 +1678,12 @@ def test_sample() -> None:
     assert df.sample(frac=0.4, seed=0).shape == (1, 3)
 
 
-@pytest.mark.parametrize("in_place", [True, False])
-def test_shrink_to_fit(in_place: bool) -> None:
+def test_shrink_to_fit() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
 
-    if in_place:
-        assert df.shrink_to_fit(in_place) is None
-    else:
-        assert df.shrink_to_fit(in_place).frame_equal(df)
+    assert df.shrink_to_fit(in_place=True) is df
+    assert df.shrink_to_fit(in_place=False) is not df
+    assert df.shrink_to_fit(in_place=False).frame_equal(df)
 
 
 def test_arithmetic() -> None:
@@ -1912,9 +2030,13 @@ def test_partition_by() -> None:
 def test_list_of_list_of_struct() -> None:
     expected = [{"list_of_list_of_struct": [[{"a": 1}, {"a": 2}]]}]
     pa_df = pa.Table.from_pylist(expected)
+
     df = pl.from_arrow(pa_df)
     assert df.rows() == [([[{"a": 1}, {"a": 2}]],)]
     assert df.to_dicts() == expected
+
+    df = pl.from_arrow(pa_df[:0])
+    assert df.to_dicts() == []
 
 
 def test_concat_to_empty() -> None:
@@ -2153,3 +2275,21 @@ def test_set() -> None:
     # we cannot index with any type, such as bool
     with pytest.raises(ValueError):
         df[True] = 1  # type: ignore[index]
+
+
+def test_union_with_aliases_4770() -> None:
+    lf = pl.DataFrame(
+        {
+            "a": [1, None],
+            "b": [3, 4],
+        }
+    ).lazy()
+
+    lf = pl.concat(
+        [
+            lf.select([pl.col("a").alias("x")]),
+            lf.select([pl.col("b").alias("x")]),
+        ]
+    ).filter(pl.col("x").is_not_null())
+
+    assert lf.collect()["x"].to_list() == [1, 3, 4]

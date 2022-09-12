@@ -16,17 +16,15 @@ jobs:
         python-version: ["3.7"]
     steps:
       - uses: actions/checkout@v3
-      - name: Install latest Rust nightly
-        uses: actions-rs/toolchain@v1
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2022-08-22
-          override: true
-          components: rustfmt, clippy
       - name: Setup universal2 targets for Rust
         run: |
           rustup target add aarch64-apple-darwin
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
       - name: Prepare maturin publish
@@ -35,7 +33,6 @@ jobs:
           rm py-polars/README.md
           cp README.md py-polars/README.md
           cd py-polars
-          rustup override set nightly-2022-08-22
       - name: maturin publish
         uses: messense/maturin-action@v1
         env:

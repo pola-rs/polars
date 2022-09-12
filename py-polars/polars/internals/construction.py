@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from contextlib import suppress
+from dataclasses import astuple, is_dataclass
 from datetime import date, datetime, time, timedelta
 from itertools import zip_longest
-from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
+from sys import version_info
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, get_type_hints
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -29,6 +31,17 @@ from polars.datatypes_constructor import (
     py_type_to_constructor,
 )
 from polars.utils import threadpool_size
+
+if version_info >= (3, 10):
+
+    def dataclass_type_hints(obj: type) -> dict[str, Any]:
+        return get_type_hints(obj)
+
+else:
+
+    def dataclass_type_hints(obj: type) -> dict[str, Any]:
+        return obj.__annotations__
+
 
 try:
     from polars.polars import PyDataFrame, PySeries
@@ -77,6 +90,8 @@ def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySe
             pys = PySeries.from_arrow(name, next(it))
             for a in it:
                 pys.append(PySeries.from_arrow(name, a))
+        elif array.num_chunks == 0:
+            pys = PySeries.from_arrow(name, pa.array([], array.type))
         else:
             pys = PySeries.from_arrow(name, array.combine_chunks())
 
@@ -543,7 +558,16 @@ def sequence_to_pydf(
         return pydf
 
     elif isinstance(data[0], Sequence) and not isinstance(data[0], str):
-        # Infer orientation
+        # infer orientation
+        if all(
+            hasattr(data[0], attr)
+            for attr in ("_fields", "_field_defaults", "_replace")
+        ):  # namedtuple
+            if columns is None:
+                columns = data[0]._fields  # type: ignore[attr-defined]
+            elif orient is None:
+                orient = "row"
+
         if orient is None and columns is not None:
             orient = "col" if len(columns) == len(data) else "row"
 
@@ -562,7 +586,16 @@ def sequence_to_pydf(
             raise ValueError(
                 f"orient must be one of {{'col', 'row', None}}, got {orient} instead."
             )
-
+    elif is_dataclass(data[0]):
+        columns = columns or [
+            (col, py_type_to_dtype(tp, raise_unmatched=False))
+            for col, tp in dataclass_type_hints(data[0].__class__).items()
+        ]
+        pydf = _post_apply_columns(
+            PyDataFrame.read_rows([astuple(dc) for dc in data], infer_schema_length),
+            columns=columns,
+        )
+        return pydf
     else:
         columns, dtypes = _unpack_columns(columns, n_expected=1)
         data_series = [pli.Series(columns[0], data, dtypes.get(columns[0]))._s]
@@ -687,7 +720,12 @@ def arrow_to_pydf(
 
         # path for table without rows that keeps datatype
         if tbl.shape[0] == 0:
-            pydf = pli.DataFrame._from_pandas(tbl.to_pandas())._df
+            pydf = pli.DataFrame(
+                [
+                    pli.Series(name, c)
+                    for (name, c) in zip(tbl.column_names, tbl.columns)
+                ]
+            )._df
         else:
             pydf = PyDataFrame.from_arrow_record_batches(tbl.to_batches())
     else:

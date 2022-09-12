@@ -472,8 +472,8 @@ def test_csv_globbing(examples_dir: str) -> None:
 
     df = pl.read_csv(path, columns=["category", "sugars_g"])
     assert df.shape == (135, 2)
-    assert df.row(-1) == ("seafood", 1)  # type: ignore[comparison-overlap]
-    assert df.row(0) == ("vegetables", 2)  # type: ignore[comparison-overlap]
+    assert df.row(-1) == ("seafood", 1)
+    assert df.row(0) == ("vegetables", 2)
 
     with pytest.raises(ValueError):
         _ = pl.read_csv(path, dtypes=[pl.Utf8, pl.Int64, pl.Int64, pl.Int64])
@@ -494,26 +494,33 @@ def test_csv_schema_offset(foods_csv: str) -> None:
         """\
         metadata
         line
-        foo,bar
-        1,2
-        3,4
-        5,6
+        col1,col2,col3
+        alpha,beta,gamma
+        1,2.0,"A"
+        3,4.0,"B"
+        5,6.0,"C"
         """
     ).encode()
-    df = pl.read_csv(csv, skip_rows=2)
-    assert df.columns == ["foo", "bar"]
-    assert df.shape == (3, 2)
-    df = pl.read_csv(csv, skip_rows=2, skip_rows_after_header=2)
-    assert df.columns == ["foo", "bar"]
-    assert df.shape == (1, 2)
+
+    df = pl.read_csv(csv, skip_rows=3)
+    assert df.columns == ["alpha", "beta", "gamma"]
+    assert df.shape == (3, 3)
+    assert df.dtypes == [pl.Int64, pl.Float64, pl.Utf8]
+
+    df = pl.read_csv(csv, skip_rows=2, skip_rows_after_header=1)
+    assert df.columns == ["col1", "col2", "col3"]
+    assert df.shape == (3, 3)
+    assert df.dtypes == [pl.Int64, pl.Float64, pl.Utf8]
 
     df = pl.scan_csv(foods_csv, skip_rows=4).collect()
     assert df.columns == ["fruit", "60", "0", "11"]
     assert df.shape == (23, 4)
+    assert df.dtypes == [pl.Utf8, pl.Int64, pl.Float64, pl.Int64]
 
-    df = pl.scan_csv(foods_csv, skip_rows_after_header=10).collect()
+    df = pl.scan_csv(foods_csv, skip_rows_after_header=24).collect()
     assert df.columns == ["category", "calories", "fats_g", "sugars_g"]
-    assert df.shape == (17, 4)
+    assert df.shape == (3, 4)
+    assert df.dtypes == [pl.Utf8, pl.Int64, pl.Int64, pl.Int64]
 
 
 def test_empty_string_missing_round_trip() -> None:
@@ -581,7 +588,7 @@ def test_fallback_chrono_parser() -> None:
     """
     )
     df = pl.read_csv(data.encode(), parse_dates=True)
-    assert df.null_count().row(0) == (0, 0)  # type: ignore[comparison-overlap]
+    assert df.null_count().row(0) == (0, 0)
 
 
 def test_csv_string_escaping() -> None:

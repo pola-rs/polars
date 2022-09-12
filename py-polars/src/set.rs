@@ -78,19 +78,15 @@ pub(crate) fn set_at_idx(mut s: Series, idx: &Series, values: &Series) -> Result
             let ca = s.bool()?;
             let values = values.bool()?;
             let value = values.get(0);
-            let out = ca
-                .set_at_idx(idx.into_iter().copied(), value)
-                .map(|ca| ca.into_series())?;
-            out
+            ca.set_at_idx(idx.iter().copied(), value)
+                .map(|ca| ca.into_series())?
         }
         DataType::Utf8 => {
             let ca = s.utf8()?;
             let values = values.utf8()?;
             let value = values.get(0);
-            let out = ca
-                .set_at_idx(idx.into_iter().copied(), value)
-                .map(|ca| ca.into_series())?;
-            out
+            ca.set_at_idx(idx.iter().copied(), value)
+                .map(|ca| ca.into_series())?
         }
         _ => panic!("not yet implemented for dtype: {}", logical_dtype),
     };

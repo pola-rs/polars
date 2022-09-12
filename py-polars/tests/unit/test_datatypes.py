@@ -24,8 +24,8 @@ def test_dtype_temporal_units() -> None:
         assert pl.Datetime == pl.Datetime(tu)
         assert pl.Duration == pl.Duration(tu)
 
-        assert pl.Datetime(tu) == pl.Datetime()  # type: ignore[operator]
-        assert pl.Duration(tu) == pl.Duration()  # type: ignore[operator]
+        assert pl.Datetime(tu) == pl.Datetime()
+        assert pl.Duration(tu) == pl.Duration()
 
     assert pl.Datetime("ms") != pl.Datetime("ns")
     assert pl.Duration("ns") != pl.Duration("us")
@@ -40,3 +40,17 @@ def test_dtypes_picklable() -> None:
     singleton_type = pl.Float64
     assert pickle.loads(pickle.dumps(parametric_type)) == parametric_type
     assert pickle.loads(pickle.dumps(singleton_type)) == singleton_type
+
+
+def test_dtypes_hashable() -> None:
+    # ensure that all the types can be hashed, and that their hashes
+    # are sufficient to ensure distinct entries in a dictionary/set
+
+    all_dtypes = [
+        getattr(datatypes, d)
+        for d in dir(datatypes)
+        if isinstance(getattr(datatypes, d), datatypes.DataType)
+    ]
+    assert len(set(all_dtypes + all_dtypes)) == len(all_dtypes)
+    assert len({pl.Datetime("ms"), pl.Datetime("us"), pl.Datetime("ns")}) == 3
+    assert len({pl.List, pl.List(pl.Int16), pl.List(pl.Int32), pl.List(pl.Int64)}) == 4

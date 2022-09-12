@@ -32,8 +32,6 @@ use polars_core::datatypes::PlHashMap;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
-#[cfg(feature = "dtype-categorical")]
-use polars_core::toggle_string_cache;
 use polars_io::RowCount;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -127,7 +125,6 @@ pub struct OptState {
     pub simplify_expr: bool,
     pub file_caching: bool,
     pub aggregate_pushdown: bool,
-    pub global_string_cache: bool,
     pub slice_pushdown: bool,
 }
 
@@ -138,7 +135,6 @@ impl Default for OptState {
             predicate_pushdown: true,
             type_coercion: true,
             simplify_expr: true,
-            global_string_cache: false,
             slice_pushdown: true,
             // will be toggled by a scan operation such as csv scan or parquet scan
             file_caching: false,
@@ -185,7 +181,6 @@ impl LazyFrame {
             predicate_pushdown: false,
             type_coercion: true,
             simplify_expr: false,
-            global_string_cache: false,
             slice_pushdown: false,
             // will be toggled by a scan operation such as csv scan or parquet scan
             file_caching: false,
@@ -220,12 +215,6 @@ impl LazyFrame {
     /// Toggle aggregate pushdown.
     pub fn with_aggregate_pushdown(mut self, toggle: bool) -> Self {
         self.opt_state.aggregate_pushdown = toggle;
-        self
-    }
-
-    /// Toggle global string cache.
-    pub fn with_string_cache(mut self, toggle: bool) -> Self {
-        self.opt_state.global_string_cache = toggle;
         self
     }
 
@@ -680,39 +669,11 @@ impl LazyFrame {
         Ok(lp_top)
     }
 
-    /// Execute all the lazy operations and collect them into a [DataFrame](polars_core::frame::DataFrame).
-    /// Before execution the query is being optimized.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use polars_core::prelude::*;
-    /// use polars_lazy::prelude::*;
-    ///
-    /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.lazy()
-    ///       .groupby([col("foo")])
-    ///       .agg([col("bar").sum(), col("ham").mean().alias("avg_ham")])
-    ///       .collect()
-    /// }
-    /// ```
-    pub fn collect(self) -> Result<DataFrame> {
+    fn prepare_collect(self) -> Result<(ExecutionState, Box<dyn Executor>)> {
         let file_caching = self.opt_state.file_caching;
-        #[cfg(feature = "dtype-categorical")]
-        let using_string_cache = self.opt_state.global_string_cache;
-        #[cfg(feature = "dtype-categorical")]
-        if using_string_cache {
-            eprint!("global string cache in combination with LazyFrames is deprecated; please set the global string cache globally.")
-        }
         let mut expr_arena = Arena::with_capacity(256);
         let mut lp_arena = Arena::with_capacity(128);
         let lp_top = self.optimize(&mut lp_arena, &mut expr_arena)?;
-
-        // if string cache was already set, we skip this and global settings are respected
-        #[cfg(feature = "dtype-categorical")]
-        if using_string_cache {
-            toggle_string_cache(using_string_cache);
-        }
 
         let finger_prints = if file_caching {
             #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
@@ -730,21 +691,52 @@ impl LazyFrame {
         };
 
         let planner = PhysicalPlanner::default();
-        let mut physical_plan =
-            planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
+        let physical_plan = planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
-        let mut state = ExecutionState::with_finger_prints(finger_prints);
+        let state = ExecutionState::with_finger_prints(finger_prints);
+        Ok((state, physical_plan))
+    }
+
+    /// Execute all the lazy operations and collect them into a [DataFrame](polars_core::frame::DataFrame).
+    /// Before execution the query is being optimized.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    ///
+    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    ///     df.lazy()
+    ///       .groupby([col("foo")])
+    ///       .agg([col("bar").sum(), col("ham").mean().alias("avg_ham")])
+    ///       .collect()
+    /// }
+    /// ```
+    pub fn collect(self) -> Result<DataFrame> {
+        let (mut state, mut physical_plan) = self.prepare_collect()?;
         let out = physical_plan.execute(&mut state);
         #[cfg(debug_assertions)]
         {
             #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
             state.file_cache.assert_empty();
         }
-        #[cfg(feature = "dtype-categorical")]
-        if using_string_cache {
-            toggle_string_cache(!using_string_cache);
-        }
         out
+    }
+
+    //// Profile a LazyFrame.
+    ////
+    //// This will run the query and return a tuple
+    //// containing the materialized DataFrame and a DataFrame that contains profiling information
+    //// of each node that is executed.
+    ////
+    //// The units of the timings are microseconds.
+    pub fn profile(self) -> Result<(DataFrame, DataFrame)> {
+        let (mut state, mut physical_plan) = self.prepare_collect()?;
+        state.time_nodes();
+        let out = physical_plan.execute(&mut state)?;
+        let timer_df = state.finish_timer()?;
+        Ok((out, timer_df))
     }
 
     /// Filter by some predicate expression.
@@ -845,6 +837,13 @@ impl LazyFrame {
         }
     }
 
+    /// Create rolling groups based on a time column.
+    ///
+    /// Also works for index values of type Int32 or Int64.
+    ///
+    /// Different from a [`dynamic_groupby`] the windows are now determined by the
+    /// individual values and are not of constant intervals. For constant intervals use
+    /// *groupby_dynamic*
     pub fn groupby_rolling<E: AsRef<[Expr]>>(
         self,
         by: E,
@@ -861,6 +860,21 @@ impl LazyFrame {
         }
     }
 
+    /// Group based on a time value (or index value of type Int32, Int64).
+    ///
+    /// Time windows are calculated and rows are assigned to windows. Different from a
+    /// normal groupby is that a row can be member of multiple groups. The time/index
+    /// window could be seen as a rolling window, with a window size determined by
+    /// dates/times/values instead of slots in the DataFrame.
+    ///
+    /// A window is defined by:
+    ///
+    /// - every: interval of the window
+    /// - period: length of the window
+    /// - offset: offset of the window
+    ///
+    /// The `by` argument should be empty `[]` if you don't want to combine this
+    /// with a ordinary groupby on these keys.
     pub fn groupby_dynamic<E: AsRef<[Expr]>>(
         self,
         by: E,
@@ -877,7 +891,7 @@ impl LazyFrame {
         }
     }
 
-    /// Similar to groupby, but order of the DataFrame is maintained.
+    /// Similar to [`groupby`], but order of the DataFrame is maintained.
     pub fn groupby_stable<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
         let keys = by
             .as_ref()

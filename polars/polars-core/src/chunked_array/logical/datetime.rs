@@ -73,6 +73,24 @@ impl LogicalType for DatetimeChunked {
                     .into_date()
                     .into_series()),
             },
+            #[cfg(feature = "dtype-time")]
+            (Datetime(tu, _), Time) => match tu {
+                TimeUnit::Nanoseconds => Ok((self.0.as_ref() % NS_IN_DAY)
+                    .cast(&Int64)
+                    .unwrap()
+                    .into_time()
+                    .into_series()),
+                TimeUnit::Microseconds => Ok((self.0.as_ref() % US_IN_DAY * 1_000i64)
+                    .cast(&Int64)
+                    .unwrap()
+                    .into_time()
+                    .into_series()),
+                TimeUnit::Milliseconds => Ok((self.0.as_ref() % MS_IN_DAY * 1_000_000i64)
+                    .cast(&Int64)
+                    .unwrap()
+                    .into_time()
+                    .into_series()),
+            },
             _ => self.0.cast(dtype),
         }
     }

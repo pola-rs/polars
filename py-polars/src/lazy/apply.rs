@@ -127,7 +127,7 @@ pub fn map_single(
     let output_type2 = output_type.clone();
     let function = move |s: Series| {
         Python::with_gil(|py| {
-            let output_type = output_type2.clone().unwrap_or_else(|| DataType::Unknown);
+            let output_type = output_type2.clone().unwrap_or(DataType::Unknown);
 
             // this is a python Series
             let out = call_lambda_with_series(py, s.clone(), &lambda, &POLARS)

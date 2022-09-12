@@ -3,6 +3,8 @@ from __future__ import annotations
 import ctypes
 import sys
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
+from inspect import isclass
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -32,11 +34,28 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
+UnionType: type
+if sys.version_info >= (3, 10):
+    from types import UnionType
+else:
+    # infer equivalent class
+    UnionType = type(Union[int, float])
+
+if sys.version_info >= (3, 8):
+    from typing import get_args
+else:
+
+    # pass-through (only impact is that under 3.7 we'll end-up doing
+    # standard inference for dataclass fields with an option/union)
+    def get_args(tp: Any) -> Any:
+        return tp
+
+
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit
 
 
-def get_idx_type() -> type[DataType]:
+def get_idx_type() -> PolarsDataType:
     """
     Get the datatype used for polars Indexing.
 
@@ -77,6 +96,8 @@ class DataType:
         return dtype_str_repr(self)
 
 
+# note: defined this way as some types can have instances that
+# act as specialisations (eg: "List" and "List[Int32]")
 PolarsDataType = Union[Type[DataType], DataType]
 
 ColumnsType = Union[
@@ -84,6 +105,7 @@ ColumnsType = Union[
     Mapping[str, PolarsDataType],
     Sequence[Tuple[str, Optional[PolarsDataType]]],
 ]
+NoneType = type(None)
 
 
 class Int8(DataType):
@@ -143,7 +165,9 @@ class Unknown(DataType):
 
 
 class List(DataType):
-    def __init__(self, inner: type[DataType]):
+    inner: PolarsDataType | None = None
+
+    def __init__(self, inner: PolarsDataType):
         """
         Nested list/array type.
 
@@ -155,7 +179,7 @@ class List(DataType):
         """
         self.inner = py_type_to_dtype(inner)
 
-    def __eq__(self, other: type[DataType]) -> bool:  # type: ignore[override]
+    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # The comparison allows comparing objects to classes
         # and specific inner types to none specific.
         # if one of the arguments is not specific about its inner type
@@ -177,7 +201,7 @@ class List(DataType):
             return False
 
     def __hash__(self) -> int:
-        return hash(List)
+        return hash((List, self.inner))
 
 
 class Date(DataType):
@@ -196,13 +220,14 @@ class Datetime(DataType):
         time_unit : {'us', 'ns', 'ms'}
             Time unit.
         time_zone
-            Timezone string as defined in pytz.
+            Timezone string as defined in zoneinfo (run
+            ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
 
         """
         self.tu = time_unit
         self.tz = time_zone
 
-    def __eq__(self, other: type[DataType]) -> bool:  # type: ignore[override]
+    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
         if type(other) is type and issubclass(other, Datetime):
             return True
@@ -230,7 +255,7 @@ class Duration(DataType):
         """
         self.tu = time_unit
 
-    def __eq__(self, other: type[DataType]) -> bool:  # type: ignore[override]
+    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
         if type(other) is type and issubclass(other, Duration):
             return True
@@ -256,7 +281,7 @@ class Categorical(DataType):
 
 
 class Field:
-    def __init__(self, name: str, dtype: type[DataType]):
+    def __init__(self, name: str, dtype: PolarsDataType):
         """
         Definition of a single field within a `Struct` DataType.
 
@@ -295,19 +320,17 @@ class Struct(DataType):
         """
         self.fields = fields
 
-    def __eq__(self, other: type[DataType]) -> bool:  # type: ignore[override]
-        # The comparison allows comparing objects to classes
-        # and specific inner types to none specific.
-        # if one of the arguments is not specific about its inner type
-        # we infer it as being equal.
-        # See the list type for more info
-        if type(other) is type and issubclass(other, Struct):
+    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
+        # The comparison allows comparing objects to classes, and specific
+        # inner types to those without (eg: inner=None). if one of the
+        # arguments is not specific about its inner type we infer it
+        # as being equal. (See the List type for more info).
+        if isclass(other) and issubclass(other, Struct):
             return True
-        if isinstance(other, Struct):
-            if self.fields is None or other.fields is None:
-                return True
-            else:
-                return self.fields == other.fields
+        elif isinstance(other, Struct):
+            return any((f is None) for f in (self.fields, other.fields)) or (
+                self.fields == other.fields
+            )
         else:
             return False
 
@@ -365,7 +388,7 @@ for tu in DTYPE_TEMPORAL_UNITS:
     _DTYPE_TO_CTYPE[Duration(tu)] = ctypes.c_int64
 
 
-_PY_TYPE_TO_DTYPE: dict[type, type[DataType]] = {
+_PY_TYPE_TO_DTYPE: dict[type, PolarsDataType] = {
     float: Float64,
     int: Int64,
     str: Utf8,
@@ -376,6 +399,7 @@ _PY_TYPE_TO_DTYPE: dict[type, type[DataType]] = {
     time: Time,
     list: List,
     tuple: List,
+    Decimal: Float64,
 }
 
 
@@ -461,8 +485,16 @@ if _PYARROW_AVAILABLE:
     }
 
 
+def _lookup_type(dtype: PolarsDataType) -> PolarsDataType:
+    """Normalise type so it can be looked-up correctly."""
+    # (currently only List requires this, due to arbitrary 'inner')
+    return List if dtype == List else dtype
+
+
 def dtype_to_ctype(dtype: PolarsDataType) -> type[_SimpleCData]:
+    """Convert a Polars dtype to a ctype."""
     try:
+        dtype = _lookup_type(dtype)
         return _DTYPE_TO_CTYPE[dtype]
     except KeyError:  # pragma: no cover
         raise NotImplementedError(
@@ -471,7 +503,9 @@ def dtype_to_ctype(dtype: PolarsDataType) -> type[_SimpleCData]:
 
 
 def dtype_to_ffiname(dtype: PolarsDataType) -> str:
+    """Return FFI function name associated with the given Polars dtype."""
     try:
+        dtype = _lookup_type(dtype)
         return _DTYPE_TO_FFINAME[dtype]
     except KeyError:  # pragma: no cover
         raise NotImplementedError(
@@ -480,7 +514,9 @@ def dtype_to_ffiname(dtype: PolarsDataType) -> str:
 
 
 def dtype_to_py_type(dtype: PolarsDataType) -> type:
+    """Convert a Polars dtype to a Python dtype."""
     try:
+        dtype = _lookup_type(dtype)
         return _DTYPE_TO_PY_TYPE[dtype]
     except KeyError:  # pragma: no cover
         raise NotImplementedError(
@@ -489,18 +525,28 @@ def dtype_to_py_type(dtype: PolarsDataType) -> type:
 
 
 def is_polars_dtype(data_type: Any) -> bool:
+    """Indicate whether the given input is a Polars dtype, or dtype specialisation."""
     return isinstance(data_type, DataType) or (
         type(data_type) is type and issubclass(data_type, DataType)
     )
 
 
-def py_type_to_dtype(data_type: Any) -> PolarsDataType:
+def py_type_to_dtype(data_type: Any, raise_unmatched: bool = True) -> PolarsDataType:
+    """Convert a Python dtype to a Polars dtype."""
     # when the passed in is already a Polars datatype, return that
     if is_polars_dtype(data_type):
         return data_type
+    elif isinstance(data_type, UnionType):
+        # not exhaustive; currently handles the common "type | None" case,
+        # but ideally would pick appropriate supertype when n_types > 1
+        possible_types = [tp for tp in get_args(data_type) if tp is not NoneType]
+        if len(possible_types) == 1:
+            data_type = possible_types[0]
     try:
         return _PY_TYPE_TO_DTYPE[data_type]
     except KeyError:  # pragma: no cover
+        if not raise_unmatched:
+            return None  # type: ignore[return-value]
         raise NotImplementedError(
             f"Conversion of Python data type {data_type} to Polars data type not"
             " implemented."
@@ -531,7 +577,8 @@ def supported_numpy_char_code(dtype: str) -> bool:
     return dtype in _NUMPY_CHAR_CODE_TO_DTYPE
 
 
-def numpy_char_code_to_dtype(dtype: str) -> type[DataType]:
+def numpy_char_code_to_dtype(dtype: str) -> PolarsDataType:
+    """Convert a numpy character dtype to a Polars dtype."""
     try:
         return _NUMPY_CHAR_CODE_TO_DTYPE[dtype]
     except KeyError:  # pragma: no cover
@@ -541,8 +588,8 @@ def numpy_char_code_to_dtype(dtype: str) -> type[DataType]:
 
 
 def maybe_cast(
-    el: type[DataType], dtype: type, time_unit: TimeUnit | None = None
-) -> type[DataType]:
+    el: PolarsDataType, dtype: type, time_unit: TimeUnit | None = None
+) -> PolarsDataType:
     # cast el if it doesn't match
     from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_timedelta
 
@@ -557,4 +604,4 @@ def maybe_cast(
 
 
 #: Mapping of `~polars.DataFrame` / `~polars.LazyFrame` column names to their `DataType`
-Schema = Dict[str, Type[DataType]]
+Schema = Dict[str, PolarsDataType]

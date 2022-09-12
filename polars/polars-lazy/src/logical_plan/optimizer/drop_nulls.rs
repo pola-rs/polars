@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use polars_core::prelude::*;
-
 use crate::dsl::function_expr::FunctionExpr;
+use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::iterator::*;
 use crate::prelude::stack_opt::OptimizationRule;
 use crate::prelude::*;
@@ -74,25 +73,16 @@ impl OptimizationRule for ReplaceDropNulls {
                     }
                 }
                 if not_null_count == column_count && binary_and_count < column_count {
-                    let subset = aexpr_to_root_names(*predicate, expr_arena)
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<_>>();
+                    let subset = Arc::new(
+                        aexpr_to_root_names(*predicate, expr_arena)
+                            .iter()
+                            .map(|s| s.to_string())
+                            .collect::<Vec<_>>(),
+                    );
 
-                    let function = move |df: DataFrame| df.drop_nulls(Some(&subset));
-
-                    let options = LogicalPlanUdfOptions {
-                        // does not matter as this runs after pushdowns have occurred
-                        predicate_pd: true,
-                        projection_pd: true,
-                        fmt_str: "DROP NULLS",
-                    };
-
-                    Some(ALogicalPlan::Udf {
+                    Some(ALogicalPlan::MapFunction {
                         input: *input,
-                        function: Arc::new(function),
-                        options,
-                        schema: None,
+                        function: FunctionNode::DropNulls { subset },
                     })
                 } else {
                     None
@@ -105,6 +95,8 @@ impl OptimizationRule for ReplaceDropNulls {
 
 #[cfg(test)]
 mod test {
+    use polars_core::prelude::*;
+
     use super::*;
     use crate::prelude::stack_opt::OptimizationRule;
     use crate::tests::fruits_cars;
@@ -123,7 +115,7 @@ mod test {
         ] {
             let lp = df.clone().lazy().drop_nulls(subset).logical_plan;
             let out = optimize_lp(lp, &mut rules);
-            assert!(matches!(out, LogicalPlan::Udf { .. }));
+            assert!(matches!(out, LogicalPlan::MapFunction { .. }));
         }
         Ok(())
     }

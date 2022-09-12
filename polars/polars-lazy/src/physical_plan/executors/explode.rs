@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use polars_core::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;
@@ -17,6 +19,6 @@ impl Executor for ExplodeExec {
             }
         }
         let df = self.input.execute(state)?;
-        df.explode(&self.columns)
+        state.record(|| df.explode(&self.columns), Cow::Borrowed("explode()"))
     }
 }

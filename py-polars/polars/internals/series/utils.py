@@ -6,7 +6,7 @@ from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 import polars.internals as pli
-from polars.datatypes import DataType, dtype_to_ffiname
+from polars.datatypes import PolarsDataType, dtype_to_ffiname
 
 if TYPE_CHECKING:
     from polars.polars import PySeries
@@ -126,7 +126,7 @@ def expr_dispatch(cls: type[T]) -> type[T]:
 
 
 def get_ffi_func(
-    name: str, dtype: type[DataType], obj: PySeries
+    name: str, dtype: PolarsDataType, obj: PySeries
 ) -> Callable[..., Any] | None:
     """
     Dynamically obtain the proper ffi function/ method.

@@ -1,3 +1,4 @@
+use std::fmt::Formatter;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -7,6 +8,36 @@ use crate::logical_plan::iterator::{ArenaExprIter, ArenaLpIter};
 use crate::logical_plan::Context;
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
+
+// write some thing
+pub(crate) fn column_delimited(mut s: String, items: &[String]) -> String {
+    s.push('(');
+    for c in items {
+        s.push_str(c);
+        s.push_str(", ");
+    }
+    s.pop();
+    s.pop();
+    s.push(')');
+    s
+}
+
+// write some thing
+pub(crate) fn fmt_column_delimited<S: AsRef<str>>(
+    f: &mut Formatter<'_>,
+    items: &[S],
+    container_start: &str,
+    container_end: &str,
+) -> std::fmt::Result {
+    write!(f, "{}", container_start)?;
+    for (i, c) in items.iter().enumerate() {
+        write!(f, "{}", c.as_ref())?;
+        if i != (items.len() - 1) {
+            write!(f, ", ")?;
+        }
+    }
+    write!(f, "{}", container_end)
+}
 
 pub(crate) trait PushNode {
     fn push_node(&mut self, value: Node);
@@ -212,15 +243,20 @@ pub(crate) fn aexpr_to_root_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Node>
 /// In some cases we can have multiple roots.
 /// For instance in predicate pushdown the predicates are combined by their root column
 /// When combined they may be a binary expression with the same root columns
-pub(crate) fn rename_aexpr_root_names(node: Node, arena: &mut Arena<AExpr>, new_name: Arc<str>) {
-    let roots = aexpr_to_root_nodes(node, arena);
-
-    for node in roots {
-        arena.replace_with(node, |ae| match ae {
-            AExpr::Column(_) => AExpr::Column(new_name.clone()),
-            _ => panic!("should be only a column"),
-        });
-    }
+pub(crate) fn rename_aexpr_root_names(
+    node: Node,
+    arena: &mut Arena<AExpr>,
+    new_name: Arc<str>,
+) -> Node {
+    // we convert to expression as we cannot easily copy the aexpr.
+    let mut new_expr = node_to_expr(node, arena);
+    new_expr.mutate().apply(|e| {
+        if let Expr::Column(name) = e {
+            *name = new_name.clone()
+        }
+        true
+    });
+    to_aexpr(new_expr, arena)
 }
 
 /// Rename the root of the expression from `current` to `new` and assign to new node in arena.

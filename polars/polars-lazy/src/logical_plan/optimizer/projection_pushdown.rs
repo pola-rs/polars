@@ -1048,19 +1048,15 @@ impl ProjectionPushDown {
                     schema: Arc::new(new_schema),
                 })
             }
-            Udf {
+            MapFunction {
                 input,
-                function,
-                options,
-                schema,
+                ref function,
             } => {
-                let lp = Udf {
+                let lp = MapFunction {
                     input,
-                    function,
-                    options,
-                    schema,
+                    function: function.clone(),
                 };
-                if options.projection_pd {
+                if function.allow_projection_pd() {
                     let acc_projection_len = acc_projections.len();
                     let local_projections = self.pushdown_and_assign_check_schema(
                         input,

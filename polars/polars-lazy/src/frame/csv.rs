@@ -215,6 +215,7 @@ impl<'a> LazyCsvReader<'a> {
             // we set it to None and modify them after the schema is updated
             None,
             &mut skip_rows,
+            self.skip_rows_after_header,
             self.comment_char,
             self.quote_char,
             self.eol_char,

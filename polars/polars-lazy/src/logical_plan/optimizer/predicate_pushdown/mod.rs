@@ -447,6 +447,7 @@ impl PredicatePushDown {
 
                     // predicate should not have an aggregation or window function as that would
                     // be influenced by join
+                    #[allow(clippy::suspicious_else_formatting)]
                     if !predicate_is_pushdown_boundary(predicate, expr_arena) {
                         // no else if. predicate can be in both tables.
                         if check_input_node(predicate, &schema_left, expr_arena) {
@@ -459,8 +460,11 @@ impl PredicatePushDown {
                             );
                             filter_left = true;
                         }
-
-                        if check_input_node(predicate, &schema_right, expr_arena)  {
+                        // this is `else if` because if the predicate is in the left hand side
+                        // the right hand side should be renamed with the suffix.
+                        // in that case we should not push down as the user wants to filter on `x`
+                        // not on `x_rhs`.
+                        else if check_input_node(predicate, &schema_right, expr_arena)  {
                             let name = get_insertion_name(expr_arena, predicate, &schema_right);
                             insert_and_combine_predicate(
                                 &mut pushdown_right,
@@ -472,7 +476,7 @@ impl PredicatePushDown {
                         }
                     }
                     match (filter_left, filter_right, &options.how) {
-                        // if not pushed down on of the tables we have to do it locally.
+                        // if not pushed down on one of the tables we have to do it locally.
                         (false, false, _) |
                         // if left join and predicate only available in right table,
                         // 'we should not filter right, because that would lead to
@@ -501,13 +505,8 @@ impl PredicatePushDown {
                 };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
-
-            lp @ Udf { .. } => {
-                if let ALogicalPlan::Udf {
-                    options: LogicalPlanUdfOptions {
-                        predicate_pd: true, ..
-                    }, ..
-                } = lp
+            MapFunction { ref function, .. } => {
+                if function.allow_predicate_pd()
                 {
                     self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
                 } else {

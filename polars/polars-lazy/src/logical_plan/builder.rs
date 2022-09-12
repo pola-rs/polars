@@ -19,6 +19,7 @@ use polars_io::{
     csv::NullValues,
 };
 
+use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::projection::rewrite_projections;
 use crate::logical_plan::schema::det_join_schema;
 use crate::prelude::*;
@@ -186,6 +187,7 @@ impl LogicalPlanBuilder {
                 has_header,
                 schema_overwrite,
                 &mut skip_rows,
+                skip_rows_after_header,
                 comment_char,
                 quote_char,
                 eol_char,
@@ -553,17 +555,17 @@ impl LogicalPlanBuilder {
     where
         F: DataFrameUdf + 'static,
     {
-        let options = LogicalPlanUdfOptions {
-            predicate_pd: optimizations.predicate_pushdown,
-            projection_pd: optimizations.projection_pushdown,
-            fmt_str: name,
-        };
+        let function = Arc::new(function);
 
-        LogicalPlan::Udf {
+        LogicalPlan::MapFunction {
             input: Box::new(self.0),
-            function: Arc::new(function),
-            options,
-            schema,
+            function: FunctionNode::Opaque {
+                function,
+                schema,
+                predicate_pd: optimizations.predicate_pushdown,
+                projection_pd: optimizations.projection_pushdown,
+                fmt_str: name,
+            },
         }
         .into()
     }

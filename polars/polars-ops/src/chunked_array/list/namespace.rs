@@ -224,9 +224,17 @@ pub trait ListNameSpaceImpl: AsList {
             match s.dtype() {
                 DataType::List(inner_type) => {
                     inner_super_type = try_get_supertype(&inner_super_type, inner_type)?;
+                    #[cfg(feature = "dtype-categorical")]
+                    if let DataType::Categorical(_) = &inner_super_type {
+                        inner_super_type = merge_dtypes(&inner_super_type, inner_type)?;
+                    }
                 }
                 dt => {
                     inner_super_type = try_get_supertype(&inner_super_type, dt)?;
+                    #[cfg(feature = "dtype-categorical")]
+                    if let DataType::Categorical(_) = &inner_super_type {
+                        inner_super_type = merge_dtypes(&inner_super_type, dt)?;
+                    }
                 }
             }
         }
@@ -238,7 +246,7 @@ pub trait ListNameSpaceImpl: AsList {
 
         // broadcasting path in case all unit length
         // this path will not expand the series, so saves memory
-        if other.iter().all(|s| s.len() == 1) && ca.len() != 1 {
+        let out = if other.iter().all(|s| s.len() == 1) && ca.len() != 1 {
             cast_rhs(&mut other, &inner_super_type, dtype, length, false)?;
             let to_append = other
                 .iter()
@@ -283,7 +291,7 @@ pub trait ListNameSpaceImpl: AsList {
                 });
                 builder.append_opt_series(opt_s.as_ref())
             });
-            Ok(builder.finish())
+            builder.finish()
         } else {
             // normal path which may contain same length list or unit length lists
             cast_rhs(&mut other, &inner_super_type, dtype, length, true)?;
@@ -345,8 +353,9 @@ pub trait ListNameSpaceImpl: AsList {
                 }
                 builder.append_series(&acc);
             }
-            Ok(builder.finish())
-        }
+            builder.finish()
+        };
+        Ok(out)
     }
 }
 

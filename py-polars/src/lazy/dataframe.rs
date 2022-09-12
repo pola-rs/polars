@@ -347,7 +347,6 @@ impl PyLazyFrame {
         predicate_pushdown: bool,
         projection_pushdown: bool,
         simplify_expr: bool,
-        string_cache: bool,
         slice_pushdown: bool,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
@@ -355,7 +354,6 @@ impl PyLazyFrame {
             .with_type_coercion(type_coercion)
             .with_predicate_pushdown(predicate_pushdown)
             .with_simplify_expr(simplify_expr)
-            .with_string_cache(string_cache)
             .with_slice_pushdown(slice_pushdown)
             .with_projection_pushdown(projection_pushdown);
         ldf.into()
@@ -386,6 +384,16 @@ impl PyLazyFrame {
     pub fn cache(&self) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         ldf.cache().into()
+    }
+
+    pub fn profile(&self, py: Python) -> PyResult<(PyDataFrame, PyDataFrame)> {
+        // if we don't allow threads and we have udfs trying to acquire the gil from different
+        // threads we deadlock.
+        let (df, time_df) = py.allow_threads(|| {
+            let ldf = self.ldf.clone();
+            ldf.profile().map_err(PyPolarsErr::from)
+        })?;
+        Ok((df.into(), time_df.into()))
     }
 
     pub fn collect(&self, py: Python) -> PyResult<PyDataFrame> {

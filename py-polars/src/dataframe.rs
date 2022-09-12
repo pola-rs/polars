@@ -18,7 +18,6 @@ use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use polars_core::utils::try_get_supertype;
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
-use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
 
@@ -455,7 +454,7 @@ impl PyDataFrame {
         float_precision: Option<usize>,
         null_value: Option<String>,
     ) -> PyResult<()> {
-        let null = null_value.unwrap_or(String::new());
+        let null = null_value.unwrap_or_default();
 
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
@@ -786,21 +785,6 @@ impl PyDataFrame {
         format!("{:?}", self.df)
     }
 
-    pub fn join(
-        &self,
-        other: &PyDataFrame,
-        left_on: Vec<&str>,
-        right_on: Vec<&str>,
-        how: Wrap<JoinType>,
-        suffix: String,
-    ) -> PyResult<Self> {
-        let df = self
-            .df
-            .join(&other.df, left_on, right_on, how.0, Some(suffix))
-            .map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
-    }
-
     pub fn get_columns(&self) -> Vec<PySeries> {
         let cols = self.df.get_columns().clone();
         to_pyseries_collection(cols)
@@ -817,12 +801,6 @@ impl PyDataFrame {
             .set_column_names(&names)
             .map_err(PyPolarsErr::from)?;
         Ok(())
-    }
-
-    pub fn with_column(&mut self, s: PySeries) -> PyResult<Self> {
-        let mut df = self.df.clone();
-        df.with_column(s.series).map_err(PyPolarsErr::from)?;
-        Ok(df.into())
     }
 
     /// Get datatypes
@@ -918,16 +896,6 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn filter(&self, mask: &PySeries) -> PyResult<Self> {
-        let filter_series = &mask.series;
-        if let Ok(ca) = filter_series.bool() {
-            let df = self.df.filter(ca).map_err(PyPolarsErr::from)?;
-            Ok(PyDataFrame::new(df))
-        } else {
-            Err(PyRuntimeError::new_err("Expected a boolean mask"))
-        }
-    }
-
     pub fn take(&self, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
         let indices = indices.0;
         let indices = IdxCa::from_vec("", indices);
@@ -959,11 +927,6 @@ impl PyDataFrame {
         self.df
             .replace(column, new_col.series)
             .map_err(PyPolarsErr::from)?;
-        Ok(())
-    }
-
-    pub fn rename(&mut self, column: &str, new_col: &str) -> PyResult<()> {
-        self.df.rename(column, new_col).map_err(PyPolarsErr::from)?;
         Ok(())
     }
 

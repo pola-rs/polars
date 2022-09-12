@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use bitflags::bitflags;
 use parking_lot::Mutex;
 use polars_core::frame::groupby::GroupsProxy;
@@ -6,6 +8,7 @@ use polars_core::prelude::*;
 
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use super::file_cache::FileCache;
+use crate::physical_plan::node_timer::NodeTimer;
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use crate::prelude::file_caching::FileFingerPrint;
 
@@ -58,9 +61,36 @@ pub struct ExecutionState {
     pub(super) branch_idx: usize,
     pub(super) flags: StateFlags,
     pub(super) ext_contexts: Arc<Vec<DataFrame>>,
+    node_timer: Option<NodeTimer>,
 }
 
 impl ExecutionState {
+    /// Toggle this to measure execution times.
+    pub(crate) fn time_nodes(&mut self) {
+        self.node_timer = Some(NodeTimer::new())
+    }
+    pub(super) fn has_node_timer(&self) -> bool {
+        self.node_timer.is_some()
+    }
+
+    pub(crate) fn finish_timer(self) -> Result<DataFrame> {
+        self.node_timer.unwrap().finish()
+    }
+
+    pub(super) fn record<T, F: FnOnce() -> T>(&self, func: F, name: Cow<'static, str>) -> T {
+        match &self.node_timer {
+            None => func(),
+            Some(timer) => {
+                let start = std::time::Instant::now();
+                let out = func();
+                let end = std::time::Instant::now();
+
+                timer.store(start, end, name.as_ref().to_string());
+                out
+            }
+        }
+    }
+
     /// Partially clones and partially clears state
     pub(super) fn split(&self) -> Self {
         Self {
@@ -73,6 +103,23 @@ impl ExecutionState {
             branch_idx: self.branch_idx,
             flags: self.flags,
             ext_contexts: self.ext_contexts.clone(),
+            node_timer: self.node_timer.clone(),
+        }
+    }
+
+    /// clones and partially clears state
+    pub(super) fn clone(&self) -> Self {
+        Self {
+            df_cache: self.df_cache.clone(),
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            file_cache: self.file_cache.clone(),
+            schema_cache: self.schema_cache.clone(),
+            group_tuples: self.group_tuples.clone(),
+            join_tuples: self.join_tuples.clone(),
+            branch_idx: self.branch_idx,
+            flags: self.flags,
+            ext_contexts: self.ext_contexts.clone(),
+            node_timer: self.node_timer.clone(),
         }
     }
 
@@ -92,6 +139,7 @@ impl ExecutionState {
             branch_idx: 0,
             flags: StateFlags::init(),
             ext_contexts: Default::default(),
+            node_timer: None,
         }
     }
 
@@ -102,15 +150,16 @@ impl ExecutionState {
             flags |= StateFlags::VERBOSE;
         }
         Self {
-            df_cache: Arc::new(Mutex::new(PlHashMap::default())),
+            df_cache: Default::default(),
             schema_cache: Default::default(),
             #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
             file_cache: FileCache::new(None),
-            group_tuples: Arc::new(Mutex::new(PlHashMap::default())),
-            join_tuples: Arc::new(Mutex::new(PlHashMap::default())),
+            group_tuples: Default::default(),
+            join_tuples: Default::default(),
             branch_idx: 0,
             flags: StateFlags::init(),
             ext_contexts: Default::default(),
+            node_timer: None,
         }
     }
     pub(crate) fn set_schema(&mut self, schema: SchemaRef) {
