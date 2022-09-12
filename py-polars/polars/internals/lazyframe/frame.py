@@ -2045,31 +2045,143 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         return self._from_pyldf(self._ldf.fill_nan(fill_value._pyexpr))
 
     def std(self: LDF, ddof: int = 1) -> LDF:
-        """Aggregate the columns in the DataFrame to their standard deviation value."""
+        """
+        Aggregate the columns in the DataFrame to their standard deviation value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
+        >>> df.std().collect()
+        shape: (1, 2)
+        ┌──────────┬─────┐
+        │ a        ┆ b   │
+        │ ---      ┆ --- │
+        │ f64      ┆ f64 │
+        ╞══════════╪═════╡
+        │ 1.290994 ┆ 0.5 │
+        └──────────┴─────┘
+
+        """
         return self._from_pyldf(self._ldf.std(ddof))
 
     def var(self: LDF, ddof: int = 1) -> LDF:
-        """Aggregate the columns in the DataFrame to their variance value."""
+        """
+        Aggregate the columns in the DataFrame to their variance value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
+        >>> df.var().collect()
+        shape: (1, 2)
+        ┌──────────┬──────┐
+        │ a        ┆ b    │
+        │ ---      ┆ ---  │
+        │ f64      ┆ f64  │
+        ╞══════════╪══════╡
+        │ 1.666667 ┆ 0.25 │
+        └──────────┴──────┘
+
+        """
         return self._from_pyldf(self._ldf.var(ddof))
 
     def max(self: LDF) -> LDF:
-        """Aggregate the columns in the DataFrame to their maximum value."""
+        """
+        Aggregate the columns in the DataFrame to their maximum value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
+        >>> df.max().collect()
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 4   ┆ 2   │
+        └─────┴─────┘
+
+        """
         return self._from_pyldf(self._ldf.max())
 
     def min(self: LDF) -> LDF:
-        """Aggregate the columns in the DataFrame to their minimum value."""
+        """
+        Aggregate the columns in the DataFrame to their minimum value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
+        >>> df.min().collect()
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 1   │
+        └─────┴─────┘
+
+        """
         return self._from_pyldf(self._ldf.min())
 
     def sum(self: LDF) -> LDF:
-        """Aggregate the columns in the DataFrame to their sum value."""
+        """
+        Aggregate the columns in the DataFrame to their sum value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
+        >>> df.sum().collect()
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 10  ┆ 5   │
+        └─────┴─────┘
+
+        """
         return self._from_pyldf(self._ldf.sum())
 
     def mean(self: LDF) -> LDF:
-        """Aggregate the columns in the DataFrame to their mean value."""
+        """
+        Aggregate the columns in the DataFrame to their mean value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
+        >>> df.mean().collect()
+        shape: (1, 2)
+        ┌─────┬──────┐
+        │ a   ┆ b    │
+        │ --- ┆ ---  │
+        │ f64 ┆ f64  │
+        ╞═════╪══════╡
+        │ 2.5 ┆ 1.25 │
+        └─────┴──────┘
+
+        """
         return self._from_pyldf(self._ldf.mean())
 
     def median(self: LDF) -> LDF:
-        """Aggregate the columns in the DataFrame to their median value."""
+        """
+        Aggregate the columns in the DataFrame to their median value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
+        >>> df.median().collect()
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ f64 ┆ f64 │
+        ╞═════╪═════╡
+        │ 2.5 ┆ 1.0 │
+        └─────┴─────┘
+
+        """
         return self._from_pyldf(self._ldf.median())
 
     def quantile(
@@ -2085,6 +2197,19 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
             Interpolation method.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
+        >>> df.quantile(0.7).collect()
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ f64 ┆ f64 │
+        ╞═════╪═════╡
+        │ 3.0 ┆ 1.0 │
+        └─────┴─────┘
+
         """
         return self._from_pyldf(self._ldf.quantile(quantile, interpolation))
 
@@ -2099,54 +2224,33 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "letters": ["c", "c", "a", "c", "a", "b"],
-        ...         "nrs": [[1, 2], [1, 3], [4, 3], [5, 5, 5], [6], [2, 1, 2]],
+        ...         "letters": ["a", "a", "b", "c"],
+        ...         "numbers": [[1], [2, 3], [4, 5], [6, 7, 8]],
         ...     }
-        ... )
-        >>> df
-        shape: (6, 2)
-        ┌─────────┬───────────┐
-        │ letters ┆ nrs       │
-        │ ---     ┆ ---       │
-        │ str     ┆ list[i64] │
-        ╞═════════╪═══════════╡
-        │ c       ┆ [1, 2]    │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ c       ┆ [1, 3]    │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ a       ┆ [4, 3]    │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ c       ┆ [5, 5, 5] │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ a       ┆ [6]       │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ b       ┆ [2, 1, 2] │
-        └─────────┴───────────┘
-        >>> df.explode("nrs")
-        shape: (13, 2)
-        ┌─────────┬─────┐
-        │ letters ┆ nrs │
-        │ ---     ┆ --- │
-        │ str     ┆ i64 │
-        ╞═════════╪═════╡
-        │ c       ┆ 1   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c       ┆ 2   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c       ┆ 1   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c       ┆ 3   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ ...     ┆ ... │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ a       ┆ 6   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b       ┆ 2   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b       ┆ 1   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b       ┆ 2   │
-        └─────────┴─────┘
+        ... ).lazy()
+        >>> df.explode("numbers").collect()
+        shape: (8, 2)
+        ┌─────────┬─────────┐
+        │ letters ┆ numbers │
+        │ ---     ┆ ---     │
+        │ str     ┆ i64     │
+        ╞═════════╪═════════╡
+        │ a       ┆ 1       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ a       ┆ 2       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ a       ┆ 3       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ b       ┆ 4       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ b       ┆ 5       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ c       ┆ 6       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ c       ┆ 7       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ c       ┆ 8       │
+        └─────────┴─────────┘
 
         """
         columns = pli.selection_to_pyexpr_list(columns)
