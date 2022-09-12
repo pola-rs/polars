@@ -19,7 +19,7 @@ jobs:
   ubuntu:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         python-version: ['3.7', '3.10']
 
@@ -82,6 +82,7 @@ jobs:
   windows:
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ['3.10']
 
