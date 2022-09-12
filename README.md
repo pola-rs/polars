@@ -105,6 +105,9 @@ Install the latest polars version with:
 # Install Polars only.
 $ pip3 install -U 'polars'
 
+# Install Polars with all optional dependencies.
+$ pip3 install -U 'polars[all]'
+
 # Install Polars and numpy.
 $ pip3 install -U 'polars[numpy]'
 
