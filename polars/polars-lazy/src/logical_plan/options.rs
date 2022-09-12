@@ -8,7 +8,7 @@ use crate::prelude::*;
 
 pub type FileCount = u32;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvParserOptions {
     pub(crate) delimiter: u8,
@@ -30,7 +30,7 @@ pub struct CsvParserOptions {
     pub(crate) file_counter: FileCount,
 }
 #[cfg(feature = "parquet")]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetOptions {
     pub(crate) n_rows: Option<usize>,
@@ -54,7 +54,7 @@ pub struct IpcScanOptions {
     pub memmap: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptionsInner {
     pub(crate) n_rows: Option<usize>,
@@ -80,7 +80,7 @@ impl From<IpcScanOptions> for IpcScanOptionsInner {
     }
 }
 
-#[derive(Clone, Debug, Copy, Default)]
+#[derive(Clone, Debug, Copy, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
     pub(crate) slice: bool,
@@ -88,7 +88,7 @@ pub struct UnionOptions {
     pub(crate) slice_len: IdxSize,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GroupbyOptions {
     pub(crate) dynamic: Option<DynamicGroupOptions>,
@@ -96,7 +96,7 @@ pub struct GroupbyOptions {
     pub(crate) slice: Option<(i64, usize)>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DistinctOptions {
     pub(crate) subset: Option<Arc<Vec<String>>>,

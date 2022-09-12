@@ -1,0 +1,364 @@
+//! Common Subplan Elimination
+
+use std::hash::{BuildHasher, Hash, Hasher};
+
+use polars_core::prelude::*;
+
+use crate::prelude::*;
+
+// nodes into an alogicalplan.
+type Trail = Vec<Node>;
+
+pub(crate) fn collect_trails(
+    root: Node,
+    lp_arena: &Arena<ALogicalPlan>,
+    // every branch gets its own trail
+    trails: &mut Vec<Trail>,
+    branch: usize,
+    // if trails should be collected
+    collect: bool,
+) {
+    if collect {
+        trails[branch].push(root)
+    }
+
+    use ALogicalPlan::*;
+    match lp_arena.get(root) {
+        // we start collecting from first encountered join
+        // later we must unions as well
+        Join {
+            input_left,
+            input_right,
+            ..
+        } => {
+            trails.resize_with(branch + 2, Vec::new);
+            // make sure that the new branch has the same trail history
+            let new_trail = trails[branch].clone();
+            trails[branch + 1] = new_trail;
+
+            collect_trails(*input_left, lp_arena, trails, branch, true);
+            collect_trails(*input_right, lp_arena, trails, branch + 1, true);
+        }
+        Union { inputs, .. } => {
+            // first init trails
+            trails.resize_with(branch + inputs.len() + 1, Vec::new);
+            for i in 1..inputs.len() {
+                // make sure that the new branch has the same trail history
+                let new_trail = trails[branch].clone();
+                trails[branch + i] = new_trail;
+            }
+
+            // then collect the trails
+            for (i, input) in inputs.iter().enumerate() {
+                collect_trails(*input, lp_arena, trails, branch + i, true)
+            }
+        }
+        ExtContext { .. } => {
+            // block for now.
+        }
+        lp => {
+            // other nodes have only a single
+            let nodes = &mut [None];
+            lp.copy_inputs(nodes);
+            if let Some(input) = nodes[0] {
+                collect_trails(input, lp_arena, trails, branch, collect)
+            }
+        }
+    }
+}
+
+fn expr_nodes_equal(a: &[Node], b: &[Node], expr_arena: &Arena<AExpr>) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .zip(b)
+            .all(|(a, b)| node_to_expr(*a, expr_arena) == node_to_expr(*b, expr_arena))
+}
+
+fn predicate_equal(a: Option<Node>, b: Option<Node>, expr_arena: &Arena<AExpr>) -> bool {
+    match (a, b) {
+        (Some(l), Some(r)) => node_to_expr(l, expr_arena) == node_to_expr(r, expr_arena),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) -> bool {
+    use ALogicalPlan::*;
+    match (a, b) {
+        (
+            DataFrameScan {
+                df: left_df,
+                projection: None,
+                selection: None,
+                ..
+            },
+            DataFrameScan {
+                df: right_df,
+                projection: None,
+                selection: None,
+                ..
+            },
+        ) => Arc::ptr_eq(left_df, right_df),
+        #[cfg(feature = "parquet")]
+        (
+            ParquetScan {
+                path: path_left,
+                predicate: predicate_l,
+                options: options_l,
+                ..
+            },
+            ParquetScan {
+                path: path_right,
+                predicate: predicate_r,
+                options: options_r,
+                ..
+            },
+        ) => {
+            path_left == path_right
+                && options_l == options_r
+                && predicate_equal(*predicate_l, *predicate_r, expr_arena)
+        }
+        #[cfg(feature = "ipc")]
+        (
+            IpcScan {
+                path: path_left,
+                predicate: predicate_l,
+                options: options_l,
+                ..
+            },
+            IpcScan {
+                path: path_right,
+                predicate: predicate_r,
+                options: options_r,
+                ..
+            },
+        ) => {
+            path_left == path_right
+                && options_l == options_r
+                && predicate_equal(*predicate_l, *predicate_r, expr_arena)
+        }
+        #[cfg(feature = "csv-file")]
+        (
+            CsvScan {
+                path: path_left,
+                predicate: predicate_l,
+                options: options_l,
+                ..
+            },
+            CsvScan {
+                path: path_right,
+                predicate: predicate_r,
+                options: options_r,
+                ..
+            },
+        ) => {
+            path_left == path_right
+                && options_l == options_r
+                && predicate_equal(*predicate_l, *predicate_r, expr_arena)
+        }
+        (Selection { predicate: l, .. }, Selection { predicate: r, .. }) => {
+            node_to_expr(*l, expr_arena) == node_to_expr(*r, expr_arena)
+        }
+        (Projection { expr: l, .. }, Projection { expr: r, .. })
+        | (HStack { exprs: l, .. }, HStack { exprs: r, .. }) => expr_nodes_equal(l, r, expr_arena),
+        (Melt { args: l, .. }, Melt { args: r, .. }) => Arc::ptr_eq(l, r),
+        (
+            Slice {
+                offset: offset_l,
+                len: len_l,
+                ..
+            },
+            Slice {
+                offset: offset_r,
+                len: len_r,
+                ..
+            },
+        ) => offset_l == offset_r && len_l == len_r,
+        (
+            Sort {
+                by_column: by_l,
+                args: args_l,
+                ..
+            },
+            Sort {
+                by_column: by_r,
+                args: args_r,
+                ..
+            },
+        ) => expr_nodes_equal(by_l, by_r, expr_arena) && args_l == args_r,
+        (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
+        (Distinct { options: l, .. }, Distinct { options: r, .. }) => l == r,
+        (MapFunction { function: l, .. }, MapFunction { function: r, .. }) => l == r,
+        (
+            Aggregate {
+                keys: keys_l,
+                aggs: agg_l,
+                apply: None,
+                maintain_order: maintain_order_l,
+                options: options_l,
+                ..
+            },
+            Aggregate {
+                keys: keys_r,
+                aggs: agg_r,
+                apply: None,
+                maintain_order: maintain_order_r,
+                options: options_r,
+                ..
+            },
+        ) => {
+            maintain_order_l == maintain_order_r
+                && options_l == options_r
+                && expr_nodes_equal(keys_l, keys_r, expr_arena)
+                && expr_nodes_equal(agg_l, agg_r, expr_arena)
+        }
+        #[cfg(feature = "python")]
+        (PythonScan { options: l }, PythonScan { options: r, .. }) => l == r,
+        (
+            Join {
+                left_on: left_on_l,
+                right_on: right_on_l,
+                options: options_l,
+                ..
+            },
+            Join {
+                left_on: left_on_r,
+                right_on: right_on_r,
+                options: options_r,
+                ..
+            },
+        ) => {
+            // the inputs should be checked by previous nodes
+            // as we iterate from leafs to roots
+            expr_nodes_equal(left_on_l, left_on_r, expr_arena)
+                && expr_nodes_equal(right_on_l, right_on_r, expr_arena)
+                && options_l == options_r
+        }
+        (
+            Union {
+                inputs: l,
+                options: options_l,
+            },
+            Union {
+                inputs: r,
+                options: options_r,
+            },
+        ) => {
+            // the inputs should be checked by previous nodes
+            // as we iterate from leafs to roots
+            options_l == options_r && l.len() == r.len()
+        }
+
+        _ => false,
+    }
+}
+
+fn longest_subgraph(
+    trail_a: &Trail,
+    trail_b: &Trail,
+    lp_arena: &Arena<ALogicalPlan>,
+    expr_arena: &Arena<AExpr>,
+) -> Option<(usize, Node, Node)> {
+    if trail_a.is_empty() || trail_b.is_empty() {
+        return None;
+    }
+    let mut prev_node_a = Node(0);
+    let mut prev_node_b = Node(0);
+    let mut is_equal = false;
+    let mut i = 0;
+
+    // iterates from the leafs upwards
+    for (node_a, node_b) in trail_a.iter().rev().zip(trail_b.iter().rev()) {
+        let a = lp_arena.get(*node_a);
+        let b = lp_arena.get(*node_b);
+
+        is_equal = lp_node_equal(a, b, expr_arena);
+
+        if !is_equal {
+            break;
+        }
+
+        prev_node_a = *node_a;
+        prev_node_b = *node_b;
+        i += 1;
+    }
+    if is_equal {
+        Some((i - 1, prev_node_a, prev_node_b))
+    } else {
+        None
+    }
+}
+
+pub(crate) fn elim_cmn_subplans(
+    root: Node,
+    lp_arena: &mut Arena<ALogicalPlan>,
+    expr_arena: &Arena<AExpr>,
+) -> (Node, bool) {
+    let mut trails = Vec::with_capacity(8);
+    collect_trails(root, lp_arena, &mut trails, 0, false);
+
+    // search from the leafs upwards and find the longest shared subplans
+    let mut longest_trails = vec![];
+
+    let mut equal_trails = vec![];
+    for i in 0..trails.len() {
+        equal_trails.clear();
+        let trail_i = &trails[i];
+
+        // we only look forwards, then we traverse all combinations
+        for trail_j in trails.iter().skip(i + 1) {
+            if let Some(res) = longest_subgraph(trail_i, trail_j, lp_arena, expr_arena) {
+                equal_trails.push(res)
+            }
+        }
+        // and only take the longest common sub plan as cache
+        // todo! experiment if setting all is faster
+        equal_trails.sort_by_key(|c| c.0);
+        if let Some(combination) = equal_trails.pop() {
+            longest_trails.push(combination);
+        }
+    }
+
+    let lp_cache = lp_arena as *const Arena<ALogicalPlan> as usize;
+
+    let hb = ahash::RandomState::new();
+    let mut changed = false;
+    // insert cache nodes
+    for combination in longest_trails.iter() {
+        let mut h = hb.build_hasher();
+        combination.hash(&mut h);
+        let hash = h.finish();
+        let mut cache_id = lp_cache.wrapping_add(hash as usize);
+        // this ensures we can still add branch ids without overflowing
+        // during the dot representation
+        if (usize::MAX - cache_id) < 2048 {
+            cache_id -= 2048
+        }
+
+        // reassign old nodes to another location as we are going to replace
+        // them with a cache node
+        let lp = lp_arena.get(combination.1).clone();
+        let node = lp_arena.add(lp);
+
+        let cache_lp = ALogicalPlan::Cache {
+            input: node,
+            id: cache_id,
+            // remove after one cache hit.
+            count: 1,
+        };
+        lp_arena.replace(combination.1, cache_lp.clone());
+
+        let lp = lp_arena.get(combination.2).clone();
+        let node = lp_arena.add(lp);
+        let cache_lp = ALogicalPlan::Cache {
+            input: node,
+            id: cache_id,
+            // remove after one cache hit.
+            count: 1,
+        };
+        lp_arena.replace(combination.2, cache_lp);
+        changed = true;
+    }
+
+    (root, changed)
+}

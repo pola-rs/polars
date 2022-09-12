@@ -348,6 +348,7 @@ impl PyLazyFrame {
         projection_pushdown: bool,
         simplify_expr: bool,
         slice_pushdown: bool,
+        cse: bool,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         let ldf = ldf
@@ -355,6 +356,7 @@ impl PyLazyFrame {
             .with_predicate_pushdown(predicate_pushdown)
             .with_simplify_expr(simplify_expr)
             .with_slice_pushdown(slice_pushdown)
+            .with_common_subplan_elimination(cse)
             .with_projection_pushdown(projection_pushdown);
         ldf.into()
     }

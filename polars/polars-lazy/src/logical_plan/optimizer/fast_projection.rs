@@ -14,7 +14,7 @@ use crate::prelude::*;
 /// It is important that this optimization is ran after projection pushdown.
 ///
 /// The schema reported after this optimization is also
-pub(crate) struct FastProjection {}
+pub(crate) struct FastProjectionAndCollapse {}
 
 fn impl_fast_projection(
     input: Node,
@@ -43,7 +43,7 @@ fn impl_fast_projection(
     }
 }
 
-impl OptimizationRule for FastProjection {
+impl OptimizationRule for FastProjectionAndCollapse {
     fn optimize_plan(
         &mut self,
         lp_arena: &mut Arena<ALogicalPlan>,
@@ -75,6 +75,28 @@ impl OptimizationRule for FastProjection {
                     Some(MapFunction {
                         input: *prev_input,
                         function: projection.clone(),
+                    })
+                } else {
+                    None
+                }
+            }
+            // if there are 2 subsequent caches, flatten them and only take the inner
+            Cache {
+                input,
+                count: outer_count,
+                ..
+            } => {
+                if let Cache {
+                    input: prev_input,
+                    id,
+                    count,
+                } = lp_arena.get(*input)
+                {
+                    Some(Cache {
+                        input: *prev_input,
+                        id: *id,
+                        // ensure the counts are updated
+                        count: count.saturating_add(*outer_count),
                     })
                 } else {
                     None

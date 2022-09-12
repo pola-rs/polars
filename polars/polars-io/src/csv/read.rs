@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum CsvEncoding {
     /// Utf8 encoding
@@ -9,7 +9,7 @@ pub enum CsvEncoding {
     LossyUtf8,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum NullValues {
     /// A single value that's used for all columns

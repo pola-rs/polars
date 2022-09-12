@@ -529,7 +529,7 @@ impl PredicatePushDown {
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
             // Pushed down passed these nodes
-            lp @ Cache { .. } |  lp @ Sort { .. } => {
+            lp @ Sort { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             }
             lp @ HStack {..} | lp @ Projection {..} | lp @ ExtContext {..} => {
@@ -538,6 +538,8 @@ impl PredicatePushDown {
             // NOT Pushed down passed these nodes
             // predicates influence slice sizes
             lp @ Slice { .. }
+            // caches will be different
+            | lp @ Cache { .. }
             // dont push down predicates. An aggregation needs all rows
             | lp @ Aggregate {..} => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)

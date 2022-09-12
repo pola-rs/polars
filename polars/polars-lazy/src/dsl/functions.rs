@@ -589,15 +589,7 @@ pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, rechunk: bool) -> Result<LazyFra
     lf.opt_state = opt_state;
 
     if rechunk {
-        Ok(lf.map(
-            |mut df: DataFrame| {
-                df.as_single_chunk_par();
-                Ok(df)
-            },
-            Some(AllowedOptimizations::default()),
-            None,
-            Some("RECHUNK"),
-        ))
+        Ok(lf.map_private(FunctionNode::Rechunk))
     } else {
         Ok(lf)
     }

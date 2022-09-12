@@ -29,6 +29,19 @@ pub enum FunctionNode {
     DropNulls {
         subset: Arc<Vec<String>>,
     },
+    Rechunk,
+}
+
+impl PartialEq for FunctionNode {
+    fn eq(&self, other: &Self) -> bool {
+        use FunctionNode::*;
+        match (self, other) {
+            (FastProjection { columns: l }, FastProjection { columns: r }) => l == r,
+            (DropNulls { subset: l }, DropNulls { subset: r }) => l == r,
+            (Rechunk, Rechunk) => true,
+            _ => false,
+        }
+    }
 }
 
 impl FunctionNode {
@@ -55,6 +68,7 @@ impl FunctionNode {
                 Ok(Cow::Owned(Arc::new(schema)))
             }
             DropNulls { .. } => Ok(Cow::Borrowed(input_schema)),
+            Rechunk => Ok(Cow::Borrowed(input_schema)),
         }
     }
 
@@ -62,7 +76,7 @@ impl FunctionNode {
         use FunctionNode::*;
         match self {
             Opaque { predicate_pd, .. } => *predicate_pd,
-            FastProjection { .. } | DropNulls { .. } => true,
+            FastProjection { .. } | DropNulls { .. } | Rechunk => true,
         }
     }
 
@@ -70,16 +84,20 @@ impl FunctionNode {
         use FunctionNode::*;
         match self {
             Opaque { projection_pd, .. } => *projection_pd,
-            FastProjection { .. } | DropNulls { .. } => true,
+            FastProjection { .. } | DropNulls { .. } | Rechunk => true,
         }
     }
 
-    pub(crate) fn evaluate(&self, df: DataFrame) -> Result<DataFrame> {
+    pub(crate) fn evaluate(&self, mut df: DataFrame) -> Result<DataFrame> {
         use FunctionNode::*;
         match self {
             Opaque { function, .. } => function.call_udf(df),
             FastProjection { columns } => df.select(columns.as_slice()),
             DropNulls { subset } => df.drop_nulls(Some(subset.as_slice())),
+            Rechunk => {
+                df.as_single_chunk_par();
+                Ok(df)
+            }
         }
     }
 }
@@ -99,6 +117,7 @@ impl Display for FunctionNode {
                 let subset = subset.as_slice();
                 fmt_column_delimited(f, subset, "[", "]")
             }
+            Rechunk => write!(f, "RECHUNK"),
         }
     }
 }

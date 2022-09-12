@@ -45,19 +45,20 @@ use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
 use crate::logical_plan::FETCH_ROWS;
 use crate::physical_plan::state::ExecutionState;
+use crate::prelude::cse::elim_cmn_subplans;
 use crate::prelude::delay_rechunk::DelayRechunk;
 use crate::prelude::drop_nulls::ReplaceDropNulls;
-use crate::prelude::fast_projection::FastProjection;
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-use crate::prelude::file_caching::collect_fingerprints;
+use crate::prelude::fast_projection::FastProjectionAndCollapse;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use crate::prelude::file_caching::find_column_union_and_fingerprints;
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+use crate::prelude::file_caching::{collect_fingerprints, decrement_caches};
 use crate::prelude::simplify_expr::SimplifyBooleanRule;
 use crate::prelude::slice_pushdown_lp::SlicePushDown;
 use crate::prelude::*;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JoinOptions {
     pub allow_parallel: bool,
@@ -126,6 +127,7 @@ pub struct OptState {
     pub file_caching: bool,
     pub aggregate_pushdown: bool,
     pub slice_pushdown: bool,
+    pub common_subplan_elimination: bool,
 }
 
 impl Default for OptState {
@@ -139,6 +141,7 @@ impl Default for OptState {
             // will be toggled by a scan operation such as csv scan or parquet scan
             file_caching: false,
             aggregate_pushdown: false,
+            common_subplan_elimination: true,
         }
     }
 }
@@ -185,6 +188,7 @@ impl LazyFrame {
             // will be toggled by a scan operation such as csv scan or parquet scan
             file_caching: false,
             aggregate_pushdown: false,
+            common_subplan_elimination: false,
         })
     }
 
@@ -209,6 +213,12 @@ impl LazyFrame {
     /// Toggle expression simplification optimization on or off
     pub fn with_simplify_expr(mut self, toggle: bool) -> Self {
         self.opt_state.simplify_expr = toggle;
+        self
+    }
+
+    /// Toggle common subplan elimination optimization on or off
+    pub fn with_common_subplan_elimination(mut self, toggle: bool) -> Self {
+        self.opt_state.common_subplan_elimination = toggle;
         self
     }
 
@@ -550,6 +560,7 @@ impl LazyFrame {
         let type_coercion = self.opt_state.type_coercion;
         let simplify_expr = self.opt_state.simplify_expr;
         let slice_pushdown = self.opt_state.slice_pushdown;
+        let cse = self.opt_state.common_subplan_elimination;
 
         #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
         let agg_scan_projection = self.opt_state.file_caching;
@@ -566,6 +577,13 @@ impl LazyFrame {
         let prev_schema = logical_plan.schema()?.into_owned();
 
         let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena)?;
+        let cse_changed = if cse {
+            let (lp, changed) = elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+            lp_top = lp;
+            changed
+        } else {
+            false
+        };
 
         // we do simplification
         if simplify_expr {
@@ -588,7 +606,7 @@ impl LazyFrame {
 
         // make sure its before slice pushdown.
         if projection_pushdown {
-            rules.push(Box::new(FastProjection {}));
+            rules.push(Box::new(FastProjectionAndCollapse {}));
         }
         rules.push(Box::new(DelayRechunk {}));
 
@@ -646,6 +664,12 @@ impl LazyFrame {
                 lp_arena,
                 lp_top,
             );
+
+            if cse_changed {
+                let mut scratch = vec![];
+                // this must run after cse
+                decrement_caches(lp_top, lp_arena, expr_arena, 0, &mut scratch);
+            }
         }
 
         rules.push(Box::new(ReplaceDropNulls {}));
@@ -1217,6 +1241,12 @@ impl LazyFrame {
                 name.unwrap_or("ANONYMOUS UDF"),
             )
             .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    pub(crate) fn map_private(self, function: FunctionNode) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().map_private(function).build();
         Self::from_logical_plan(lp, opt_state)
     }
 

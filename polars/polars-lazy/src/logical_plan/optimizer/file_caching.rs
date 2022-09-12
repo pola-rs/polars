@@ -430,3 +430,55 @@ impl OptimizationRule for FileCacher {
         }
     }
 }
+
+// ensure the file count counters are decremented with the cache counts
+pub(crate) fn decrement_caches(
+    root: Node,
+    lp_arena: &mut Arena<ALogicalPlan>,
+    expr_arena: &Arena<AExpr>,
+    acc_count: FileCount,
+    scratch: &mut Vec<Node>,
+) {
+    use ALogicalPlan::*;
+    match lp_arena.get_mut(root) {
+        #[cfg(feature = "parquet")]
+        ParquetScan { options, .. } => {
+            if acc_count >= options.file_counter {
+                options.file_counter = 1;
+            } else {
+                options.file_counter -= acc_count as FileCount
+            }
+        }
+        #[cfg(feature = "ipc")]
+        IpcScan { options, .. } => {
+            if acc_count >= options.file_counter {
+                options.file_counter = 1;
+            } else {
+                options.file_counter -= acc_count as FileCount
+            }
+        }
+        #[cfg(feature = "csv-file")]
+        CsvScan { options, .. } => {
+            if acc_count >= options.file_counter {
+                options.file_counter = 1;
+            } else {
+                options.file_counter -= acc_count as FileCount
+            }
+        }
+        Cache { count, input, .. } => {
+            // we use usize::MAX for an infinite cache.
+            let new_count = if *count != usize::MAX {
+                acc_count + *count as FileCount
+            } else {
+                acc_count
+            };
+            decrement_caches(*input, lp_arena, expr_arena, new_count, scratch)
+        }
+        lp => {
+            lp.copy_inputs(scratch);
+            while let Some(input) = scratch.pop() {
+                decrement_caches(input, lp_arena, expr_arena, acc_count, scratch)
+            }
+        }
+    }
+}

@@ -62,8 +62,8 @@ impl PushNode for [Option<Node>; 2] {
 impl PushNode for [Option<Node>; 1] {
     fn push_node(&mut self, value: Node) {
         match self {
-            [Some(_)] => self[0] = Some(value),
-            _ => panic!("cannot push more than 2 nodes"),
+            [None] => self[0] = Some(value),
+            _ => panic!("cannot push more than 1 node"),
         }
     }
 }

@@ -11,7 +11,7 @@ use crate::prelude::*;
 #[repr(transparent)]
 struct Wrap<T>(pub T);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DynamicGroupOptions {
     /// Time or index column
@@ -29,7 +29,7 @@ pub struct DynamicGroupOptions {
     pub closed_window: ClosedWindow,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RollingGroupOptions {
     /// Time or index column

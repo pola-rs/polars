@@ -440,12 +440,11 @@ impl LogicalPlan {
 
                 let pred = fmt_predicate(predicate.as_ref());
                 let fmt = format!(
-                    "PARQUET SCAN {};\nπ {}/{};\nσ {} [{:?}]",
+                    "PARQUET SCAN {};\nπ {}/{};\nσ {}",
                     path.to_string_lossy(),
                     n_columns,
                     total_columns,
                     pred,
-                    (branch, id)
                 );
                 let current_node = DotNode {
                     branch,
@@ -470,12 +469,11 @@ impl LogicalPlan {
 
                 let pred = fmt_predicate(predicate.as_ref());
                 let fmt = format!(
-                    "IPC SCAN {};\nπ {}/{};\nσ {} [{:?}]",
+                    "IPC SCAN {};\nπ {}/{};\nσ {}",
                     path.to_string_lossy(),
                     n_columns,
                     total_columns,
                     pred,
-                    (branch, id)
                 );
                 let current_node = DotNode {
                     branch,

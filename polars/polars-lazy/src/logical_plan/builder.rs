@@ -550,6 +550,14 @@ impl LogicalPlanBuilder {
         }
         .into()
     }
+    pub(crate) fn map_private(self, function: FunctionNode) -> Self {
+        LogicalPlan::MapFunction {
+            input: Box::new(self.0),
+            function,
+        }
+        .into()
+    }
+
     pub fn map<F>(
         self,
         function: F,

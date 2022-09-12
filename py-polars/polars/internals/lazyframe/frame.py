@@ -549,6 +549,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
+        common_subplan_elimination: bool = True,
     ) -> str:
         """Create a string representation of the optimized query plan."""
         ldf = self._ldf.optimization_toggle(
@@ -556,7 +557,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
-            slice_pushdown=slice_pushdown,
+            slice_pushdown,
+            common_subplan_elimination,
         )
 
         return ldf.describe_optimized_plan()
@@ -568,6 +570,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         output_path: str | None = None,
         raw_output: bool = False,
         figsize: tuple[float, float] = (16.0, 12.0),
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        common_subplan_elimination: bool = True,
     ) -> str | None:
         """
         Show a plot of the query plan. Note that you should have graphviz installed.
@@ -584,16 +592,37 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Return dot syntax. This cannot be combined with `show`
         figsize
             Passed to matplotlib if `show` == True.
+        type_coercion
+            Do type coercion optimization.
+        predicate_pushdown
+            Do predicate pushdown optimization.
+        projection_pushdown
+            Do projection pushdown optimization.
+        simplify_expression
+            Run simplify expressions optimization.
+        slice_pushdown
+            Slice pushdown optimization.
+        common_subplan_elimination
+            Will try to cache branching subplans that occur on self-joins or unions.
 
         """
         if raw_output:
             show = False
 
+        _ldf = self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+            common_subplan_elimination,
+        )
+
         if show and _in_notebook():
             try:
                 from IPython.display import SVG, display
 
-                dot = self._ldf.to_dot(optimized)
+                dot = _ldf.to_dot(optimized)
                 svg = subprocess.check_output(
                     ["dot", "-Nshape=box", "-Tsvg"], input=f"{dot}".encode()
                 )
@@ -611,7 +640,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 "Graphviz dot binary should be on your PATH and matplotlib should be"
                 " installed to show graph."
             ) from None
-        dot = self._ldf.to_dot(optimized)
+        dot = _ldf.to_dot(optimized)
         if raw_output:
             return dot
         with tempfile.TemporaryDirectory() as tmpdir_name:
@@ -759,6 +788,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         string_cache: bool = False,
         no_optimization: bool = False,
         slice_pushdown: bool = True,
+        common_subplan_elimination: bool = True,
     ) -> pli.DataFrame:
         """
         Collect into a DataFrame.
@@ -783,6 +813,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Turn off (certain) optimizations.
         slice_pushdown
             Slice pushdown optimization.
+        common_subplan_elimination
+            Will try to cache branching subplans that occur on self-joins or unions.
 
         Returns
         -------
@@ -792,6 +824,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
+            slice_pushdown = False
+            common_subplan_elimination = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -799,6 +833,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             projection_pushdown,
             simplify_expression,
             slice_pushdown,
+            common_subplan_elimination,
         )
         return pli.wrap_df(ldf.collect())
 
@@ -812,6 +847,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         string_cache: bool = False,
         no_optimization: bool = False,
         slice_pushdown: bool = True,
+        common_subplan_elimination: bool = False,
     ) -> pli.DataFrame:
         """
         Collect a small number of rows for debugging purposes.
@@ -843,6 +879,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Turn off optimizations.
         slice_pushdown
             Slice pushdown optimization
+        common_subplan_elimination
+            Will try to cache branching subplans that occur on self-joins or unions.
 
         Returns
         -------
@@ -853,6 +891,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             predicate_pushdown = False
             projection_pushdown = False
             slice_pushdown = False
+            common_subplan_elimination = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -860,6 +899,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             projection_pushdown,
             simplify_expression,
             slice_pushdown,
+            common_subplan_elimination,
         )
         return pli.wrap_df(ldf.fetch(n_rows))
 

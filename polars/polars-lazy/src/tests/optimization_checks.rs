@@ -1,11 +1,5 @@
 use super::*;
 
-fn get_arenas() -> (Arena<AExpr>, Arena<ALogicalPlan>) {
-    let expr_arena = Arena::with_capacity(16);
-    let lp_arena = Arena::with_capacity(8);
-    (expr_arena, lp_arena)
-}
-
 pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
