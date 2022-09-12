@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import typing
 from datetime import datetime, timedelta
+from decimal import Decimal
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, Iterator
 
@@ -210,6 +211,61 @@ def test_from_arrow() -> None:
     df = pl.from_arrow(empty_tbl)
     assert df.schema == expected_schema
     assert df.rows() == []
+
+
+def test_dataclasses_and_namedtuple() -> None:
+    from dataclasses import dataclass
+    from typing import NamedTuple
+
+    @dataclass
+    class TradeDC:
+        timestamp: datetime
+        ticker: str
+        price: Decimal
+        size: int | None = None
+
+    class TradeNT(NamedTuple):
+        timestamp: datetime
+        ticker: str
+        price: Decimal
+        size: int | None = None
+
+    raw_data = [
+        (datetime(2022, 9, 8, 14, 30, 45), "AAPL", Decimal("157.5"), 125),
+        (datetime(2022, 9, 9, 10, 15, 12), "FLSY", Decimal("10.0"), 1500),
+        (datetime(2022, 9, 7, 15, 30), "MU", Decimal("55.5"), 400),
+    ]
+
+    for TradeClass in (TradeDC, TradeNT):
+        trades = [TradeClass(*values) for values in raw_data]
+
+        for DF in (pl.DataFrame, pl.from_records):
+            df = DF(data=trades)  # type: ignore[operator]
+            assert df.schema == {
+                "timestamp": pl.Datetime("us"),
+                "ticker": pl.Utf8,
+                "price": pl.Float64,
+                "size": pl.Int64,
+            }
+            assert df.rows() == raw_data
+
+        # in conjunction with 'columns' override (rename/downcast)
+        df = pl.DataFrame(
+            data=trades,
+            columns=[  # type: ignore[arg-type]
+                ("ts", pl.Datetime("ms")),
+                ("tk", pl.Utf8),
+                ("pc", pl.Float32),
+                ("sz", pl.UInt16),
+            ],
+        )
+        assert df.schema == {
+            "ts": pl.Datetime("ms"),
+            "tk": pl.Utf8,
+            "pc": pl.Float32,
+            "sz": pl.UInt16,
+        }
+        assert df.rows() == raw_data
 
 
 def test_dataframe_membership_operator() -> None:
@@ -1979,7 +2035,7 @@ def test_list_of_list_of_struct() -> None:
     assert df.rows() == [([[{"a": 1}, {"a": 2}]],)]
     assert df.to_dicts() == expected
 
-    df = pl.from_arrow(pa_df)[:0]
+    df = pl.from_arrow(pa_df[:0])
     assert df.to_dicts() == []
 
 
