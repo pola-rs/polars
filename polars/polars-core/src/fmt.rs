@@ -478,13 +478,13 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
             // instead we write 12.0
             let s = format!("{:>width$.6}", v, width = width);
 
-            if s.ends_with('0') & !s.starts_with('0') {
+            if s.ends_with('0') {
                 let mut s = s.as_str();
                 let mut len = s.len() - 1;
 
                 while s.ends_with('0') {
-                    len -= 1;
                     s = &s[..len];
+                    len -= 1;
                 }
                 if s.ends_with('.') {
                     write!(f, "{}0", s)
@@ -916,10 +916,10 @@ Series: 'foo' [i32]
             r#"shape: (4,)
 Series: 'foo' [f64]
 [
-	0.000080
+	0.00008
 	0.000079
 	0.000085
-	8.0
+	8.00008
 ]"#,
             format!("{:?}", s)
         );
