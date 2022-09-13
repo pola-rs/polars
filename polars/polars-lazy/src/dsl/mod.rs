@@ -34,7 +34,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
-use polars_core::utils::{try_get_supertype, NoNull};
+use polars_core::utils::try_get_supertype;
 use polars_ops::prelude::SeriesOps;
 #[cfg(feature = "rolling_window")]
 use polars_time::series::SeriesOpsTime;
@@ -929,6 +929,15 @@ impl Expr {
             }),
         )
         .with_fmt("cummax")
+    }
+
+    /// Count the number of elements elements over an expanding window.
+    pub fn cumcount(self, reverse: bool, count_nulls: bool) -> Self {
+        self.apply(
+            move |s| Ok(s.cumcount(reverse, count_nulls)),
+            GetOutput::same_type(),
+        )
+        .with_fmt("cumcount")
     }
 
     /// Get the product aggregation of an expression
@@ -1990,27 +1999,6 @@ impl Expr {
         };
         self.apply(move |s| s.reshape(&dims), output_type)
             .with_fmt("reshape")
-    }
-
-    /// Cumulatively count values from 0 to len.
-    pub fn cumcount(self, reverse: bool) -> Self {
-        self.apply(
-            move |s| {
-                if reverse {
-                    let ca: NoNull<UInt32Chunked> = (0u32..s.len() as u32).rev().collect();
-                    let mut ca = ca.into_inner();
-                    ca.rename(s.name());
-                    Ok(ca.into_series())
-                } else {
-                    let ca: NoNull<UInt32Chunked> = (0u32..s.len() as u32).collect();
-                    let mut ca = ca.into_inner();
-                    ca.rename(s.name());
-                    Ok(ca.into_series())
-                }
-            },
-            GetOutput::from_type(IDX_DTYPE),
-        )
-        .with_fmt("cumcount")
     }
 
     #[cfg(feature = "random")]

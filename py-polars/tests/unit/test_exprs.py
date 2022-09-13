@@ -38,8 +38,8 @@ def test_cumcount() -> None:
         [pl.col("A").cumcount(reverse=False).alias("foo")]
     )
 
-    assert out["foo"][0].to_list() == [0, 1, 2, 3]
-    assert out["foo"][1].to_list() == [0, 1]
+    assert out["foo"][0].to_list() == [1, 2, 3, 4]
+    assert out["foo"][1].to_list() == [1, 2]
 
 
 def test_filter_where() -> None:

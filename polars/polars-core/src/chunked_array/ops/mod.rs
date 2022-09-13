@@ -115,6 +115,10 @@ pub trait ChunkCumAgg<T: PolarsDataType> {
     fn cumprod(&self, _reverse: bool) -> ChunkedArray<T> {
         panic!("operation cumprod not supported for this dtype")
     }
+    /// Get an array with the cumulative count at every element.
+    fn cumcount(&self, _reverse: bool, _count_nulls: bool) -> UInt32Chunked {
+        panic!("operation cumcount not supported for this dtype")
+    }
 }
 
 /// Traverse and collect every nth element

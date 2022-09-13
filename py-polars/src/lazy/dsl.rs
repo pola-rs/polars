@@ -493,15 +493,21 @@ impl PyExpr {
     pub fn cumsum(&self, reverse: bool) -> PyExpr {
         self.clone().inner.cumsum(reverse).into()
     }
+
     pub fn cummax(&self, reverse: bool) -> PyExpr {
         self.clone().inner.cummax(reverse).into()
     }
+
     pub fn cummin(&self, reverse: bool) -> PyExpr {
         self.clone().inner.cummin(reverse).into()
     }
 
     pub fn cumprod(&self, reverse: bool) -> PyExpr {
         self.clone().inner.cumprod(reverse).into()
+    }
+
+    pub fn cumcount(&self, reverse: bool, count_nulls: bool) -> Self {
+        self.inner.clone().cumcount(reverse, count_nulls).into()
     }
 
     pub fn product(&self) -> PyExpr {
@@ -1443,10 +1449,6 @@ impl PyExpr {
 
     pub fn reshape(&self, dims: Vec<i64>) -> Self {
         self.inner.clone().reshape(&dims).into()
-    }
-
-    pub fn cumcount(&self, reverse: bool) -> Self {
-        self.inner.clone().cumcount(reverse).into()
     }
 
     pub fn to_physical(&self) -> Self {

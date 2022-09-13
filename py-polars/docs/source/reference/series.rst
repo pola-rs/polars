@@ -119,6 +119,7 @@ Computations
     Series.cummin
     Series.cumprod
     Series.cumsum
+    Series.cumcount
     Series.cumulative_eval
     Series.diff
     Series.dot

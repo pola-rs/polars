@@ -1,7 +1,6 @@
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::concat_df;
 use polars_time::prelude::DateMethods;
 
 use super::*;
@@ -1886,7 +1885,7 @@ fn empty_df() -> PolarsResult<()> {
             col("A").shift_and_fill(1, lit(1)).alias("2"),
             col("A").shift_and_fill(-1, lit(1)).alias("3"),
             col("A").fill_null(lit(1)).alias("4"),
-            col("A").cumcount(false).alias("5"),
+            col("A").cumcount(false, true).alias("5"),
             col("A").diff(1, NullBehavior::Ignore).alias("6"),
             col("A").cummax(false).alias("7"),
             col("A").cummin(false).alias("8"),

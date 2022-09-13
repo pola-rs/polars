@@ -26,6 +26,31 @@ def test_cum_agg() -> None:
     verify_series_and_expr_api(s, pl.Series("a", [1, 2, 6, 12]), "cumprod")
 
 
+@pytest.mark.parametrize(
+    "series",
+    [
+        pl.Series([8, 6, None], dtype=pl.Float32),
+        pl.Series([8, 6, None], dtype=pl.Float64),
+        pl.Series([8, 6, None], dtype=pl.Int8),
+        pl.Series([8, 6, None], dtype=pl.Int16),
+        pl.Series([8, 6, None], dtype=pl.Int32),
+        pl.Series([8, 6, None], dtype=pl.Int64),
+        pl.Series([8, 6, None], dtype=pl.UInt8),
+        pl.Series([8, 6, None], dtype=pl.UInt16),
+        pl.Series([8, 6, None], dtype=pl.UInt32),
+        pl.Series([8, 6, None], dtype=pl.UInt64),
+        pl.Series(["a", "b", None], dtype=pl.Utf8),
+        pl.Series([True, False, None], dtype=pl.Boolean),
+        pl.Series([date(2020, 1, 1), date(2020, 1, 2), None], dtype=pl.Date),
+    ],
+)
+def test_cumcount(series: pl.Series) -> None:
+    assert series.cumcount(reverse=False, count_nulls=False).to_list() == [1, 2, 2]
+    assert series.cumcount(reverse=False, count_nulls=True).to_list() == [1, 2, 3]
+    assert series.cumcount(reverse=True, count_nulls=False).to_list() == [2, 1, 0]
+    assert series.cumcount(reverse=True, count_nulls=True).to_list() == [3, 2, 1]
+
+
 def test_init_inputs(monkeypatch: Any) -> None:
     for flag in [False, True]:
         monkeypatch.setattr(pl.internals.construction, "_PYARROW_AVAILABLE", flag)

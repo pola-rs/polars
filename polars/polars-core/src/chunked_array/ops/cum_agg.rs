@@ -135,6 +135,97 @@ where
         ca.rename(self.name());
         ca
     }
+
+    fn cumcount(&self, reverse: bool, count_nulls: bool) -> UInt32Chunked {
+        let mut initial_value = 0u32;
+        let mut chunked_array: UInt32Chunked = match reverse {
+            false => self
+                .into_iter()
+                .map(|x| {
+                    if x.is_some() || count_nulls {
+                        initial_value += 1;
+                    }
+                    Some(initial_value)
+                })
+                .collect_trusted(),
+            true => self
+                .into_iter()
+                .rev()
+                .map(|x| {
+                    if x.is_some() || count_nulls {
+                        initial_value += 1;
+                    }
+                    Some(initial_value)
+                })
+                .collect_reversed(),
+        };
+        chunked_array.rename(self.name());
+        chunked_array
+    }
+}
+
+impl ChunkCumAgg<BooleanType> for ChunkedArray<BooleanType>
+where
+    ChunkedArray<BooleanType>: FromIterator<Option<bool>>,
+{
+    fn cumcount(&self, reverse: bool, count_nulls: bool) -> UInt32Chunked {
+        let mut initial_value = 0u32;
+        let mut chunked_array: UInt32Chunked = match reverse {
+            false => self
+                .into_iter()
+                .map(|x| {
+                    if x.is_some() || count_nulls {
+                        initial_value += 1;
+                    }
+                    Some(initial_value)
+                })
+                .collect_trusted(),
+            true => self
+                .into_iter()
+                .rev()
+                .map(|x| {
+                    if x.is_some() || count_nulls {
+                        initial_value += 1;
+                    }
+                    Some(initial_value)
+                })
+                .collect_reversed(),
+        };
+        chunked_array.rename(self.name());
+        chunked_array
+    }
+}
+
+impl ChunkCumAgg<Utf8Type> for ChunkedArray<Utf8Type>
+where
+    ChunkedArray<Utf8Type>: FromIterator<Option<String>>,
+{
+    fn cumcount(&self, reverse: bool, count_nulls: bool) -> UInt32Chunked {
+        let mut initial_value = 0u32;
+        let mut chunked_array: UInt32Chunked = match reverse {
+            false => self
+                .into_iter()
+                .map(|x| {
+                    if x.is_some() || count_nulls {
+                        initial_value += 1;
+                    }
+                    Some(initial_value)
+                })
+                .collect_trusted(),
+            true => self
+                .into_iter()
+                .rev()
+                .map(|x| {
+                    if x.is_some() || count_nulls {
+                        initial_value += 1;
+                    }
+                    Some(initial_value)
+                })
+                .collect_reversed(),
+        };
+        chunked_array.rename(self.name());
+        chunked_array
+    }
 }
 
 #[cfg(test)]

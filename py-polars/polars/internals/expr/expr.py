@@ -1297,7 +1297,7 @@ class Expr:
         Parameters
         ----------
         reverse
-            Reverse the operation.
+            When ``True``, instead move from the tail to the head.
 
         Notes
         -----
@@ -1338,7 +1338,7 @@ class Expr:
         Parameters
         ----------
         reverse
-            Reverse the operation.
+            When ``True``, instead move from the tail to the head.
 
         Notes
         -----
@@ -1379,7 +1379,7 @@ class Expr:
         Parameters
         ----------
         reverse
-            Reverse the operation.
+            When ``True``, instead move from the tail to the head.
 
         Examples
         --------
@@ -1415,7 +1415,7 @@ class Expr:
         Parameters
         ----------
         reverse
-            Reverse the operation.
+            When ``True``, instead move from the tail to the head.
 
         Examples
         --------
@@ -1444,16 +1444,16 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.cummax(reverse))
 
-    def cumcount(self, reverse: bool = False) -> Expr:
+    def cumcount(self, reverse: bool = False, count_nulls: bool = False) -> Expr:
         """
         Get an array with the cumulative count computed at every element.
-
-        Counting from 0 to len
 
         Parameters
         ----------
         reverse
-            Reverse the operation.
+            When ``True``, instead count from the tail to the head.
+        count_nulls
+            Whether to include null values in the count.
 
         Examples
         --------
@@ -1470,17 +1470,17 @@ class Expr:
         │ --- ┆ ---       │
         │ u32 ┆ u32       │
         ╞═════╪═══════════╡
-        │ 0   ┆ 3         │
+        │ 1   ┆ 4         │
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 1   ┆ 2         │
+        │ 2   ┆ 3         │
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2   ┆ 1         │
+        │ 3   ┆ 2         │
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 3   ┆ 0         │
+        │ 4   ┆ 1         │
         └─────┴───────────┘
 
         """
-        return wrap_expr(self._pyexpr.cumcount(reverse))
+        return wrap_expr(self._pyexpr.cumcount(reverse, count_nulls))
 
     def floor(self) -> Expr:
         """

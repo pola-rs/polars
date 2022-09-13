@@ -552,7 +552,7 @@ impl Series {
         {
             use DataType::*;
             match self.dtype() {
-                Boolean => self.cast(&DataType::UInt32).unwrap().cumsum(reverse),
+                Boolean => self.cast(&UInt32).unwrap().cumsum(reverse),
                 Int8 | UInt8 | Int16 | UInt16 => {
                     let s = self.cast(&Int64).unwrap();
                     s.cumsum(reverse)
@@ -601,7 +601,7 @@ impl Series {
         {
             use DataType::*;
             match self.dtype() {
-                Boolean => self.cast(&DataType::Int64).unwrap().cumprod(reverse),
+                Boolean => self.cast(&Int64).unwrap().cumprod(reverse),
                 Int8 | UInt8 | Int16 | UInt16 | Int32 | UInt32 => {
                     let s = self.cast(&Int64).unwrap();
                     s.cumprod(reverse)
@@ -623,6 +623,82 @@ impl Series {
                     ca.cumprod(reverse).into_series()
                 }
                 dt => panic!("cumprod not supported for dtype: {:?}", dt),
+            }
+        }
+        #[cfg(not(feature = "cum_agg"))]
+        {
+            panic!("activate 'cum_agg' feature")
+        }
+    }
+
+    /// Count the number of elements elements over an expanding window.
+    #[allow(unused_variables)]
+    pub fn cumcount(&self, reverse: bool, count_nulls: bool) -> Series {
+        #[cfg(feature = "cum_agg")]
+        {
+            match self.dtype() {
+                DataType::Float32 => self
+                    .f32()
+                    .unwrap()
+                    .cumcount(reverse, count_nulls)
+                    .into_series(),
+                DataType::Float64 => self
+                    .f64()
+                    .unwrap()
+                    .cumcount(reverse, count_nulls)
+                    .into_series(),
+                DataType::Int8 => self
+                    .i8()
+                    .unwrap()
+                    .cumcount(reverse, count_nulls)
+                    .into_series(),
+                DataType::Int16 => self
+                    .i16()
+                    .unwrap()
+                    .cumcount(reverse, count_nulls)
+                    .into_series(),
+                DataType::Int32 => self
+                    .i32()
+                    .unwrap()
+                    .cumcount(reverse, count_nulls)
+                    .into_series(),
+                DataType::Int64 => self
+                    .i64()
+                    .unwrap()
+                    .cumcount(reverse, count_nulls)
+                    .into_series(),
+                DataType::UInt8 => self
+                    .u8()
+                    .unwrap()
+                    .cumcount(reverse, count_nulls)
+                    .into_series(),
+                DataType::UInt16 => self
+                    .u16()
+                    .unwrap()
+                    .cumcount(reverse, count_nulls)
+                    .into_series(),
+                DataType::UInt32 => self
+                    .u32()
+                    .unwrap()
+                    .cumcount(reverse, count_nulls)
+                    .into_series(),
+                DataType::UInt64 => self
+                    .u64()
+                    .unwrap()
+                    .cumcount(reverse, count_nulls)
+                    .into_series(),
+                DataType::Utf8 => self
+                    .utf8()
+                    .unwrap()
+                    .cumcount(reverse, count_nulls)
+                    .into_series(),
+                DataType::Boolean => self
+                    .bool()
+                    .unwrap()
+                    .cumcount(reverse, count_nulls)
+                    .into_series(),
+                // Handle Date, Datetime, Time, Categorical
+                _ => self.to_physical_repr().cumcount(reverse, count_nulls),
             }
         }
         #[cfg(not(feature = "cum_agg"))]

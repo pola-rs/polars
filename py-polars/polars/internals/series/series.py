@@ -1348,7 +1348,7 @@ class Series:
         Parameters
         ----------
         reverse
-            reverse the operation.
+            When ``True``, instead move from the tail to the head.
 
         Notes
         -----
@@ -1376,7 +1376,7 @@ class Series:
         Parameters
         ----------
         reverse
-            reverse the operation.
+            When ``True``, instead move from the tail to the head.
 
         Examples
         --------
@@ -1399,7 +1399,7 @@ class Series:
         Parameters
         ----------
         reverse
-            reverse the operation.
+            When ``True``, instead move from the tail to the head.
 
         Examples
         --------
@@ -1422,7 +1422,7 @@ class Series:
         Parameters
         ----------
         reverse
-            reverse the operation.
+            When ``True``, instead move from the tail to the head.
 
         Notes
         -----
@@ -1439,6 +1439,30 @@ class Series:
             1
             2
             6
+        ]
+
+        """
+
+    def cumcount(self, reverse: bool = False, count_nulls: bool = False) -> Series:
+        """
+        Get an array with the cumulative count computed at every element.
+
+        Parameters
+        ----------
+        reverse
+            When ``True``, instead count from the tail to the head.
+        count_nulls
+            Whether to include null values in the count.
+
+        Examples
+        --------
+        >>> pl.Series([8, 6, None]).cumcount(reverse=True, count_nulls=False)
+        shape: (3,)
+        Series: '' [u32]
+        [
+            2
+            1
+            0
         ]
 
         """
