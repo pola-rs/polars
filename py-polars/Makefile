@@ -26,20 +26,23 @@ clean:  ## Clean up caches and build artifacts
 	@find -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -delete
 	@cargo clean
 
-.PHONY: pre-commit
-pre-commit: venv  ## Run autoformatting and linting
+.PHONY: fmt
+fmt: venv  ## Run autoformatting and linting
 	$(PYTHON_BIN)/isort .
 	$(PYTHON_BIN)/black .
 	$(PYTHON_BIN)/blackdoc .
 	$(PYTHON_BIN)/pyupgrade --py37-plus `find polars/ tests/ -name "*.py" -type f`
-	$(PYTHON_BIN)/mypy
-	$(PYTHON_BIN)/flake8
-	make -C .. fmt_toml
 	cargo fmt --all
+	-dprint fmt
+	-$(PYTHON_BIN)/mypy
+	-$(PYTHON_BIN)/flake8
 
 .PHONY: clippy
-clippy:  ## Run clippy
+clippy:  ## Lint Rust files
 	cargo clippy -- -D warnings -A clippy::borrow_deref_ref
+
+.PHONY: pre-commit
+pre-commit: fmt clippy ## Run all code quality checks
 
 .PHONY: test
 test: venv  ## Run fast unittests
