@@ -1,3 +1,5 @@
+from typing import Any, List
+
 import pytest
 
 import polars as pl
@@ -72,14 +74,16 @@ Series: 'foo' [i64]
         ),
     ],
 )
-def test_fmt_series(capfd: pytest.CaptureFixture, expected: str, values: list) -> None:
+def test_fmt_series(
+    capfd: pytest.CaptureFixture[str], expected: str, values: List[Any]
+) -> None:
     s = pl.Series(name="foo", values=values)
     print(s)
     out, err = capfd.readouterr()
     assert out == expected
 
 
-def test_fmt_float(capfd: pytest.CaptureFixture) -> None:
+def test_fmt_float(capfd: pytest.CaptureFixture[str]) -> None:
     s = pl.Series(name="foo", values=[7.966e-05, 7.9e-05, 8.4666e-05, 8.00007966])
     print(s)
     out, err = capfd.readouterr()
