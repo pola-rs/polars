@@ -48,7 +48,7 @@ test-all: build  ## Run all tests
 	pytest
 	python tests/docs/run_doc_examples.py
 
-.PHONY: test-with-cov
+.PHONY: coverage
 test-with-cov: build  ## Run tests and report coverage
 	pytest --cov
 
