@@ -33,7 +33,7 @@ fn test_cse_unions() -> Result<()> {
 }
 
 #[test]
-fn test_cse_cache_block_projection_pd() -> Result<()> {
+fn test_cse_cache_union_projection_pd() -> Result<()> {
     let q = df![
         "a" => [1],
         "b" => [2],
@@ -42,26 +42,26 @@ fn test_cse_cache_block_projection_pd() -> Result<()> {
     .lazy();
 
     let q1 = q.clone().filter(col("a").eq(lit(1))).select([col("a")]);
-    let q2 = q.clone().filter(col("a").eq(lit(1))).select([col("a"), col("b")]);
+    let q2 = q
+        .clone()
+        .filter(col("a").eq(lit(1)))
+        .select([col("a"), col("b")]);
     let q = q1.left_join(q2, col("a"), col("a"));
 
-    println!("{}", q.clone().to_dot(true).unwrap());
-    //
-    // // check that the projection of a is not done before the cache
-    // let (mut expr_arena, mut lp_arena) = get_arenas();
-    // let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
-    // assert!((&lp_arena).iter(lp).all(|(_, lp)| {
-    //     use ALogicalPlan::*;
-    //     match lp {
-    //         DataFrameScan {
-    //             projection: None, ..
-    //         } => true,
-    //         DataFrameScan {
-    //             ..
-    //         } => false,
-    //         _ => true,
-    //     }
-    // }));
+    // check that the projection of a is not done before the cache
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    assert!((&lp_arena).iter(lp).all(|(_, lp)| {
+        use ALogicalPlan::*;
+        match lp {
+            DataFrameScan {
+                projection: Some(projection),
+                ..
+            } => projection.as_ref() == &vec!["a".to_string(), "b".to_string()],
+            DataFrameScan { .. } => false,
+            _ => true,
+        }
+    }));
 
     Ok(())
 }

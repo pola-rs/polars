@@ -204,7 +204,11 @@ impl ALogicalPlan {
                 output_schema,
                 ..
             } => output_schema.as_ref().unwrap_or(schema),
-            DataFrameScan { schema, output_schema, .. } => output_schema.as_ref().unwrap_or(schema),
+            DataFrameScan {
+                schema,
+                output_schema,
+                ..
+            } => output_schema.as_ref().unwrap_or(schema),
             AnonymousScan {
                 schema,
                 output_schema,
@@ -521,11 +525,7 @@ impl ALogicalPlan {
                     container.push(*node)
                 }
             }
-            DataFrameScan {
-                projection,
-                selection,
-                ..
-            } => {
+            DataFrameScan { selection, .. } => {
                 if let Some(expr) = selection {
                     container.push(*expr)
                 }

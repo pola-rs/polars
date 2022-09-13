@@ -590,6 +590,8 @@ impl LazyFrame {
         } else {
             false
         };
+        #[cfg(not(feature = "cse"))]
+        let cse_changed = false;
 
         // we do simplification
         if simplify_expr {
@@ -660,21 +662,21 @@ impl LazyFrame {
                 expr_arena,
             );
 
-            let rule = FileCacher::new(file_predicate_to_columns_and_count);
-            // its important that we do it now
-            // because typo coercion will change the predicates and there for
-            lp_top = opt.optimize_loop(
-                &mut [Box::new(rule) as Box<dyn OptimizationRule>],
-                expr_arena,
-                lp_arena,
-                lp_top,
-            );
+            let mut scratch = vec![];
+            let mut file_cacher = FileCacher::new(file_predicate_to_columns_and_count);
+            file_cacher.assign_unions(lp_top, lp_arena, expr_arena, &mut scratch, false);
+            scratch.clear();
 
             #[cfg(feature = "cse")]
             if cse_changed {
-                let mut scratch = vec![];
                 // this must run after cse
-                cse::decrement_file_counters_by_cache_hits(lp_top, lp_arena, expr_arena, 0, &mut scratch);
+                cse::decrement_file_counters_by_cache_hits(
+                    lp_top,
+                    lp_arena,
+                    expr_arena,
+                    0,
+                    &mut scratch,
+                );
             }
         }
 

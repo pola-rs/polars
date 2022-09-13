@@ -251,8 +251,7 @@ fn test_predicate_on_join_suffix_4788() -> Result<()> {
         .suffix("_")
         .finish()
         .filter(col("x").eq(1))
-        .with_common_subplan_elimination(false)
-        ;
+        .with_common_subplan_elimination(false);
 
     // the left hand side should have a predicate
     assert!(predicate_at_scan(q.clone()));

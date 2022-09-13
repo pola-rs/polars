@@ -4,7 +4,6 @@ use std::sync::Arc;
 use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 
-use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::ALogicalPlanBuilder;
 use crate::prelude::*;
 
@@ -108,13 +107,13 @@ pub(crate) fn collect_fingerprints(
             fps.push(fp);
         }
         // we process this for cse
-        DataFrameScan { df, selection, ..} => {
+        DataFrameScan { df, selection, .. } => {
             let ptr = Arc::as_ptr(df) as usize;
             let predicate = selection.map(|node| node_to_expr(node, expr_arena));
-            let fp = FileFingerPrint{
+            let fp = FileFingerPrint {
                 path: PathBuf::from(format!("{}", ptr)),
                 predicate,
-                slice: (0, None)
+                slice: (0, None),
             };
             fps.push(fp)
         }
@@ -196,7 +195,13 @@ pub(crate) fn find_column_union_and_fingerprints(
                 schema,
             );
         }
-        DataFrameScan { projection, selection, schema, df, ..  } => {
+        DataFrameScan {
+            projection,
+            selection,
+            schema,
+            df,
+            ..
+        } => {
             let ptr = Arc::as_ptr(df) as usize;
             let path = PathBuf::from(format!("{}", ptr));
             let predicate = selection.map(|node| node_to_expr(node, expr_arena));
@@ -207,10 +212,9 @@ pub(crate) fn find_column_union_and_fingerprints(
                 predicate,
                 (0, None),
                 columns,
-                schema
+                schema,
             );
-
-        },
+        }
         lp => {
             for input in lp.get_inputs() {
                 find_column_union_and_fingerprints(input, columns, lp_arena, expr_arena)
@@ -250,6 +254,7 @@ impl FileCacher {
         lp_arena: &mut Arena<ALogicalPlan>,
         finger_print: &FileFingerPrint,
         with_columns: Option<Arc<Vec<String>>>,
+        behind_cache: bool,
     ) -> ALogicalPlan {
         // if the original projection is less than the new one. Also project locally
         if let Some(mut with_columns) = with_columns {
@@ -259,7 +264,7 @@ impl FileCacher {
                 Some((_file_count, agg_columns)) => with_columns.len() < agg_columns.len(),
                 None => true,
             };
-            if do_projection {
+            if !behind_cache && do_projection {
                 let node = lp_arena.add(lp);
 
                 let projections = std::mem::take(Arc::make_mut(&mut with_columns))
@@ -281,220 +286,181 @@ impl FileCacher {
     ) -> Option<(FileCount, Arc<Vec<String>>)> {
         self.file_count_and_column_union.get(finger_print).cloned()
     }
-}
 
-impl OptimizationRule for FileCacher {
-    fn optimize_plan(
+    // This will ensure that all read files have the amount of columns needed for the cache.
+    // In case of CSE, it will ensure that the union projected nodes are available.
+    pub(crate) fn assign_unions(
         &mut self,
+        root: Node,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-        node: Node,
-    ) -> Option<ALogicalPlan> {
-        let lp = lp_arena.get_mut(node);
+        scratch: &mut Vec<Node>,
+        // if behind cache we should not add a projection
+        behind_cache: bool,
+    ) {
+        let lp = lp_arena.take(root);
         match lp {
-            #[cfg(feature = "ipc")]
-            ALogicalPlan::IpcScan { .. } => {
-                let lp = std::mem::take(lp);
-                if let ALogicalPlan::IpcScan {
-                    path,
-                    schema,
-                    output_schema,
-                    predicate,
-                    aggregate,
-                    mut options,
-                } = lp
-                {
-                    let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
-                    let finger_print = FileFingerPrint {
-                        path,
-                        predicate: predicate_expr,
-                        slice: (0, options.n_rows),
-                    };
-
-                    let with_columns = self.extract_columns_and_count(&finger_print);
-                    options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
-                    let with_columns = with_columns.map(|t| t.1);
-                    // prevent infinite loop
-                    if options.with_columns == with_columns {
-                        let lp = ALogicalPlan::IpcScan {
-                            path: finger_print.path,
-                            schema,
-                            output_schema,
-                            predicate,
-                            aggregate,
-                            options,
-                        };
-                        lp_arena.replace(node, lp);
-                        return None;
-                    }
-
-                    options.with_columns = with_columns;
-                    let lp = ALogicalPlan::IpcScan {
-                        path: finger_print.path.clone(),
-                        schema,
-                        output_schema,
-                        predicate,
-                        aggregate,
-                        options: options.clone(),
-                    };
-                    Some(self.finish_rewrite(
-                        lp,
-                        expr_arena,
-                        lp_arena,
-                        &finger_print,
-                        options.with_columns,
-                    ))
-                } else {
-                    unreachable!()
-                }
-            }
             #[cfg(feature = "parquet")]
-            ALogicalPlan::ParquetScan { .. } => {
-                let lp = std::mem::take(lp);
-                if let ALogicalPlan::ParquetScan {
+            ALogicalPlan::ParquetScan {
+                path,
+                schema,
+                output_schema,
+                predicate,
+                aggregate,
+                mut options,
+            } => {
+                let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
+                let finger_print = FileFingerPrint {
                     path,
+                    predicate: predicate_expr,
+                    slice: (0, options.n_rows),
+                };
+
+                let with_columns = self.extract_columns_and_count(&finger_print);
+                options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
+                let with_columns = with_columns.map(|t| t.1);
+
+                options.with_columns = with_columns;
+                let lp = ALogicalPlan::ParquetScan {
+                    path: finger_print.path.clone(),
                     schema,
                     output_schema,
                     predicate,
                     aggregate,
-                    mut options,
-                } = lp
-                {
-                    let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
-                    let finger_print = FileFingerPrint {
-                        path,
-                        predicate: predicate_expr,
-                        slice: (0, options.n_rows),
-                    };
-                    let with_columns = self.extract_columns_and_count(&finger_print);
-                    options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
-                    let mut with_columns = with_columns.map(|t| t.1);
-                    // prevent infinite loop
-                    if options.with_columns == with_columns {
-                        let lp = ALogicalPlan::ParquetScan {
-                            path: finger_print.path,
-                            schema,
-                            output_schema,
-                            predicate,
-                            aggregate,
-                            options,
-                        };
-                        lp_arena.replace(node, lp);
-                        return None;
-                    }
-                    std::mem::swap(&mut options.with_columns, &mut with_columns);
-
-                    let lp = ALogicalPlan::ParquetScan {
-                        path: finger_print.path.clone(),
-                        schema,
-                        output_schema,
-                        predicate,
-                        aggregate,
-                        options,
-                    };
-                    Some(self.finish_rewrite(lp, expr_arena, lp_arena, &finger_print, with_columns))
-                } else {
-                    unreachable!()
-                }
+                    options: options.clone(),
+                };
+                let lp = self.finish_rewrite(
+                    lp,
+                    expr_arena,
+                    lp_arena,
+                    &finger_print,
+                    options.with_columns,
+                    behind_cache,
+                );
+                lp_arena.replace(root, lp);
             }
             #[cfg(feature = "csv-file")]
-            ALogicalPlan::CsvScan { .. } => {
-                let lp = std::mem::take(lp);
-                if let ALogicalPlan::CsvScan {
+            ALogicalPlan::CsvScan {
+                path,
+                schema,
+                output_schema,
+                predicate,
+                aggregate,
+                mut options,
+            } => {
+                let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
+                let finger_print = FileFingerPrint {
                     path,
+                    predicate: predicate_expr,
+                    slice: (options.skip_rows, options.n_rows),
+                };
+
+                let with_columns = self.extract_columns_and_count(&finger_print);
+                options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
+                let with_columns = with_columns.map(|t| t.1);
+
+                options.with_columns = with_columns;
+                let lp = ALogicalPlan::CsvScan {
+                    path: finger_print.path.clone(),
                     schema,
                     output_schema,
-                    mut options,
                     predicate,
                     aggregate,
-                } = lp
-                {
-                    let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
-                    let finger_print = FileFingerPrint {
-                        path,
-                        predicate: predicate_expr,
-                        slice: (options.skip_rows, options.n_rows),
-                    };
-                    let with_columns = self.extract_columns_and_count(&finger_print);
-                    options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
-                    let with_columns = with_columns.map(|t| t.1);
-                    if options.with_columns == with_columns {
-                        let lp = ALogicalPlan::CsvScan {
-                            path: finger_print.path,
-                            schema,
-                            output_schema,
-                            options,
-                            predicate,
-                            aggregate,
-                        };
-                        lp_arena.replace(node, lp);
-                        return None;
-                    }
-                    options.with_columns = with_columns;
-                    let lp = ALogicalPlan::CsvScan {
-                        path: finger_print.path.clone(),
-                        schema,
-                        output_schema,
-                        options: options.clone(),
-                        predicate,
-                        aggregate,
-                    };
-                    Some(self.finish_rewrite(
-                        lp,
-                        expr_arena,
-                        lp_arena,
-                        &finger_print,
-                        options.with_columns,
-                    ))
-                } else {
-                    unreachable!()
-                }
+                    options: options.clone(),
+                };
+                let lp = self.finish_rewrite(
+                    lp,
+                    expr_arena,
+                    lp_arena,
+                    &finger_print,
+                    options.with_columns,
+                    behind_cache,
+                );
+                lp_arena.replace(root, lp);
             }
-            ALogicalPlan::DataFrameScan { .. } => {
-                let lp = std::mem::take(lp);
-                if let ALogicalPlan::DataFrameScan {
+            ALogicalPlan::DataFrameScan {
+                df,
+                schema,
+                output_schema,
+                selection,
+                ..
+            } => {
+                let ptr = Arc::as_ptr(&df) as usize;
+                let path = PathBuf::from(format!("{}", ptr));
+                let predicate_expr = selection.map(|node| node_to_expr(node, expr_arena));
+                let finger_print = FileFingerPrint {
+                    path,
+                    predicate: predicate_expr,
+                    slice: (0, None),
+                };
+                let projection = self.extract_columns_and_count(&finger_print).map(|t| t.1);
+
+                let lp = ALogicalPlan::DataFrameScan {
                     df,
                     schema,
                     output_schema,
-                    projection,
+                    projection: projection.clone(),
                     selection,
-                } = lp
-                {
-                    let ptr = Arc::as_ptr(&df) as usize;
-                    let path = PathBuf::from(format!("{}", ptr));
-                    let predicate_expr = selection.map(|node| node_to_expr(node, expr_arena));
-                    let finger_print = FileFingerPrint {
-                        path,
-                        predicate: predicate_expr,
-                        slice: (0, None),
-                    };
-                    let with_columns = self.extract_columns_and_count(&finger_print).map(|t| t.1);
-
-                    // prevent infinite loop
-                    if projection == with_columns {
-                        let lp = ALogicalPlan::DataFrameScan {
-                            df,
-                            schema,
-                            output_schema,
-                            projection: with_columns,
-                            selection
-                        };
-                        lp_arena.replace(node, lp);
-                        return None;
-                    }
-
-                    Some(ALogicalPlan::DataFrameScan {
-                        df,
-                        schema,
-                        output_schema,
-                        projection: with_columns,
-                        selection
-                    })
-                } else {
-                    unreachable!()
-                }
+                };
+                let lp = self.finish_rewrite(
+                    lp,
+                    expr_arena,
+                    lp_arena,
+                    &finger_print,
+                    projection,
+                    behind_cache,
+                );
+                lp_arena.replace(root, lp);
             }
-            _ => None,
+
+            #[cfg(feature = "ipc")]
+            ALogicalPlan::IpcScan {
+                path,
+                schema,
+                output_schema,
+                predicate,
+                aggregate,
+                mut options,
+            } => {
+                let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
+                let finger_print = FileFingerPrint {
+                    path,
+                    predicate: predicate_expr,
+                    slice: (0, options.n_rows),
+                };
+
+                let with_columns = self.extract_columns_and_count(&finger_print);
+                options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
+                let with_columns = with_columns.map(|t| t.1);
+
+                options.with_columns = with_columns;
+                let lp = ALogicalPlan::IpcScan {
+                    path: finger_print.path.clone(),
+                    schema,
+                    output_schema,
+                    predicate,
+                    aggregate,
+                    options: options.clone(),
+                };
+                let lp = self.finish_rewrite(
+                    lp,
+                    expr_arena,
+                    lp_arena,
+                    &finger_print,
+                    options.with_columns,
+                    behind_cache,
+                );
+                lp_arena.replace(root, lp);
+            }
+            lp => {
+                let behind_cache = behind_cache || matches!(&lp, ALogicalPlan::Cache { .. });
+
+                lp.copy_inputs(scratch);
+                while let Some(input) = scratch.pop() {
+                    self.assign_unions(input, lp_arena, expr_arena, scratch, behind_cache)
+                }
+                lp_arena.replace(root, lp);
+            }
         }
     }
 }

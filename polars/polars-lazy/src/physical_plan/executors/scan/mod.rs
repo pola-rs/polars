@@ -71,7 +71,7 @@ fn prepare_scan_args<'a>(
 pub struct DataFrameExec {
     pub(crate) df: Arc<DataFrame>,
     pub(crate) selection: Option<Arc<dyn PhysicalExpr>>,
-    pub(crate) projection: Option<Arc<Vec<String>>>
+    pub(crate) projection: Option<Arc<Vec<String>>>,
 }
 
 impl Executor for DataFrameExec {

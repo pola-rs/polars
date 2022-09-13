@@ -264,7 +264,7 @@ fn longest_subgraph(
     }
     let mut prev_node_a = Node(0);
     let mut prev_node_b = Node(0);
-    let mut is_equal = false;
+    let mut is_equal;
     let mut i = 0;
 
     // iterates from the leafs upwards
@@ -301,22 +301,15 @@ pub(crate) fn elim_cmn_subplans(
     // search from the leafs upwards and find the longest shared subplans
     let mut longest_trails = vec![];
 
-    let mut equal_trails = vec![];
+    // let mut equal_trails = vec![];
     for i in 0..trails.len() {
-        equal_trails.clear();
         let trail_i = &trails[i];
 
         // we only look forwards, then we traverse all combinations
         for trail_j in trails.iter().skip(i + 1) {
             if let Some(res) = longest_subgraph(trail_i, trail_j, lp_arena, expr_arena) {
-                equal_trails.push(res)
+                longest_trails.push(res)
             }
-        }
-        // and only take the longest common sub plan as cache
-        // todo! experiment if setting all is faster
-        equal_trails.sort_by_key(|c| c.0);
-        if let Some(combination) = equal_trails.pop() {
-            longest_trails.push(combination);
         }
     }
 
@@ -410,7 +403,9 @@ pub(crate) fn decrement_file_counters_by_cache_hits(
         lp => {
             lp.copy_inputs(scratch);
             while let Some(input) = scratch.pop() {
-                decrement_file_counters_by_cache_hits(input, lp_arena, expr_arena, acc_count, scratch)
+                decrement_file_counters_by_cache_hits(
+                    input, lp_arena, expr_arena, acc_count, scratch,
+                )
             }
         }
     }
