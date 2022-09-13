@@ -1,15 +1,6 @@
 .DEFAULT_GOAL := help
 
 SHELL=/bin/bash
-PYTHON=venv/bin/python
-PYTHON_BIN=venv/bin
-
-venv:  ## Set up virtual environment
-	@python -m venv venv
-	@venv/bin/pip install --upgrade pip
-	@venv/bin/pip install -r requirements-dev.txt
-	@venv/bin/pip install -r requirements-lint.txt
-	@unset CONDA_PREFIX && source venv/bin/activate && maturin develop
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
@@ -27,15 +18,15 @@ clean:  ## Clean up caches and build artifacts
 	@cargo clean
 
 .PHONY: fmt
-fmt: venv  ## Run autoformatting and linting
-	$(PYTHON_BIN)/isort .
-	$(PYTHON_BIN)/black .
-	$(PYTHON_BIN)/blackdoc .
-	$(PYTHON_BIN)/pyupgrade --py37-plus `find polars/ tests/ -name "*.py" -type f`
+fmt:  ## Run autoformatting and linting
+	isort .
+	black .
+	blackdoc .
+	pyupgrade --py37-plus `find polars/ tests/ -name "*.py" -type f`
 	cargo fmt --all
 	-dprint fmt
-	-$(PYTHON_BIN)/mypy
-	-$(PYTHON_BIN)/flake8
+	-mypy
+	-flake8
 
 .PHONY: clippy
 clippy:  ## Lint Rust files
@@ -45,23 +36,23 @@ clippy:  ## Lint Rust files
 pre-commit: fmt clippy ## Run all code quality checks
 
 .PHONY: test
-test: venv  ## Run fast unittests
-	$(PYTHON_BIN)/maturin develop
-	$(PYTHON) -m pytest tests/unit/
+test:  ## Run fast unittests
+	maturin develop
+	pytest tests/unit/
 
 .PHONY: test-all
-test-all: venv  ## Run all tests
-	$(PYTHON_BIN)/maturin develop
-	$(PYTHON) -m pytest
-	$(PYTHON) tests/docs/run_doc_examples.py
+test-all:  ## Run all tests
+	maturin develop
+	pytest
+	python tests/docs/run_doc_examples.py
 
 .PHONY: test-with-cov
-test-with-cov: venv  ## Run tests and report coverage
-	$(PYTHON) -m pytest --cov
+test-with-cov:  ## Run tests and report coverage
+	pytest --cov
 
 .PHONY: doctest
 doctest:  ## Run doctests
-	$(PYTHON) tests/docs/run_doc_examples.py
+	python tests/docs/run_doc_examples.py
 
 .PHONY: help
 help:  ## Display this help screen
