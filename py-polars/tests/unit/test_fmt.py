@@ -17,7 +17,7 @@ Series: 'foo' [str]
             id="Long string",
         ),
         pytest.param(
-            """"shape: (1,)
+            """shape: (1,)
 Series: 'foo' [str]
 [
 	"😀😁😂😃😄😅😆😇😈😉😊😋😌😎...
@@ -38,7 +38,7 @@ Series: 'foo' [str]
         ),
         pytest.param(
             """shape: (100,)
-Series: 'foo' [i32]
+Series: 'foo' [i64]
 [
 	0
 	1
@@ -72,20 +72,14 @@ Series: 'foo' [i32]
         ),
     ],
 )
-def test_fmt_series(capfd, expected, values):
+def test_fmt_series(capfd: pytest.CaptureFixture, expected: str, values: list) -> None:
     s = pl.Series(name="foo", values=values)
     print(s)
     out, err = capfd.readouterr()
-    expected = """shape: (1,)
-Series: 'foo' [str]
-[
-	"Somelongstring...
-]
-"""
-    s = pl.Series
+    assert out == expected
 
 
-def test_fmt_float(capfd):
+def test_fmt_float(capfd: pytest.CaptureFixture) -> None:
     s = pl.Series(name="foo", values=[7.966e-05, 7.9e-05, 8.4666e-05, 8.00007966])
     print(s)
     out, err = capfd.readouterr()
