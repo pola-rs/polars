@@ -15,7 +15,7 @@ fmt:  ## Run autoformatting and linting
 	cargo fmt --all
 	-dprint fmt
 	-mypy
-	-flake8
+	-flake8 polars tests docs
 
 .PHONY: clippy
 clippy:  ## Lint Rust files
@@ -43,7 +43,7 @@ coverage: build  ## Run tests and report coverage
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
-	@rm -rf venv/
+	@rm -rf *venv/
 	@rm -rf target/
 	@rm -rf docs/build/
 	@rm -rf docs/source/reference/api/

@@ -15,5 +15,5 @@ extend-ignore =
 
 extend-exclude =
     # Automatically generated test artifacts
-    venv/,
+    *venv/,
     target/,
