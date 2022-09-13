@@ -1,19 +1,64 @@
 .DEFAULT_GOAL := help
 
 SHELL=/bin/bash
-PYTHON=venv/bin/python
-PYTHON_BIN=venv/bin
+VENV ?= venv
+
+ifeq ($(OS),Windows_NT)
+	VENV_BIN=$(VENV)/Scripts
+else
+	VENV_BIN=$(VENV)/bin
+endif
 
 venv:  ## Set up virtual environment
-	@python -m venv venv
-	@venv/bin/pip install --upgrade pip
-	@venv/bin/pip install -r requirements-dev.txt
-	@venv/bin/pip install -r requirements-lint.txt
-	@unset CONDA_PREFIX && source venv/bin/activate && maturin develop
+	python3 -m venv $(VENV)
+	$(VENV_BIN)/pip install --upgrade pip
+	$(VENV_BIN)/pip install -r requirements-dev.txt
+	$(VENV_BIN)/pip install -r requirements-lint.txt
+	$(MAKE) build
+
+.PHONY: build
+build: venv  ## Set up virtual environment
+	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop
+
+.PHONY: fmt
+fmt: venv  ## Run autoformatting and linting
+	$(VENV_BIN)/isort .
+	$(VENV_BIN)/black .
+	$(VENV_BIN)/blackdoc .
+	$(VENV_BIN)/pyupgrade --py37-plus `find polars/ tests/ -name "*.py" -type f`
+	cargo fmt --all
+	-dprint fmt
+	-$(VENV_BIN)/mypy
+	-$(VENV_BIN)/flake8 polars tests docs
+
+.PHONY: clippy
+clippy:  ## Run clippy
+	cargo clippy -- -D warnings -A clippy::borrow_deref_ref
+
+.PHONY: pre-commit
+pre-commit: fmt clippy  ## Run all code quality checks
+
+.PHONY: test
+test: venv build  ## Run fast unittests
+	$(VENV_BIN)/pytest tests/unit/
+
+.PHONY: doctest
+doctest: venv build  ## Run doctests
+	$(VENV_BIN)/python tests/docs/run_doc_examples.py
+
+.PHONY: test-all
+test-all: venv build  ## Run all tests
+	$(VENV_BIN)/maturin develop
+	$(VENV_BIN)/pytest
+	$(VENV_BIN)/python tests/docs/run_doc_examples.py
+
+.PHONY: coverage
+coverage: venv build  ## Run tests and report coverage
+	$(VENV_BIN)/pytest --cov
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
-	@rm -rf venv/
+	@rm -rf $(VENV)
 	@rm -rf target/
 	@rm -rf docs/build/
 	@rm -rf docs/source/reference/api/
@@ -25,64 +70,6 @@ clean:  ## Clean up caches and build artifacts
 	@rm -f polars/polars.abi3.so
 	@find -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -delete
 	@cargo clean
-
-.PHONY: pre-commit
-pre-commit: venv  ## Run autoformatting and linting
-	$(PYTHON_BIN)/isort .
-	$(PYTHON_BIN)/black .
-	$(PYTHON_BIN)/blackdoc .
-	$(PYTHON_BIN)/pyupgrade --py37-plus `find polars/ tests/ -name "*.py" -type f`
-	$(PYTHON_BIN)/mypy
-	$(PYTHON_BIN)/flake8
-	make -C .. fmt_toml
-	cargo fmt --all
-
-.PHONY: clippy
-clippy:  ## Run clippy
-	cargo clippy -- -D warnings -A clippy::borrow_deref_ref
-
-.PHONY: test
-test: venv  ## Run fast unittests
-	$(PYTHON_BIN)/maturin develop
-	$(PYTHON) -m pytest tests/unit/
-
-.PHONY: test-all
-test-all: venv  ## Run all tests
-	$(PYTHON_BIN)/maturin develop
-	$(PYTHON) -m pytest
-	$(PYTHON) tests/docs/run_doc_examples.py
-
-.PHONY: test-with-cov
-test-with-cov: venv  ## Run tests and report coverage
-	$(PYTHON) -m pytest --cov
-
-.PHONY: doctest
-doctest:  ## Run doctests
-	$(PYTHON) tests/docs/run_doc_examples.py
-
-.PHONY: install-wheel
-install-wheel:
-	pip install --force-reinstall -U wheels/polars-*.whl
-
-.PHONY: build-no-venv
-build-no-venv:
-	maturin build -o wheels
-
-.PHONY: build-no-venv-release
-build-no-venv-release:
-	maturin build -o wheels --release
-
-.PHONY: build-and-test-no-venv
-build-and-test-no-venv:
-	maturin build -o wheels
-	pip install --force-reinstall -U wheels/polars-*.whl
-	pytest tests
-
-.PHONY: install-no-venv
-install-no-venv: build-no-venv install-wheel
-
-.PHONY: install-no-venv-release
-install-no-venv-release: build-no-venv-release install-wheel
 
 .PHONY: help
 help:  ## Display this help screen
