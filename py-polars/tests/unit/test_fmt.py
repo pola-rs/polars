@@ -14,7 +14,7 @@ Series: 'foo' [str]
 [
 	"Somelongstring...
 ]
-""",
+""",  # noqa: W191, E101
             ["Somelongstringto eeat wit me oundaf"],
             id="Long string",
         ),
@@ -24,7 +24,7 @@ Series: 'foo' [str]
 [
 	"😀😁😂😃😄😅😆😇😈😉😊😋😌😎...
 ]
-""",
+""",  # noqa: W191, E101
             ["😀😁😂😃😄😅😆😇😈😉😊😋😌😎😏😐😑😒😓"],
             id="Emojis",
         ),
@@ -34,7 +34,7 @@ Series: 'foo' [str]
 [
 	"yzäöüäöüäöüäö"
 ]
-""",
+""",  # noqa: W191, E101
             ["yzäöüäöüäöüäö"],
             id="Characters with accents",
         ),
@@ -68,7 +68,7 @@ Series: 'foo' [i64]
 	98
 	99
 ]
-""",
+""",  # noqa: W191, E101
             [*range(100)],
             id="Long series",
         ),
@@ -95,5 +95,5 @@ Series: 'foo' [f64]
 	0.000085
 	8.00008
 ]
-"""
+"""  # noqa: W191, E101
     assert out == expected
