@@ -83,19 +83,19 @@ def test_set_tbl_cols(environ: None) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
 
     pl.Config.set_tbl_cols(1)
-    assert str(df).split("\n")[2] == "│ a   ┆ ... │"
+    assert str(df).split("\n")[2] == "│ a     ┆ ... │"
     pl.Config.set_tbl_cols(2)
-    assert str(df).split("\n")[2] == "│ a   ┆ ... ┆ c   │"
+    assert str(df).split("\n")[2] == "│ a     ┆ ... ┆ c     │"
     pl.Config.set_tbl_cols(3)
-    assert str(df).split("\n")[2] == "│ a   ┆ b   ┆ c   │"
+    assert str(df).split("\n")[2] == "│ a     ┆ b     ┆ c     │"
 
     df = pl.DataFrame(
         {"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9], "d": [10, 11, 12]}
     )
     pl.Config.set_tbl_cols(2)
-    assert str(df).split("\n")[2] == "│ a   ┆ ... ┆ d   │"
+    assert str(df).split("\n")[2] == "│ a     ┆ ... ┆ d     │"
     pl.Config.set_tbl_cols(3)
-    assert str(df).split("\n")[2] == "│ a   ┆ b   ┆ ... ┆ d   │"
+    assert str(df).split("\n")[2] == "│ a     ┆ b     ┆ ... ┆ d     │"
 
 
 def test_set_tbl_rows(environ: None) -> None:
