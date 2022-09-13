@@ -18,7 +18,7 @@ pub(crate) struct FileFingerPrint {
 #[allow(clippy::type_complexity)]
 fn process_with_columns(
     path: &Path,
-    with_columns: &Option<Arc<Vec<String>>>,
+    with_columns: Option<&Vec<String>>,
     predicate: Option<Expr>,
     slice: (usize, Option<usize>),
     file_count_and_column_union: &mut PlHashMap<FileFingerPrint, (FileCount, PlIndexSet<String>)>,
@@ -107,7 +107,17 @@ pub(crate) fn collect_fingerprints(
             };
             fps.push(fp);
         }
-        DataFrameScan { .. } => (),
+        // we process this for cse
+        DataFrameScan { df, selection, ..} => {
+            let ptr = Arc::as_ptr(df) as usize;
+            let predicate = selection.map(|node| node_to_expr(node, expr_arena));
+            let fp = FileFingerPrint{
+                path: PathBuf::from(format!("{}", ptr)),
+                predicate,
+                slice: (0, None)
+            };
+            fps.push(fp)
+        }
         lp => {
             for input in lp.get_inputs() {
                 collect_fingerprints(input, fps, lp_arena, expr_arena)
@@ -141,7 +151,7 @@ pub(crate) fn find_column_union_and_fingerprints(
             let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
             process_with_columns(
                 path,
-                &options.with_columns,
+                options.with_columns.as_deref(),
                 predicate,
                 slice,
                 columns,
@@ -160,7 +170,7 @@ pub(crate) fn find_column_union_and_fingerprints(
             let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
             process_with_columns(
                 path,
-                &options.with_columns,
+                options.with_columns.as_deref(),
                 predicate,
                 slice,
                 columns,
@@ -179,14 +189,28 @@ pub(crate) fn find_column_union_and_fingerprints(
             let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
             process_with_columns(
                 path,
-                &options.with_columns,
+                options.with_columns.as_deref(),
                 predicate,
                 slice,
                 columns,
                 schema,
             );
         }
-        DataFrameScan { .. } => (),
+        DataFrameScan { projection, selection, schema, df, ..  } => {
+            let ptr = Arc::as_ptr(df) as usize;
+            let path = PathBuf::from(format!("{}", ptr));
+            let predicate = selection.map(|node| node_to_expr(node, expr_arena));
+
+            process_with_columns(
+                &path,
+                projection.as_deref(),
+                predicate,
+                (0, None),
+                columns,
+                schema
+            );
+
+        },
         lp => {
             for input in lp.get_inputs() {
                 find_column_union_and_fingerprints(input, columns, lp_arena, expr_arena)
@@ -422,6 +446,50 @@ impl OptimizationRule for FileCacher {
                         &finger_print,
                         options.with_columns,
                     ))
+                } else {
+                    unreachable!()
+                }
+            }
+            ALogicalPlan::DataFrameScan { .. } => {
+                let lp = std::mem::take(lp);
+                if let ALogicalPlan::DataFrameScan {
+                    df,
+                    schema,
+                    output_schema,
+                    projection,
+                    selection,
+                } = lp
+                {
+                    let ptr = Arc::as_ptr(&df) as usize;
+                    let path = PathBuf::from(format!("{}", ptr));
+                    let predicate_expr = selection.map(|node| node_to_expr(node, expr_arena));
+                    let finger_print = FileFingerPrint {
+                        path,
+                        predicate: predicate_expr,
+                        slice: (0, None),
+                    };
+                    let with_columns = self.extract_columns_and_count(&finger_print).map(|t| t.1);
+
+                    // prevent infinite loop
+                    if projection == with_columns {
+                        let lp = ALogicalPlan::DataFrameScan {
+                            df,
+                            schema,
+                            output_schema,
+                            projection: with_columns,
+                            selection
+                        };
+                        lp_arena.replace(node, lp);
+                        return None;
+                    }
+
+                    Some(ALogicalPlan::DataFrameScan {
+                        df,
+                        schema,
+                        output_schema,
+                        projection: with_columns,
+                        selection
+                    })
                 } else {
                     unreachable!()
                 }

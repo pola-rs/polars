@@ -193,6 +193,7 @@ impl PredicatePushDown {
             DataFrameScan {
                 df,
                 schema,
+                output_schema,
                 projection,
                 selection,
             } => {
@@ -200,6 +201,7 @@ impl PredicatePushDown {
                 let lp = DataFrameScan {
                     df,
                     schema,
+                    output_schema,
                     projection,
                     selection,
                 };

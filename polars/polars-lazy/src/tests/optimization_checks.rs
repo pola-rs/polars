@@ -163,7 +163,9 @@ pub fn test_slice_pushdown_join() -> Result<()> {
 
     let q = q1
         .join(q2, [col("category")], [col("category")], JoinType::Left)
-        .slice(1, 3);
+        .slice(1, 3)
+        // this inserts a cache and blocks slice pushdown
+        .with_common_subplan_elimination(false);
     // test if optimization continued beyond the join node
     assert!(slice_at_scan(q.clone()));
 

@@ -567,7 +567,6 @@ impl LazyFrame {
         #[cfg(feature = "cse")]
         let cse = self.opt_state.common_subplan_elimination;
 
-        #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
         let agg_scan_projection = self.opt_state.file_caching;
         let aggregate_pushdown = self.opt_state.aggregate_pushdown;
 
@@ -643,8 +642,7 @@ impl LazyFrame {
         // make sure that we do that once slice pushdown
         // and predicate pushdown are done. At that moment
         // the file fingerprints are finished.
-        #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-        if agg_scan_projection {
+        if agg_scan_projection || cse_changed {
             // we do this so that expressions are simplified created by the pushdown optimizations
             // we must clean up the predicates, because the agg_scan_projection
             // uses them in the hashtable to determine duplicates.
@@ -676,7 +674,7 @@ impl LazyFrame {
             if cse_changed {
                 let mut scratch = vec![];
                 // this must run after cse
-                cse::decrement_caches(lp_top, lp_arena, expr_arena, 0, &mut scratch);
+                cse::decrement_file_counters_by_cache_hits(lp_top, lp_arena, expr_arena, 0, &mut scratch);
             }
         }
 

@@ -204,27 +204,13 @@ impl PhysicalPlanner {
                 selection,
                 ..
             } => {
-                let has_windows = if let Some(projection) = &projection {
-                    projection
-                        .iter()
-                        .any(|node| has_aexpr_window(*node, expr_arena))
-                } else {
-                    false
-                };
-
                 let selection = selection
                     .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
-                    .map_or(Ok(None), |v| v.map(Some))?;
-                let projection = projection
-                    .map(|proj| {
-                        self.create_physical_expressions(&proj, Context::Default, expr_arena)
-                    })
                     .map_or(Ok(None), |v| v.map(Some))?;
                 Ok(Box::new(executors::DataFrameExec {
                     df,
                     projection,
                     selection,
-                    has_windows,
                 }))
             }
             AnonymousScan {

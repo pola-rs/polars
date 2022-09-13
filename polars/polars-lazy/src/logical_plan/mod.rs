@@ -109,7 +109,9 @@ pub enum LogicalPlan {
     DataFrameScan {
         df: Arc<DataFrame>,
         schema: SchemaRef,
-        projection: Option<Vec<Expr>>,
+        // schema of the projected file
+        output_schema: Option<SchemaRef>,
+        projection: Option<Arc<Vec<String>>>,
         selection: Option<Expr>,
     },
     // a projection that doesn't have to be optimized
@@ -210,6 +212,7 @@ impl Default for LogicalPlan {
         DataFrameScan {
             df: Arc::new(df),
             schema: Arc::new(schema),
+            output_schema: None,
             projection: None,
             selection: None,
         }

@@ -81,7 +81,9 @@ pub enum ALogicalPlan {
     DataFrameScan {
         df: Arc<DataFrame>,
         schema: SchemaRef,
-        projection: Option<Vec<Node>>,
+        // schema of the projected file
+        output_schema: Option<SchemaRef>,
+        projection: Option<Arc<Vec<String>>>,
         selection: Option<Node>,
     },
     Projection {
@@ -202,7 +204,7 @@ impl ALogicalPlan {
                 output_schema,
                 ..
             } => output_schema.as_ref().unwrap_or(schema),
-            DataFrameScan { schema, .. } => schema,
+            DataFrameScan { schema, output_schema, .. } => output_schema.as_ref().unwrap_or(schema),
             AnonymousScan {
                 schema,
                 output_schema,
@@ -409,6 +411,7 @@ impl ALogicalPlan {
             DataFrameScan {
                 df,
                 schema,
+                output_schema,
                 projection,
                 selection,
             } => {
@@ -416,15 +419,12 @@ impl ALogicalPlan {
                 if selection.is_some() {
                     new_selection = exprs.pop()
                 }
-                let mut new_projection = None;
-                if projection.is_some() {
-                    new_projection = Some(exprs)
-                }
 
                 DataFrameScan {
                     df: df.clone(),
                     schema: schema.clone(),
-                    projection: new_projection,
+                    output_schema: output_schema.clone(),
+                    projection: projection.clone(),
                     selection: new_selection,
                 }
             }
@@ -526,9 +526,6 @@ impl ALogicalPlan {
                 selection,
                 ..
             } => {
-                if let Some(expr) = projection {
-                    container.extend_from_slice(expr)
-                }
                 if let Some(expr) = selection {
                     container.push(*expr)
                 }

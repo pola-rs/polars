@@ -429,6 +429,7 @@ impl LogicalPlanBuilder {
         LogicalPlan::DataFrameScan {
             df: Arc::new(df),
             schema,
+            output_schema: None,
             projection: None,
             selection: None,
         }

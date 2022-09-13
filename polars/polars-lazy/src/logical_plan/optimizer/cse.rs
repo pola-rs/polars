@@ -282,7 +282,8 @@ fn longest_subgraph(
         prev_node_b = *node_b;
         i += 1;
     }
-    if is_equal {
+    // previous node was equal
+    if i > 0 {
         Some((i - 1, prev_node_a, prev_node_b))
     } else {
         None
@@ -364,7 +365,7 @@ pub(crate) fn elim_cmn_subplans(
 }
 
 // ensure the file count counters are decremented with the cache counts
-pub(crate) fn decrement_caches(
+pub(crate) fn decrement_file_counters_by_cache_hits(
     root: Node,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &Arena<AExpr>,
@@ -404,12 +405,12 @@ pub(crate) fn decrement_caches(
             } else {
                 acc_count
             };
-            decrement_caches(*input, lp_arena, expr_arena, new_count, scratch)
+            decrement_file_counters_by_cache_hits(*input, lp_arena, expr_arena, new_count, scratch)
         }
         lp => {
             lp.copy_inputs(scratch);
             while let Some(input) = scratch.pop() {
-                decrement_caches(input, lp_arena, expr_arena, acc_count, scratch)
+                decrement_file_counters_by_cache_hits(input, lp_arena, expr_arena, acc_count, scratch)
             }
         }
     }

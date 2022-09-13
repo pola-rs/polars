@@ -387,23 +387,25 @@ impl ProjectionPushDown {
             }
             DataFrameScan {
                 df,
-                mut schema,
+                schema,
+                mut output_schema,
                 selection,
                 ..
             } => {
                 let mut projection = None;
                 if !acc_projections.is_empty() {
-                    schema = Arc::new(update_scan_schema(
+                    output_schema = Some(Arc::new(update_scan_schema(
                         &acc_projections,
                         expr_arena,
                         &schema,
                         false,
-                    )?);
-                    projection = Some(acc_projections);
+                    )?));
+                    projection = get_scan_columns(&mut acc_projections, expr_arena);
                 }
                 let lp = DataFrameScan {
                     df,
                     schema,
+                    output_schema,
                     projection,
                     selection,
                 };
@@ -1085,7 +1087,7 @@ impl ProjectionPushDown {
                 }
             }
             // Slice and Unions have only inputs and exprs, so we can use same logic.
-            lp @ Slice { .. } | lp @ Union { .. } => {
+            lp @ Slice { .. } | lp @ Union { .. } | lp @ Cache {..} => {
                 let inputs = lp.get_inputs();
                 let exprs = lp.get_exprs();
 
@@ -1108,23 +1110,23 @@ impl ProjectionPushDown {
 
                 Ok(lp.with_exprs_and_input(exprs, new_inputs))
             }
-            Cache { input, .. } => {
-                // we restart projection pd
-                projected_names.clear();
-                self.pushdown_and_assign(
-                    input,
-                    vec![],
-                    projected_names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )?;
-                Ok(
-                    ALogicalPlanBuilder::from_lp(logical_plan, expr_arena, lp_arena)
-                        .project(acc_projections)
-                        .build(),
-                )
-            }
+            // Cache { input, .. } => {
+            //     // we restart projection pd
+            //     projected_names.clear();
+            //     self.pushdown_and_assign(
+            //         input,
+            //         vec![],
+            //         projected_names,
+            //         projections_seen,
+            //         lp_arena,
+            //         expr_arena,
+            //     )?;
+            //     Ok(
+            //         ALogicalPlanBuilder::from_lp(logical_plan, expr_arena, lp_arena)
+            //             .project(acc_projections)
+            //             .build(),
+            //     )
+            // }
         }
     }
 
