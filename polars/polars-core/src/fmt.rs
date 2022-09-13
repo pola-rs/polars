@@ -359,7 +359,7 @@ impl Display for DataFrame {
             let field_to_str = |f: &Field| {
                 let name = make_str_val(f.name(), str_truncate);
                 let lower_bounds = std::cmp::max(5, std::cmp::min(12, name.len()));
-                let mut column_name = format!("{}", name);
+                let mut column_name = name;
                 if std::env::var("POLARS_FMT_TABLE_HIDE_COLUMN_NAMES").is_ok() {
                     column_name = "".to_string();
                 }
@@ -397,7 +397,7 @@ impl Display for DataFrame {
             let mut table = Table::new();
 
             let str_preset =
-                std::env::var("POLARS_FMT_TABLE_FORMATTING").unwrap_or("none".to_string());
+                std::env::var("POLARS_FMT_TABLE_FORMATTING").unwrap_or_else(|_| "none".to_string());
             let preset = match str_preset.as_str() {
                 "ASCII_FULL" => ASCII_FULL,
                 "ASCII_NO_BORDERS" => ASCII_NO_BORDERS,
@@ -475,7 +475,7 @@ impl Display for DataFrame {
             if std::env::var("POLARS_FMT_TABLE_CELL_ALIGNMENT").is_ok() {
                 // for (column_index, column) in table.column_iter_mut().enumerate() {
                 let str_preset =
-                    std::env::var("POLARS_FMT_TABLE_CELL_ALIGNMENT").unwrap_or("none".to_string());
+                    std::env::var("POLARS_FMT_TABLE_CELL_ALIGNMENT").unwrap_or_else(|_| "none".to_string());
                 for column in table.column_iter_mut() {
                     if str_preset == "RIGHT" {
                         column.set_cell_alignment(CellAlignment::Right);
