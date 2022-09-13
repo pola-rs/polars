@@ -549,7 +549,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
-        common_subplan_elimination: bool = True,
+        common_subplan_elimination: bool = False,
     ) -> str:
         """Create a string representation of the optimized query plan."""
         ldf = self._ldf.optimization_toggle(
@@ -575,7 +575,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
-        common_subplan_elimination: bool = True,
+        common_subplan_elimination: bool = False,
     ) -> str | None:
         """
         Show a plot of the query plan. Note that you should have graphviz installed.
@@ -788,7 +788,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         string_cache: bool = False,
         no_optimization: bool = False,
         slice_pushdown: bool = True,
-        common_subplan_elimination: bool = True,
+        common_subplan_elimination: bool = False,
     ) -> pli.DataFrame:
         """
         Collect into a DataFrame.
