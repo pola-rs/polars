@@ -45,14 +45,13 @@ use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
 use crate::logical_plan::FETCH_ROWS;
 use crate::physical_plan::state::ExecutionState;
-use crate::prelude::cse::elim_cmn_subplans;
 use crate::prelude::delay_rechunk::DelayRechunk;
 use crate::prelude::drop_nulls::ReplaceDropNulls;
 use crate::prelude::fast_projection::FastProjectionAndCollapse;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-use crate::prelude::file_caching::find_column_union_and_fingerprints;
+use crate::prelude::file_caching::collect_fingerprints;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-use crate::prelude::file_caching::{collect_fingerprints, decrement_caches};
+use crate::prelude::file_caching::find_column_union_and_fingerprints;
 use crate::prelude::simplify_expr::SimplifyBooleanRule;
 use crate::prelude::slice_pushdown_lp::SlicePushDown;
 use crate::prelude::*;
@@ -127,6 +126,7 @@ pub struct OptState {
     pub file_caching: bool,
     pub aggregate_pushdown: bool,
     pub slice_pushdown: bool,
+    #[cfg(feature = "cse")]
     pub common_subplan_elimination: bool,
 }
 
@@ -141,6 +141,7 @@ impl Default for OptState {
             // will be toggled by a scan operation such as csv scan or parquet scan
             file_caching: false,
             aggregate_pushdown: false,
+            #[cfg(feature = "cse")]
             common_subplan_elimination: true,
         }
     }
@@ -188,6 +189,7 @@ impl LazyFrame {
             // will be toggled by a scan operation such as csv scan or parquet scan
             file_caching: false,
             aggregate_pushdown: false,
+            #[cfg(feature = "cse")]
             common_subplan_elimination: false,
         })
     }
@@ -217,6 +219,8 @@ impl LazyFrame {
     }
 
     /// Toggle common subplan elimination optimization on or off
+    #[cfg(feature = "cse")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "cse")))]
     pub fn with_common_subplan_elimination(mut self, toggle: bool) -> Self {
         self.opt_state.common_subplan_elimination = toggle;
         self
@@ -241,8 +245,8 @@ impl LazyFrame {
 
     /// Describe the optimized logical plan.
     pub fn describe_optimized_plan(&self) -> Result<String> {
-        let mut expr_arena = Arena::with_capacity(512);
-        let mut lp_arena = Arena::with_capacity(512);
+        let mut expr_arena = Arena::with_capacity(64);
+        let mut lp_arena = Arena::with_capacity(64);
         let lp_top = self.clone().optimize(&mut lp_arena, &mut expr_arena)?;
         let logical_plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
         Ok(logical_plan.describe())
@@ -560,6 +564,7 @@ impl LazyFrame {
         let type_coercion = self.opt_state.type_coercion;
         let simplify_expr = self.opt_state.simplify_expr;
         let slice_pushdown = self.opt_state.slice_pushdown;
+        #[cfg(feature = "cse")]
         let cse = self.opt_state.common_subplan_elimination;
 
         #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
@@ -577,8 +582,10 @@ impl LazyFrame {
         let prev_schema = logical_plan.schema()?.into_owned();
 
         let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena)?;
+
+        #[cfg(feature = "cse")]
         let cse_changed = if cse {
-            let (lp, changed) = elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+            let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
             lp_top = lp;
             changed
         } else {
@@ -665,10 +672,11 @@ impl LazyFrame {
                 lp_top,
             );
 
+            #[cfg(feature = "cse")]
             if cse_changed {
                 let mut scratch = vec![];
                 // this must run after cse
-                decrement_caches(lp_top, lp_arena, expr_arena, 0, &mut scratch);
+                cse::decrement_caches(lp_top, lp_arena, expr_arena, 0, &mut scratch);
             }
         }
 

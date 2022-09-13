@@ -2,7 +2,7 @@
 mod aggregations;
 #[cfg(feature = "test")]
 mod arity;
-#[cfg(all(feature = "test", "strings"))]
+#[cfg(all(feature = "test", feature = "strings", feature = "cse"))]
 mod cse;
 #[cfg(feature = "parquet")]
 mod io;

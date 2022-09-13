@@ -4,6 +4,7 @@ use polars_core::prelude::*;
 use crate::prelude::*;
 
 pub(crate) mod aggregate_pushdown;
+#[cfg(feature = "cse")]
 pub(crate) mod cse;
 pub(crate) mod delay_rechunk;
 pub(crate) mod drop_nulls;
