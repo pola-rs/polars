@@ -483,8 +483,8 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
                 let mut len = s.len() - 1;
 
                 while s.ends_with('0') {
-                    len -= 1;
                     s = &s[..len];
+                    len -= 1;
                 }
                 if s.ends_with('.') {
                     write!(f, "{}0", s)
@@ -835,75 +835,6 @@ ChunkedArray: 'name' [str]
 	"b"
 ]"#,
             format!("{:?}", ca)
-        );
-    }
-
-    #[test]
-    fn test_fmt_series() {
-        let s = Series::new("foo", &["Somelongstringto eeat wit me oundaf"]);
-        assert_eq!(
-            r#"shape: (1,)
-Series: 'foo' [str]
-[
-	"Somelongstring...
-]"#,
-            format!("{:?}", s)
-        );
-
-        let s = Series::new("foo", &["😀😁😂😃😄😅😆😇😈😉😊😋😌😎😏😐😑😒😓"]);
-        assert_eq!(
-            r#"shape: (1,)
-Series: 'foo' [str]
-[
-	"😀😁😂😃😄😅😆😇😈😉😊😋😌😎...
-]"#,
-            format!("{:?}", s)
-        );
-
-        let s = Series::new("foo", &["yzäöüäöüäöüäö"]);
-        assert_eq!(
-            r#"shape: (1,)
-Series: 'foo' [str]
-[
-	"yzäöüäöüäöüäö"
-]"#,
-            format!("{:?}", s)
-        );
-
-        let s = Series::new("foo", (0..100).collect::<Vec<_>>());
-
-        dbg!(&s);
-        assert_eq!(
-            r#"shape: (100,)
-Series: 'foo' [i32]
-[
-	0
-	1
-	2
-	3
-	4
-	5
-	6
-	7
-	8
-	9
-	10
-	11
-	...
-	88
-	89
-	90
-	91
-	92
-	93
-	94
-	95
-	96
-	97
-	98
-	99
-]"#,
-            format!("{:?}", s)
         );
     }
 }
