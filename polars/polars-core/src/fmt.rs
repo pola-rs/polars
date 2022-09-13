@@ -363,7 +363,11 @@ impl Display for DataFrame {
                 if std::env::var("POLARS_FMT_TABLE_HIDE_COLUMN_NAMES").is_ok() {
                     column_name = "".to_string();
                 }
-                let mut column_data_type = format!("\n({})", f.data_type());
+                let mut column_data_type = format!("\n{}", f.data_type());
+                if std::env::var("POLARS_FMT_TABLE_CHANGE_COLUMN_DATA_TYPE_POSITION_FORMAT").is_ok()
+                {
+                    column_data_type = format!("\n({})", f.data_type());
+                }
                 if std::env::var("POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES").is_ok() {
                     column_data_type = "".to_string();
                 }
@@ -372,7 +376,11 @@ impl Display for DataFrame {
                     column_separator = ""
                 }
                 // let s = format!("{}\n({})\n---", name, f.data_type());
-                let s = format!("{}{}{}", column_name, column_data_type, column_separator);
+                let mut s = format!("{}{}{}", column_name, column_separator, column_data_type);
+                if std::env::var("POLARS_FMT_TABLE_CHANGE_COLUMN_DATA_TYPE_POSITION_FORMAT").is_ok()
+                {
+                    s = format!("{}{}{}", column_name, column_data_type, column_separator);
+                }
                 (s, lower_bounds)
             };
             let tbl_lower_bounds = |l: usize| {

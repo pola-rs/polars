@@ -43,6 +43,12 @@ class Config:
         return cls
 
     @classmethod
+    def set_tbl_change_column_data_type_position_format(cls) -> type[Config]:
+        """Changes the data type position / format to directly below column name."""
+        os.environ["POLARS_FMT_TABLE_CHANGE_COLUMN_DATA_TYPE_POSITION_FORMAT"] = "1"
+        return cls
+
+    @classmethod
     def set_utf8_tables(cls) -> type[Config]:
         """Use utf8 characters to print tables."""
         # os.unsetenv is automatically called if we remove a key from os.environ,
