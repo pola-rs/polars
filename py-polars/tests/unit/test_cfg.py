@@ -3,9 +3,8 @@ from __future__ import annotations
 import os
 from typing import Iterator
 
-import pytest
-
 import polars as pl
+import pytest
 
 
 @pytest.fixture()
