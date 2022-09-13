@@ -2,21 +2,6 @@
 
 SHELL=/bin/bash
 
-.PHONY: clean
-clean:  ## Clean up caches and build artifacts
-	@rm -rf venv/
-	@rm -rf target/
-	@rm -rf docs/build/
-	@rm -rf docs/source/reference/api/
-	@rm -rf .hypothesis/
-	@rm -rf .mypy_cache/
-	@rm -rf .pytest_cache/
-	@rm -f .coverage
-	@rm -f coverage.xml
-	@rm -f polars/polars.abi3.so
-	@find -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -delete
-	@cargo clean
-
 .PHONY: build
 build:  # Build and install Polars
 	maturin develop
@@ -43,18 +28,33 @@ pre-commit: fmt clippy ## Run all code quality checks
 test: build  ## Run fast unittests
 	pytest tests/unit/
 
+.PHONY: doctest
+doctest: build  ## Run doctests
+	python tests/docs/run_doc_examples.py
+
 .PHONY: test-all
 test-all: build  ## Run all tests
 	pytest
 	python tests/docs/run_doc_examples.py
 
 .PHONY: coverage
-test-with-cov: build  ## Run tests and report coverage
+coverage: build  ## Run tests and report coverage
 	pytest --cov
 
-.PHONY: doctest
-doctest: build  ## Run doctests
-	python tests/docs/run_doc_examples.py
+.PHONY: clean
+clean:  ## Clean up caches and build artifacts
+	@rm -rf venv/
+	@rm -rf target/
+	@rm -rf docs/build/
+	@rm -rf docs/source/reference/api/
+	@rm -rf .hypothesis/
+	@rm -rf .mypy_cache/
+	@rm -rf .pytest_cache/
+	@rm -f .coverage
+	@rm -f coverage.xml
+	@rm -f polars/polars.abi3.so
+	@find -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -delete
+	@cargo clean
 
 .PHONY: help
 help:  ## Display this help screen
