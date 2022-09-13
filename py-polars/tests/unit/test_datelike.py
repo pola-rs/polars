@@ -16,7 +16,7 @@ else:
     from backports import zoneinfo
 
 import polars as pl
-from polars.datatypes import DTYPE_TEMPORAL_UNITS
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, TemporalDataType
 from polars.testing import verify_series_and_expr_api
 
 if TYPE_CHECKING:
@@ -56,9 +56,16 @@ def test_filter_date() -> None:
     assert df.filter(pl.col("date") <= pl.lit(datetime(2019, 1, 3))).is_empty()
     assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 4))).shape[0] == 2
     assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 5))).shape[0] == 3
-    assert df.filter(pl.col("date") <= pl.lit(datetime(2019, 1, 3))).is_empty()
-    assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 4))).shape[0] == 2
-    assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 5))).shape[0] == 3
+    assert df.filter(pl.col("date") <= pl.lit(date(2019, 1, 3))).is_empty()
+    assert df.filter(pl.col("date") < pl.lit(date(2020, 1, 4))).shape[0] == 2
+    assert df.filter(pl.col("date") < pl.lit(date(2020, 1, 5))).shape[0] == 3
+
+
+def test_filter_time() -> None:
+    df = pl.DataFrame({"t": [time(8, 0), time(9, 0), time(10, 0)]})
+    assert df.filter(pl.col("t") <= pl.lit(time(7, 0))).is_empty()
+    assert df.filter(pl.col("t") < pl.lit(time(10, 0))).shape[0] == 2
+    assert df.filter(pl.col("t") < pl.lit(time(11, 0))).shape[0] == 3
 
 
 def test_series_add_timedelta() -> None:
@@ -385,40 +392,26 @@ def test_date_range() -> None:
     assert result.cast(pl.Utf8)[-1] == "2022-01-01 00:00:59.247379260"
 
 
-def test_date_comp() -> None:
-    one = datetime(2001, 1, 1)
-    two = datetime(2001, 1, 2)
+@pytest.mark.parametrize(
+    "one,two",
+    [
+        (date(2001, 1, 1), date(2001, 1, 2)),
+        (datetime(2001, 1, 1), datetime(2001, 1, 2)),
+        (time(20, 10, 0), time(20, 10, 1)),
+        # also test if the conversion stays correct with wide date ranges
+        (date(201, 1, 1), date(201, 1, 2)),
+        (date(5001, 1, 1), date(5001, 1, 2)),
+    ],
+)
+def test_date_comp(one: TemporalDataType, two: TemporalDataType) -> None:
     a = pl.Series("a", [one, two])
-
     assert (a == one).to_list() == [True, False]
+    assert (a == two).to_list() == [False, True]
     assert (a != one).to_list() == [False, True]
     assert (a > one).to_list() == [False, True]
     assert (a >= one).to_list() == [True, True]
     assert (a < one).to_list() == [False, False]
     assert (a <= one).to_list() == [True, False]
-
-    one = date(2001, 1, 1)  # type: ignore[assignment]
-    two = date(2001, 1, 2)  # type: ignore[assignment]
-    a = pl.Series("a", [one, two])
-    assert (a == one).to_list() == [True, False]
-    assert (a != one).to_list() == [False, True]
-    assert (a > one).to_list() == [False, True]
-    assert (a >= one).to_list() == [True, True]
-    assert (a < one).to_list() == [False, False]
-    assert (a <= one).to_list() == [True, False]
-
-    # also test if the conversion stays correct with wide date ranges
-    one = date(201, 1, 1)  # type: ignore[assignment]
-    two = date(201, 1, 2)  # type: ignore[assignment]
-    a = pl.Series("a", [one, two])
-    assert (a == one).to_list() == [True, False]
-    assert (a == two).to_list() == [False, True]
-
-    one = date(5001, 1, 1)  # type: ignore[assignment]
-    two = date(5001, 1, 2)  # type: ignore[assignment]
-    a = pl.Series("a", [one, two])
-    assert (a == one).to_list() == [True, False]
-    assert (a == two).to_list() == [False, True]
 
 
 def test_truncate_negative_offset() -> None:

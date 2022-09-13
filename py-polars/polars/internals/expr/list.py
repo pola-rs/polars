@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars.internals as pli
@@ -332,7 +332,7 @@ class ExprListNameSpace:
         return self.get(-1)
 
     def contains(
-        self, item: float | str | bool | int | date | datetime | pli.Expr
+        self, item: float | str | bool | int | date | datetime | time | pli.Expr
     ) -> pli.Expr:
         """
         Check if sublists contain the given item.
