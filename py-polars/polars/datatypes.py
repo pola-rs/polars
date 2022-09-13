@@ -211,6 +211,9 @@ class Date(DataType):
 class Datetime(DataType):
     """Calendar date and time type."""
 
+    tu: TimeUnit | None = None
+    tz: str | None = None
+
     def __init__(self, time_unit: TimeUnit = "us", time_zone: str | None = None):
         """
         Calendar date and time type.
@@ -242,6 +245,8 @@ class Datetime(DataType):
 
 class Duration(DataType):
     """Time duration/delta type."""
+
+    tu: TimeUnit | None = None
 
     def __init__(self, time_unit: TimeUnit = "us"):
         """
@@ -337,6 +342,8 @@ class Struct(DataType):
     def __hash__(self) -> int:
         return hash(Struct)
 
+
+TemporalDataType = Union[Type[Datetime], Datetime, Type[Date], Date, Type[Time], Time]
 
 DTYPE_TEMPORAL_UNITS: frozenset[TimeUnit] = frozenset(["ns", "us", "ms"])
 
@@ -597,6 +604,7 @@ def maybe_cast(
         return _datetime_to_pl_timestamp(el, time_unit)
     elif isinstance(el, timedelta):
         return _timedelta_to_pl_timedelta(el, time_unit)
+
     py_type = dtype_to_py_type(dtype)
     if not isinstance(el, py_type):
         el = py_type(el)

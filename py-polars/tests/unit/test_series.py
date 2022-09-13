@@ -1490,7 +1490,6 @@ def test_str_strptime() -> None:
     verify_series_and_expr_api(
         s, expected, "str.strptime", pl.Datetime, "%Y-%m-%d %H:%M:%S"
     )
-
     s = pl.Series(["00:00:00", "03:20:10"])
     expected = pl.Series([0, 12010000000000], dtype=pl.Time)
     verify_series_and_expr_api(s, expected, "str.strptime", pl.Time, "%H:%M:%S")
@@ -1522,14 +1521,16 @@ def test_dt_year_month_week_day_ordinal_day() -> None:
 
 
 def test_dt_datetimes() -> None:
-    s = pl.Series(["2020-01-01 00:00:00", "2020-02-02 03:20:10"])
-    s = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S")
+    s = pl.Series(["2020-01-01 00:00:00.000000000", "2020-02-02 03:20:10.987654321"])
+    s = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
 
     # hours, minutes, seconds and nanoseconds
     verify_series_and_expr_api(s, pl.Series("", [0, 3], dtype=UInt32), "dt.hour")
     verify_series_and_expr_api(s, pl.Series("", [0, 20], dtype=UInt32), "dt.minute")
     verify_series_and_expr_api(s, pl.Series("", [0, 10], dtype=UInt32), "dt.second")
-    verify_series_and_expr_api(s, pl.Series("", [0, 0], dtype=UInt32), "dt.nanosecond")
+    verify_series_and_expr_api(
+        s, pl.Series("", [0, 987654321], dtype=UInt32), "dt.nanosecond"
+    )
 
     # epoch methods
     verify_series_and_expr_api(
@@ -1546,6 +1547,10 @@ def test_dt_datetimes() -> None:
         pl.Series("", [1_577_836_800_000, 1_580_613_610_000], dtype=Int64),
         "dt.epoch",
         tu="ms",
+    )
+    # fractional seconds
+    assert pl.Series("", [0.0, 10.987654321], dtype=Float64) == s.dt.second(
+        fractional=True
     )
 
 

@@ -145,7 +145,7 @@ class ExprDateTimeNameSpace:
         """
         Extract year from underlying Date representation.
 
-        Can be performed on Date and Datetime.
+        Can be performed on Date and Datetime columns.
 
         Returns the year number in the calendar date.
 
@@ -197,7 +197,7 @@ class ExprDateTimeNameSpace:
         """
         Extract quarter from underlying Date representation.
 
-        Can be performed on Date and Datetime.
+        Can be performed on Date and Datetime columns.
 
         Returns the quarter ranging from 1 to 4.
 
@@ -245,7 +245,7 @@ class ExprDateTimeNameSpace:
         """
         Extract month from underlying Date representation.
 
-        Can be performed on Date and Datetime.
+        Can be performed on Date and Datetime columns.
 
         Returns the month number starting from 1.
         The return value ranges from 1 to 12.
@@ -294,7 +294,7 @@ class ExprDateTimeNameSpace:
         """
         Extract the week from the underlying Date representation.
 
-        Can be performed on Date and Datetime
+        Can be performed on Date and Datetime columns.
 
         Returns the ISO week number starting from 1.
         The return value ranges from 1 to 53. (The last week of year differs by years.)
@@ -343,7 +343,7 @@ class ExprDateTimeNameSpace:
         """
         Extract the week day from the underlying Date representation.
 
-        Can be performed on Date and Datetime.
+        Can be performed on Date and Datetime columns.
 
         Returns the weekday number where monday = 0 and sunday = 6
 
@@ -397,7 +397,7 @@ class ExprDateTimeNameSpace:
         """
         Extract day from underlying Date representation.
 
-        Can be performed on Date and Datetime.
+        Can be performed on Date and Datetime columns.
 
         Returns the day of month starting from 1.
         The return value ranges from 1 to 31. (The last day of month differs by months.)
@@ -452,7 +452,7 @@ class ExprDateTimeNameSpace:
         """
         Extract ordinal day from underlying Date representation.
 
-        Can be performed on Date and Datetime.
+        Can be performed on Date and Datetime columns.
 
         Returns the day of year starting from 1.
         The return value ranges from 1 to 366. (The last day of year differs by years.)
@@ -507,7 +507,7 @@ class ExprDateTimeNameSpace:
         """
         Extract hour from underlying DateTime representation.
 
-        Can be performed on Datetime.
+        Can be performed on Datetime columns.
 
         Returns the hour number from 0 to 23.
 
@@ -555,7 +555,7 @@ class ExprDateTimeNameSpace:
         """
         Extract minutes from underlying DateTime representation.
 
-        Can be performed on Datetime.
+        Can be performed on Datetime columns.
 
         Returns the minute number from 0 to 59.
 
@@ -601,61 +601,86 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.minute())
 
-    def second(self) -> pli.Expr:
+    def second(self, fractional: bool = False) -> pli.Expr:
         """
         Extract seconds from underlying DateTime representation.
 
-        Can be performed on Datetime.
+        Can be performed on Datetime columns.
 
-        Returns the second number from 0 to 59.
+        Returns the integer second number from 0 to 59, or a floating
+        point number from 0 < 60 if ``fractional=True`` that includes
+        any milli/micro/nanosecond component.
 
         Returns
         -------
-        Second as UInt32
+        Second as UInt32 (or Float64)
 
         Examples
         --------
         >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 1, 0, 0, 4)
         >>> df = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, timedelta(seconds=2))}
+        ...     data={
+        ...         "date": pl.date_range(
+        ...             low=datetime(2001, 1, 1, 0, 0, 0, 456789),
+        ...             high=datetime(2001, 1, 1, 0, 0, 6),
+        ...             interval=timedelta(seconds=2, microseconds=654321),
+        ...         )
+        ...     }
         ... )
         >>> df
         shape: (3, 1)
-        ┌─────────────────────┐
-        │ date                │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2001-01-01 00:00:00 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2001-01-01 00:00:02 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2001-01-01 00:00:04 │
-        └─────────────────────┘
-        >>> df.select(pl.col("date").dt.second())
+        ┌────────────────────────────┐
+        │ date                       │
+        │ ---                        │
+        │ datetime[μs]               │
+        ╞════════════════════════════╡
+        │ 2001-01-01 00:00:00.456789 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-01 00:00:03.111110 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-01 00:00:05.765431 │
+        └────────────────────────────┘
+        >>> df.select(pl.col("date").dt.second().alias("secs"))
         shape: (3, 1)
         ┌──────┐
-        │ date │
+        │ secs │
         │ ---  │
         │ u32  │
         ╞══════╡
         │ 0    │
         ├╌╌╌╌╌╌┤
-        │ 2    │
+        │ 3    │
         ├╌╌╌╌╌╌┤
-        │ 4    │
+        │ 5    │
         └──────┘
 
+        >>> df.select(pl.col("date").dt.second(fractional=True).alias("secs"))
+        shape: (3, 1)
+        ┌──────────┐
+        │ secs     │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.456789 │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 3.11111  │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ 5.765431 │
+        └──────────┘
+
         """
-        return pli.wrap_expr(self._pyexpr.second())
+        sec = pli.wrap_expr(self._pyexpr.second())
+        return (
+            sec + (pli.wrap_expr(self._pyexpr.nanosecond()) / pli.lit(1_000_000_000.0))
+            if fractional
+            else sec
+        )
 
     def nanosecond(self) -> pli.Expr:
         """
         Extract seconds from underlying DateTime representation.
 
-        Can be performed on Datetime.
+        Can be performed on Datetime columns.
 
         Returns the number of nanoseconds since the whole non-leap second.
         The range from 1,000,000,000 to 1,999,999,999 represents the leap second.

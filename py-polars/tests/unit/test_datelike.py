@@ -377,12 +377,12 @@ def test_date_range() -> None:
     ]
 
     result = pl.date_range(
-        datetime(2022, 1, 1), datetime(2022, 1, 1, 0, 1), "987654321ns"
+        datetime(2022, 1, 1), datetime(2022, 1, 1, 0, 1), "987456321ns"
     )
     assert len(result) == 61
     assert result.dtype.tu == "ns"  # type: ignore[attr-defined]
     assert result.dt.second()[-1] == 59
-    assert result.dt.nanosecond()[-1] == 259259260
+    assert result.cast(pl.Utf8)[-1] == "2022-01-01 00:00:59.247379260"
 
 
 def test_date_comp() -> None:
@@ -715,6 +715,31 @@ def test_strptime_dates_datetimes() -> None:
     ]
 
 
+def test_strptime_precision() -> None:
+    s = pl.Series(
+        "date", ["2022-09-12 21:54:36.789321456", "2022-09-13 12:34:56.987456321"]
+    )
+    ds = s.str.strptime(pl.Datetime)
+    assert ds.cast(pl.Date) != None  # noqa: E711  (note: *deliberately* testing "!=")
+    assert getattr(ds.dtype, "tu", None) == "us"
+
+    time_units: list[TimeUnit] = ["ms", "us", "ns"]
+    suffixes = ["%.3f", "%.6f", "%.9f"]
+    test_data = zip(
+        time_units,
+        suffixes,
+        (
+            [789000000, 987000000],
+            [789321000, 987456000],
+            [789321456, 987456321],
+        ),
+    )
+    for precision, suffix, expected_values in test_data:
+        ds = s.str.strptime(pl.Datetime(precision), f"%Y-%m-%d %H:%M:%S{suffix}")
+        assert getattr(ds.dtype, "tu", None) == precision
+        assert ds.dt.nanosecond().to_list() == expected_values
+
+
 def test_asof_join_tolerance_grouper() -> None:
     from datetime import date
 
@@ -874,7 +899,6 @@ def test_asof_join() -> None:
             "bid": [720.5, 51.95, 51.97, 51.99, 720.50, 97.99, 720.50, 52.01],
         }
     )
-
     dates = [
         "2016-05-25 13:30:00.023",
         "2016-05-25 13:30:00.038",
@@ -896,10 +920,22 @@ def test_asof_join() -> None:
             "bid": [51.95, 51.95, 720.77, 720.92, 98.0],
         }
     )
-
+    assert trades.schema == {
+        "dates": pl.Datetime("ms"),
+        "ticker": pl.Utf8,
+        "bid": pl.Float64,
+    }
     out = trades.join_asof(quotes, on="dates", strategy="backward")
+
+    assert out.schema == {
+        "bid": pl.Float64,
+        "bid_right": pl.Float64,
+        "dates": pl.Datetime("ms"),
+        "ticker": pl.Utf8,
+        "ticker_right": pl.Utf8,
+    }
     assert out.columns == ["dates", "ticker", "bid", "ticker_right", "bid_right"]
-    assert (out["dates"].cast(int) / 1000).to_list() == [
+    assert (out["dates"].cast(int)).to_list() == [
         1464183000023,
         1464183000038,
         1464183000048,

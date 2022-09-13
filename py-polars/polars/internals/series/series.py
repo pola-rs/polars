@@ -368,6 +368,7 @@ class Series:
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return wrap_s(f(ts))
+
         if isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
@@ -378,10 +379,13 @@ class Series:
             other = Series("", other, dtype_if_empty=self.dtype)
         if isinstance(other, Series):
             return wrap_s(getattr(self._s, op)(other._s))
-        other = maybe_cast(other, self.dtype, self.time_unit)
+
+        if other is not None:
+            other = maybe_cast(other, self.dtype, self.time_unit)
         f = get_ffi_func(op + "_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
+
         return wrap_s(f(other))
 
     def __eq__(self, other: Any) -> Series:  # type: ignore[override]
@@ -4239,7 +4243,7 @@ def _resolve_datetime_dtype(
 ) -> PolarsDataType | None:
     """Given polars/numpy datetime dtypes, resolve to an explicit unit."""
     if dtype is None or (dtype == Datetime and not getattr(dtype, "tu", None)):
-        tu = getattr(dtype, "tu", np.datetime_data(ndtype)[0])
+        tu = getattr(dtype, "tu", None) or np.datetime_data(ndtype)[0]
         # explicit formulation is verbose, but keeps mypy happy
         # (and avoids unsupported timeunits such as "s")
         if tu == "ns":
