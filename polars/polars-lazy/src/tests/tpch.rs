@@ -84,7 +84,7 @@ fn test_q2() -> Result<()> {
         )
         .limit(100);
 
-    let out = q.collect()?;
+    let out = q.with_common_subplan_elimination(true).collect()?;
     let schema = Schema::from([
         Field::new("s_acctbal", DataType::Float64),
         Field::new("s_name", DataType::Utf8),

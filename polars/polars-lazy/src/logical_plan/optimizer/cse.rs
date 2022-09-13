@@ -10,22 +10,23 @@ use crate::prelude::*;
 // nodes into an alogicalplan.
 type Trail = Vec<Node>;
 
+// we use mutation of `id` to get a unique trail
+// we traverse left first, so the `id` remains the same for an all left traversal.
+// every right node may increment `id` and because it's shared mutable there will
+// be no collisions as the increment is communicated upward with mutation.
 pub(crate) fn collect_trails(
     root: Node,
     lp_arena: &Arena<ALogicalPlan>,
     // every branch gets its own trail
     // note to self:
     // don't use a vec, as different branches can have collisions
-    trails: &mut BTreeMap<usize, Trail>,
-    id: usize,
-    branch: usize,
-    mut level: usize,
+    trails: &mut BTreeMap<u32, Trail>,
+    id: &mut u32,
     // if trails should be collected
     collect: bool,
 ) {
-    level += 1;
     if collect {
-        trails.get_mut(&id).unwrap().push(root);
+        trails.get_mut(id).unwrap().push(root);
     }
 
     use ALogicalPlan::*;
@@ -38,35 +39,20 @@ pub(crate) fn collect_trails(
             ..
         } => {
             // make sure that the new branch has the same trail history
-            let new_trail = trails.get(&id).unwrap().clone();
-            // try to accumulate some state in the id to try to avoid collisions.
-            let new_id = level * (branch + id % level * 50) + id;
-            trails.insert(new_id, new_trail);
+            let new_trail = trails.get(id).unwrap().clone();
+            collect_trails(*input_left, lp_arena, trails, id, true);
 
-            collect_trails(*input_left, lp_arena, trails, id, branch, level, true);
-            collect_trails(*input_right, lp_arena, trails, new_id, branch, level, true);
+            *id += 1;
+            trails.insert(*id, new_trail);
+            collect_trails(*input_right, lp_arena, trails, id, true);
         }
         Union { inputs, .. } => {
-            // first init trails
-            for i in 1..inputs.len() {
-                // make sure that the new branch has the same trail history
-                let new_trail = trails.get(&id).unwrap().clone();
+            let new_trail = trails.get(id).unwrap().clone();
 
-                // different ids than joins to try and avoid collisions
-                // TODO! make proper key that will not collide
-                let new_id = level * (branch + id % level + i * 1000) + id;
-                trails.insert(new_id, new_trail);
-            }
-
-            // then collect the trails
-            for (i, input) in inputs.iter().enumerate() {
-                // different ids than joins to try and avoid collisions
-                let new_id = level * (branch + id % level + i * 1000) + id;
-                if i == 0 {
-                    collect_trails(*input, lp_arena, trails, id, branch, level, true)
-                } else {
-                    collect_trails(*input, lp_arena, trails, new_id, branch + i, level, true)
-                }
+            for input in inputs.iter() {
+                collect_trails(*input, lp_arena, trails, id, true);
+                *id += 1;
+                trails.insert(*id, new_trail.clone());
             }
         }
         ExtContext { .. } => {
@@ -77,7 +63,7 @@ pub(crate) fn collect_trails(
             let nodes = &mut [None];
             lp.copy_inputs(nodes);
             if let Some(input) = nodes[0] {
-                collect_trails(input, lp_arena, trails, id, branch, level, collect)
+                collect_trails(input, lp_arena, trails, id, collect)
             }
         }
     }
@@ -312,9 +298,9 @@ pub(crate) fn elim_cmn_subplans(
     expr_arena: &Arena<AExpr>,
 ) -> (Node, bool) {
     let mut trails = BTreeMap::new();
-    let id = 1;
+    let mut id = 0;
     trails.insert(id, Vec::new());
-    collect_trails(root, lp_arena, &mut trails, id, 1, 1, false);
+    collect_trails(root, lp_arena, &mut trails, &mut id, false);
     let trails = trails.into_values().collect::<Vec<_>>();
 
     // search from the leafs upwards and find the longest shared subplans

@@ -202,7 +202,11 @@ impl LogicalPlan {
                 id: cache_id,
                 count,
             } => {
-                let fmt = format!("CACHE: {}times", *count);
+                let fmt = if *count == usize::MAX {
+                    "CACHE".to_string()
+                } else {
+                    format!("CACHE: {}times", *count)
+                };
                 let current_node = DotNode {
                     branch: *cache_id,
                     id: *cache_id,

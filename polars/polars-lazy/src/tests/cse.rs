@@ -14,7 +14,10 @@ fn test_cse_self_joins() -> Result<()> {
 
     let lf = lf.clone().with_column(col("category").str().to_uppercase());
 
-    let lf = lf.clone().left_join(lf, col("fats_g"), col("fats_g"));
+    let lf = lf
+        .clone()
+        .left_join(lf, col("fats_g"), col("fats_g"))
+        .with_common_subplan_elimination(true);
     cached_before_root(lf);
 
     Ok(())
@@ -26,7 +29,7 @@ fn test_cse_unions() -> Result<()> {
 
     let lf1 = lf.clone().with_column(col("category").str().to_uppercase());
 
-    let lf = concat(&[lf1.clone(), lf, lf1], false)?;
+    let lf = concat(&[lf1.clone(), lf, lf1], false)?.with_common_subplan_elimination(true);
     cached_before_root(lf);
 
     Ok(())
@@ -46,7 +49,9 @@ fn test_cse_cache_union_projection_pd() -> Result<()> {
         .clone()
         .filter(col("a").eq(lit(1)))
         .select([col("a"), col("b")]);
-    let q = q1.left_join(q2, col("a"), col("a"));
+    let q = q1
+        .left_join(q2, col("a"), col("a"))
+        .with_common_subplan_elimination(true);
 
     // check that the projection of a is not done before the cache
     let (mut expr_arena, mut lp_arena) = get_arenas();
