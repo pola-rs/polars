@@ -334,9 +334,9 @@
 //!                                    These options are defined by comfy-table which provides examples for each at:
 //!                                    https://github.com/Nukesor/comfy-table/blob/main/src/style/presets.rs
 //! * `POLARS_FMT_TABLE_CELL_ALIGNMENT` -> define cell alignment using any of the following options (default = LEFT):
-//!                                    LEFT 
+//!                                    LEFT
 //!                                    CENTER
-//!                                    RIGHT 
+//!                                    RIGHT
 //! * `POLARS_FMT_MAX_COLS` -> maximum number of columns shown when formatting DataFrames.
 //! * `POLARS_FMT_MAX_ROWS` -> maximum number of rows shown when formatting DataFrames.
 //! * `POLARS_FMT_STR_LEN` -> maximum number of characters printed per string value.
