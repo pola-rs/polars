@@ -60,30 +60,6 @@ test-with-cov: venv  ## Run tests and report coverage
 doctest:  ## Run doctests
 	$(PYTHON) tests/docs/run_doc_examples.py
 
-.PHONY: install-wheel
-install-wheel:
-	pip install --force-reinstall -U wheels/polars-*.whl
-
-.PHONY: build-no-venv
-build-no-venv:
-	maturin build -o wheels
-
-.PHONY: build-no-venv-release
-build-no-venv-release:
-	maturin build -o wheels --release
-
-.PHONY: build-and-test-no-venv
-build-and-test-no-venv:
-	maturin build -o wheels
-	pip install --force-reinstall -U wheels/polars-*.whl
-	pytest tests
-
-.PHONY: install-no-venv
-install-no-venv: build-no-venv install-wheel
-
-.PHONY: install-no-venv-release
-install-no-venv-release: build-no-venv-release install-wheel
-
 .PHONY: help
 help:  ## Display this help screen
 	@echo -e '\033[1mAvailable commands:\033[0m'
