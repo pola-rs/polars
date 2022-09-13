@@ -20,25 +20,25 @@ class Config:
 
     @classmethod
     def set_tbl_hide_column_names(cls) -> type[Config]:
-        """Hide column names of tables"""
+        """Hide column names of tables."""
         os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_NAMES"] = "1"
         return cls
 
     @classmethod
     def set_tbl_hide_column_data_types(cls) -> type[Config]:
-        """Hide column data types (i64, f64, str etc.) of tables"""
+        """Hide column data types (i64, f64, str etc.) of tables."""
         os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES"] = "1"
         return cls
 
     @classmethod
     def set_tbl_hide_column_separator(cls) -> type[Config]:
-        """Hide the '---' separator that separates column names from the table rows"""
+        """Hide the '---' separator that separates column names from the table rows."""
         os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR"] = "1"
         return cls
 
     @classmethod
     def set_tbl_hide_dataframe_shape(cls) -> type[Config]:
-        """Hide the shape information of the dataframe when displaying tables"""
+        """Hide the shape information of the dataframe when displaying tables."""
         os.environ["POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION"] = "1"
         return cls
 
@@ -74,28 +74,28 @@ class Config:
             "NOTHING",
         ],
     ) -> type[Config]:
-        """Set table formatting style.
+        """
+        Set table formatting style.
 
-        Parameters:
-        -----------
-        "ASCII_FULL",
-        "ASCII_NO_BORDERS",
-        "ASCII_BORDERS_ONLY",
-        "ASCII_BORDERS_ONLY_CONDENSED",
-        "ASCII_HORIZONTAL_ONLY",
-        "ASCII_MARKDOWN",
-        "UTF8_FULL",
-        "UTF8_NO_BORDERS",
-        "UTF8_BORDERS_ONLY",
-        "UTF8_HORIZONTAL_ONLY",
-        "NOTHING"
+        Args
+        ----
+            "ASCII_FULL": ASCII borders / lines
+            "ASCII_NO_BORDERS": ASCII no borders
+            "ASCII_BORDERS_ONLY": ASCII borders only
+            "ASCII_BORDERS_ONLY_CONDENSED": ASCII borders only condensed
+            "ASCII_HORIZONTAL_ONLY": Horizontal lines only
+            "ASCII_MARKDOWN": Markdown style
+            "UTF8_FULL": UTF8 borders lines
+            "UTF8_NO_BORDERS": UTF8 no borders
+            "UTF8_BORDERS_ONLY": UTF8 borders only
+            "UTF8_HORIZONTAL_ONLY": UTF8 horizontal only
+            "NOTHING": No borders /lines
 
-        These are defined by comfy-table which provides examples for each parameter at:
-
-        https://github.com/Nukesor/comfy-table/blob/main/src/style/presets.rs
+        Raises
+        ------
+            KeyError: Wrong key
 
         """
-
         os.environ["POLARS_FMT_TABLE_FORMATTING"] = format
         return cls
 
@@ -106,11 +106,15 @@ class Config:
         """
         Set table cell alignment.
 
-        Parameters:
-        -----------
-        "LEFT"
-        "CENTER"
-        "RIGHT"
+        Args
+        ----
+            "LEFT": left aligned
+            "CENTER": center aligned
+            "RIGHT": right aligned
+
+        Raises
+        ------
+            KeyError: Wrong key
 
         """
         os.environ["POLARS_FMT_TABLE_CELL_ALIGNMENT"] = format
