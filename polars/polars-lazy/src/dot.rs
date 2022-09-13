@@ -502,8 +502,8 @@ impl LogicalPlan {
                     fmt: &fmt,
                 };
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
-                input_left.dot(acc_str, (branch + 10, id + 1), current_node, id_map)?;
-                input_right.dot(acc_str, (branch + 20, id + 1), current_node, id_map)
+                input_left.dot(acc_str, (branch + 100, id + 1), current_node, id_map)?;
+                input_right.dot(acc_str, (branch + 200, id + 1), current_node, id_map)
             }
             MapFunction {
                 input, function, ..

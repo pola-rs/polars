@@ -9,7 +9,12 @@ pub(crate) mod cse;
 pub(crate) mod delay_rechunk;
 pub(crate) mod drop_nulls;
 pub(crate) mod fast_projection;
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "csv-file",
+    feature = "cse"
+))]
 pub(crate) mod file_caching;
 pub(crate) mod predicate_pushdown;
 pub(crate) mod projection_pushdown;

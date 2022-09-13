@@ -37,7 +37,12 @@ use polars_io::RowCount;
 use serde::{Deserialize, Serialize};
 
 use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
-#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+#[cfg(any(
+    feature = "parquet",
+    feature = "csv-file",
+    feature = "ipc",
+    feature = "cse"
+))]
 use crate::logical_plan::optimizer::file_caching::FileCacher;
 use crate::logical_plan::optimizer::predicate_pushdown::PredicatePushDown;
 use crate::logical_plan::optimizer::projection_pushdown::ProjectionPushDown;
@@ -644,6 +649,12 @@ impl LazyFrame {
         // make sure that we do that once slice pushdown
         // and predicate pushdown are done. At that moment
         // the file fingerprints are finished.
+        #[cfg(any(
+            feature = "cse",
+            feature = "parquet",
+            feature = "ipc",
+            feature = "csv-file"
+        ))]
         if agg_scan_projection || cse_changed {
             // we do this so that expressions are simplified created by the pushdown optimizations
             // we must clean up the predicates, because the agg_scan_projection
