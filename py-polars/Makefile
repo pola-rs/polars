@@ -17,6 +17,10 @@ clean:  ## Clean up caches and build artifacts
 	@find -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -delete
 	@cargo clean
 
+.PHONY: build
+build:  # Build and install Polars
+	maturin develop
+
 .PHONY: fmt
 fmt:  ## Run autoformatting and linting
 	isort .
@@ -36,22 +40,20 @@ clippy:  ## Lint Rust files
 pre-commit: fmt clippy ## Run all code quality checks
 
 .PHONY: test
-test:  ## Run fast unittests
-	maturin develop
+test: build  ## Run fast unittests
 	pytest tests/unit/
 
 .PHONY: test-all
-test-all:  ## Run all tests
-	maturin develop
+test-all: build  ## Run all tests
 	pytest
 	python tests/docs/run_doc_examples.py
 
 .PHONY: test-with-cov
-test-with-cov:  ## Run tests and report coverage
+test-with-cov: build  ## Run tests and report coverage
 	pytest --cov
 
 .PHONY: doctest
-doctest:  ## Run doctests
+doctest: build  ## Run doctests
 	python tests/docs/run_doc_examples.py
 
 .PHONY: help
