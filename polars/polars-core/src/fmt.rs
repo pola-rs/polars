@@ -474,8 +474,8 @@ impl Display for DataFrame {
 
             if std::env::var("POLARS_FMT_TABLE_CELL_ALIGNMENT").is_ok() {
                 // for (column_index, column) in table.column_iter_mut().enumerate() {
-                let str_preset =
-                    std::env::var("POLARS_FMT_TABLE_CELL_ALIGNMENT").unwrap_or_else(|_| "none".to_string());
+                let str_preset = std::env::var("POLARS_FMT_TABLE_CELL_ALIGNMENT")
+                    .unwrap_or_else(|_| "none".to_string());
                 for column in table.column_iter_mut() {
                     if str_preset == "RIGHT" {
                         column.set_cell_alignment(CellAlignment::Right);
