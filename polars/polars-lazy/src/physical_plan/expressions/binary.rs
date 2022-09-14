@@ -71,21 +71,17 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> Result<Ser
         Operator::Minus => Ok(left - right),
         Operator::Multiply => Ok(left * right),
         Operator::Divide => Ok(left / right),
-        Operator::TrueDivide => {
-            use DataType::*;
-            match left.dtype() {
-                Date | Datetime(_, _) | Float32 | Float64 => Ok(left / right),
-                _ => Ok(&left.cast(&Float64)? / &right.cast(&Float64)?),
+        Operator::TrueDivide => match left.dtype() {
+            DataType::Date | DataType::Datetime(_, _) | DataType::Float32 | DataType::Float64 => {
+                Ok(left / right)
             }
-        }
-        Operator::FloorDivide => {
-            use DataType::*;
-            match left.dtype() {
-                #[cfg(feature = "round_series")]
-                Float32 | Float64 => (left / right).floor(),
-                _ => Ok(left / right),
-            }
-        }
+            _ => Ok(&left.cast(&DataType::Float64)? / &right.cast(&DataType::Float64)?),
+        },
+        Operator::FloorDivide => match left.dtype() {
+            #[cfg(feature = "round_series")]
+            DataType::Float32 | DataType::Float64 => (left / right).floor(),
+            _ => Ok(left / right),
+        },
         Operator::And => left.bitand(right),
         Operator::Or => left.bitor(right),
         Operator::Xor => left.bitxor(right),

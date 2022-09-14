@@ -1,3 +1,4 @@
+#[cfg(feature = "date_offset")]
 use super::*;
 
 #[cfg(feature = "date_offset")]

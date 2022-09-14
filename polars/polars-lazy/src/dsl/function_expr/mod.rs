@@ -34,7 +34,6 @@ use std::fmt::{Display, Formatter};
 #[cfg(feature = "list")]
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
-use polars_core::utils::slice_offsets;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

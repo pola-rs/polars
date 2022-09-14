@@ -30,8 +30,6 @@ pub use expr::*;
 pub use functions::*;
 pub use options::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_core::export::arrow::array::BooleanArray;
-use polars_core::export::arrow::bitmap::MutableBitmap;
 use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;

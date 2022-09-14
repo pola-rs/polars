@@ -8,6 +8,7 @@ use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::{GroupByMethod, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
+#[cfg(feature = "dtype-struct")]
 use polars_core::POOL;
 
 use crate::physical_plan::state::ExecutionState;
@@ -305,7 +306,6 @@ impl PartitionedAggregation for AggregationExpr {
             GroupByMethod::Mean => {
                 let new_name = partitioned.name();
                 match partitioned.dtype() {
-                    #[cfg(feature = "dtype-struct")]
                     DataType::Struct(_) => {
                         let ca = partitioned.struct_().unwrap();
                         let sum = &ca.fields()[0];

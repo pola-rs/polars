@@ -10,7 +10,9 @@ use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
-use crate::frame::hash_join::{check_categorical_src, ZipOuterJoinColumn};
+#[cfg(feature = "is_in")]
+use crate::frame::hash_join::check_categorical_src;
+use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 
