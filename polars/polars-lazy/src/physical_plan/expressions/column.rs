@@ -136,7 +136,7 @@ impl PhysicalExpr for ColumnExpr {
             PolarsError::NotFound(format!(
                 "could not find column: {} in schema: {:?}",
                 self.0, &input_schema
-            ))
+            ).into())
         })?;
         Ok(field)
     }

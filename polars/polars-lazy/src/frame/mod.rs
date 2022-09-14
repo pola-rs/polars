@@ -60,6 +60,7 @@ use crate::prelude::file_caching::find_column_union_and_fingerprints;
 use crate::prelude::simplify_expr::SimplifyBooleanRule;
 use crate::prelude::slice_pushdown_lp::SlicePushDown;
 use crate::prelude::*;
+use crate::prelude::cache_states::set_cache_states;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -356,7 +357,7 @@ impl LazyFrame {
             for (old, new) in existing2.iter().zip(new2.iter()) {
                 new_schema
                     .rename(old, new.to_string())
-                    .ok_or_else(|| PolarsError::NotFound(old.into()))?
+                    .ok_or_else(|| PolarsError::NotFound(old.to_string().into()))?
             }
             Ok(Arc::new(new_schema))
         };
@@ -576,6 +577,7 @@ impl LazyFrame {
         let aggregate_pushdown = self.opt_state.aggregate_pushdown;
 
         let logical_plan = self.get_plan_builder().build();
+        let mut scratch = vec![];
 
         // gradually fill the rules passed to the optimizer
         let opt = StackOptimizer {};
@@ -673,10 +675,11 @@ impl LazyFrame {
                 expr_arena,
             );
 
-            let mut scratch = vec![];
+
             let mut file_cacher = FileCacher::new(file_predicate_to_columns_and_count);
             file_cacher.assign_unions(lp_top, lp_arena, expr_arena, &mut scratch, false);
             scratch.clear();
+
 
             #[cfg(feature = "cse")]
             if cse_changed {
@@ -694,6 +697,10 @@ impl LazyFrame {
         rules.push(Box::new(ReplaceDropNulls {}));
 
         lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top);
+
+        if projection_pushdown {
+            cache_states::set_cache_states(lp_top, lp_arena, expr_arena, &mut scratch);
+        }
 
         // during debug we check if the optimizations have not modified the final schema
         #[cfg(debug_assertions)]

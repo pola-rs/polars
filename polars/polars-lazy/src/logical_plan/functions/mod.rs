@@ -62,7 +62,7 @@ impl FunctionNode {
                         let name = name.as_ref();
                         input_schema
                             .get_field(name)
-                            .ok_or_else(|| PolarsError::NotFound(name.into()))
+                            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
                     })
                     .collect::<Result<Schema>>()?;
                 Ok(Cow::Owned(Arc::new(schema)))

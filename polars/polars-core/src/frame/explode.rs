@@ -252,7 +252,7 @@ impl DataFrame {
         let mut iter = value_vars.iter().map(|v| {
             schema
                 .get(v)
-                .ok_or_else(|| PolarsError::NotFound(v.clone()))
+                .ok_or_else(|| PolarsError::NotFound(v.to_string().into()))
         });
         let mut st = iter.next().unwrap()?.clone();
         for dt in iter {

@@ -397,7 +397,7 @@ impl LogicalPlanBuilder {
             let dtype = try_delayed!(
                 current_schema
                     .get(name)
-                    .ok_or_else(|| PolarsError::NotFound(name.clone())),
+                    .ok_or_else(|| PolarsError::NotFound(name.to_string().into())),
                 self.0,
                 into
             );

@@ -1087,7 +1087,7 @@ impl ProjectionPushDown {
                 }
             }
             // Slice and Unions have only inputs and exprs, so we can use same logic.
-            lp @ Slice { .. } | lp @ Union { .. } | lp @ Cache { .. } => {
+            lp @ Slice { .. } | lp @ Union { .. }   => {
                 let inputs = lp.get_inputs();
                 let exprs = lp.get_exprs();
 
@@ -1109,23 +1109,31 @@ impl ProjectionPushDown {
                     .collect::<Result<Vec<_>>>()?;
 
                 Ok(lp.with_exprs_and_input(exprs, new_inputs))
-            } // Cache { input, .. } => {
-              //     // we restart projection pd
-              //     projected_names.clear();
-              //     self.pushdown_and_assign(
-              //         input,
-              //         vec![],
-              //         projected_names,
-              //         projections_seen,
-              //         lp_arena,
-              //         expr_arena,
-              //     )?;
-              //     Ok(
-              //         ALogicalPlanBuilder::from_lp(logical_plan, expr_arena, lp_arena)
-              //             .project(acc_projections)
-              //             .build(),
-              //     )
-              // }
+            }
+            Cache { .. } => {
+                // projections above this cache will be accumulated and pushed down
+                // later
+                return Ok(logical_plan)
+
+                //   // we restart projection pd
+                //   projected_names.clear();
+                //   self.pushdown_and_assign(
+                //       input,
+                //       vec![],
+                //       projected_names,
+                //       projections_seen,
+                //       lp_arena,
+                //       expr_arena,
+                //   )?;
+                //
+                // if acc_projections.is_empty() {
+                //     Ok(logical_plan)
+                // } else {
+                //         Ok(ALogicalPlanBuilder::from_lp(logical_plan, expr_arena, lp_arena)
+                //             .project(acc_projections)
+                //             .build())
+                // }
+            }
         }
     }
 

@@ -56,7 +56,7 @@ pub(crate) fn columns_to_projection(
         PolarsError::NotFound(format!(
             "Unable to get field named \"{}\". Valid fields: {:?}",
             column, valid_fields
-        ))
+        ).into())
     };
 
     let mut prj = Vec::with_capacity(columns.len());

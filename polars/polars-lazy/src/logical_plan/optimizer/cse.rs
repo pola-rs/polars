@@ -304,7 +304,7 @@ pub(crate) fn elim_cmn_subplans(
     let trails = trails.into_values().collect::<Vec<_>>();
 
     // search from the leafs upwards and find the longest shared subplans
-    let mut longest_trails = vec![];
+    let mut trail_ends = vec![];
 
     // let mut equal_trails = vec![];
     for i in 0..trails.len() {
@@ -313,7 +313,7 @@ pub(crate) fn elim_cmn_subplans(
         // we only look forwards, then we traverse all combinations
         for trail_j in trails.iter().skip(i + 1) {
             if let Some(res) = longest_subgraph(trail_i, trail_j, lp_arena, expr_arena) {
-                longest_trails.push(res)
+                trail_ends.push(res)
             }
         }
     }
@@ -323,7 +323,7 @@ pub(crate) fn elim_cmn_subplans(
     let hb = ahash::RandomState::new();
     let mut changed = false;
     // insert cache nodes
-    for combination in longest_trails.iter() {
+    for combination in trail_ends.iter() {
         let mut h = hb.build_hasher();
         combination.hash(&mut h);
         let hash = h.finish();

@@ -62,7 +62,7 @@ fn test_q2() -> Result<()> {
         .groupby([col("p_partkey")])
         .agg([col("ps_supplycost").min()])
         .join(
-            q1,
+            q1.clone(),
             [col("p_partkey"), col("ps_supplycost")],
             [col("p_partkey"), col("ps_supplycost")],
             JoinType::Inner,
@@ -82,9 +82,9 @@ fn test_q2() -> Result<()> {
             [true, false, false, false],
             false,
         )
-        .limit(100);
+        .limit(100).with_common_subplan_elimination(true);
 
-    let out = q.with_common_subplan_elimination(true).collect()?;
+    let out = q.collect()?;
     let schema = Schema::from([
         Field::new("s_acctbal", DataType::Float64),
         Field::new("s_name", DataType::Utf8),

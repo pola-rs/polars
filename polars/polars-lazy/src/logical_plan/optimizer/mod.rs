@@ -23,6 +23,7 @@ mod slice_pushdown_expr;
 pub mod slice_pushdown_lp;
 pub(crate) mod stack_opt;
 pub(crate) mod type_coercion;
+pub(crate) mod cache_states;
 
 pub(crate) use slice_pushdown_lp::SlicePushDown;
 
