@@ -151,7 +151,7 @@ features = [
 ]
 
 [patch.crates-io]
-# packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd" }
+cmake = { git = "https://github.com/messense/cmake-rs.git", branch = "cross-compile" }
 
 [lib]
 name = "polars"

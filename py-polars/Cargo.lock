@@ -292,8 +292,7 @@ dependencies = [
 [[package]]
 name = "cmake"
 version = "0.1.48"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8ad8cef104ac57b68b89df3208164d228503abbdce70f6880ffa3d970e7443a"
+source = "git+https://github.com/messense/cmake-rs.git?branch=cross-compile#15ab68baca7c44bcf23c5d91a4201f10d40552a1"
 dependencies = [
  "cc",
 ]
