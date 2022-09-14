@@ -54,7 +54,7 @@ test-all: venv  ## Run all tests
 
 .PHONY: test-with-cov
 test-with-cov: venv  ## Run tests and report coverage
-	$(PYTHON) -m pytest --cov=polars --cov-report xml
+	$(PYTHON) -m pytest --cov
 
 .PHONY: doctest
 doctest:  ## Run doctests
