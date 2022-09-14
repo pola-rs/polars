@@ -62,22 +62,31 @@ impl OptimizationRule for FastProjectionAndCollapse {
                 }
             }
             LocalProjection { input, expr, .. } => impl_fast_projection(*input, expr, expr_arena),
-            // if there are 2 subsequent fast projections, flatten them and only take the last
             MapFunction {
                 input,
-                function: projection,
-            } if matches!(projection, FunctionNode::FastProjection { .. }) => {
-                if let MapFunction {
-                    function: FunctionNode::FastProjection { .. },
-                    input: prev_input,
-                } = lp_arena.get(*input)
-                {
-                    Some(MapFunction {
+                function: FunctionNode::FastProjection { columns },
+            } => {
+                // if there are 2 subsequent fast projections, flatten them and only take the last
+                match lp_arena.get(*input) {
+                    MapFunction {
+                        function: FunctionNode::FastProjection { .. },
+                        input: prev_input,
+                    } => Some(MapFunction {
                         input: *prev_input,
-                        function: projection.clone(),
-                    })
-                } else {
-                    None
+                        function: FunctionNode::FastProjection {
+                            columns: columns.clone(),
+                        },
+                    }),
+                    // cleanup projections set in projection pushdown just above caches
+                    // they are nto needed.
+                    cache_lp @ Cache { .. } => {
+                        if cache_lp.schema(lp_arena).len() == columns.len() {
+                            Some(cache_lp.clone())
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
                 }
             }
             // if there are 2 subsequent caches, flatten them and only take the inner

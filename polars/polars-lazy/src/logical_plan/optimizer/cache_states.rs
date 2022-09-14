@@ -5,6 +5,57 @@ use polars_core::prelude::PlIndexSet;
 
 use crate::prelude::*;
 
+fn get_pushdown_names(
+    parent: Node,
+    lp_arena: &Arena<ALogicalPlan>,
+    expr_arena: &Arena<AExpr>,
+) -> Option<Vec<Arc<str>>> {
+    let parent = lp_arena.get(parent);
+
+    use ALogicalPlan::*;
+    match parent {
+        Projection { expr, .. } | HStack { exprs: expr, .. } => Some(
+            expr.iter()
+                .map(|node| aexpr_to_root_column_name(*node, expr_arena).unwrap())
+                .collect(),
+        ),
+        Join {
+            left_on, right_on, ..
+        } => {
+            let iter_left = left_on
+                .iter()
+                .map(|node| aexpr_to_root_column_name(*node, expr_arena).unwrap());
+            let iter_right = right_on
+                .iter()
+                .map(|node| aexpr_to_root_column_name(*node, expr_arena).unwrap());
+            Some(iter_left.chain(iter_right).collect())
+        }
+        Aggregate {
+            keys,
+            aggs,
+            options,
+            ..
+        } => {
+            let keys = keys
+                .iter()
+                .map(|node| aexpr_to_root_column_name(*node, expr_arena).unwrap());
+            let aggs = aggs
+                .iter()
+                .map(|node| aexpr_to_root_column_name(*node, expr_arena).unwrap());
+            let mut names = keys.chain(aggs).collect::<Vec<_>>();
+            if let Some(opt) = &options.rolling {
+                names.push(Arc::from(opt.index_column.as_str()))
+            }
+            if let Some(opt) = &options.dynamic {
+                names.push(Arc::from(opt.index_column.as_str()))
+            }
+            Some(names)
+        }
+        // todo! add more
+        _ => None,
+    }
+}
+
 pub(crate) fn set_cache_states(
     root: Node,
     lp_arena: &mut Arena<ALogicalPlan>,
@@ -38,34 +89,29 @@ pub(crate) fn set_cache_states(
             }
             Cache { input, id, .. } => {
                 if let Some(parent_node) = parent {
-                    let parent = lp_arena.get(parent_node);
                     // projection pushdown has already run and blocked on cache nodes
                     // the pushed down columns are projected just above this cache
                     // if there were no pushed down column, we just take the current
                     // nodes schema
                     // we never want to naively take parents, as a join or aggregate for instance
                     // change the schema
-                    let schema = if let ALogicalPlan::Projection { .. }
-                    | ALogicalPlan::MapFunction {
-                        function: FunctionNode::FastProjection { .. },
-                        ..
-                    } = parent
-                    {
-                        parent.schema(lp_arena)
-                    } else {
-                        lp.schema(lp_arena)
-                    };
 
                     let entry = cache_schema_and_children.entry(*id).or_insert_with(|| {
                         (
                             Vec::new(),
-                            PlIndexSet::with_capacity_and_hasher(schema.len(), Default::default()),
+                            PlIndexSet::with_capacity_and_hasher(0, Default::default()),
                         )
                     });
                     entry.0.push(*input);
-                    entry
-                        .1
-                        .extend(schema.iter_names().map(|name| Arc::from(name.as_str())));
+
+                    if let Some(names) = get_pushdown_names(parent_node, lp_arena, expr_arena) {
+                        entry.1.extend(names);
+                    } else {
+                        let schema = lp.schema(lp_arena);
+                        entry
+                            .1
+                            .extend(schema.iter_names().map(|name| Arc::from(name.as_str())));
+                    }
                 }
                 cache_id = Some(*id);
             }
@@ -101,6 +147,14 @@ pub(crate) fn set_cache_states(
                     .build();
 
                 let lp = pd.optimize(lp, lp_arena, expr_arena).unwrap();
+                // remove the projection added by the optimization
+                let lp = if let ALogicalPlan::Projection { input, .. }
+                | ALogicalPlan::LocalProjection { input, .. } = lp
+                {
+                    lp_arena.take(input)
+                } else {
+                    lp
+                };
                 lp_arena.replace(child, lp);
             }
         }

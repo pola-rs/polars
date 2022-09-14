@@ -322,40 +322,57 @@ pub(crate) fn elim_cmn_subplans(
 
     let hb = ahash::RandomState::new();
     let mut changed = false;
+
+    let mut cache_mapping = BTreeMap::new();
+
     // insert cache nodes
     for combination in trail_ends.iter() {
-        let mut h = hb.build_hasher();
-        combination.hash(&mut h);
-        let hash = h.finish();
-        let mut cache_id = lp_cache.wrapping_add(hash as usize);
-        // this ensures we can still add branch ids without overflowing
-        // during the dot representation
-        if (usize::MAX - cache_id) < 2048 {
-            cache_id -= 2048
-        }
+        // both are the same, but only point to a different location
+        // in our arena so we hash one and store the hash for both locations
+        // this will ensure all matches have the same hash.
+        let node1 = combination.1 .0;
+        let node2 = combination.2 .0;
+
+        let cache_id = match (cache_mapping.get(&node1), cache_mapping.get(&node2)) {
+            (Some(h), _) => *h,
+            (_, Some(h)) => *h,
+            _ => {
+                let mut h = hb.build_hasher();
+                node1.hash(&mut h);
+                let hash = h.finish();
+                let mut cache_id = lp_cache.wrapping_add(hash as usize);
+                // this ensures we can still add branch ids without overflowing
+                // during the dot representation
+                if (usize::MAX - cache_id) < 2048 {
+                    cache_id -= 2048
+                }
+
+                cache_mapping.insert(node1, cache_id);
+                cache_mapping.insert(node2, cache_id);
+                cache_id
+            }
+        } as usize;
 
         // reassign old nodes to another location as we are going to replace
         // them with a cache node
-        let lp = lp_arena.get(combination.1).clone();
-        let node = lp_arena.add(lp);
+        for inp_node in [combination.1, combination.2] {
+            if let ALogicalPlan::Cache { count, .. } = lp_arena.get_mut(inp_node) {
+                *count += 1;
+            } else {
+                let lp = lp_arena.get(inp_node).clone();
 
-        let cache_lp = ALogicalPlan::Cache {
-            input: node,
-            id: cache_id,
-            // remove after one cache hit.
-            count: 1,
-        };
-        lp_arena.replace(combination.1, cache_lp.clone());
+                let node = lp_arena.add(lp);
 
-        let lp = lp_arena.get(combination.2).clone();
-        let node = lp_arena.add(lp);
-        let cache_lp = ALogicalPlan::Cache {
-            input: node,
-            id: cache_id,
-            // remove after one cache hit.
-            count: 1,
-        };
-        lp_arena.replace(combination.2, cache_lp);
+                let cache_lp = ALogicalPlan::Cache {
+                    input: node,
+                    id: cache_id,
+                    // remove after one cache hit.
+                    count: 1,
+                };
+                lp_arena.replace(inp_node, cache_lp.clone());
+            };
+        }
+
         changed = true;
     }
 

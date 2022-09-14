@@ -30,8 +30,27 @@ fn test_cse_unions() -> Result<()> {
 
     let lf1 = lf.clone().with_column(col("category").str().to_uppercase());
 
-    let lf = concat(&[lf1.clone(), lf, lf1], false)?.with_common_subplan_elimination(true);
-    cached_before_root(lf);
+    let lf = concat(&[lf1.clone(), lf, lf1], false)?
+        .select([col("category"), col("fats_g")])
+        .with_common_subplan_elimination(true);
+
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = lf.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    assert!((&lp_arena).iter(lp).all(|(_, lp)| {
+        use ALogicalPlan::*;
+        match lp {
+            IpcScan { options, .. } => {
+                if let Some(columns) = &options.with_columns {
+                    columns.len() == 2
+                } else {
+                    false
+                }
+            }
+            _ => true,
+        }
+    }));
+    let out = lf.collect()?;
+    assert_eq!(out.get_column_names(), &["category", "fats_g"]);
 
     Ok(())
 }
