@@ -3224,7 +3224,9 @@ impl DataFrame {
             // the code below will return an error with the missing name
             let schema = self.schema();
             for col in cols {
-                let _ = schema.get(&col).ok_or(PolarsError::NotFound(col))?;
+                let _ = schema
+                    .get(&col)
+                    .ok_or_else(|| PolarsError::NotFound(col.into()))?;
             }
         }
         DataFrame::new(new_cols)

@@ -1,21 +1,22 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use polars_core::prelude::{PlHashMap, PlHashSet};
+
+use polars_core::prelude::PlIndexSet;
+
 use crate::prelude::*;
-use crate::prelude::LogicalPlan::{DataFrameScan, IpcScan};
 
 pub(crate) fn set_cache_states(
     root: Node,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
-    scratch: &mut Vec<Node>
-)  {
+    scratch: &mut Vec<Node>,
+) {
     scratch.clear();
 
     // per cache id holds:
     // a Vec: with (parent, child) pairs
     // a Set: with the union of column names.
-    let mut cache_schema_and_cache_family = BTreeMap::new();
+    let mut cache_schema_and_children = BTreeMap::new();
 
     let mut stack = Vec::with_capacity(4);
     stack.push((root, None, None));
@@ -30,26 +31,44 @@ pub(crate) fn set_cache_states(
         use ALogicalPlan::*;
         match lp {
             // don't allow parallelism if underneath a cache
-            Join {..} if cache_id.is_some() => {
-                if let Join{options,
-                    ..} = lp_arena.get_mut(node) {
+            Join { .. } if cache_id.is_some() => {
+                if let Join { options, .. } = lp_arena.get_mut(node) {
                     options.allow_parallel = false;
                 }
             }
-            Cache {input, id, ..} => {
+            Cache { input, id, .. } => {
                 if let Some(parent_node) = parent {
-                    let parent= lp_arena.get(parent_node);
-                    let schema = parent.schema(lp_arena);
+                    let parent = lp_arena.get(parent_node);
+                    // projection pushdown has already run and blocked on cache nodes
+                    // the pushed down columns are projected just above this cache
+                    // if there were no pushed down column, we just take the current
+                    // nodes schema
+                    // we never want to naively take parents, as a join or aggregate for instance
+                    // change the schema
+                    let schema = if let ALogicalPlan::Projection { .. }
+                    | ALogicalPlan::MapFunction {
+                        function: FunctionNode::FastProjection { .. },
+                        ..
+                    } = parent
+                    {
+                        parent.schema(lp_arena)
+                    } else {
+                        lp.schema(lp_arena)
+                    };
 
-                    let entry = cache_schema_and_cache_family.entry(*id).or_insert_with(|| {
-                        (Vec::new(), PlHashSet::new())
+                    let entry = cache_schema_and_children.entry(*id).or_insert_with(|| {
+                        (
+                            Vec::new(),
+                            PlIndexSet::with_capacity_and_hasher(schema.len(), Default::default()),
+                        )
                     });
-                    entry.0.push((parent_node, *input));
-                    entry.1.extend(schema.iter_names().map(|name| Arc::from(name.as_str())));
-
+                    entry.0.push(*input);
+                    entry
+                        .1
+                        .extend(schema.iter_names().map(|name| Arc::from(name.as_str())));
                 }
                 cache_id = Some(*id);
-            },
+            }
             _ => {}
         }
 
@@ -65,14 +84,15 @@ pub(crate) fn set_cache_states(
     // just before the cache. Then we do another projection pushdown
     // and finally remove that last projection and stitch the subplan
     // back to the cache node again
-    if !cache_schema_and_cache_family.is_empty() {
-        let pd = projection_pushdown::ProjectionPushDown{};
-        for (_cache_id, (family, columns)) in cache_schema_and_cache_family {
-            let projection = columns.into_iter().map(|name| {
-                expr_arena.add(AExpr::Column(name))
-            }).collect::<Vec<_>>();
+    if !cache_schema_and_children.is_empty() {
+        let pd = projection_pushdown::ProjectionPushDown {};
+        for (_cache_id, (children, columns)) in cache_schema_and_children {
+            let projection = columns
+                .into_iter()
+                .map(|name| expr_arena.add(AExpr::Column(name)))
+                .collect::<Vec<_>>();
 
-            for (parent, child) in family {
+            for child in children {
                 let child_lp = lp_arena.get(child).clone();
                 let new_child = lp_arena.add(child_lp);
 

@@ -449,11 +449,12 @@ impl PhysicalPlanner {
                     true
                 } else if options.allow_parallel {
                     // todo! set this in optimization pass
-                    !(&*lp_arena).iter(input_left).any(|(_, lp)| {
-                        matches!(lp, ALogicalPlan::Cache {..})
-                    }) || !(&*lp_arena).iter(input_right).any(|(_, lp)| {
-                        matches!(lp, ALogicalPlan::Cache {..})
-                    })
+                    !(&*lp_arena)
+                        .iter(input_left)
+                        .any(|(_, lp)| matches!(lp, ALogicalPlan::Cache { .. }))
+                        || !(&*lp_arena)
+                            .iter(input_right)
+                            .any(|(_, lp)| matches!(lp, ALogicalPlan::Cache { .. }))
                 } else {
                     false
                 };

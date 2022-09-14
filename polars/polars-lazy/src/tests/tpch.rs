@@ -82,7 +82,8 @@ fn test_q2() -> Result<()> {
             [true, false, false, false],
             false,
         )
-        .limit(100).with_common_subplan_elimination(true);
+        .limit(100)
+        .with_common_subplan_elimination(true);
 
     let out = q.collect()?;
     let schema = Schema::from([

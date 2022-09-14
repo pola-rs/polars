@@ -60,7 +60,6 @@ use crate::prelude::file_caching::find_column_union_and_fingerprints;
 use crate::prelude::simplify_expr::SimplifyBooleanRule;
 use crate::prelude::slice_pushdown_lp::SlicePushDown;
 use crate::prelude::*;
-use crate::prelude::cache_states::set_cache_states;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -605,11 +604,13 @@ impl LazyFrame {
             rules.push(Box::new(SimplifyExprRule {}));
         }
 
+        // should be run before predicate pushdown
         if projection_pushdown {
             let projection_pushdown_opt = ProjectionPushDown {};
             let alp = lp_arena.take(lp_top);
             let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
             lp_arena.replace(lp_top, alp);
+            cache_states::set_cache_states(lp_top, lp_arena, expr_arena, &mut scratch);
         }
 
         if predicate_pushdown {
@@ -675,11 +676,9 @@ impl LazyFrame {
                 expr_arena,
             );
 
-
             let mut file_cacher = FileCacher::new(file_predicate_to_columns_and_count);
             file_cacher.assign_unions(lp_top, lp_arena, expr_arena, &mut scratch, false);
             scratch.clear();
-
 
             #[cfg(feature = "cse")]
             if cse_changed {
@@ -697,10 +696,6 @@ impl LazyFrame {
         rules.push(Box::new(ReplaceDropNulls {}));
 
         lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top);
-
-        if projection_pushdown {
-            cache_states::set_cache_states(lp_top, lp_arena, expr_arena, &mut scratch);
-        }
 
         // during debug we check if the optimizations have not modified the final schema
         #[cfg(debug_assertions)]

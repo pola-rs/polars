@@ -19,7 +19,6 @@ fn test_cse_self_joins() -> Result<()> {
         .left_join(lf, col("fats_g"), col("fats_g"))
         .with_common_subplan_elimination(true);
 
-    println!("{}", lf.to_dot(true).unwrap());
     cached_before_root(lf);
 
     Ok(())
@@ -64,11 +63,7 @@ fn test_cse_cache_union_projection_pd() -> Result<()> {
             DataFrameScan {
                 projection: Some(projection),
                 ..
-            } => {
-                let mut projection = (**projection).clone();
-                projection.sort_unstable();
-                projection == vec!["a".to_string(), "b".to_string()]
-            },
+            } => projection.as_ref() == &vec!["a".to_string(), "b".to_string()],
             DataFrameScan { .. } => false,
             _ => true,
         }

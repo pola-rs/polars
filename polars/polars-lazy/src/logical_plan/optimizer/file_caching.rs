@@ -287,10 +287,12 @@ impl FileCacher {
 
                 let with_columns = self.extract_columns_and_count(&finger_print);
                 options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
-                let with_columns = with_columns.and_then(|t| if t.1.len() != schema.len() {
-                    Some(t.1)
-                } else {
-                    None
+                let with_columns = with_columns.and_then(|t| {
+                    if t.1.len() != schema.len() {
+                        Some(t.1)
+                    } else {
+                        None
+                    }
                 });
 
                 options.with_columns = with_columns;
@@ -330,10 +332,12 @@ impl FileCacher {
 
                 let with_columns = self.extract_columns_and_count(&finger_print);
                 options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
-                let with_columns = with_columns.and_then(|t| if t.1.len() != schema.len() {
-                    Some(t.1)
-                } else {
-                    None
+                let with_columns = with_columns.and_then(|t| {
+                    if t.1.len() != schema.len() {
+                        Some(t.1)
+                    } else {
+                        None
+                    }
                 });
 
                 options.with_columns = with_columns;
@@ -373,10 +377,12 @@ impl FileCacher {
 
                 let with_columns = self.extract_columns_and_count(&finger_print);
                 options.file_counter = with_columns.as_ref().map(|t| t.0).unwrap_or(0);
-                let with_columns = with_columns.and_then(|t| if t.1.len() != schema.len() {
-                    Some(t.1)
-                } else {
-                    None
+                let with_columns = with_columns.and_then(|t| {
+                    if t.1.len() != schema.len() {
+                        Some(t.1)
+                    } else {
+                        None
+                    }
                 });
 
                 options.with_columns = with_columns;
