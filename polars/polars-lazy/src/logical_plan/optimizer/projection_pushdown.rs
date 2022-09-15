@@ -5,7 +5,7 @@ use crate::logical_plan::Context;
 use crate::prelude::iterator::ArenaExprIter;
 use crate::prelude::*;
 use crate::utils::{
-    aexpr_assign_renamed_root, aexpr_to_root_names, aexpr_to_root_nodes, check_input_node,
+    aexpr_assign_renamed_root, aexpr_to_leaf_names, aexpr_to_leaf_nodes, check_input_node,
 };
 
 fn init_vec() -> Vec<Node> {
@@ -24,7 +24,7 @@ fn get_scan_columns(
     if !acc_projections.is_empty() {
         let mut columns = Vec::with_capacity(acc_projections.len());
         for expr in acc_projections {
-            for name in aexpr_to_root_names(*expr, expr_arena) {
+            for name in aexpr_to_leaf_names(*expr, expr_arena) {
                 columns.push((*name).to_owned())
             }
         }
@@ -53,7 +53,7 @@ fn split_acc_projections(
             .partition(|expr| check_input_node(*expr, down_schema, expr_arena));
         let mut names = init_set();
         for proj in &acc_projections {
-            for name in aexpr_to_root_names(*proj, expr_arena) {
+            for name in aexpr_to_leaf_names(*proj, expr_arena) {
                 names.insert(name);
             }
         }
@@ -68,8 +68,8 @@ fn add_expr_to_accumulated(
     projected_names: &mut PlHashSet<Arc<str>>,
     expr_arena: &mut Arena<AExpr>,
 ) {
-    for root_node in aexpr_to_root_nodes(expr, expr_arena) {
-        for name in aexpr_to_root_names(root_node, expr_arena) {
+    for root_node in aexpr_to_leaf_nodes(expr, expr_arena) {
+        for name in aexpr_to_leaf_names(root_node, expr_arena) {
             if projected_names.insert(name) {
                 acc_projections.push(root_node)
             }
@@ -103,7 +103,7 @@ fn update_scan_schema(
     let mut new_schema = Schema::with_capacity(acc_projections.len());
     let mut new_cols = Vec::with_capacity(acc_projections.len());
     for node in acc_projections.iter() {
-        for name in aexpr_to_root_names(*node, expr_arena) {
+        for name in aexpr_to_leaf_names(*node, expr_arena) {
             let item = schema.get_full(&name).ok_or_else(|| {
                 PolarsError::ComputeError(
                     format!("column '{}' not available in schema {:?}", name, schema).into(),
@@ -150,8 +150,8 @@ impl ProjectionPushDown {
         expr_arena: &mut Arena<AExpr>,
     ) -> bool {
         let mut pushed_at_least_one = false;
-        let names = aexpr_to_root_names(proj, expr_arena);
-        let root_projections = aexpr_to_root_nodes(proj, expr_arena);
+        let names = aexpr_to_leaf_names(proj, expr_arena);
+        let root_projections = aexpr_to_leaf_nodes(proj, expr_arena);
 
         for (name, root_projection) in names.into_iter().zip(root_projections) {
             if check_input_node(root_projection, schema_left, expr_arena)
@@ -266,7 +266,7 @@ impl ProjectionPushDown {
                             if let AExpr::Alias(_, name) = ae {
                                 if projected_names.remove(name) {
                                     acc_projections.retain(|expr| {
-                                        !aexpr_to_root_names(*expr, expr_arena).contains(name)
+                                        !aexpr_to_leaf_names(*expr, expr_arena).contains(name)
                                     });
                                 }
                             }
@@ -532,7 +532,7 @@ impl ProjectionPushDown {
                 if !acc_projections.is_empty() {
                     // Make sure that the column(s) used for the sort is projected
                     by_column.iter().for_each(|node| {
-                        aexpr_to_root_nodes(*node, expr_arena)
+                        aexpr_to_leaf_nodes(*node, expr_arena)
                             .iter()
                             .for_each(|root| {
                                 add_expr_to_accumulated(
@@ -775,7 +775,7 @@ impl ProjectionPushDown {
                     // the JOIN executor
                     // we only want to add the `col` and the `alias` as two `col()` expressions.
                     if left_side {
-                        for node in aexpr_to_root_nodes(expr, expr_arena) {
+                        for node in aexpr_to_leaf_nodes(expr, expr_arena) {
                             if !local_projection.contains(&node) {
                                 local_projection.push(node)
                             }
@@ -870,7 +870,7 @@ impl ProjectionPushDown {
                         // but we don't want to project it a this level, otherwise we project both
                         // the root and the alias, hence add_local = false.
                         if let AExpr::Alias(expr, name) = expr_arena.get(proj).clone() {
-                            for root_name in aexpr_to_root_names(expr, expr_arena) {
+                            for root_name in aexpr_to_leaf_names(expr, expr_arena) {
                                 let node = expr_arena.add(AExpr::Column(root_name));
                                 let proj = expr_arena.add(AExpr::Alias(node, name.clone()));
                                 local_projection.push(proj)
@@ -894,7 +894,7 @@ impl ProjectionPushDown {
                         ) {
                             // Column name of the projection without any alias.
                             let root_column_name =
-                                aexpr_to_root_names(proj, expr_arena).pop().unwrap();
+                                aexpr_to_leaf_names(proj, expr_arena).pop().unwrap();
 
                             let suffix = options.suffix.as_ref();
                             // If _right suffix exists we need to push a projection down without this
@@ -965,7 +965,7 @@ impl ProjectionPushDown {
                 let schema_after_join = alp.schema(lp_arena);
 
                 for proj in &mut local_projection {
-                    for name in aexpr_to_root_names(*proj, expr_arena) {
+                    for name in aexpr_to_leaf_names(*proj, expr_arena) {
                         if name.contains(suffix.as_ref()) && schema_after_join.get(&name).is_none()
                         {
                             let new_name = &name.as_ref()[..name.len() - suffix.len()];

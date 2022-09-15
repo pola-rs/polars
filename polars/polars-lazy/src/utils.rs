@@ -1,4 +1,5 @@
 use std::fmt::Formatter;
+use std::iter::FlatMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -229,15 +230,28 @@ pub(crate) fn expr_to_root_column_name(expr: &Expr) -> Result<Arc<str>> {
     }
 }
 
-pub(crate) fn aexpr_to_root_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Node> {
-    let mut out = vec![];
-    arena.iter(root).for_each(|(node, e)| match e {
-        AExpr::Column(_) | AExpr::Wildcard => {
-            out.push(node);
-        }
-        _ => {}
-    });
-    out
+fn is_leaf_aexpr(ae: &AExpr) -> bool {
+    matches!(ae, AExpr::Column(_) | AExpr::Wildcard)
+}
+
+#[allow(clippy::type_complexity)]
+pub(crate) fn aexpr_to_leaf_nodes_iter<'a>(
+    root: Node,
+    arena: &'a Arena<AExpr>,
+) -> FlatMap<AExprIter<'a>, Option<Node>, fn((Node, &'a AExpr)) -> Option<Node>> {
+    arena.iter(root).flat_map(
+        |(node, ae)| {
+            if is_leaf_aexpr(ae) {
+                Some(node)
+            } else {
+                None
+            }
+        },
+    )
+}
+
+pub(crate) fn aexpr_to_leaf_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Node> {
+    aexpr_to_leaf_nodes_iter(root, arena).collect()
 }
 
 /// Rename the roots of the expression to a single name.
@@ -245,7 +259,7 @@ pub(crate) fn aexpr_to_root_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Node>
 /// In some cases we can have multiple roots.
 /// For instance in predicate pushdown the predicates are combined by their root column
 /// When combined they may be a binary expression with the same root columns
-pub(crate) fn rename_aexpr_root_names(
+pub(crate) fn rename_aexpr_leaf_names(
     node: Node,
     arena: &mut Arena<AExpr>,
     new_name: Arc<str>,
@@ -269,7 +283,7 @@ pub(crate) fn aexpr_assign_renamed_root(
     current: &str,
     new_name: &str,
 ) -> Node {
-    let roots = aexpr_to_root_nodes(node, arena);
+    let roots = aexpr_to_leaf_nodes(node, arena);
 
     for node in roots {
         match arena.get(node) {
@@ -304,33 +318,21 @@ pub(crate) fn expressions_to_schema(
     Schema::try_from_fallible(fields)
 }
 
-pub(crate) fn aexpr_to_root_names(node: Node, arena: &Arena<AExpr>) -> Vec<Arc<str>> {
-    aexpr_to_root_nodes(node, arena)
-        .into_iter()
-        .map(|node| aexpr_to_root_column_name(node, arena).unwrap())
-        .collect()
+pub(crate) fn aexpr_to_leaf_names_iter(
+    node: Node,
+    arena: &Arena<AExpr>,
+) -> impl Iterator<Item = Arc<str>> + '_ {
+    aexpr_to_leaf_nodes_iter(node, arena).map(|node| match arena.get(node) {
+        // expecting only columns here, wildcards and dtypes should already be replaced
+        AExpr::Column(name) => name.clone(),
+        e => {
+            panic!("{:?} not expected", e)
+        }
+    })
 }
 
-/// unpack alias(col) to name of the root column name
-pub(crate) fn aexpr_to_root_column_name(root: Node, arena: &Arena<AExpr>) -> Result<Arc<str>> {
-    let mut roots = aexpr_to_root_nodes(root, arena);
-    match roots.len() {
-        0 => Err(PolarsError::ComputeError(
-            "no root column name found".into(),
-        )),
-        1 => match arena.get(roots.pop().unwrap()) {
-            AExpr::Wildcard => Err(PolarsError::ComputeError(
-                "wildcard has not root column name".into(),
-            )),
-            AExpr::Column(name) => Ok(name.clone()),
-            _ => {
-                unreachable!();
-            }
-        },
-        _ => Err(PolarsError::ComputeError(
-            "found more than one root column name".into(),
-        )),
-    }
+pub(crate) fn aexpr_to_leaf_names(node: Node, arena: &Arena<AExpr>) -> Vec<Arc<str>> {
+    aexpr_to_leaf_names_iter(node, arena).collect()
 }
 
 /// check if a selection/projection can be done on the downwards schema
@@ -339,7 +341,7 @@ pub(crate) fn check_input_node(
     input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
 ) -> bool {
-    aexpr_to_root_names(node, expr_arena)
+    aexpr_to_leaf_names(node, expr_arena)
         .iter()
         .all(|name| input_schema.index_of(name).is_some())
 }

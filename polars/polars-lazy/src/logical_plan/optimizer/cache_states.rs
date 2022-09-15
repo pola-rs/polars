@@ -15,11 +15,13 @@ fn get_upper_projections(
     use ALogicalPlan::*;
     // during projection pushdown all accumulated p
     match parent {
-        Projection { expr, .. } => Some(
-            expr.iter()
-                .map(|node| aexpr_to_root_column_name(*node, expr_arena).unwrap())
-                .collect(),
-        ),
+        Projection { expr, .. } => {
+            let mut out = Vec::with_capacity(expr.len());
+            for node in expr {
+                out.extend(aexpr_to_leaf_names_iter(*node, expr_arena));
+            }
+            Some(out)
+        }
         // other
         _ => None,
     }

@@ -147,7 +147,7 @@ impl Default for OptState {
             file_caching: false,
             aggregate_pushdown: false,
             #[cfg(feature = "cse")]
-            common_subplan_elimination: false,
+            common_subplan_elimination: true,
         }
     }
 }
