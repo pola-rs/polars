@@ -24,13 +24,15 @@ pub(crate) fn collect_trails(
     id: &mut u32,
     // if trails should be collected
     collect: bool,
-) {
+) -> Option<()> {
     if collect {
         trails.get_mut(id).unwrap().push(root);
     }
 
     use ALogicalPlan::*;
     match lp_arena.get(root) {
+        // if we find a cache anywhere, that means the users has set caches and we don't interfere
+        Cache { .. } => return None,
         // we start collecting from first encountered join
         // later we must unions as well
         Join {
@@ -40,17 +42,17 @@ pub(crate) fn collect_trails(
         } => {
             // make sure that the new branch has the same trail history
             let new_trail = trails.get(id).unwrap().clone();
-            collect_trails(*input_left, lp_arena, trails, id, true);
+            collect_trails(*input_left, lp_arena, trails, id, true)?;
 
             *id += 1;
             trails.insert(*id, new_trail);
-            collect_trails(*input_right, lp_arena, trails, id, true);
+            collect_trails(*input_right, lp_arena, trails, id, true)?;
         }
         Union { inputs, .. } => {
             let new_trail = trails.get(id).unwrap().clone();
 
             for input in inputs.iter() {
-                collect_trails(*input, lp_arena, trails, id, true);
+                collect_trails(*input, lp_arena, trails, id, true)?;
                 *id += 1;
                 trails.insert(*id, new_trail.clone());
             }
@@ -63,10 +65,11 @@ pub(crate) fn collect_trails(
             let nodes = &mut [None];
             lp.copy_inputs(nodes);
             if let Some(input) = nodes[0] {
-                collect_trails(input, lp_arena, trails, id, collect)
+                collect_trails(input, lp_arena, trails, id, collect)?
             }
         }
     }
+    Some(())
 }
 
 fn expr_nodes_equal(a: &[Node], b: &[Node], expr_arena: &Arena<AExpr>) -> bool {
@@ -300,7 +303,11 @@ pub(crate) fn elim_cmn_subplans(
     let mut trails = BTreeMap::new();
     let mut id = 0;
     trails.insert(id, Vec::new());
-    collect_trails(root, lp_arena, &mut trails, &mut id, false);
+    if collect_trails(root, lp_arena, &mut trails, &mut id, false).is_none() {
+        // early return because we encountered a cache set by the caller
+        // we will not interfere with those
+        return (root, false);
+    }
     let trails = trails.into_values().collect::<Vec<_>>();
 
     // search from the leafs upwards and find the longest shared subplans
