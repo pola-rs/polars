@@ -1527,7 +1527,7 @@ def collect_all(
     string_cache: bool = False,
     no_optimization: bool = False,
     slice_pushdown: bool = True,
-    common_subplan_elimination: bool = False,
+    common_subplan_elimination: bool = True,
 ) -> list[pli.DataFrame]:
     """
     Collect multiple LazyFrames at the same time.
