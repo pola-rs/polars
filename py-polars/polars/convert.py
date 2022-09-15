@@ -36,7 +36,7 @@ def from_dict(
     """
     Construct a DataFrame from a dictionary of sequences.
 
-    This operation clones data, unless you pass in a `dict[str, pl.Series]`.
+    This operation clones data, unless you pass in a ``Dict[str, pl.Series]``.
 
     Parameters
     ----------
@@ -49,7 +49,7 @@ def from_dict(
 
     Returns
     -------
-    DataFrame
+    :class:`DataFrame`
 
     Examples
     --------
@@ -87,7 +87,7 @@ def from_dicts(
 
     Returns
     -------
-    DataFrame
+    :class:`DataFrame`
 
     Examples
     --------
@@ -139,7 +139,7 @@ def from_records(
 
     Returns
     -------
-    DataFrame
+    :class:`DataFrame`
 
     Examples
     --------
@@ -177,7 +177,7 @@ def from_numpy(
 
     Parameters
     ----------
-    data : numpy ndarray
+    data : :class:`numpy.ndarray`
         Two-dimensional data represented as a numpy ndarray.
     columns : Sequence of str, default None
         Column labels to use for resulting DataFrame. Must match data dimensions.
@@ -189,7 +189,7 @@ def from_numpy(
 
     Returns
     -------
-    DataFrame
+    :class:`DataFrame`
 
     Examples
     --------
@@ -239,14 +239,14 @@ def from_arrow(
 
     Parameters
     ----------
-    a : Arrow Table or Array
+    a : :class:`pyarrow.Table` or :class:`pyarrow.Array`
         Data represented as Arrow Table or Array.
     rechunk : bool, default True
         Make sure that all data is in contiguous memory.
 
     Returns
     -------
-    DataFrame or Series
+    :class:`DataFrame` or :class:`Series`
 
     Examples
     --------
@@ -322,24 +322,24 @@ def from_pandas(
 
     This operation clones data.
 
-    This requires that pandas and pyarrow are installed.
+    This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
 
     Parameters
     ----------
-    df : pandas DataFrame, Series, or DatetimeIndex
+    df: :class:`pandas.DataFrame`, :class:`pandas.Series`, :class:`pandas.DatetimeIndex`
         Data represented as a pandas DataFrame, Series, or DatetimeIndex.
     rechunk : bool, default True
         Make sure that all data is in contiguous memory.
     nan_to_none : bool, default True
-        If data contains NaN values PyArrow will convert the NaN to None
+        If data contains `NaN` values PyArrow will convert the ``NaN`` to ``None``
 
     Returns
     -------
-    DataFrame
+    :class:`DataFrame`
 
     Examples
     --------
-    Constructing a DataFrame from a pandas DataFrame:
+    Constructing a :class:`DataFrame` from a :class:`pandas.DataFrame`:
 
     >>> import pandas as pd
     >>> pd_df = pd.DataFrame([[1, 2, 3], [4, 5, 6]], columns=["a", "b", "c"])
@@ -356,7 +356,7 @@ def from_pandas(
     │ 4   ┆ 5   ┆ 6   │
     └─────┴─────┴─────┘
 
-    Constructing a Series from a pandas Series:
+    Constructing a Series from a :class:`pd.Series`:
 
     >>> import pandas as pd
     >>> pd_series = pd.Series([1, 2, 3], name="pd")

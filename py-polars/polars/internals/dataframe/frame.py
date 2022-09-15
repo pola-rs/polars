@@ -3890,8 +3890,8 @@ class DataFrame:
         │ 3    ┆ 8.0  ┆ c   ┆ null  │
         └──────┴──────┴─────┴───────┘
 
-        Note
-        ----
+        Notes
+        -----
         For joining on columns with categorical data, see ``pl.StringCache()``.
 
         """
