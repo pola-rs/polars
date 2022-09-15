@@ -70,9 +70,8 @@ fn prepare_scan_args<'a>(
 /// Producer of an in memory DataFrame
 pub struct DataFrameExec {
     pub(crate) df: Arc<DataFrame>,
-    pub(crate) projection: Option<Vec<Arc<dyn PhysicalExpr>>>,
     pub(crate) selection: Option<Arc<dyn PhysicalExpr>>,
-    pub(crate) has_windows: bool,
+    pub(crate) projection: Option<Arc<Vec<String>>>,
 }
 
 impl Executor for DataFrameExec {
@@ -84,7 +83,7 @@ impl Executor for DataFrameExec {
         // TODO: this is only the case if we don't create new columns
         if let Some(projection) = &self.projection {
             state.may_set_schema(&df, projection.len());
-            df = evaluate_physical_expressions(&df, projection, state, self.has_windows)?;
+            df = df.select(projection.as_ref())?;
         }
 
         if let Some(selection) = &self.selection {

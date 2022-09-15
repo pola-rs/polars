@@ -257,13 +257,14 @@ pub(crate) fn to_alp(
         LogicalPlan::DataFrameScan {
             df,
             schema,
+            output_schema,
             projection,
             selection,
         } => ALogicalPlan::DataFrameScan {
             df,
             schema,
-            projection: projection
-                .map(|exprs| exprs.into_iter().map(|x| to_aexpr(x, expr_arena)).collect()),
+            output_schema,
+            projection,
             selection: selection.map(|expr| to_aexpr(expr, expr_arena)),
         },
         LogicalPlan::Projection {
@@ -320,9 +321,9 @@ pub(crate) fn to_alp(
                 schema,
             }
         }
-        LogicalPlan::Cache { input, id } => {
+        LogicalPlan::Cache { input, id, count } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::Cache { input, id }
+            ALogicalPlan::Cache { input, id, count }
         }
         LogicalPlan::Aggregate {
             input,
@@ -729,14 +730,14 @@ pub(crate) fn node_to_lp(
         ALogicalPlan::DataFrameScan {
             df,
             schema,
+            output_schema,
             projection,
             selection,
         } => LogicalPlan::DataFrameScan {
             df,
             schema,
-            projection: projection
-                .as_ref()
-                .map(|nodes| nodes.iter().map(|n| node_to_expr(*n, expr_arena)).collect()),
+            output_schema,
+            projection,
             selection: selection.map(|n| node_to_expr(n, expr_arena)),
         },
         ALogicalPlan::Projection {
@@ -789,9 +790,9 @@ pub(crate) fn node_to_lp(
                 schema,
             }
         }
-        ALogicalPlan::Cache { input, id } => {
+        ALogicalPlan::Cache { input, id, count } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
-            LogicalPlan::Cache { input, id }
+            LogicalPlan::Cache { input, id, count }
         }
         ALogicalPlan::Aggregate {
             input,

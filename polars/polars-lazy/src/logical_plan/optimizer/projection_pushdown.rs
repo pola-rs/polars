@@ -9,7 +9,7 @@ use crate::utils::{
 };
 
 fn init_vec() -> Vec<Node> {
-    Vec::with_capacity(100)
+    Vec::with_capacity(16)
 }
 fn init_set() -> PlHashSet<Arc<str>> {
     PlHashSet::with_capacity(32)
@@ -387,23 +387,25 @@ impl ProjectionPushDown {
             }
             DataFrameScan {
                 df,
-                mut schema,
+                schema,
+                mut output_schema,
                 selection,
                 ..
             } => {
                 let mut projection = None;
                 if !acc_projections.is_empty() {
-                    schema = Arc::new(update_scan_schema(
+                    output_schema = Some(Arc::new(update_scan_schema(
                         &acc_projections,
                         expr_arena,
                         &schema,
                         false,
-                    )?);
-                    projection = Some(acc_projections);
+                    )?));
+                    projection = get_scan_columns(&mut acc_projections, expr_arena);
                 }
                 let lp = DataFrameScan {
                     df,
                     schema,
+                    output_schema,
                     projection,
                     selection,
                 };
@@ -1084,8 +1086,8 @@ impl ProjectionPushDown {
                     Ok(lp)
                 }
             }
-            // Slice and Cache have only inputs and exprs, so we can use same logic.
-            lp @ Slice { .. } | lp @ Cache { .. } | lp @ Union { .. } => {
+            // Slice and Unions have only inputs and exprs, so we can use same logic.
+            lp @ Slice { .. } | lp @ Union { .. } => {
                 let inputs = lp.get_inputs();
                 let exprs = lp.get_exprs();
 
@@ -1108,6 +1110,21 @@ impl ProjectionPushDown {
 
                 Ok(lp.with_exprs_and_input(exprs, new_inputs))
             }
+            Cache { .. } => {
+                // projections above this cache will be accumulated and pushed down
+                // later
+                // the redundant projection will be cleaned in the fast projection optimization
+                // phase.
+                if acc_projections.is_empty() {
+                    Ok(logical_plan)
+                } else {
+                    Ok(
+                        ALogicalPlanBuilder::from_lp(logical_plan, expr_arena, lp_arena)
+                            .project(acc_projections)
+                            .build(),
+                    )
+                }
+            }
         }
     }
 
@@ -1117,8 +1134,15 @@ impl ProjectionPushDown {
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> Result<ALogicalPlan> {
-        let acc_predicates = init_vec();
+        let acc_projections = init_vec();
         let names = init_set();
-        self.push_down(logical_plan, acc_predicates, names, 0, lp_arena, expr_arena)
+        self.push_down(
+            logical_plan,
+            acc_projections,
+            names,
+            0,
+            lp_arena,
+            expr_arena,
+        )
     }
 }

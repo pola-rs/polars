@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use polars_core::prelude::*;
 
-use crate::logical_plan::iterator::{ArenaExprIter, ArenaLpIter};
+use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
@@ -62,8 +62,8 @@ impl PushNode for [Option<Node>; 2] {
 impl PushNode for [Option<Node>; 1] {
     fn push_node(&mut self, value: Node) {
         match self {
-            [Some(_)] => self[0] = Some(value),
-            _ => panic!("cannot push more than 2 nodes"),
+            [None] => self[0] = Some(value),
+            _ => panic!("cannot push more than 1 node"),
         }
     }
 }
@@ -302,28 +302,6 @@ pub(crate) fn expressions_to_schema(
     Schema::try_from_fallible(fields)
 }
 
-/// Get a set of the data source paths in this LogicalPlan
-pub(crate) fn agg_source_paths(
-    root_lp: Node,
-    paths: &mut PlHashSet<PathBuf>,
-    lp_arena: &Arena<ALogicalPlan>,
-) {
-    lp_arena.iter(root_lp).for_each(|(_, lp)| {
-        use ALogicalPlan::*;
-        match lp {
-            #[cfg(feature = "csv-file")]
-            CsvScan { path, .. } => {
-                paths.insert(path.clone());
-            }
-            #[cfg(feature = "parquet")]
-            ParquetScan { path, .. } => {
-                paths.insert(path.clone());
-            }
-            _ => {}
-        }
-    })
-}
-
 pub(crate) fn aexpr_to_root_names(node: Node, arena: &Arena<AExpr>) -> Vec<Arc<str>> {
     aexpr_to_root_nodes(node, arena)
         .into_iter()
@@ -443,4 +421,26 @@ pub(crate) mod test {
             unreachable!()
         }
     }
+}
+
+/// Get a set of the data source paths in this LogicalPlan
+pub(crate) fn agg_source_paths(
+    root_lp: Node,
+    paths: &mut PlHashSet<PathBuf>,
+    lp_arena: &Arena<ALogicalPlan>,
+) {
+    lp_arena.iter(root_lp).for_each(|(_, lp)| {
+        use ALogicalPlan::*;
+        match lp {
+            #[cfg(feature = "csv-file")]
+            CsvScan { path, .. } => {
+                paths.insert(path.clone());
+            }
+            #[cfg(feature = "parquet")]
+            ParquetScan { path, .. } => {
+                paths.insert(path.clone());
+            }
+            _ => {}
+        }
+    })
 }

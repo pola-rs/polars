@@ -133,10 +133,13 @@ impl PhysicalExpr for ColumnExpr {
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         let field = input_schema.get_field(&self.0).ok_or_else(|| {
-            PolarsError::NotFound(format!(
-                "could not find column: {} in schema: {:?}",
-                self.0, &input_schema
-            ))
+            PolarsError::NotFound(
+                format!(
+                    "could not find column: {} in schema: {:?}",
+                    self.0, &input_schema
+                )
+                .into(),
+            )
         })?;
         Ok(field)
     }

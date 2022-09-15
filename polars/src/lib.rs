@@ -183,6 +183,7 @@
 //!                  This allows polars to scale up way beyond that by using `u64` as an index.
 //!                  Polars will be a bit slower with this feature activated as many data structures
 //!                  are less cache efficient.
+//!     - `cse` - Activate common subplan elimination optimization
 //! * IO related:
 //!     - `serde` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization.
 //!                 Can be used for JSON and more serde supported serialization formats.

@@ -1,11 +1,5 @@
 use super::*;
 
-fn get_arenas() -> (Arena<AExpr>, Arena<ALogicalPlan>) {
-    let expr_arena = Arena::with_capacity(16);
-    let lp_arena = Arena::with_capacity(8);
-    (expr_arena, lp_arena)
-}
-
 pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
@@ -169,7 +163,9 @@ pub fn test_slice_pushdown_join() -> Result<()> {
 
     let q = q1
         .join(q2, [col("category")], [col("category")], JoinType::Left)
-        .slice(1, 3);
+        .slice(1, 3)
+        // this inserts a cache and blocks slice pushdown
+        .with_common_subplan_elimination(false);
     // test if optimization continued beyond the join node
     assert!(slice_at_scan(q.clone()));
 

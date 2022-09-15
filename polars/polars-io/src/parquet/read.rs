@@ -13,7 +13,7 @@ use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowCount;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ParallelStrategy {
     /// Don't parallelize

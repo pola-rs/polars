@@ -14,7 +14,7 @@ use crate::prelude::*;
 /// It is important that this optimization is ran after projection pushdown.
 ///
 /// The schema reported after this optimization is also
-pub(crate) struct FastProjection {}
+pub(crate) struct FastProjectionAndCollapse {}
 
 fn impl_fast_projection(
     input: Node,
@@ -43,7 +43,7 @@ fn impl_fast_projection(
     }
 }
 
-impl OptimizationRule for FastProjection {
+impl OptimizationRule for FastProjectionAndCollapse {
     fn optimize_plan(
         &mut self,
         lp_arena: &mut Arena<ALogicalPlan>,
@@ -62,19 +62,50 @@ impl OptimizationRule for FastProjection {
                 }
             }
             LocalProjection { input, expr, .. } => impl_fast_projection(*input, expr, expr_arena),
-            // if there are 2 subsequent fast projections, flatten them and only take the last
             MapFunction {
                 input,
-                function: projection,
-            } if matches!(projection, FunctionNode::FastProjection { .. }) => {
-                if let MapFunction {
-                    function: FunctionNode::FastProjection { .. },
+                function: FunctionNode::FastProjection { columns },
+            } => {
+                // if there are 2 subsequent fast projections, flatten them and only take the last
+                match lp_arena.get(*input) {
+                    MapFunction {
+                        function: FunctionNode::FastProjection { .. },
+                        input: prev_input,
+                    } => Some(MapFunction {
+                        input: *prev_input,
+                        function: FunctionNode::FastProjection {
+                            columns: columns.clone(),
+                        },
+                    }),
+                    // cleanup projections set in projection pushdown just above caches
+                    // they are nto needed.
+                    cache_lp @ Cache { .. } => {
+                        if cache_lp.schema(lp_arena).len() == columns.len() {
+                            Some(cache_lp.clone())
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
+            }
+            // if there are 2 subsequent caches, flatten them and only take the inner
+            Cache {
+                input,
+                count: outer_count,
+                ..
+            } => {
+                if let Cache {
                     input: prev_input,
+                    id,
+                    count,
                 } = lp_arena.get(*input)
                 {
-                    Some(MapFunction {
+                    Some(Cache {
                         input: *prev_input,
-                        function: projection.clone(),
+                        id: *id,
+                        // ensure the counts are updated
+                        count: count.saturating_add(*outer_count),
                     })
                 } else {
                     None

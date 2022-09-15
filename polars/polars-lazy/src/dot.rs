@@ -176,11 +176,11 @@ impl LogicalPlan {
             AnonymousScan { schema, .. } => {
                 let total_columns = schema.len();
 
-                let current_node = format!("ANONYMOUS SCAN;\nπ {}", total_columns);
+                let fmt = format!("ANONYMOUS SCAN;\nπ {}", total_columns);
                 let current_node = DotNode {
                     branch,
                     id,
-                    fmt: &current_node,
+                    fmt: &fmt,
                 };
                 self.write_dot(acc_str, prev_node, current_node, id_map)
             }
@@ -200,11 +200,17 @@ impl LogicalPlan {
             Cache {
                 input,
                 id: cache_id,
+                count,
             } => {
+                let fmt = if *count == usize::MAX {
+                    "CACHE".to_string()
+                } else {
+                    format!("CACHE: {}times", *count)
+                };
                 let current_node = DotNode {
                     branch: *cache_id,
                     id: *cache_id,
-                    fmt: "CACHE",
+                    fmt: &fmt,
                 };
                 // here we take the cache id, to ensure the same cached subplans get the same ids
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
@@ -439,12 +445,11 @@ impl LogicalPlan {
 
                 let pred = fmt_predicate(predicate.as_ref());
                 let fmt = format!(
-                    "PARQUET SCAN {};\nπ {}/{};\nσ {} [{:?}]",
+                    "PARQUET SCAN {};\nπ {}/{};\nσ {}",
                     path.to_string_lossy(),
                     n_columns,
                     total_columns,
                     pred,
-                    (branch, id)
                 );
                 let current_node = DotNode {
                     branch,
@@ -469,12 +474,11 @@ impl LogicalPlan {
 
                 let pred = fmt_predicate(predicate.as_ref());
                 let fmt = format!(
-                    "IPC SCAN {};\nπ {}/{};\nσ {} [{:?}]",
+                    "IPC SCAN {};\nπ {}/{};\nσ {}",
                     path.to_string_lossy(),
                     n_columns,
                     total_columns,
                     pred,
-                    (branch, id)
                 );
                 let current_node = DotNode {
                     branch,
@@ -502,8 +506,8 @@ impl LogicalPlan {
                     fmt: &fmt,
                 };
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
-                input_left.dot(acc_str, (branch + 10, id + 1), current_node, id_map)?;
-                input_right.dot(acc_str, (branch + 20, id + 1), current_node, id_map)
+                input_left.dot(acc_str, (branch + 100, id + 1), current_node, id_map)?;
+                input_right.dot(acc_str, (branch + 200, id + 1), current_node, id_map)
             }
             MapFunction {
                 input, function, ..

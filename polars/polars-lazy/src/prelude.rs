@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(not(feature = "dynamic_groupby"))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DynamicGroupOptions {
     pub index_column: String,
 }
@@ -18,7 +18,7 @@ pub(crate) use polars_time::prelude::*;
 
 #[cfg(not(feature = "dynamic_groupby"))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RollingGroupOptions {
     pub index_column: String,
 }

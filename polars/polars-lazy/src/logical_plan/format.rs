@@ -4,12 +4,13 @@ use std::fmt::{Debug, Display, Formatter};
 
 use crate::prelude::*;
 
-impl fmt::Debug for LogicalPlan {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl LogicalPlan {
+    fn _format(&self, f: &mut fmt::Formatter, mut indent: usize) -> fmt::Result {
+        indent += 2;
         use LogicalPlan::*;
         match self {
             #[cfg(feature = "python")]
-            PythonScan { .. } => write!(f, "PYTHON SCAN"),
+            PythonScan { .. } => writeln!(f, "{:indent$}PYTHON SCAN\n", ""),
             AnonymousScan {
                 schema,
                 predicate,
@@ -21,14 +22,24 @@ impl fmt::Debug for LogicalPlan {
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
                 }
-                write!(
+                writeln!(
                     f,
-                    "{}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
-                    options.fmt_str, n_columns, total_columns, predicate
+                    "{:indent$}{}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    "", options.fmt_str, n_columns, total_columns, predicate
                 )
             }
-            Union { inputs, .. } => write!(f, "UNION {:?}", inputs),
-            Cache { input, .. } => write!(f, "CACHE {:?}", input),
+            Union { inputs, .. } => {
+                writeln!(f, "{:indent$}UNION:", "")?;
+                for (i, plan) in inputs.iter().enumerate() {
+                    writeln!(f, "{:indent$}PLAN {}:", "", i)?;
+                    plan._format(f, indent)?;
+                }
+                writeln!(f, "{:indent$}END UNION", "")
+            }
+            Cache { input, id, count } => {
+                writeln!(f, "{:indent$}CACHE[id: {:x}, count: {}]", "", *id, *count)?;
+                input._format(f, indent)
+            }
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
@@ -42,9 +53,10 @@ impl fmt::Debug for LogicalPlan {
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
                 }
-                write!(
+                writeln!(
                     f,
-                    "PARQUET SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    "{:indent$}PARQUET SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    "",
                     path.to_string_lossy(),
                     n_columns,
                     total_columns,
@@ -64,9 +76,10 @@ impl fmt::Debug for LogicalPlan {
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
                 }
-                write!(
+                writeln!(
                     f,
-                    "IPC SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    "{:indent$}IPC SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    "",
                     path.to_string_lossy(),
                     n_columns,
                     total_columns,
@@ -74,10 +87,12 @@ impl fmt::Debug for LogicalPlan {
                 )
             }
             Selection { predicate, input } => {
-                write!(f, "FILTER {:?}\nFROM\n{:?}", predicate, input)
+                writeln!(f, "{:indent$}FILTER {:?} FROM", "", predicate)?;
+                input._format(f, indent)
             }
             Melt { input, .. } => {
-                write!(f, "MELT {:?}", input)
+                writeln!(f, "{:indent$}MELT", "")?;
+                input._format(f, indent)
             }
             #[cfg(feature = "csv-file")]
             CsvScan {
@@ -92,9 +107,10 @@ impl fmt::Debug for LogicalPlan {
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
                 }
-                write!(
+                writeln!(
                     f,
-                    "CSV SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    "{:indent$}CSV SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    "",
                     path.to_string_lossy(),
                     n_columns,
                     total_columns,
@@ -117,41 +133,33 @@ impl fmt::Debug for LogicalPlan {
                     None => Cow::Borrowed("None"),
                 };
 
-                write!(
+                writeln!(
                     f,
-                    "DATAFRAME(in-memory): {:?};\n\tproject {}/{} columns\t|\tdetails: {:?};\n\
-                    \tselection: {:?}\n\n",
+                    "{:indent$}DF {:?}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    "",
                     schema.iter_names().take(4).collect::<Vec<_>>(),
                     n_columns,
                     total_columns,
-                    projection,
                     selection,
                 )
             }
             Projection { expr, input, .. } => {
-                write!(
-                    f,
-                    "SELECT {:?} COLUMNS: {:?}
-FROM
-{:?}",
-                    expr.len(),
-                    expr,
-                    input
-                )
+                writeln!(f, "{:indent$} SELECT {:?} FROM", "", expr)?;
+                input._format(f, indent)
             }
             LocalProjection { expr, input, .. } => {
-                write!(
-                    f,
-                    "LOCAL SELECT {:?} COLUMNS \nFROM\n{:?}",
-                    expr.len(),
-                    input
-                )
+                writeln!(f, "{:indent$} LOCAL SELECT {:?} FROM", "", expr)?;
+                input._format(f, indent)
             }
             Sort {
                 input, by_column, ..
-            } => write!(f, "SORT {:?} BY {:?}", input, by_column),
+            } => {
+                writeln!(f, "{:indent$}SORT BY {:?}", "", by_column)?;
+                input._format(f, indent)
+            }
             Explode { input, columns, .. } => {
-                write!(f, "EXPLODE COLUMN(S) {:?} OF {:?}", columns, input)
+                writeln!(f, "{:indent$}EXPLODE BY {:?}", "", columns)?;
+                input._format(f, indent)
             }
             Aggregate {
                 input, keys, aggs, ..
@@ -162,26 +170,44 @@ FROM
                 left_on,
                 right_on,
                 ..
-            } => write!(
-                f,
-                "JOIN\n\t({:?})\nWITH\n\t({:?})\nON (left: {:?} right: {:?})",
-                input_left, input_right, left_on, right_on
-            ),
-            HStack { input, exprs, .. } => {
-                write!(f, "{:?}\nWITH COLUMNS {:?}", input, exprs)
+            } => {
+                writeln!(f, "{:indent$}JOIN:", "")?;
+                writeln!(f, "{:indent$}LEFT PLAN ON: {:?}", "", left_on)?;
+                input_left._format(f, indent)?;
+                writeln!(f, "{:indent$}RIGHT PLAN ON: {:?}", "", right_on)?;
+                input_right._format(f, indent)?;
+                writeln!(f, "{:indent$}END JOIN", "")
             }
-            Distinct { input, .. } => write!(f, "DISTINCT {:?}", input),
+            HStack { input, exprs, .. } => {
+                writeln!(f, "{:indent$} WITH_COLUMNS {:?}", "", exprs)?;
+                input._format(f, indent)
+            }
+            Distinct { input, options } => {
+                writeln!(f, "{:indent$}UNIQUE BY {:?}", "", options.subset)?;
+                input._format(f, indent)
+            }
             Slice { input, offset, len } => {
-                write!(f, "{:?}\nSLICE[offset: {}, len: {}]", input, offset, len)
+                writeln!(f, "{:indent$}SLICE[offset: {}, len: {}]", "", offset, len)?;
+                input._format(f, indent)
             }
             MapFunction {
                 input, function, ..
-            } => write!(f, "{} \n{:?}", function, input),
+            } => {
+                writeln!(f, "{:indent$}{:?}", "", function)?;
+                input._format(f, indent)
+            }
             Error { input, err } => write!(f, "{:?}\n{:?}", err, input),
             ExtContext { input, .. } => {
-                write!(f, "{:?}\nExtContext", input)
+                writeln!(f, "{:indent$}EXTERNAL_CONTEXT", "")?;
+                input._format(f, indent)
             }
         }
+    }
+}
+
+impl fmt::Debug for LogicalPlan {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self._format(f, 0)
     }
 }
 

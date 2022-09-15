@@ -48,7 +48,7 @@ pub enum PolarsError {
     #[error("Data types don't match: {0}")]
     SchemaMisMatch(ErrString),
     #[error("Not found: {0}")]
-    NotFound(String),
+    NotFound(ErrString),
     #[error("Lengths don't match: {0}")]
     ShapeMisMatch(ErrString),
     #[error("{0}")]

@@ -1526,7 +1526,8 @@ def collect_all(
     simplify_expression: bool = True,
     string_cache: bool = False,
     no_optimization: bool = False,
-    slice_pushdown: bool = False,
+    slice_pushdown: bool = True,
+    common_subplan_elimination: bool = False,
 ) -> list[pli.DataFrame]:
     """
     Collect multiple LazyFrames at the same time.
@@ -1551,6 +1552,8 @@ def collect_all(
         Turn off optimizations.
     slice_pushdown
         Slice pushdown optimization.
+    common_subplan_elimination
+        Will try to cache branching subplans that occur on self-joins or unions.
 
     Returns
     -------
@@ -1561,6 +1564,7 @@ def collect_all(
         predicate_pushdown = False
         projection_pushdown = False
         slice_pushdown = False
+        common_subplan_elimination = False
 
     prepared = []
 
@@ -1571,6 +1575,7 @@ def collect_all(
             projection_pushdown,
             simplify_expression,
             slice_pushdown,
+            common_subplan_elimination,
         )
         prepared.append(ldf)
 

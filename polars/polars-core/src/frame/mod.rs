@@ -49,7 +49,7 @@ pub enum NullStrategy {
     Propagate,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum UniqueKeepStrategy {
     First,
@@ -188,7 +188,7 @@ impl DataFrame {
     /// Get the index of the column.
     fn check_name_to_idx(&self, name: &str) -> Result<usize> {
         self.find_idx_by_name(name)
-            .ok_or_else(|| PolarsError::NotFound(name.into()))
+            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
     }
 
     fn check_already_present(&self, name: &str) -> Result<()> {
@@ -1336,7 +1336,7 @@ impl DataFrame {
     pub fn column(&self, name: &str) -> Result<&Series> {
         let idx = self
             .find_idx_by_name(name)
-            .ok_or_else(|| PolarsError::NotFound(name.into()))?;
+            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))?;
         Ok(self.select_at_idx(idx).unwrap())
     }
 
@@ -1435,7 +1435,7 @@ impl DataFrame {
                 .map(|name| {
                     let idx = *name_to_idx
                         .get(name.as_str())
-                        .ok_or_else(|| PolarsError::NotFound(name.into()))?;
+                        .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))?;
                     Ok(self.select_at_idx(idx).unwrap().clone())
                 })
                 .collect::<Result<Vec<_>>>()?
@@ -1724,7 +1724,7 @@ impl DataFrame {
     /// ```
     pub fn rename(&mut self, column: &str, name: &str) -> Result<&mut Self> {
         self.select_mut(column)
-            .ok_or_else(|| PolarsError::NotFound(column.into()))
+            .ok_or_else(|| PolarsError::NotFound(column.to_string().into()))
             .map(|s| s.rename(name))?;
 
         let unique_names: AHashSet<&str, ahash::RandomState> =
@@ -2163,7 +2163,7 @@ impl DataFrame {
     {
         let idx = self
             .find_idx_by_name(column)
-            .ok_or_else(|| PolarsError::NotFound(column.to_string()))?;
+            .ok_or_else(|| PolarsError::NotFound(column.to_string().into()))?;
         self.try_apply_at_idx(idx, f)
     }
 
@@ -3224,7 +3224,9 @@ impl DataFrame {
             // the code below will return an error with the missing name
             let schema = self.schema();
             for col in cols {
-                let _ = schema.get(&col).ok_or(PolarsError::NotFound(col))?;
+                let _ = schema
+                    .get(&col)
+                    .ok_or_else(|| PolarsError::NotFound(col.into()))?;
             }
         }
         DataFrame::new(new_cols)

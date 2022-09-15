@@ -91,18 +91,23 @@ fn test_row_count_pd() -> Result<()> {
 fn scan_join_same_file() -> Result<()> {
     let lf = LazyCsvReader::new(FOODS_CSV.to_string()).finish()?;
 
-    let partial = lf.clone().select([col("category")]).limit(5);
-    let lf = lf.join(
-        partial,
-        [col("category")],
-        [col("category")],
-        JoinType::Inner,
-    );
-    let out = lf.collect()?;
-    assert_eq!(
-        out.get_column_names(),
-        &["category", "calories", "fats_g", "sugars_g"]
-    );
+    for cse in [true, false] {
+        let partial = lf.clone().select([col("category")]).limit(5);
+        let q = lf
+            .clone()
+            .join(
+                partial,
+                [col("category")],
+                [col("category")],
+                JoinType::Inner,
+            )
+            .with_common_subplan_elimination(cse);
+        let out = q.collect()?;
+        assert_eq!(
+            out.get_column_names(),
+            &["category", "calories", "fats_g", "sugars_g"]
+        );
+    }
     Ok(())
 }
 

@@ -146,10 +146,12 @@ impl FunctionExpr {
                             let fld = flds
                                 .iter()
                                 .find(|fld| fld.name() == name.as_ref())
-                                .ok_or_else(|| PolarsError::NotFound(name.as_ref().to_string()))?;
+                                .ok_or_else(|| {
+                                    PolarsError::NotFound(name.as_ref().to_string().into())
+                                })?;
                             Ok(fld.clone())
                         } else {
-                            Err(PolarsError::NotFound(name.as_ref().to_string()))
+                            Err(PolarsError::NotFound(name.as_ref().to_string().into()))
                         }
                     }
                 }

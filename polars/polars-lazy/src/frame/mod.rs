@@ -37,7 +37,12 @@ use polars_io::RowCount;
 use serde::{Deserialize, Serialize};
 
 use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
-#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+#[cfg(any(
+    feature = "parquet",
+    feature = "csv-file",
+    feature = "ipc",
+    feature = "cse"
+))]
 use crate::logical_plan::optimizer::file_caching::FileCacher;
 use crate::logical_plan::optimizer::predicate_pushdown::PredicatePushDown;
 use crate::logical_plan::optimizer::projection_pushdown::ProjectionPushDown;
@@ -47,7 +52,7 @@ use crate::logical_plan::FETCH_ROWS;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::delay_rechunk::DelayRechunk;
 use crate::prelude::drop_nulls::ReplaceDropNulls;
-use crate::prelude::fast_projection::FastProjection;
+use crate::prelude::fast_projection::FastProjectionAndCollapse;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use crate::prelude::file_caching::collect_fingerprints;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
@@ -57,7 +62,7 @@ use crate::prelude::slice_pushdown_lp::SlicePushDown;
 use crate::prelude::*;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JoinOptions {
     pub allow_parallel: bool,
@@ -126,6 +131,8 @@ pub struct OptState {
     pub file_caching: bool,
     pub aggregate_pushdown: bool,
     pub slice_pushdown: bool,
+    #[cfg(feature = "cse")]
+    pub common_subplan_elimination: bool,
 }
 
 impl Default for OptState {
@@ -139,6 +146,8 @@ impl Default for OptState {
             // will be toggled by a scan operation such as csv scan or parquet scan
             file_caching: false,
             aggregate_pushdown: false,
+            #[cfg(feature = "cse")]
+            common_subplan_elimination: false,
         }
     }
 }
@@ -185,6 +194,8 @@ impl LazyFrame {
             // will be toggled by a scan operation such as csv scan or parquet scan
             file_caching: false,
             aggregate_pushdown: false,
+            #[cfg(feature = "cse")]
+            common_subplan_elimination: false,
         })
     }
 
@@ -212,6 +223,14 @@ impl LazyFrame {
         self
     }
 
+    /// Toggle common subplan elimination optimization on or off
+    #[cfg(feature = "cse")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "cse")))]
+    pub fn with_common_subplan_elimination(mut self, toggle: bool) -> Self {
+        self.opt_state.common_subplan_elimination = toggle;
+        self
+    }
+
     /// Toggle aggregate pushdown.
     pub fn with_aggregate_pushdown(mut self, toggle: bool) -> Self {
         self.opt_state.aggregate_pushdown = toggle;
@@ -231,8 +250,8 @@ impl LazyFrame {
 
     /// Describe the optimized logical plan.
     pub fn describe_optimized_plan(&self) -> Result<String> {
-        let mut expr_arena = Arena::with_capacity(512);
-        let mut lp_arena = Arena::with_capacity(512);
+        let mut expr_arena = Arena::with_capacity(64);
+        let mut lp_arena = Arena::with_capacity(64);
         let lp_top = self.clone().optimize(&mut lp_arena, &mut expr_arena)?;
         let logical_plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
         Ok(logical_plan.describe())
@@ -337,7 +356,7 @@ impl LazyFrame {
             for (old, new) in existing2.iter().zip(new2.iter()) {
                 new_schema
                     .rename(old, new.to_string())
-                    .ok_or_else(|| PolarsError::NotFound(old.into()))?
+                    .ok_or_else(|| PolarsError::NotFound(old.to_string().into()))?
             }
             Ok(Arc::new(new_schema))
         };
@@ -550,12 +569,14 @@ impl LazyFrame {
         let type_coercion = self.opt_state.type_coercion;
         let simplify_expr = self.opt_state.simplify_expr;
         let slice_pushdown = self.opt_state.slice_pushdown;
+        #[cfg(feature = "cse")]
+        let cse = self.opt_state.common_subplan_elimination;
 
-        #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
         let agg_scan_projection = self.opt_state.file_caching;
         let aggregate_pushdown = self.opt_state.aggregate_pushdown;
 
         let logical_plan = self.get_plan_builder().build();
+        let mut scratch = vec![];
 
         // gradually fill the rules passed to the optimizer
         let opt = StackOptimizer {};
@@ -567,16 +588,29 @@ impl LazyFrame {
 
         let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena)?;
 
+        #[cfg(feature = "cse")]
+        let cse_changed = if cse {
+            let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+            lp_top = lp;
+            changed
+        } else {
+            false
+        };
+        #[cfg(not(feature = "cse"))]
+        let cse_changed = false;
+
         // we do simplification
         if simplify_expr {
             rules.push(Box::new(SimplifyExprRule {}));
         }
 
+        // should be run before predicate pushdown
         if projection_pushdown {
             let projection_pushdown_opt = ProjectionPushDown {};
             let alp = lp_arena.take(lp_top);
             let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
             lp_arena.replace(lp_top, alp);
+            cache_states::set_cache_states(lp_top, lp_arena, expr_arena, &mut scratch);
         }
 
         if predicate_pushdown {
@@ -588,7 +622,7 @@ impl LazyFrame {
 
         // make sure its before slice pushdown.
         if projection_pushdown {
-            rules.push(Box::new(FastProjection {}));
+            rules.push(Box::new(FastProjectionAndCollapse {}));
         }
         rules.push(Box::new(DelayRechunk {}));
 
@@ -618,8 +652,13 @@ impl LazyFrame {
         // make sure that we do that once slice pushdown
         // and predicate pushdown are done. At that moment
         // the file fingerprints are finished.
-        #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-        if agg_scan_projection {
+        #[cfg(any(
+            feature = "cse",
+            feature = "parquet",
+            feature = "ipc",
+            feature = "csv-file"
+        ))]
+        if agg_scan_projection || cse_changed {
             // we do this so that expressions are simplified created by the pushdown optimizations
             // we must clean up the predicates, because the agg_scan_projection
             // uses them in the hashtable to determine duplicates.
@@ -637,15 +676,21 @@ impl LazyFrame {
                 expr_arena,
             );
 
-            let rule = FileCacher::new(file_predicate_to_columns_and_count);
-            // its important that we do it now
-            // because typo coercion will change the predicates and there for
-            lp_top = opt.optimize_loop(
-                &mut [Box::new(rule) as Box<dyn OptimizationRule>],
-                expr_arena,
-                lp_arena,
-                lp_top,
-            );
+            let mut file_cacher = FileCacher::new(file_predicate_to_columns_and_count);
+            file_cacher.assign_unions(lp_top, lp_arena, expr_arena, &mut scratch, false);
+            scratch.clear();
+
+            #[cfg(feature = "cse")]
+            if cse_changed {
+                // this must run after cse
+                cse::decrement_file_counters_by_cache_hits(
+                    lp_top,
+                    lp_arena,
+                    expr_arena,
+                    0,
+                    &mut scratch,
+                );
+            }
         }
 
         rules.push(Box::new(ReplaceDropNulls {}));
@@ -1217,6 +1262,12 @@ impl LazyFrame {
                 name.unwrap_or("ANONYMOUS UDF"),
             )
             .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    pub(crate) fn map_private(self, function: FunctionNode) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().map_private(function).build();
         Self::from_logical_plan(lp, opt_state)
     }
 

@@ -229,7 +229,12 @@ impl LogicalPlanBuilder {
     pub fn cache(self) -> Self {
         let input = Box::new(self.0);
         let id = input.as_ref() as *const LogicalPlan as usize;
-        LogicalPlan::Cache { input, id }.into()
+        LogicalPlan::Cache {
+            input,
+            id,
+            count: usize::MAX,
+        }
+        .into()
     }
 
     pub fn project(self, exprs: Vec<Expr>) -> Self {
@@ -392,7 +397,7 @@ impl LogicalPlanBuilder {
             let dtype = try_delayed!(
                 current_schema
                     .get(name)
-                    .ok_or_else(|| PolarsError::NotFound(name.clone())),
+                    .ok_or_else(|| PolarsError::NotFound(name.to_string().into())),
                 self.0,
                 into
             );
@@ -424,6 +429,7 @@ impl LogicalPlanBuilder {
         LogicalPlan::DataFrameScan {
             df: Arc::new(df),
             schema,
+            output_schema: None,
             projection: None,
             selection: None,
         }
@@ -545,6 +551,14 @@ impl LogicalPlanBuilder {
         }
         .into()
     }
+    pub(crate) fn map_private(self, function: FunctionNode) -> Self {
+        LogicalPlan::MapFunction {
+            input: Box::new(self.0),
+            function,
+        }
+        .into()
+    }
+
     pub fn map<F>(
         self,
         function: F,

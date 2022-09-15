@@ -53,10 +53,13 @@ pub(crate) fn columns_to_projection(
 
     let err = |column: &str| {
         let valid_fields: Vec<String> = schema.fields.iter().map(|f| f.name.clone()).collect();
-        PolarsError::NotFound(format!(
-            "Unable to get field named \"{}\". Valid fields: {:?}",
-            column, valid_fields
-        ))
+        PolarsError::NotFound(
+            format!(
+                "Unable to get field named \"{}\". Valid fields: {:?}",
+                column, valid_fields
+            )
+            .into(),
+        )
     };
 
     let mut prj = Vec::with_capacity(columns.len());

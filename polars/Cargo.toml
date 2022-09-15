@@ -55,7 +55,7 @@ avro = ["polars-io", "polars-io/avro"]
 csv-file = ["polars-io", "polars-io/csv-file", "polars-lazy/csv-file"]
 
 # slower builds
-performant = ["polars-core/performant", "chunked_ids", "dtype-u8", "dtype-u16"]
+performant = ["polars-core/performant", "chunked_ids", "dtype-u8", "dtype-u16", "cse"]
 
 # Dataframe formatting.
 fmt = ["polars-core/fmt"]
@@ -126,6 +126,7 @@ sign = ["polars-lazy/sign"]
 pivot = ["polars-lazy/pivot"]
 top_k = ["polars-lazy/top_k"]
 algo = ["polars-algo"]
+cse = ["polars-lazy/cse"]
 
 test = [
   "lazy",
