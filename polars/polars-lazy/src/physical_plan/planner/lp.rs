@@ -448,13 +448,14 @@ impl PhysicalPlanner {
                 let parallel = if options.force_parallel {
                     true
                 } else if options.allow_parallel {
-                    // todo! set this in optimization pass
-                    !(&*lp_arena)
-                        .iter(input_left)
-                        .any(|(_, lp)| matches!(lp, ALogicalPlan::Cache { .. }))
-                        || !(&*lp_arena)
-                            .iter(input_right)
-                            .any(|(_, lp)| matches!(lp, ALogicalPlan::Cache { .. }))
+                    // check if two DataFrames come from a separate source.
+                    // If they don't we can parallelize,
+                    // we may deadlock if we don't check this
+                    let mut sources_left = PlHashSet::new();
+                    agg_source_paths(input_left, &mut sources_left, lp_arena);
+                    let mut sources_right = PlHashSet::new();
+                    agg_source_paths(input_right, &mut sources_right, lp_arena);
+                    sources_left.intersection(&sources_right).next().is_none()
                 } else {
                     false
                 };

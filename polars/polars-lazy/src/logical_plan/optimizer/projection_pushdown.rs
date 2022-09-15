@@ -1110,21 +1110,19 @@ impl ProjectionPushDown {
 
                 Ok(lp.with_exprs_and_input(exprs, new_inputs))
             }
-            Cache { input, .. } => {
+            Cache { .. } => {
                 // projections above this cache will be accumulated and pushed down
                 // later
                 // the redundant projection will be cleaned in the fast projection optimization
                 // phase.
                 if acc_projections.is_empty() {
                     Ok(logical_plan)
-                } else if acc_projections.len() != lp_arena.get(input).schema(lp_arena).len() {
+                } else {
                     Ok(
                         ALogicalPlanBuilder::from_lp(logical_plan, expr_arena, lp_arena)
                             .project(acc_projections)
                             .build(),
                     )
-                } else {
-                    Ok(logical_plan)
                 }
             }
         }

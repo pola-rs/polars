@@ -108,22 +108,17 @@ test = [
 ]
 
 test_all = [
-  "panic_on_schema",
-  "private",
-  "rolling_window",
-  "rank",
-  "list",
-  "round_series",
-  "csv-file",
-  "dtype-categorical",
-  "cum_agg",
+  "test",
+  "strings",
   "regex",
-  "polars-core/fmt",
-  "diff",
-  "abs",
-  "parquet",
   "ipc",
-  "dtype-date",
+  "row_hash",
+  "string_justify",
+  "search_sorted",
+  "top_k",
+  "pivot",
+  "semi_anti_join",
+  "cse",
 ]
 
 [dependencies]
