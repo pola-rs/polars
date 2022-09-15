@@ -6,6 +6,7 @@ use polars_core::prelude::*;
 
 use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
+#[cfg(feature = "meta")]
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
 
@@ -148,6 +149,7 @@ pub(crate) fn has_null(current_expr: &Expr) -> bool {
 }
 
 /// output name of expr
+#[cfg(feature = "meta")]
 pub(crate) fn expr_output_name(expr: &Expr) -> Result<Arc<str>> {
     for e in expr {
         match e {

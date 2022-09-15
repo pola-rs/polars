@@ -131,6 +131,7 @@ impl FunctionExpr {
             }
             #[cfg(feature = "dtype-struct")]
             StructExpr(s) => {
+                use polars_core::utils::slice_offsets;
                 use StructFunction::*;
                 match s {
                     FieldByIndex(index) => {
