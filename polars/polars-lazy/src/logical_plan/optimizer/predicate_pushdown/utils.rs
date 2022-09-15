@@ -3,7 +3,7 @@ use polars_core::prelude::*;
 
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{aexpr_to_root_names, check_input_node, has_aexpr, rename_aexpr_root_names};
+use crate::utils::{aexpr_to_leaf_names, check_input_node, has_aexpr, rename_aexpr_leaf_names};
 
 trait Dsl {
     fn and(self, right: Node, arena: &mut Arena<AExpr>) -> Node;
@@ -227,7 +227,7 @@ where
         let output_field = projection_expr
             .to_field(&input_schema, Context::Default, expr_arena)
             .unwrap();
-        let projection_roots = aexpr_to_root_names(*projection_node, expr_arena);
+        let projection_roots = aexpr_to_leaf_names(*projection_node, expr_arena);
 
         {
             let projection_aexpr = expr_arena.get(*projection_node);
@@ -243,7 +243,7 @@ where
                     if projection_roots.len() == 1 {
                         // we were able to rename the alias column with the root column name
                         // before pushing down the predicate
-                        let predicate = rename_aexpr_root_names(
+                        let predicate = rename_aexpr_leaf_names(
                             predicate,
                             expr_arena,
                             projection_roots[0].clone(),
@@ -325,7 +325,7 @@ pub(super) fn no_pushdown_preds<F>(
     // matching expr are typically explode, shift, etc. expressions that mess up predicates when pushed down
     if has_aexpr(node, arena, matches) {
         // columns that are projected. We check if we can push down the predicates past this projection
-        let columns = aexpr_to_root_names(node, arena);
+        let columns = aexpr_to_leaf_names(node, arena);
 
         let condition = |name: Arc<str>| columns.contains(&name);
         local_predicates.extend(transfer_to_local_by_name(arena, acc_predicates, condition));
@@ -345,7 +345,7 @@ where
     let mut remove_keys = Vec::with_capacity(acc_predicates.len());
 
     for (key, predicate) in &*acc_predicates {
-        let root_names = aexpr_to_root_names(*predicate, expr_arena);
+        let root_names = aexpr_to_leaf_names(*predicate, expr_arena);
         for name in root_names {
             if condition(name) {
                 remove_keys.push(key.clone());

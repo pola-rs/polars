@@ -20,23 +20,23 @@ fn aggregate_expr_to_scan_agg(
             if let AExpr::Agg(agg) = expr_arena.get(expr) {
                 match agg {
                     AAggExpr::Min(e) => ScanAggregation::Min {
-                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).to_string(),
+                        column: (*aexpr_to_leaf_names(*e, expr_arena).pop().unwrap()).to_string(),
                         alias,
                     },
                     AAggExpr::Max(e) => ScanAggregation::Max {
-                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).to_string(),
+                        column: (*aexpr_to_leaf_names(*e, expr_arena).pop().unwrap()).to_string(),
                         alias,
                     },
                     AAggExpr::Sum(e) => ScanAggregation::Sum {
-                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).to_string(),
+                        column: (*aexpr_to_leaf_names(*e, expr_arena).pop().unwrap()).to_string(),
                         alias,
                     },
                     AAggExpr::First(e) => ScanAggregation::First {
-                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).to_string(),
+                        column: (*aexpr_to_leaf_names(*e, expr_arena).pop().unwrap()).to_string(),
                         alias,
                     },
                     AAggExpr::Last(e) => ScanAggregation::Last {
-                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).to_string(),
+                        column: (*aexpr_to_leaf_names(*e, expr_arena).pop().unwrap()).to_string(),
                         alias,
                     },
                     _ => todo!(),
@@ -399,7 +399,7 @@ impl PhysicalPlanner {
 
                             #[cfg(feature = "object")]
                             {
-                                for name in aexpr_to_root_names(*agg, expr_arena) {
+                                for name in aexpr_to_leaf_names(*agg, expr_arena) {
                                     let dtype = input_schema.get(&name).unwrap();
 
                                     if let DataType::Object(_) = dtype {

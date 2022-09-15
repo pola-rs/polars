@@ -29,7 +29,7 @@ impl PhysicalPlanner {
                 let phys_function =
                     self.create_physical_expr(function, Context::Aggregation, expr_arena)?;
                 let mut out_name = None;
-                let mut apply_columns = aexpr_to_root_names(function, expr_arena);
+                let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
                 // sort and then dedup removes consecutive duplicates == all duplicates
                 apply_columns.sort();
                 apply_columns.dedup();

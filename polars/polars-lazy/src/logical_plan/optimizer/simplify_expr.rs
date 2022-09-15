@@ -241,7 +241,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 AExpr::Literal(LiteralValue::Boolean(false))
             ) =>
             {
-                let names = aexpr_to_root_names(*truthy, expr_arena);
+                let names = aexpr_to_leaf_names(*truthy, expr_arena);
                 if names.is_empty() {
                     None
                 } else {

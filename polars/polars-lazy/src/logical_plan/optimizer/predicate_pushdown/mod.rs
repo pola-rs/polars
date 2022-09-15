@@ -7,7 +7,7 @@ use utils::*;
 use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::{optimizer, Context};
 use crate::prelude::*;
-use crate::utils::{aexpr_to_root_names, aexprs_to_schema, check_input_node, has_aexpr};
+use crate::utils::{aexpr_to_leaf_names, aexprs_to_schema, check_input_node, has_aexpr};
 
 #[derive(Default)]
 pub(crate) struct PredicatePushDown {}
@@ -178,7 +178,7 @@ impl PredicatePushDown {
                 // we remove it and apply it locally
                 let local_predicates = transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena));
 
-                let name = roots_to_key(&aexpr_to_root_names(predicate, expr_arena));
+                let name = roots_to_key(&aexpr_to_leaf_names(predicate, expr_arena));
                 insert_and_combine_predicate(&mut acc_predicates, name, predicate, expr_arena);
                 let alp = lp_arena.take(input);
                 let new_input = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
