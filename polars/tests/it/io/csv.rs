@@ -1018,14 +1018,6 @@ fn test_whitespace_skipping() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_duplicate_column_err() {
-    let csv = "a,b,a
-  12,1435,1";
-    let file = Cursor::new(csv);
-    assert!(CsvReader::new(file).finish().is_err());
-}
-
-#[test]
 fn test_parse_dates_3380() -> PolarsResult<()> {
     let csv = "lat;lon;validdate;t_2m:C;precip_1h:mm
 46.685;7.953;2022-05-10T07:07:12Z;6.1;0.00

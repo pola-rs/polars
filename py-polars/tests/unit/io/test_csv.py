@@ -808,3 +808,14 @@ def test_skip_rows_different_field_len() -> None:
         "a": [3, 4],
         "b": ["B", None],
     }
+
+
+def test_duplicated_columns() -> None:
+    csv = textwrap.dedent(
+        """a,a
+    1,2
+    """
+    )
+    assert pl.read_csv(csv.encode()).columns == ["a", "a_duplicated_0"]
+    new = ["c", "d"]
+    assert pl.read_csv(csv.encode(), new_columns=new).columns == new
