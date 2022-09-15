@@ -166,7 +166,7 @@ pub(crate) fn write<W: Write>(
     df: &DataFrame,
     chunk_size: usize,
     options: &mut SerializeOptions,
-) -> Result<()> {
+) -> PolarsResult<()> {
     // check that the double quote is valid utf8
     std::str::from_utf8(&[options.quote, options.quote])
         .map_err(|_| PolarsError::ComputeError("quote char leads invalid utf8".into()))?;
@@ -277,7 +277,7 @@ pub(crate) fn write_header<W: Write>(
     writer: &mut W,
     names: &[&str],
     options: &SerializeOptions,
-) -> Result<()> {
+) -> PolarsResult<()> {
     writer.write_all(
         names
             .join(std::str::from_utf8(&[options.delimiter]).unwrap())

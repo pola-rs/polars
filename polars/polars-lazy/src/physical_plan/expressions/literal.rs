@@ -20,7 +20,7 @@ impl PhysicalExpr for LiteralExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.1)
     }
-    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series> {
         use LiteralValue::*;
         let s = match &self.0 {
             #[cfg(feature = "dtype-i8")]
@@ -126,7 +126,7 @@ impl PhysicalExpr for LiteralExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let s = self.evaluate(df, state)?;
         Ok(AggregationContext::from_literal(s, Cow::Borrowed(groups)))
     }
@@ -135,7 +135,7 @@ impl PhysicalExpr for LiteralExpr {
         Some(self)
     }
 
-    fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
         let dtype = self.0.get_datatype();
         Ok(Field::new("literal", dtype))
     }
@@ -154,7 +154,7 @@ impl PartitionedAggregation for LiteralExpr {
         df: &DataFrame,
         _groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         self.evaluate(df, state)
     }
 
@@ -163,7 +163,7 @@ impl PartitionedAggregation for LiteralExpr {
         partitioned: Series,
         _groups: &GroupsProxy,
         _state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         Ok(partitioned)
     }
 }

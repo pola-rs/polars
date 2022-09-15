@@ -46,7 +46,7 @@ where
     Err(left)
 }
 
-pub fn search_sorted(s: &Series, search_value: &AnyValue) -> Result<IdxSize> {
+pub fn search_sorted(s: &Series, search_value: &AnyValue) -> PolarsResult<IdxSize> {
     if s.is_logical() {
         let search_dtype: DataType = search_value.into();
         if &search_dtype != s.dtype() {

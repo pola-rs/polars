@@ -60,7 +60,7 @@ trait ParsedBuffer {
         bytes: &[u8],
         ignore_errors: bool,
         _needs_escaping: bool,
-    ) -> Result<()>;
+    ) -> PolarsResult<()>;
 }
 
 impl<T> ParsedBuffer for PrimitiveChunkedBuilder<T>
@@ -73,7 +73,7 @@ where
         bytes: &[u8],
         ignore_errors: bool,
         needs_escaping: bool,
-    ) -> Result<()> {
+    ) -> PolarsResult<()> {
         if bytes.is_empty() {
             self.append_null()
         } else {
@@ -156,7 +156,7 @@ impl ParsedBuffer for Utf8Field {
         bytes: &[u8],
         ignore_errors: bool,
         needs_escaping: bool,
-    ) -> Result<()> {
+    ) -> PolarsResult<()> {
         if bytes.is_empty() {
             // append null
             self.offsets.push(self.data.len() as i64);
@@ -238,7 +238,7 @@ impl ParsedBuffer for BooleanChunkedBuilder {
         bytes: &[u8],
         ignore_errors: bool,
         _needs_escaping: bool,
-    ) -> Result<()> {
+    ) -> PolarsResult<()> {
         if bytes.eq_ignore_ascii_case(b"false") {
             self.append_value(false);
         } else if bytes.eq_ignore_ascii_case(b"true") {
@@ -285,7 +285,7 @@ fn slow_datetime_parser<T>(
     buf: &mut DatetimeField<T>,
     bytes: &[u8],
     ignore_errors: bool,
-) -> Result<()>
+) -> PolarsResult<()>
 where
     T: PolarsNumericType,
     DatetimeInfer<T::Native>: TryFrom<Pattern>,
@@ -336,7 +336,7 @@ where
         mut bytes: &[u8],
         ignore_errors: bool,
         needs_escaping: bool,
-    ) -> Result<()> {
+    ) -> PolarsResult<()> {
         if needs_escaping && bytes.len() > 2 {
             bytes = &bytes[1..bytes.len() - 1]
         }
@@ -368,7 +368,7 @@ pub(crate) fn init_buffers(
     quote_char: Option<u8>,
     encoding: CsvEncoding,
     ignore_errors: bool,
-) -> Result<Vec<Buffer>> {
+) -> PolarsResult<Vec<Buffer>> {
     // we keep track of the string columns we have seen so that we can increment the index
     let mut str_index = 0;
 
@@ -438,7 +438,7 @@ pub(crate) enum Buffer {
 }
 
 impl Buffer {
-    pub(crate) fn into_series(self) -> Result<Series> {
+    pub(crate) fn into_series(self) -> PolarsResult<Series> {
         let s = match self {
             Buffer::Boolean(v) => v.finish().into_series(),
             Buffer::Int32(v) => v.finish().into_series(),
@@ -554,7 +554,7 @@ impl Buffer {
         bytes: &[u8],
         ignore_errors: bool,
         needs_escaping: bool,
-    ) -> Result<()> {
+    ) -> PolarsResult<()> {
         use Buffer::*;
         match self {
             Boolean(buf) => <BooleanChunkedBuilder as ParsedBuffer>::parse_bytes(

@@ -7,7 +7,7 @@ pub fn cut(
     labels: Option<Vec<&str>>,
     break_point_label: Option<&str>,
     category_label: Option<&str>,
-) -> Result<DataFrame> {
+) -> PolarsResult<DataFrame> {
     let var_name = s.name();
 
     let breakpoint_str = if let Some(label) = break_point_label {
@@ -67,7 +67,7 @@ pub fn cut(
 }
 
 #[test]
-fn test_cut() -> Result<()> {
+fn test_cut() -> PolarsResult<()> {
     let samples: Vec<f32> = (0..12).map(|i| -3.0 + i as f32 * 0.5).collect();
     let series = Series::new("a", samples);
 

@@ -1,7 +1,7 @@
 use polars::export::arrow::array::Array;
 use polars::prelude::*;
 
-pub(crate) fn set_at_idx(mut s: Series, idx: &Series, values: &Series) -> Result<Series> {
+pub(crate) fn set_at_idx(mut s: Series, idx: &Series, values: &Series) -> PolarsResult<Series> {
     let logical_dtype = s.dtype().clone();
     let idx = idx.cast(&IDX_DTYPE)?;
     let idx = idx.rechunk();

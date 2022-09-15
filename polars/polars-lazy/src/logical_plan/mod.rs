@@ -230,7 +230,7 @@ impl LogicalPlan {
 }
 
 impl LogicalPlan {
-    pub(crate) fn schema(&self) -> Result<Cow<'_, SchemaRef>> {
+    pub(crate) fn schema(&self) -> PolarsResult<Cow<'_, SchemaRef>> {
         use LogicalPlan::*;
         match self {
             #[cfg(feature = "python")]

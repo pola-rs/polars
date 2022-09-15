@@ -471,7 +471,7 @@ impl DataFrame {
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
         slice: Option<(i64, usize)>,
-    ) -> Result<DataFrame>
+    ) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -633,7 +633,7 @@ impl DataFrame {
         right_by: I,
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
-    ) -> Result<DataFrame>
+    ) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -649,7 +649,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_asof_by() -> Result<()> {
+    fn test_asof_by() -> PolarsResult<()> {
         let a = df![
         "a" => [-1, 2, 3, 3, 3, 4],
         "b" => ["a", "b", "c", "d", "e", "f"]
@@ -673,7 +673,7 @@ mod test {
     }
 
     #[test]
-    fn test_asof_by2() -> Result<()> {
+    fn test_asof_by2() -> PolarsResult<()> {
         let trades = df![
             "time" => [23i64, 38, 48, 48, 48],
             "ticker" => ["MSFT", "MSFT", "GOOG", "GOOG", "AAPL"],

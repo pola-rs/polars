@@ -270,7 +270,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_rank() -> Result<()> {
+    fn test_rank() -> PolarsResult<()> {
         let s = Series::new("a", &[1, 2, 3, 2, 2, 3, 0]);
 
         let out = rank(&s, RankMethod::Ordinal, false)
@@ -363,7 +363,7 @@ mod test {
     }
 
     #[test]
-    fn test_rank_all_null() -> Result<()> {
+    fn test_rank_all_null() -> PolarsResult<()> {
         let s = UInt32Chunked::new("", &[None, None, None]).into_series();
         let out = rank(&s, RankMethod::Average, false)
             .f32()?
@@ -388,7 +388,7 @@ mod test {
     }
 
     #[test]
-    fn test_rank_reverse() -> Result<()> {
+    fn test_rank_reverse() -> PolarsResult<()> {
         let s = Series::new("", &[None, Some(1), Some(1), Some(5), None]);
         let out = rank(&s, RankMethod::Dense, true)
             .idx()?

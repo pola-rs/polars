@@ -57,14 +57,14 @@ impl DataFrame {
     /// Create a new DataFrame from rows. This should only be used when you have row wise data,
     /// as this is a lot slower than creating the `Series` in a columnar fashion
     #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
-    pub fn from_rows_and_schema(rows: &[Row], schema: &Schema) -> Result<Self> {
+    pub fn from_rows_and_schema(rows: &[Row], schema: &Schema) -> PolarsResult<Self> {
         Self::from_rows_iter_and_schema(rows.iter(), schema)
     }
 
     /// Create a new DataFrame from an iterator over rows. This should only be used when you have row wise data,
     /// as this is a lot slower than creating the `Series` in a columnar fashion
     #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
-    pub fn from_rows_iter_and_schema<'a, I>(mut rows: I, schema: &Schema) -> Result<Self>
+    pub fn from_rows_iter_and_schema<'a, I>(mut rows: I, schema: &Schema) -> PolarsResult<Self>
     where
         I: Iterator<Item = &'a Row<'a>>,
     {
@@ -78,7 +78,7 @@ impl DataFrame {
             })
             .collect();
 
-        rows.try_for_each::<_, Result<()>>(|row| {
+        rows.try_for_each::<_, PolarsResult<()>>(|row| {
             for (value, buf) in row.0.iter().zip(&mut buffers) {
                 buf.add_fallible(value)?
             }
@@ -99,7 +99,7 @@ impl DataFrame {
     /// Create a new DataFrame from rows. This should only be used when you have row wise data,
     /// as this is a lot slower than creating the `Series` in a columnar fashion
     #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
-    pub fn from_rows(rows: &[Row]) -> Result<Self> {
+    pub fn from_rows(rows: &[Row]) -> PolarsResult<Self> {
         let schema = rows_to_schema_first_non_null(rows, Some(50));
         let has_nulls = schema
             .iter_dtypes()
@@ -112,7 +112,7 @@ impl DataFrame {
         Self::from_rows_and_schema(rows, &schema)
     }
 
-    pub(crate) fn transpose_from_dtype(&self, dtype: &DataType) -> Result<DataFrame> {
+    pub(crate) fn transpose_from_dtype(&self, dtype: &DataType) -> PolarsResult<DataFrame> {
         let new_width = self.height();
         let new_height = self.width();
 
@@ -169,7 +169,7 @@ impl DataFrame {
 
     #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     /// Transpose a DataFrame. This is a very expensive operation.
-    pub fn transpose(&self) -> Result<DataFrame> {
+    pub fn transpose(&self) -> PolarsResult<DataFrame> {
         let height = self.height();
         let width = self.width();
         if height == 0 || width == 0 {
@@ -272,7 +272,7 @@ fn infer_dtype_dynamic(av: &AnyValue) -> DataType {
 pub fn rows_to_schema_supertypes(
     rows: &[Row],
     infer_schema_length: Option<usize>,
-) -> Result<Schema> {
+) -> PolarsResult<Schema> {
     // no of rows to use to infer dtype
     let max_infer = infer_schema_length.unwrap_or(rows.len());
 
@@ -296,7 +296,7 @@ pub fn rows_to_schema_supertypes(
                 .unwrap()?;
             Ok(Field::new(format!("column_{}", i).as_ref(), dtype))
         })
-        .collect::<Result<_>>()
+        .collect::<PolarsResult<_>>()
 }
 
 /// Infer schema from rows and set the first no null type as column data type.
@@ -432,7 +432,7 @@ impl<'a> AnyValueBuffer<'a> {
         Some(())
     }
 
-    pub(crate) fn add_fallible(&mut self, val: &AnyValue<'a>) -> Result<()> {
+    pub(crate) fn add_fallible(&mut self, val: &AnyValue<'a>) -> PolarsResult<()> {
         self.add(val.clone()).ok_or_else(|| {
             PolarsError::ComputeError(format!("Could not append {:?} to builder; make sure that all rows have the same schema.\n\
             Or consider increasing the the 'schema_inference_length' argument.", val).into())
@@ -493,7 +493,7 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
     }
 }
 
-fn numeric_transpose<T>(cols: &[Series]) -> Result<DataFrame>
+fn numeric_transpose<T>(cols: &[Series]) -> PolarsResult<DataFrame>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
@@ -598,7 +598,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_transpose() -> Result<()> {
+    fn test_transpose() -> PolarsResult<()> {
         let df = df![
             "a" => [1, 2, 3],
             "b" => [10, 20, 30],

@@ -99,7 +99,7 @@ where
 /// That means that the first `Series` will be used to determine the ordering
 /// until duplicates are found. Once duplicates are found, the next `Series` will
 /// be used and so on.
-pub fn argsort_by(by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
+pub fn argsort_by(by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
     if by.len() != reverse.len() {
         return Err(PolarsError::ComputeError(
             format!(
@@ -137,7 +137,7 @@ impl<'a> IterBroadCast<'a> {
 /// If no `delimiter` is needed, an empty &str should be passed as argument.
 #[cfg(feature = "concat_str")]
 #[cfg_attr(docsrs, doc(cfg(feature = "concat_str")))]
-pub fn concat_str(s: &[Series], delimiter: &str) -> Result<Utf8Chunked> {
+pub fn concat_str(s: &[Series], delimiter: &str) -> PolarsResult<Utf8Chunked> {
     if s.is_empty() {
         return Err(PolarsError::NoData(
             "expected multiple series in concat_str function".into(),
@@ -161,7 +161,7 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> Result<Utf8Chunked> {
 
             Ok(ca)
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     if !s.iter().all(|s| s.len() == 1 || s.len() == len) {
         return Err(PolarsError::ComputeError(
@@ -214,7 +214,7 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> Result<Utf8Chunked> {
 #[cfg(feature = "horizontal_concat")]
 #[cfg_attr(docsrs, doc(cfg(feature = "horizontal_concat")))]
 /// Concat horizontally and extend with null values if lengths don't match
-pub fn hor_concat_df(dfs: &[DataFrame]) -> Result<DataFrame> {
+pub fn hor_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
     let max_len = dfs
         .iter()
         .map(|df| df.height())
@@ -255,7 +255,7 @@ pub fn hor_concat_df(dfs: &[DataFrame]) -> Result<DataFrame> {
 #[cfg(feature = "diagonal_concat")]
 #[cfg_attr(docsrs, doc(cfg(feature = "diagonal_concat")))]
 /// Concat diagonally thereby combining different schemas.
-pub fn diag_concat_df(dfs: &[DataFrame]) -> Result<DataFrame> {
+pub fn diag_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
     let upper_bound_width = dfs.iter().map(|df| df.width()).sum();
     let mut column_names = AHashSet::with_capacity(upper_bound_width);
     let mut schema = Vec::with_capacity(upper_bound_width);
@@ -333,7 +333,7 @@ mod test {
 
     #[test]
     #[cfg(feature = "diagonal_concat")]
-    fn test_diag_concat() -> Result<()> {
+    fn test_diag_concat() -> PolarsResult<()> {
         let a = df![
             "a" => [1, 2],
             "b" => ["a", "b"]

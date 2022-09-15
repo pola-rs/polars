@@ -24,7 +24,7 @@ impl Utf8Chunked {
     /// Extract json path, first match
     /// Refer to <https://goessner.net/articles/JsonPath/>
     #[cfg(feature = "extract_jsonpath")]
-    pub fn json_path_match(&self, json_path: &str) -> Result<Utf8Chunked> {
+    pub fn json_path_match(&self, json_path: &str) -> PolarsResult<Utf8Chunked> {
         match PathCompiled::compile(json_path) {
             Ok(pat) => Ok(self.apply_on_opt(|opt_s| opt_s.and_then(|s| extract_json(&pat, s)))),
             Err(e) => Err(PolarsError::ComputeError(

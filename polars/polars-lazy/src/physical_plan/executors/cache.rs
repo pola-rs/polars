@@ -10,7 +10,7 @@ pub struct CacheExec {
 }
 
 impl Executor for CacheExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         if self.count > 0 {
             if let Some(df) = state.cache_hit(&self.id) {
                 if state.verbose() {

@@ -27,7 +27,7 @@ impl SQLContext {
         self.table_map.insert(name.to_owned(), df.clone().lazy());
     }
 
-    fn execute_select(&self, select_stmt: &Select) -> Result<LazyFrame, PolarsError> {
+    fn execute_select(&self, select_stmt: &Select) -> PolarsResult<LazyFrame, PolarsError> {
         // Determine involved dataframe
         // Implicit join require some more work in query parsers, Explicit join are preferred for now.
         let tbl = select_stmt.from.get(0).unwrap();
@@ -153,7 +153,7 @@ impl SQLContext {
         Ok(df)
     }
 
-    pub fn execute(&self, query: &str) -> Result<LazyFrame, PolarsError> {
+    pub fn execute(&self, query: &str) -> PolarsResult<LazyFrame, PolarsError> {
         let ast = Parser::parse_sql(&self.dialect, query)
             .map_err(|e| PolarsError::ComputeError(format!("{:?}", e).into()))?;
         if ast.len() != 1 {

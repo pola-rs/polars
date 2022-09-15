@@ -27,7 +27,7 @@ pub struct AsOfOptions {
     pub right_by: Option<Vec<String>>,
 }
 
-fn check_asof_columns(a: &Series, b: &Series) -> Result<()> {
+fn check_asof_columns(a: &Series, b: &Series) -> PolarsResult<()> {
     if a.dtype() != b.dtype() {
         return Err(PolarsError::ComputeError(
             format!(
@@ -61,7 +61,7 @@ where
         other: &Series,
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
-    ) -> Result<Vec<Option<IdxSize>>> {
+    ) -> PolarsResult<Vec<Option<IdxSize>>> {
         let other = self.unpack_series_matching_type(other)?;
 
         if self.null_count() > 0 || other.null_count() > 0 {
@@ -113,7 +113,7 @@ impl DataFrame {
         tolerance: Option<AnyValue<'static>>,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         let left_key = self.column(left_on)?;
         let right_key = other.column(right_on)?;
 
@@ -200,7 +200,7 @@ impl DataFrame {
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
         suffix: Option<String>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         self._join_asof(other, left_on, right_on, strategy, tolerance, suffix, None)
     }
 }

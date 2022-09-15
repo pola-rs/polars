@@ -261,7 +261,7 @@ fn argsort_multiple_numeric<T: PolarsNumericType>(
     ca: &ChunkedArray<T>,
     other: &[Series],
     reverse: &[bool],
-) -> Result<IdxCa> {
+) -> PolarsResult<IdxCa> {
     args_validate(ca, other, reverse)?;
     let mut count: IdxSize = 0;
     let vals: Vec<_> = ca
@@ -301,7 +301,7 @@ where
     ///
     /// This function is very opinionated.
     /// We assume that all numeric `Series` are of the same type, if not it will panic
-    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> Result<IdxCa> {
+    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
         argsort_multiple_numeric(self, other, reverse)
     }
 }
@@ -327,7 +327,7 @@ impl ChunkSort<Float32Type> for Float32Chunked {
     ///
     /// This function is very opinionated.
     /// We assume that all numeric `Series` are of the same type, if not it will panic
-    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> Result<IdxCa> {
+    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
         argsort_multiple_numeric(self, other, reverse)
     }
 }
@@ -353,7 +353,7 @@ impl ChunkSort<Float64Type> for Float64Chunked {
     ///
     /// This function is very opinionated.
     /// We assume that all numeric `Series` are of the same type, if not it will panic
-    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> Result<IdxCa> {
+    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
         argsort_multiple_numeric(self, other, reverse)
     }
 }
@@ -492,7 +492,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     /// In this case we assume that all numeric `Series` are `f64` types. The caller needs to
     /// uphold this contract. If not, it will panic.
     ///
-    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> Result<IdxCa> {
+    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
         args_validate(self, other, reverse)?;
 
         let mut count: IdxSize = 0;
@@ -550,7 +550,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
 pub(crate) fn prepare_argsort(
     columns: Vec<Series>,
     mut reverse: Vec<bool>,
-) -> Result<(Series, Vec<Series>, Vec<bool>)> {
+) -> PolarsResult<(Series, Vec<Series>, Vec<bool>)> {
     let n_cols = columns.len();
 
     let mut columns = columns
@@ -677,7 +677,7 @@ mod test {
     #[test]
     #[cfg(feature = "sort_multiple")]
     #[cfg_attr(miri, ignore)]
-    fn test_argsort_multiple() -> Result<()> {
+    fn test_argsort_multiple() -> PolarsResult<()> {
         let a = Int32Chunked::new("a", &[1, 2, 1, 1, 3, 4, 3, 3]);
         let b = Int64Chunked::new("b", &[0, 1, 2, 3, 4, 5, 6, 1]);
         let c = Utf8Chunked::new("c", &["a", "b", "c", "d", "e", "f", "g", "h"]);

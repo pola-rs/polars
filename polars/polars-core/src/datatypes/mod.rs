@@ -700,7 +700,7 @@ impl<'a> AnyValue<'a> {
 
     /// Try to coerce to an AnyValue with static lifetime.
     /// This can be done if it does not borrow any values.
-    pub fn into_static(self) -> Result<AnyValue<'static>> {
+    pub fn into_static(self) -> PolarsResult<AnyValue<'static>> {
         use AnyValue::*;
         let av = match self {
             Null => AnyValue::Null,

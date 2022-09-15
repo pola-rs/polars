@@ -34,7 +34,7 @@ impl PhysicalExpr for AggregationExpr {
         None
     }
 
-    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series> {
         unimplemented!()
     }
     #[allow(clippy::ptr_arg)]
@@ -43,7 +43,7 @@ impl PhysicalExpr for AggregationExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.series().name().to_string();
@@ -195,7 +195,7 @@ impl PhysicalExpr for AggregationExpr {
         Ok(AggregationContext::new(out, Cow::Borrowed(groups), true))
     }
 
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
     }
 
@@ -219,7 +219,7 @@ impl PartitionedAggregation for AggregationExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         let expr = self.input.as_partitioned_aggregator().unwrap();
         let series = expr.evaluate_partitioned(df, groups, state)?;
 
@@ -295,7 +295,7 @@ impl PartitionedAggregation for AggregationExpr {
         partitioned: Series,
         groups: &GroupsProxy,
         _state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         match self.agg_type {
             GroupByMethod::Count | GroupByMethod::Sum => {
                 let mut agg = unsafe { partitioned.agg_sum(groups) };
@@ -335,7 +335,7 @@ impl PartitionedAggregation for AggregationExpr {
                 let mut length_so_far = 0i64;
                 offsets.push(length_so_far);
 
-                let mut process_group = |ca: ListChunked| -> Result<()> {
+                let mut process_group = |ca: ListChunked| -> PolarsResult<()> {
                     let s = ca.explode()?;
                     length_so_far += s.len() as i64;
                     offsets.push(length_so_far);
@@ -437,7 +437,7 @@ impl PhysicalExpr for AggQuantileExpr {
         None
     }
 
-    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series> {
         unimplemented!()
     }
     #[allow(clippy::ptr_arg)]
@@ -446,7 +446,7 @@ impl PhysicalExpr for AggQuantileExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.expr.evaluate_on_groups(df, groups, state)?;
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.series().name().to_string();
@@ -462,7 +462,7 @@ impl PhysicalExpr for AggQuantileExpr {
         Ok(AggregationContext::new(agg, Cow::Borrowed(groups), true))
     }
 
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.expr.to_field(input_schema)
     }
 

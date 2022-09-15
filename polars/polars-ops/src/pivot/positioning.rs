@@ -143,7 +143,7 @@ pub(super) fn compute_col_idx(
     pivot_df: &DataFrame,
     column: &str,
     groups: &GroupsProxy,
-) -> Result<(Vec<IdxSize>, Series)> {
+) -> PolarsResult<(Vec<IdxSize>, Series)> {
     let column_s = pivot_df.column(column)?;
     let column_agg = unsafe { column_s.agg_first(groups) };
     let column_agg_physical = column_agg.to_physical_repr();
@@ -227,7 +227,7 @@ pub(super) fn compute_row_idx(
     index: &[String],
     groups: &GroupsProxy,
     count: usize,
-) -> Result<(Vec<IdxSize>, usize, Option<Vec<Series>>)> {
+) -> PolarsResult<(Vec<IdxSize>, usize, Option<Vec<Series>>)> {
     let (row_locations, n_rows, row_index) = if index.len() == 1 {
         let index_s = pivot_df.column(&index[0])?;
         let index_agg = unsafe { index_s.agg_first(groups) };

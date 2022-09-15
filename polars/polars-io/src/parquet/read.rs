@@ -54,7 +54,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&[ScanAggregation]>,
         projection: Option<&[usize]>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         // this path takes predicates and parallelism into account
         let metadata = read::read_metadata(&mut self.reader)?;
         let schema = read::schema::infer_schema(&metadata)?;
@@ -119,7 +119,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
-    pub fn schema(mut self) -> Result<Schema> {
+    pub fn schema(mut self) -> PolarsResult<Schema> {
         let metadata = read::read_metadata(&mut self.reader)?;
 
         let schema = read::infer_schema(&metadata)?;
@@ -147,7 +147,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
         self
     }
 
-    fn finish(mut self) -> Result<DataFrame> {
+    fn finish(mut self) -> PolarsResult<DataFrame> {
         let metadata = read::read_metadata(&mut self.reader)?;
         let schema = read::schema::infer_schema(&metadata)?;
 

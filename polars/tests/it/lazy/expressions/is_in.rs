@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn test_is_in() -> Result<()> {
+fn test_is_in() -> PolarsResult<()> {
     let df = df![
         "x" => [1, 2, 3],
         "y" => ["a", "b", "c"]

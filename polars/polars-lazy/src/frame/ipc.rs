@@ -27,7 +27,7 @@ impl Default for ScanArgsIpc {
 }
 
 impl LazyFrame {
-    fn scan_ipc_impl(path: impl AsRef<Path>, args: ScanArgsIpc) -> Result<Self> {
+    fn scan_ipc_impl(path: impl AsRef<Path>, args: ScanArgsIpc) -> PolarsResult<Self> {
         let options = IpcScanOptions {
             n_rows: args.n_rows,
             cache: args.cache,
@@ -52,7 +52,7 @@ impl LazyFrame {
 
     /// Create a LazyFrame directly from a ipc scan.
     #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
-    pub fn scan_ipc(path: impl AsRef<Path>, args: ScanArgsIpc) -> Result<Self> {
+    pub fn scan_ipc(path: impl AsRef<Path>, args: ScanArgsIpc) -> PolarsResult<Self> {
         let path = path.as_ref();
         let path_str = path.to_string_lossy();
         if path_str.contains('*') {
@@ -65,7 +65,7 @@ impl LazyFrame {
                     args.row_count = None;
                     Self::scan_ipc_impl(path, args)
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
 
             concat(&lfs, args.rechunk)
                 .map_err(|_| PolarsError::ComputeError("no matching files found".into()))

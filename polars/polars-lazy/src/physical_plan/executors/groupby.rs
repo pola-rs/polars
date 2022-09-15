@@ -44,7 +44,7 @@ pub(super) fn groupby_helper(
     state: &mut ExecutionState,
     maintain_order: bool,
     slice: Option<(i64, usize)>,
-) -> Result<DataFrame> {
+) -> PolarsResult<DataFrame> {
     df.as_single_chunk_par();
     let gb = df.groupby_with_series(keys, true, maintain_order)?;
 
@@ -80,7 +80,7 @@ pub(super) fn groupby_helper(
                 }
                 Ok(agg)
             })
-            .collect::<Result<Vec<_>>>();
+            .collect::<PolarsResult<Vec<_>>>();
 
         rayon::join(get_columns, get_agg)
     });
@@ -92,13 +92,17 @@ pub(super) fn groupby_helper(
 }
 
 impl GroupByExec {
-    fn execute_impl(&mut self, state: &mut ExecutionState, df: DataFrame) -> Result<DataFrame> {
+    fn execute_impl(
+        &mut self,
+        state: &mut ExecutionState,
+        df: DataFrame,
+    ) -> PolarsResult<DataFrame> {
         state.set_schema(self.input_schema.clone());
         let keys = self
             .keys
             .iter()
             .map(|e| e.evaluate(&df, state))
-            .collect::<Result<_>>()?;
+            .collect::<PolarsResult<_>>()?;
         groupby_helper(
             df,
             keys,
@@ -112,7 +116,7 @@ impl GroupByExec {
 }
 
 impl Executor for GroupByExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
@@ -129,7 +133,7 @@ impl Executor for GroupByExec {
                 .keys
                 .iter()
                 .map(|s| Ok(s.to_field(&self.input_schema)?.name))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
             let name = column_delimited("groupby".to_string(), &by);
             Cow::Owned(name)
         } else {

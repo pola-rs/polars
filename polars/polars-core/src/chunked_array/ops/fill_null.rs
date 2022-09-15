@@ -213,7 +213,7 @@ where
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
 {
-    fn fill_null(&self, strategy: FillNullStrategy) -> Result<Self> {
+    fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Self> {
         // nothing to fill
         if !self.has_validity() {
             return Ok(self.clone());
@@ -254,13 +254,13 @@ impl<T> ChunkFillNullValue<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn fill_null_with_values(&self, value: T::Native) -> Result<Self> {
+    fn fill_null_with_values(&self, value: T::Native) -> PolarsResult<Self> {
         Ok(self.apply_kernel(&|arr| Box::new(set_at_nulls(arr, value))))
     }
 }
 
 impl ChunkFillNull for BooleanChunked {
-    fn fill_null(&self, strategy: FillNullStrategy) -> Result<Self> {
+    fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Self> {
         // nothing to fill
         if !self.has_validity() {
             return Ok(self.clone());
@@ -304,13 +304,13 @@ impl ChunkFillNull for BooleanChunked {
 }
 
 impl ChunkFillNullValue<bool> for BooleanChunked {
-    fn fill_null_with_values(&self, value: bool) -> Result<Self> {
+    fn fill_null_with_values(&self, value: bool) -> PolarsResult<Self> {
         self.set(&self.is_null(), Some(value))
     }
 }
 
 impl ChunkFillNull for Utf8Chunked {
-    fn fill_null(&self, strategy: FillNullStrategy) -> Result<Self> {
+    fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Self> {
         // nothing to fill
         if !self.has_validity() {
             return Ok(self.clone());
@@ -340,13 +340,13 @@ impl ChunkFillNull for Utf8Chunked {
 }
 
 impl ChunkFillNullValue<&str> for Utf8Chunked {
-    fn fill_null_with_values(&self, value: &str) -> Result<Self> {
+    fn fill_null_with_values(&self, value: &str) -> PolarsResult<Self> {
         self.set(&self.is_null(), Some(value))
     }
 }
 
 impl ChunkFillNull for ListChunked {
-    fn fill_null(&self, _strategy: FillNullStrategy) -> Result<Self> {
+    fn fill_null(&self, _strategy: FillNullStrategy) -> PolarsResult<Self> {
         Err(PolarsError::InvalidOperation(
             "fill_null not supported for List type".into(),
         ))
@@ -354,7 +354,7 @@ impl ChunkFillNull for ListChunked {
 }
 
 impl ChunkFillNullValue<&Series> for ListChunked {
-    fn fill_null_with_values(&self, _value: &Series) -> Result<Self> {
+    fn fill_null_with_values(&self, _value: &Series) -> PolarsResult<Self> {
         Err(PolarsError::InvalidOperation(
             "fill_null_with_value not supported for List type".into(),
         ))
@@ -362,7 +362,7 @@ impl ChunkFillNullValue<&Series> for ListChunked {
 }
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkFillNull for ObjectChunked<T> {
-    fn fill_null(&self, _strategy: FillNullStrategy) -> Result<Self> {
+    fn fill_null(&self, _strategy: FillNullStrategy) -> PolarsResult<Self> {
         Err(PolarsError::InvalidOperation(
             "fill_null not supported for Object type".into(),
         ))
@@ -371,7 +371,7 @@ impl<T: PolarsObject> ChunkFillNull for ObjectChunked<T> {
 
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkFillNullValue<ObjectType<T>> for ObjectChunked<T> {
-    fn fill_null_with_values(&self, _value: ObjectType<T>) -> Result<Self> {
+    fn fill_null_with_values(&self, _value: ObjectType<T>) -> PolarsResult<Self> {
         Err(PolarsError::InvalidOperation(
             "fill_null_with_value not supported for Object type".into(),
         ))

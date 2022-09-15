@@ -62,7 +62,7 @@ impl Series {
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         if !with_replacement && n > self.len() {
             return Err(PolarsError::ShapeMisMatch(
                 "cannot take a larger sample than the total population when `with_replacement=false`"
@@ -97,7 +97,7 @@ impl Series {
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         let n = (self.len() as f64 * frac) as usize;
         self.sample_n(n, with_replacement, shuffle, seed)
     }
@@ -124,7 +124,7 @@ where
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         if !with_replacement && n > self.len() {
             return Err(PolarsError::ShapeMisMatch(
                 "cannot take a larger sample than the total population when `with_replacement=false`"
@@ -156,7 +156,7 @@ where
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         let n = (self.len() as f64 * frac) as usize;
         self.sample_n(n, with_replacement, shuffle, seed)
     }
@@ -170,7 +170,7 @@ impl DataFrame {
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         if !with_replacement && n > self.height() {
             return Err(PolarsError::ShapeMisMatch(
                 "cannot take a larger sample than the total population when `with_replacement=false`"
@@ -194,7 +194,7 @@ impl DataFrame {
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         let n = (self.height() as f64 * frac) as usize;
         self.sample_n(n, with_replacement, shuffle, seed)
     }
@@ -206,7 +206,7 @@ where
     T::Native: Float,
 {
     /// Create `ChunkedArray` with samples from a Normal distribution.
-    pub fn rand_normal(name: &str, length: usize, mean: f64, std_dev: f64) -> Result<Self> {
+    pub fn rand_normal(name: &str, length: usize, mean: f64, std_dev: f64) -> PolarsResult<Self> {
         let normal = match Normal::new(mean, std_dev) {
             Ok(dist) => dist,
             Err(e) => return Err(PolarsError::ComputeError(format!("{:?}", e).into())),
@@ -249,7 +249,7 @@ where
 
 impl BooleanChunked {
     /// Create `ChunkedArray` with samples from a Bernoulli distribution.
-    pub fn rand_bernoulli(name: &str, length: usize, p: f64) -> Result<Self> {
+    pub fn rand_bernoulli(name: &str, length: usize, p: f64) -> PolarsResult<Self> {
         let dist = match Bernoulli::new(p) {
             Ok(dist) => dist,
             Err(e) => return Err(PolarsError::ComputeError(format!("{:?}", e).into())),

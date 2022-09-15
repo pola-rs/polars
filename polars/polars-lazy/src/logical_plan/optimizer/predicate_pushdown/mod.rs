@@ -36,7 +36,7 @@ impl PredicatePushDown {
         acc_predicates: PlHashMap<Arc<str>, Node>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<()> {
+    ) -> PolarsResult<()> {
         let alp = lp_arena.take(input);
         let lp = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
         lp_arena.replace(input, lp);
@@ -51,7 +51,7 @@ impl PredicatePushDown {
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
         has_projections: bool,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         let inputs = lp.get_inputs();
         let exprs = lp.get_exprs();
 
@@ -112,7 +112,7 @@ impl PredicatePushDown {
                     lp_arena.replace(node, alp);
                     Ok(node)
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
 
             let lp = lp.with_exprs_and_input(exprs, new_inputs);
             Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
@@ -126,7 +126,7 @@ impl PredicatePushDown {
         acc_predicates: PlHashMap<Arc<str>, Node>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         let inputs = lp.get_inputs();
         let exprs = lp.get_exprs();
 
@@ -143,7 +143,7 @@ impl PredicatePushDown {
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
         let lp = lp.with_exprs_and_input(exprs, new_inputs);
 
         // all predicates are done locally
@@ -168,7 +168,7 @@ impl PredicatePushDown {
         mut acc_predicates: PlHashMap<Arc<str>, Node>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         use ALogicalPlan::*;
 
         match lp {
@@ -560,7 +560,7 @@ impl PredicatePushDown {
         logical_plan: ALogicalPlan,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         let acc_predicates = PlHashMap::new();
         self.push_down(logical_plan, acc_predicates, lp_arena, expr_arena)
     }

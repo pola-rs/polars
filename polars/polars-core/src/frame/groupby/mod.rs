@@ -54,7 +54,7 @@ impl DataFrame {
         by: Vec<Series>,
         multithreaded: bool,
         sorted: bool,
-    ) -> Result<GroupBy> {
+    ) -> PolarsResult<GroupBy> {
         if by.is_empty() {
             return Err(PolarsError::ComputeError(
                 "expected keys in groupby operation, got nothing".into(),
@@ -173,13 +173,13 @@ impl DataFrame {
     ///
     /// ```
     /// use polars_core::prelude::*;
-    /// fn groupby_sum(df: &DataFrame) -> Result<DataFrame> {
+    /// fn groupby_sum(df: &DataFrame) -> PolarsResult<DataFrame> {
     ///     df.groupby(["column_name"])?
     ///     .select(["agg_column_name"])
     ///     .sum()
     /// }
     /// ```
-    pub fn groupby<I, S>(&self, by: I) -> Result<GroupBy>
+    pub fn groupby<I, S>(&self, by: I) -> PolarsResult<GroupBy>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -190,7 +190,7 @@ impl DataFrame {
 
     /// Group DataFrame using a Series column.
     /// The groups are ordered by their smallest row index.
-    pub fn groupby_stable<I, S>(&self, by: I) -> Result<GroupBy>
+    pub fn groupby_stable<I, S>(&self, by: I) -> PolarsResult<GroupBy>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -370,7 +370,7 @@ impl<'df> GroupBy<'df> {
         self.keys_sliced(None)
     }
 
-    fn prepare_agg(&self) -> Result<(Vec<Series>, Vec<Series>)> {
+    fn prepare_agg(&self) -> PolarsResult<(Vec<Series>, Vec<Series>)> {
         let selection = match &self.selected_agg {
             Some(selection) => selection.clone(),
             None => {
@@ -395,7 +395,7 @@ impl<'df> GroupBy<'df> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.groupby(["date"])?.select(&["temp", "rain"]).mean()
     /// }
     /// ```
@@ -414,7 +414,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21 | 15        | 0.15      |
     /// +------------+-----------+-----------+
     /// ```
-    pub fn mean(&self) -> Result<DataFrame> {
+    pub fn mean(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
 
         for agg_col in agg_cols {
@@ -432,7 +432,7 @@ impl<'df> GroupBy<'df> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.groupby(["date"])?.select(["temp"]).sum()
     /// }
     /// ```
@@ -451,7 +451,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21 | 30       |
     /// +------------+----------+
     /// ```
-    pub fn sum(&self) -> Result<DataFrame> {
+    pub fn sum(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
 
         for agg_col in agg_cols {
@@ -469,7 +469,7 @@ impl<'df> GroupBy<'df> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.groupby(["date"])?.select(["temp"]).min()
     /// }
     /// ```
@@ -488,7 +488,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21 | 10       |
     /// +------------+----------+
     /// ```
-    pub fn min(&self) -> Result<DataFrame> {
+    pub fn min(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Min);
@@ -505,7 +505,7 @@ impl<'df> GroupBy<'df> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.groupby(["date"])?.select(["temp"]).max()
     /// }
     /// ```
@@ -524,7 +524,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21 | 20       |
     /// +------------+----------+
     /// ```
-    pub fn max(&self) -> Result<DataFrame> {
+    pub fn max(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Max);
@@ -541,7 +541,7 @@ impl<'df> GroupBy<'df> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.groupby(["date"])?.select(["temp"]).first()
     /// }
     /// ```
@@ -560,7 +560,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21 | 20         |
     /// +------------+------------+
     /// ```
-    pub fn first(&self) -> Result<DataFrame> {
+    pub fn first(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::First);
@@ -577,7 +577,7 @@ impl<'df> GroupBy<'df> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.groupby(["date"])?.select(["temp"]).last()
     /// }
     /// ```
@@ -596,7 +596,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21 | 10         |
     /// +------------+------------+
     /// ```
-    pub fn last(&self) -> Result<DataFrame> {
+    pub fn last(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Last);
@@ -613,7 +613,7 @@ impl<'df> GroupBy<'df> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.groupby(["date"])?.select(["temp"]).n_unique()
     /// }
     /// ```
@@ -632,7 +632,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21 | 2             |
     /// +------------+---------------+
     /// ```
-    pub fn n_unique(&self) -> Result<DataFrame> {
+    pub fn n_unique(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::NUnique);
@@ -651,11 +651,15 @@ impl<'df> GroupBy<'df> {
     /// # use polars_core::prelude::*;
     /// # use polars_arrow::prelude::QuantileInterpolOptions;
     ///
-    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.groupby(["date"])?.select(["temp"]).quantile(0.2, QuantileInterpolOptions::default())
     /// }
     /// ```
-    pub fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<DataFrame> {
+    pub fn quantile(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> PolarsResult<DataFrame> {
         if !(0.0..=1.0).contains(&quantile) {
             return Err(PolarsError::ComputeError(
                 "quantile should be within 0.0 and 1.0".into(),
@@ -678,11 +682,11 @@ impl<'df> GroupBy<'df> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.groupby(["date"])?.select(["temp"]).median()
     /// }
     /// ```
-    pub fn median(&self) -> Result<DataFrame> {
+    pub fn median(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Median);
@@ -694,7 +698,7 @@ impl<'df> GroupBy<'df> {
     }
 
     /// Aggregate grouped `Series` and determine the variance per group.
-    pub fn var(&self, ddof: u8) -> Result<DataFrame> {
+    pub fn var(&self, ddof: u8) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Var(ddof));
@@ -706,7 +710,7 @@ impl<'df> GroupBy<'df> {
     }
 
     /// Aggregate grouped `Series` and determine the standard deviation per group.
-    pub fn std(&self, ddof: u8) -> Result<DataFrame> {
+    pub fn std(&self, ddof: u8) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Std(ddof));
@@ -723,7 +727,7 @@ impl<'df> GroupBy<'df> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.groupby(["date"])?.select(["temp"]).count()
     /// }
     /// ```
@@ -742,7 +746,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21 | 2          |
     /// +------------+------------+
     /// ```
-    pub fn count(&self) -> Result<DataFrame> {
+    pub fn count(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
 
         for agg_col in agg_cols {
@@ -760,7 +764,7 @@ impl<'df> GroupBy<'df> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.groupby(["date"])?.groups()
     /// }
     /// ```
@@ -779,7 +783,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21   | "[0, 1]"   |
     /// +--------------+------------+
     /// ```
-    pub fn groups(&self) -> Result<DataFrame> {
+    pub fn groups(&self) -> PolarsResult<DataFrame> {
         let mut cols = self.keys();
         let mut column = self.groups.as_list_chunked();
         let new_name = fmt_groupby_column("", GroupByMethod::Groups);
@@ -794,7 +798,7 @@ impl<'df> GroupBy<'df> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     // GroupBy and aggregate to Lists
     ///     df.groupby(["date"])?.select(["temp"]).agg_list()
     /// }
@@ -814,7 +818,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21 | "[Some(20), Some(10)]" |
     /// +------------+------------------------+
     /// ```
-    pub fn agg_list(&self) -> Result<DataFrame> {
+    pub fn agg_list(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::List);
@@ -825,7 +829,7 @@ impl<'df> GroupBy<'df> {
         DataFrame::new(cols)
     }
 
-    fn prepare_apply(&self) -> Result<DataFrame> {
+    fn prepare_apply(&self) -> PolarsResult<DataFrame> {
         if let Some(agg) = &self.selected_agg {
             if agg.is_empty() {
                 Ok(self.df.clone())
@@ -842,9 +846,9 @@ impl<'df> GroupBy<'df> {
     }
 
     /// Apply a closure over the groups as a new DataFrame in parallel.
-    pub fn par_apply<F>(&self, f: F) -> Result<DataFrame>
+    pub fn par_apply<F>(&self, f: F) -> PolarsResult<DataFrame>
     where
-        F: Fn(DataFrame) -> Result<DataFrame> + Send + Sync,
+        F: Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
         let df = self.prepare_apply()?;
         let dfs = self
@@ -856,7 +860,7 @@ impl<'df> GroupBy<'df> {
                 let sub_df = unsafe { take_df(&df, g) };
                 f(sub_df)
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
 
         let mut df = accumulate_dataframes_vertical(dfs)?;
         df.as_single_chunk();
@@ -864,9 +868,9 @@ impl<'df> GroupBy<'df> {
     }
 
     /// Apply a closure over the groups as a new DataFrame.
-    pub fn apply<F>(&self, f: F) -> Result<DataFrame>
+    pub fn apply<F>(&self, f: F) -> PolarsResult<DataFrame>
     where
-        F: Fn(DataFrame) -> Result<DataFrame> + Send + Sync,
+        F: Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
         let df = self.prepare_apply()?;
         let dfs = self
@@ -878,7 +882,7 @@ impl<'df> GroupBy<'df> {
                 let sub_df = unsafe { take_df(&df, g) };
                 f(sub_df)
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
 
         let mut df = accumulate_dataframes_vertical(dfs)?;
         df.as_single_chunk();
@@ -966,7 +970,7 @@ mod test {
     #[test]
     #[cfg(feature = "dtype-date")]
     #[cfg_attr(miri, ignore)]
-    fn test_group_by() -> Result<()> {
+    fn test_group_by() -> PolarsResult<()> {
         let s0 = Series::new(
             "date",
             &[
@@ -1168,7 +1172,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_groupby_null_handling() -> Result<()> {
+    fn test_groupby_null_handling() -> PolarsResult<()> {
         let df = df!(
             "a" => ["a", "a", "a", "b", "b"],
             "b" => [Some(1), Some(2), None, None, Some(1)]
@@ -1184,7 +1188,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_groupby_var() -> Result<()> {
+    fn test_groupby_var() -> PolarsResult<()> {
         // check variance and proper coercion to f64
         let df = df![
             "g" => ["foo", "foo", "bar"],
@@ -1205,7 +1209,7 @@ mod test {
     #[test]
     #[cfg_attr(miri, ignore)]
     #[cfg(feature = "dtype-categorical")]
-    fn test_groupby_null_group() -> Result<()> {
+    fn test_groupby_null_group() -> PolarsResult<()> {
         // check if null is own group
         let mut df = df![
             "g" => [Some("foo"), Some("foo"), Some("bar"), None, None],

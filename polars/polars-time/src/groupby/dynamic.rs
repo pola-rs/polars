@@ -48,13 +48,13 @@ pub trait PolarsTemporalGroupby {
         &self,
         by: Vec<Series>,
         options: &RollingGroupOptions,
-    ) -> Result<(Series, Vec<Series>, GroupsProxy)>;
+    ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)>;
 
     fn groupby_dynamic(
         &self,
         by: Vec<Series>,
         options: &DynamicGroupOptions,
-    ) -> Result<(Series, Vec<Series>, GroupsProxy)>;
+    ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)>;
 }
 
 impl PolarsTemporalGroupby for DataFrame {
@@ -62,7 +62,7 @@ impl PolarsTemporalGroupby for DataFrame {
         &self,
         by: Vec<Series>,
         options: &RollingGroupOptions,
-    ) -> Result<(Series, Vec<Series>, GroupsProxy)> {
+    ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         Wrap(self).groupby_rolling(by, options)
     }
 
@@ -70,7 +70,7 @@ impl PolarsTemporalGroupby for DataFrame {
         &self,
         by: Vec<Series>,
         options: &DynamicGroupOptions,
-    ) -> Result<(Series, Vec<Series>, GroupsProxy)> {
+    ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         Wrap(self).groupby_dynamic(by, options)
     }
 }
@@ -80,7 +80,7 @@ impl Wrap<&DataFrame> {
         &self,
         by: Vec<Series>,
         options: &RollingGroupOptions,
-    ) -> Result<(Series, Vec<Series>, GroupsProxy)> {
+    ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         let time = self.0.column(&options.index_column)?;
         let time_type = time.dtype();
 
@@ -129,7 +129,7 @@ impl Wrap<&DataFrame> {
         &self,
         by: Vec<Series>,
         options: &DynamicGroupOptions,
-    ) -> Result<(Series, Vec<Series>, GroupsProxy)> {
+    ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         if options.offset.parsed_int || options.every.parsed_int || options.period.parsed_int {
             assert!(
                 (options.offset.parsed_int || options.offset.is_zero())
@@ -199,7 +199,7 @@ impl Wrap<&DataFrame> {
         options: &DynamicGroupOptions,
         tu: TimeUnit,
         time_type: &DataType,
-    ) -> Result<(Series, Vec<Series>, GroupsProxy)> {
+    ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         let w = Window::new(options.every, options.period, options.offset);
         let dt = dt.datetime().unwrap();
 
@@ -331,7 +331,7 @@ impl Wrap<&DataFrame> {
         options: &RollingGroupOptions,
         tu: TimeUnit,
         time_type: &DataType,
-    ) -> Result<(Series, Vec<Series>, GroupsProxy)> {
+    ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         let mut dt = dt.rechunk();
 
         let groups = if by.is_empty() {
@@ -419,7 +419,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_rolling_groupby_tu() -> Result<()> {
+    fn test_rolling_groupby_tu() -> PolarsResult<()> {
         // test multiple time units
         for tu in [
             TimeUnit::Nanoseconds,
@@ -463,7 +463,7 @@ mod test {
     }
 
     #[test]
-    fn test_rolling_groupby_aggs() -> Result<()> {
+    fn test_rolling_groupby_aggs() -> PolarsResult<()> {
         let date = Utf8Chunked::new(
             "dt",
             [

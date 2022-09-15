@@ -51,7 +51,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "to_list")]
 pub trait ToList<T: PolarsDataType> {
-    fn to_list(&self) -> Result<ListChunked> {
+    fn to_list(&self) -> PolarsResult<ListChunked> {
         Err(PolarsError::InvalidOperation(
             format!("to_list not supported for dtype: {:?}", T::get_dtype()).into(),
         ))
@@ -125,10 +125,10 @@ pub trait ChunkTakeEvery<T: PolarsDataType> {
 
 /// Explode/ flatten a List or Utf8 Series
 pub trait ChunkExplode {
-    fn explode(&self) -> Result<Series> {
+    fn explode(&self) -> PolarsResult<Series> {
         self.explode_and_offsets().map(|t| t.0)
     }
-    fn explode_and_offsets(&self) -> Result<(Series, Buffer<i64>)>;
+    fn explode_and_offsets(&self) -> PolarsResult<(Series, Buffer<i64>)>;
 }
 
 pub trait ChunkBytes {
@@ -144,7 +144,7 @@ pub trait ChunkRollApply {
         &self,
         _f: &dyn Fn(&Series) -> Series,
         _options: RollingOptionsFixedWindow,
-    ) -> Result<Series>
+    ) -> PolarsResult<Series>
     where
         Self: Sized,
     {
@@ -216,7 +216,7 @@ pub trait ChunkTake {
     /// Take values from ChunkedArray by index.
     /// Note that the iterator will be cloned, so prefer an iterator that takes the owned memory
     /// by reference.
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Result<Self>
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
     where
         Self: std::marker::Sized,
         I: TakeIterator,
@@ -242,7 +242,7 @@ pub trait ChunkSet<'a, A, B> {
         &'a self,
         idx: I,
         opt_value: Option<A>,
-    ) -> Result<Self>
+    ) -> PolarsResult<Self>
     where
         Self: Sized;
 
@@ -257,7 +257,11 @@ pub trait ChunkSet<'a, A, B> {
     ///
     /// assert_eq!(Vec::from(&new), &[Some(-4), Some(-3), Some(3)]);
     /// ```
-    fn set_at_idx_with<I: IntoIterator<Item = IdxSize>, F>(&'a self, idx: I, f: F) -> Result<Self>
+    fn set_at_idx_with<I: IntoIterator<Item = IdxSize>, F>(
+        &'a self,
+        idx: I,
+        f: F,
+    ) -> PolarsResult<Self>
     where
         Self: Sized,
         F: Fn(Option<A>) -> Option<B>;
@@ -272,7 +276,7 @@ pub trait ChunkSet<'a, A, B> {
     /// let new = ca.set(&mask, Some(5)).unwrap();
     /// assert_eq!(Vec::from(&new), &[Some(1), Some(5), Some(3)]);
     /// ```
-    fn set(&'a self, mask: &BooleanChunked, opt_value: Option<A>) -> Result<Self>
+    fn set(&'a self, mask: &BooleanChunked, opt_value: Option<A>) -> PolarsResult<Self>
     where
         Self: Sized;
 }
@@ -280,10 +284,10 @@ pub trait ChunkSet<'a, A, B> {
 /// Cast `ChunkedArray<T>` to `ChunkedArray<N>`
 pub trait ChunkCast {
     /// Cast a `[ChunkedArray]` to `[DataType]`
-    fn cast(&self, data_type: &DataType) -> Result<Series>;
+    fn cast(&self, data_type: &DataType) -> PolarsResult<Series>;
 
     /// Does not check if the cast is a valid one and may over/underflow
-    fn cast_unchecked(&self, data_type: &DataType) -> Result<Series>;
+    fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series>;
 }
 
 /// Fastest way to do elementwise operations on a ChunkedArray<T> when the operation is cheaper than
@@ -322,9 +326,9 @@ pub trait ChunkApply<'a, A, B> {
     where
         F: Fn(A) -> B + Copy;
 
-    fn try_apply<F>(&'a self, f: F) -> Result<Self>
+    fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
     where
-        F: Fn(A) -> Result<B> + Copy,
+        F: Fn(A) -> PolarsResult<B> + Copy,
         Self: Sized;
 
     /// Apply a closure elementwise including null values.
@@ -385,7 +389,11 @@ pub trait ChunkQuantile<T> {
     }
     /// Aggregate a given quantile of the ChunkedArray.
     /// Returns `None` if the array is empty or only contains null values.
-    fn quantile(&self, _quantile: f64, _interpol: QuantileInterpolOptions) -> Result<Option<T>> {
+    fn quantile(
+        &self,
+        _quantile: f64,
+        _interpol: QuantileInterpolOptions,
+    ) -> PolarsResult<Option<T>> {
         Ok(None)
     }
 }
@@ -411,7 +419,7 @@ pub trait ChunkVar<T> {
 ///
 /// ```
 /// use polars_core::prelude::*;
-/// fn filter_all_ones(df: &DataFrame) -> Result<DataFrame> {
+/// fn filter_all_ones(df: &DataFrame) -> PolarsResult<DataFrame> {
 ///     let mask = df
 ///     .column("column_a")?
 ///     .equal(1)?;
@@ -448,26 +456,26 @@ pub trait ChunkCompare<Rhs> {
 pub trait ChunkUnique<T: PolarsDataType> {
     // We don't return Self to be able to use AutoRef specialization
     /// Get unique values of a ChunkedArray
-    fn unique(&self) -> Result<ChunkedArray<T>>;
+    fn unique(&self) -> PolarsResult<ChunkedArray<T>>;
 
     /// Get first index of the unique values in a `ChunkedArray`.
     /// This Vec is sorted.
-    fn arg_unique(&self) -> Result<IdxCa>;
+    fn arg_unique(&self) -> PolarsResult<IdxCa>;
 
     /// Number of unique values in the `ChunkedArray`
-    fn n_unique(&self) -> Result<usize> {
+    fn n_unique(&self) -> PolarsResult<usize> {
         self.arg_unique().map(|v| v.len())
     }
 
     /// Get a mask of all the unique values.
-    fn is_unique(&self) -> Result<BooleanChunked> {
+    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
         Err(PolarsError::InvalidOperation(
             "is_unique is not implemented for this dtype".into(),
         ))
     }
 
     /// Get a mask of all the duplicated values.
-    fn is_duplicated(&self) -> Result<BooleanChunked> {
+    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
         Err(PolarsError::InvalidOperation(
             "is_duplicated is not implemented for this dtype".into(),
         ))
@@ -476,7 +484,7 @@ pub trait ChunkUnique<T: PolarsDataType> {
     /// The most occurring value(s). Can return multiple Values
     #[cfg(feature = "mode")]
     #[cfg_attr(docsrs, doc(cfg(feature = "mode")))]
-    fn mode(&self) -> Result<ChunkedArray<T>> {
+    fn mode(&self) -> PolarsResult<ChunkedArray<T>> {
         Err(PolarsError::InvalidOperation(
             "mode is not implemented for this dtype".into(),
         ))
@@ -502,7 +510,7 @@ pub trait ChunkSort<T: PolarsDataType> {
     fn argsort(&self, options: SortOptions) -> IdxCa;
 
     /// Retrieve the indexes need to sort this and the other arrays.
-    fn argsort_multiple(&self, _other: &[Series], _reverse: &[bool]) -> Result<IdxCa> {
+    fn argsort_multiple(&self, _other: &[Series], _reverse: &[bool]) -> PolarsResult<IdxCa> {
         Err(PolarsError::InvalidOperation(
             "argsort_multiple not implemented for this dtype".into(),
         ))
@@ -541,14 +549,14 @@ pub trait ChunkFillNull {
     /// * Mean fill (replace None with the mean of the whole array)
     /// * Min fill (replace None with the minimum of the whole array)
     /// * Max fill (replace None with the maximum of the whole array)
-    fn fill_null(&self, strategy: FillNullStrategy) -> Result<Self>
+    fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Self>
     where
         Self: Sized;
 }
 /// Replace None values with a value
 pub trait ChunkFillNullValue<T> {
     /// Replace None values with a give value `T`.
-    fn fill_null_with_values(&self, value: T) -> Result<Self>
+    fn fill_null_with_values(&self, value: T) -> PolarsResult<Self>
     where
         Self: Sized;
 }
@@ -585,7 +593,7 @@ pub trait ChunkFilter<T: PolarsDataType> {
     /// let filtered = array.filter(&mask).unwrap();
     /// assert_eq!(Vec::from(&filtered), [Some(1), Some(3)])
     /// ```
-    fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<T>>
+    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<T>>
     where
         Self: Sized;
 }
@@ -667,7 +675,11 @@ pub trait ChunkShift<T: PolarsDataType> {
 pub trait ChunkZip<T: PolarsDataType> {
     /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
     /// from `other` where the mask evaluates `false`
-    fn zip_with(&self, mask: &BooleanChunked, other: &ChunkedArray<T>) -> Result<ChunkedArray<T>>;
+    fn zip_with(
+        &self,
+        mask: &BooleanChunked,
+        other: &ChunkedArray<T>,
+    ) -> PolarsResult<ChunkedArray<T>>;
 }
 
 /// Apply kernels on the arrow array chunks in a ChunkedArray.
@@ -700,7 +712,7 @@ pub trait ChunkPeaks {
 #[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
 pub trait IsIn {
     /// Check if elements of this array are in the right Series, or List values of the right Series.
-    fn is_in(&self, _other: &Series) -> Result<BooleanChunked> {
+    fn is_in(&self, _other: &Series) -> PolarsResult<BooleanChunked> {
         unimplemented!()
     }
 }
@@ -731,7 +743,7 @@ pub trait RepeatBy {
 #[cfg_attr(docsrs, doc(cfg(feature = "is_first")))]
 /// Mask the first unique values as `true`
 pub trait IsFirst<T: PolarsDataType> {
-    fn is_first(&self) -> Result<BooleanChunked> {
+    fn is_first(&self) -> PolarsResult<BooleanChunked> {
         Err(PolarsError::InvalidOperation(
             format!("operation not supported by {:?}", T::get_dtype()).into(),
         ))
@@ -742,7 +754,7 @@ pub trait IsFirst<T: PolarsDataType> {
 #[cfg_attr(docsrs, doc(cfg(feature = "is_first")))]
 /// Mask the last unique values as `true`
 pub trait IsLast<T: PolarsDataType> {
-    fn is_last(&self) -> Result<BooleanChunked> {
+    fn is_last(&self) -> PolarsResult<BooleanChunked> {
         Err(PolarsError::InvalidOperation(
             format!("operation not supported by {:?}", T::get_dtype()).into(),
         ))

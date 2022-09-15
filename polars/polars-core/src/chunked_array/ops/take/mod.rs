@@ -144,7 +144,7 @@ where
         }
     }
 
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Result<Self>
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
     where
         Self: std::marker::Sized,
         I: TakeIterator,
@@ -230,7 +230,7 @@ impl ChunkTake for BooleanChunked {
         }
     }
 
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Result<Self>
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
     where
         Self: std::marker::Sized,
         I: TakeIterator,
@@ -310,7 +310,7 @@ impl ChunkTake for Utf8Chunked {
         }
     }
 
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Result<Self>
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
     where
         Self: std::marker::Sized,
         I: TakeIterator,
@@ -392,7 +392,7 @@ impl ChunkTake for ListChunked {
         }
     }
 
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Result<Self>
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
     where
         Self: std::marker::Sized,
         I: TakeIterator,
@@ -487,7 +487,7 @@ impl<T: PolarsObject> ChunkTake for ObjectChunked<T> {
         }
     }
 
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Result<Self>
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
     where
         Self: std::marker::Sized,
         I: TakeIterator,

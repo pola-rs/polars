@@ -243,7 +243,7 @@ pub fn apply_lambda_with_rows_output<'a>(
     init_null_count: usize,
     first_value: Row<'a>,
     inference_size: usize,
-) -> Result<DataFrame> {
+) -> PolarsResult<DataFrame> {
     let columns = df.get_columns();
     let width = first_value.0.len();
     let null_row = Row::new(vec![AnyValue::Null; width]);

@@ -74,7 +74,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_serde() -> Result<()> {
+    fn test_serde() -> PolarsResult<()> {
         let ca = UInt32Chunked::new("foo", &[Some(1), None, Some(2)]);
 
         let json = serde_json::to_string(&ca).unwrap();

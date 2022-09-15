@@ -16,7 +16,11 @@ pub struct StackExec {
 }
 
 impl StackExec {
-    fn execute_impl(&mut self, state: &mut ExecutionState, mut df: DataFrame) -> Result<DataFrame> {
+    fn execute_impl(
+        &mut self,
+        state: &mut ExecutionState,
+        mut df: DataFrame,
+    ) -> PolarsResult<DataFrame> {
         state.set_schema(self.input_schema.clone());
         let res = if self.has_windows {
             // we have a different run here
@@ -27,7 +31,7 @@ impl StackExec {
                 self.expr
                     .par_iter()
                     .map(|expr| expr.evaluate(&df, state))
-                    .collect::<Result<Vec<_>>>()
+                    .collect::<PolarsResult<Vec<_>>>()
             })?
         };
         state.clear_schema_cache();
@@ -49,7 +53,7 @@ impl StackExec {
 }
 
 impl Executor for StackExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
@@ -63,7 +67,7 @@ impl Executor for StackExec {
                 .expr
                 .iter()
                 .map(|s| Ok(s.to_field(&self.input_schema)?.name))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
             let name = column_delimited("with_column".to_string(), &by);
             Cow::Owned(name)
         } else {

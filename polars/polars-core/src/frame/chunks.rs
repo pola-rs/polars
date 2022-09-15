@@ -7,8 +7,8 @@ pub type ArrowChunk = Chunk<ArrayRef>;
 impl std::convert::TryFrom<(ArrowChunk, &[ArrowField])> for DataFrame {
     type Error = PolarsError;
 
-    fn try_from(arg: (ArrowChunk, &[ArrowField])) -> Result<DataFrame> {
-        let columns: Result<Vec<Series>> = arg
+    fn try_from(arg: (ArrowChunk, &[ArrowField])) -> PolarsResult<DataFrame> {
+        let columns: PolarsResult<Vec<Series>> = arg
             .0
             .columns()
             .iter()

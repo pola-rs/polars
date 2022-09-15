@@ -44,7 +44,7 @@ impl JoinExec {
 }
 
 impl Executor for JoinExec {
-    fn execute<'a>(&'a mut self, state: &'a mut ExecutionState) -> Result<DataFrame> {
+    fn execute<'a>(&'a mut self, state: &'a mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
@@ -86,7 +86,7 @@ impl Executor for JoinExec {
                 .left_on
                 .iter()
                 .map(|s| Ok(s.to_field(&df_left.schema())?.name))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
             let name = column_delimited("join".to_string(), &by);
             Cow::Owned(name)
         } else {
@@ -99,13 +99,13 @@ impl Executor for JoinExec {
                 .left_on
                 .iter()
                 .map(|e| e.evaluate(&df_left, state))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
 
             let right_on_series = self
                 .right_on
                 .iter()
                 .map(|e| e.evaluate(&df_right, state))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
 
             // make sure that we can join on evaluated expressions
             for s in &left_on_series {

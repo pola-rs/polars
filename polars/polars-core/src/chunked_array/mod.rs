@@ -100,7 +100,7 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 ///
 /// ```rust
 /// # use polars_core::prelude::*;
-/// fn to_chunked_array(series: &Series) -> Result<&Int32Chunked>{
+/// fn to_chunked_array(series: &Series) -> PolarsResult<&Int32Chunked>{
 ///     series.i32()
 /// }
 ///
@@ -283,7 +283,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Series to ChunkedArray<T>
-    pub fn unpack_series_matching_type(&self, series: &Series) -> Result<&ChunkedArray<T>> {
+    pub fn unpack_series_matching_type(&self, series: &Series) -> PolarsResult<&ChunkedArray<T>> {
         if self.dtype() == series.dtype() {
             // Safety
             // dtype will be correct.
@@ -341,7 +341,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// array.append(&array_2);
     /// assert_eq!(Vec::from(&array), [Some(1), Some(2), Some(3)])
     /// ```
-    pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
+    pub fn append_array(&mut self, other: ArrayRef) -> PolarsResult<()> {
         if self.field.data_type() == other.data_type() {
             let length = other.len() as IdxSize;
             self.chunks.push(other);
@@ -498,7 +498,7 @@ where
 
 pub(crate) trait AsSinglePtr {
     /// Rechunk and return a ptr to the start of the array
-    fn as_single_ptr(&mut self) -> Result<usize> {
+    fn as_single_ptr(&mut self) -> PolarsResult<usize> {
         Err(PolarsError::InvalidOperation(
             "operation as_single_ptr not supported for this dtype".into(),
         ))
@@ -509,7 +509,7 @@ impl<T> AsSinglePtr for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn as_single_ptr(&mut self) -> Result<usize> {
+    fn as_single_ptr(&mut self) -> PolarsResult<usize> {
         let mut ca = self.rechunk();
         mem::swap(&mut ca, self);
         let a = self.data_views().next().unwrap();
@@ -529,7 +529,7 @@ where
     T: PolarsNumericType,
 {
     /// Contiguous slice
-    pub fn cont_slice(&self) -> Result<&[T::Native]> {
+    pub fn cont_slice(&self) -> PolarsResult<&[T::Native]> {
         if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
             Ok(self.downcast_iter().next().map(|arr| arr.values()).unwrap())
         } else {

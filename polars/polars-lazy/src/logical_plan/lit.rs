@@ -127,7 +127,7 @@ impl<'a> Literal for &'a str {
 
 impl TryFrom<AnyValue<'_>> for LiteralValue {
     type Error = PolarsError;
-    fn try_from(value: AnyValue) -> Result<Self> {
+    fn try_from(value: AnyValue) -> PolarsResult<Self> {
         match value {
             AnyValue::Null => Ok(Self::Null),
             AnyValue::Boolean(b) => Ok(Self::Boolean(b)),

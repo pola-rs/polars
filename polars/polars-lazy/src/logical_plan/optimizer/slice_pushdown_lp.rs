@@ -19,7 +19,7 @@ impl SlicePushDown {
         lp: ALogicalPlan,
         state: Option<State>,
         lp_arena: &mut Arena<ALogicalPlan>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         match state {
             Some(state) => {
                 let input = lp_arena.add(lp);
@@ -42,7 +42,7 @@ impl SlicePushDown {
         state: Option<State>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         let inputs = lp.get_inputs();
         let exprs = lp.get_exprs();
 
@@ -56,7 +56,7 @@ impl SlicePushDown {
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
         let lp = lp.with_exprs_and_input(exprs, new_inputs);
 
         self.no_pushdown_finish_opt(lp, state, lp_arena)
@@ -69,7 +69,7 @@ impl SlicePushDown {
         state: Option<State>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         let inputs = lp.get_inputs();
         let exprs = lp.get_exprs();
 
@@ -81,7 +81,7 @@ impl SlicePushDown {
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
         Ok(lp.with_exprs_and_input(exprs, new_inputs))
     }
 
@@ -91,7 +91,7 @@ impl SlicePushDown {
         state: Option<State>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         use ALogicalPlan::*;
 
         match (lp, state) {
@@ -367,7 +367,7 @@ impl SlicePushDown {
         logical_plan: ALogicalPlan,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         self.pushdown(logical_plan, None, lp_arena, expr_arena)
     }
 }

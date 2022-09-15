@@ -148,7 +148,7 @@ impl AExpr {
         schema: &Schema,
         ctxt: Context,
         arena: &Arena<AExpr>,
-    ) -> Result<DataType> {
+    ) -> PolarsResult<DataType> {
         self.to_field(schema, ctxt, arena)
             .map(|f| f.data_type().clone())
     }
@@ -185,7 +185,7 @@ impl AExpr {
         schema: &Schema,
         ctxt: Context,
         arena: &Arena<AExpr>,
-    ) -> Result<Field> {
+    ) -> PolarsResult<Field> {
         use AExpr::*;
         match self {
             Count => Ok(Field::new(COUNT, DataType::UInt32)),
@@ -355,7 +355,7 @@ impl AExpr {
                     .iter()
                     // default context because `col()` would return a list in aggregation context
                     .map(|node| arena.get(*node).to_field(schema, Context::Default, arena))
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<PolarsResult<Vec<_>>>()?;
                 Ok(output_type.get_field(schema, ctxt, &fields))
             }
             Function {
@@ -365,7 +365,7 @@ impl AExpr {
                     .iter()
                     // default context because `col()` would return a list in aggregation context
                     .map(|node| arena.get(*node).to_field(schema, Context::Default, arena))
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<PolarsResult<Vec<_>>>()?;
                 function.get_field(schema, ctxt, &fields)
             }
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),

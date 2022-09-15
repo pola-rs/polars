@@ -2,7 +2,7 @@ use crate::prelude::*;
 
 impl Series {
     /// Extend with a constant value.
-    pub fn extend_constant(&self, value: AnyValue, n: usize) -> Result<Self> {
+    pub fn extend_constant(&self, value: AnyValue, n: usize) -> PolarsResult<Self> {
         use AnyValue::*;
         let s = match value {
             Float32(v) => Series::new("", vec![v]),

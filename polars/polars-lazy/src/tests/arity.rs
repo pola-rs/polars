@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn test_pearson_corr() -> Result<()> {
+fn test_pearson_corr() -> PolarsResult<()> {
     let df = df! {
         "uid" => [0, 0, 0, 1, 1, 1],
         "day" => [1, 2, 4, 1, 2, 3],
@@ -40,7 +40,7 @@ fn test_pearson_corr() -> Result<()> {
 // send.
 #[test]
 #[cfg(feature = "ignore")]
-fn test_single_thread_when_then_otherwise_categorical() -> Result<()> {
+fn test_single_thread_when_then_otherwise_categorical() -> PolarsResult<()> {
     let df = df!["col1"=> ["a", "b", "a", "b"],
         "col2"=> ["a", "a", "b", "b"],
         "col3"=> ["same", "same", "same", "same"]

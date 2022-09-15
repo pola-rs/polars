@@ -336,10 +336,10 @@ pub fn get_list_builder(
     value_capacity: usize,
     list_capacity: usize,
     name: &str,
-) -> Result<Box<dyn ListBuilderTrait>> {
+) -> PolarsResult<Box<dyn ListBuilderTrait>> {
     let physical_type = dt.to_physical();
 
-    let _err = || -> Result<Box<dyn ListBuilderTrait>> {
+    let _err = || -> PolarsResult<Box<dyn ListBuilderTrait>> {
         Err(PolarsError::ComputeError(
             format!(
                 "list builder not supported for this dtype: {}",

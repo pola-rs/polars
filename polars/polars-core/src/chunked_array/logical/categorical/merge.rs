@@ -7,7 +7,7 @@ use super::*;
 pub(crate) fn merge_categorical_map(
     left: &Arc<RevMapping>,
     right: &Arc<RevMapping>,
-) -> Result<Arc<RevMapping>> {
+) -> PolarsResult<Arc<RevMapping>> {
     match (&**left, &**right) {
         (RevMapping::Global(l_map, l_slots, l_id), RevMapping::Global(r_map, r_slots, r_id)) => {
             if l_id != r_id {
@@ -75,7 +75,7 @@ pub(crate) fn merge_categorical_map(
 }
 
 impl CategoricalChunked {
-    pub(crate) fn merge_categorical_map(&self, other: &Self) -> Result<Arc<RevMapping>> {
+    pub(crate) fn merge_categorical_map(&self, other: &Self) -> PolarsResult<Arc<RevMapping>> {
         merge_categorical_map(self.get_rev_map(), other.get_rev_map())
     }
 }

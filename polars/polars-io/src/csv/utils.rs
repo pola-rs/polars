@@ -56,7 +56,9 @@ pub(crate) fn get_file_chunks(
     offsets
 }
 
-pub fn get_reader_bytes<R: Read + MmapBytesReader>(reader: &mut R) -> Result<ReaderBytes<'_>> {
+pub fn get_reader_bytes<R: Read + MmapBytesReader>(
+    reader: &mut R,
+) -> PolarsResult<ReaderBytes<'_>> {
     // we have a file so we can mmap
     if let Some(file) = reader.to_file() {
         let mmap = unsafe { memmap::Mmap::map(file)? };
@@ -145,7 +147,10 @@ fn infer_field_schema(string: &str, parse_dates: bool) -> DataType {
 }
 
 #[inline]
-pub(crate) fn parse_bytes_with_encoding(bytes: &[u8], encoding: CsvEncoding) -> Result<Cow<str>> {
+pub(crate) fn parse_bytes_with_encoding(
+    bytes: &[u8],
+    encoding: CsvEncoding,
+) -> PolarsResult<Cow<str>> {
     let s = match encoding {
         CsvEncoding::Utf8 => simdutf8::basic::from_utf8(bytes)
             .map_err(anyhow::Error::from)?
@@ -177,7 +182,7 @@ pub fn infer_file_schema(
     eol_char: u8,
     null_values: Option<&NullValues>,
     parse_dates: bool,
-) -> Result<(Schema, usize)> {
+) -> PolarsResult<(Schema, usize)> {
     // We use lossy utf8 here because we don't want the schema inference to fail on utf8.
     // It may later.
     let encoding = CsvEncoding::LossyUtf8;
@@ -236,7 +241,7 @@ pub fn infer_file_schema(
                     let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
                     Ok(s.into())
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
 
             if PlHashSet::from_iter(headers.iter()).len() != headers.len() {
                 return Err(PolarsError::ComputeError(

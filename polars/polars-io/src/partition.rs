@@ -33,7 +33,7 @@ where
 /// use polars_io::ipc::IpcWriterOption;
 /// use polars_io::partition::PartitionedWriter;
 ///
-/// fn example(df: &mut DataFrame) -> Result<()> {
+/// fn example(df: &mut DataFrame) -> PolarsResult<()> {
 ///     let option = IpcWriterOption::default();
 ///     PartitionedWriter::new(option, "./rootdir", ["a", "b"])
 ///         .finish(df)
@@ -71,7 +71,7 @@ where
         self
     }
 
-    fn write_partition_df(&self, partition_df: &mut DataFrame, i: usize) -> Result<()> {
+    fn write_partition_df(&self, partition_df: &mut DataFrame, i: usize) -> PolarsResult<()> {
         let mut path = resolve_partition_dir(&self.rootdir, &self.by, partition_df);
         std::fs::create_dir_all(&path)?;
 
@@ -89,7 +89,7 @@ where
             .finish(partition_df)
     }
 
-    pub fn finish(self, df: &DataFrame) -> Result<()> {
+    pub fn finish(self, df: &DataFrame) -> PolarsResult<()> {
         let groups = df.groupby(self.by.clone())?;
         let groups = groups.get_groups();
 
@@ -105,7 +105,7 @@ where
                             let mut part_df = unsafe { df._take_unchecked_slice(group, false) };
                             self.write_partition_df(&mut part_df, i)
                         })
-                        .collect::<Result<Vec<_>>>()
+                        .collect::<PolarsResult<Vec<_>>>()
                 }
                 GroupsProxy::Slice { groups, .. } => groups
                     .par_iter()
@@ -114,7 +114,7 @@ where
                         let mut part_df = df.slice(*first as i64, *len as usize);
                         self.write_partition_df(&mut part_df, i)
                     })
-                    .collect::<Result<Vec<_>>>(),
+                    .collect::<PolarsResult<Vec<_>>>(),
             }
         })?;
 
@@ -128,7 +128,7 @@ mod test {
 
     #[test]
     #[cfg(feature = "ipc")]
-    fn test_ipc_partition() -> Result<()> {
+    fn test_ipc_partition() -> PolarsResult<()> {
         use std::io::BufReader;
         use std::path::PathBuf;
 
@@ -168,7 +168,7 @@ mod test {
                     let entry = e?;
                     Ok(entry.path())
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
 
             assert_eq!(ipc_paths.len(), 1);
             let reader = BufReader::new(std::fs::File::open(&ipc_paths[0])?);

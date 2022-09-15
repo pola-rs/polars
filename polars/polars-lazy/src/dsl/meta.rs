@@ -23,7 +23,7 @@ impl MetaNameSpace {
     }
 
     /// Get the output name of this expression.
-    pub fn output_name(&self) -> Result<Arc<str>> {
+    pub fn output_name(&self) -> PolarsResult<Arc<str>> {
         expr_output_name(&self.0)
     }
 

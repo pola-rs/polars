@@ -8,7 +8,7 @@ pub(crate) fn det_join_schema(
     left_on: &[Expr],
     right_on: &[String],
     options: &JoinOptions,
-) -> Result<SchemaRef> {
+) -> PolarsResult<SchemaRef> {
     match options.how {
         // semi and anti joins are just filtering operations
         // the schema will never change.

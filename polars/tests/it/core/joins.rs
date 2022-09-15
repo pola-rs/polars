@@ -3,7 +3,7 @@ use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use super::*;
 
 #[test]
-fn test_chunked_left_join() -> Result<()> {
+fn test_chunked_left_join() -> PolarsResult<()> {
     let mut band_members = df![
         "name" => ["john", "paul", "mick", "bob"],
         "band" => ["beatles", "beatles", "stones", "wailers"],

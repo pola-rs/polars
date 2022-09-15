@@ -48,7 +48,7 @@ pub trait QuantileAggSeries {
         &self,
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
-    ) -> Result<Series>;
+    ) -> PolarsResult<Series>;
 }
 
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
@@ -205,7 +205,11 @@ where
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
 {
-    fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f64>> {
+    fn quantile(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> PolarsResult<Option<f64>> {
         if !(0.0..=1.0).contains(&quantile) {
             return Err(PolarsError::ComputeError(
                 "quantile should be between 0.0 and 1.0".into(),
@@ -275,7 +279,11 @@ where
 }
 
 impl ChunkQuantile<f32> for Float32Chunked {
-    fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f32>> {
+    fn quantile(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> PolarsResult<Option<f32>> {
         if !(0.0..=1.0).contains(&quantile) {
             return Err(PolarsError::ComputeError(
                 "quantile should be between 0.0 and 1.0".into(),
@@ -345,7 +353,11 @@ impl ChunkQuantile<f32> for Float32Chunked {
 }
 
 impl ChunkQuantile<f64> for Float64Chunked {
-    fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f64>> {
+    fn quantile(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> PolarsResult<Option<f64>> {
         if !(0.0..=1.0).contains(&quantile) {
             return Err(PolarsError::ComputeError(
                 "quantile should be between 0.0 and 1.0".into(),
@@ -701,7 +713,7 @@ where
         &self,
         quantile: f64,
         interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         impl_quantile_as_series!(self, quantile, Float64Chunked, quantile, interpol)
     }
 
@@ -715,7 +727,7 @@ impl QuantileAggSeries for Float32Chunked {
         &self,
         quantile: f64,
         interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         impl_quantile_as_series!(self, quantile, Float32Chunked, quantile, interpol)
     }
 
@@ -729,7 +741,7 @@ impl QuantileAggSeries for Float64Chunked {
         &self,
         quantile: f64,
         interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         impl_quantile_as_series!(self, quantile, Float64Chunked, quantile, interpol)
     }
 
@@ -743,7 +755,7 @@ impl QuantileAggSeries for BooleanChunked {
         &self,
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         Ok(Self::full_null(self.name(), 1).into_series())
     }
 
@@ -756,7 +768,7 @@ impl QuantileAggSeries for ListChunked {
         &self,
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         Ok(Self::full_null(self.name(), 1).into_series())
     }
 
@@ -770,7 +782,7 @@ impl<T: PolarsObject> QuantileAggSeries for ObjectChunked<T> {
         &self,
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         unimplemented!()
     }
 
@@ -783,7 +795,7 @@ impl QuantileAggSeries for Utf8Chunked {
         &self,
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         Ok(Self::full_null(self.name(), 1).into_series())
     }
 

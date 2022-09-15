@@ -16,7 +16,7 @@ impl Display for ListFunction {
 }
 
 #[cfg(feature = "is_in")]
-pub(super) fn contains(args: &mut [Series]) -> Result<Series> {
+pub(super) fn contains(args: &mut [Series]) -> PolarsResult<Series> {
     let list = &args[0];
     let is_in = &args[1];
 
@@ -26,7 +26,7 @@ pub(super) fn contains(args: &mut [Series]) -> Result<Series> {
     })
 }
 
-pub(super) fn concat(s: &mut [Series]) -> Result<Series> {
+pub(super) fn concat(s: &mut [Series]) -> PolarsResult<Series> {
     let mut first = std::mem::take(&mut s[0]);
     let other = &s[1..];
 

@@ -6,7 +6,7 @@ impl SeriesOps for Wrap<BooleanChunked> {
     }
 
     #[cfg(feature = "to_dummies")]
-    fn to_dummies(&self) -> Result<DataFrame> {
+    fn to_dummies(&self) -> PolarsResult<DataFrame> {
         ToDummies::to_dummies(self)
     }
 }

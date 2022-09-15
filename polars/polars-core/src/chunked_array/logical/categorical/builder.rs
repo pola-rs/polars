@@ -422,7 +422,7 @@ mod test {
     use crate::{reset_string_cache, toggle_string_cache, SINGLE_LOCK};
 
     #[test]
-    fn test_categorical_rev() -> Result<()> {
+    fn test_categorical_rev() -> PolarsResult<()> {
         let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
         let slice = &[

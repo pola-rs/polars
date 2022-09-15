@@ -45,7 +45,10 @@ impl PartialEq for FunctionNode {
 }
 
 impl FunctionNode {
-    pub(crate) fn schema<'a>(&self, input_schema: &'a SchemaRef) -> Result<Cow<'a, SchemaRef>> {
+    pub(crate) fn schema<'a>(
+        &self,
+        input_schema: &'a SchemaRef,
+    ) -> PolarsResult<Cow<'a, SchemaRef>> {
         use FunctionNode::*;
         match self {
             Opaque { schema, .. } => match schema {
@@ -64,7 +67,7 @@ impl FunctionNode {
                             .get_field(name)
                             .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
                     })
-                    .collect::<Result<Schema>>()?;
+                    .collect::<PolarsResult<Schema>>()?;
                 Ok(Cow::Owned(Arc::new(schema)))
             }
             DropNulls { .. } => Ok(Cow::Borrowed(input_schema)),
@@ -88,7 +91,7 @@ impl FunctionNode {
         }
     }
 
-    pub(crate) fn evaluate(&self, mut df: DataFrame) -> Result<DataFrame> {
+    pub(crate) fn evaluate(&self, mut df: DataFrame) -> PolarsResult<DataFrame> {
         use FunctionNode::*;
         match self {
             Opaque { function, .. } => function.call_udf(df),

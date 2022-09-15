@@ -75,7 +75,7 @@
 //! ```
 //! use polars::prelude::*;
 //! use polars::df;
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //!
 //! // use macro
 //! let df = df! [
@@ -98,7 +98,7 @@
 //!
 //! ```
 //! use polars::prelude::*;
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //! let s_int = Series::new("a", &[1, 2, 3]);
 //! let s_flt = Series::new("b", &[1.0, 2.0, 3.0]);
 //!
@@ -157,7 +157,7 @@
 //!
 //! ```
 //! use polars::prelude::*;
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //!
 //! let s = Series::new("a", &[1, 2, 3]);
 //! let ca = UInt32Chunked::new("b", &[Some(3), None, Some(1)]);
@@ -241,7 +241,7 @@
 //!
 //! ```
 //! use polars::prelude::*;
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //!
 //! // apply a closure over all values
 //! let s = Series::new("foo", &[Some(1), Some(2), None]);
@@ -291,7 +291,7 @@
 //! ```
 //! use polars::prelude::*;
 //! use polars::df;
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //!
 //! let mut df = df![
 //!     "letters" => ["a", "b", "c", "d"],
@@ -315,7 +315,7 @@
 //! ```
 //! use polars::prelude::*;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //! // create a mask to filter out null values
 //! let mask = df.column("sepal.width")?.is_not_null();
 //!
@@ -337,7 +337,7 @@
 //! use polars::prelude::*;
 //! use polars::df;
 //!
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //! let df = df![
 //!     "a" => [1, 2, 3],
 //!     "b" => ["a", "a", "b"]
@@ -375,7 +375,7 @@
 //! use polars::prelude::*;
 //! use polars::df;
 //!
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //! // Create first df.
 //! let temp = df!("days" => &[0, 1, 2, 3, 4],
 //!                "temp" => &[22.1, 19.9, 7., 2., 3.],
@@ -413,7 +413,7 @@
 //! ```
 //! use polars::prelude::*;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //!  // groupby "groups" | sum "foo"
 //!  let out = df.groupby(["groups"])?
 //!     .select(["foo"])
@@ -430,7 +430,7 @@
 //! use polars::prelude::*;
 //! use polars::df;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //!  let df = df!("foo" => ["A", "A", "B", "B", "C"],
 //!      "N" => [1, 2, 2, 4, 2],
 //!      "bar" => ["k", "l", "m", "n", "0"]
@@ -464,7 +464,7 @@
 //! use polars::prelude::*;
 //! use polars::df;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //! let df = df!["A" => &["a", "b", "a"],
 //!              "B" => &[1, 3, 5],
 //!              "C" => &[10, 11, 12],
@@ -502,7 +502,7 @@
 //! use polars::prelude::*;
 //! use polars::df;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //! let s0 = Series::new("a", &[1i64, 2, 3]);
 //! let s1 = Series::new("b", &[1i64, 1, 1]);
 //! let s2 = Series::new("c", &[2i64, 2, 2]);
@@ -552,7 +552,7 @@
 //! ```
 //! use polars::prelude::*;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //! // read from path
 //! let df = CsvReader::from_path("iris_csv")?
 //!             .infer_schema(None)
@@ -568,7 +568,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &mut DataFrame) -> Result<()> {
+//! # fn example(df: &mut DataFrame) -> PolarsResult<()> {
 //! // create a file
 //! let mut file = File::create("example.csv").expect("could not create file");
 //!
@@ -586,7 +586,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //! // open file
 //! let file = File::open("file.ipc").expect("file not found");
 //!
@@ -602,7 +602,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &mut DataFrame) -> Result<()> {
+//! # fn example(df: &mut DataFrame) -> PolarsResult<()> {
 //! // create a file
 //! let mut file = File::create("file.ipc").expect("could not create file");
 //!
@@ -618,7 +618,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //! // open file
 //! let file = File::open("some_file.parquet").unwrap();
 //!
@@ -633,7 +633,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &mut DataFrame) -> Result<()> {
+//! # fn example(df: &mut DataFrame) -> PolarsResult<()> {
 //! // create a file
 //! let file = File::create("example.parquet").expect("could not create file");
 //!
@@ -653,7 +653,7 @@
 //! use polars::df;
 //!
 //! /// Replaces NaN with missing values.
-//! fn fill_nan_with_nulls() -> Result<DataFrame> {
+//! fn fill_nan_with_nulls() -> PolarsResult<DataFrame> {
 //!     let nan = f64::NAN;
 //!
 //!     let mut df = df! {
@@ -683,7 +683,7 @@
 //! use polars::prelude::*;
 //! use polars::df;
 //!
-//! fn extract_data() -> Result<()> {
+//! fn extract_data() -> PolarsResult<()> {
 //!     let df = df! [
 //!        "a" => [None, Some(1.0f32), Some(2.0)],
 //!        "str" => ["foo", "bar", "ham"]

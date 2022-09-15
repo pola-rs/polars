@@ -50,7 +50,7 @@ pub fn pivot<I0, S0, I1, S1, I2, S2>(
     columns: I2,
     agg_fn: PivotAgg,
     sort_columns: bool,
-) -> Result<DataFrame>
+) -> PolarsResult<DataFrame>
 where
     I0: IntoIterator<Item = S0>,
     S0: AsRef<str>,
@@ -94,7 +94,7 @@ pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
     columns: I2,
     agg_fn: PivotAgg,
     sort_columns: bool,
-) -> Result<DataFrame>
+) -> PolarsResult<DataFrame>
 where
     I0: IntoIterator<Item = S0>,
     S0: AsRef<str>,
@@ -140,7 +140,7 @@ fn pivot_impl(
     agg_fn: PivotAgg,
     sort_columns: bool,
     stable: bool,
-) -> Result<DataFrame> {
+) -> PolarsResult<DataFrame> {
     if index.is_empty() {
         return Err(PolarsError::ComputeError(
             "index cannot be zero length".into(),
@@ -150,7 +150,7 @@ fn pivot_impl(
     let mut final_cols = vec![];
 
     let mut count = 0;
-    let out: Result<()> = POOL.install(|| {
+    let out: PolarsResult<()> = POOL.install(|| {
         for column in columns {
             let mut groupby = index.to_vec();
             groupby.push(column.clone());

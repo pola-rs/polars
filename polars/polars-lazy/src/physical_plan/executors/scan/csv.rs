@@ -10,7 +10,7 @@ pub struct CsvExec {
 }
 
 impl CsvExec {
-    fn read(&mut self) -> Result<DataFrame> {
+    fn read(&mut self) -> PolarsResult<DataFrame> {
         let mut with_columns = mem::take(&mut self.options.with_columns);
         let mut projected_len = 0;
         with_columns.as_ref().map(|columns| {
@@ -59,7 +59,7 @@ impl CsvExec {
 }
 
 impl Executor for CsvExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let finger_print = FileFingerPrint {
             path: self.path.clone(),
             predicate: self

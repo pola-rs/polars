@@ -77,17 +77,17 @@ impl Display for StringFunction {
     }
 }
 
-pub(super) fn uppercase(s: &Series) -> Result<Series> {
+pub(super) fn uppercase(s: &Series) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.to_uppercase().into_series())
 }
 
-pub(super) fn lowercase(s: &Series) -> Result<Series> {
+pub(super) fn lowercase(s: &Series) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.to_lowercase().into_series())
 }
 
-pub(super) fn contains(s: &Series, pat: &str, literal: bool) -> Result<Series> {
+pub(super) fn contains(s: &Series, pat: &str, literal: bool) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     if literal {
         ca.contains_literal(pat).map(|ca| ca.into_series())
@@ -96,17 +96,17 @@ pub(super) fn contains(s: &Series, pat: &str, literal: bool) -> Result<Series> {
     }
 }
 
-pub(super) fn ends_with(s: &Series, sub: &str) -> Result<Series> {
+pub(super) fn ends_with(s: &Series, sub: &str) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.ends_with(sub).into_series())
 }
-pub(super) fn starts_with(s: &Series, sub: &str) -> Result<Series> {
+pub(super) fn starts_with(s: &Series, sub: &str) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.starts_with(sub).into_series())
 }
 
 /// Extract a regex pattern from the a string value.
-pub(super) fn extract(s: &Series, pat: &str, group_index: usize) -> Result<Series> {
+pub(super) fn extract(s: &Series, pat: &str, group_index: usize) -> PolarsResult<Series> {
     let pat = pat.to_string();
 
     let ca = s.utf8()?;
@@ -114,30 +114,30 @@ pub(super) fn extract(s: &Series, pat: &str, group_index: usize) -> Result<Serie
 }
 
 #[cfg(feature = "string_justify")]
-pub(super) fn zfill(s: &Series, alignment: usize) -> Result<Series> {
+pub(super) fn zfill(s: &Series, alignment: usize) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.zfill(alignment).into_series())
 }
 
 #[cfg(feature = "string_justify")]
-pub(super) fn ljust(s: &Series, width: usize, fillchar: char) -> Result<Series> {
+pub(super) fn ljust(s: &Series, width: usize, fillchar: char) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.ljust(width, fillchar).into_series())
 }
 #[cfg(feature = "string_justify")]
-pub(super) fn rjust(s: &Series, width: usize, fillchar: char) -> Result<Series> {
+pub(super) fn rjust(s: &Series, width: usize, fillchar: char) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.rjust(width, fillchar).into_series())
 }
 
-pub(super) fn extract_all(s: &Series, pat: &str) -> Result<Series> {
+pub(super) fn extract_all(s: &Series, pat: &str) -> PolarsResult<Series> {
     let pat = pat.to_string();
 
     let ca = s.utf8()?;
     ca.extract_all(&pat).map(|ca| ca.into_series())
 }
 
-pub(super) fn count_match(s: &Series, pat: &str) -> Result<Series> {
+pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {
     let pat = pat.to_string();
 
     let ca = s.utf8()?;
@@ -145,7 +145,7 @@ pub(super) fn count_match(s: &Series, pat: &str) -> Result<Series> {
 }
 
 #[cfg(feature = "temporal")]
-pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> Result<Series> {
+pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Series> {
     let ca = s.utf8()?;
 
     let out = match &options.date_dtype {
@@ -193,7 +193,7 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> Result<Series> 
 }
 
 #[cfg(feature = "concat_str")]
-pub(super) fn concat(s: &Series, delimiter: &str) -> Result<Series> {
+pub(super) fn concat(s: &Series, delimiter: &str) -> PolarsResult<Series> {
     Ok(s.str_concat(delimiter).into_series())
 }
 
@@ -204,7 +204,7 @@ impl From<StringFunction> for FunctionExpr {
 }
 
 #[cfg(feature = "regex")]
-fn get_pat(pat: &Utf8Chunked) -> Result<&str> {
+fn get_pat(pat: &Utf8Chunked) -> PolarsResult<&str> {
     pat.get(0).ok_or_else(|| {
         PolarsError::ComputeError("pattern may not be 'null' in 'replace' expression".into())
     })
@@ -233,7 +233,7 @@ fn replace_single<'a>(
     pat: &'a Utf8Chunked,
     val: &'a Utf8Chunked,
     literal: bool,
-) -> Result<Utf8Chunked> {
+) -> PolarsResult<Utf8Chunked> {
     match (pat.len(), val.len()) {
         (1, 1) => {
             let pat = get_pat(pat)?;
@@ -278,7 +278,7 @@ fn replace_all<'a>(
     pat: &'a Utf8Chunked,
     val: &'a Utf8Chunked,
     literal: bool,
-) -> Result<Utf8Chunked> {
+) -> PolarsResult<Utf8Chunked> {
     match (pat.len(), val.len()) {
         (1, 1) => {
             let pat = get_pat(pat)?;
@@ -312,7 +312,7 @@ fn replace_all<'a>(
 }
 
 #[cfg(feature = "regex")]
-pub(super) fn replace(s: &[Series], literal: bool, all: bool) -> Result<Series> {
+pub(super) fn replace(s: &[Series], literal: bool, all: bool) -> PolarsResult<Series> {
     let column = &s[0];
     let pat = &s[1];
     let val = &s[2];

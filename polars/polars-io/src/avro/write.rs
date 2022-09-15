@@ -15,7 +15,7 @@ use super::*;
 /// use std::fs::File;
 /// use polars_io::SerWriter;
 ///
-/// fn example(df: &mut DataFrame) -> Result<()> {
+/// fn example(df: &mut DataFrame) -> PolarsResult<()> {
 ///     let mut file = File::create("file.avro").expect("could not create file");
 ///
 ///     AvroWriter::new(&mut file)
@@ -50,7 +50,7 @@ where
         }
     }
 
-    fn finish(&mut self, df: &mut DataFrame) -> Result<()> {
+    fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         let schema = df.schema().to_arrow();
         let record = write::to_record(&schema)?;
 

@@ -251,7 +251,7 @@ impl Display for DataType {
     }
 }
 
-pub fn merge_dtypes(left: &DataType, right: &DataType) -> Result<DataType> {
+pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType> {
     // TODO! add struct
     use DataType::*;
     match (left, right) {

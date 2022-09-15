@@ -61,7 +61,7 @@ fn execute_projection_cached_window_fns(
     df: &DataFrame,
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &ExecutionState,
-) -> Result<Vec<Series>> {
+) -> PolarsResult<Vec<Series>> {
     // We partition by normal expression and window expression
     // - the normal expressions can run in parallel
     // - the window expression take more memory and often use the same groupby keys and join tuples
@@ -111,7 +111,7 @@ fn execute_projection_cached_window_fns(
         other
             .par_iter()
             .map(|(idx, expr)| expr.evaluate(df, state).map(|s| (*idx, s)))
-            .collect::<Result<Vec<_>>>()
+            .collect::<PolarsResult<Vec<_>>>()
     })?;
 
     for mut partition in windows {
@@ -163,7 +163,7 @@ pub(crate) fn evaluate_physical_expressions(
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &mut ExecutionState,
     has_windows: bool,
-) -> Result<DataFrame> {
+) -> PolarsResult<DataFrame> {
     let zero_length = df.height() == 0;
     let selected_columns = if has_windows {
         execute_projection_cached_window_fns(df, exprs, state)?
@@ -172,7 +172,7 @@ pub(crate) fn evaluate_physical_expressions(
             exprs
                 .par_iter()
                 .map(|expr| expr.evaluate(df, state))
-                .collect::<Result<_>>()
+                .collect::<PolarsResult<_>>()
         })?
     };
     state.clear_schema_cache();
@@ -183,7 +183,7 @@ pub(crate) fn evaluate_physical_expressions(
 fn check_expand_literals(
     mut selected_columns: Vec<Series>,
     zero_length: bool,
-) -> Result<DataFrame> {
+) -> PolarsResult<DataFrame> {
     let first_len = selected_columns[0].len();
     let mut df_height = 0;
     let mut all_equal_len = true;
@@ -222,7 +222,7 @@ fn check_expand_literals(
                     ))
                 }
             })
-            .collect::<Result<_>>()?
+            .collect::<PolarsResult<_>>()?
     }
 
     let df = DataFrame::new_no_checks(selected_columns);

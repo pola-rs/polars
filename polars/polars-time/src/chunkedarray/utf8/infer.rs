@@ -22,7 +22,7 @@ pub struct DatetimeInfer<T> {
 impl TryFrom<Pattern> for DatetimeInfer<i64> {
     type Error = PolarsError;
 
-    fn try_from(value: Pattern) -> Result<Self> {
+    fn try_from(value: Pattern) -> PolarsResult<Self> {
         match value {
             Pattern::DatetimeDMY => Ok(DatetimeInfer {
                 patterns: patterns::DATETIME_D_M_Y,
@@ -51,7 +51,7 @@ impl TryFrom<Pattern> for DatetimeInfer<i64> {
 impl TryFrom<Pattern> for DatetimeInfer<i32> {
     type Error = PolarsError;
 
-    fn try_from(value: Pattern) -> Result<Self> {
+    fn try_from(value: Pattern) -> PolarsResult<Self> {
         match value {
             Pattern::DateDMY => Ok(DatetimeInfer {
                 patterns: patterns::DATE_D_M_Y,
@@ -237,7 +237,7 @@ fn infer_pattern_date_single(val: &str) -> Option<Pattern> {
 }
 
 #[cfg(feature = "dtype-datetime")]
-pub(crate) fn to_datetime(ca: &Utf8Chunked, tu: TimeUnit) -> Result<DatetimeChunked> {
+pub(crate) fn to_datetime(ca: &Utf8Chunked, tu: TimeUnit) -> PolarsResult<DatetimeChunked> {
     match ca.first_non_null() {
         None => Ok(Int64Chunked::full_null(ca.name(), ca.len()).into_datetime(tu, None)),
         Some(idx) => {
@@ -266,7 +266,7 @@ pub(crate) fn to_datetime(ca: &Utf8Chunked, tu: TimeUnit) -> Result<DatetimeChun
     }
 }
 #[cfg(feature = "dtype-date")]
-pub(crate) fn to_date(ca: &Utf8Chunked) -> Result<DateChunked> {
+pub(crate) fn to_date(ca: &Utf8Chunked) -> PolarsResult<DateChunked> {
     match ca.first_non_null() {
         None => Ok(Int32Chunked::full_null(ca.name(), ca.len()).into_date()),
         Some(idx) => {

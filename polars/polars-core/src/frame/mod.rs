@@ -87,7 +87,7 @@ pub enum UniqueKeepStrategy {
 /// let s1 = Series::new("Fruit", &["Apple", "Apple", "Pear"]);
 /// let s2 = Series::new("Color", &["Red", "Yellow", "Green"]);
 ///
-/// let df: Result<DataFrame> = DataFrame::new(vec![s1, s2]);
+/// let df: PolarsResult<DataFrame> = DataFrame::new(vec![s1, s2]);
 /// ```
 ///
 /// ## Using a macro
@@ -96,7 +96,7 @@ pub enum UniqueKeepStrategy {
 ///
 /// ```rust
 /// # use polars_core::prelude::*;
-/// let df: Result<DataFrame> = df!("Fruit" => &["Apple", "Apple", "Pear"],
+/// let df: PolarsResult<DataFrame> = df!("Fruit" => &["Apple", "Apple", "Pear"],
 ///                                 "Color" => &["Red", "Yellow", "Green"]);
 /// ```
 ///
@@ -136,7 +136,7 @@ pub struct DataFrame {
     pub(crate) columns: Vec<Series>,
 }
 
-fn duplicate_err(name: &str) -> Result<()> {
+fn duplicate_err(name: &str) -> PolarsResult<()> {
     Err(PolarsError::Duplicate(
         format!("Column with name: '{}' has more than one occurrences", name).into(),
     ))
@@ -172,26 +172,26 @@ impl DataFrame {
     // reduce monomorphization
     fn try_apply_columns_par(
         &self,
-        func: &(dyn Fn(&Series) -> Result<Series> + Send + Sync),
-    ) -> Result<Vec<Series>> {
+        func: &(dyn Fn(&Series) -> PolarsResult<Series> + Send + Sync),
+    ) -> PolarsResult<Vec<Series>> {
         POOL.install(|| self.columns.par_iter().map(|s| func(s)).collect())
     }
 
     // reduce monomorphization
     fn try_apply_columns(
         &self,
-        func: &(dyn Fn(&Series) -> Result<Series> + Send + Sync),
-    ) -> Result<Vec<Series>> {
+        func: &(dyn Fn(&Series) -> PolarsResult<Series> + Send + Sync),
+    ) -> PolarsResult<Vec<Series>> {
         self.columns.iter().map(|s| func(s)).collect()
     }
 
     /// Get the index of the column.
-    fn check_name_to_idx(&self, name: &str) -> Result<usize> {
+    fn check_name_to_idx(&self, name: &str) -> PolarsResult<usize> {
         self.find_idx_by_name(name)
             .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
     }
 
-    fn check_already_present(&self, name: &str) -> Result<()> {
+    fn check_already_present(&self, name: &str) -> PolarsResult<()> {
         if self.columns.iter().any(|s| s.name() == name) {
             Err(PolarsError::Duplicate(
                 format!("column with name: '{}' already present in DataFrame", name).into(),
@@ -222,7 +222,7 @@ impl DataFrame {
     /// let df = DataFrame::new(vec![s0, s1])?;
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn new<S: IntoSeries>(columns: Vec<S>) -> Result<Self> {
+    pub fn new<S: IntoSeries>(columns: Vec<S>) -> PolarsResult<Self> {
         let mut first_len = None;
 
         let shape_err = |s: &[Series]| {
@@ -363,7 +363,7 @@ impl DataFrame {
     ///  | 3   | Patricia |
     ///  +-----+----------+
     /// ```
-    pub fn with_row_count(&self, name: &str, offset: Option<IdxSize>) -> Result<Self> {
+    pub fn with_row_count(&self, name: &str, offset: Option<IdxSize>) -> PolarsResult<Self> {
         let mut columns = Vec::with_capacity(self.columns.len() + 1);
         let offset = offset.unwrap_or(0);
 
@@ -574,7 +574,7 @@ impl DataFrame {
     /// assert_eq!(df.get_column_names(), &["Set"]);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn set_column_names<S: AsRef<str>>(&mut self, names: &[S]) -> Result<()> {
+    pub fn set_column_names<S: AsRef<str>>(&mut self, names: &[S]) -> PolarsResult<()> {
         if names.len() != self.columns.len() {
             return Err(PolarsError::ShapeMisMatch("the provided slice with column names has not the same size as the DataFrame's width".into()));
         }
@@ -616,7 +616,7 @@ impl DataFrame {
     }
 
     /// The number of chunks per column
-    pub fn n_chunks(&self) -> Result<usize> {
+    pub fn n_chunks(&self) -> PolarsResult<usize> {
         Ok(self
             .columns
             .get(0)
@@ -746,7 +746,7 @@ impl DataFrame {
     ///     df.hstack_mut(columns);
     /// }
     /// ```
-    pub fn hstack_mut(&mut self, columns: &[Series]) -> Result<&mut Self> {
+    pub fn hstack_mut(&mut self, columns: &[Series]) -> PolarsResult<&mut Self> {
         let mut names = PlHashSet::with_capacity(self.columns.len());
         for s in &self.columns {
             names.insert(s.name());
@@ -810,7 +810,7 @@ impl DataFrame {
     /// | Gold    | 79     | 79       |
     /// +---------+--------+----------+
     /// ```
-    pub fn hstack(&self, columns: &[Series]) -> Result<Self> {
+    pub fn hstack(&self, columns: &[Series]) -> PolarsResult<Self> {
         let mut new_cols = self.columns.clone();
         new_cols.extend_from_slice(columns);
         DataFrame::new(new_cols)
@@ -856,7 +856,7 @@ impl DataFrame {
     /// | Palladium | 1828.05           |
     /// +-----------+-------------------+
     /// ```
-    pub fn vstack(&self, other: &DataFrame) -> Result<Self> {
+    pub fn vstack(&self, other: &DataFrame) -> PolarsResult<Self> {
         let mut df = self.clone();
         df.vstack_mut(other)?;
         Ok(df)
@@ -902,7 +902,7 @@ impl DataFrame {
     /// | Palladium | 1828.05           |
     /// +-----------+-------------------+
     /// ```
-    pub fn vstack_mut(&mut self, other: &DataFrame) -> Result<&mut Self> {
+    pub fn vstack_mut(&mut self, other: &DataFrame) -> PolarsResult<&mut Self> {
         if self.width() != other.width() {
             if self.width() == 0 {
                 self.columns = other.columns.clone();
@@ -917,7 +917,7 @@ impl DataFrame {
         self.columns
             .iter_mut()
             .zip(other.columns.iter())
-            .try_for_each::<_, Result<_>>(|(left, right)| {
+            .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
                 can_extend(left, right)?;
                 left.append(right).expect("should not fail");
                 Ok(())
@@ -949,7 +949,7 @@ impl DataFrame {
     /// Prefer `vstack` over `extend` when you want to append many times before doing a query. For instance
     /// when you read in multiple files and when to store them in a single `DataFrame`. In the latter case, finish the sequence
     /// of `append` operations with a [`rechunk`](Self::rechunk).
-    pub fn extend(&mut self, other: &DataFrame) -> Result<()> {
+    pub fn extend(&mut self, other: &DataFrame) -> PolarsResult<()> {
         if self.width() != other.width() {
             return Err(PolarsError::ShapeMisMatch(
                 format!("Could not extend DataFrame. The DataFrames extended width {} differs from the parent DataFrames width {}", self.width(), other.width()).into()
@@ -959,7 +959,7 @@ impl DataFrame {
         self.columns
             .iter_mut()
             .zip(other.columns.iter())
-            .try_for_each::<_, Result<_>>(|(left, right)| {
+            .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
                 can_extend(left, right)?;
                 left.extend(right).unwrap();
                 Ok(())
@@ -976,14 +976,14 @@ impl DataFrame {
     /// let mut df: DataFrame = df!("Animal" => &["Tiger", "Lion", "Great auk"],
     ///                             "IUCN" => &["Endangered", "Vulnerable", "Extinct"])?;
     ///
-    /// let s1: Result<Series> = df.drop_in_place("Average weight");
+    /// let s1: PolarsResult<Series> = df.drop_in_place("Average weight");
     /// assert!(s1.is_err());
     ///
     /// let s2: Series = df.drop_in_place("Animal")?;
     /// assert_eq!(s2, Series::new("Animal", &["Tiger", "Lion", "Great auk"]));
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn drop_in_place(&mut self, name: &str) -> Result<Series> {
+    pub fn drop_in_place(&mut self, name: &str) -> PolarsResult<Series> {
         let idx = self.check_name_to_idx(name)?;
         Ok(self.columns.remove(idx))
     }
@@ -1016,7 +1016,7 @@ impl DataFrame {
     /// | Malta   | 32.7                |
     /// +---------+---------------------+
     /// ```
-    pub fn drop_nulls(&self, subset: Option<&[String]>) -> Result<Self> {
+    pub fn drop_nulls(&self, subset: Option<&[String]>) -> PolarsResult<Self> {
         let selected_series;
 
         let mut iter = match subset {
@@ -1057,7 +1057,7 @@ impl DataFrame {
     /// assert!(df2.is_empty());
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn drop(&self, name: &str) -> Result<Self> {
+    pub fn drop(&self, name: &str) -> PolarsResult<Self> {
         let idx = self.check_name_to_idx(name)?;
         let mut new_cols = Vec::with_capacity(self.columns.len() - 1);
 
@@ -1070,7 +1070,11 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(new_cols))
     }
 
-    fn insert_at_idx_no_name_check(&mut self, index: usize, series: Series) -> Result<&mut Self> {
+    fn insert_at_idx_no_name_check(
+        &mut self,
+        index: usize,
+        series: Series,
+    ) -> PolarsResult<&mut Self> {
         if series.len() == self.height() {
             self.columns.insert(index, series);
             Ok(self)
@@ -1087,13 +1091,17 @@ impl DataFrame {
     }
 
     /// Insert a new column at a given index.
-    pub fn insert_at_idx<S: IntoSeries>(&mut self, index: usize, column: S) -> Result<&mut Self> {
+    pub fn insert_at_idx<S: IntoSeries>(
+        &mut self,
+        index: usize,
+        column: S,
+    ) -> PolarsResult<&mut Self> {
         let series = column.into_series();
         self.check_already_present(series.name())?;
         self.insert_at_idx_no_name_check(index, series)
     }
 
-    fn add_column_by_search(&mut self, series: Series) -> Result<()> {
+    fn add_column_by_search(&mut self, series: Series) -> PolarsResult<()> {
         if let Some(idx) = self.find_idx_by_name(series.name()) {
             self.replace_at_idx(idx, series)?;
         } else {
@@ -1103,8 +1111,8 @@ impl DataFrame {
     }
 
     /// Add a new column to this `DataFrame` or replace an existing one.
-    pub fn with_column<S: IntoSeries>(&mut self, column: S) -> Result<&mut Self> {
-        fn inner(df: &mut DataFrame, mut series: Series) -> Result<&mut DataFrame> {
+    pub fn with_column<S: IntoSeries>(&mut self, column: S) -> PolarsResult<&mut Self> {
+        fn inner(df: &mut DataFrame, mut series: Series) -> PolarsResult<&mut DataFrame> {
             let height = df.height();
             if series.len() == 1 && height > 1 {
                 series = series.expand_at_index(0, height);
@@ -1134,7 +1142,7 @@ impl DataFrame {
         inner(self, series)
     }
 
-    fn add_column_by_schema(&mut self, s: Series, schema: &Schema) -> Result<()> {
+    fn add_column_by_schema(&mut self, s: Series, schema: &Schema) -> PolarsResult<()> {
         let name = s.name();
         if let Some((idx, _, _)) = schema.get_full(name) {
             // schema is incorrect fallback to search
@@ -1156,7 +1164,7 @@ impl DataFrame {
         &mut self,
         column: S,
         schema: &Schema,
-    ) -> Result<&mut Self> {
+    ) -> PolarsResult<&mut Self> {
         let mut series = column.into_series();
 
         let height = self.height();
@@ -1250,7 +1258,7 @@ impl DataFrame {
     /// assert!(df.frame_equal(&df.select_by_range(..)?));
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn select_by_range<R>(&self, range: R) -> Result<Self>
+    pub fn select_by_range<R>(&self, range: R) -> PolarsResult<Self>
     where
         R: ops::RangeBounds<usize>,
     {
@@ -1333,7 +1341,7 @@ impl DataFrame {
     /// assert_eq!(df.column("Password")?, &s1);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn column(&self, name: &str) -> Result<&Series> {
+    pub fn column(&self, name: &str) -> PolarsResult<&Series> {
         let idx = self
             .find_idx_by_name(name)
             .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))?;
@@ -1354,7 +1362,7 @@ impl DataFrame {
     /// assert_eq!(&df[1], sv[1]);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn columns<I, S>(&self, names: I) -> Result<Vec<&Series>>
+    pub fn columns<I, S>(&self, names: I) -> PolarsResult<Vec<&Series>>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -1371,11 +1379,11 @@ impl DataFrame {
     ///
     /// ```
     /// # use polars_core::prelude::*;
-    /// fn example(df: &DataFrame) -> Result<DataFrame> {
+    /// fn example(df: &DataFrame) -> PolarsResult<DataFrame> {
     ///     df.select(["foo", "bar"])
     /// }
     /// ```
-    pub fn select<I, S>(&self, selection: I) -> Result<Self>
+    pub fn select<I, S>(&self, selection: I) -> PolarsResult<Self>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -1387,7 +1395,7 @@ impl DataFrame {
         self.select_impl(&cols)
     }
 
-    fn select_impl(&self, cols: &[String]) -> Result<Self> {
+    fn select_impl(&self, cols: &[String]) -> PolarsResult<Self> {
         {
             let mut names = PlHashSet::with_capacity(cols.len());
             for name in cols {
@@ -1415,13 +1423,13 @@ impl DataFrame {
     /// assert_eq!(df["Hydrogen"], sv[1]);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn select_series(&self, selection: impl IntoVec<String>) -> Result<Vec<Series>> {
+    pub fn select_series(&self, selection: impl IntoVec<String>) -> PolarsResult<Vec<Series>> {
         let cols = selection.into_vec();
         self.select_series_impl(&cols)
     }
 
     /// A non generic implementation to reduce compiler bloat.
-    fn select_series_impl(&self, cols: &[String]) -> Result<Vec<Series>> {
+    fn select_series_impl(&self, cols: &[String]) -> PolarsResult<Vec<Series>> {
         let selected = if cols.len() > 1 && self.columns.len() > 10 {
             // we hash, because there are user that having millions of columns.
             // # https://github.com/pola-rs/polars/issues/1023
@@ -1438,11 +1446,11 @@ impl DataFrame {
                         .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))?;
                     Ok(self.select_at_idx(idx).unwrap().clone())
                 })
-                .collect::<Result<Vec<_>>>()?
+                .collect::<PolarsResult<Vec<_>>>()?
         } else {
             cols.iter()
                 .map(|c| self.column(c).map(|s| s.clone()))
-                .collect::<Result<Vec<_>>>()?
+                .collect::<PolarsResult<Vec<_>>>()?
         };
 
         Ok(selected)
@@ -1462,12 +1470,12 @@ impl DataFrame {
 
     /// Does a filter but splits thread chunks vertically instead of horizontally
     /// This yields a DataFrame with `n_chunks == n_threads`.
-    fn filter_vertical(&mut self, mask: &BooleanChunked) -> Result<Self> {
+    fn filter_vertical(&mut self, mask: &BooleanChunked) -> PolarsResult<Self> {
         let n_threads = POOL.current_num_threads();
 
         let masks = split_ca(mask, n_threads).unwrap();
         let dfs = split_df(self, n_threads).unwrap();
-        let dfs: Result<Vec<_>> = POOL.install(|| {
+        let dfs: PolarsResult<Vec<_>> = POOL.install(|| {
             masks
                 .par_iter()
                 .zip(dfs)
@@ -1476,7 +1484,7 @@ impl DataFrame {
                         .columns
                         .iter()
                         .map(|s| s.filter(mask))
-                        .collect::<Result<_>>()?;
+                        .collect::<PolarsResult<_>>()?;
                     Ok(DataFrame::new_no_checks(cols))
                 })
                 .collect()
@@ -1496,12 +1504,12 @@ impl DataFrame {
     ///
     /// ```
     /// # use polars_core::prelude::*;
-    /// fn example(df: &DataFrame) -> Result<DataFrame> {
+    /// fn example(df: &DataFrame) -> PolarsResult<DataFrame> {
     ///     let mask = df.column("sepal.width")?.is_not_null();
     ///     df.filter(&mask)
     /// }
     /// ```
-    pub fn filter(&self, mask: &BooleanChunked) -> Result<Self> {
+    pub fn filter(&self, mask: &BooleanChunked) -> PolarsResult<Self> {
         if std::env::var("POLARS_VERT_PAR").is_ok() {
             return self.clone().filter_vertical(mask);
         }
@@ -1513,7 +1521,7 @@ impl DataFrame {
     }
 
     /// Same as `filter` but does not parallelize.
-    pub fn _filter_seq(&self, mask: &BooleanChunked) -> Result<Self> {
+    pub fn _filter_seq(&self, mask: &BooleanChunked) -> PolarsResult<Self> {
         let new_col = self.try_apply_columns(&|s| s.filter(mask))?;
         Ok(DataFrame::new_no_checks(new_col))
     }
@@ -1524,12 +1532,12 @@ impl DataFrame {
     ///
     /// ```
     /// # use polars_core::prelude::*;
-    /// fn example(df: &DataFrame) -> Result<DataFrame> {
+    /// fn example(df: &DataFrame) -> PolarsResult<DataFrame> {
     ///     let iterator = (0..9).into_iter();
     ///     df.take_iter(iterator)
     /// }
     /// ```
-    pub fn take_iter<I>(&self, iter: I) -> Result<Self>
+    pub fn take_iter<I>(&self, iter: I) -> PolarsResult<Self>
     where
         I: Iterator<Item = usize> + Clone + Sync + TrustedLen,
     {
@@ -1643,12 +1651,12 @@ impl DataFrame {
     ///
     /// ```
     /// # use polars_core::prelude::*;
-    /// fn example(df: &DataFrame) -> Result<DataFrame> {
+    /// fn example(df: &DataFrame) -> PolarsResult<DataFrame> {
     ///     let idx = IdxCa::new("idx", &[0, 1, 9]);
     ///     df.take(&idx)
     /// }
     /// ```
-    pub fn take(&self, indices: &IdxCa) -> Result<Self> {
+    pub fn take(&self, indices: &IdxCa) -> PolarsResult<Self> {
         let indices = if indices.chunks.len() > 1 {
             Cow::Owned(indices.rechunk())
         } else {
@@ -1716,13 +1724,13 @@ impl DataFrame {
     ///
     /// ```
     /// # use polars_core::prelude::*;
-    /// fn example(df: &mut DataFrame) -> Result<&mut DataFrame> {
+    /// fn example(df: &mut DataFrame) -> PolarsResult<&mut DataFrame> {
     ///     let original_name = "foo";
     ///     let new_name = "bar";
     ///     df.rename(original_name, new_name)
     /// }
     /// ```
-    pub fn rename(&mut self, column: &str, name: &str) -> Result<&mut Self> {
+    pub fn rename(&mut self, column: &str, name: &str) -> PolarsResult<&mut Self> {
         self.select_mut(column)
             .ok_or_else(|| PolarsError::NotFound(column.to_string().into()))
             .map(|s| s.rename(name))?;
@@ -1742,7 +1750,7 @@ impl DataFrame {
         &mut self,
         by_column: impl IntoVec<String>,
         reverse: impl IntoVec<bool>,
-    ) -> Result<&mut Self> {
+    ) -> PolarsResult<&mut Self> {
         // a lot of indirection in both sorting and take
         self.as_single_chunk_par();
         let by_column = self.select_series(by_column)?;
@@ -1759,7 +1767,7 @@ impl DataFrame {
         reverse: Vec<bool>,
         nulls_last: bool,
         slice: Option<(i64, usize)>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         // note that the by_column argument also contains evaluated expression from polars-lazy
         // that may not even be present in this dataframe.
 
@@ -1827,11 +1835,11 @@ impl DataFrame {
     ///
     /// ```
     /// # use polars_core::prelude::*;
-    /// fn sort_example(df: &DataFrame, reverse: bool) -> Result<DataFrame> {
+    /// fn sort_example(df: &DataFrame, reverse: bool) -> PolarsResult<DataFrame> {
     ///     df.sort(["a"], reverse)
     /// }
     ///
-    /// fn sort_by_multiple_columns_example(df: &DataFrame) -> Result<DataFrame> {
+    /// fn sort_by_multiple_columns_example(df: &DataFrame) -> PolarsResult<DataFrame> {
     ///     df.sort(&["a", "b"], vec![false, true])
     /// }
     /// ```
@@ -1839,14 +1847,14 @@ impl DataFrame {
         &self,
         by_column: impl IntoVec<String>,
         reverse: impl IntoVec<bool>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         let mut df = self.clone();
         df.sort_in_place(by_column, reverse)?;
         Ok(df)
     }
 
     /// Sort the `DataFrame` by a single column with extra options.
-    pub fn sort_with_options(&self, by_column: &str, options: SortOptions) -> Result<Self> {
+    pub fn sort_with_options(&self, by_column: &str, options: SortOptions) -> PolarsResult<Self> {
         let mut df = self.clone();
         // a lot of indirection in both sorting and take
         df.as_single_chunk_par();
@@ -1872,14 +1880,18 @@ impl DataFrame {
     /// assert!(df.replace("Country", s).is_ok());
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn replace<S: IntoSeries>(&mut self, column: &str, new_col: S) -> Result<&mut Self> {
+    pub fn replace<S: IntoSeries>(&mut self, column: &str, new_col: S) -> PolarsResult<&mut Self> {
         self.apply(column, |_| new_col.into_series())
     }
 
     /// Replace or update a column. The difference between this method and [DataFrame::with_column]
     /// is that now the value of `column: &str` determines the name of the column and not the name
     /// of the `Series` passed to this method.
-    pub fn replace_or_add<S: IntoSeries>(&mut self, column: &str, new_col: S) -> Result<&mut Self> {
+    pub fn replace_or_add<S: IntoSeries>(
+        &mut self,
+        column: &str,
+        new_col: S,
+    ) -> PolarsResult<&mut Self> {
         let mut new_col = new_col.into_series();
         new_col.rename(column);
         self.with_column(new_col)
@@ -1899,7 +1911,11 @@ impl DataFrame {
     /// df.replace_at_idx(1, df.select_at_idx(1).unwrap() + 32);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn replace_at_idx<S: IntoSeries>(&mut self, idx: usize, new_col: S) -> Result<&mut Self> {
+    pub fn replace_at_idx<S: IntoSeries>(
+        &mut self,
+        idx: usize,
+        new_col: S,
+    ) -> PolarsResult<&mut Self> {
         let mut new_column = new_col.into_series();
         if new_column.len() != self.height() {
             return Err(PolarsError::ShapeMisMatch(
@@ -1962,7 +1978,7 @@ impl DataFrame {
     /// | "egg"  | 3     |
     /// +--------+-------+
     /// ```
-    pub fn apply<F, S>(&mut self, name: &str, f: F) -> Result<&mut Self>
+    pub fn apply<F, S>(&mut self, name: &str, f: F) -> PolarsResult<&mut Self>
     where
         F: FnOnce(&Series) -> S,
         S: IntoSeries,
@@ -2001,7 +2017,7 @@ impl DataFrame {
     /// | "egg"  | 111   |
     /// +--------+-------+
     /// ```
-    pub fn apply_at_idx<F, S>(&mut self, idx: usize, f: F) -> Result<&mut Self>
+    pub fn apply_at_idx<F, S>(&mut self, idx: usize, f: F) -> PolarsResult<&mut Self>
     where
         F: FnOnce(&Series) -> S,
         S: IntoSeries,
@@ -2087,9 +2103,9 @@ impl DataFrame {
     /// | "quack-is-modified" | 5      |
     /// +---------------------+--------+
     /// ```
-    pub fn try_apply_at_idx<F, S>(&mut self, idx: usize, f: F) -> Result<&mut Self>
+    pub fn try_apply_at_idx<F, S>(&mut self, idx: usize, f: F) -> PolarsResult<&mut Self>
     where
-        F: FnOnce(&Series) -> Result<S>,
+        F: FnOnce(&Series) -> PolarsResult<S>,
         S: IntoSeries,
     {
         let width = self.width();
@@ -2156,9 +2172,9 @@ impl DataFrame {
     /// | "not_within_bounds" | 5      |
     /// +---------------------+--------+
     /// ```
-    pub fn try_apply<F, S>(&mut self, column: &str, f: F) -> Result<&mut Self>
+    pub fn try_apply<F, S>(&mut self, column: &str, f: F) -> PolarsResult<&mut Self>
     where
-        F: FnOnce(&Series) -> Result<S>,
+        F: FnOnce(&Series) -> PolarsResult<S>,
         S: IntoSeries,
     {
         let idx = self
@@ -2355,7 +2371,7 @@ impl DataFrame {
     /// * Max fill (replace None with the maximum of the whole array)
     ///
     /// See the method on [Series](../series/trait.SeriesTrait.html#method.fill_null) for more info on the `fill_null` operation.
-    pub fn fill_null(&self, strategy: FillNullStrategy) -> Result<Self> {
+    pub fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Self> {
         let col = self.try_apply_columns_par(&|s| s.fill_null(strategy))?;
 
         Ok(DataFrame::new_no_checks(col))
@@ -2701,7 +2717,7 @@ impl DataFrame {
     }
 
     /// Aggregate the columns to their quantile values.
-    pub fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Self> {
+    pub fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> PolarsResult<Self> {
         let columns = self.try_apply_columns_par(&|s| s.quantile_as_series(quantile, interpol))?;
 
         Ok(DataFrame::new_no_checks(columns))
@@ -2710,7 +2726,7 @@ impl DataFrame {
     /// Aggregate the column horizontally to their min values.
     #[cfg(feature = "zip_with")]
     #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
-    pub fn hmin(&self) -> Result<Option<Series>> {
+    pub fn hmin(&self) -> PolarsResult<Option<Series>> {
         let min_fn = |acc: &Series, s: &Series| {
             let mask = acc.lt(s)? & acc.is_not_null() | s.is_null();
             acc.zip_with(&mask, s)
@@ -2740,7 +2756,7 @@ impl DataFrame {
     /// Aggregate the column horizontally to their max values.
     #[cfg(feature = "zip_with")]
     #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
-    pub fn hmax(&self) -> Result<Option<Series>> {
+    pub fn hmax(&self) -> PolarsResult<Option<Series>> {
         let max_fn = |acc: &Series, s: &Series| {
             let mask = acc.gt(s)? & acc.is_not_null() | s.is_null();
             acc.zip_with(&mask, s)
@@ -2768,21 +2784,22 @@ impl DataFrame {
     }
 
     /// Aggregate the column horizontally to their sum values.
-    pub fn hsum(&self, none_strategy: NullStrategy) -> Result<Option<Series>> {
-        let sum_fn = |acc: &Series, s: &Series, none_strategy: NullStrategy| -> Result<Series> {
-            let mut acc = acc.clone();
-            let mut s = s.clone();
-            if let NullStrategy::Ignore = none_strategy {
-                // if has nulls
-                if acc.has_validity() {
-                    acc = acc.fill_null(FillNullStrategy::Zero)?;
+    pub fn hsum(&self, none_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
+        let sum_fn =
+            |acc: &Series, s: &Series, none_strategy: NullStrategy| -> PolarsResult<Series> {
+                let mut acc = acc.clone();
+                let mut s = s.clone();
+                if let NullStrategy::Ignore = none_strategy {
+                    // if has nulls
+                    if acc.has_validity() {
+                        acc = acc.fill_null(FillNullStrategy::Zero)?;
+                    }
+                    if s.has_validity() {
+                        s = s.fill_null(FillNullStrategy::Zero)?;
+                    }
                 }
-                if s.has_validity() {
-                    s = s.fill_null(FillNullStrategy::Zero)?;
-                }
-            }
-            Ok(&acc + &s)
-        };
+                Ok(&acc + &s)
+            };
 
         match self.columns.len() {
             0 => Ok(None),
@@ -2806,7 +2823,7 @@ impl DataFrame {
     }
 
     /// Aggregate the column horizontally to their mean values.
-    pub fn hmean(&self, none_strategy: NullStrategy) -> Result<Option<Series>> {
+    pub fn hmean(&self, none_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
         match self.columns.len() {
             0 => Ok(None),
             1 => Ok(Some(self.columns[0].clone())),
@@ -2843,25 +2860,25 @@ impl DataFrame {
     }
 
     /// Pipe different functions/ closure operations that work on a DataFrame together.
-    pub fn pipe<F, B>(self, f: F) -> Result<B>
+    pub fn pipe<F, B>(self, f: F) -> PolarsResult<B>
     where
-        F: Fn(DataFrame) -> Result<B>,
+        F: Fn(DataFrame) -> PolarsResult<B>,
     {
         f(self)
     }
 
     /// Pipe different functions/ closure operations that work on a DataFrame together.
-    pub fn pipe_mut<F, B>(&mut self, f: F) -> Result<B>
+    pub fn pipe_mut<F, B>(&mut self, f: F) -> PolarsResult<B>
     where
-        F: Fn(&mut DataFrame) -> Result<B>,
+        F: Fn(&mut DataFrame) -> PolarsResult<B>,
     {
         f(self)
     }
 
     /// Pipe different functions/ closure operations that work on a DataFrame together.
-    pub fn pipe_with_args<F, B, Args>(self, f: F, args: Args) -> Result<B>
+    pub fn pipe_with_args<F, B, Args>(self, f: F, args: Args) -> PolarsResult<B>
     where
-        F: Fn(DataFrame, Args) -> Result<B>,
+        F: Fn(DataFrame, Args) -> PolarsResult<B>,
     {
         f(self, args)
     }
@@ -2898,7 +2915,11 @@ impl DataFrame {
     /// +-----+-----+-----+
     /// ```
     #[deprecated(note = "use distinct")]
-    pub fn drop_duplicates(&self, maintain_order: bool, subset: Option<&[String]>) -> Result<Self> {
+    pub fn drop_duplicates(
+        &self,
+        maintain_order: bool,
+        subset: Option<&[String]>,
+    ) -> PolarsResult<Self> {
         match maintain_order {
             true => self.unique_stable(subset, UniqueKeepStrategy::First),
             false => self.unique(subset, UniqueKeepStrategy::First),
@@ -2942,12 +2963,16 @@ impl DataFrame {
         &self,
         subset: Option<&[String]>,
         keep: UniqueKeepStrategy,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         self.distinct_impl(true, subset, keep)
     }
 
     /// Unstable distinct. See [`DataFrame::distinct_stable`].
-    pub fn unique(&self, subset: Option<&[String]>, keep: UniqueKeepStrategy) -> Result<DataFrame> {
+    pub fn unique(
+        &self,
+        subset: Option<&[String]>,
+        keep: UniqueKeepStrategy,
+    ) -> PolarsResult<DataFrame> {
         self.distinct_impl(false, subset, keep)
     }
 
@@ -2956,7 +2981,7 @@ impl DataFrame {
         maintain_order: bool,
         subset: Option<&[String]>,
         keep: UniqueKeepStrategy,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         use UniqueKeepStrategy::*;
         let names = match &subset {
             Some(s) => s.iter().map(|s| &**s).collect(),
@@ -3012,7 +3037,7 @@ impl DataFrame {
     /// assert!(ca.all());
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn is_unique(&self) -> Result<BooleanChunked> {
+    pub fn is_unique(&self) -> PolarsResult<BooleanChunked> {
         let gb = self.groupby(self.get_column_names())?;
         let groups = gb.take_groups();
         Ok(is_unique_helper(
@@ -3036,7 +3061,7 @@ impl DataFrame {
     /// assert!(!ca.all());
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn is_duplicated(&self) -> Result<BooleanChunked> {
+    pub fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
         let gb = self.groupby(self.get_column_names())?;
         let groups = gb.take_groups();
         Ok(is_unique_helper(
@@ -3060,7 +3085,10 @@ impl DataFrame {
 
     /// Hash and combine the row values
     #[cfg(feature = "row_hash")]
-    pub fn hash_rows(&mut self, hasher_builder: Option<RandomState>) -> Result<UInt64Chunked> {
+    pub fn hash_rows(
+        &mut self,
+        hasher_builder: Option<RandomState>,
+    ) -> PolarsResult<UInt64Chunked> {
         let dfs = split_df(self, POOL.current_num_threads())?;
         let (cas, _) = df_rows_to_hashes_threaded(&dfs, hasher_builder);
 
@@ -3073,7 +3101,7 @@ impl DataFrame {
     }
 
     /// Get the supertype of the columns in this DataFrame
-    pub fn get_supertype(&self) -> Option<Result<DataType>> {
+    pub fn get_supertype(&self) -> Option<PolarsResult<DataType>> {
         self.columns
             .iter()
             .map(|s| Ok(s.dtype().clone()))
@@ -3152,7 +3180,11 @@ impl DataFrame {
 
     #[cfg(feature = "partition_by")]
     #[doc(hidden)]
-    pub fn _partition_by_impl(&self, cols: &[String], stable: bool) -> Result<Vec<DataFrame>> {
+    pub fn _partition_by_impl(
+        &self,
+        cols: &[String],
+        stable: bool,
+    ) -> PolarsResult<Vec<DataFrame>> {
         let groups = if stable {
             self.groupby_stable(cols)?.take_groups()
         } else {
@@ -3183,7 +3215,7 @@ impl DataFrame {
     /// Split into multiple DataFrames partitioned by groups
     #[cfg(feature = "partition_by")]
     #[cfg_attr(docsrs, doc(cfg(feature = "partition_by")))]
-    pub fn partition_by(&self, cols: impl IntoVec<String>) -> Result<Vec<DataFrame>> {
+    pub fn partition_by(&self, cols: impl IntoVec<String>) -> PolarsResult<Vec<DataFrame>> {
         let cols = cols.into_vec();
         self._partition_by_impl(&cols, false)
     }
@@ -3192,7 +3224,7 @@ impl DataFrame {
     /// Order of the groups are maintained.
     #[cfg(feature = "partition_by")]
     #[cfg_attr(docsrs, doc(cfg(feature = "partition_by")))]
-    pub fn partition_by_stable(&self, cols: impl IntoVec<String>) -> Result<Vec<DataFrame>> {
+    pub fn partition_by_stable(&self, cols: impl IntoVec<String>) -> PolarsResult<Vec<DataFrame>> {
         let cols = cols.into_vec();
         self._partition_by_impl(&cols, true)
     }
@@ -3201,13 +3233,13 @@ impl DataFrame {
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
     #[cfg_attr(docsrs, doc(cfg(feature = "dtype-struct")))]
-    pub fn unnest<I: IntoVec<String>>(&self, cols: I) -> Result<DataFrame> {
+    pub fn unnest<I: IntoVec<String>>(&self, cols: I) -> PolarsResult<DataFrame> {
         let cols = cols.into_vec();
         self.unnest_impl(cols.into_iter().collect())
     }
 
     #[cfg(feature = "dtype-struct")]
-    fn unnest_impl(&self, cols: PlHashSet<String>) -> Result<DataFrame> {
+    fn unnest_impl(&self, cols: PlHashSet<String>) -> PolarsResult<DataFrame> {
         let mut new_cols = Vec::with_capacity(std::cmp::min(self.width() * 2, self.width() + 128));
         let mut count = 0;
         for s in &self.columns {
@@ -3268,7 +3300,7 @@ impl From<DataFrame> for Vec<Series> {
 }
 
 // utility to test if we can vstack/extend the columns
-fn can_extend(left: &Series, right: &Series) -> Result<()> {
+fn can_extend(left: &Series, right: &Series) -> PolarsResult<()> {
     if left.dtype() != right.dtype() || left.name() != right.name() {
         if left.dtype() != right.dtype() {
             return Err(PolarsError::SchemaMisMatch(
@@ -3450,7 +3482,7 @@ mod test {
     }
 
     #[test]
-    fn test_replace_or_add() -> Result<()> {
+    fn test_replace_or_add() -> PolarsResult<()> {
         let mut df = df!(
             "a" => [1, 2, 3],
             "b" => [1, 2, 3]
@@ -3464,7 +3496,7 @@ mod test {
     }
 
     #[test]
-    fn test_empty_df_hstack() -> Result<()> {
+    fn test_empty_df_hstack() -> PolarsResult<()> {
         let mut base = df!(
             "a" => [1, 2, 3],
             "b" => [1, 2, 3]
@@ -3486,7 +3518,7 @@ mod test {
 
     #[test]
     #[cfg(feature = "describe")]
-    fn test_df_describe() -> Result<()> {
+    fn test_df_describe() -> PolarsResult<()> {
         let df1: DataFrame = df!("categorical" => &["d","e","f"],
                                  "numeric" => &[1, 2, 3],
                                  "object" => &["a", "b", "c"])?;

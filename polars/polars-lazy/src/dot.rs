@@ -9,7 +9,7 @@ use crate::utils::expr_to_root_column_names;
 impl Expr {
     /// Get a dot language representation of the Expression.
     #[cfg_attr(docsrs, doc(cfg(feature = "dot_diagram")))]
-    pub fn to_dot(&self) -> Result<String> {
+    pub fn to_dot(&self) -> PolarsResult<String> {
         let mut s = String::with_capacity(512);
         self.dot_viz(&mut s, (0, 0), "").expect("io error");
         s.push_str("\n}");
@@ -69,7 +69,7 @@ impl Expr {
 impl LazyFrame {
     /// Get a dot language representation of the LogicalPlan.
     #[cfg_attr(docsrs, doc(cfg(feature = "dot_diagram")))]
-    pub fn to_dot(&self, optimized: bool) -> Result<String> {
+    pub fn to_dot(&self, optimized: bool) -> PolarsResult<String> {
         let mut s = String::with_capacity(512);
 
         let mut logical_plan = self.clone().get_plan_builder().build();

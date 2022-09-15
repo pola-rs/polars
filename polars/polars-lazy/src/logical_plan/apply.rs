@@ -3,14 +3,14 @@ use std::fmt::{Debug, Formatter};
 use polars_core::prelude::*;
 
 pub trait DataFrameUdf: Send + Sync {
-    fn call_udf(&self, df: DataFrame) -> Result<DataFrame>;
+    fn call_udf(&self, df: DataFrame) -> PolarsResult<DataFrame>;
 }
 
 impl<F> DataFrameUdf for F
 where
-    F: Fn(DataFrame) -> Result<DataFrame> + Send + Sync,
+    F: Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
 {
-    fn call_udf(&self, df: DataFrame) -> Result<DataFrame> {
+    fn call_udf(&self, df: DataFrame) -> PolarsResult<DataFrame> {
         self(df)
     }
 }
@@ -22,14 +22,14 @@ impl Debug for dyn DataFrameUdf {
 }
 
 pub trait UdfSchema: Send + Sync {
-    fn get_schema(&self, input_schema: &Schema) -> Result<SchemaRef>;
+    fn get_schema(&self, input_schema: &Schema) -> PolarsResult<SchemaRef>;
 }
 
 impl<F> UdfSchema for F
 where
-    F: Fn(&Schema) -> Result<SchemaRef> + Send + Sync,
+    F: Fn(&Schema) -> PolarsResult<SchemaRef> + Send + Sync,
 {
-    fn get_schema(&self, input_schema: &Schema) -> Result<SchemaRef> {
+    fn get_schema(&self, input_schema: &Schema) -> PolarsResult<SchemaRef> {
         self(input_schema)
     }
 }

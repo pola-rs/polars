@@ -39,9 +39,9 @@ impl FileCache {
         finger_print: FileFingerPrint,
         total_read_count: FileCount,
         reader: &mut F,
-    ) -> Result<DataFrame>
+    ) -> PolarsResult<DataFrame>
     where
-        F: FnMut() -> Result<DataFrame>,
+        F: FnMut() -> PolarsResult<DataFrame>,
     {
         if total_read_count == 1 {
             if total_read_count == 0 {

@@ -33,7 +33,7 @@ impl PartitionGroupByExec {
         }
     }
 
-    fn keys(&self, df: &DataFrame, state: &ExecutionState) -> Result<Vec<Series>> {
+    fn keys(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Vec<Series>> {
         self.keys.iter().map(|s| s.evaluate(df, state)).collect()
     }
 }
@@ -44,7 +44,7 @@ fn run_partitions(
     state: &ExecutionState,
     n_threads: usize,
     maintain_order: bool,
-) -> Result<Vec<DataFrame>> {
+) -> PolarsResult<Vec<DataFrame>> {
     // We do a partitioned groupby.
     // Meaning that we first do the groupby operation arbitrarily
     // split on several threads. Than the final result we apply the same groupby again.
@@ -84,7 +84,7 @@ fn run_partitions(
                         } else {
                             Ok(agg)
                         }
-                    }).collect::<Result<Vec<_>>>()?;
+                    }).collect::<PolarsResult<Vec<_>>>()?;
 
                 columns.extend_from_slice(&agg_columns);
 
@@ -197,7 +197,7 @@ impl PartitionGroupByExec {
         &mut self,
         state: &mut ExecutionState,
         mut original_df: DataFrame,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         let dfs = {
             // already get the keys. This is the very last minute decision which groupby method we choose.
             // If the column is a categorical, we know the number of groups we have and can decide to continue
@@ -256,7 +256,7 @@ impl PartitionGroupByExec {
 
         let get_columns = || gb.keys_sliced(self.slice);
         let get_agg = || {
-            let out: Result<Vec<_>> = self
+            let out: PolarsResult<Vec<_>> = self
                 .phys_aggs
                 .par_iter()
                 // we slice the keys off and finalize every aggregation
@@ -280,7 +280,7 @@ impl PartitionGroupByExec {
 }
 
 impl Executor for PartitionGroupByExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
@@ -294,7 +294,7 @@ impl Executor for PartitionGroupByExec {
                 .keys
                 .iter()
                 .map(|s| Ok(s.to_field(&self.input_schema)?.name))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
             let name = column_delimited("groupby_paritioned".to_string(), &by);
             Cow::Owned(name)
         } else {

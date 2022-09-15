@@ -15,7 +15,7 @@ fn hamming_distance(series_a: &PyAny, series_b: &PyAny) -> PyResult<PyObject> {
 }
 
 /// This function iterates over 2 `Utf8Chunked` arrays and computes the hamming distance between the values .
-fn hamming_distance_impl(a: &Series, b: &Series) -> Result<UInt32Chunked> {
+fn hamming_distance_impl(a: &Series, b: &Series) -> PolarsResult<UInt32Chunked> {
     Ok(a.utf8()?
         .into_iter()
         .zip(b.utf8()?.into_iter())

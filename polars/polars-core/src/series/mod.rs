@@ -197,7 +197,7 @@ impl Series {
     }
 
     /// Append arrow array of same datatype.
-    pub fn append_array(&mut self, other: ArrayRef) -> Result<&mut Self> {
+    pub fn append_array(&mut self, other: ArrayRef) -> PolarsResult<&mut Self> {
         self._get_inner_mut().append_array(other)?;
         Ok(self)
     }
@@ -205,7 +205,7 @@ impl Series {
     /// Append in place. This is done by adding the chunks of `other` to this [`Series`].
     ///
     /// See [`ChunkedArray::append`] and [`ChunkedArray::extend`].
-    pub fn append(&mut self, other: &Series) -> Result<&mut Self> {
+    pub fn append(&mut self, other: &Series) -> PolarsResult<&mut Self> {
         self._get_inner_mut().append(other)?;
         Ok(self)
     }
@@ -213,7 +213,7 @@ impl Series {
     /// Extend the memory backed by this array with the values from `other`.
     ///
     /// See [`ChunkedArray::extend`] and [`ChunkedArray::append`].
-    pub fn extend(&mut self, other: &Series) -> Result<&mut Self> {
+    pub fn extend(&mut self, other: &Series) -> PolarsResult<&mut Self> {
         self._get_inner_mut().extend(other)?;
         Ok(self)
     }
@@ -226,12 +226,12 @@ impl Series {
     }
 
     /// Only implemented for numeric types
-    pub fn as_single_ptr(&mut self) -> Result<usize> {
+    pub fn as_single_ptr(&mut self) -> PolarsResult<usize> {
         self._get_inner_mut().as_single_ptr()
     }
 
     /// Cast `[Series]` to another `[DataType]`
-    pub fn cast(&self, dtype: &DataType) -> Result<Self> {
+    pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
         self.0.cast(dtype)
     }
 
@@ -291,7 +291,7 @@ impl Series {
     }
 
     /// Explode a list or utf8 Series. This expands every item to a new row..
-    pub fn explode(&self) -> Result<Series> {
+    pub fn explode(&self) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::List(_) => self.list().unwrap().explode(),
             DataType::Utf8 => self.utf8().unwrap().explode(),
@@ -306,7 +306,7 @@ impl Series {
     }
 
     /// Check if float value is NaN (note this is different than missing/ null)
-    pub fn is_nan(&self) -> Result<BooleanChunked> {
+    pub fn is_nan(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
@@ -315,7 +315,7 @@ impl Series {
     }
 
     /// Check if float value is NaN (note this is different than missing/ null)
-    pub fn is_not_nan(&self) -> Result<BooleanChunked> {
+    pub fn is_not_nan(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
@@ -324,7 +324,7 @@ impl Series {
     }
 
     /// Check if float value is finite
-    pub fn is_finite(&self) -> Result<BooleanChunked> {
+    pub fn is_finite(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_finite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_finite()),
@@ -339,7 +339,7 @@ impl Series {
     }
 
     /// Check if float value is finite
-    pub fn is_infinite(&self) -> Result<BooleanChunked> {
+    pub fn is_infinite(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_infinite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
@@ -357,7 +357,7 @@ impl Series {
     /// from `other` where the mask evaluates `false`
     #[cfg(feature = "zip_with")]
     #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
-    pub fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
+    pub fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         let (lhs, rhs) = coerce_lhs_rhs(self, other)?;
         lhs.zip_with_same_type(mask, rhs.as_ref())
     }
@@ -401,12 +401,12 @@ impl Series {
         &self,
         rechunk: bool,
         len: usize,
-        func: &(dyn Fn(usize, usize) -> Result<Series> + Send + Sync),
-    ) -> Result<Series> {
+        func: &(dyn Fn(usize, usize) -> PolarsResult<Series> + Send + Sync),
+    ) -> PolarsResult<Series> {
         let n_threads = POOL.current_num_threads();
         let offsets = _split_offsets(len, n_threads);
 
-        let series: Result<Vec<_>> = POOL.install(|| {
+        let series: PolarsResult<Vec<_>> = POOL.install(|| {
             offsets
                 .into_par_iter()
                 .map(|(offset, len)| func(offset, len))
@@ -420,7 +420,11 @@ impl Series {
     ///
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_threaded(&self, idx: &IdxCa, rechunk: bool) -> Result<Series> {
+    pub unsafe fn take_unchecked_threaded(
+        &self,
+        idx: &IdxCa,
+        rechunk: bool,
+    ) -> PolarsResult<Series> {
         self.threaded_op(rechunk, idx.len(), &|offset, len| {
             let idx = idx.slice(offset as i64, len);
             self.take_unchecked(&idx)
@@ -463,7 +467,7 @@ impl Series {
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take_threaded(&self, idx: &IdxCa, rechunk: bool) -> Result<Series> {
+    pub fn take_threaded(&self, idx: &IdxCa, rechunk: bool) -> PolarsResult<Series> {
         self.threaded_op(rechunk, idx.len(), &|offset, len| {
             let idx = idx.slice(offset as i64, len);
             self.take(&idx)
@@ -471,7 +475,7 @@ impl Series {
     }
 
     /// Filter by boolean mask. This operation clones data.
-    pub fn filter_threaded(&self, filter: &BooleanChunked, rechunk: bool) -> Result<Series> {
+    pub fn filter_threaded(&self, filter: &BooleanChunked, rechunk: bool) -> PolarsResult<Series> {
         // this would fail if there is a broadcasting filter.
         // because we cannot split that filter over threads
         // besides they are a no-op, so we do the standard filter.
@@ -482,7 +486,7 @@ impl Series {
         let filters = split_ca(filter, n_threads).unwrap();
         let series = split_series(self, n_threads).unwrap();
 
-        let series: Result<Vec<_>> = POOL.install(|| {
+        let series: PolarsResult<Vec<_>> = POOL.install(|| {
             filters
                 .par_iter()
                 .zip(series)
@@ -670,7 +674,7 @@ impl Series {
     }
 
     /// Cast throws an error if conversion had overflows
-    pub fn strict_cast(&self, data_type: &DataType) -> Result<Series> {
+    pub fn strict_cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         let s = self.cast(data_type)?;
         if self.null_count() != s.null_count() {
             let failure_mask = !self.is_null() & s.is_null();
@@ -799,7 +803,7 @@ impl Series {
     #[cfg(feature = "abs")]
     #[cfg_attr(docsrs, doc(cfg(feature = "abs")))]
     /// convert numerical values to their absolute value
-    pub fn abs(&self) -> Result<Series> {
+    pub fn abs(&self) -> PolarsResult<Series> {
         let a = self.to_physical_repr();
         use DataType::*;
         let out = match a.dtype() {
@@ -865,14 +869,14 @@ impl Series {
 
     /// Compute the unique elements, but maintain order. This requires more work
     /// than a naive [`Series::unique`](SeriesTrait::unique).
-    pub fn unique_stable(&self) -> Result<Series> {
+    pub fn unique_stable(&self) -> PolarsResult<Series> {
         let idx = self.arg_unique()?;
         // Safety:
         // Indices are in bounds.
         unsafe { self.take_unchecked(&idx) }
     }
 
-    pub fn idx(&self) -> Result<&IdxCa> {
+    pub fn idx(&self) -> PolarsResult<&IdxCa> {
         #[cfg(feature = "bigidx")]
         {
             self.u64()

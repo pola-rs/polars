@@ -179,19 +179,19 @@ where
         ChunkedArray::<T>::from_chunks(self.name(), chunks)
     }
 
-    fn try_apply<F>(&'a self, f: F) -> Result<Self>
+    fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
     where
-        F: Fn(T::Native) -> Result<T::Native> + Copy,
+        F: Fn(T::Native) -> PolarsResult<T::Native> + Copy,
     {
         let mut ca: ChunkedArray<T> = self
             .data_views()
             .into_iter()
             .zip(self.iter_validities())
             .map(|(slice, validity)| {
-                let vec: Result<Vec<_>> = slice.iter().copied().map(f).collect();
+                let vec: PolarsResult<Vec<_>> = slice.iter().copied().map(f).collect();
                 Ok((vec?, validity.cloned()))
             })
-            .collect::<Result<_>>()?;
+            .collect::<PolarsResult<_>>()?;
         ca.rename(self.name());
         Ok(ca)
     }
@@ -303,9 +303,9 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
         apply!(self, f)
     }
 
-    fn try_apply<F>(&self, f: F) -> Result<Self>
+    fn try_apply<F>(&self, f: F) -> PolarsResult<Self>
     where
-        F: Fn(bool) -> Result<bool> + Copy,
+        F: Fn(bool) -> PolarsResult<bool> + Copy,
     {
         try_apply!(self, f)
     }
@@ -392,9 +392,9 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
         apply!(self, f)
     }
 
-    fn try_apply<F>(&'a self, f: F) -> Result<Self>
+    fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
     where
-        F: Fn(&'a str) -> Result<Cow<'a, str>> + Copy,
+        F: Fn(&'a str) -> PolarsResult<Cow<'a, str>> + Copy,
     {
         try_apply!(self, f)
     }
@@ -575,9 +575,9 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         ca
     }
 
-    fn try_apply<F>(&'a self, f: F) -> Result<Self>
+    fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
     where
-        F: Fn(Series) -> Result<Series> + Copy,
+        F: Fn(Series) -> PolarsResult<Series> + Copy,
     {
         if self.is_empty() {
             return Ok(self.clone());
@@ -593,7 +593,7 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
             }
             out
         };
-        let ca: Result<ListChunked> = try_apply!(self, &mut function);
+        let ca: PolarsResult<ListChunked> = try_apply!(self, &mut function);
         let mut ca = ca?;
         if fast_explode {
             ca.set_fast_explode()
@@ -710,9 +710,9 @@ where
         ca
     }
 
-    fn try_apply<F>(&'a self, _f: F) -> Result<Self>
+    fn try_apply<F>(&'a self, _f: F) -> PolarsResult<Self>
     where
-        F: Fn(&'a T) -> Result<T> + Copy,
+        F: Fn(&'a T) -> PolarsResult<T> + Copy,
     {
         todo!()
     }

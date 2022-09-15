@@ -257,7 +257,7 @@ fn py_duration(
 
 #[pyfunction]
 fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
-    use polars_core::error::Result;
+    use polars_core::error::PolarsResult;
     use polars_core::utils::rayon::prelude::*;
 
     let (seq, _len) = get_pyseq(dfs)?;
@@ -267,7 +267,7 @@ fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
     let first_rdf = get_df(first)?;
     let identity_df = first_rdf.slice(0, 0);
 
-    let mut rdfs: Vec<Result<DataFrame>> = vec![Ok(first_rdf)];
+    let mut rdfs: Vec<PolarsResult<DataFrame>> = vec![Ok(first_rdf)];
 
     for item in iter {
         let rdf = get_df(item?)?;
@@ -280,7 +280,7 @@ fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
         .allow_threads(|| {
             polars_core::POOL.install(|| {
                 rdfs.into_par_iter()
-                    .fold(identity, |acc: Result<DataFrame>, df| {
+                    .fold(identity, |acc: PolarsResult<DataFrame>, df| {
                         let mut acc = acc?;
                         acc.vstack_mut(&df?)?;
                         Ok(acc)
@@ -409,7 +409,7 @@ fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFrame>> 
                     let df = lf.ldf.clone().collect()?;
                     Ok(PyDataFrame::new(df))
                 })
-                .collect::<polars_core::error::Result<Vec<_>>>()
+                .collect::<polars_core::error::PolarsResult<Vec<_>>>()
                 .map_err(PyPolarsErr::from)
         })
     });

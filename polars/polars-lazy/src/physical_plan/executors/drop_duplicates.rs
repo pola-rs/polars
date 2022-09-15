@@ -11,7 +11,7 @@ pub(crate) struct DropDuplicatesExec {
 }
 
 impl Executor for DropDuplicatesExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {

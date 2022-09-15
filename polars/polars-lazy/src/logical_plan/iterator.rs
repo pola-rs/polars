@@ -327,7 +327,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_lp_iter() -> Result<()> {
+    fn test_lp_iter() -> PolarsResult<()> {
         let df = df! {
             "a" => [1, 2]
         }?;

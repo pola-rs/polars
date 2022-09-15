@@ -2,7 +2,7 @@ use super::*;
 
 #[cfg(feature = "strings")]
 #[test]
-fn test_explode_row_numbers() -> Result<()> {
+fn test_explode_row_numbers() -> PolarsResult<()> {
     let df = df![
         "text" => ["one two three four", "uno dos tres cuatro"]
     ]?

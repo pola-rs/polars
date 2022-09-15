@@ -61,7 +61,7 @@ where
     }
 
     /// Write the given DataFrame in the the writer `W`.
-    pub fn finish(mut self, df: &mut DataFrame) -> Result<()> {
+    pub fn finish(mut self, df: &mut DataFrame) -> PolarsResult<()> {
         // ensures all chunks are aligned.
         df.rechunk();
 

@@ -88,7 +88,7 @@ where
     }
 
     /// Take the SerReader and return a parsed DataFrame.
-    fn finish(self) -> Result<DataFrame>;
+    fn finish(self) -> PolarsResult<DataFrame>;
 }
 
 pub trait SerWriter<W>
@@ -98,7 +98,7 @@ where
     fn new(writer: W) -> Self
     where
         Self: Sized;
-    fn finish(&mut self, df: &mut DataFrame) -> Result<()>;
+    fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()>;
 }
 
 pub trait WriterFactory {
@@ -124,7 +124,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     aggregate: Option<&[ScanAggregation]>,
     arrow_schema: &ArrowSchema,
     row_count: Option<RowCount>,
-) -> Result<DataFrame> {
+) -> PolarsResult<DataFrame> {
     use polars_core::utils::accumulate_dataframes_vertical;
 
     let mut num_rows = 0;
@@ -172,7 +172,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
                 .map(|fld| {
                     Series::try_from((fld.name.as_str(), new_empty_array(fld.data_type.clone())))
                 })
-                .collect::<Result<_>>()?;
+                .collect::<PolarsResult<_>>()?;
             DataFrame::new(empty_cols)?
         } else {
             // If there are any rows, accumulate them into a df

@@ -3,7 +3,7 @@ use polars_io::RowCount;
 use super::*;
 
 #[test]
-fn test_parquet_exec() -> Result<()> {
+fn test_parquet_exec() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     // filter
     for par in [true, false] {
@@ -75,7 +75,7 @@ fn test_parquet_statistics_no_skip() {
 }
 
 #[test]
-fn test_parquet_statistics() -> Result<()> {
+fn test_parquet_statistics() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     init_files();
     std::env::set_var("POLARS_PANIC_IF_PARQUET_PARSED", "1");
@@ -144,7 +144,7 @@ fn test_parquet_statistics() -> Result<()> {
 
 #[test]
 #[cfg(not(target_os = "windows"))]
-fn test_parquet_globbing() -> Result<()> {
+fn test_parquet_globbing() -> PolarsResult<()> {
     // for side effects
     init_files();
     let _guard = SINGLE_LOCK.lock().unwrap();
@@ -169,7 +169,7 @@ fn test_parquet_globbing() -> Result<()> {
 
 #[test]
 #[cfg(not(target_os = "windows"))]
-fn test_ipc_globbing() -> Result<()> {
+fn test_ipc_globbing() -> PolarsResult<()> {
     // for side effects
     init_files();
     let glob = "../../examples/datasets/*.ipc";
@@ -204,7 +204,7 @@ fn slice_at_union(lp_arena: &Arena<ALogicalPlan>, lp: Node) -> bool {
 
 #[test]
 #[cfg(not(target_os = "windows"))]
-fn test_csv_globbing() -> Result<()> {
+fn test_csv_globbing() -> PolarsResult<()> {
     let glob = "../../examples/datasets/*.csv";
     let full_df = LazyCsvReader::new(glob).finish()?.collect()?;
 
@@ -238,7 +238,7 @@ fn test_csv_globbing() -> Result<()> {
 }
 
 #[test]
-pub fn test_simple_slice() -> Result<()> {
+pub fn test_simple_slice() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     let out = scan_foods_parquet(false).limit(3).collect()?;
     assert_eq!(out.height(), 3);
@@ -246,7 +246,7 @@ pub fn test_simple_slice() -> Result<()> {
     Ok(())
 }
 #[test]
-fn test_union_and_agg_projections() -> Result<()> {
+fn test_union_and_agg_projections() -> PolarsResult<()> {
     init_files();
     let _guard = SINGLE_LOCK.lock().unwrap();
     // a union vstacks columns and aggscan optimization determines columns to aggregate in a
@@ -271,7 +271,7 @@ fn test_union_and_agg_projections() -> Result<()> {
 
 #[test]
 #[cfg(all(feature = "ipc", feature = "csv-file"))]
-fn test_slice_filter() -> Result<()> {
+fn test_slice_filter() -> PolarsResult<()> {
     init_files();
     let _guard = SINGLE_LOCK.lock().unwrap();
 
@@ -319,7 +319,7 @@ fn test_slice_filter() -> Result<()> {
 }
 
 #[test]
-fn skip_rows_and_slice() -> Result<()> {
+fn skip_rows_and_slice() -> PolarsResult<()> {
     let out = LazyCsvReader::new(FOODS_CSV)
         .with_skip_rows(4)
         .finish()?
@@ -331,7 +331,7 @@ fn skip_rows_and_slice() -> Result<()> {
 }
 
 #[test]
-fn test_row_count_on_files() -> Result<()> {
+fn test_row_count_on_files() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     for offset in [0 as IdxSize, 10] {
         let lf = LazyCsvReader::new(FOODS_CSV)
@@ -382,7 +382,7 @@ fn test_row_count_on_files() -> Result<()> {
 }
 
 #[test]
-fn scan_predicate_on_set_null_values() -> Result<()> {
+fn scan_predicate_on_set_null_values() -> PolarsResult<()> {
     let df = LazyCsvReader::new(FOODS_CSV)
         .with_null_values(Some(NullValues::Named(vec![("fats_g".into(), "0".into())])))
         .with_infer_schema_length(Some(0))
@@ -396,7 +396,7 @@ fn scan_predicate_on_set_null_values() -> Result<()> {
 }
 
 #[test]
-fn scan_anonymous_fn() -> Result<()> {
+fn scan_anonymous_fn() -> PolarsResult<()> {
     let function = Arc::new(|_scan_opts: AnonymousScanOptions| Ok(fruits_cars()));
 
     let args = ScanArgsAnonymous {

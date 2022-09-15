@@ -18,7 +18,11 @@ pub struct ProjectionExec {
 }
 
 impl ProjectionExec {
-    fn execute_impl(&mut self, state: &mut ExecutionState, df: DataFrame) -> Result<DataFrame> {
+    fn execute_impl(
+        &mut self,
+        state: &mut ExecutionState,
+        df: DataFrame,
+    ) -> PolarsResult<DataFrame> {
         state.set_schema(self.input_schema.clone());
 
         let df = evaluate_physical_expressions(&df, &self.expr, state, self.has_windows);
@@ -41,7 +45,7 @@ impl ProjectionExec {
 }
 
 impl Executor for ProjectionExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
@@ -55,7 +59,7 @@ impl Executor for ProjectionExec {
                 .expr
                 .iter()
                 .map(|s| Ok(s.to_field(&self.input_schema)?.name))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
             let name = column_delimited("projection".to_string(), &by);
             Cow::Owned(name)
         } else {

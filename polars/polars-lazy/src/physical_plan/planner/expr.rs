@@ -12,7 +12,7 @@ impl PhysicalPlanner {
         expression: Node,
         ctxt: Context,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<Arc<dyn PhysicalExpr>> {
+    ) -> PolarsResult<Arc<dyn PhysicalExpr>> {
         use AExpr::*;
 
         match expr_arena.get(expression).clone() {

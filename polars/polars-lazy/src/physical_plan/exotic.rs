@@ -22,7 +22,7 @@ pub(crate) fn prepare_expression_for_context(
     expr: &Expr,
     dtype: &DataType,
     ctxt: Context,
-) -> Result<Arc<dyn PhysicalExpr>> {
+) -> PolarsResult<Arc<dyn PhysicalExpr>> {
     let mut lp_arena = Arena::with_capacity(8);
     let mut expr_arena = Arena::with_capacity(10);
 

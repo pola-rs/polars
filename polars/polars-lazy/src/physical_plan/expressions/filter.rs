@@ -26,7 +26,7 @@ impl PhysicalExpr for FilterExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let s_f = || self.input.evaluate(df, state);
         let predicate_f = || self.by.evaluate(df, state);
 
@@ -41,7 +41,7 @@ impl PhysicalExpr for FilterExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let ac_s_f = || self.input.evaluate_on_groups(df, groups, state);
         let ac_predicate_f = || self.by.evaluate_on_groups(df, groups, state);
 
@@ -60,7 +60,7 @@ impl PhysicalExpr for FilterExpr {
                         (Some(s), Some(pred)) => s.as_ref().filter(pred.as_ref().bool()?).map(Some),
                         _ => Ok(None),
                     })
-                    .collect::<Result<ListChunked>>()?;
+                    .collect::<PolarsResult<ListChunked>>()?;
                 out.rename(s.name());
                 ac_s.with_series(out.into_series(), true);
                 ac_s.update_groups = WithSeriesLen;
@@ -141,7 +141,7 @@ impl PhysicalExpr for FilterExpr {
         }
     }
 
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
     }
 

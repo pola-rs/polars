@@ -105,7 +105,7 @@ where
         }
     }
 
-    fn finish(&mut self, df: &mut DataFrame) -> Result<()> {
+    fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         df.rechunk();
         let fields = df.iter().map(|s| s.field().to_arrow()).collect::<Vec<_>>();
         let batches = df
@@ -163,7 +163,7 @@ where
         self
     }
 
-    fn finish(self) -> Result<DataFrame> {
+    fn finish(self) -> PolarsResult<DataFrame> {
         let rb: ReaderBytes = (&self.reader).into();
 
         let out = match self.json_format {

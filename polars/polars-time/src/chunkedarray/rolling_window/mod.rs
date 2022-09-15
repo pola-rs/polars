@@ -146,30 +146,30 @@ pub trait RollingAgg {
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their mean.
-    fn rolling_mean(&self, options: RollingOptionsImpl) -> Result<Series>;
+    fn rolling_mean(&self, options: RollingOptionsImpl) -> PolarsResult<Series>;
 
     /// Apply a rolling sum (moving sum) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their sum.
-    fn rolling_sum(&self, options: RollingOptionsImpl) -> Result<Series>;
+    fn rolling_sum(&self, options: RollingOptionsImpl) -> PolarsResult<Series>;
 
     /// Apply a rolling min (moving min) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their min.
-    fn rolling_min(&self, options: RollingOptionsImpl) -> Result<Series>;
+    fn rolling_min(&self, options: RollingOptionsImpl) -> PolarsResult<Series>;
 
     /// Apply a rolling max (moving max) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their max.
-    fn rolling_max(&self, options: RollingOptionsImpl) -> Result<Series>;
+    fn rolling_max(&self, options: RollingOptionsImpl) -> PolarsResult<Series>;
 
     /// Apply a rolling median (moving median) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be weighted according to the `weights` vector.
-    fn rolling_median(&self, options: RollingOptionsImpl) -> Result<Series>;
+    fn rolling_median(&self, options: RollingOptionsImpl) -> PolarsResult<Series>;
 
     /// Apply a rolling quantile (moving quantile) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
@@ -179,24 +179,24 @@ pub trait RollingAgg {
         quantile: f64,
         interpolation: QuantileInterpolOptions,
         options: RollingOptionsImpl,
-    ) -> Result<Series>;
+    ) -> PolarsResult<Series>;
 
     /// Apply a rolling var (moving var) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their var.
-    fn rolling_var(&self, options: RollingOptionsImpl) -> Result<Series>;
+    fn rolling_var(&self, options: RollingOptionsImpl) -> PolarsResult<Series>;
 
     /// Apply a rolling std (moving std) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their std.
-    fn rolling_std(&self, options: RollingOptionsImpl) -> Result<Series>;
+    fn rolling_std(&self, options: RollingOptionsImpl) -> PolarsResult<Series>;
 }
 
 /// utility
 #[cfg(feature = "rolling_window")]
-fn check_input(window_size: usize, min_periods: usize) -> Result<()> {
+fn check_input(window_size: usize, min_periods: usize) -> PolarsResult<()> {
     if min_periods > window_size {
         Err(PolarsError::ComputeError(
             "`windows_size` should be >= `min_periods`".into(),
@@ -222,7 +222,7 @@ fn rolling_agg<T>(
     rolling_agg_fn_dynamic: Option<
         &dyn Fn(&[T::Native], Duration, Duration, &[i64], ClosedWindow, TimeUnit) -> ArrayRef,
     >,
-) -> Result<Series>
+) -> PolarsResult<Series>
 where
     T: PolarsNumericType,
 {

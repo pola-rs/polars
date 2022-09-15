@@ -103,7 +103,7 @@ mod test {
     use crate::utils::test::optimize_lp;
 
     #[test]
-    fn test_drop_nulls_optimization() -> Result<()> {
+    fn test_drop_nulls_optimization() -> PolarsResult<()> {
         let mut rules: Vec<Box<dyn OptimizationRule>> = vec![Box::new(ReplaceDropNulls {})];
         let df = fruits_cars();
 
@@ -121,7 +121,7 @@ mod test {
     }
 
     #[test]
-    fn test_filter() -> Result<()> {
+    fn test_filter() -> PolarsResult<()> {
         // This tests if the filter does not accidentally is optimized by ReplaceNulls
 
         let data = vec![

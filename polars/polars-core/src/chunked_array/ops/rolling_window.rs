@@ -36,7 +36,7 @@ mod inner_mod {
     use crate::prelude::*;
 
     /// utility
-    fn check_input(window_size: usize, min_periods: usize) -> Result<()> {
+    fn check_input(window_size: usize, min_periods: usize) -> PolarsResult<()> {
         if min_periods > window_size {
             Err(PolarsError::ComputeError(
                 "`windows_size` should be >= `min_periods`".into(),
@@ -71,7 +71,7 @@ mod inner_mod {
             &self,
             f: &dyn Fn(&Series) -> Series,
             options: RollingOptionsFixedWindow,
-        ) -> Result<Series> {
+        ) -> PolarsResult<Series> {
             check_input(options.window_size, options.min_periods)?;
 
             let ca = self.rechunk();
@@ -185,7 +185,7 @@ mod inner_mod {
         T::Native: Float + IsFloat + SubAssign + num::pow::Pow<T::Native, Output = T::Native>,
     {
         /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
-        pub fn rolling_apply_float<F>(&self, window_size: usize, mut f: F) -> Result<Self>
+        pub fn rolling_apply_float<F>(&self, window_size: usize, mut f: F) -> PolarsResult<Self>
         where
             F: FnMut(&mut ChunkedArray<T>) -> Option<T::Native>,
         {

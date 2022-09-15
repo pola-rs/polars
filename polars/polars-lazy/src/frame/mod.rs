@@ -157,7 +157,7 @@ pub type AllowedOptimizations = OptState;
 
 impl LazyFrame {
     /// Get a hold on the schema of the current LazyFrame computation.
-    pub fn schema(&self) -> Result<SchemaRef> {
+    pub fn schema(&self) -> PolarsResult<SchemaRef> {
         let logical_plan = self.clone().get_plan_builder().build();
         logical_plan.schema().map(|schema| schema.into_owned())
     }
@@ -249,7 +249,7 @@ impl LazyFrame {
     }
 
     /// Describe the optimized logical plan.
-    pub fn describe_optimized_plan(&self) -> Result<String> {
+    pub fn describe_optimized_plan(&self) -> PolarsResult<String> {
         let mut expr_arena = Arena::with_capacity(64);
         let mut lp_arena = Arena::with_capacity(64);
         let lp_top = self.clone().optimize(&mut lp_arena, &mut expr_arena)?;
@@ -551,7 +551,7 @@ impl LazyFrame {
     /// Note that the fetch does not guarantee the final number of rows in the DataFrame.
     /// Filter, join operations and a lower number of rows available in the scanned file influence
     /// the final number of rows.
-    pub fn fetch(self, n_rows: usize) -> Result<DataFrame> {
+    pub fn fetch(self, n_rows: usize) -> PolarsResult<DataFrame> {
         FETCH_ROWS.with(|fetch_rows| fetch_rows.set(Some(n_rows)));
         let res = self.collect();
         FETCH_ROWS.with(|fetch_rows| fetch_rows.set(None));
@@ -562,7 +562,7 @@ impl LazyFrame {
         self,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<Node> {
+    ) -> PolarsResult<Node> {
         // get toggle values
         let predicate_pushdown = self.opt_state.predicate_pushdown;
         let projection_pushdown = self.opt_state.projection_pushdown;
@@ -714,7 +714,7 @@ impl LazyFrame {
         Ok(lp_top)
     }
 
-    fn prepare_collect(self) -> Result<(ExecutionState, Box<dyn Executor>)> {
+    fn prepare_collect(self) -> PolarsResult<(ExecutionState, Box<dyn Executor>)> {
         let file_caching = self.opt_state.file_caching;
         let mut expr_arena = Arena::with_capacity(256);
         let mut lp_arena = Arena::with_capacity(128);
@@ -751,14 +751,14 @@ impl LazyFrame {
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
     ///
-    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.lazy()
     ///       .groupby([col("foo")])
     ///       .agg([col("bar").sum(), col("ham").mean().alias("avg_ham")])
     ///       .collect()
     /// }
     /// ```
-    pub fn collect(self) -> Result<DataFrame> {
+    pub fn collect(self) -> PolarsResult<DataFrame> {
         let (mut state, mut physical_plan) = self.prepare_collect()?;
         let out = physical_plan.execute(&mut state);
         #[cfg(debug_assertions)]
@@ -776,7 +776,7 @@ impl LazyFrame {
     //// of each node that is executed.
     ////
     //// The units of the timings are microseconds.
-    pub fn profile(self) -> Result<(DataFrame, DataFrame)> {
+    pub fn profile(self) -> PolarsResult<(DataFrame, DataFrame)> {
         let (mut state, mut physical_plan) = self.prepare_collect()?;
         state.time_nodes();
         let out = physical_plan.execute(&mut state)?;
@@ -1250,7 +1250,7 @@ impl LazyFrame {
         name: Option<&'static str>,
     ) -> LazyFrame
     where
-        F: 'static + Fn(DataFrame) -> Result<DataFrame> + Send + Sync,
+        F: 'static + Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
         let opt_state = self.get_opt_state();
         let lp = self
@@ -1454,7 +1454,7 @@ impl LazyGroupBy {
     /// this as materializing the `DataFrame` is very expensive.
     pub fn apply<F>(self, f: F, schema: SchemaRef) -> LazyFrame
     where
-        F: 'static + Fn(DataFrame) -> Result<DataFrame> + Send + Sync,
+        F: 'static + Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
         let lp = LogicalPlan::Aggregate {
             input: Box::new(self.logical_plan),

@@ -250,7 +250,7 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
 #[cfg(feature = "format_str")]
 #[cfg_attr(docsrs, doc(cfg(feature = "format_str")))]
 /// Format the results of an array of expressions using a format string
-pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> Result<Expr> {
+pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr> {
     let mut args: std::collections::VecDeque<Expr> = args.as_ref().to_vec().into();
 
     // Parse the format string, and seperate substrings between placeholders
@@ -563,7 +563,7 @@ pub fn duration(args: DurationArgs) -> Expr {
 }
 
 /// Concat multiple
-pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, rechunk: bool) -> Result<LazyFrame> {
+pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, rechunk: bool) -> PolarsResult<LazyFrame> {
     let mut inputs = inputs.as_ref().to_vec();
     let lf = std::mem::take(
         inputs
@@ -596,7 +596,7 @@ pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, rechunk: bool) -> Result<LazyFra
 }
 
 /// Collect all `LazyFrame` computations.
-pub fn collect_all<I>(lfs: I) -> Result<Vec<DataFrame>>
+pub fn collect_all<I>(lfs: I) -> PolarsResult<Vec<DataFrame>>
 where
     I: IntoParallelIterator<Item = LazyFrame>,
 {
@@ -706,7 +706,7 @@ macro_rules! prepare_binary_function {
 /// Apply a closure on the two columns that are evaluated from `Expr` a and `Expr` b.
 pub fn map_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr
 where
-    F: Fn(Series, Series) -> Result<Series> + Send + Sync,
+    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync,
 {
     let function = prepare_binary_function!(f);
     a.map_many(function, &[b], output_type)
@@ -714,7 +714,7 @@ where
 
 pub fn apply_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr
 where
-    F: Fn(Series, Series) -> Result<Series> + Send + Sync,
+    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync,
 {
     let function = prepare_binary_function!(f);
     a.apply_many(function, &[b], output_type)
@@ -723,7 +723,7 @@ where
 /// Accumulate over multiple columns horizontally / row wise.
 pub fn fold_exprs<F: 'static, E: AsRef<[Expr]>>(acc: Expr, f: F, exprs: E) -> Expr
 where
-    F: Fn(Series, Series) -> Result<Series> + Send + Sync + Clone,
+    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync + Clone,
 {
     let mut exprs = exprs.as_ref().to_vec();
     exprs.push(acc);

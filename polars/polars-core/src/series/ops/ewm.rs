@@ -6,7 +6,7 @@ use polars_arrow::kernels::ewm::{ewm_mean, ewm_std, ewm_var};
 use crate::prelude::*;
 
 impl Series {
-    pub fn ewm_mean(&self, options: EWMOptions) -> Result<Self> {
+    pub fn ewm_mean(&self, options: EWMOptions) -> PolarsResult<Self> {
         if options.alpha <= 0. || options.alpha > 1. {
             return Err(PolarsError::ComputeError(
                 "alpha must satisfy: 0 < alpha <= 1".into(),
@@ -37,7 +37,7 @@ impl Series {
         }
     }
 
-    pub fn ewm_std(&self, options: EWMOptions) -> Result<Self> {
+    pub fn ewm_std(&self, options: EWMOptions) -> PolarsResult<Self> {
         if options.alpha <= 0. || options.alpha > 1. {
             return Err(PolarsError::ComputeError(
                 "alpha must satisfy: 0 < alpha <= 1".into(),
@@ -70,7 +70,7 @@ impl Series {
         }
     }
 
-    pub fn ewm_var(&self, options: EWMOptions) -> Result<Self> {
+    pub fn ewm_var(&self, options: EWMOptions) -> PolarsResult<Self> {
         if options.alpha <= 0. || options.alpha > 1. {
             return Err(PolarsError::ComputeError(
                 "alpha must satisfy: 0 < alpha <= 1".into(),

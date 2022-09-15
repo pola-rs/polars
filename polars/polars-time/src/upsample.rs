@@ -33,7 +33,7 @@ pub trait PolarsUpsample {
         time_column: &str,
         every: Duration,
         offset: Duration,
-    ) -> Result<DataFrame>;
+    ) -> PolarsResult<DataFrame>;
 
     /// Upsample a DataFrame at a regular frequency.
     ///
@@ -65,7 +65,7 @@ pub trait PolarsUpsample {
         time_column: &str,
         every: Duration,
         offset: Duration,
-    ) -> Result<DataFrame>;
+    ) -> PolarsResult<DataFrame>;
 }
 
 impl PolarsUpsample for DataFrame {
@@ -75,7 +75,7 @@ impl PolarsUpsample for DataFrame {
         time_column: &str,
         every: Duration,
         offset: Duration,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         let by = by.into_vec();
         upsample_impl(self, by, time_column, every, offset, false)
     }
@@ -86,7 +86,7 @@ impl PolarsUpsample for DataFrame {
         time_column: &str,
         every: Duration,
         offset: Duration,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         let by = by.into_vec();
         upsample_impl(self, by, time_column, every, offset, true)
     }
@@ -99,7 +99,7 @@ fn upsample_impl(
     every: Duration,
     offset: Duration,
     stable: bool,
-) -> Result<DataFrame> {
+) -> PolarsResult<DataFrame> {
     let s = source.column(index_column)?;
     if matches!(s.dtype(), DataType::Date) {
         let mut df = source.clone();
@@ -133,7 +133,7 @@ fn upsample_single_impl(
     index_column: &Series,
     every: Duration,
     offset: Duration,
-) -> Result<DataFrame> {
+) -> PolarsResult<DataFrame> {
     let index_col_name = index_column.name();
 
     use DataType::*;

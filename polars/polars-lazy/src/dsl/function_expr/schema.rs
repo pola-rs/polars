@@ -6,7 +6,7 @@ impl FunctionExpr {
         _input_schema: &Schema,
         _cntxt: Context,
         fields: &[Field],
-    ) -> Result<Field> {
+    ) -> PolarsResult<Field> {
         // set a dtype
         let with_dtype = |dtype: DataType| Ok(Field::new(fields[0].name(), dtype));
 

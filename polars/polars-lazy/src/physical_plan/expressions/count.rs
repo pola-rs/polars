@@ -21,7 +21,7 @@ impl PhysicalExpr for CountExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
-    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series> {
         Ok(Series::new("count", [df.height() as IdxSize]))
     }
 
@@ -30,14 +30,14 @@ impl PhysicalExpr for CountExpr {
         _df: &DataFrame,
         groups: &'a GroupsProxy,
         _state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let mut ca = groups.group_count();
         ca.rename(COUNT_NAME);
         let s = ca.into_series();
 
         Ok(AggregationContext::new(s, Cow::Borrowed(groups), true))
     }
-    fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
         Ok(Field::new("count", DataType::UInt32))
     }
 
@@ -57,7 +57,7 @@ impl PartitionedAggregation for CountExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         self.evaluate_on_groups(df, groups, state)
             .map(|mut ac| ac.aggregated())
     }
@@ -69,7 +69,7 @@ impl PartitionedAggregation for CountExpr {
         partitioned: Series,
         groups: &GroupsProxy,
         _state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         // safety:
         // groups are in bounds
         let mut agg = unsafe { partitioned.agg_sum(groups) };

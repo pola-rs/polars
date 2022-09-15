@@ -20,7 +20,7 @@ impl LogicalType for DurationChunked {
         self.0.get_any_value(i).into_duration(self.time_unit())
     }
 
-    fn cast(&self, dtype: &DataType) -> Result<Series> {
+    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         use DataType::*;
         match (self.dtype(), dtype) {
             (Duration(TimeUnit::Milliseconds), Duration(TimeUnit::Nanoseconds)) => {

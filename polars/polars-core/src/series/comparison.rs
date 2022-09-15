@@ -65,9 +65,9 @@ fn compare_cat_to_str_value<Compare>(
     name: &str,
     compare: Compare,
     fill_value: bool,
-) -> Result<BooleanChunked>
+) -> PolarsResult<BooleanChunked>
 where
-    Compare: Fn(&Series, u32) -> Result<BooleanChunked>,
+    Compare: Fn(&Series, u32) -> PolarsResult<BooleanChunked>,
 {
     let cat = cat.categorical().expect("should be categorical");
     let cat_map = cat.get_rev_map();
@@ -87,9 +87,9 @@ fn compare_cat_to_str_series<Compare>(
     name: &str,
     compare: Compare,
     fill_value: bool,
-) -> Result<BooleanChunked>
+) -> PolarsResult<BooleanChunked>
 where
-    Compare: Fn(&Series, u32) -> Result<BooleanChunked>,
+    Compare: Fn(&Series, u32) -> PolarsResult<BooleanChunked>,
 {
     match string.utf8()?.get(0) {
         None => Ok(cat.is_null()),
@@ -97,7 +97,7 @@ where
     }
 }
 
-fn validate_types(left: &DataType, right: &DataType) -> Result<()> {
+fn validate_types(left: &DataType, right: &DataType) -> PolarsResult<()> {
     use DataType::*;
     #[cfg(feature = "dtype-categorical")]
     {
@@ -125,9 +125,9 @@ fn validate_types(left: &DataType, right: &DataType) -> Result<()> {
 }
 
 impl ChunkCompare<&Series> for Series {
-    type Item = Result<BooleanChunked>;
+    type Item = PolarsResult<BooleanChunked>;
 
-    fn eq_missing(&self, rhs: &Series) -> Result<BooleanChunked> {
+    fn eq_missing(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), rhs.dtype())?;
         #[cfg(feature = "dtype-categorical")]
         use DataType::*;
@@ -172,7 +172,7 @@ impl ChunkCompare<&Series> for Series {
     }
 
     /// Create a boolean mask by checking for equality.
-    fn equal(&self, rhs: &Series) -> Result<BooleanChunked> {
+    fn equal(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), rhs.dtype())?;
         #[cfg(feature = "dtype-categorical")]
         use DataType::*;
@@ -217,7 +217,7 @@ impl ChunkCompare<&Series> for Series {
     }
 
     /// Create a boolean mask by checking for inequality.
-    fn not_equal(&self, rhs: &Series) -> Result<BooleanChunked> {
+    fn not_equal(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), rhs.dtype())?;
         #[cfg(feature = "dtype-categorical")]
         use DataType::*;
@@ -262,7 +262,7 @@ impl ChunkCompare<&Series> for Series {
     }
 
     /// Create a boolean mask by checking if self > rhs.
-    fn gt(&self, rhs: &Series) -> Result<BooleanChunked> {
+    fn gt(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), rhs.dtype())?;
         let mut out = impl_compare!(self, rhs, gt);
         out.rename(self.name());
@@ -270,7 +270,7 @@ impl ChunkCompare<&Series> for Series {
     }
 
     /// Create a boolean mask by checking if self >= rhs.
-    fn gt_eq(&self, rhs: &Series) -> Result<BooleanChunked> {
+    fn gt_eq(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), rhs.dtype())?;
         let mut out = impl_compare!(self, rhs, gt_eq);
         out.rename(self.name());
@@ -278,7 +278,7 @@ impl ChunkCompare<&Series> for Series {
     }
 
     /// Create a boolean mask by checking if self < rhs.
-    fn lt(&self, rhs: &Series) -> Result<BooleanChunked> {
+    fn lt(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), rhs.dtype())?;
         let mut out = impl_compare!(self, rhs, lt);
         out.rename(self.name());
@@ -286,7 +286,7 @@ impl ChunkCompare<&Series> for Series {
     }
 
     /// Create a boolean mask by checking if self <= rhs.
-    fn lt_eq(&self, rhs: &Series) -> Result<BooleanChunked> {
+    fn lt_eq(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), rhs.dtype())?;
         let mut out = impl_compare!(self, rhs, lt_eq);
         out.rename(self.name());
@@ -298,45 +298,45 @@ impl<Rhs> ChunkCompare<Rhs> for Series
 where
     Rhs: NumericNative,
 {
-    type Item = Result<BooleanChunked>;
+    type Item = PolarsResult<BooleanChunked>;
 
-    fn eq_missing(&self, rhs: Rhs) -> Result<BooleanChunked> {
+    fn eq_missing(&self, rhs: Rhs) -> PolarsResult<BooleanChunked> {
         // just take any numeric dtype for rhs
         validate_types(self.dtype(), &DataType::Int8)?;
         self.equal(rhs)
     }
 
-    fn equal(&self, rhs: Rhs) -> Result<BooleanChunked> {
+    fn equal(&self, rhs: Rhs) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Int8)?;
         let s = self.to_physical_repr();
         Ok(apply_method_physical_numeric!(&s, equal, rhs))
     }
 
-    fn not_equal(&self, rhs: Rhs) -> Result<BooleanChunked> {
+    fn not_equal(&self, rhs: Rhs) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Int8)?;
         let s = self.to_physical_repr();
         Ok(apply_method_physical_numeric!(&s, not_equal, rhs))
     }
 
-    fn gt(&self, rhs: Rhs) -> Result<BooleanChunked> {
+    fn gt(&self, rhs: Rhs) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Int8)?;
         let s = self.to_physical_repr();
         Ok(apply_method_physical_numeric!(&s, gt, rhs))
     }
 
-    fn gt_eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
+    fn gt_eq(&self, rhs: Rhs) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Int8)?;
         let s = self.to_physical_repr();
         Ok(apply_method_physical_numeric!(&s, gt_eq, rhs))
     }
 
-    fn lt(&self, rhs: Rhs) -> Result<BooleanChunked> {
+    fn lt(&self, rhs: Rhs) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Int8)?;
         let s = self.to_physical_repr();
         Ok(apply_method_physical_numeric!(&s, lt, rhs))
     }
 
-    fn lt_eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
+    fn lt_eq(&self, rhs: Rhs) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Int8)?;
         let s = self.to_physical_repr();
         Ok(apply_method_physical_numeric!(&s, lt_eq, rhs))
@@ -344,13 +344,13 @@ where
 }
 
 impl ChunkCompare<&str> for Series {
-    type Item = Result<BooleanChunked>;
-    fn eq_missing(&self, rhs: &str) -> Result<BooleanChunked> {
+    type Item = PolarsResult<BooleanChunked>;
+    fn eq_missing(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Utf8)?;
         self.equal(rhs)
     }
 
-    fn equal(&self, rhs: &str) -> Result<BooleanChunked> {
+    fn equal(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Utf8)?;
         use DataType::*;
         match self.dtype() {
@@ -363,7 +363,7 @@ impl ChunkCompare<&str> for Series {
         }
     }
 
-    fn not_equal(&self, rhs: &str) -> Result<BooleanChunked> {
+    fn not_equal(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Utf8)?;
         use DataType::*;
         match self.dtype() {
@@ -380,7 +380,7 @@ impl ChunkCompare<&str> for Series {
         }
     }
 
-    fn gt(&self, rhs: &str) -> Result<BooleanChunked> {
+    fn gt(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Utf8)?;
         if let Ok(a) = self.utf8() {
             Ok(a.gt(rhs))
@@ -395,7 +395,7 @@ impl ChunkCompare<&str> for Series {
         }
     }
 
-    fn gt_eq(&self, rhs: &str) -> Result<BooleanChunked> {
+    fn gt_eq(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Utf8)?;
         if let Ok(a) = self.utf8() {
             Ok(a.gt_eq(rhs))
@@ -410,7 +410,7 @@ impl ChunkCompare<&str> for Series {
         }
     }
 
-    fn lt(&self, rhs: &str) -> Result<BooleanChunked> {
+    fn lt(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Utf8)?;
         if let Ok(a) = self.utf8() {
             Ok(a.lt(rhs))
@@ -425,7 +425,7 @@ impl ChunkCompare<&str> for Series {
         }
     }
 
-    fn lt_eq(&self, rhs: &str) -> Result<BooleanChunked> {
+    fn lt_eq(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Utf8)?;
         if let Ok(a) = self.utf8() {
             Ok(a.lt_eq(rhs))

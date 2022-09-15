@@ -20,7 +20,7 @@ impl<'a> Hash for BufferKey<'a> {
 pub(crate) fn init_buffers(
     schema: &Schema,
     capacity: usize,
-) -> Result<PlIndexMap<BufferKey, Buffer>> {
+) -> PolarsResult<PlIndexMap<BufferKey, Buffer>> {
     schema
         .iter()
         .map(|(name, dtype)| {
@@ -68,7 +68,7 @@ pub(crate) enum Buffer<'a> {
 }
 
 impl<'a> Buffer<'a> {
-    pub(crate) fn into_series(self) -> Result<Series> {
+    pub(crate) fn into_series(self) -> PolarsResult<Series> {
         let s = match self {
             Buffer::Boolean(v) => v.finish().into_series(),
             Buffer::Int32(v) => v.finish().into_series(),
@@ -110,7 +110,7 @@ impl<'a> Buffer<'a> {
     }
 
     #[inline]
-    pub(crate) fn add(&mut self, value: &Value) -> Result<()> {
+    pub(crate) fn add(&mut self, value: &Value) -> PolarsResult<()> {
         use Buffer::*;
         match self {
             Boolean(buf) => {

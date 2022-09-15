@@ -34,7 +34,7 @@ impl BinaryExpr {
 }
 
 /// Can partially do operations in place.
-fn apply_operator_owned(left: Series, right: Series, op: Operator) -> Result<Series> {
+fn apply_operator_owned(left: Series, right: Series, op: Operator) -> PolarsResult<Series> {
     match op {
         Operator::Gt => ChunkCompare::<&Series>::gt(&left, &right).map(|ca| ca.into_series()),
         Operator::GtEq => ChunkCompare::<&Series>::gt_eq(&left, &right).map(|ca| ca.into_series()),
@@ -57,7 +57,7 @@ fn apply_operator_owned(left: Series, right: Series, op: Operator) -> Result<Ser
     }
 }
 
-pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> Result<Series> {
+pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResult<Series> {
     match op {
         Operator::Gt => ChunkCompare::<&Series>::gt(left, right).map(|ca| ca.into_series()),
         Operator::GtEq => ChunkCompare::<&Series>::gt_eq(left, right).map(|ca| ca.into_series()),
@@ -94,7 +94,7 @@ impl PhysicalExpr for BinaryExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let mut state = state.split();
         // don't cache window functions as they run in parallel
         state.flags.remove(StateFlags::CACHE_WINDOW_EXPR);
@@ -113,7 +113,7 @@ impl PhysicalExpr for BinaryExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let (result_a, result_b) = POOL.install(|| {
             rayon::join(
                 || self.left.evaluate_on_groups(df, groups, state),
@@ -203,7 +203,7 @@ impl PhysicalExpr for BinaryExpr {
                             })
                             .transpose()
                     })
-                    .collect::<Result<_>>()?;
+                    .collect::<PolarsResult<_>>()?;
                 ca.rename(l.name());
 
                 ac_l.with_series(ca.into_series(), true);
@@ -252,7 +252,7 @@ impl PhysicalExpr for BinaryExpr {
                             })
                             .transpose()
                     })
-                    .collect::<Result<_>>()?;
+                    .collect::<PolarsResult<_>>()?;
                 ca.rename(l.name());
 
                 ac_l.with_series(ca.into_series(), true);
@@ -384,7 +384,7 @@ impl PhysicalExpr for BinaryExpr {
                             (Some(l), Some(r)) => apply_operator(&l, &r, self.op).map(Some),
                             _ => Ok(None),
                         })
-                        .collect::<Result<ListChunked>>()
+                        .collect::<PolarsResult<ListChunked>>()
                 })?;
 
                 out.rename(ac_l.series().name());
@@ -402,7 +402,7 @@ impl PhysicalExpr for BinaryExpr {
                         }
                         _ => Ok(None),
                     })
-                    .collect::<Result<ListChunked>>()?;
+                    .collect::<PolarsResult<ListChunked>>()?;
                 out.rename(ac_l.series().name());
                 ac_l.with_series(out.into_series(), true);
                 Ok(ac_l)
@@ -410,7 +410,7 @@ impl PhysicalExpr for BinaryExpr {
         }
     }
 
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.expr.to_field(input_schema, Context::Default)
     }
 
@@ -532,7 +532,7 @@ mod stats {
     }
 
     impl BinaryExpr {
-        fn impl_should_read(&self, stats: &BatchStats) -> Result<bool> {
+        fn impl_should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
             let schema = stats.schema();
             let fld_l = self.left.to_field(schema)?;
             let fld_r = self.right.to_field(schema)?;
@@ -592,7 +592,7 @@ mod stats {
     }
 
     impl StatsEvaluator for BinaryExpr {
-        fn should_read(&self, stats: &BatchStats) -> Result<bool> {
+        fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
             if std::env::var("POLARS_NO_PARQUET_STATISTICS").is_ok() {
                 return Ok(true);
             }
@@ -618,7 +618,7 @@ impl PartitionedAggregation for BinaryExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         let left = self.left.as_partitioned_aggregator().unwrap();
         let right = self.right.as_partitioned_aggregator().unwrap();
         let left = left.evaluate_partitioned(df, groups, state)?;
@@ -631,7 +631,7 @@ impl PartitionedAggregation for BinaryExpr {
         partitioned: Series,
         _groups: &GroupsProxy,
         _state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         Ok(partitioned)
     }
 }
