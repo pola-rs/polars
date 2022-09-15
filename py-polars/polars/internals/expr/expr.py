@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import random
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 from warnings import warn
 
@@ -68,6 +68,7 @@ def expr_to_lit_or_expr(
         | None
         | date
         | datetime
+        | time
         | Sequence[(int | float | str | None)]
     ),
     str_to_lit: bool = True,
@@ -91,7 +92,8 @@ def expr_to_lit_or_expr(
     if isinstance(expr, str) and not str_to_lit:
         return pli.col(expr)
     elif (
-        isinstance(expr, (int, float, str, pli.Series, datetime, date)) or expr is None
+        isinstance(expr, (int, float, str, pli.Series, datetime, date, time))
+        or expr is None
     ):
         return pli.lit(expr)
     elif isinstance(expr, Expr):

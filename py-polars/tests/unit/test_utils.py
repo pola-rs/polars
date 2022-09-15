@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -9,6 +9,7 @@ import polars as pl
 from polars.utils import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
+    _time_to_pl_time,
     _timedelta_to_pl_timedelta,
 )
 
@@ -27,6 +28,19 @@ if TYPE_CHECKING:
 def test_datetime_to_pl_timestamp(dt: datetime, tu: TimeUnit, expected: int) -> None:
     out = _datetime_to_pl_timestamp(dt, tu)
     assert out == expected
+
+
+@pytest.mark.parametrize(
+    "t, expected",
+    [
+        (time(0, 0, 0), 0),
+        (time(0, 0, 1), 1_000_000_000),
+        (time(20, 52, 10), 75_130_000_000_000),
+        (time(20, 52, 10, 200), 75_130_000_200_000),
+    ],
+)
+def test_time_to_pl_time(t: time, expected: int) -> None:
+    assert _time_to_pl_time(t) == expected
 
 
 def test_date_to_pl_date() -> None:

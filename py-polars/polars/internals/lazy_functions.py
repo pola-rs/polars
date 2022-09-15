@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from inspect import isclass
 from typing import TYPE_CHECKING, Any, Callable, Sequence, cast, overload
 
@@ -12,11 +12,16 @@ from polars.datatypes import (
     Datetime,
     Duration,
     PolarsDataType,
+    Time,
     UInt32,
     is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_timedelta
+from polars.utils import (
+    _datetime_to_pl_timestamp,
+    _time_to_pl_time,
+    _timedelta_to_pl_timedelta,
+)
 
 try:
     from polars.polars import arange as pyarange
@@ -726,6 +731,9 @@ def lit(
     elif isinstance(value, timedelta):
         tu = "us"
         return lit(_timedelta_to_pl_timedelta(value, tu)).cast(Duration(tu))
+
+    elif isinstance(value, time):
+        return lit(_time_to_pl_time(value)).cast(Time)
 
     elif isinstance(value, date):
         return lit(datetime(value.year, value.month, value.day)).cast(Date)

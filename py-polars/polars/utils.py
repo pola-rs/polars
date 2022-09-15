@@ -70,6 +70,11 @@ def _datetime_to_pl_timestamp(dt: datetime, tu: TimeUnit | None) -> int:
         raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
 
 
+def _time_to_pl_time(t: time) -> int:
+    t = t.replace(tzinfo=timezone.utc)
+    return int((t.hour * 3_600 + t.minute * 60 + t.second) * 1e9 + t.microsecond * 1e3)
+
+
 def _timedelta_to_pl_timedelta(td: timedelta, tu: TimeUnit | None = None) -> int:
     if tu == "ns":
         return int(td.total_seconds() * 1e9)

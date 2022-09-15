@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Sequence, Union
 from warnings import warn
 
@@ -51,6 +51,7 @@ from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
+    _time_to_pl_time,
     deprecated_alias,
     is_bool_sequence,
     is_int_sequence,
@@ -368,7 +369,11 @@ class Series:
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return wrap_s(f(ts))
-
+        if isinstance(other, time) and self.dtype == Time:
+            d = _time_to_pl_time(other)
+            f = get_ffi_func(op + "_<>", Int64, self._s)
+            assert f is not None
+            return wrap_s(f(d))
         if isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
