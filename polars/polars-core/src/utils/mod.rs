@@ -451,7 +451,7 @@ macro_rules! apply_method_physical_numeric {
 macro_rules! df {
     ($($col_name:expr => $slice:expr), + $(,)?) => {
         {
-            DataFrame::new(vec![$(Series::new($col_name, $slice),)+])
+            $crate::prelude::DataFrame::new(vec![$($crate::prelude::Series::new($col_name, $slice),)+])
         }
     }
 }
