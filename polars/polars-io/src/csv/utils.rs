@@ -239,16 +239,24 @@ pub fn infer_file_schema(
                         slice
                     };
                     let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
-                    Ok(s.into())
+                    Ok(s)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
 
-            if PlHashSet::from_iter(headers.iter()).len() != headers.len() {
-                return Err(PolarsError::ComputeError(
-                    "CSV header contains duplicate column names".into(),
-                ));
+            let mut final_headers = Vec::with_capacity(headers.len());
+
+            let mut header_names = PlHashMap::with_capacity(headers.len());
+
+            for name in &headers {
+                let count = header_names.entry(name.as_ref()).or_insert(0usize);
+                if *count != 0 {
+                    final_headers.push(format!("{}_duplicated_{}", name, *count - 1))
+                } else {
+                    final_headers.push(name.to_string())
+                }
+                *count += 1;
             }
-            headers
+            final_headers
         } else {
             let mut column_names: Vec<String> = byterecord
                 .enumerate()
