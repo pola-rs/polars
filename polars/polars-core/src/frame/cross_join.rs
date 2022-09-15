@@ -46,7 +46,7 @@ impl DataFrame {
         other: &DataFrame,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         let n_rows_left = self.height() as IdxSize;
         let n_rows_right = other.height() as IdxSize;
         let total_rows = n_rows_right * n_rows_left;
@@ -91,7 +91,7 @@ mod test {
     use crate::df;
 
     #[test]
-    fn test_cross_join() -> Result<()> {
+    fn test_cross_join() -> PolarsResult<()> {
         let df_a = df![
             "a" => [1, 2],
             "b" => ["foo", "spam"]

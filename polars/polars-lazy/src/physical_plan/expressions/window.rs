@@ -44,7 +44,7 @@ impl WindowExpr {
         df: &DataFrame,
         state: &ExecutionState,
         gb: &'a GroupBy,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let ac = self
             .phys_function
             .evaluate_on_groups(df, gb.get_groups(), state)?;
@@ -129,7 +129,7 @@ impl WindowExpr {
         sorted_keys: bool,
         explicit_list: bool,
         gb: &GroupBy,
-    ) -> Result<MapStrategy> {
+    ) -> PolarsResult<MapStrategy> {
         match (self.options.explode, explicit_list, agg_state) {
             // Explode
             // `(col("x").sum() * col("y")).list().over("groups").flatten()`
@@ -191,7 +191,7 @@ impl PhysicalExpr for WindowExpr {
 
     // This first cached the groupby and the join tuples, but rayon under a mutex leads to deadlocks:
     // https://github.com/rayon-rs/rayon/issues/592
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         // This method does the following:
         // 1. determine groupby tuples based on the group_column
         // 2. apply an aggregation function
@@ -221,7 +221,7 @@ impl PhysicalExpr for WindowExpr {
             .group_by
             .iter()
             .map(|e| e.evaluate(df, state))
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
 
         // if the keys are sorted
         let sorted_keys = groupby_columns
@@ -243,7 +243,7 @@ impl PhysicalExpr for WindowExpr {
 
         let create_groups = || {
             let gb = df.groupby_with_series(groupby_columns.clone(), true, sort_groups)?;
-            let out: Result<GroupsProxy> = Ok(gb.take_groups());
+            let out: PolarsResult<GroupsProxy> = Ok(gb.take_groups());
             out
         };
 
@@ -478,7 +478,7 @@ impl PhysicalExpr for WindowExpr {
         }
     }
 
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.function.to_field(input_schema, Context::Default)
     }
 
@@ -488,7 +488,7 @@ impl PhysicalExpr for WindowExpr {
         _df: &DataFrame,
         _groups: &'a GroupsProxy,
         _state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         Err(PolarsError::InvalidOperation(
             "window expression not allowed in aggregation".into(),
         ))

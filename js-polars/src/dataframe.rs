@@ -27,7 +27,7 @@ impl DataFrame {
         PDataFrame::new_no_checks(vec![]).into()
     }
 
-    pub fn assign(&self, series: Series) -> Result<DataFrame, JsValue> {
+    pub fn assign(&self, series: Series) -> PolarsResult<DataFrame, JsValue> {
         let mut df = self.df.clone();
         df.with_column(series.series).map_err(JsPolarsError::from)?;
         Ok(df.into())

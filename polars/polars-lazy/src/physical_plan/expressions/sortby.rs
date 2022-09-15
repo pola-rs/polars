@@ -46,7 +46,7 @@ impl PhysicalExpr for SortByExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let series_f = || self.input.evaluate(df, state);
         let reverse = prepare_reverse(&self.reverse, self.by.len());
 
@@ -65,7 +65,7 @@ impl PhysicalExpr for SortByExpr {
                     .by
                     .iter()
                     .map(|e| e.evaluate(df, state))
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
                 s_sort_by[0].argsort_multiple(&s_sort_by[1..], &reverse)
             };
@@ -84,7 +84,7 @@ impl PhysicalExpr for SortByExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac_in = self.input.evaluate_on_groups(df, groups, state)?;
 
         let reverse = prepare_reverse(&self.reverse, self.by.len());
@@ -136,7 +136,7 @@ impl PhysicalExpr for SortByExpr {
                 .by
                 .iter()
                 .map(|e| e.evaluate_on_groups(df, groups, state))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
             let sort_by_s = ac_sort_by
                 .iter()
                 .map(|s| s.flat_naive().into_owned())
@@ -196,7 +196,7 @@ impl PhysicalExpr for SortByExpr {
         Ok(ac_in)
     }
 
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
     }
 

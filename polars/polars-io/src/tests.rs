@@ -7,7 +7,7 @@ use crate::csv::CsvReader;
 use crate::SerReader;
 
 #[test]
-fn test_filter() -> Result<()> {
+fn test_filter() -> PolarsResult<()> {
     let path = "../../examples/datasets/foods1.csv";
     let df = CsvReader::from_path(path)?.finish()?;
 

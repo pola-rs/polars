@@ -14,15 +14,15 @@ where
     }
 
     #[cfg(feature = "rolling_window")]
-    fn rolling_mean(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_mean(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         RollingAgg::rolling_mean(self, options)
     }
     #[cfg(feature = "rolling_window")]
-    fn rolling_sum(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_sum(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         RollingAgg::rolling_sum(self, options)
     }
     #[cfg(feature = "rolling_window")]
-    fn rolling_median(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_median(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         RollingAgg::rolling_median(self, options)
     }
 
@@ -32,27 +32,27 @@ where
         quantile: f64,
         interpolation: QuantileInterpolOptions,
         options: RollingOptionsImpl,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         RollingAgg::rolling_quantile(self, quantile, interpolation, options)
     }
 
     #[cfg(feature = "rolling_window")]
-    fn rolling_min(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_min(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         RollingAgg::rolling_min(self, options)
     }
 
     #[cfg(feature = "rolling_window")]
-    fn rolling_max(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_max(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         RollingAgg::rolling_max(self, options)
     }
     #[cfg(feature = "rolling_window")]
-    fn rolling_var(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_var(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         RollingAgg::rolling_var(self, options)
     }
 
     /// Apply a rolling std_dev to a Series.
     #[cfg(feature = "rolling_window")]
-    fn rolling_std(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_std(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         RollingAgg::rolling_std(self, options)
     }
 }

@@ -57,7 +57,7 @@ impl NullValuesCompiled {
 }
 
 impl NullValues {
-    pub(super) fn compile(self, schema: &Schema) -> Result<NullValuesCompiled> {
+    pub(super) fn compile(self, schema: &Schema) -> PolarsResult<NullValuesCompiled> {
         Ok(match self {
             NullValues::AllColumnsSingle(v) => NullValuesCompiled::AllColumnsSingle(v),
             NullValues::AllColumns(v) => NullValuesCompiled::AllColumns(v),
@@ -82,7 +82,7 @@ impl NullValues {
 /// use polars_io::prelude::*;
 /// use std::fs::File;
 ///
-/// fn example() -> Result<DataFrame> {
+/// fn example() -> PolarsResult<DataFrame> {
 ///     CsvReader::from_path("iris_csv")?
 ///             .has_header(true)
 ///             .finish()
@@ -316,7 +316,7 @@ where
 
 impl<'a> CsvReader<'a, File> {
     /// This is the recommended way to create a csv reader as this allows for fastest parsing.
-    pub fn from_path<P: Into<PathBuf>>(path: P) -> Result<Self> {
+    pub fn from_path<P: Into<PathBuf>>(path: P) -> PolarsResult<Self> {
         let path = resolve_homedir(&path.into());
         let f = std::fs::File::open(&path)?;
         Ok(Self::new(f).with_path(Some(path)))
@@ -362,7 +362,7 @@ where
     }
 
     /// Read the file and create the DataFrame.
-    fn finish(mut self) -> Result<DataFrame> {
+    fn finish(mut self) -> PolarsResult<DataFrame> {
         let rechunk = self.rechunk;
         // we cannot append categorical under local string cache, so we cast them later.
         #[allow(unused_mut)]

@@ -18,9 +18,9 @@ impl ColumnExpr {
 impl ColumnExpr {
     fn check_external_context(
         &self,
-        out: Result<Series>,
+        out: PolarsResult<Series>,
         state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         match out {
             Ok(col) => Ok(col),
             Err(e) => {
@@ -44,7 +44,7 @@ impl PhysicalExpr for ColumnExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.1)
     }
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let out = match state.get_schema() {
             None => df.column(&self.0).map(|s| s.clone()),
             Some(schema) => {
@@ -122,7 +122,7 @@ impl PhysicalExpr for ColumnExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let s = self.evaluate(df, state)?;
         Ok(AggregationContext::new(s, Cow::Borrowed(groups), false))
     }
@@ -131,7 +131,7 @@ impl PhysicalExpr for ColumnExpr {
         Some(self)
     }
 
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         let field = input_schema.get_field(&self.0).ok_or_else(|| {
             PolarsError::NotFound(
                 format!(
@@ -154,7 +154,7 @@ impl PartitionedAggregation for ColumnExpr {
         df: &DataFrame,
         _groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         self.evaluate(df, state)
     }
 
@@ -163,7 +163,7 @@ impl PartitionedAggregation for ColumnExpr {
         partitioned: Series,
         _groups: &GroupsProxy,
         _state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         Ok(partitioned)
     }
 }

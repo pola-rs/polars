@@ -3,7 +3,7 @@ use polars_core::prelude::*;
 pub trait PhysicalIoExpr: Send + Sync {
     /// Take a `DataFrame` and produces a boolean `Series` that serves
     /// as a predicate mask
-    fn evaluate(&self, df: &DataFrame) -> Result<Series>;
+    fn evaluate(&self, df: &DataFrame) -> PolarsResult<Series>;
 
     /// Can take &dyn Statistics and determine of a file should be
     /// read -> `true`
@@ -16,7 +16,7 @@ pub trait PhysicalIoExpr: Send + Sync {
 
 #[cfg(feature = "parquet")]
 pub trait StatsEvaluator {
-    fn should_read(&self, stats: &crate::parquet::predicates::BatchStats) -> Result<bool>;
+    fn should_read(&self, stats: &crate::parquet::predicates::BatchStats) -> PolarsResult<bool>;
 }
 
 #[cfg(feature = "parquet")]
@@ -39,7 +39,7 @@ pub(crate) fn apply_predicate(
     df: &mut DataFrame,
     predicate: Option<&dyn PhysicalIoExpr>,
     parallel: bool,
-) -> Result<()> {
+) -> PolarsResult<()> {
     if let (Some(predicate), false) = (&predicate, df.is_empty()) {
         let s = predicate.evaluate(df)?;
         let mask = s.bool().expect("filter predicates was not of type boolean");

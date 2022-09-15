@@ -73,7 +73,7 @@ impl ExecutionState {
         self.node_timer.is_some()
     }
 
-    pub(crate) fn finish_timer(self) -> Result<DataFrame> {
+    pub(crate) fn finish_timer(self) -> PolarsResult<DataFrame> {
         self.node_timer.unwrap().finish()
     }
 

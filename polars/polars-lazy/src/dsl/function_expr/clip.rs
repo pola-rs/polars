@@ -4,7 +4,7 @@ pub(super) fn clip(
     s: Series,
     min: Option<AnyValue<'_>>,
     max: Option<AnyValue<'_>>,
-) -> Result<Series> {
+) -> PolarsResult<Series> {
     match (min, max) {
         (Some(min), Some(max)) => s.clip(min, max),
         (Some(min), None) => s.clip_min(min),

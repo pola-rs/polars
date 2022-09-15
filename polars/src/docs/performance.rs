@@ -38,7 +38,7 @@
 //! ```rust
 //! use polars::prelude::*;
 //!
-//! fn example(path: &str) -> Result<DataFrame> {
+//! fn example(path: &str) -> PolarsResult<DataFrame> {
 //!     let mut df = CsvReader::from_path(path)?
 //!                 .finish()?;
 //!
@@ -58,7 +58,7 @@
 //! use polars::prelude::*;
 //! use polars::toggle_string_cache;
 //!
-//! fn example(mut df_a: DataFrame, mut df_b: DataFrame) -> Result<DataFrame> {
+//! fn example(mut df_a: DataFrame, mut df_b: DataFrame) -> PolarsResult<DataFrame> {
 //!     // Set a global string cache
 //!     toggle_string_cache(true);
 //!
@@ -77,7 +77,7 @@
 //! # {
 //! use polars::prelude::*;
 //!
-//! fn lazy_example(mut df_a: LazyFrame, mut df_b: LazyFrame) -> Result<DataFrame> {
+//! fn lazy_example(mut df_a: LazyFrame, mut df_b: LazyFrame) -> PolarsResult<DataFrame> {
 //!
 //!     let q1 = df_a.with_columns(vec![
 //!         col("a").cast(DataType::Categorical(None)),

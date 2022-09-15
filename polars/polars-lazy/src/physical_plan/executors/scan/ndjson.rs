@@ -2,7 +2,7 @@ use super::*;
 use crate::prelude::{AnonymousScan, AnonymousScanOptions, LazyJsonLineReader};
 
 impl AnonymousScan for LazyJsonLineReader {
-    fn scan(&self, scan_opts: AnonymousScanOptions) -> Result<DataFrame> {
+    fn scan(&self, scan_opts: AnonymousScanOptions) -> PolarsResult<DataFrame> {
         let schema = scan_opts.output_schema.unwrap_or(scan_opts.schema);
         JsonLineReader::from_path(&self.path)?
             .with_schema(&schema)
@@ -14,7 +14,7 @@ impl AnonymousScan for LazyJsonLineReader {
             .finish()
     }
 
-    fn schema(&self, infer_schema_length: Option<usize>) -> Result<Schema> {
+    fn schema(&self, infer_schema_length: Option<usize>) -> PolarsResult<Schema> {
         let f = std::fs::File::open(&self.path)?;
         let mut reader = std::io::BufReader::new(f);
 

@@ -10,7 +10,7 @@ pub struct MeltExec {
 }
 
 impl Executor for MeltExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {

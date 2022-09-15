@@ -53,7 +53,7 @@ use crate::{finish_reader, ArrowReader, ArrowResult, WriterFactory};
 /// use polars_io::ipc::IpcStreamReader;
 /// use polars_io::SerReader;
 ///
-/// fn example() -> Result<DataFrame> {
+/// fn example() -> PolarsResult<DataFrame> {
 ///     let file = File::open("file.ipc").expect("file not found");
 ///
 ///     IpcStreamReader::new(file)
@@ -75,12 +75,12 @@ pub struct IpcStreamReader<R> {
 
 impl<R: Read + Seek> IpcStreamReader<R> {
     /// Get schema of the Ipc Stream File
-    pub fn schema(&mut self) -> Result<Schema> {
+    pub fn schema(&mut self) -> PolarsResult<Schema> {
         Ok((&self.metadata()?.schema.fields).into())
     }
 
     /// Get arrow schema of the Ipc Stream File, this is faster than creating a polars schema.
-    pub fn arrow_schema(&mut self) -> Result<ArrowSchema> {
+    pub fn arrow_schema(&mut self) -> PolarsResult<ArrowSchema> {
         Ok(self.metadata()?.schema)
     }
     /// Stop reading when `n` rows are read.
@@ -108,7 +108,7 @@ impl<R: Read + Seek> IpcStreamReader<R> {
         self
     }
 
-    fn metadata(&mut self) -> Result<StreamMetadata> {
+    fn metadata(&mut self) -> PolarsResult<StreamMetadata> {
         match &self.metadata {
             None => {
                 let metadata = read::read_stream_metadata(&mut self.reader)?;
@@ -156,7 +156,7 @@ where
         self
     }
 
-    fn finish(mut self) -> Result<DataFrame> {
+    fn finish(mut self) -> PolarsResult<DataFrame> {
         let rechunk = self.rechunk;
         let metadata = self.metadata()?;
         let schema = &metadata.schema;
@@ -227,7 +227,7 @@ fn fix_column_order(df: DataFrame, projection: Option<Vec<usize>>, row_count: bo
 /// use std::fs::File;
 /// use polars_io::SerWriter;
 ///
-/// fn example(df: &mut DataFrame) -> Result<()> {
+/// fn example(df: &mut DataFrame) -> PolarsResult<()> {
 ///     let mut file = File::create("file.ipc").expect("could not create file");
 ///
 ///     IpcStreamWriter::new(&mut file)
@@ -265,7 +265,7 @@ where
         }
     }
 
-    fn finish(&mut self, df: &mut DataFrame) -> Result<()> {
+    fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         let mut ipc_stream_writer = write::StreamWriter::new(
             &mut self.writer,
             WriteOptions {

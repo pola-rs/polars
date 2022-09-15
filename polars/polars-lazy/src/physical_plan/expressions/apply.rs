@@ -46,7 +46,7 @@ impl ApplyExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Vec<AggregationContext<'a>>> {
+    ) -> PolarsResult<Vec<AggregationContext<'a>>> {
         POOL.install(|| {
             self.inputs
                 .par_iter()
@@ -79,7 +79,7 @@ fn all_unit_length(ca: &ListChunked) -> bool {
     (offset[offset.len() - 1] as usize) == list_arr.len() as usize
 }
 
-fn check_map_output_len(input_len: usize, output_len: usize) -> Result<()> {
+fn check_map_output_len(input_len: usize, output_len: usize) -> PolarsResult<()> {
     if input_len != output_len {
         Err(PolarsError::ComputeError("A 'map' functions output length must be equal to that of the input length. Consider using 'apply' in favor of 'map'.".into()))
     } else {
@@ -92,12 +92,12 @@ impl PhysicalExpr for ApplyExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let mut inputs = self
             .inputs
             .par_iter()
             .map(|e| e.evaluate(df, state))
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
 
         if self.allow_rename {
             return self.function.call_udf(&mut inputs);
@@ -115,7 +115,7 @@ impl PhysicalExpr for ApplyExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         if self.inputs.len() == 1 {
             let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
@@ -280,7 +280,7 @@ impl PhysicalExpr for ApplyExpr {
             }
         }
     }
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.expr.to_field(input_schema, Context::Default)
     }
     fn is_valid_aggregation(&self) -> bool {
@@ -311,7 +311,7 @@ impl PhysicalExpr for ApplyExpr {
 
 #[cfg(feature = "parquet")]
 impl StatsEvaluator for ApplyExpr {
-    fn should_read(&self, stats: &BatchStats) -> Result<bool> {
+    fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
         if matches!(
             self.expr,
             Expr::Function {
@@ -343,7 +343,7 @@ impl PartitionedAggregation for ApplyExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         let a = self.inputs[0].as_partitioned_aggregator().unwrap();
         let s = a.evaluate_partitioned(df, groups, state)?;
 
@@ -363,7 +363,7 @@ impl PartitionedAggregation for ApplyExpr {
         partitioned: Series,
         _groups: &GroupsProxy,
         _state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         Ok(partitioned)
     }
 }

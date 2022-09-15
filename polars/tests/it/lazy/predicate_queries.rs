@@ -3,7 +3,7 @@ use polars_core::{with_string_cache, SINGLE_LOCK};
 use super::*;
 
 #[test]
-fn test_predicate_after_renaming() -> Result<()> {
+fn test_predicate_after_renaming() -> PolarsResult<()> {
     let df = df![
         "foo" => [1, 2, 3],
         "bar" => [3, 2, 1]
@@ -23,7 +23,7 @@ fn test_predicate_after_renaming() -> Result<()> {
 }
 
 #[test]
-fn filter_true_lit() -> Result<()> {
+fn filter_true_lit() -> PolarsResult<()> {
     let df = df! {
         "a" => [Some(true), Some(false), None],
         "b" => ["1", "2", "3"]
@@ -43,7 +43,7 @@ fn filter_true_lit() -> Result<()> {
 }
 
 #[test]
-fn test_combine_columns_in_filter() -> Result<()> {
+fn test_combine_columns_in_filter() -> PolarsResult<()> {
     let df = df![
         "a" => [1, 2, 3],
         "b" => [None, Some("a"), Some("b")]
@@ -80,7 +80,7 @@ fn and_filters(expr: Vec<Expr>) -> Expr {
 }
 
 #[test]
-fn test_many_filters() -> Result<()> {
+fn test_many_filters() -> PolarsResult<()> {
     // just check if it runs. in #3210
     // we had terrible tree traversion perf.
     let df = df! {
@@ -97,7 +97,7 @@ fn test_many_filters() -> Result<()> {
 }
 
 #[test]
-fn test_filter_no_combine() -> Result<()> {
+fn test_filter_no_combine() -> PolarsResult<()> {
     let df = df![
         "vals" => [1, 2, 3, 4, 5]
     ]?;
@@ -119,7 +119,7 @@ fn test_filter_no_combine() -> Result<()> {
 }
 
 #[test]
-fn test_filter_block_join() -> Result<()> {
+fn test_filter_block_join() -> PolarsResult<()> {
     let df_a = df![
         "a" => ["a", "b", "c"],
         "c" => [1, 4, 6]
@@ -142,7 +142,7 @@ fn test_filter_block_join() -> Result<()> {
 
 #[test]
 #[cfg(all(feature = "is_in", feature = "dtype-categorical"))]
-fn test_is_in_categorical_3420() -> Result<()> {
+fn test_is_in_categorical_3420() -> PolarsResult<()> {
     let df = df![
         "a" => ["a", "b", "c", "d", "e"],
         "b" => [1, 2, 3, 4, 5]
@@ -150,7 +150,7 @@ fn test_is_in_categorical_3420() -> Result<()> {
 
     let _guard = SINGLE_LOCK.lock();
 
-    let _: Result<_> = with_string_cache(|| {
+    let _: PolarsResult<_> = with_string_cache(|| {
         let s = Series::new("x", ["a", "b", "c"]).strict_cast(&DataType::Categorical(None))?;
         let out = df
             .lazy()
@@ -171,7 +171,7 @@ fn test_is_in_categorical_3420() -> Result<()> {
 }
 
 #[test]
-fn test_predicate_pushdown_blocked_by_outer_join() -> Result<()> {
+fn test_predicate_pushdown_blocked_by_outer_join() -> PolarsResult<()> {
     let df1 = df! {
         "a" => ["a1", "a2"],
         "b" => ["b1", "b2"]
@@ -193,7 +193,7 @@ fn test_predicate_pushdown_blocked_by_outer_join() -> Result<()> {
 }
 
 #[test]
-fn test_count_blocked_at_union_3963() -> Result<()> {
+fn test_count_blocked_at_union_3963() -> PolarsResult<()> {
     let lf1 = df![
         "k" => ["x", "x", "y"],
         "v" => [3, 2, 6,]

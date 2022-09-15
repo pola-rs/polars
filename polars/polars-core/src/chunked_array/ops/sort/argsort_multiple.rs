@@ -6,7 +6,7 @@ pub(crate) fn args_validate<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
     other: &[Series],
     reverse: &[bool],
-) -> Result<()> {
+) -> PolarsResult<()> {
     for s in other {
         assert_eq!(ca.len(), s.len());
     }
@@ -29,7 +29,7 @@ pub(crate) fn argsort_multiple_impl<T: PartialOrd + Send + IsFloat + Copy>(
     mut vals: Vec<(IdxSize, T)>,
     other: &[Series],
     reverse: &[bool],
-) -> Result<IdxCa> {
+) -> PolarsResult<IdxCa> {
     assert_eq!(reverse.len() - 1, other.len());
     let compare_inner: Vec<_> = other
         .iter()

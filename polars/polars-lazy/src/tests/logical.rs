@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 #[cfg(all(feature = "strings", feature = "temporal", feature = "dtype-duration"))]
-fn test_duration() -> Result<()> {
+fn test_duration() -> PolarsResult<()> {
     let df = df![
         "date" => ["2021-01-01", "2021-01-02", "2021-01-03"],
         "groups" => [1, 1, 1]

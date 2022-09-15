@@ -57,7 +57,7 @@ impl PhysicalPlanner {
         exprs: &[Node],
         context: Context,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<Vec<Arc<dyn PhysicalExpr>>> {
+    ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>> {
         exprs
             .iter()
             .map(|e| self.create_physical_expr(*e, context, expr_arena))
@@ -68,7 +68,7 @@ impl PhysicalPlanner {
         root: Node,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<Box<dyn Executor>> {
+    ) -> PolarsResult<Box<dyn Executor>> {
         use ALogicalPlan::*;
         let logical_plan = lp_arena.take(root);
         match logical_plan {
@@ -78,7 +78,7 @@ impl PhysicalPlanner {
                 let inputs = inputs
                     .into_iter()
                     .map(|node| self.create_physical_plan(node, lp_arena, expr_arena))
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<PolarsResult<Vec<_>>>()?;
                 Ok(Box::new(executors::UnionExec { inputs, options }))
             }
             Melt { input, args, .. } => {
@@ -503,7 +503,7 @@ impl PhysicalPlanner {
                 let contexts = contexts
                     .into_iter()
                     .map(|node| self.create_physical_plan(node, lp_arena, expr_arena))
-                    .collect::<Result<_>>()?;
+                    .collect::<PolarsResult<_>>()?;
                 Ok(Box::new(executors::ExternalContext { input, contexts }))
             }
         }

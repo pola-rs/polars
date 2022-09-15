@@ -14,7 +14,11 @@ pub(crate) struct GroupByDynamicExec {
 
 impl GroupByDynamicExec {
     #[cfg(feature = "dynamic_groupby")]
-    fn execute_impl(&mut self, state: &mut ExecutionState, mut df: DataFrame) -> Result<DataFrame> {
+    fn execute_impl(
+        &mut self,
+        state: &mut ExecutionState,
+        mut df: DataFrame,
+    ) -> PolarsResult<DataFrame> {
         df.as_single_chunk_par();
         state.set_schema(self.input_schema.clone());
 
@@ -28,7 +32,7 @@ impl GroupByDynamicExec {
             .keys
             .iter()
             .map(|e| e.evaluate(&df, state))
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
 
         let (mut time_key, mut keys, groups) = df.groupby_dynamic(keys, &self.options)?;
 
@@ -64,7 +68,7 @@ impl GroupByDynamicExec {
                     }
                     Ok(agg)
                 })
-                .collect::<Result<Vec<_>>>()
+                .collect::<PolarsResult<Vec<_>>>()
         })?;
 
         state.clear_schema_cache();
@@ -79,12 +83,12 @@ impl GroupByDynamicExec {
 
 impl Executor for GroupByDynamicExec {
     #[cfg(not(feature = "dynamic_groupby"))]
-    fn execute(&mut self, _state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, _state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         panic!("activate feature dynamic_groupby")
     }
 
     #[cfg(feature = "dynamic_groupby")]
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
@@ -98,7 +102,7 @@ impl Executor for GroupByDynamicExec {
                 .keys
                 .iter()
                 .map(|s| Ok(s.to_field(&self.input_schema)?.name))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
             let name = column_delimited("groupby_dynamic".to_string(), &by);
             Cow::Owned(name)
         } else {

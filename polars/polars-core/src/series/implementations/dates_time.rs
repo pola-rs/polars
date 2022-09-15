@@ -63,7 +63,11 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "zip_with")]
-            fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
+            fn zip_with_same_type(
+                &self,
+                mask: &BooleanChunked,
+                other: &Series,
+            ) -> PolarsResult<Series> {
                 let other = other.to_physical_repr().into_owned();
                 self.0
                     .zip_with(mask, &other.as_ref().as_ref())
@@ -122,7 +126,7 @@ macro_rules! impl_dyn_series {
                     .into_series()
             }
 
-            fn subtract(&self, rhs: &Series) -> Result<Series> {
+            fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
                 match (self.dtype(), rhs.dtype()) {
                     (DataType::Date, DataType::Date) => {
                         let dt = DataType::Datetime(TimeUnit::Milliseconds, None);
@@ -143,7 +147,7 @@ macro_rules! impl_dyn_series {
                     )),
                 }
             }
-            fn add_to(&self, rhs: &Series) -> Result<Series> {
+            fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
                 match (self.dtype(), rhs.dtype()) {
                     (DataType::Date, DataType::Duration(tu)) => {
                         ((&self.cast(&DataType::Datetime(*tu, None)).unwrap()) + rhs)
@@ -158,17 +162,17 @@ macro_rules! impl_dyn_series {
                     )),
                 }
             }
-            fn multiply(&self, _rhs: &Series) -> Result<Series> {
+            fn multiply(&self, _rhs: &Series) -> PolarsResult<Series> {
                 Err(PolarsError::ComputeError(
                     "cannot do multiplication on logical".into(),
                 ))
             }
-            fn divide(&self, _rhs: &Series) -> Result<Series> {
+            fn divide(&self, _rhs: &Series) -> PolarsResult<Series> {
                 Err(PolarsError::ComputeError(
                     "cannot do division on logical".into(),
                 ))
             }
-            fn remainder(&self, _rhs: &Series) -> Result<Series> {
+            fn remainder(&self, _rhs: &Series) -> PolarsResult<Series> {
                 Err(PolarsError::ComputeError(
                     "cannot do remainder operation on logical".into(),
                 ))
@@ -177,7 +181,7 @@ macro_rules! impl_dyn_series {
                 self.0.group_tuples(multithreaded, sorted)
             }
             #[cfg(feature = "sort_multiple")]
-            fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
+            fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
                 self.0.deref().argsort_multiple(by, reverse)
             }
         }
@@ -217,7 +221,7 @@ macro_rules! impl_dyn_series {
                 self.0.shrink_to_fit()
             }
 
-            fn append_array(&mut self, other: ArrayRef) -> Result<()> {
+            fn append_array(&mut self, other: ArrayRef) -> PolarsResult<()> {
                 self.0.append_array(other)
             }
 
@@ -233,7 +237,7 @@ macro_rules! impl_dyn_series {
                 self.0.median()
             }
 
-            fn append(&mut self, other: &Series) -> Result<()> {
+            fn append(&mut self, other: &Series) -> PolarsResult<()> {
                 if self.0.dtype() == other.dtype() {
                     let other = other.to_physical_repr();
                     // 3 refs
@@ -248,7 +252,7 @@ macro_rules! impl_dyn_series {
                     ))
                 }
             }
-            fn extend(&mut self, other: &Series) -> Result<()> {
+            fn extend(&mut self, other: &Series) -> PolarsResult<()> {
                 if self.0.dtype() == other.dtype() {
                     // 3 refs
                     // ref Cow
@@ -264,7 +268,7 @@ macro_rules! impl_dyn_series {
                 }
             }
 
-            fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
+            fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
                 self.0
                     .filter(filter)
                     .map(|ca| ca.$into_logical().into_series())
@@ -282,12 +286,12 @@ macro_rules! impl_dyn_series {
                 ca.$into_logical().into_series()
             }
 
-            fn take(&self, indices: &IdxCa) -> Result<Series> {
+            fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
                 ChunkTake::take(self.0.deref(), indices.into())
                     .map(|ca| ca.$into_logical().into_series())
             }
 
-            fn take_iter(&self, iter: &mut dyn TakeIterator) -> Result<Series> {
+            fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
                 ChunkTake::take(self.0.deref(), iter.into())
                     .map(|ca| ca.$into_logical().into_series())
             }
@@ -302,7 +306,7 @@ macro_rules! impl_dyn_series {
                     .into_series()
             }
 
-            unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
+            unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
                 let mut out = ChunkTake::take_unchecked(self.0.deref(), idx.into());
 
                 if self.0.is_sorted() && (idx.is_sorted() || idx.is_sorted_reverse()) {
@@ -319,7 +323,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "take_opt_iter")]
-            fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
+            fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
                 ChunkTake::take(self.0.deref(), iter.into())
                     .map(|ca| ca.$into_logical().into_series())
             }
@@ -339,7 +343,7 @@ macro_rules! impl_dyn_series {
                     .into_series()
             }
 
-            fn cast(&self, data_type: &DataType) -> Result<Series> {
+            fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
                 match (self.dtype(), data_type) {
                     (DataType::Date, DataType::Utf8) => Ok(self
                         .0
@@ -379,15 +383,15 @@ macro_rules! impl_dyn_series {
                 self.0.has_validity()
             }
 
-            fn unique(&self) -> Result<Series> {
+            fn unique(&self) -> PolarsResult<Series> {
                 self.0.unique().map(|ca| ca.$into_logical().into_series())
             }
 
-            fn n_unique(&self) -> Result<usize> {
+            fn n_unique(&self) -> PolarsResult<usize> {
                 self.0.n_unique()
             }
 
-            fn arg_unique(&self) -> Result<IdxCa> {
+            fn arg_unique(&self) -> PolarsResult<IdxCa> {
                 self.0.arg_unique()
             }
 
@@ -407,11 +411,11 @@ macro_rules! impl_dyn_series {
                 self.0.is_not_null()
             }
 
-            fn is_unique(&self) -> Result<BooleanChunked> {
+            fn is_unique(&self) -> PolarsResult<BooleanChunked> {
                 self.0.is_unique()
             }
 
-            fn is_duplicated(&self) -> Result<BooleanChunked> {
+            fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
                 self.0.is_duplicated()
             }
 
@@ -419,7 +423,7 @@ macro_rules! impl_dyn_series {
                 self.0.reverse().$into_logical().into_series()
             }
 
-            fn as_single_ptr(&mut self) -> Result<usize> {
+            fn as_single_ptr(&mut self) -> PolarsResult<usize> {
                 self.0.as_single_ptr()
             }
 
@@ -427,7 +431,7 @@ macro_rules! impl_dyn_series {
                 self.0.shift(periods).$into_logical().into_series()
             }
 
-            fn fill_null(&self, strategy: FillNullStrategy) -> Result<Series> {
+            fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Series> {
                 self.0
                     .fill_null(strategy)
                     .map(|ca| ca.$into_logical().into_series())
@@ -467,7 +471,7 @@ macro_rules! impl_dyn_series {
                 &self,
                 _quantile: f64,
                 _interpol: QuantileInterpolOptions,
-            ) -> Result<Series> {
+            ) -> PolarsResult<Series> {
                 Ok(Int32Chunked::full_null(self.name(), 1)
                     .cast(self.dtype())
                     .unwrap()
@@ -490,7 +494,7 @@ macro_rules! impl_dyn_series {
                 self.0.peak_min()
             }
             #[cfg(feature = "is_in")]
-            fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
+            fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
                 self.0.is_in(other)
             }
             #[cfg(feature = "repeat_by")]
@@ -516,12 +520,12 @@ macro_rules! impl_dyn_series {
                 }
             }
             #[cfg(feature = "is_first")]
-            fn is_first(&self) -> Result<BooleanChunked> {
+            fn is_first(&self) -> PolarsResult<BooleanChunked> {
                 self.0.is_first()
             }
 
             #[cfg(feature = "mode")]
-            fn mode(&self) -> Result<Series> {
+            fn mode(&self) -> PolarsResult<Series> {
                 self.0.mode().map(|ca| ca.$into_logical().into_series())
             }
         }
@@ -564,7 +568,7 @@ mod test {
 
     #[test]
     #[cfg(feature = "dtype-datetime")]
-    fn test_agg_list_type() -> Result<()> {
+    fn test_agg_list_type() -> PolarsResult<()> {
         let s = Series::new("foo", &[1, 2, 3]);
         let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
 
@@ -586,7 +590,7 @@ mod test {
     #[test]
     #[cfg(feature = "dtype-datetime")]
     #[cfg_attr(miri, ignore)]
-    fn test_datelike_join() -> Result<()> {
+    fn test_datelike_join() -> PolarsResult<()> {
         let s = Series::new("foo", &[1, 2, 3]);
         let mut s1 = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
         s1.rename("bar");
@@ -615,7 +619,7 @@ mod test {
 
     #[test]
     #[cfg(all(feature = "dtype-datetime", feature = "dtype-duration"))]
-    fn test_datelike_methods() -> Result<()> {
+    fn test_datelike_methods() -> PolarsResult<()> {
         let s = Series::new("foo", &[1, 2, 3]);
         let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
 
@@ -695,7 +699,7 @@ mod test {
 
     #[test]
     #[cfg(feature = "dtype-duration")]
-    fn test_duration() -> Result<()> {
+    fn test_duration() -> PolarsResult<()> {
         let a = Int64Chunked::new("", &[1, 2, 3])
             .into_datetime(TimeUnit::Nanoseconds, None)
             .into_series();

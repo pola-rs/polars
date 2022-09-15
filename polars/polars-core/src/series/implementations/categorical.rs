@@ -46,9 +46,9 @@ impl SeriesWrap<CategoricalChunked> {
         &'a self,
         keep_fast_unique: bool,
         apply: F,
-    ) -> Result<CategoricalChunked>
+    ) -> PolarsResult<CategoricalChunked>
     where
-        F: for<'b> Fn(&'a UInt32Chunked) -> Result<UInt32Chunked>,
+        F: for<'b> Fn(&'a UInt32Chunked) -> PolarsResult<UInt32Chunked>,
     {
         let cats = apply(self.0.logical())?;
         Ok(self.finish_with_state(keep_fast_unique, cats))
@@ -83,7 +83,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 
     #[cfg(feature = "zip_with")]
-    fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
+    fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         self.0
             .zip_with(mask, other.categorical()?)
             .map(|ca| ca.into_series())
@@ -138,7 +138,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 
     #[cfg(feature = "sort_multiple")]
-    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
+    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
         self.0.argsort_multiple(by, reverse)
     }
 }
@@ -177,7 +177,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.logical_mut().shrink_to_fit()
     }
 
-    fn append_array(&mut self, other: ArrayRef) -> Result<()> {
+    fn append_array(&mut self, other: ArrayRef) -> PolarsResult<()> {
         self.0.logical_mut().append_array(other)
     }
 
@@ -186,7 +186,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             .into_series()
     }
 
-    fn append(&mut self, other: &Series) -> Result<()> {
+    fn append(&mut self, other: &Series) -> PolarsResult<()> {
         if self.0.dtype() == other.dtype() {
             self.0.append(other.categorical().unwrap())
         } else {
@@ -195,7 +195,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             ))
         }
     }
-    fn extend(&mut self, other: &Series) -> Result<()> {
+    fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         if self.0.dtype() == other.dtype() {
             let other = other.categorical()?;
             self.0.logical_mut().extend(other.logical());
@@ -211,7 +211,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         }
     }
 
-    fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
+    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
         self.try_with_state(false, |cats| cats.filter(filter))
             .map(|ca| ca.into_series())
     }
@@ -228,7 +228,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.finish_with_state(false, cats).into_series()
     }
 
-    fn take(&self, indices: &IdxCa) -> Result<Series> {
+    fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
         let indices = if indices.chunks.len() > 1 {
             Cow::Owned(indices.rechunk())
         } else {
@@ -238,7 +238,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             .map(|ca| ca.into_series())
     }
 
-    fn take_iter(&self, iter: &mut dyn TakeIterator) -> Result<Series> {
+    fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
         let cats = self.0.logical().take(iter.into())?;
         Ok(self.finish_with_state(false, cats).into_series())
     }
@@ -253,7 +253,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.finish_with_state(false, cats).into_series()
     }
 
-    unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
+    unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
         let idx = if idx.chunks.len() > 1 {
             Cow::Owned(idx.rechunk())
         } else {
@@ -270,7 +270,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     #[cfg(feature = "take_opt_iter")]
-    fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
+    fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
         let cats = self.0.logical().take(iter.into())?;
         Ok(self.finish_with_state(false, cats).into_series())
     }
@@ -288,7 +288,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType) -> Result<Series> {
+    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         self.0.cast(data_type)
     }
 
@@ -318,15 +318,15 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.logical().has_validity()
     }
 
-    fn unique(&self) -> Result<Series> {
+    fn unique(&self) -> PolarsResult<Series> {
         self.0.unique().map(|ca| ca.into_series())
     }
 
-    fn n_unique(&self) -> Result<usize> {
+    fn n_unique(&self) -> PolarsResult<usize> {
         self.0.n_unique()
     }
 
-    fn arg_unique(&self) -> Result<IdxCa> {
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.0.logical().arg_unique()
     }
 
@@ -338,11 +338,11 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.logical().is_not_null()
     }
 
-    fn is_unique(&self) -> Result<BooleanChunked> {
+    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
         self.0.logical().is_unique()
     }
 
-    fn is_duplicated(&self) -> Result<BooleanChunked> {
+    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
         self.0.logical().is_duplicated()
     }
 
@@ -350,7 +350,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.with_state(true, |cats| cats.reverse()).into_series()
     }
 
-    fn as_single_ptr(&mut self) -> Result<usize> {
+    fn as_single_ptr(&mut self) -> PolarsResult<usize> {
         self.0.logical_mut().as_single_ptr()
     }
 
@@ -358,7 +358,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.with_state(false, |ca| ca.shift(periods)).into_series()
     }
 
-    fn fill_null(&self, strategy: FillNullStrategy) -> Result<Series> {
+    fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Series> {
         self.try_with_state(false, |cats| cats.fill_null(strategy))
             .map(|ca| ca.into_series())
     }
@@ -385,7 +385,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         &self,
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         Ok(CategoricalChunked::full_null(self.0.logical().name(), 1).into_series())
     }
 
@@ -397,7 +397,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     #[cfg(feature = "is_in")]
-    fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
+    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
         check_categorical_src(self.dtype(), other.dtype())?;
         self.0.logical().is_in(&other.to_physical_repr())
     }
@@ -411,12 +411,12 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     #[cfg(feature = "is_first")]
-    fn is_first(&self) -> Result<BooleanChunked> {
+    fn is_first(&self) -> PolarsResult<BooleanChunked> {
         self.0.logical().is_first()
     }
 
     #[cfg(feature = "mode")]
-    fn mode(&self) -> Result<Series> {
+    fn mode(&self) -> PolarsResult<Series> {
         Ok(CategoricalChunked::full_null(self.0.logical().name(), 1).into_series())
     }
 }

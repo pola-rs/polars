@@ -52,7 +52,7 @@ pub trait ToStruct: AsList {
         &self,
         n_fields: ListToStructWidthStrategy,
         name_generator: Option<NameGenerator>,
-    ) -> Result<StructChunked> {
+    ) -> PolarsResult<StructChunked> {
         let ca = self.as_list();
         let n_fields = det_n_fields(ca, n_fields);
 
@@ -73,7 +73,7 @@ pub trait ToStruct: AsList {
                         s
                     })
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
 
             StructChunked::new(ca.name(), &fields)
         }

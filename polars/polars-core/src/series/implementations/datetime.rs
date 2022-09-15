@@ -65,7 +65,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     }
 
     #[cfg(feature = "zip_with")]
-    fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
+    fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         let other = other.to_physical_repr().into_owned();
         self.0.zip_with(mask, other.as_ref().as_ref()).map(|ca| {
             ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
@@ -131,7 +131,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series()
     }
-    fn subtract(&self, rhs: &Series) -> Result<Series> {
+    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         match (self.dtype(), rhs.dtype()) {
             (DataType::Datetime(tu, tz), DataType::Datetime(tur, tzr)) => {
                 assert_eq!(tu, tur);
@@ -158,7 +158,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             )),
         }
     }
-    fn add_to(&self, rhs: &Series) -> Result<Series> {
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
         match (self.dtype(), rhs.dtype()) {
             (DataType::Datetime(tu, tz), DataType::Duration(tur)) => {
                 assert_eq!(tu, tur);
@@ -178,17 +178,17 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             )),
         }
     }
-    fn multiply(&self, _rhs: &Series) -> Result<Series> {
+    fn multiply(&self, _rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::ComputeError(
             "cannot do multiplication on logical".into(),
         ))
     }
-    fn divide(&self, _rhs: &Series) -> Result<Series> {
+    fn divide(&self, _rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::ComputeError(
             "cannot do division on logical".into(),
         ))
     }
-    fn remainder(&self, _rhs: &Series) -> Result<Series> {
+    fn remainder(&self, _rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::ComputeError(
             "cannot do remainder operation on logical".into(),
         ))
@@ -197,7 +197,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         self.0.group_tuples(multithreaded, sorted)
     }
     #[cfg(feature = "sort_multiple")]
-    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
+    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
         self.0.deref().argsort_multiple(by, reverse)
     }
 }
@@ -240,7 +240,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.shrink_to_fit()
     }
 
-    fn append_array(&mut self, other: ArrayRef) -> Result<()> {
+    fn append_array(&mut self, other: ArrayRef) -> PolarsResult<()> {
         self.0.append_array(other)
     }
 
@@ -259,7 +259,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.median()
     }
 
-    fn append(&mut self, other: &Series) -> Result<()> {
+    fn append(&mut self, other: &Series) -> PolarsResult<()> {
         if self.0.dtype() == other.dtype() {
             let other = other.to_physical_repr();
             self.0.append(other.as_ref().as_ref().as_ref());
@@ -271,7 +271,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         }
     }
 
-    fn extend(&mut self, other: &Series) -> Result<()> {
+    fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         if self.0.dtype() == other.dtype() {
             let other = other.to_physical_repr();
             self.0.extend(other.as_ref().as_ref().as_ref());
@@ -283,7 +283,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         }
     }
 
-    fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
+    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
         self.0.filter(filter).map(|ca| {
             ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
                 .into_series()
@@ -304,14 +304,14 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    fn take(&self, indices: &IdxCa) -> Result<Series> {
+    fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
         ChunkTake::take(self.0.deref(), indices.into()).map(|ca| {
             ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
                 .into_series()
         })
     }
 
-    fn take_iter(&self, iter: &mut dyn TakeIterator) -> Result<Series> {
+    fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
         ChunkTake::take(self.0.deref(), iter.into()).map(|ca| {
             ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
                 .into_series()
@@ -331,7 +331,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
+    unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
         let mut out = ChunkTake::take_unchecked(self.0.deref(), idx.into());
 
         if self.0.is_sorted() && (idx.is_sorted() || idx.is_sorted_reverse()) {
@@ -350,7 +350,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     #[cfg(feature = "take_opt_iter")]
-    fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
+    fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
         ChunkTake::take(self.0.deref(), iter.into()).map(|ca| {
             ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
                 .into_series()
@@ -375,7 +375,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType) -> Result<Series> {
+    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         match (data_type, self.0.time_unit()) {
             (DataType::Utf8, TimeUnit::Milliseconds) => {
                 Ok(self.0.strftime("%F %T%.3f").into_series())
@@ -421,18 +421,18 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.has_validity()
     }
 
-    fn unique(&self) -> Result<Series> {
+    fn unique(&self) -> PolarsResult<Series> {
         self.0.unique().map(|ca| {
             ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
                 .into_series()
         })
     }
 
-    fn n_unique(&self) -> Result<usize> {
+    fn n_unique(&self) -> PolarsResult<usize> {
         self.0.n_unique()
     }
 
-    fn arg_unique(&self) -> Result<IdxCa> {
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.0.arg_unique()
     }
 
@@ -452,11 +452,11 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.is_not_null()
     }
 
-    fn is_unique(&self) -> Result<BooleanChunked> {
+    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
         self.0.is_unique()
     }
 
-    fn is_duplicated(&self) -> Result<BooleanChunked> {
+    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
         self.0.is_duplicated()
     }
 
@@ -467,7 +467,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    fn as_single_ptr(&mut self) -> Result<usize> {
+    fn as_single_ptr(&mut self) -> PolarsResult<usize> {
         self.0.as_single_ptr()
     }
 
@@ -478,7 +478,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    fn fill_null(&self, strategy: FillNullStrategy) -> Result<Series> {
+    fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Series> {
         self.0.fill_null(strategy).map(|ca| {
             ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
                 .into_series()
@@ -519,7 +519,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         &self,
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         Ok(Int32Chunked::full_null(self.name(), 1)
             .cast(self.dtype())
             .unwrap())
@@ -541,7 +541,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.peak_min()
     }
     #[cfg(feature = "is_in")]
-    fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
+    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
         self.0.is_in(other)
     }
     #[cfg(feature = "repeat_by")]
@@ -558,12 +558,12 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .clone()
     }
     #[cfg(feature = "is_first")]
-    fn is_first(&self) -> Result<BooleanChunked> {
+    fn is_first(&self) -> PolarsResult<BooleanChunked> {
         self.0.is_first()
     }
 
     #[cfg(feature = "mode")]
-    fn mode(&self) -> Result<Series> {
+    fn mode(&self) -> PolarsResult<Series> {
         self.0.mode().map(|ca| {
             ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
                 .into_series()

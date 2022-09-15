@@ -25,7 +25,7 @@ impl LogicalType for TimeChunked {
         self.0.get_any_value(i).into_time()
     }
 
-    fn cast(&self, dtype: &DataType) -> Result<Series> {
+    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         self.0.cast(dtype)
     }
 }

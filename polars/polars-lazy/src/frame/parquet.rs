@@ -38,7 +38,7 @@ impl LazyFrame {
         row_count: Option<RowCount>,
         rechunk: bool,
         low_memory: bool,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(
             path.as_ref(),
             n_rows,
@@ -60,7 +60,7 @@ impl LazyFrame {
         Ok(lf)
     }
 
-    fn concat_impl(lfs: Vec<LazyFrame>, args: ScanArgsParquet) -> Result<LazyFrame> {
+    fn concat_impl(lfs: Vec<LazyFrame>, args: ScanArgsParquet) -> PolarsResult<LazyFrame> {
         concat(&lfs, args.rechunk).map(|mut lf| {
             if let Some(n_rows) = args.n_rows {
                 lf = lf.slice(0, n_rows as IdxSize)
@@ -78,7 +78,7 @@ impl LazyFrame {
     pub fn scan_parquet_files<P: AsRef<Path>>(
         paths: Vec<P>,
         args: ScanArgsParquet,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         let lfs = paths
             .iter()
             .map(|p| {
@@ -92,14 +92,14 @@ impl LazyFrame {
                     args.low_memory,
                 )
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
 
         Self::concat_impl(lfs, args)
     }
 
     /// Create a LazyFrame directly from a parquet scan.
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
-    pub fn scan_parquet(path: impl AsRef<Path>, args: ScanArgsParquet) -> Result<Self> {
+    pub fn scan_parquet(path: impl AsRef<Path>, args: ScanArgsParquet) -> PolarsResult<Self> {
         let path = path.as_ref();
         let path_str = path.to_string_lossy();
         if path_str.contains('*') {
@@ -118,7 +118,7 @@ impl LazyFrame {
                         args.low_memory,
                     )
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
 
             Self::concat_impl(lfs, args)
         } else {

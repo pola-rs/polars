@@ -94,7 +94,7 @@
 //! use polars_lazy::prelude::*;
 //! use polars_arrow::prelude::QuantileInterpolOptions;
 //!
-//! fn example() -> Result<DataFrame> {
+//! fn example() -> PolarsResult<DataFrame> {
 //!     let df = df!(
 //!     "date" => ["2020-08-21", "2020-08-21", "2020-08-22", "2020-08-23", "2020-08-22"],
 //!     "temp" => [20, 10, 7, 9, 1],

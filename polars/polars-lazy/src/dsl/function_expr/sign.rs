@@ -3,7 +3,7 @@ use DataType::*;
 
 use super::*;
 
-pub(super) fn sign(s: &Series) -> Result<Series> {
+pub(super) fn sign(s: &Series) -> PolarsResult<Series> {
     match s.dtype() {
         Float32 => {
             let ca = s.f32().unwrap();
@@ -23,7 +23,7 @@ pub(super) fn sign(s: &Series) -> Result<Series> {
     }
 }
 
-fn sign_float<T>(ca: &ChunkedArray<T>) -> Result<Series>
+fn sign_float<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsFloatType,
     T::Native: num::Float,

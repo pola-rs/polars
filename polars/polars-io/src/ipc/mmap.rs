@@ -18,7 +18,11 @@ struct MMapChunkIter<'a> {
 }
 
 impl<'a> MMapChunkIter<'a> {
-    fn new(mmap: Mmap, metadata: FileMetadata, projection: &'a Option<Vec<usize>>) -> Result<Self> {
+    fn new(
+        mmap: Mmap,
+        metadata: FileMetadata,
+        projection: &'a Option<Vec<usize>>,
+    ) -> PolarsResult<Self> {
         let mmap = Arc::new(mmap);
 
         let end = metadata.blocks.len();
@@ -68,7 +72,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
         &mut self,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&[ScanAggregation]>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         match self.reader.to_file() {
             Some(file) => {
                 let mmap = unsafe { memmap::Mmap::map(file).unwrap() };

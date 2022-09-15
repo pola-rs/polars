@@ -4,7 +4,7 @@ use polars_core::utils::Wrap;
 use super::*;
 
 pub trait ToDummies<T> {
-    fn to_dummies(&self) -> Result<DataFrame> {
+    fn to_dummies(&self) -> PolarsResult<DataFrame> {
         Err(PolarsError::InvalidOperation(
             "to_dummies is not implemented for this dtype".into(),
         ))
@@ -41,7 +41,7 @@ fn sort_columns(mut columns: Vec<Series>) -> Vec<Series> {
 }
 
 impl ToDummies<Utf8Type> for Wrap<Utf8Chunked> {
-    fn to_dummies(&self) -> Result<DataFrame> {
+    fn to_dummies(&self) -> PolarsResult<DataFrame> {
         let ca = &self.0;
         let groups = ca.group_tuples(true, false).into_idx();
         let col_name = ca.name();
@@ -65,7 +65,7 @@ impl ToDummies<Utf8Type> for Wrap<Utf8Chunked> {
 
 #[cfg(feature = "dtype-categorical")]
 impl ToDummies<Utf8Type> for Wrap<CategoricalChunked> {
-    fn to_dummies(&self) -> Result<DataFrame> {
+    fn to_dummies(&self) -> PolarsResult<DataFrame> {
         let rev_map = self.get_rev_map();
 
         let groups = self.logical().group_tuples(true, false).into_idx();
@@ -96,7 +96,7 @@ where
     T: PolarsIntegerType + Sync,
     T::Native: NumericNative,
 {
-    fn to_dummies(&self) -> Result<DataFrame> {
+    fn to_dummies(&self) -> PolarsResult<DataFrame> {
         let groups = self.group_tuples(true, false).into_idx();
         let col_name = self.name();
         let taker = self.take_rand();
@@ -120,7 +120,7 @@ where
 
 impl<T: PolarsFloatType> ToDummies<Float32Type> for WrapFloat<ChunkedArray<T>> {}
 impl ToDummies<Wrap<BooleanType>> for Wrap<BooleanChunked> {
-    fn to_dummies(&self) -> Result<DataFrame> {
+    fn to_dummies(&self) -> PolarsResult<DataFrame> {
         let ca = self.cast(&DataType::Int8)?;
         ca.to_ops().to_dummies()
     }

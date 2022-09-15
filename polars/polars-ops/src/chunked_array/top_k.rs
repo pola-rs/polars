@@ -31,7 +31,11 @@ impl<T: PartialOrd + IsFloat> Ord for Compare<T> {
     }
 }
 
-fn top_k_impl<T>(ca: &ChunkedArray<T>, k: usize, mult_order: T::Native) -> Result<ChunkedArray<T>>
+fn top_k_impl<T>(
+    ca: &ChunkedArray<T>,
+    k: usize,
+    mult_order: T::Native,
+) -> PolarsResult<ChunkedArray<T>>
 where
     T: PolarsNumericType,
 {
@@ -55,7 +59,7 @@ where
     Ok(out)
 }
 
-pub fn top_k(s: &Series, k: usize, reverse: bool) -> Result<Series> {
+pub fn top_k(s: &Series, k: usize, reverse: bool) -> PolarsResult<Series> {
     let dtype = s.dtype();
 
     let s = s.to_physical_repr();

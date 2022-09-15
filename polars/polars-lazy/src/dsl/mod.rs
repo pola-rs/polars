@@ -599,7 +599,7 @@ impl Expr {
     /// the correct output_type. If None given the output type of the input expr is used.
     pub fn map<F>(self, function: F, output_type: GetOutput) -> Self
     where
-        F: Fn(Series) -> Result<Series> + 'static + Send + Sync,
+        F: Fn(Series) -> PolarsResult<Series> + 'static + Send + Sync,
     {
         let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
 
@@ -638,7 +638,7 @@ impl Expr {
     /// See the [`Expr::map`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
     pub fn map_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
     where
-        F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
+        F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
     {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
@@ -664,7 +664,7 @@ impl Expr {
     ///  * `map_list` should be used when the function expects a list aggregated series.
     pub fn map_list<F>(self, function: F, output_type: GetOutput) -> Self
     where
-        F: Fn(Series) -> Result<Series> + 'static + Send + Sync,
+        F: Fn(Series) -> PolarsResult<Series> + 'static + Send + Sync,
     {
         let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
 
@@ -688,7 +688,7 @@ impl Expr {
         options: FunctionOptions,
     ) -> Self
     where
-        F: Fn(Series) -> Result<Series> + 'static + Send + Sync,
+        F: Fn(Series) -> PolarsResult<Series> + 'static + Send + Sync,
     {
         let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
 
@@ -711,7 +711,7 @@ impl Expr {
     /// * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
     pub fn apply<F>(self, function: F, output_type: GetOutput) -> Self
     where
-        F: Fn(Series) -> Result<Series> + 'static + Send + Sync,
+        F: Fn(Series) -> PolarsResult<Series> + 'static + Send + Sync,
     {
         let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
 
@@ -743,7 +743,7 @@ impl Expr {
     /// See the [`Expr::apply`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
     pub fn apply_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
     where
-        F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
+        F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
     {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
@@ -1020,7 +1020,7 @@ impl Expr {
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
     ///
-    /// fn example() -> Result<()> {
+    /// fn example() -> PolarsResult<()> {
     ///     let df = df! {
     ///             "groups" => &[1, 1, 2, 2, 1, 2, 3, 3, 1],
     ///             "values" => &[1, 2, 3, 4, 5, 6, 7, 8, 8]
@@ -1567,7 +1567,9 @@ impl Expr {
         options: RollingOptions,
         expr_name: &'static str,
         expr_name_by: &'static str,
-        rolling_fn: Arc<dyn (Fn(&Series, RollingOptionsImpl) -> Result<Series>) + Send + Sync>,
+        rolling_fn: Arc<
+            dyn (Fn(&Series, RollingOptionsImpl) -> PolarsResult<Series>) + Send + Sync,
+        >,
     ) -> Expr {
         if let Some(ref by) = options.by {
             self.apply_many(
@@ -2316,7 +2318,7 @@ impl Rem for Expr {
 /// the correct output_type. If None given the output type of the input expr is used.
 pub fn map_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
 where
-    F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
+    F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();
@@ -2342,7 +2344,7 @@ where
 ///  * `map_list_mul` should be used when the function expects a list aggregated series.
 pub fn map_list_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
 where
-    F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
+    F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();
@@ -2371,7 +2373,7 @@ where
 /// * `[apply_mul]` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
 pub fn apply_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
 where
-    F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
+    F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();

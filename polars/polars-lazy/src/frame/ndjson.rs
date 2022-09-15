@@ -75,7 +75,7 @@ impl LazyJsonLineReader {
         self
     }
 
-    pub fn finish(self) -> Result<LazyFrame> {
+    pub fn finish(self) -> PolarsResult<LazyFrame> {
         let options = ScanArgsAnonymous {
             name: "JSON SCAN",
             infer_schema_length: self.infer_schema_length,

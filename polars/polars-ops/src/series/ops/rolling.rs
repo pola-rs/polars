@@ -8,7 +8,11 @@ use polars_core::utils::with_unstable_series;
 use crate::series::ops::SeriesSealed;
 
 #[cfg(feature = "moment")]
-fn rolling_skew<T>(ca: &ChunkedArray<T>, window_size: usize, bias: bool) -> Result<ChunkedArray<T>>
+fn rolling_skew<T>(
+    ca: &ChunkedArray<T>,
+    window_size: usize,
+    bias: bool,
+) -> PolarsResult<ChunkedArray<T>>
 where
     ChunkedArray<T>: IntoSeries,
     T: PolarsFloatType,
@@ -30,7 +34,7 @@ where
 
 pub trait RollingSeries: SeriesSealed {
     #[cfg(feature = "moment")]
-    fn rolling_skew(&self, window_size: usize, bias: bool) -> Result<Series> {
+    fn rolling_skew(&self, window_size: usize, bias: bool) -> PolarsResult<Series> {
         let s = self.as_series();
 
         match s.dtype() {

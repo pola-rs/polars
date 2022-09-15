@@ -103,7 +103,7 @@ use crate::series::IsSorted;
 /// If Categorical types are created without a global string cache or under
 /// a different global string cache the mapping will be incorrect.
 #[cfg(feature = "dtype-categorical")]
-pub(crate) fn check_categorical_src(l: &DataType, r: &DataType) -> Result<()> {
+pub(crate) fn check_categorical_src(l: &DataType, r: &DataType) -> PolarsResult<()> {
     match (l, r) {
         (DataType::Categorical(Some(l)), DataType::Categorical(Some(r))) => {
             if !l.same_src(r) {
@@ -271,7 +271,7 @@ impl DataFrame {
         mut df_left: DataFrame,
         mut df_right: DataFrame,
         suffix: Option<String>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         let mut left_names = PlHashSet::with_capacity(df_left.width());
 
         df_left.columns.iter().for_each(|series| {
@@ -347,7 +347,7 @@ impl DataFrame {
         slice: Option<(i64, usize)>,
         _check_rechunk: bool,
         _verbose: bool,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = how {
             return self.cross_join(other, suffix, slice);
@@ -619,7 +619,7 @@ impl DataFrame {
         right_on: I,
         how: JoinType,
         suffix: Option<String>,
-    ) -> Result<DataFrame>
+    ) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -648,11 +648,16 @@ impl DataFrame {
     ///
     /// ```
     /// # use polars_core::prelude::*;
-    /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
+    /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> PolarsResult<DataFrame> {
     ///     left.inner_join(right, ["join_column_left"], ["join_column_right"])
     /// }
     /// ```
-    pub fn inner_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> Result<DataFrame>
+    pub fn inner_join<I, S>(
+        &self,
+        other: &DataFrame,
+        left_on: I,
+        right_on: I,
+    ) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -667,7 +672,7 @@ impl DataFrame {
         s_right: &Series,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
@@ -739,7 +744,12 @@ impl DataFrame {
     /// | 100             | null   |
     /// +-----------------+--------+
     /// ```
-    pub fn left_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> Result<DataFrame>
+    pub fn left_join<I, S>(
+        &self,
+        other: &DataFrame,
+        left_on: I,
+        right_on: I,
+    ) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -754,7 +764,7 @@ impl DataFrame {
         other: &DataFrame,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         let (left_idx, right_idx) = ids;
         let materialize_left = || {
             let mut left_idx = &*left_idx;
@@ -787,7 +797,7 @@ impl DataFrame {
         other: &DataFrame,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         let (left_idx, right_idx) = ids;
         let materialize_left = || match left_idx {
             JoinIds::Left(left_idx) => {
@@ -838,7 +848,7 @@ impl DataFrame {
         s_right: &Series,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
@@ -889,7 +899,7 @@ impl DataFrame {
         s_right: &Series,
         slice: Option<(i64, usize)>,
         anti: bool,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
@@ -904,11 +914,16 @@ impl DataFrame {
     ///
     /// ```
     /// # use polars_core::prelude::*;
-    /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
+    /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> PolarsResult<DataFrame> {
     ///     left.outer_join(right, ["join_column_left"], ["join_column_right"])
     /// }
     /// ```
-    pub fn outer_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> Result<DataFrame>
+    pub fn outer_join<I, S>(
+        &self,
+        other: &DataFrame,
+        left_on: I,
+        right_on: I,
+    ) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -922,7 +937,7 @@ impl DataFrame {
         s_right: &Series,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
@@ -1068,7 +1083,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_outer_join() -> Result<()> {
+    fn test_outer_join() -> PolarsResult<()> {
         let (temp, rain) = create_frames();
         let joined = temp.outer_join(&rain, ["days"], ["days"])?;
         println!("{:?}", &joined);
@@ -1261,7 +1276,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn empty_df_join() -> Result<()> {
+    fn empty_df_join() -> PolarsResult<()> {
         let empty: Vec<String> = vec![];
         let empty_df = DataFrame::new(vec![
             Series::new("key", &empty),
@@ -1313,7 +1328,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn unit_df_join() -> Result<()> {
+    fn unit_df_join() -> PolarsResult<()> {
         let df1 = df![
             "a" => [1],
             "b" => [2]
@@ -1336,7 +1351,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_join_err() -> Result<()> {
+    fn test_join_err() -> PolarsResult<()> {
         let df1 = df![
             "a" => [1, 2],
             "b" => ["foo", "bar"]
@@ -1360,7 +1375,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_joins_with_duplicates() -> Result<()> {
+    fn test_joins_with_duplicates() -> PolarsResult<()> {
         // test joins with duplicates in both dataframes
 
         let df_left = df![
@@ -1412,7 +1427,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_multi_joins_with_duplicates() -> Result<()> {
+    fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
         // test joins with multiple join columns and duplicates in both
         // dataframes
 
@@ -1483,7 +1498,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_join_floats() -> Result<()> {
+    fn test_join_floats() -> PolarsResult<()> {
         let df_a = df! {
             "a" => &[1.0, 2.0, 1.0, 1.0],
             "b" => &["a", "b", "c", "c"],
@@ -1529,7 +1544,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_join_nulls() -> Result<()> {
+    fn test_join_nulls() -> PolarsResult<()> {
         let a = df![
             "a" => [Some(1), None, None]
         ]?;
@@ -1545,7 +1560,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_4_threads_bit_offset() -> Result<()> {
+    fn test_4_threads_bit_offset() -> PolarsResult<()> {
         // run this locally with a thread pool size of 4
         // this was an obscure bug caused by not taking the offset of a bit into account.
         let n = 8i64;

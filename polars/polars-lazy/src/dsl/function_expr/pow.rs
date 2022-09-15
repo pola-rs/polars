@@ -5,7 +5,7 @@ use polars_core::export::num::{Float, ToPrimitive};
 
 use super::*;
 
-fn pow_on_floats<T>(base: &ChunkedArray<T>, exponent: &Series) -> Result<Series>
+fn pow_on_floats<T>(base: &ChunkedArray<T>, exponent: &Series) -> PolarsResult<Series>
 where
     T: PolarsFloatType,
     T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
@@ -54,7 +54,7 @@ where
     }
 }
 
-fn pow_on_series(base: &Series, exponent: &Series) -> Result<Series> {
+fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Series> {
     use DataType::*;
     match base.dtype() {
         Float32 => {
@@ -72,7 +72,7 @@ fn pow_on_series(base: &Series, exponent: &Series) -> Result<Series> {
     }
 }
 
-pub(super) fn pow(s: &mut [Series]) -> Result<Series> {
+pub(super) fn pow(s: &mut [Series]) -> PolarsResult<Series> {
     let base = &s[0];
     let exponent = &s[1];
 

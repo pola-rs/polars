@@ -11,7 +11,7 @@
 //!
 //! ```rust no_run
 //! use polars::prelude::*;
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //!
 //! let lf1 = LazyFrame::scan_parquet("myfile_1.parquet", Default::default())?
 //!     .groupby([col("ham")])
@@ -118,7 +118,7 @@
 //!
 //! ```no_run
 //! # use polars::prelude::*;
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //! # let df = DataFrame::default();
 //!   df.lazy()
 //!    .select([

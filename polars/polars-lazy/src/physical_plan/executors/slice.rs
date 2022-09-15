@@ -10,7 +10,7 @@ pub struct SliceExec {
 }
 
 impl Executor for SliceExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {

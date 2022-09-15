@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn test_multiple_roots() -> Result<()> {
+fn test_multiple_roots() -> PolarsResult<()> {
     let mut expr_arena = Arena::with_capacity(16);
     let mut lp_arena = Arena::with_capacity(8);
 
@@ -25,7 +25,7 @@ fn test_multiple_roots() -> Result<()> {
 
 #[test]
 #[cfg(all(feature = "is_in", feature = "strings"))]
-fn test_issue_2472() -> Result<()> {
+fn test_issue_2472() -> PolarsResult<()> {
     let df = df![
         "group" => ["54360-2001-0-20020312-4-1"
     ,"39444-2020-0-20210418-4-1"
@@ -64,7 +64,7 @@ fn test_issue_2472() -> Result<()> {
 }
 
 #[test]
-fn test_pass_unrelated_apply() -> Result<()> {
+fn test_pass_unrelated_apply() -> PolarsResult<()> {
     // maps should not influence a predicate of a different column as maps should not depend on previous values
     let df = fruits_cars();
 
@@ -82,7 +82,7 @@ fn test_pass_unrelated_apply() -> Result<()> {
 }
 
 #[test]
-fn filter_added_column_issue_2470() -> Result<()> {
+fn filter_added_column_issue_2470() -> PolarsResult<()> {
     let df = fruits_cars();
 
     // the binary expression in the predicate lead to an incorrect pushdown because the rhs
@@ -98,7 +98,7 @@ fn filter_added_column_issue_2470() -> Result<()> {
 }
 
 #[test]
-fn filter_blocked_by_map() -> Result<()> {
+fn filter_blocked_by_map() -> PolarsResult<()> {
     let df = fruits_cars();
 
     let allowed = AllowedOptimizations {
@@ -119,7 +119,7 @@ fn filter_blocked_by_map() -> Result<()> {
 
 #[test]
 #[cfg(all(feature = "temporal", feature = "strings"))]
-fn test_strptime_block_predicate() -> Result<()> {
+fn test_strptime_block_predicate() -> PolarsResult<()> {
     let df = df![
         "date" => ["2021-01-01", "2021-01-02"]
     ]?;
@@ -143,7 +143,7 @@ fn test_strptime_block_predicate() -> Result<()> {
 }
 
 #[test]
-fn test_strict_cast_predicate_pushdown() -> Result<()> {
+fn test_strict_cast_predicate_pushdown() -> PolarsResult<()> {
     let df = df![
         "a" => ["a", "b", "c"]
     ]?;
@@ -160,7 +160,7 @@ fn test_strict_cast_predicate_pushdown() -> Result<()> {
 }
 
 #[test]
-fn test_filter_nulls_created_by_join() -> Result<()> {
+fn test_filter_nulls_created_by_join() -> PolarsResult<()> {
     // #2602
     let a = df![
         "key" => ["foo", "bar"],
@@ -198,7 +198,7 @@ fn test_filter_nulls_created_by_join() -> Result<()> {
 }
 
 #[test]
-fn test_filter_null_creation_by_cast() -> Result<()> {
+fn test_filter_null_creation_by_cast() -> PolarsResult<()> {
     let df = df![
         "int" => [1, 2, 3],
         "empty" => ["", "", ""]
@@ -220,7 +220,7 @@ fn test_filter_null_creation_by_cast() -> Result<()> {
 }
 
 #[test]
-fn test_predicate_pd_apply() -> Result<()> {
+fn test_predicate_pd_apply() -> PolarsResult<()> {
     let q = df![
         "a" => [1, 2, 3],
     ]?
@@ -238,7 +238,7 @@ fn test_predicate_pd_apply() -> Result<()> {
     Ok(())
 }
 #[test]
-fn test_predicate_on_join_suffix_4788() -> Result<()> {
+fn test_predicate_on_join_suffix_4788() -> PolarsResult<()> {
     let lf = df![
       "x" => [1, 2],
       "y" => [1, 1],

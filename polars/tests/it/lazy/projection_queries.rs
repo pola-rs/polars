@@ -1,7 +1,7 @@
 use polars::prelude::*;
 
 #[test]
-fn test_sum_after_filter() -> Result<()> {
+fn test_sum_after_filter() -> PolarsResult<()> {
     let df = df![
         "ids" => 0..10,
         "values" => 10..20,
@@ -16,7 +16,7 @@ fn test_sum_after_filter() -> Result<()> {
 }
 
 #[test]
-fn test_swap_rename() -> Result<()> {
+fn test_swap_rename() -> PolarsResult<()> {
     let df = df![
         "a" => [1],
         "b" => [2],
@@ -34,7 +34,7 @@ fn test_swap_rename() -> Result<()> {
 }
 
 #[test]
-fn test_outer_join_with_column_2988() -> Result<()> {
+fn test_outer_join_with_column_2988() -> PolarsResult<()> {
     let ldf1 = df![
         "key1" => ["foo", "bar"],
         "key2" => ["foo", "bar"],

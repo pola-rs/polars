@@ -15,7 +15,7 @@ fn cast_rhs(
     dtype: &DataType,
     length: usize,
     allow_broadcast: bool,
-) -> Result<()> {
+) -> PolarsResult<()> {
     for s in other.iter_mut() {
         // make sure that inner types match before we coerce into list
         if !matches!(s.dtype(), DataType::List(_)) {
@@ -58,7 +58,7 @@ fn cast_rhs(
 pub trait ListNameSpaceImpl: AsList {
     /// In case the inner dtype [`DataType::Utf8`], the individual items will be joined into a
     /// single string separated by `separator`.
-    fn lst_join(&self, separator: &str) -> Result<Utf8Chunked> {
+    fn lst_join(&self, separator: &str) -> PolarsResult<Utf8Chunked> {
         let ca = self.as_list();
         match ca.inner_dtype() {
             DataType::Utf8 => {
@@ -144,7 +144,7 @@ pub trait ListNameSpaceImpl: AsList {
         ca.apply_amortized(|s| s.as_ref().reverse())
     }
 
-    fn lst_unique(&self) -> Result<ListChunked> {
+    fn lst_unique(&self) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
         ca.try_apply_amortized(|s| s.as_ref().unique())
     }
@@ -204,7 +204,7 @@ pub trait ListNameSpaceImpl: AsList {
     /// So index `0` would return the first item of every sublist
     /// and index `-1` would return the last item of every sublist
     /// if an index is out of bounds, it will return a `None`.
-    fn lst_get(&self, idx: i64) -> Result<Series> {
+    fn lst_get(&self, idx: i64) -> PolarsResult<Series> {
         let ca = self.as_list();
         let chunks = ca
             .downcast_iter()
@@ -213,7 +213,7 @@ pub trait ListNameSpaceImpl: AsList {
         Series::try_from((ca.name(), chunks))
     }
 
-    fn lst_concat(&self, other: &[Series]) -> Result<ListChunked> {
+    fn lst_concat(&self, other: &[Series]) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
         let other_len = other.len();
         let length = ca.len();

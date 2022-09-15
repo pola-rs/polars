@@ -7,7 +7,7 @@ impl SeriesOps for Wrap<DurationChunked> {
         self.0.dtype()
     }
     #[cfg(feature = "to_dummies")]
-    fn to_dummies(&self) -> Result<DataFrame> {
+    fn to_dummies(&self) -> PolarsResult<DataFrame> {
         self.0.deref().to_ops().to_dummies()
     }
 }

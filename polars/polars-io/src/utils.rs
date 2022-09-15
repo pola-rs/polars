@@ -48,7 +48,7 @@ pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> Ar
 pub(crate) fn columns_to_projection(
     columns: &[String],
     schema: &ArrowSchema,
-) -> Result<Vec<usize>> {
+) -> PolarsResult<Vec<usize>> {
     use ahash::AHashMap;
 
     let err = |column: &str| {

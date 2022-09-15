@@ -15,7 +15,7 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 impl PhysicalAggExpr for Expr {
-    fn evaluate<'a>(&self, df: &DataFrame, groups: &'a GroupsProxy) -> Result<Series> {
+    fn evaluate<'a>(&self, df: &DataFrame, groups: &'a GroupsProxy) -> PolarsResult<Series> {
         let state = ExecutionState::new();
         let dtype = df.get_columns()[0].dtype();
         let phys_expr = prepare_expression_for_context("", self, dtype, Context::Aggregation)?;
@@ -24,7 +24,7 @@ impl PhysicalAggExpr for Expr {
             .map(|mut ac| ac.aggregated())
     }
 
-    fn root_name(&self) -> Result<&str> {
+    fn root_name(&self) -> PolarsResult<&str> {
         Ok("")
     }
 }
@@ -36,7 +36,7 @@ pub fn pivot<I0, S0, I1, S1, I2, S2>(
     columns: I2,
     agg_expr: Expr,
     sort_columns: bool,
-) -> Result<DataFrame>
+) -> PolarsResult<DataFrame>
 where
     I0: IntoIterator<Item = S0>,
     S0: AsRef<str>,
@@ -64,7 +64,7 @@ pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
     columns: I2,
     agg_expr: Expr,
     sort_columns: bool,
-) -> Result<DataFrame>
+) -> PolarsResult<DataFrame>
 where
     I0: IntoIterator<Item = S0>,
     S0: AsRef<str>,

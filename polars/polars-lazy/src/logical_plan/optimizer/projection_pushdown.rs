@@ -99,7 +99,7 @@ fn update_scan_schema(
     // sorting parsers: csv,
     // non-sorting: parquet, ipc
     sort_projections: bool,
-) -> Result<Schema> {
+) -> PolarsResult<Schema> {
     let mut new_schema = Schema::with_capacity(acc_projections.len());
     let mut new_cols = Vec::with_capacity(acc_projections.len());
     for node in acc_projections.iter() {
@@ -180,7 +180,7 @@ impl ProjectionPushDown {
         projections_seen: usize,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<()> {
+    ) -> PolarsResult<()> {
         let alp = lp_arena.take(input);
         let lp = self.push_down(
             alp,
@@ -206,7 +206,7 @@ impl ProjectionPushDown {
         projections_seen: usize,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<Vec<Node>> {
+    ) -> PolarsResult<Vec<Node>> {
         let alp = lp_arena.take(input);
         let down_schema = alp.schema(lp_arena);
         let (acc_projections, local_projections, names) =
@@ -243,7 +243,7 @@ impl ProjectionPushDown {
         projections_seen: usize,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         use ALogicalPlan::*;
 
         match logical_plan {
@@ -1106,7 +1106,7 @@ impl ProjectionPushDown {
                         lp_arena.replace(node, alp);
                         Ok(node)
                     })
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
                 Ok(lp.with_exprs_and_input(exprs, new_inputs))
             }
@@ -1133,7 +1133,7 @@ impl ProjectionPushDown {
         logical_plan: ALogicalPlan,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         let acc_projections = init_vec();
         let names = init_set();
         self.push_down(

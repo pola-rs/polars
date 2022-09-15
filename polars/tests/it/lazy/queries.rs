@@ -19,7 +19,7 @@ fn test_with_duplicate_column_empty_df() {
 }
 
 #[test]
-fn test_drop() -> Result<()> {
+fn test_drop() -> PolarsResult<()> {
     // dropping all columns is a special case. It may fail because a projection
     // that projects nothing could be misinterpreted as select all.
     let out = df![
@@ -34,7 +34,7 @@ fn test_drop() -> Result<()> {
 
 #[test]
 #[cfg(feature = "dynamic_groupby")]
-fn test_special_groupby_schemas() -> Result<()> {
+fn test_special_groupby_schemas() -> PolarsResult<()> {
     let df = df![
         "a" => [1, 2, 3, 4, 5],
         "b" => [1, 2, 3, 4, 5],
@@ -94,7 +94,7 @@ fn test_special_groupby_schemas() -> Result<()> {
 }
 
 #[test]
-fn max_on_empty_df_3027() -> Result<()> {
+fn max_on_empty_df_3027() -> PolarsResult<()> {
     let df = df! {
         "id" => ["1"],
         "name" => ["one"],
@@ -112,7 +112,7 @@ fn max_on_empty_df_3027() -> Result<()> {
 }
 
 #[test]
-fn test_alias_before_cast() -> Result<()> {
+fn test_alias_before_cast() -> PolarsResult<()> {
     let out = df![
         "a" => [1, 2, 3],
     ]?
@@ -128,7 +128,7 @@ fn test_alias_before_cast() -> Result<()> {
 }
 
 #[test]
-fn test_sorted_path() -> Result<()> {
+fn test_sorted_path() -> PolarsResult<()> {
     // start with a sorted column and see if the metadata remains preserved
 
     let payloads = &[1, 2, 3];
@@ -151,7 +151,7 @@ fn test_sorted_path() -> Result<()> {
 }
 
 #[test]
-fn test_sorted_path_joins() -> Result<()> {
+fn test_sorted_path_joins() -> PolarsResult<()> {
     let dfa = df![
         "a"=> [1, 2, 3]
     ]?;
@@ -173,7 +173,7 @@ fn test_sorted_path_joins() -> Result<()> {
 }
 
 #[test]
-fn test_unknown_supertype_ignore() -> Result<()> {
+fn test_unknown_supertype_ignore() -> PolarsResult<()> {
     let df = df![
         "col1" => [0., 3., 2., 1.],
         "col2" => [0., 0., 1., 1.],

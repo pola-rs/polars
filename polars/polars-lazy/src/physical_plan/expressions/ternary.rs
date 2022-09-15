@@ -50,7 +50,7 @@ fn finish_as_iters<'a>(
     mut ac_truthy: AggregationContext<'a>,
     mut ac_falsy: AggregationContext<'a>,
     mut ac_mask: AggregationContext<'a>,
-) -> Result<AggregationContext<'a>> {
+) -> PolarsResult<AggregationContext<'a>> {
     let mut ca: ListChunked = ac_truthy
         .iter_groups()
         .zip(ac_falsy.iter_groups())
@@ -66,7 +66,7 @@ fn finish_as_iters<'a>(
             }
             .transpose()
         })
-        .collect::<Result<_>>()?;
+        .collect::<PolarsResult<_>>()?;
 
     ca.rename(ac_truthy.series().name());
     // aggregation leaves only a single chunks
@@ -89,7 +89,7 @@ impl PhysicalExpr for TernaryExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let mut state = state.split();
         // don't cache window functions as they run in parallel
         state.flags.remove(StateFlags::CACHE_WINDOW_EXPR);
@@ -114,7 +114,7 @@ impl PhysicalExpr for TernaryExpr {
 
         truthy.zip_with(&mask, &falsy)
     }
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.truthy.to_field(input_schema)
     }
 
@@ -124,7 +124,7 @@ impl PhysicalExpr for TernaryExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let aggregation_predicate = self.predicate.is_valid_aggregation();
         if !aggregation_predicate {
             // unwrap will not fail as it is not an aggregation expression.
@@ -302,7 +302,7 @@ impl PartitionedAggregation for TernaryExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         let truthy = self.truthy.as_partitioned_aggregator().unwrap();
         let falsy = self.falsy.as_partitioned_aggregator().unwrap();
         let mask = self.predicate.as_partitioned_aggregator().unwrap();
@@ -321,7 +321,7 @@ impl PartitionedAggregation for TernaryExpr {
         partitioned: Series,
         _groups: &GroupsProxy,
         _state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         Ok(partitioned)
     }
 }

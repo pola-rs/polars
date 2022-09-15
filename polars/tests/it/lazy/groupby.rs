@@ -4,7 +4,7 @@ use polars_core::SINGLE_LOCK;
 use super::*;
 
 #[test]
-fn test_filter_sort_diff_2984() -> Result<()> {
+fn test_filter_sort_diff_2984() -> PolarsResult<()> {
     // make sort that sort doest not oob if filter returns no values
     let df = df![
     "group"=> ["A" ,"A", "A", "B", "B", "B", "B"],
@@ -28,7 +28,7 @@ fn test_filter_sort_diff_2984() -> Result<()> {
 }
 
 #[test]
-fn test_filter_after_tail() -> Result<()> {
+fn test_filter_after_tail() -> PolarsResult<()> {
     let df = df![
         "a" => ["foo", "foo", "bar"],
         "b" => [1, 2, 3]
@@ -53,7 +53,7 @@ fn test_filter_after_tail() -> Result<()> {
 
 #[test]
 #[cfg(feature = "unique_counts")]
-fn test_list_arithmetic_in_groupby() -> Result<()> {
+fn test_list_arithmetic_in_groupby() -> PolarsResult<()> {
     // specifically make the amount of groups equal to df height.
     let df = df![
         "a" => ["foo", "ham", "bar"],
@@ -88,7 +88,7 @@ fn test_list_arithmetic_in_groupby() -> Result<()> {
 }
 
 #[test]
-fn test_filter_diff_arithmetic() -> Result<()> {
+fn test_filter_diff_arithmetic() -> PolarsResult<()> {
     let df = df![
         "user" => [1, 1, 1, 1, 2],
         "group" => [1, 2, 1, 1, 2],
@@ -114,7 +114,7 @@ fn test_filter_diff_arithmetic() -> Result<()> {
 }
 
 #[test]
-fn test_groupby_lit_agg() -> Result<()> {
+fn test_groupby_lit_agg() -> PolarsResult<()> {
     let df = df![
         "group" => [1, 2, 1, 1, 2],
     ]?;
@@ -131,7 +131,7 @@ fn test_groupby_lit_agg() -> Result<()> {
 }
 
 #[test]
-fn test_groupby_agg_list_with_not_aggregated() -> Result<()> {
+fn test_groupby_agg_list_with_not_aggregated() -> PolarsResult<()> {
     let df = df![
     "group" => ["a", "a", "a", "a", "a", "a", "b", "b", "b", "b", "b", "b"],
     "value" => [0, 2, 3, 6, 2, 4, 7, 9, 3, 4, 6, 7, ],
@@ -157,7 +157,7 @@ fn test_groupby_agg_list_with_not_aggregated() -> Result<()> {
 
 #[test]
 #[cfg(all(feature = "dtype-duration", feature = "dtype-struct"))]
-fn test_logical_mean_partitioned_groupby_block() -> Result<()> {
+fn test_logical_mean_partitioned_groupby_block() -> PolarsResult<()> {
     let guard = SINGLE_LOCK.lock();
     let df = df![
         "a" => [1, 1, 2],

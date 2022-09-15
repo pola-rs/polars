@@ -457,7 +457,7 @@ pub(super) fn parse_lines(
     n_lines: usize,
     // length or original schema
     schema_len: usize,
-) -> Result<usize> {
+) -> PolarsResult<usize> {
     assert!(
         !projection.is_empty(),
         "at least one column should be projected"

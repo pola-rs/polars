@@ -76,7 +76,7 @@ pub trait LogicalType {
         unimplemented!()
     }
 
-    fn cast(&self, dtype: &DataType) -> Result<Series>;
+    fn cast(&self, dtype: &DataType) -> PolarsResult<Series>;
 }
 
 impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T>

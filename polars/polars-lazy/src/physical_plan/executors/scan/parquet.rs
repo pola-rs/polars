@@ -26,7 +26,7 @@ impl ParquetExec {
         }
     }
 
-    fn read(&mut self) -> Result<DataFrame> {
+    fn read(&mut self) -> PolarsResult<DataFrame> {
         let (file, projection, n_rows, aggregate, predicate) = prepare_scan_args(
             &self.path,
             &self.predicate,
@@ -51,7 +51,7 @@ impl ParquetExec {
 }
 
 impl Executor for ParquetExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let finger_print = FileFingerPrint {
             path: self.path.clone(),
             predicate: self

@@ -26,7 +26,10 @@ use crate::prelude::*;
 use crate::utils;
 use crate::utils::{combine_predicates_expr, has_expr};
 
-pub(crate) fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> Result<(Vec<Expr>, Schema)> {
+pub(crate) fn prepare_projection(
+    exprs: Vec<Expr>,
+    schema: &Schema,
+) -> PolarsResult<(Vec<Expr>, Schema)> {
     let exprs = rewrite_projections(exprs, schema, &[]);
     let schema = utils::expressions_to_schema(&exprs, schema, Context::Default)?;
     Ok((exprs, schema))
@@ -63,7 +66,7 @@ impl LogicalPlanBuilder {
         skip_rows: Option<usize>,
         n_rows: Option<usize>,
         name: &'static str,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         let schema = Arc::new(match schema {
             Some(s) => s,
             None => function.schema(infer_schema_length)?,
@@ -96,7 +99,7 @@ impl LogicalPlanBuilder {
         row_count: Option<RowCount>,
         rechunk: bool,
         low_memory: bool,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         use polars_io::SerReader as _;
 
         let path = path.into();
@@ -124,7 +127,7 @@ impl LogicalPlanBuilder {
 
     #[cfg(feature = "ipc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
-    pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: IpcScanOptions) -> Result<Self> {
+    pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: IpcScanOptions) -> PolarsResult<Self> {
         use polars_io::SerReader as _;
 
         let path = path.into();
@@ -164,7 +167,7 @@ impl LogicalPlanBuilder {
         encoding: CsvEncoding,
         row_count: Option<RowCount>,
         parse_dates: bool,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         let path = path.into();
         let mut file = std::fs::File::open(&path)?;
         let mut magic_nr = [0u8; 2];
@@ -524,7 +527,7 @@ impl LogicalPlanBuilder {
                 .map(|e| e
                     .to_field(&schema_right, Context::Default)
                     .map(|field| field.name))
-                .collect::<Result<Vec<_>>>(),
+                .collect::<PolarsResult<Vec<_>>>(),
             &self.0,
             into
         );

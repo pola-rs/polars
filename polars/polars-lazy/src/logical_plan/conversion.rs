@@ -148,7 +148,7 @@ pub(crate) fn to_alp(
     lp: LogicalPlan,
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<ALogicalPlan>,
-) -> Result<Node> {
+) -> PolarsResult<Node> {
     let v = match lp {
         LogicalPlan::AnonymousScan {
             function,
@@ -173,7 +173,7 @@ pub(crate) fn to_alp(
             let inputs = inputs
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
-                .collect::<Result<_>>()?;
+                .collect::<PolarsResult<_>>()?;
             ALogicalPlan::Union { inputs, options }
         }
         LogicalPlan::Selection { input, predicate } => {
@@ -416,7 +416,7 @@ pub(crate) fn to_alp(
             let contexts = contexts
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
-                .collect::<Result<_>>()?;
+                .collect::<PolarsResult<_>>()?;
             ALogicalPlan::ExtContext {
                 input,
                 contexts,

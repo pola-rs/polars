@@ -52,7 +52,7 @@ impl PhysicalExpr for SortExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let series = self.physical_expr.evaluate(df, state)?;
         Ok(series.sort_with(self.options))
     }
@@ -63,7 +63,7 @@ impl PhysicalExpr for SortExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
         let series = ac.flat_naive().into_owned();
 
@@ -101,7 +101,7 @@ impl PhysicalExpr for SortExpr {
         Ok(ac)
     }
 
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.physical_expr.to_field(input_schema)
     }
 

@@ -30,7 +30,7 @@ pub(crate) use slice_pushdown_lp::SlicePushDown;
 use crate::prelude::stack_opt::OptimizationRule;
 
 pub trait Optimize {
-    fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan>;
+    fn optimize(&self, logical_plan: LogicalPlan) -> PolarsResult<LogicalPlan>;
 }
 
 // arbitrary constant to reduce reallocation.

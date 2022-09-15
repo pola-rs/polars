@@ -88,7 +88,7 @@ impl Series {
         name: &str,
         chunks: Vec<ArrayRef>,
         dtype: &ArrowDataType,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         match dtype {
             ArrowDataType::LargeUtf8 => Ok(Utf8Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Utf8 => {
@@ -372,7 +372,7 @@ impl Series {
                             &field.data_type,
                         )
                     })
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<PolarsResult<Vec<_>>>()?;
                 Ok(StructChunked::new_unchecked(name, &fields).into_series())
             }
             dt => Err(PolarsError::InvalidOperation(
@@ -431,7 +431,7 @@ fn convert_inner_types(arr: &ArrayRef) -> ArrayRef {
 impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
     type Error = PolarsError;
 
-    fn try_from(name_arr: (&str, Vec<ArrayRef>)) -> Result<Self> {
+    fn try_from(name_arr: (&str, Vec<ArrayRef>)) -> PolarsResult<Self> {
         let (name, chunks) = name_arr;
 
         let mut chunks_iter = chunks.iter();
@@ -457,7 +457,7 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
 impl TryFrom<(&str, ArrayRef)> for Series {
     type Error = PolarsError;
 
-    fn try_from(name_arr: (&str, ArrayRef)) -> Result<Self> {
+    fn try_from(name_arr: (&str, ArrayRef)) -> PolarsResult<Self> {
         let (name, arr) = name_arr;
         Series::try_from((name, vec![arr]))
     }

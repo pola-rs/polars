@@ -1,7 +1,7 @@
 use super::*;
 
 pub trait NumOpsDispatch: Debug {
-    fn subtract(&self, rhs: &Series) -> Result<Series> {
+    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
             format!(
                 "subtraction operation not supported for {:?} and {:?}",
@@ -10,7 +10,7 @@ pub trait NumOpsDispatch: Debug {
             .into(),
         ))
     }
-    fn add_to(&self, rhs: &Series) -> Result<Series> {
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
             format!(
                 "addition operation not supported for {:?} and {:?}",
@@ -19,7 +19,7 @@ pub trait NumOpsDispatch: Debug {
             .into(),
         ))
     }
-    fn multiply(&self, rhs: &Series) -> Result<Series> {
+    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
             format!(
                 "multiplication operation not supported for {:?} and {:?}",
@@ -28,7 +28,7 @@ pub trait NumOpsDispatch: Debug {
             .into(),
         ))
     }
-    fn divide(&self, rhs: &Series) -> Result<Series> {
+    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
             format!(
                 "division operation not supported for {:?} and {:?}",
@@ -37,7 +37,7 @@ pub trait NumOpsDispatch: Debug {
             .into(),
         ))
     }
-    fn remainder(&self, rhs: &Series) -> Result<Series> {
+    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
             format!(
                 "remainder operation not supported for {:?} and {:?}",
@@ -53,7 +53,7 @@ where
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
 {
-    fn subtract(&self, rhs: &Series) -> Result<Series> {
+    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // There will be UB if a ChunkedArray is alive with the wrong datatype.
         // we now only create the potentially wrong dtype for a short time.
@@ -63,28 +63,28 @@ where
         let out = self - rhs;
         Ok(out.into_series())
     }
-    fn add_to(&self, rhs: &Series) -> Result<Series> {
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // see subtract
         let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
         let out = self + rhs;
         Ok(out.into_series())
     }
-    fn multiply(&self, rhs: &Series) -> Result<Series> {
+    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // see subtract
         let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
         let out = self * rhs;
         Ok(out.into_series())
     }
-    fn divide(&self, rhs: &Series) -> Result<Series> {
+    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // see subtract
         let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
         let out = self / rhs;
         Ok(out.into_series())
     }
-    fn remainder(&self, rhs: &Series) -> Result<Series> {
+    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // see subtract
         let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
@@ -94,7 +94,7 @@ where
 }
 
 impl NumOpsDispatch for Utf8Chunked {
-    fn add_to(&self, rhs: &Series) -> Result<Series> {
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
         let rhs = self.unpack_series_matching_type(rhs)?;
         let out = self + rhs;
         Ok(out.into_series())
@@ -110,7 +110,7 @@ pub mod checked {
 
     pub trait NumOpsDispatchChecked: Debug {
         /// Checked integer division. Computes self / rhs, returning None if rhs == 0 or the division results in overflow.
-        fn checked_div(&self, rhs: &Series) -> Result<Series> {
+        fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
             Err(PolarsError::InvalidOperation(
                 format!(
                     "checked division operation not supported for {:?} and {:?}",
@@ -119,7 +119,7 @@ pub mod checked {
                 .into(),
             ))
         }
-        fn checked_div_num<T: ToPrimitive>(&self, _rhs: T) -> Result<Series> {
+        fn checked_div_num<T: ToPrimitive>(&self, _rhs: T) -> PolarsResult<Series> {
             Err(PolarsError::InvalidOperation(
                 format!(
                     "checked division by number operation not supported for {:?}",
@@ -137,7 +137,7 @@ pub mod checked {
             CheckedDiv<Output = T::Native> + CheckedDiv<Output = T::Native> + num::Zero + num::One,
         ChunkedArray<T>: IntoSeries,
     {
-        fn checked_div(&self, rhs: &Series) -> Result<Series> {
+        fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
             // Safety:
             // There will be UB if a ChunkedArray is alive with the wrong datatype.
             // we now only create the potentially wrong dtype for a short time.
@@ -166,7 +166,7 @@ pub mod checked {
     }
 
     impl NumOpsDispatchChecked for Float32Chunked {
-        fn checked_div(&self, rhs: &Series) -> Result<Series> {
+        fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
             // Safety:
             // see check_div for chunkedarray<T>
             let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
@@ -198,7 +198,7 @@ pub mod checked {
     }
 
     impl NumOpsDispatchChecked for Float64Chunked {
-        fn checked_div(&self, rhs: &Series) -> Result<Series> {
+        fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
             // Safety:
             // see check_div
             let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
@@ -230,12 +230,12 @@ pub mod checked {
     }
 
     impl NumOpsDispatchChecked for Series {
-        fn checked_div(&self, rhs: &Series) -> Result<Series> {
+        fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
             let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
             lhs.as_ref().as_ref().checked_div(rhs.as_ref())
         }
 
-        fn checked_div_num<T: ToPrimitive>(&self, rhs: T) -> Result<Series> {
+        fn checked_div_num<T: ToPrimitive>(&self, rhs: T) -> PolarsResult<Series> {
             use DataType::*;
             let s = self.to_physical_repr();
 
@@ -322,7 +322,7 @@ pub mod checked {
 pub(crate) fn coerce_lhs_rhs<'a>(
     lhs: &'a Series,
     rhs: &'a Series,
-) -> Result<(Cow<'a, Series>, Cow<'a, Series>)> {
+) -> PolarsResult<(Cow<'a, Series>, Cow<'a, Series>)> {
     if let Some(result) = coerce_time_units(lhs, rhs) {
         return Ok(result);
     }

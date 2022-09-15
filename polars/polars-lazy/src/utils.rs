@@ -151,7 +151,7 @@ pub(crate) fn has_null(current_expr: &Expr) -> bool {
 
 /// output name of expr
 #[cfg(feature = "meta")]
-pub(crate) fn expr_output_name(expr: &Expr) -> Result<Arc<str>> {
+pub(crate) fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     for e in expr {
         match e {
             // don't follow the partition by branch
@@ -184,7 +184,7 @@ pub(crate) fn expr_output_name(expr: &Expr) -> Result<Arc<str>> {
 
 /// This function should be used to find the name of the start of an expression
 /// Normal iteration would just return the first root column it found
-pub(crate) fn get_single_root(expr: &Expr) -> Result<Arc<str>> {
+pub(crate) fn get_single_root(expr: &Expr) -> PolarsResult<Arc<str>> {
     for e in expr {
         match e {
             Expr::Filter { input, .. } => return get_single_root(input),
@@ -209,7 +209,7 @@ pub(crate) fn expr_to_root_column_names(expr: &Expr) -> Vec<Arc<str>> {
 }
 
 /// unpack alias(col) to name of the root column name
-pub(crate) fn expr_to_root_column_name(expr: &Expr) -> Result<Arc<str>> {
+pub(crate) fn expr_to_root_column_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     let mut roots = expr_to_root_column_exprs(expr);
     match roots.len() {
         0 => Err(PolarsError::ComputeError(
@@ -313,7 +313,7 @@ pub(crate) fn expressions_to_schema(
     expr: &[Expr],
     schema: &Schema,
     ctxt: Context,
-) -> Result<Schema> {
+) -> PolarsResult<Schema> {
     let fields = expr.iter().map(|expr| expr.to_field(schema, ctxt));
     Schema::try_from_fallible(fields)
 }

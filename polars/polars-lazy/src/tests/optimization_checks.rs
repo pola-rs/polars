@@ -72,7 +72,7 @@ fn slice_at_scan(q: LazyFrame) -> bool {
 }
 
 #[test]
-fn test_pred_pd_1() -> Result<()> {
+fn test_pred_pd_1() -> PolarsResult<()> {
     let df = fruits_cars();
 
     let q = df
@@ -110,7 +110,7 @@ fn test_pred_pd_1() -> Result<()> {
 }
 
 #[test]
-fn test_no_left_join_pass() -> Result<()> {
+fn test_no_left_join_pass() -> PolarsResult<()> {
     let df1 = df![
         "foo" => ["abc", "def", "ghi"],
         "idx1" => [0, 0, 1],
@@ -137,7 +137,7 @@ fn test_no_left_join_pass() -> Result<()> {
 }
 
 #[test]
-pub fn test_simple_slice() -> Result<()> {
+pub fn test_simple_slice() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     let q = scan_foods_parquet(false).limit(3);
 
@@ -156,7 +156,7 @@ pub fn test_simple_slice() -> Result<()> {
 }
 
 #[test]
-pub fn test_slice_pushdown_join() -> Result<()> {
+pub fn test_slice_pushdown_join() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     let q1 = scan_foods_parquet(false).limit(3);
     let q2 = scan_foods_parquet(false);
@@ -186,7 +186,7 @@ pub fn test_slice_pushdown_join() -> Result<()> {
 }
 
 #[test]
-pub fn test_slice_pushdown_groupby() -> Result<()> {
+pub fn test_slice_pushdown_groupby() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     let q = scan_foods_parquet(false).limit(100);
 
@@ -215,7 +215,7 @@ pub fn test_slice_pushdown_groupby() -> Result<()> {
 }
 
 #[test]
-pub fn test_slice_pushdown_sort() -> Result<()> {
+pub fn test_slice_pushdown_sort() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     let q = scan_foods_parquet(false).limit(100);
 
@@ -242,7 +242,7 @@ pub fn test_slice_pushdown_sort() -> Result<()> {
 
 #[test]
 #[cfg(feature = "dtype-i16")]
-pub fn test_predicate_block_cast() -> Result<()> {
+pub fn test_predicate_block_cast() -> PolarsResult<()> {
     let df = df![
         "value" => [10, 20, 30, 40]
     ]?;
@@ -300,7 +300,7 @@ fn test_lazy_filter_and_rename() {
 }
 
 #[test]
-fn test_with_row_count_opts() -> Result<()> {
+fn test_with_row_count_opts() -> PolarsResult<()> {
     let df = df![
         "a" => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     ]?;
@@ -376,7 +376,7 @@ fn test_with_row_count_opts() -> Result<()> {
 }
 
 #[test]
-fn test_groupby_ternary_literal_predicate() -> Result<()> {
+fn test_groupby_ternary_literal_predicate() -> PolarsResult<()> {
     let df = df![
         "a" => [1, 2, 3],
         "b" => [1, 2, 3]

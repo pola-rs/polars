@@ -9,7 +9,7 @@ fn cached_before_root(q: LazyFrame) {
 }
 
 #[test]
-fn test_cse_self_joins() -> Result<()> {
+fn test_cse_self_joins() -> PolarsResult<()> {
     let lf = scan_foods_ipc();
 
     let lf = lf.clone().with_column(col("category").str().to_uppercase());
@@ -25,7 +25,7 @@ fn test_cse_self_joins() -> Result<()> {
 }
 
 #[test]
-fn test_cse_unions() -> Result<()> {
+fn test_cse_unions() -> PolarsResult<()> {
     let lf = scan_foods_ipc();
 
     let lf1 = lf.clone().with_column(col("category").str().to_uppercase());
@@ -56,7 +56,7 @@ fn test_cse_unions() -> Result<()> {
 }
 
 #[test]
-fn test_cse_cache_union_projection_pd() -> Result<()> {
+fn test_cse_cache_union_projection_pd() -> PolarsResult<()> {
     let q = df![
         "a" => [1],
         "b" => [2],

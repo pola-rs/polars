@@ -7,7 +7,7 @@ use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::prelude::*;
 use crate::utils::try_get_supertype;
 
-fn get_exploded(series: &Series) -> Result<(Series, Buffer<i64>)> {
+fn get_exploded(series: &Series) -> PolarsResult<(Series, Buffer<i64>)> {
     match series.dtype() {
         DataType::List(_) => series.list().unwrap().explode_and_offsets(),
         DataType::Utf8 => series.utf8().unwrap().explode_and_offsets(),
@@ -28,7 +28,7 @@ pub struct MeltArgs {
 }
 
 impl DataFrame {
-    pub fn explode_impl(&self, mut columns: Vec<Series>) -> Result<DataFrame> {
+    pub fn explode_impl(&self, mut columns: Vec<Series>) -> PolarsResult<DataFrame> {
         let mut df = self.clone();
         if self.height() == 0 {
             for s in &columns {
@@ -138,7 +138,7 @@ impl DataFrame {
     ///  | 2   | 3   | 1   |
     ///  +-----+-----+-----+
     /// ```
-    pub fn explode<I, S>(&self, columns: I) -> Result<DataFrame>
+    pub fn explode<I, S>(&self, columns: I) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -206,7 +206,7 @@ impl DataFrame {
     ///  | "a" | 5   | "D"      | 6     |
     ///  +-----+-----+----------+-------+
     /// ```
-    pub fn melt<I, J>(&self, id_vars: I, value_vars: J) -> Result<Self>
+    pub fn melt<I, J>(&self, id_vars: I, value_vars: J) -> PolarsResult<Self>
     where
         I: IntoVec<String>,
         J: IntoVec<String>,
@@ -222,7 +222,7 @@ impl DataFrame {
 
     /// Similar to melt, but without generics. This may be easier if you want to pass
     /// an empty `id_vars` or empty `value_vars`.
-    pub fn melt2(&self, args: MeltArgs) -> Result<Self> {
+    pub fn melt2(&self, args: MeltArgs) -> PolarsResult<Self> {
         let id_vars = args.id_vars;
         let mut value_vars = args.value_vars;
 
@@ -346,7 +346,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_explode_df_empty_list() -> Result<()> {
+    fn test_explode_df_empty_list() -> PolarsResult<()> {
         let s0 = Series::new("a", &[1, 2, 3]);
         let s1 = Series::new("b", &[1, 1, 1]);
         let list = Series::new("foo", &[s0, s1.clone(), s1.slice(0, 0)]);
@@ -378,7 +378,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_explode_single_col() -> Result<()> {
+    fn test_explode_single_col() -> PolarsResult<()> {
         let s0 = Series::new("a", &[1i32, 2, 3]);
         let s1 = Series::new("b", &[1i32, 1, 1]);
         let list = Series::new("foo", &[s0, s1]);
@@ -397,7 +397,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_melt() -> Result<()> {
+    fn test_melt() -> PolarsResult<()> {
         let df = df!("A" => &["a", "b", "a"],
          "B" => &[1, 3, 5],
          "C" => &[10, 11, 12],

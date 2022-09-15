@@ -48,7 +48,7 @@ fn partsupp() -> LazyFrame {
 }
 
 #[test]
-fn test_q2() -> Result<()> {
+fn test_q2() -> PolarsResult<()> {
     let q1 = part()
         .inner_join(partsupp(), "p_partkey", "ps_partkey")
         .inner_join(supplier(), "ps_suppkey", "s_suppkey")

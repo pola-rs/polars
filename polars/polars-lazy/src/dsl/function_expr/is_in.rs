@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn is_in(s: &mut [Series]) -> Result<Series> {
+pub(super) fn is_in(s: &mut [Series]) -> PolarsResult<Series> {
     let left = &s[0];
     let other = &s[1];
 

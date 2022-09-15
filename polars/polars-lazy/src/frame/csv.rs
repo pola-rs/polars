@@ -199,9 +199,9 @@ impl<'a> LazyCsvReader<'a> {
     /// Modify a schema before we run the lazy scanning.
     ///
     /// Important! Run this function latest in the builder!
-    pub fn with_schema_modify<F>(self, f: F) -> Result<Self>
+    pub fn with_schema_modify<F>(self, f: F) -> PolarsResult<Self>
     where
-        F: Fn(Schema) -> Result<Schema>,
+        F: Fn(Schema) -> PolarsResult<Schema>,
     {
         let mut file = std::fs::File::open(&self.path)?;
         let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
@@ -234,7 +234,7 @@ impl<'a> LazyCsvReader<'a> {
         Ok(self.with_schema(Arc::new(schema)))
     }
 
-    pub fn finish_impl(self) -> Result<LazyFrame> {
+    pub fn finish_impl(self) -> PolarsResult<LazyFrame> {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
             self.path,
             self.delimiter,
@@ -263,7 +263,7 @@ impl<'a> LazyCsvReader<'a> {
         Ok(lf)
     }
 
-    pub fn finish(self) -> Result<LazyFrame> {
+    pub fn finish(self) -> PolarsResult<LazyFrame> {
         let path_str = self.path.to_string_lossy();
         if path_str.contains('*') {
             let paths = glob::glob(&path_str)
@@ -282,7 +282,7 @@ impl<'a> LazyCsvReader<'a> {
                     builder.rechunk = false;
                     builder.finish_impl()
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
             concat(&lfs, self.rechunk)
                 .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
                 .map(|lf| {

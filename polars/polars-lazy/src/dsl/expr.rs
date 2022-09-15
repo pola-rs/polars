@@ -10,16 +10,16 @@ use serde::{Deserialize, Serialize};
 use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::*;
 
-/// A wrapper trait for any closure `Fn(Vec<Series>) -> Result<Series>`
+/// A wrapper trait for any closure `Fn(Vec<Series>) -> PolarsResult<Series>`
 pub trait SeriesUdf: Send + Sync {
-    fn call_udf(&self, s: &mut [Series]) -> Result<Series>;
+    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Series>;
 }
 
 impl<F> SeriesUdf for F
 where
-    F: Fn(&mut [Series]) -> Result<Series> + Send + Sync,
+    F: Fn(&mut [Series]) -> PolarsResult<Series> + Send + Sync,
 {
-    fn call_udf(&self, s: &mut [Series]) -> Result<Series> {
+    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Series> {
         self(s)
     }
 }
@@ -30,16 +30,16 @@ impl Debug for dyn SeriesUdf {
     }
 }
 
-/// A wrapper trait for any binary closure `Fn(Series, Series) -> Result<Series>`
+/// A wrapper trait for any binary closure `Fn(Series, Series) -> PolarsResult<Series>`
 pub trait SeriesBinaryUdf: Send + Sync {
-    fn call_udf(&self, a: Series, b: Series) -> Result<Series>;
+    fn call_udf(&self, a: Series, b: Series) -> PolarsResult<Series>;
 }
 
 impl<F> SeriesBinaryUdf for F
 where
-    F: Fn(Series, Series) -> Result<Series> + Send + Sync,
+    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync,
 {
-    fn call_udf(&self, a: Series, b: Series) -> Result<Series> {
+    fn call_udf(&self, a: Series, b: Series) -> PolarsResult<Series> {
         self(a, b)
     }
 }
@@ -376,7 +376,7 @@ pub enum Excluded {
 
 impl Expr {
     /// Get Field result of the expression. The schema is the input data.
-    pub(crate) fn to_field(&self, schema: &Schema, ctxt: Context) -> Result<Field> {
+    pub(crate) fn to_field(&self, schema: &Schema, ctxt: Context) -> PolarsResult<Field> {
         // this is not called much and th expression depth is typically shallow
         let mut arena = Arena::with_capacity(5);
         let root = to_aexpr(self.clone(), &mut arena);

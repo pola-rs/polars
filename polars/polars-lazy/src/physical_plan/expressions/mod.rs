@@ -538,7 +538,7 @@ pub trait PhysicalExpr: Send + Sync {
     }
 
     /// Take a DataFrame and evaluate the expression.
-    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> Result<Series>;
+    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series>;
 
     /// Some expression that are not aggregations can be done per group
     /// Think of sort, slice, filter, shift, etc.
@@ -568,10 +568,10 @@ pub trait PhysicalExpr: Send + Sync {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>>;
+    ) -> PolarsResult<AggregationContext<'a>>;
 
     /// Get the output field of this expr
-    fn to_field(&self, input_schema: &Schema) -> Result<Field>;
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field>;
 
     /// Convert to a partitioned aggregator.
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
@@ -611,7 +611,7 @@ pub struct PhysicalIoHelper {
 }
 
 impl PhysicalIoExpr for PhysicalIoHelper {
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame) -> PolarsResult<Series> {
         self.expr.evaluate(df, &Default::default())
     }
 
@@ -635,7 +635,7 @@ pub trait PartitionedAggregation: Send + Sync + PhysicalExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series>;
+    ) -> PolarsResult<Series>;
 
     /// Called to merge all the partitioned results in a final aggregate.
     #[allow(clippy::ptr_arg)]
@@ -644,5 +644,5 @@ pub trait PartitionedAggregation: Send + Sync + PhysicalExpr {
         partitioned: Series,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series>;
+    ) -> PolarsResult<Series>;
 }

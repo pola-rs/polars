@@ -11,7 +11,7 @@ pub(crate) struct ExplodeExec {
 }
 
 impl Executor for ExplodeExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {

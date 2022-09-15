@@ -24,7 +24,11 @@ use crate::predicates::PhysicalIoExpr;
 use crate::utils::update_row_counts;
 use crate::RowCount;
 
-pub(crate) fn cast_columns(df: &mut DataFrame, to_cast: &[Field], parallel: bool) -> Result<()> {
+pub(crate) fn cast_columns(
+    df: &mut DataFrame,
+    to_cast: &[Field],
+    parallel: bool,
+) -> PolarsResult<()> {
     use DataType::*;
 
     let cast_fn = |s: &Series, fld: &Field| match (s.dtype(), fld.data_type()) {
@@ -50,7 +54,7 @@ pub(crate) fn cast_columns(df: &mut DataFrame, to_cast: &[Field], parallel: bool
                     Ok(s.clone())
                 }
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
         *df = DataFrame::new_no_checks(cols)
     } else {
         // cast to the original dtypes in the schema
@@ -180,7 +184,7 @@ impl<'a> CoreReader<'a> {
         skip_rows_after_header: usize,
         row_count: Option<RowCount>,
         parse_dates: bool,
-    ) -> Result<CoreReader<'a>> {
+    ) -> PolarsResult<CoreReader<'a>> {
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
 
@@ -299,7 +303,7 @@ impl<'a> CoreReader<'a> {
         &self,
         mut bytes: &'b [u8],
         eol_char: u8,
-    ) -> Result<(&'b [u8], Option<usize>)> {
+    ) -> PolarsResult<(&'b [u8], Option<usize>)> {
         let starting_point_offset = bytes.as_ptr() as usize;
 
         // Skip all leading white space and the occasional utf8-bom
@@ -354,7 +358,7 @@ impl<'a> CoreReader<'a> {
         mut n_threads: usize,
         bytes: &[u8],
         predicate: Option<&Arc<dyn PhysicalIoExpr>>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         let logging = std::env::var("POLARS_VERBOSE").is_ok();
 
         // Make the variable mutable so that we can reassign the sliced file to this variable.
@@ -501,7 +505,7 @@ impl<'a> CoreReader<'a> {
                     buffers
                         .into_iter()
                         .map(|buf| buf.into_series())
-                        .collect::<Result<_>>()?,
+                        .collect::<PolarsResult<_>>()?,
                 );
                 return Ok(df);
             }
@@ -557,7 +561,7 @@ impl<'a> CoreReader<'a> {
                                 buffers
                                     .into_iter()
                                     .map(|buf| buf.into_series())
-                                    .collect::<Result<_>>()?,
+                                    .collect::<PolarsResult<_>>()?,
                             );
                             let current_row_count = local_df.height() as IdxSize;
                             if let Some(rc) = &self.row_count {
@@ -602,7 +606,7 @@ impl<'a> CoreReader<'a> {
                         }
                         Ok(dfs)
                     })
-                    .collect::<Result<Vec<_>>>()
+                    .collect::<PolarsResult<Vec<_>>>()
             })?;
             let mut dfs = flatten(&dfs, None);
             if self.row_count.is_some() {
@@ -679,7 +683,7 @@ impl<'a> CoreReader<'a> {
                             buffers
                                 .into_iter()
                                 .map(|buf| buf.into_series())
-                                .collect::<Result<_>>()?,
+                                .collect::<PolarsResult<_>>()?,
                         );
 
                         cast_columns(&mut df, self.to_cast, false)?;
@@ -689,7 +693,7 @@ impl<'a> CoreReader<'a> {
                         let n_read = df.height() as IdxSize;
                         Ok((df, n_read))
                     })
-                    .collect::<Result<Vec<_>>>()
+                    .collect::<PolarsResult<Vec<_>>>()
             })?;
             if self.row_count.is_some() {
                 update_row_counts(&mut dfs)
@@ -699,7 +703,7 @@ impl<'a> CoreReader<'a> {
     }
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
-    pub fn as_df(&mut self) -> Result<DataFrame> {
+    pub fn as_df(&mut self) -> PolarsResult<DataFrame> {
         let predicate = self.predicate.take();
         let aggregate = self.aggregate.take();
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
@@ -712,7 +716,7 @@ impl<'a> CoreReader<'a> {
             let cols = aggregate
                 .iter()
                 .map(|scan_agg| scan_agg.finish(&df))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
             df = DataFrame::new_no_checks(cols)
         }
 

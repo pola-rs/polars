@@ -68,17 +68,17 @@ pub trait DataFrameOps: IntoDf {
     ///  +------+------+------+--------+--------+--------+---------+---------+---------+
     /// ```
     #[cfg(feature = "to_dummies")]
-    fn to_dummies(&self) -> Result<DataFrame> {
+    fn to_dummies(&self) -> PolarsResult<DataFrame> {
         self._to_dummies(None)
     }
 
     #[cfg(feature = "to_dummies")]
-    fn columns_to_dummies(&self, columns: Vec<&str>) -> Result<DataFrame> {
+    fn columns_to_dummies(&self, columns: Vec<&str>) -> PolarsResult<DataFrame> {
         self._to_dummies(Some(columns))
     }
 
     #[cfg(feature = "to_dummies")]
-    fn _to_dummies(&self, columns: Option<Vec<&str>>) -> Result<DataFrame> {
+    fn _to_dummies(&self, columns: Option<Vec<&str>>) -> PolarsResult<DataFrame> {
         let df = self.to_df();
 
         let set: PlHashSet<&str> =
@@ -91,7 +91,7 @@ pub trait DataFrameOps: IntoDf {
                     true => s.to_ops().to_dummies(),
                     false => Ok(s.clone().into_frame()),
                 })
-                .collect::<Result<Vec<_>>>()
+                .collect::<PolarsResult<Vec<_>>>()
         })?;
 
         accumulate_dataframes_horizontal(cols)

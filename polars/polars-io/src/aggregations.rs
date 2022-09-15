@@ -32,7 +32,7 @@ impl ScanAggregation {
         feature = "json",
         feature = "avro"
     ))]
-    pub(crate) fn evaluate_batch(&self, df: &DataFrame) -> Result<Series> {
+    pub(crate) fn evaluate_batch(&self, df: &DataFrame) -> PolarsResult<Series> {
         use ScanAggregation::*;
         let s = match self {
             Sum { column, .. } => df.column(column)?.sum_as_series(),
@@ -45,7 +45,7 @@ impl ScanAggregation {
     }
 
     /// After all batches are concatenated the aggregation is determined for the whole set.
-    pub(crate) fn finish(&self, df: &DataFrame) -> Result<Series> {
+    pub(crate) fn finish(&self, df: &DataFrame) -> PolarsResult<Series> {
         use ScanAggregation::*;
         match self {
             Sum { column, alias } => {
@@ -97,12 +97,12 @@ impl ScanAggregation {
 pub(crate) fn apply_aggregations(
     df: &mut DataFrame,
     aggregate: Option<&[ScanAggregation]>,
-) -> Result<()> {
+) -> PolarsResult<()> {
     if let Some(aggregate) = aggregate {
         let cols = aggregate
             .iter()
             .map(|scan_agg| scan_agg.evaluate_batch(df))
-            .collect::<Result<_>>()?;
+            .collect::<PolarsResult<_>>()?;
         if cfg!(debug_assertions) {
             *df = DataFrame::new(cols).unwrap();
         } else {

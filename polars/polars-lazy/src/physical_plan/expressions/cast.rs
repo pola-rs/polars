@@ -14,7 +14,7 @@ pub struct CastExpr {
 }
 
 impl CastExpr {
-    fn finish(&self, input: &Series) -> Result<Series> {
+    fn finish(&self, input: &Series) -> PolarsResult<Series> {
         // this is quite dirty
         // We use the booleanarray as null series, because we have no null array.
         // in a ternary or binary operation, we then do type coercion to matching supertype.
@@ -82,7 +82,7 @@ impl PhysicalExpr for CastExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let series = self.input.evaluate(df, state)?;
         self.finish(&series)
     }
@@ -93,7 +93,7 @@ impl PhysicalExpr for CastExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
         // before we flatten, make sure that groups are updated
         ac.groups();
@@ -109,7 +109,7 @@ impl PhysicalExpr for CastExpr {
         Ok(ac)
     }
 
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema).map(|mut fld| {
             fld.coerce(self.data_type.clone());
             fld
@@ -131,7 +131,7 @@ impl PartitionedAggregation for CastExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         let e = self.input.as_partitioned_aggregator().unwrap();
         self.finish(&e.evaluate_partitioned(df, groups, state)?)
     }
@@ -141,7 +141,7 @@ impl PartitionedAggregation for CastExpr {
         partitioned: Series,
         _groups: &GroupsProxy,
         _state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         Ok(partitioned)
     }
 }

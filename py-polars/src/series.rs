@@ -1156,7 +1156,11 @@ impl_ufuncs!(apply_ufunc_i64, Int64Type, unsafe_from_ptr_i64);
 
 macro_rules! impl_set_with_mask {
     ($name:ident, $native:ty, $cast:ident, $variant:ident) => {
-        fn $name(series: &Series, filter: &PySeries, value: Option<$native>) -> Result<Series> {
+        fn $name(
+            series: &Series,
+            filter: &PySeries,
+            value: Option<$native>,
+        ) -> PolarsResult<Series> {
             let mask = filter.series.bool()?;
             let ca = series.$cast()?;
             let new = ca.set(mask, value)?;

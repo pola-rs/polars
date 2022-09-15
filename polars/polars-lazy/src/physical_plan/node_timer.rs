@@ -33,7 +33,7 @@ impl NodeTimer {
         ticks.push((start, end))
     }
 
-    pub(super) fn finish(self) -> Result<DataFrame> {
+    pub(super) fn finish(self) -> PolarsResult<DataFrame> {
         let mut data = self.data.lock();
         let mut nodes = std::mem::take(&mut data.0);
         nodes.push("optimization".to_string());

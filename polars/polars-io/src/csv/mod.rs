@@ -13,7 +13,7 @@
 //! use polars_io::prelude::*;
 //! use std::fs::File;
 //!
-//! fn example(df: &mut DataFrame) -> Result<()> {
+//! fn example(df: &mut DataFrame) -> PolarsResult<()> {
 //!     let mut file = File::create("example.csv").expect("could not create file");
 //!
 //!     CsvWriter::new(&mut file)
@@ -32,7 +32,7 @@
 //! use polars_io::prelude::*;
 //! use std::fs::File;
 //!
-//! fn example() -> Result<DataFrame> {
+//! fn example() -> PolarsResult<DataFrame> {
 //!     // always prefer `from_path` as that is fastest.
 //!     CsvReader::from_path("iris_csv")?
 //!             .has_header(true)

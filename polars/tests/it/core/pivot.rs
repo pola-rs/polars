@@ -4,7 +4,7 @@ use polars_ops::pivot::{pivot, pivot_stable, PivotAgg};
 
 #[test]
 #[cfg(feature = "dtype-date")]
-fn test_pivot_date() -> Result<()> {
+fn test_pivot_date() -> PolarsResult<()> {
     let mut df = df![
         "A" => [1, 1, 1, 1, 1, 1, 1, 1],
         "B" => [8, 2, 3, 6, 3, 6, 2, 2],
@@ -73,7 +73,7 @@ fn test_pivot_old() {
 
 #[test]
 #[cfg(feature = "dtype-categorical")]
-fn test_pivot_categorical() -> Result<()> {
+fn test_pivot_categorical() -> PolarsResult<()> {
     let mut df = df![
         "A" => [1, 1, 1, 1, 1, 1, 1, 1],
         "B" => [8, 2, 3, 6, 3, 6, 2, 2],
@@ -88,7 +88,7 @@ fn test_pivot_categorical() -> Result<()> {
 }
 
 #[test]
-fn test_pivot_new() -> Result<()> {
+fn test_pivot_new() -> PolarsResult<()> {
     let df = df!["A"=> ["foo", "foo", "foo", "foo", "foo",
         "bar", "bar", "bar", "bar"],
         "B"=> ["one", "one", "one", "two", "two",
@@ -126,7 +126,7 @@ fn test_pivot_new() -> Result<()> {
 }
 
 #[test]
-fn test_pivot_2() -> Result<()> {
+fn test_pivot_2() -> PolarsResult<()> {
     let df = df![
         "name"=> ["avg", "avg", "act", "test", "test"],
         "err" => [Some("name1"), Some("name2"), None, Some("name1"), Some("name2")],
@@ -147,7 +147,7 @@ fn test_pivot_2() -> Result<()> {
 
 #[test]
 #[cfg(feature = "dtype-datetime")]
-fn test_pivot_datetime() -> Result<()> {
+fn test_pivot_datetime() -> PolarsResult<()> {
     let dt = NaiveDate::from_ymd(2021, 1, 1).and_hms(12, 15, 0);
     let df = df![
         "dt" => [dt, dt, dt, dt],

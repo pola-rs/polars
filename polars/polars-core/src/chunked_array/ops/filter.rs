@@ -30,7 +30,7 @@ impl<T> ChunkFilter<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<T>> {
+    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<T>> {
         // broadcast
         if filter.len() == 1 {
             return match filter.get(0) {
@@ -51,7 +51,7 @@ where
 }
 
 impl ChunkFilter<BooleanType> for BooleanChunked {
-    fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<BooleanType>> {
+    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<BooleanType>> {
         // broadcast
         if filter.len() == 1 {
             return match filter.get(0) {
@@ -72,7 +72,7 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
 }
 
 impl ChunkFilter<Utf8Type> for Utf8Chunked {
-    fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<Utf8Type>> {
+    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<Utf8Type>> {
         // broadcast
         if filter.len() == 1 {
             return match filter.get(0) {
@@ -94,7 +94,7 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
 }
 
 impl ChunkFilter<ListType> for ListChunked {
-    fn filter(&self, filter: &BooleanChunked) -> Result<ListChunked> {
+    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ListChunked> {
         // broadcast
         if filter.len() == 1 {
             return match filter.get(0) {
@@ -126,7 +126,7 @@ impl<T> ChunkFilter<ObjectType<T>> for ObjectChunked<T>
 where
     T: PolarsObject,
 {
-    fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<ObjectType<T>>>
+    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<ObjectType<T>>>
     where
         Self: Sized,
     {

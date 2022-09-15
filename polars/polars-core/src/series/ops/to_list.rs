@@ -28,7 +28,7 @@ impl Series {
     /// Convert the values of this Series to a ListChunked with a length of 1,
     /// So a Series of:
     /// `[1, 2, 3]` becomes `[[1, 2, 3]]`
-    pub fn to_list(&self) -> Result<ListChunked> {
+    pub fn to_list(&self) -> PolarsResult<ListChunked> {
         let s = self.rechunk();
         let values = s.array_ref(0);
 
@@ -52,7 +52,7 @@ impl Series {
         Ok(ca)
     }
 
-    pub fn reshape(&self, dims: &[i64]) -> Result<Series> {
+    pub fn reshape(&self, dims: &[i64]) -> PolarsResult<Series> {
         if dims.is_empty() {
             panic!("dimensions cannot be empty")
         }
@@ -133,7 +133,7 @@ mod test {
     use crate::chunked_array::builder::get_list_builder;
 
     #[test]
-    fn test_to_list() -> Result<()> {
+    fn test_to_list() -> PolarsResult<()> {
         let s = Series::new("a", &[1, 2, 3]);
 
         let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name())?;
@@ -147,7 +147,7 @@ mod test {
     }
 
     #[test]
-    fn test_reshape() -> Result<()> {
+    fn test_reshape() -> PolarsResult<()> {
         let s = Series::new("a", &[1, 2, 3, 4]);
 
         for (dims, list_len) in [

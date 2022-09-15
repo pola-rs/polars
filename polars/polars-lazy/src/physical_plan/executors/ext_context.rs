@@ -9,7 +9,7 @@ pub struct ExternalContext {
 }
 
 impl Executor for ExternalContext {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
@@ -21,7 +21,7 @@ impl Executor for ExternalContext {
             .contexts
             .iter_mut()
             .map(|e| e.execute(state))
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
 
         state.ext_contexts = Arc::new(contexts);
         Ok(df)

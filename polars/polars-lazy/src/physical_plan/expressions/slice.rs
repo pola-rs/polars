@@ -17,7 +17,7 @@ pub struct SliceExpr {
     pub(crate) expr: Expr,
 }
 
-fn extract_offset(offset: &Series) -> Result<i64> {
+fn extract_offset(offset: &Series) -> PolarsResult<i64> {
     if offset.len() > 1 {
         return Err(PolarsError::ComputeError(format!("Invalid argument to slice; expected an offset literal but got a Series of length {}", offset.len()).into()));
     }
@@ -26,7 +26,7 @@ fn extract_offset(offset: &Series) -> Result<i64> {
     })
 }
 
-fn extract_length(length: &Series) -> Result<usize> {
+fn extract_length(length: &Series) -> PolarsResult<usize> {
     if length.len() > 1 {
         return Err(PolarsError::ComputeError(format!("Invalid argument to slice; expected a length literal but got a Series of length {}", length.len()).into()));
     }
@@ -38,11 +38,11 @@ fn extract_length(length: &Series) -> Result<usize> {
     }
 }
 
-fn extract_args(offset: &Series, length: &Series) -> Result<(i64, usize)> {
+fn extract_args(offset: &Series, length: &Series) -> PolarsResult<(i64, usize)> {
     Ok((extract_offset(offset)?, extract_length(length)?))
 }
 
-fn check_argument(arg: &Series, groups: &GroupsProxy, name: &str) -> Result<()> {
+fn check_argument(arg: &Series, groups: &GroupsProxy, name: &str) -> PolarsResult<()> {
     if let DataType::List(_) = arg.dtype() {
         Err(PolarsError::ComputeError(
             format!(
@@ -84,12 +84,12 @@ impl PhysicalExpr for SliceExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let results = POOL.install(|| {
             [&self.offset, &self.length, &self.input]
                 .par_iter()
                 .map(|e| e.evaluate(df, state))
-                .collect::<Result<Vec<_>>>()
+                .collect::<PolarsResult<Vec<_>>>()
         })?;
         let offset = &results[0];
         let length = &results[1];
@@ -104,12 +104,12 @@ impl PhysicalExpr for SliceExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let mut results = POOL.install(|| {
             [&self.offset, &self.length, &self.input]
                 .par_iter()
                 .map(|e| e.evaluate_on_groups(df, groups, state))
-                .collect::<Result<Vec<_>>>()
+                .collect::<PolarsResult<Vec<_>>>()
         })?;
         let mut ac = results.pop().unwrap();
         let mut ac_length = results.pop().unwrap();
@@ -257,7 +257,7 @@ impl PhysicalExpr for SliceExpr {
         Ok(ac)
     }
 
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
     }
 

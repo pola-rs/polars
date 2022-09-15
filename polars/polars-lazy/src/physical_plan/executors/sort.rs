@@ -12,7 +12,11 @@ pub(crate) struct SortExec {
 }
 
 impl SortExec {
-    fn execute_impl(&mut self, state: &mut ExecutionState, mut df: DataFrame) -> Result<DataFrame> {
+    fn execute_impl(
+        &mut self,
+        state: &mut ExecutionState,
+        mut df: DataFrame,
+    ) -> PolarsResult<DataFrame> {
         df.as_single_chunk_par();
 
         let by_columns = self
@@ -30,7 +34,7 @@ impl SortExec {
                 }
                 Ok(s)
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
 
         df.sort_impl(
             by_columns,
@@ -42,7 +46,7 @@ impl SortExec {
 }
 
 impl Executor for SortExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
@@ -56,7 +60,7 @@ impl Executor for SortExec {
                 .by_column
                 .iter()
                 .map(|s| Ok(s.to_field(&df.schema())?.name))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
             let name = column_delimited("sort".to_string(), &by);
             Cow::Owned(name)
         } else {

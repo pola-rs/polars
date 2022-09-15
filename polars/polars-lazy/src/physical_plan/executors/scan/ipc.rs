@@ -10,7 +10,7 @@ pub struct IpcExec {
 }
 
 impl IpcExec {
-    fn read(&mut self, verbose: bool) -> Result<DataFrame> {
+    fn read(&mut self, verbose: bool) -> PolarsResult<DataFrame> {
         let (file, projection, n_rows, aggregate, predicate) = prepare_scan_args(
             &self.path,
             &self.predicate,
@@ -30,7 +30,7 @@ impl IpcExec {
 }
 
 impl Executor for IpcExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let finger_print = FileFingerPrint {
             path: self.path.clone(),
             predicate: self

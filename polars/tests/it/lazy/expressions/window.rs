@@ -38,7 +38,7 @@ fn test_lazy_window_functions() {
 }
 
 #[test]
-fn test_shift_and_fill_window_function() -> Result<()> {
+fn test_shift_and_fill_window_function() -> PolarsResult<()> {
     let df = fruits_cars();
 
     // a ternary expression with a final list aggregation
@@ -72,7 +72,7 @@ fn test_shift_and_fill_window_function() -> Result<()> {
 }
 
 #[test]
-fn test_exploded_window_function() -> Result<()> {
+fn test_exploded_window_function() -> PolarsResult<()> {
     let df = fruits_cars();
 
     let out = df
@@ -120,7 +120,7 @@ fn test_exploded_window_function() -> Result<()> {
 }
 
 #[test]
-fn test_reverse_in_groups() -> Result<()> {
+fn test_reverse_in_groups() -> PolarsResult<()> {
     let df = fruits_cars();
 
     let out = df
@@ -141,7 +141,7 @@ fn test_reverse_in_groups() -> Result<()> {
 }
 
 #[test]
-fn test_sort_by_in_groups() -> Result<()> {
+fn test_sort_by_in_groups() -> PolarsResult<()> {
     let df = fruits_cars();
 
     let out = df
@@ -166,7 +166,7 @@ fn test_sort_by_in_groups() -> Result<()> {
     Ok(())
 }
 #[test]
-fn test_literal_window_fn() -> Result<()> {
+fn test_literal_window_fn() -> PolarsResult<()> {
     let df = df![
         "chars" => ["a", "a", "b"]
     ]?;
@@ -193,7 +193,7 @@ fn test_literal_window_fn() -> Result<()> {
 }
 
 #[test]
-fn test_window_mapping() -> Result<()> {
+fn test_window_mapping() -> PolarsResult<()> {
     let df = fruits_cars();
 
     // no aggregation
@@ -300,7 +300,7 @@ fn test_window_mapping() -> Result<()> {
 }
 
 #[test]
-fn test_window_exprs_in_binary_exprs() -> Result<()> {
+fn test_window_exprs_in_binary_exprs() -> PolarsResult<()> {
     let df = df![
         "value" => 0..8,
         "cat" => [0, 0, 0, 0, 1, 1, 1, 1]
@@ -344,7 +344,7 @@ fn test_window_exprs_in_binary_exprs() -> Result<()> {
 }
 
 #[test]
-fn test_window_exprs_any_all() -> Result<()> {
+fn test_window_exprs_any_all() -> PolarsResult<()> {
     let df = df![
         "var1"=> ["A", "B", "C", "C", "D", "D", "E", "E"],
         "var2"=> [false, true, false, false, false, true, true, true],
@@ -365,7 +365,7 @@ fn test_window_exprs_any_all() -> Result<()> {
 }
 
 #[test]
-fn test_window_naive_any() -> Result<()> {
+fn test_window_naive_any() -> PolarsResult<()> {
     let df = df![
         "row_id" => [0, 0, 1, 1, 1],
         "boolvar" => [true, false, true, false, false]
@@ -388,7 +388,7 @@ fn test_window_naive_any() -> Result<()> {
 }
 
 #[test]
-fn test_window_map_empty_df_3542() -> Result<()> {
+fn test_window_map_empty_df_3542() -> PolarsResult<()> {
     let df = df![
         "x" => ["a", "b", "c"],
         "y" => [Some(1), None, Some(3)]

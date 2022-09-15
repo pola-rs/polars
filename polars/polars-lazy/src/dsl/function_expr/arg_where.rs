@@ -2,7 +2,7 @@ use polars_arrow::trusted_len::PushUnchecked;
 
 use super::*;
 
-pub(super) fn arg_where(s: &mut [Series]) -> Result<Series> {
+pub(super) fn arg_where(s: &mut [Series]) -> PolarsResult<Series> {
     let predicate = s[0].bool()?;
 
     if predicate.is_empty() {

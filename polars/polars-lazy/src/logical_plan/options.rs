@@ -205,7 +205,7 @@ pub struct SortArguments {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg(feature = "python")]
 pub struct PythonOptions {
-    // Serialized Fn() -> Result<DataFrame>
+    // Serialized Fn() -> PolarsResult<DataFrame>
     pub(crate) scan_fn: Vec<u8>,
     pub(crate) schema: SchemaRef,
     pub(crate) output_schema: Option<SchemaRef>,

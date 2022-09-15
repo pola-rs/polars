@@ -23,7 +23,7 @@ mod test {
     use crate::prelude::*;
 
     #[test]
-    fn test_write_and_read_with_compression() -> Result<()> {
+    fn test_write_and_read_with_compression() -> PolarsResult<()> {
         let mut write_df = df!(
             "i64" => &[1, 2],
             "f64" => &[0.1, 0.2],
@@ -52,7 +52,7 @@ mod test {
     }
 
     #[test]
-    fn test_with_projection() -> Result<()> {
+    fn test_with_projection() -> PolarsResult<()> {
         let mut df = df!(
             "i64" => &[1, 2],
             "f64" => &[0.1, 0.2],
@@ -79,7 +79,7 @@ mod test {
     }
 
     #[test]
-    fn test_with_columns() -> Result<()> {
+    fn test_with_columns() -> PolarsResult<()> {
         let mut df = df!(
             "i64" => &[1, 2],
             "f64" => &[0.1, 0.2],

@@ -24,7 +24,7 @@ impl LogicalType for DateChunked {
         self.0.get_any_value(i).into_date()
     }
 
-    fn cast(&self, dtype: &DataType) -> Result<Series> {
+    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         use DataType::*;
         match (self.dtype(), dtype) {
             #[cfg(feature = "dtype-datetime")]

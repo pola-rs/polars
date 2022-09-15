@@ -12,7 +12,7 @@ pub(crate) struct UnionExec {
 }
 
 impl Executor for UnionExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
@@ -55,7 +55,7 @@ impl Executor for UnionExec {
                         out
                     })
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
 
             concat_df(dfs.iter().flatten())
         } else {
@@ -79,9 +79,9 @@ impl Executor for UnionExec {
                                 state.branch_idx += idx;
                                 input.execute(&mut state)
                             })
-                            .collect::<Result<Vec<_>>>()
+                            .collect::<PolarsResult<Vec<_>>>()
                     })
-                    .collect::<Result<Vec<_>>>()
+                    .collect::<PolarsResult<Vec<_>>>()
             });
 
             concat_df(out?.iter().flat_map(|dfs| dfs.iter()))

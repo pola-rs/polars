@@ -84,7 +84,7 @@ where
 
 impl<'a> JsonLineReader<'a, File> {
     /// This is the recommended way to create a json reader as this allows for fastest parsing.
-    pub fn from_path<P: Into<PathBuf>>(path: P) -> Result<Self> {
+    pub fn from_path<P: Into<PathBuf>>(path: P) -> PolarsResult<Self> {
         let path = resolve_homedir(&path.into());
         let f = std::fs::File::open(&path)?;
         Ok(Self::new(f).with_path(Some(path)))
@@ -108,7 +108,7 @@ where
             low_memory: false,
         }
     }
-    fn finish(mut self) -> Result<DataFrame> {
+    fn finish(mut self) -> PolarsResult<DataFrame> {
         let rechunk = self.rechunk;
         let reader_bytes = get_reader_bytes(&mut self.reader)?;
         let mut json_reader = CoreJsonReader::new(
@@ -150,7 +150,7 @@ impl<'a> CoreJsonReader<'a> {
         chunk_size: usize,
         low_memory: bool,
         infer_schema_len: Option<usize>,
-    ) -> Result<CoreJsonReader<'a>> {
+    ) -> PolarsResult<CoreJsonReader<'a>> {
         let reader_bytes = reader_bytes;
 
         let schema = match schema {
@@ -176,7 +176,7 @@ impl<'a> CoreJsonReader<'a> {
             low_memory,
         })
     }
-    fn parse_json(&mut self, mut n_threads: usize, bytes: &[u8]) -> Result<DataFrame> {
+    fn parse_json(&mut self, mut n_threads: usize, bytes: &[u8]) -> PolarsResult<DataFrame> {
         let mut bytes = bytes;
         let mut total_rows = 128;
 
@@ -238,14 +238,14 @@ impl<'a> CoreJsonReader<'a> {
                         buffers
                             .into_values()
                             .map(|buf| buf.into_series())
-                            .collect::<Result<_>>()?,
+                            .collect::<PolarsResult<_>>()?,
                     )
                 })
-                .collect::<Result<Vec<_>>>()
+                .collect::<PolarsResult<Vec<_>>>()
         })?;
         accumulate_dataframes_vertical(dfs)
     }
-    pub fn as_df(&mut self) -> Result<DataFrame> {
+    pub fn as_df(&mut self) -> PolarsResult<DataFrame> {
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
 
         let reader_bytes = self.reader_bytes.take().unwrap();
@@ -268,7 +268,7 @@ fn parse_impl<'a>(
     bytes: &[u8],
     buffers: &mut PlIndexMap<BufferKey, Buffer<'a>>,
     line: &mut Vec<u8>,
-) -> Result<usize> {
+) -> PolarsResult<usize> {
     line.clear();
     line.extend_from_slice(bytes);
 
@@ -316,7 +316,10 @@ fn parse_impl<'a>(
     }
 }
 
-fn parse_lines<'a>(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer<'a>>) -> Result<()> {
+fn parse_lines<'a>(
+    bytes: &[u8],
+    buffers: &mut PlIndexMap<BufferKey, Buffer<'a>>,
+) -> PolarsResult<()> {
     let mut buf = vec![];
 
     let total_bytes = bytes.len();

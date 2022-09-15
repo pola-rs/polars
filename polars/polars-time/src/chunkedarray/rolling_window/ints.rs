@@ -15,7 +15,7 @@ where
     T: PolarsIntegerType,
     T::Native: IsFloat + SubAssign,
 {
-    fn rolling_sum(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_sum(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         if options.weights.is_some() {
             return self.0.cast(&DataType::Float64)?.rolling_sum(options);
         }
@@ -28,7 +28,7 @@ where
         )
     }
 
-    fn rolling_median(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_median(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         self.0.cast(&DataType::Float64)?.rolling_median(options)
     }
 
@@ -37,13 +37,13 @@ where
         quantile: f64,
         interpolation: QuantileInterpolOptions,
         options: RollingOptionsImpl,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         self.0
             .cast(&DataType::Float64)?
             .rolling_quantile(quantile, interpolation, options)
     }
 
-    fn rolling_min(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_min(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         if options.weights.is_some() {
             return self.0.cast(&DataType::Float64)?.rolling_min(options);
         }
@@ -56,7 +56,7 @@ where
         )
     }
 
-    fn rolling_max(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_max(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         if options.weights.is_some() {
             return self.0.cast(&DataType::Float64)?.rolling_max(options);
         }
@@ -69,15 +69,15 @@ where
         )
     }
 
-    fn rolling_var(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_var(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         self.0.cast(&DataType::Float64)?.rolling_var(options)
     }
 
-    fn rolling_std(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_std(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         self.0.cast(&DataType::Float64)?.rolling_std(options)
     }
 
-    fn rolling_mean(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_mean(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         self.0.cast(&DataType::Float64)?.rolling_mean(options)
     }
 }

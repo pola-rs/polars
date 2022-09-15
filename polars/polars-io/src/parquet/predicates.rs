@@ -59,7 +59,7 @@ pub struct BatchStats {
 }
 
 impl BatchStats {
-    pub fn get_stats(&self, column: &str) -> polars_core::error::Result<&ColumnStats> {
+    pub fn get_stats(&self, column: &str) -> polars_core::error::PolarsResult<&ColumnStats> {
         self.schema.try_index_of(column).map(|i| &self.stats[i])
     }
 
@@ -100,7 +100,7 @@ pub(super) fn read_this_row_group(
     file_metadata: &arrow::io::parquet::read::FileMetaData,
     schema: &ArrowSchema,
     rg: usize,
-) -> Result<bool> {
+) -> PolarsResult<bool> {
     if let Some(pred) = &predicate {
         if let Some(pred) = pred.as_stats_evaluator() {
             if let Some(stats) = collect_statistics(&file_metadata.row_groups, schema, Some(rg))? {

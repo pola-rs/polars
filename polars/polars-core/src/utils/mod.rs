@@ -102,7 +102,7 @@ macro_rules! split_array {
 }
 
 #[cfg(feature = "private")]
-pub fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> Result<Vec<ChunkedArray<T>>>
+pub fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> PolarsResult<Vec<ChunkedArray<T>>>
 where
     T: PolarsDataType,
 {
@@ -134,7 +134,7 @@ pub fn _split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
 
 #[cfg(feature = "private")]
 #[doc(hidden)]
-pub fn split_series(s: &Series, n: usize) -> Result<Vec<Series>> {
+pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
     split_array!(s, n, i64)
 }
 
@@ -158,7 +158,7 @@ fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
 #[cfg(feature = "private")]
 #[doc(hidden)]
 /// Split a [`DataFrame`] into `n` parts. We take a `&mut` to be able to repartition/align chunks.
-pub fn split_df(df: &mut DataFrame, n: usize) -> Result<Vec<DataFrame>> {
+pub fn split_df(df: &mut DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
     if n == 0 {
         return Ok(vec![df.clone()]);
     }
@@ -468,7 +468,7 @@ pub fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to
 #[cfg(feature = "private")]
-pub fn try_get_supertype(l: &DataType, r: &DataType) -> Result<DataType> {
+pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
     match get_supertype(l, r) {
         Some(dt) => Ok(dt),
         None => Err(PolarsError::ComputeError(
@@ -748,7 +748,7 @@ where
 }
 
 /// This takes ownership of the DataFrame so that drop is called earlier.
-pub fn accumulate_dataframes_vertical<I>(dfs: I) -> Result<DataFrame>
+pub fn accumulate_dataframes_vertical<I>(dfs: I) -> PolarsResult<DataFrame>
 where
     I: IntoIterator<Item = DataFrame>,
 {
@@ -763,7 +763,7 @@ where
 }
 
 /// Concat the DataFrames to a single DataFrame.
-pub fn concat_df<'a, I>(dfs: I) -> Result<DataFrame>
+pub fn concat_df<'a, I>(dfs: I) -> PolarsResult<DataFrame>
 where
     I: IntoIterator<Item = &'a DataFrame>,
 {
@@ -792,7 +792,7 @@ where
     acc_df
 }
 
-pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> Result<DataFrame> {
+pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> PolarsResult<DataFrame> {
     let mut iter = dfs.into_iter();
     let mut acc_df = iter.next().unwrap();
     for df in iter {
@@ -804,9 +804,9 @@ pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> Result<DataFrame
 /// Simple wrapper to parallelize functions that can be divided over threads aggregated and
 /// finally aggregated in the main thread. This can be done for sum, min, max, etc.
 #[cfg(feature = "private")]
-pub fn parallel_op_series<F>(f: F, s: Series, n_threads: Option<usize>) -> Result<Series>
+pub fn parallel_op_series<F>(f: F, s: Series, n_threads: Option<usize>) -> PolarsResult<Series>
 where
-    F: Fn(Series) -> Result<Series> + Send + Sync,
+    F: Fn(Series) -> PolarsResult<Series> + Send + Sync,
 {
     let n_threads = n_threads.unwrap_or_else(|| POOL.current_num_threads());
     let splits = _split_offsets(s.len(), n_threads);
@@ -818,7 +818,7 @@ where
                 let s = s.slice(offset as i64, len);
                 f(s)
             })
-            .collect::<Result<Vec<_>>>()
+            .collect::<PolarsResult<Vec<_>>>()
     })?;
 
     let mut iter = chunks.into_iter();

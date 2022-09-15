@@ -144,7 +144,7 @@ impl LogicalType for CategoricalChunked {
         }
     }
 
-    fn cast(&self, dtype: &DataType) -> Result<Series> {
+    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         match dtype {
             DataType::Utf8 => {
                 let mapping = &**self.get_rev_map();
@@ -214,7 +214,7 @@ mod test {
     use crate::{reset_string_cache, toggle_string_cache, SINGLE_LOCK};
 
     #[test]
-    fn test_categorical_round_trip() -> Result<()> {
+    fn test_categorical_round_trip() -> PolarsResult<()> {
         let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
         let slice = &[
@@ -273,7 +273,7 @@ mod test {
     }
 
     #[test]
-    fn test_categorical_flow() -> Result<()> {
+    fn test_categorical_flow() -> PolarsResult<()> {
         let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
         toggle_string_cache(false);

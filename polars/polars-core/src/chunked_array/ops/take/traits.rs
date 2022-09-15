@@ -4,12 +4,12 @@ use crate::prelude::*;
 
 // Utility traits
 pub trait TakeIterator: Iterator<Item = usize> + TrustedLen {
-    fn check_bounds(&self, bound: usize) -> Result<()>;
+    fn check_bounds(&self, bound: usize) -> PolarsResult<()>;
     // a sort of clone
     fn boxed_clone(&self) -> Box<dyn TakeIterator + '_>;
 }
 pub trait TakeIteratorNulls: Iterator<Item = Option<usize>> + TrustedLen {
-    fn check_bounds(&self, bound: usize) -> Result<()>;
+    fn check_bounds(&self, bound: usize) -> PolarsResult<()>;
 
     fn boxed_clone(&self) -> Box<dyn TakeIteratorNulls + '_>;
 }
@@ -20,7 +20,7 @@ unsafe impl TrustedLen for GroupsProxyIter<'_> {}
 
 // Implement for the ref as well
 impl TakeIterator for &mut dyn TakeIterator {
-    fn check_bounds(&self, bound: usize) -> Result<()> {
+    fn check_bounds(&self, bound: usize) -> PolarsResult<()> {
         (**self).check_bounds(bound)
     }
 
@@ -29,7 +29,7 @@ impl TakeIterator for &mut dyn TakeIterator {
     }
 }
 impl TakeIteratorNulls for &mut dyn TakeIteratorNulls {
-    fn check_bounds(&self, bound: usize) -> Result<()> {
+    fn check_bounds(&self, bound: usize) -> PolarsResult<()> {
         (**self).check_bounds(bound)
     }
 
@@ -43,7 +43,7 @@ impl<I> TakeIterator for I
 where
     I: Iterator<Item = usize> + Clone + Sized + TrustedLen,
 {
-    fn check_bounds(&self, bound: usize) -> Result<()> {
+    fn check_bounds(&self, bound: usize) -> PolarsResult<()> {
         // clone so that the iterator can be used again.
         let iter = self.clone();
         let mut inbounds = true;
@@ -71,7 +71,7 @@ impl<I> TakeIteratorNulls for I
 where
     I: Iterator<Item = Option<usize>> + Clone + Sized + TrustedLen,
 {
-    fn check_bounds(&self, bound: usize) -> Result<()> {
+    fn check_bounds(&self, bound: usize) -> PolarsResult<()> {
         // clone so that the iterator can be used again.
         let iter = self.clone();
         let mut inbounds = true;
@@ -113,7 +113,7 @@ where
     I: TakeIterator,
     INulls: TakeIteratorNulls,
 {
-    pub(crate) fn check_bounds(&self, bound: usize) -> Result<()> {
+    pub(crate) fn check_bounds(&self, bound: usize) -> PolarsResult<()> {
         match self {
             TakeIdx::Iter(i) => i.check_bounds(bound),
             TakeIdx::IterNulls(i) => i.check_bounds(bound),

@@ -50,7 +50,7 @@ impl Expr {
                             Ok(AnyValue::Null)
                         }
                     })
-                    .collect::<Result<Vec<_>>>()?
+                    .collect::<PolarsResult<Vec<_>>>()?
             } else {
                 let mut df_container = DataFrame::new_no_checks(vec![]);
                 (1..s.len() + 1)
@@ -65,7 +65,7 @@ impl Expr {
                             Ok(AnyValue::Null)
                         }
                     })
-                    .collect::<Result<Vec<_>>>()?
+                    .collect::<PolarsResult<Vec<_>>>()?
             };
             Ok(Series::new(&name, avs))
         };
