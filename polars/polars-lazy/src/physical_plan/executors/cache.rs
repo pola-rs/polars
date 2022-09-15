@@ -14,7 +14,7 @@ impl Executor for CacheExec {
         if self.count > 0 {
             if let Some(df) = state.cache_hit(&self.id) {
                 if state.verbose() {
-                    println!("CACHE HIT: cache id: {}", self.id);
+                    println!("CACHE HIT: cache id: {:x}", self.id);
                 }
                 self.count -= 0;
                 return Ok(df);
@@ -25,7 +25,7 @@ impl Executor for CacheExec {
         let df = self.input.execute(state)?;
         state.store_cache(self.id, df.clone());
         if state.verbose() {
-            println!("CACHE SET: cache id: {}", self.id);
+            println!("CACHE SET: cache id: {:x}", self.id);
         }
         Ok(df)
     }

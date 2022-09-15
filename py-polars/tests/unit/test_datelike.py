@@ -1486,3 +1486,12 @@ def test_datetime_string_casts() -> None:
             "2022-08-30 10:30:45.123456789",
         )
     ]
+
+
+def test_short_formats() -> None:
+    s = pl.Series(["20202020", "2020"])
+    assert s.str.strptime(pl.Date, "%Y", strict=False).to_list() == [
+        None,
+        date(2020, 1, 1),
+    ]
+    assert s.str.strptime(pl.Date, "%foo", strict=False).to_list() == [None, None]
