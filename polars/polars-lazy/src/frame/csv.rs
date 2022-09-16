@@ -287,7 +287,10 @@ impl<'a> LazyCsvReader<'a> {
                 .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
                 .map(|lf| {
                     if self.skip_rows != 0 || self.n_rows.is_some() {
-                        lf.slice(self.skip_rows as i64, self.n_rows.unwrap() as IdxSize)
+                        lf.slice(
+                            self.skip_rows as i64,
+                            self.n_rows.unwrap_or(usize::MAX) as IdxSize,
+                        )
                     } else {
                         lf
                     }
