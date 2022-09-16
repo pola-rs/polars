@@ -184,7 +184,7 @@ macro_rules! with_match_primitive_type {(
         UInt64 => __with_ty__! { u64 },
         Float32 => __with_ty__! { f32 },
         Float64 => __with_ty__! { f64 },
-        Float16 => unimplemented!(),
+        Float16 | Int256 => unimplemented!(),
     }
 })}
 pub(crate) use with_match_primitive_type;
