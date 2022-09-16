@@ -404,12 +404,10 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             }
+            // fill null has a supertype set during projection
+            // to make the schema known before the optimization phase
             AExpr::Function {
-                // only for `DataType::Unknown` as it still has to be set.
-                function:
-                    FunctionExpr::FillNull {
-                        super_type: DataType::Unknown,
-                    },
+                function: FunctionExpr::FillNull { ref super_type },
                 ref input,
                 options,
             } => {
@@ -419,12 +417,12 @@ impl OptimizationRule for TypeCoercionRule {
                 let (fill_value, type_fill_value) =
                     get_aexpr_and_type(expr_arena, other_node, &input_schema)?;
 
-                let super_type = get_supertype(&type_left, &type_fill_value)?;
-                let super_type =
-                    modify_supertype(super_type, left, fill_value, &type_left, &type_fill_value);
-                if super_type != DataType::Unknown {
+                let new_st = get_supertype(&type_left, &type_fill_value)?;
+                let new_st =
+                    modify_supertype(new_st, left, fill_value, &type_left, &type_fill_value);
+                if &new_st != super_type {
                     Some(AExpr::Function {
-                        function: FunctionExpr::FillNull { super_type },
+                        function: FunctionExpr::FillNull { super_type: new_st },
                         input: input.clone(),
                         options,
                     })

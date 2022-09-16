@@ -307,9 +307,13 @@ impl LogicalPlanBuilder {
         let mut new_schema = (**schema).clone();
         let (exprs, _) = try_delayed!(prepare_projection(exprs, &schema), &self.0, into);
 
+        let mut arena = Arena::with_capacity(8);
         for e in &exprs {
-            let field = e.to_field(&schema, Context::Default).unwrap();
+            let field = e
+                .to_field_amortized(&schema, Context::Default, &mut arena)
+                .unwrap();
             new_schema.with_column(field.name().to_string(), field.data_type().clone());
+            arena.clear();
         }
 
         LogicalPlan::HStack {
@@ -521,12 +525,17 @@ impl LogicalPlanBuilder {
     ) -> Self {
         let schema_left = try_delayed!(self.0.schema(), &self.0, into);
         let schema_right = try_delayed!(other.schema(), &self.0, into);
+        let mut arena = Arena::with_capacity(8);
         let right_names = try_delayed!(
             right_on
                 .iter()
-                .map(|e| e
-                    .to_field(&schema_right, Context::Default)
-                    .map(|field| field.name))
+                .map(|e| {
+                    let name = e
+                        .to_field_amortized(&schema_right, Context::Default, &mut arena)
+                        .map(|field| field.name);
+                    arena.clear();
+                    name
+                })
                 .collect::<PolarsResult<Vec<_>>>(),
             &self.0,
             into

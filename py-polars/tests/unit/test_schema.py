@@ -188,3 +188,16 @@ def test_fold_all_schema() -> None:
     )
     # divide because of overflow
     assert df.select(pl.sum(pl.all().hash(seed=1) // int(1e8))).dtypes == [pl.UInt64]
+
+
+def test_fill_null_static_schema_4843() -> None:
+    df1 = pl.DataFrame(
+        {
+            "a": [1, 2, None],
+            "b": [1, None, 4],
+        }
+    ).lazy()
+
+    df2 = df1.select([pl.col(pl.Int64).fill_null(0)])
+    df3 = df2.select(pl.col(pl.Int64))
+    assert df3.schema == {"a": pl.Int64, "b": pl.Int64}

@@ -1,8 +1,9 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
 use polars_arrow::index::IndexToUsize;
+use polars_core::utils::get_supertype;
 
 use super::*;
-use crate::utils::has_nth;
+use crate::prelude::function_expr::FunctionExpr;
 
 /// This replace the wildcard Expr with a Column Expr. It also removes the Exclude Expr from the
 /// expression chain.
@@ -362,50 +363,103 @@ fn function_wildcard_expansion(mut expr: Expr, schema: &Schema, exclude: &[Arc<s
     expr
 }
 
+/// this is determined in type coercion
+/// but checking a few types early can improve type stability (e.g. no need for unknown)
+fn early_supertype(inputs: &[Expr], schema: &Schema) -> Option<DataType> {
+    let mut arena = Arena::with_capacity(8);
+
+    let mut st = None;
+    for e in inputs {
+        let dtype = e
+            .to_field_amortized(schema, Context::Default, &mut arena)
+            .ok()?
+            .dtype;
+        arena.clear();
+        match st {
+            None => {
+                st = Some(dtype);
+            }
+            Some(st_val) => st = get_supertype(&st_val, &dtype),
+        }
+    }
+    st
+}
+
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
 pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Expr]) -> Vec<Expr> {
     let mut result = Vec::with_capacity(exprs.len() + schema.len());
 
     for mut expr in exprs {
+        let result_offset = result.len();
+
         // functions can have col(["a", "b"]) or col(Utf8) as inputs
         expr = expand_function_list_inputs(expr, schema);
 
-        // has multiple column names
-        if let Some(e) = expr
-            .into_iter()
-            .find(|e| matches!(e, Expr::Columns(_) | Expr::DtypeColumn(_)))
-        {
-            if let Expr::Columns(names) = e {
-                expand_columns(&expr, &mut result, names)
-            } else if let Expr::DtypeColumn(dtypes) = e {
-                // keep track of column excluded from the dtypes
-                let exclude = prepare_excluded(&expr, schema, keys);
-                expand_dtypes(&expr, &mut result, schema, dtypes, &exclude)
+        let mut multiple_columns = false;
+        let mut has_nth = false;
+        let mut function_input_expansion = false;
+        let mut has_wildcard = false;
+        let mut replace_fill_null_type = false;
+
+        // do a single pass and collect all flags at once.
+        // supertypes/modification that can be done in place are also don e in that pass
+        for expr in &expr {
+            match expr {
+                Expr::Columns(_) | Expr::DtypeColumn(_) => multiple_columns = true,
+                Expr::Nth(_) => has_nth = true,
+                Expr::Wildcard => has_wildcard = true,
+                Expr::Function {
+                    function: FunctionExpr::FillNull { .. },
+                    ..
+                } => replace_fill_null_type = true,
+                _ => {}
             }
-            continue;
+
+            if let Expr::AnonymousFunction { options, .. } | Expr::Function { options, .. } = &expr
+            {
+                if options.input_wildcard_expansion {
+                    function_input_expansion = true;
+                }
+            }
         }
 
-        if has_nth(&expr) {
+        if has_nth {
             replace_nth(&mut expr, schema);
         }
 
-        let function_input_expansion = has_expr(
-            &expr,
-            |e| matches!(e, Expr::AnonymousFunction { options,  .. } | Expr::Function {options, ..} if options.input_wildcard_expansion),
-        );
-
-        if has_wildcard(&expr) || function_input_expansion {
+        // has multiple column names
+        // the expanded columns are added to the reuslt
+        if multiple_columns {
+            if let Some(e) = expr
+                .into_iter()
+                .find(|e| matches!(e, Expr::Columns(_) | Expr::DtypeColumn(_)))
+            {
+                match &e {
+                    Expr::Columns(names) => expand_columns(&expr, &mut result, names),
+                    Expr::DtypeColumn(dtypes) => {
+                        // keep track of column excluded from the dtypes
+                        let exclude = prepare_excluded(&expr, schema, keys);
+                        expand_dtypes(&expr, &mut result, schema, dtypes, &exclude)
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // has multiple column names due to wildcards
+        else if has_wildcard || function_input_expansion {
             // keep track of column excluded from the wildcard
             let exclude = prepare_excluded(&expr, schema, keys);
             // this path prepares the wildcard as input for the Function Expr
             if function_input_expansion {
                 expr = function_wildcard_expansion(expr, schema, &exclude);
                 result.push(expr);
-                continue;
+            } else {
+                replace_wildcard(&expr, &mut result, &exclude, schema);
             }
-            replace_wildcard(&expr, &mut result, &exclude, schema);
-        } else {
+        }
+        // can have multiple column names due to a regex
+        else {
             #[allow(clippy::collapsible_else_if)]
             #[cfg(feature = "regex")]
             {
@@ -416,7 +470,33 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Exp
                 let expr = rewrite_special_aliases(expr);
                 result.push(expr)
             }
-        };
+        }
+
+        // this is done after all expansion (wildcard, column, dtypes)
+        // have been done. This will ensure the conversion to aexpr does
+        // not panic because of an unexpected wildcard etc.
+
+        // the expanded expressions are written to result, so we pick
+        // them up there.
+        if replace_fill_null_type {
+            for e in &mut result[result_offset..] {
+                e.mutate().apply(|e| {
+                    if let Expr::Function {
+                        input,
+                        function: FunctionExpr::FillNull { super_type },
+                        ..
+                    } = e
+                    {
+                        if let Some(new_st) = early_supertype(input, schema) {
+                            *super_type = new_st;
+                        }
+                    }
+
+                    // continue iteration
+                    true
+                })
+            }
+        }
     }
     result
 }

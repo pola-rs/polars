@@ -139,10 +139,6 @@ pub(crate) fn has_wildcard(current_expr: &Expr) -> bool {
     has_expr(current_expr, |e| matches!(e, Expr::Wildcard))
 }
 
-pub(crate) fn has_nth(current_expr: &Expr) -> bool {
-    has_expr(current_expr, |e| matches!(e, Expr::Nth(_)))
-}
-
 pub(crate) fn has_null(current_expr: &Expr) -> bool {
     has_expr(current_expr, |e| {
         matches!(e, Expr::Literal(LiteralValue::Null))
