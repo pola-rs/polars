@@ -1677,17 +1677,21 @@ class DataFrame:
         """
         Cast to a pandas DataFrame.
 
-        This requires that pandas and pyarrow are installed.
+        This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
         This operation clones data.
 
         Parameters
         ----------
         args
-            Arguments will be sent to pyarrow.Table.to_pandas.
+            Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
         date_as_object
-            Cast dates to objects. If False, convert to datetime64[ns] dtype.
+            Cast dates to objects. If ``False``, convert to ``datetime64[ns]`` dtype.
         kwargs
-            Arguments will be sent to pyarrow.Table.to_pandas.
+            Arguments will be sent to :meth:`pyarrow.Table.to_pandas`.
+
+        Returns
+        -------
+        :class:`pandas.DataFrame`
 
         Examples
         --------
@@ -3890,8 +3894,8 @@ class DataFrame:
         │ 3    ┆ 8.0  ┆ c   ┆ null  │
         └──────┴──────┴─────┴───────┘
 
-        Note
-        ----
+        Notes
+        -----
         For joining on columns with categorical data, see ``pl.StringCache()``.
 
         """

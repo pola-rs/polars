@@ -355,17 +355,17 @@ def _pandas_series_to_arrow(
 
     Parameters
     ----------
-    values
+    values : :class:`pandas.Series` or :class:`pandas.DatetimeIndex`
         Series to convert to arrow
-    nan_to_none
+    nan_to_none : bool, default = True
         Interpret `NaN` as missing values
-    min_len
+    min_len : int, optional
         in case of null values, this length will be used to create a dummy f64 array
         (with all values set to null)
 
     Returns
     -------
-    Arrow Array
+    :class:`pyarrow.Array`
 
     """
     dtype = getattr(values, "dtype", None)
