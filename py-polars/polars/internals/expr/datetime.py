@@ -193,6 +193,22 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.year())
 
+    def iso_year(self) -> pli.Expr:
+        """
+        Extract iso-year from underlying Date representation.
+
+        Can be performed on Date and Datetime columns.
+
+        Returns the year number in the iso standard.
+        This may not correspond with the calendar year.
+
+        Returns
+        -------
+        Year as Int32
+
+        """
+        return pli.wrap_expr(self._pyexpr.iso_year())
+
     def quarter(self) -> pli.Expr:
         """
         Extract quarter from underlying Date representation.

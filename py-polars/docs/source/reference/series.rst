@@ -252,6 +252,7 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.weekday
     DateTimeNameSpace.with_time_unit
     DateTimeNameSpace.year
+    DateTimeNameSpace.iso_year
 
 
 Strings

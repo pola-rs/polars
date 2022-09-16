@@ -41,6 +41,16 @@ pub trait DatetimeMethods: AsDatetime {
         cast_and_apply(self.as_datetime(), temporal::year)
     }
 
+    fn iso_year(&self) -> Int32Chunked {
+        let ca = self.as_datetime();
+        let f = match ca.time_unit() {
+            TimeUnit::Nanoseconds => datetime_to_iso_year_ns,
+            TimeUnit::Microseconds => datetime_to_iso_year_us,
+            TimeUnit::Milliseconds => datetime_to_iso_year_ms,
+        };
+        ca.apply_kernel_cast::<Int32Type>(&f)
+    }
+
     /// Extract quarter from underlying NaiveDateTime representation.
     /// Quarters range from 1 to 4.
     fn quarter(&self) -> UInt32Chunked {

@@ -73,6 +73,21 @@ class DateTimeNameSpace:
 
         """
 
+    def iso_year(self) -> pli.Series:
+        """
+        Extract iso-year from underlying Date representation.
+
+        Can be performed on Date and Datetime columns.
+
+        Returns the year number in the iso standard.
+        This may not correspond with the calendar year.
+
+        Returns
+        -------
+        Year as Int32
+
+        """
+
     def quarter(self) -> pli.Series:
         """
         Extract quarter from underlying Date representation.

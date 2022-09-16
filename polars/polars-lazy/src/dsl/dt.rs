@@ -1,6 +1,7 @@
 use polars_time::prelude::TemporalMethods;
 
 use super::*;
+use crate::prelude::function_expr::TemporalFunction;
 
 /// Specialized expressions for [`Series`] with dates/datetimes.
 pub struct DateLikeNameSpace(pub(crate) Expr);
@@ -83,27 +84,28 @@ impl DateLikeNameSpace {
 
     /// Get the year of a Date/Datetime
     pub fn year(self) -> Expr {
-        let function = move |s: Series| s.year().map(|ca| ca.into_series());
         self.0
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("dt.year")
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Year))
+    }
+
+    /// Get the iso-year of a Date/Datetime.
+    /// This may not correspond with a calendar year.
+    pub fn iso_year(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::IsoYear))
     }
 
     /// Get the month of a Date/Datetime
     pub fn month(self) -> Expr {
-        let function = move |s: Series| s.month().map(|ca| ca.into_series());
         self.0
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("dt.month")
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Month))
     }
 
     /// Extract quarter from underlying NaiveDateTime representation.
     /// Quarters range from 1 to 4.
     pub fn quarter(self) -> Expr {
-        let function = move |s: Series| s.quarter().map(|ca| ca.into_series());
         self.0
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("dt.quarter")
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Quarter))
     }
 
     /// Extract the week from the underlying Date representation.
@@ -112,10 +114,8 @@ impl DateLikeNameSpace {
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
     pub fn week(self) -> Expr {
-        let function = move |s: Series| s.week().map(|ca| ca.into_series());
         self.0
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("dt.week")
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Week))
     }
 
     /// Extract the week day from the underlying Date representation.
@@ -123,63 +123,45 @@ impl DateLikeNameSpace {
 
     /// Returns the weekday number where monday = 0 and sunday = 6
     pub fn weekday(self) -> Expr {
-        let function = move |s: Series| s.weekday().map(|ca| ca.into_series());
         self.0
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("dt.weekday")
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::WeekDay))
     }
 
     /// Get the month of a Date/Datetime
     pub fn day(self) -> Expr {
-        let function = move |s: Series| s.day().map(|ca| ca.into_series());
         self.0
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("day")
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Day))
     }
     /// Get the ordinal_day of a Date/Datetime
     pub fn ordinal_day(self) -> Expr {
-        let function = move |s: Series| s.ordinal_day().map(|ca| ca.into_series());
         self.0
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("dt.ordinal_day")
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::OrdinalDay))
     }
     /// Get the hour of a Datetime/Time64
     pub fn hour(self) -> Expr {
-        let function = move |s: Series| s.hour().map(|ca| ca.into_series());
         self.0
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("dt.hour")
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Hour))
     }
     /// Get the minute of a Datetime/Time64
     pub fn minute(self) -> Expr {
-        let function = move |s: Series| s.minute().map(|ca| ca.into_series());
         self.0
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("dt.minute")
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Minute))
     }
 
     /// Get the second of a Datetime/Time64
     pub fn second(self) -> Expr {
-        let function = move |s: Series| s.second().map(|ca| ca.into_series());
         self.0
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("dt.second")
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Second))
     }
     /// Get the nanosecond of a Time64
     pub fn nanosecond(self) -> Expr {
-        let function = move |s: Series| s.nanosecond().map(|ca| ca.into_series());
         self.0
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("dt.nanosecond")
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::NanoSecond))
     }
 
     pub fn timestamp(self, tu: TimeUnit) -> Expr {
         self.0
-            .map(
-                move |s| s.timestamp(tu).map(|ca| ca.into_series()),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .with_fmt("dt.timestamp")
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TimeStamp(tu)))
     }
 
     /// Offset this `Date/Datetime` by a given offset [`Duration`].

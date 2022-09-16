@@ -2,6 +2,8 @@
 mod arg_where;
 #[cfg(feature = "round_series")]
 mod clip;
+#[cfg(feature = "temporal")]
+mod datetime;
 mod dispatch;
 mod fill_null;
 #[cfg(feature = "is_in")]
@@ -37,6 +39,8 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "temporal")]
+pub(super) use self::datetime::TemporalFunction;
 pub(super) use self::nan::NanFunction;
 #[cfg(feature = "strings")]
 pub(super) use self::strings::StringFunction;
@@ -61,6 +65,8 @@ pub enum FunctionExpr {
     SearchSorted,
     #[cfg(feature = "strings")]
     StringExpr(StringFunction),
+    #[cfg(feature = "temporal")]
+    TemporalExpr(TemporalFunction),
     #[cfg(feature = "date_offset")]
     DateOffset(Duration),
     #[cfg(feature = "trigonometry")]
@@ -122,6 +128,8 @@ impl Display for FunctionExpr {
             SearchSorted => write!(f, "search_sorted"),
             #[cfg(feature = "strings")]
             StringExpr(s) => write!(f, "{}", s),
+            #[cfg(feature = "temporal")]
+            TemporalExpr(fun) => write!(f, "{}", fun),
             #[cfg(feature = "date_offset")]
             DateOffset(_) => write!(f, "dt.offset_by"),
             #[cfg(feature = "trigonometry")]
@@ -255,6 +263,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             }
             #[cfg(feature = "strings")]
             StringExpr(s) => s.into(),
+            #[cfg(feature = "temporal")]
+            TemporalExpr(func) => func.into(),
 
             #[cfg(feature = "date_offset")]
             DateOffset(offset) => {
@@ -363,6 +373,28 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Replace { all, literal } => map_as_slice!(strings::replace, literal, all),
             Uppercase => map!(strings::uppercase),
             Lowercase => map!(strings::lowercase),
+        }
+    }
+}
+
+#[cfg(feature = "temporal")]
+impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+    fn from(func: TemporalFunction) -> Self {
+        use TemporalFunction::*;
+        match func {
+            Year => map!(datetime::year),
+            IsoYear => map!(datetime::iso_year),
+            Month => map!(datetime::month),
+            Quarter => map!(datetime::quarter),
+            Week => map!(datetime::week),
+            WeekDay => map!(datetime::weekday),
+            Day => map!(datetime::day),
+            OrdinalDay => map!(datetime::ordinal_day),
+            Hour => map!(datetime::hour),
+            Minute => map!(datetime::minute),
+            Second => map!(datetime::second),
+            NanoSecond => map!(datetime::nanosecond),
+            TimeStamp(tu) => map!(datetime::timestamp, tu),
         }
     }
 }
