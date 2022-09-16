@@ -29,7 +29,17 @@ fn fields_to_struct_array(fields: &[Series]) -> (ArrayRef, Vec<Series>) {
 impl StructChunked {
     pub fn new(name: &str, fields: &[Series]) -> PolarsResult<Self> {
         let mut names = PlHashSet::with_capacity(fields.len());
+        let first_len = fields.get(0).map(|s| s.len()).unwrap_or(0);
+        let mut max_len = first_len;
+
+        let mut all_equal_len = true;
         for s in fields {
+            let s_len = s.len();
+            max_len = std::cmp::max(max_len, s_len);
+
+            if s_len != first_len {
+                all_equal_len = false;
+            }
             let name = s.name();
             if !names.insert(name) {
                 return Err(PolarsError::Duplicate(
@@ -37,10 +47,22 @@ impl StructChunked {
                 ));
             }
         }
-        if !fields.iter().map(|s| s.len()).all_equal() {
-            Err(PolarsError::ShapeMisMatch(
-                "expected all fields to have equal length".into(),
-            ))
+
+        if !all_equal_len {
+            let mut new_fields = Vec::with_capacity(fields.len());
+            for s in fields {
+                let s_len = s.len();
+                if s_len == max_len {
+                    new_fields.push(s.clone())
+                } else if s_len == 1 {
+                    new_fields.push(s.expand_at_index(0, max_len))
+                } else {
+                    return Err(PolarsError::ShapeMisMatch(
+                        "expected all fields to have equal length".into(),
+                    ));
+                }
+            }
+            Ok(Self::new_unchecked(name, &new_fields))
         } else {
             Ok(Self::new_unchecked(name, fields))
         }
