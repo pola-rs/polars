@@ -298,6 +298,7 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.weekday
     ExprDateTimeNameSpace.with_time_unit
     ExprDateTimeNameSpace.year
+    ExprDateTimeNameSpace.iso_year
 
 Strings
 -------

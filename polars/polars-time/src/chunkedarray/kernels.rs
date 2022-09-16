@@ -12,26 +12,33 @@ use polars_arrow::export::arrow::temporal_conversions::{
 
 use super::*;
 
-trait PolarsWeekDay {
+trait PolarsIso {
     fn p_weekday(&self) -> u32;
     fn week(&self) -> u32;
+    fn iso_year(&self) -> i32;
 }
 
-impl PolarsWeekDay for NaiveDateTime {
+impl PolarsIso for NaiveDateTime {
     fn p_weekday(&self) -> u32 {
         self.weekday() as u32
     }
     fn week(&self) -> u32 {
         self.iso_week().week()
     }
+    fn iso_year(&self) -> i32 {
+        self.iso_week().year()
+    }
 }
 
-impl PolarsWeekDay for NaiveDate {
+impl PolarsIso for NaiveDate {
     fn p_weekday(&self) -> u32 {
         self.weekday() as u32
     }
     fn week(&self) -> u32 {
         self.iso_week().week()
+    }
+    fn iso_year(&self) -> i32 {
+        self.iso_week().year()
     }
 }
 
@@ -52,7 +59,7 @@ macro_rules! to_temporal_unit {
 // Dates
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
-    date_to_week,
+    date_to_iso_week,
     week,
     date32_to_datetime,
     i32,
@@ -60,7 +67,15 @@ to_temporal_unit!(
 );
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
-    date_to_weekday,
+    date_to_iso_year,
+    week,
+    date32_to_datetime,
+    i32,
+    ArrowDataType::Int32
+);
+#[cfg(feature = "dtype-date")]
+to_temporal_unit!(
+    date_to_iso_weekday,
     p_weekday,
     date32_to_datetime,
     i32,
@@ -183,4 +198,30 @@ to_temporal_unit!(
     timestamp_us_to_datetime,
     i64,
     ArrowDataType::UInt32
+);
+
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_iso_year_ns,
+    iso_year,
+    timestamp_ns_to_datetime,
+    i64,
+    ArrowDataType::Int32
+);
+
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_iso_year_us,
+    iso_year,
+    timestamp_us_to_datetime,
+    i64,
+    ArrowDataType::Int32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_iso_year_ms,
+    iso_year,
+    timestamp_ms_to_datetime,
+    i64,
+    ArrowDataType::Int32
 );

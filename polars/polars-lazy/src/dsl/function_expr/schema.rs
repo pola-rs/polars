@@ -106,6 +106,17 @@ impl FunctionExpr {
                     Uppercase | Lowercase => with_dtype(DataType::Utf8),
                 }
             }
+            #[cfg(feature = "temporal")]
+            TemporalExpr(fun) => {
+                use TemporalFunction::*;
+                let dtype = match fun {
+                    Year | IsoYear => DataType::Int32,
+                    Month | Quarter | Week | WeekDay | Day | OrdinalDay | Hour | Minute
+                    | NanoSecond | Second => DataType::UInt32,
+                    TimeStamp(_) => DataType::Int64,
+                };
+                with_dtype(dtype)
+            }
 
             #[cfg(feature = "date_offset")]
             DateOffset(_) => same_type(),

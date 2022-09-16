@@ -1495,3 +1495,8 @@ def test_short_formats() -> None:
         date(2020, 1, 1),
     ]
     assert s.str.strptime(pl.Date, "%foo", strict=False).to_list() == [None, None]
+
+
+def test_iso_year() -> None:
+    dt = datetime(2022, 1, 1, 7, 8, 40)
+    assert pl.Series([dt]).dt.iso_year()[0] == 2021

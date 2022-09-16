@@ -242,9 +242,37 @@ pub trait TemporalMethods: AsSeries {
         }
     }
 
-    /// Extract month from underlying NaiveDateTime representation.
+    /// Extract year from underlying NaiveDateTime representation.
     /// Returns the year number in the calendar date.
     fn year(&self) -> PolarsResult<Int32Chunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => s.date().map(|ca| ca.year()),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.year()),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", s.dtype()).into(),
+            )),
+        }
+    }
+
+    fn iso_year(&self) -> PolarsResult<Int32Chunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => s.date().map(|ca| ca.iso_year()),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.iso_year()),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", s.dtype()).into(),
+            )),
+        }
+    }
+
+    /// Extract ordinal year from underlying NaiveDateTime representation.
+    /// Returns the year number in the calendar date.
+    fn ordinal_year(&self) -> PolarsResult<Int32Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
