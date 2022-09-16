@@ -632,3 +632,23 @@ def test_struct_getitem() -> None:
     assert pl.Series([{"a": 1, "b": 2}]).to_frame().select(
         [pl.col("").struct[0]]
     ).to_dict(False) == {"a": [1]}
+
+
+def test_struct_broadcasting() -> None:
+    df = pl.DataFrame(
+        {
+            "col1": [1, 2],
+            "col2": [10, 20],
+        }
+    )
+
+    assert (
+        df.select(
+            pl.struct(
+                [
+                    pl.lit("a").alias("a"),
+                    pl.col("col1").alias("col1"),
+                ]
+            ).alias("my_struct")
+        )
+    ).to_dict(False) == {"my_struct": [{"a": "a", "col1": 1}, {"a": "a", "col1": 2}]}
