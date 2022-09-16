@@ -379,8 +379,16 @@ impl Expr {
     pub(crate) fn to_field(&self, schema: &Schema, ctxt: Context) -> PolarsResult<Field> {
         // this is not called much and th expression depth is typically shallow
         let mut arena = Arena::with_capacity(5);
-        let root = to_aexpr(self.clone(), &mut arena);
-        arena.get(root).to_field(schema, ctxt, &arena)
+        self.to_field_amortized(schema, ctxt, &mut arena)
+    }
+    pub(crate) fn to_field_amortized(
+        &self,
+        schema: &Schema,
+        ctxt: Context,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> PolarsResult<Field> {
+        let root = to_aexpr(self.clone(), expr_arena);
+        expr_arena.get(root).to_field(schema, ctxt, expr_arena)
     }
 }
 

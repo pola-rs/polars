@@ -1094,7 +1094,6 @@ impl Expr {
             },
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "fill_null",
                 cast_to_supertypes: true,
                 ..Default::default()
             },

@@ -86,6 +86,9 @@ impl<T> Arena<T> {
         let x = self.get_mut(idx);
         *x = val;
     }
+    pub fn clear(&mut self) {
+        self.items.clear()
+    }
 }
 
 impl<T: Default> Arena<T> {

@@ -112,9 +112,9 @@ impl<'a> ExprMut<'a> {
     /// # Arguments
     /// * `f` - A function that may mutate an expression. If the function returns `true` iteration
     /// continues.
-    pub(crate) fn apply<F>(&mut self, f: F)
+    pub(crate) fn apply<F>(&mut self, mut f: F)
     where
-        F: Fn(&mut Expr) -> bool,
+        F: FnMut(&mut Expr) -> bool,
     {
         while let Some(current_expr) = self.stack.pop() {
             // the order is important, we first modify the Expr

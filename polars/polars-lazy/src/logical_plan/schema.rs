@@ -29,9 +29,11 @@ pub(crate) fn det_join_schema(
             // an expression can have an alias, and change a dtype.
             // we only do this for the left hand side as the right hand side
             // is dropped.
+            let mut arena = Arena::with_capacity(8);
             for e in left_on {
-                let field = e.to_field(schema_left, Context::Default)?;
-                new_schema.with_column(field.name, field.dtype)
+                let field = e.to_field_amortized(schema_left, Context::Default, &mut arena)?;
+                new_schema.with_column(field.name, field.dtype);
+                arena.clear();
             }
 
             let right_names: PlHashSet<_> = right_on.iter().map(|s| s.as_str()).collect();
