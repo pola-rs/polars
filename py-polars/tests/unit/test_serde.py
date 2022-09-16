@@ -32,3 +32,19 @@ def test_serde_time_unit() -> None:
             ).cast(pl.Datetime("ns"))
         )
     ).dtype == pl.Datetime("ns")
+
+def test_serde_duration() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [
+                datetime(2021, 2, 1, 9, 20),
+                datetime(2021, 2, 2, 9, 20),
+            ],
+            "b": [4, 5],
+        }
+    ).with_columns([pl.col("a").cast(pl.Datetime("ns")).alias("a")]).select(pl.all())
+    df = df.with_columns([pl.col("a").diff(n=1).alias("a_td")])
+    serde_df = pickle.loads(pickle.dumps(df))
+    assert serde_df["a_td"].dtype == pl.Duration("ns")
+    pl.testing.assert_series_equal(serde_df["a_td"], pl.Series("a_td", [None, timedelta(days=1)], dtype=pl.Duration("ns")))
+

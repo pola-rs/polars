@@ -39,6 +39,7 @@ enum DeDataType<'a> {
     Utf8,
     Date,
     Datetime(TimeUnit, Option<TimeZone>),
+    Duration(TimeUnit),
     #[serde(with = "TimeUnitDef")]
     Time64(ArrowTimeUnit),
     List,
@@ -56,6 +57,7 @@ impl From<&DataType> for DeDataType<'_> {
             DataType::UInt64 => DeDataType::UInt64,
             DataType::Date => DeDataType::Date,
             DataType::Datetime(tu, tz) => DeDataType::Datetime(*tu, tz.clone()),
+            DataType::Duration(tu) => DeDataType::Duration(*tu),
             DataType::Float32 => DeDataType::Float32,
             DataType::Float64 => DeDataType::Float64,
             DataType::Utf8 => DeDataType::Utf8,

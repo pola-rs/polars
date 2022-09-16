@@ -50,6 +50,11 @@ impl Serialize for Series {
                     let ca = self.categorical().unwrap();
                     ca.serialize(serializer)
                 }
+                #[cfg(feature = "dtype-duration")]
+                DataType::Duration(_) => {
+                    let ca = self.duration().unwrap();
+                    ca.serialize(serializer)
+                }
                 _ => {
                     // cast small integers to i32
                     self.cast(&DataType::Int32).unwrap().serialize(serializer)
@@ -153,6 +158,12 @@ impl<'de> Deserialize<'de> for Series {
                         Ok(Series::new(&name, values)
                             .cast(&DataType::Datetime(tu, tz))
                             .unwrap())
+                    }
+                    #[cfg(feature = "dtype-duration")]
+                    DeDataType::Duration(tu) => {
+                        let values: Vec<Option<i64>> = map.next_value()?;
+                        Ok(Series::new(&name, values)
+                            .cast(&DataType::Duration(tu)).unwrap())
                     }
                     DeDataType::Boolean => {
                         let values: Vec<Option<bool>> = map.next_value()?;
