@@ -233,3 +233,11 @@ def test_empty_list_in_apply() -> None:
     assert df.select(
         pl.struct(["a", "b"]).apply(lambda row: list(set(row["a"]) & set(row["b"])))
     ).to_dict(False) == {"a": [[], [1, 2], [], [5]]}
+
+
+def test_apply_skip_nulls() -> None:
+    some_map = {None: "a", 1: "b"}
+    s = pl.Series([None, 1])
+
+    assert s.apply(lambda x: some_map[x]).to_list() == [None, "b"]
+    assert s.apply(lambda x: some_map[x], skip_nulls=False).to_list() == ["a", "b"]

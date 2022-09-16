@@ -773,6 +773,7 @@ impl PySeries {
         &self,
         lambda: &PyAny,
         output_type: Option<Wrap<DataType>>,
+        skip_nulls: bool,
     ) -> PyResult<PySeries> {
         Python::with_gil(|py| {
             let series = &self.series;
@@ -786,7 +787,8 @@ impl PySeries {
                     | DataType::Duration(_)
                     | DataType::Categorical(_)
                     | DataType::Time
-            ) {
+            ) || !skip_nulls
+            {
                 let mut avs = Vec::with_capacity(self.series.len());
                 let iter = self.series.iter().map(|av| {
                     let input = Wrap(av);

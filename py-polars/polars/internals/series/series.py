@@ -2946,7 +2946,10 @@ class Series:
         """
 
     def apply(
-        self, func: Callable[[Any], Any], return_dtype: type[DataType] | None = None
+        self,
+        func: Callable[[Any], Any],
+        return_dtype: type[DataType] | None = None,
+        skip_nulls: bool = True,
     ) -> Series:
         """
         Apply a function over elements in this Series and return a new Series.
@@ -2973,6 +2976,10 @@ class Series:
         return_dtype
             Output datatype. If none is given, the same datatype as this Series will be
             used.
+        skip_nulls
+            Nulls will be skipped and not passed to the python function.
+            This is faster because python can be skipped and because we call
+            more specialized functions.
 
         Returns
         -------
@@ -2983,7 +2990,7 @@ class Series:
             pl_return_dtype = None
         else:
             pl_return_dtype = py_type_to_dtype(return_dtype)
-        return wrap_s(self._s.apply_lambda(func, pl_return_dtype))
+        return wrap_s(self._s.apply_lambda(func, pl_return_dtype, skip_nulls))
 
     def shift(self, periods: int = 1) -> Series:
         """
