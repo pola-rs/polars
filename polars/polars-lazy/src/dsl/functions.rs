@@ -15,6 +15,8 @@ use rayon::prelude::*;
 use crate::dsl::function_expr::FunctionExpr;
 #[cfg(feature = "list")]
 use crate::dsl::function_expr::ListFunction;
+#[cfg(feature = "strings")]
+use crate::dsl::function_expr::StringFunction;
 use crate::dsl::*;
 use crate::prelude::*;
 
@@ -224,30 +226,26 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
     }
 }
 
-#[cfg(feature = "concat_str")]
+#[cfg(all(feature = "concat_str", feature = "strings"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "concat_str")))]
 /// Horizontally concat string columns in linear time
 pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
-    let s = s.as_ref().to_vec();
+    let input = s.as_ref().to_vec();
     let sep = sep.to_string();
-    let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-        polars_core::functions::concat_str(s, &sep).map(|ca| ca.into_series())
-    }) as Arc<dyn SeriesUdf>);
-    Expr::AnonymousFunction {
-        input: s,
-        function,
-        output_type: GetOutput::from_type(DataType::Utf8),
+
+    Expr::Function {
+        input,
+        function: StringFunction::ConcatHorizontal(sep).into(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
             auto_explode: true,
-            fmt_str: "concat_by",
             ..Default::default()
         },
     }
 }
 
-#[cfg(feature = "format_str")]
+#[cfg(all(feature = "concat_str", feature = "strings"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "format_str")))]
 /// Format the results of an array of expressions using a format string
 pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr> {

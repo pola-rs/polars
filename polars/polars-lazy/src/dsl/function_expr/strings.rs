@@ -38,7 +38,9 @@ pub enum StringFunction {
     #[cfg(feature = "temporal")]
     Strptime(StrpTimeOptions),
     #[cfg(feature = "concat_str")]
-    Concat(String),
+    ConcatVertical(String),
+    #[cfg(feature = "concat_str")]
+    ConcatHorizontal(String),
     #[cfg(feature = "regex")]
     Replace {
         // replace_single or replace_all
@@ -68,7 +70,9 @@ impl Display for StringFunction {
             #[cfg(feature = "temporal")]
             StringFunction::Strptime(_) => write!(f, "str.strptime"),
             #[cfg(feature = "concat_str")]
-            StringFunction::Concat(_) => write!(f, "str.concat"),
+            StringFunction::ConcatVertical(_) => write!(f, "str.concat_vertical"),
+            #[cfg(feature = "concat_str")]
+            StringFunction::ConcatHorizontal(_) => write!(f, "str.concat_horizontal"),
             #[cfg(feature = "regex")]
             StringFunction::Replace { .. } => write!(f, "str.replace"),
             StringFunction::Uppercase => write!(f, "str.uppercase"),
@@ -195,6 +199,11 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
 #[cfg(feature = "concat_str")]
 pub(super) fn concat(s: &Series, delimiter: &str) -> PolarsResult<Series> {
     Ok(s.str_concat(delimiter).into_series())
+}
+
+#[cfg(feature = "concat_str")]
+pub(super) fn concat_hor(s: &[Series], delimiter: &str) -> PolarsResult<Series> {
+    polars_core::functions::concat_str(s, delimiter).map(|ca| ca.into_series())
 }
 
 impl From<StringFunction> for FunctionExpr {

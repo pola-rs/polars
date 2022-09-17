@@ -100,7 +100,7 @@ impl FunctionExpr {
                     #[cfg(feature = "temporal")]
                     Strptime(options) => with_dtype(options.date_dtype.clone()),
                     #[cfg(feature = "concat_str")]
-                    Concat(_) => with_dtype(DataType::Utf8),
+                    ConcatVertical(_) | ConcatHorizontal(_) => with_dtype(DataType::Utf8),
                     #[cfg(feature = "regex")]
                     Replace { .. } => with_dtype(DataType::Utf8),
                     Uppercase | Lowercase => with_dtype(DataType::Utf8),

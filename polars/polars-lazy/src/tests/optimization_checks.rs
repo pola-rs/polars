@@ -156,6 +156,7 @@ pub fn test_simple_slice() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "cse")]
 pub fn test_slice_pushdown_join() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     let q1 = scan_foods_parquet(false).limit(3);
@@ -418,6 +419,37 @@ fn test_groupby_ternary_literal_predicate() -> PolarsResult<()> {
             assert_eq!(b.null_count(), 3);
         };
     }
+
+    Ok(())
+}
+
+#[cfg(all(feature = "concat_str", feature = "strings"))]
+#[test]
+fn test_string_addition_to_concat_str() -> PolarsResult<()> {
+    let df = df![
+        "a"=> ["a"],
+        "b"=> ["b"],
+    ]?;
+
+    let q = df
+        .lazy()
+        .select([lit("foo") + col("a") + col("b") + lit("bar")]);
+
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let root = q.clone().optimize(&mut lp_arena, &mut expr_arena)?;
+    let lp = lp_arena.get(root);
+    let mut exprs = lp.get_exprs();
+    let expr_node = exprs.pop().unwrap();
+    if let AExpr::Function { input, .. } = expr_arena.get(expr_node) {
+        // the concat_str has the 4 expressions as input
+        assert_eq!(input.len(), 4);
+    } else {
+        panic!()
+    }
+
+    let out = q.collect()?;
+    let s = out.column("literal")?;
+    assert_eq!(s.get(0), AnyValue::Utf8("fooabbar"));
 
     Ok(())
 }
