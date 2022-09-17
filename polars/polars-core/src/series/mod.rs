@@ -338,7 +338,7 @@ impl Series {
         }
     }
 
-    /// Check if float value is finite
+    /// Check if float value is infinite
     pub fn is_infinite(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_infinite()),
