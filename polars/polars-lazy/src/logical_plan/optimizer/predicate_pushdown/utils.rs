@@ -74,13 +74,19 @@ pub(super) fn predicate_at_scan(
     }
 }
 
+// an invisible ascii token we use as delimiter
+const HIDDEN_DELIMITER: char = '\u{1D17A}';
+
 /// Determine the hashmap key by combining all the root column names of a predicate
 pub(super) fn roots_to_key(roots: &[Arc<str>]) -> Arc<str> {
     if roots.len() == 1 {
         roots[0].clone()
     } else {
         let mut new = String::with_capacity(32 * roots.len());
-        for name in roots {
+        for (i, name) in roots.iter().enumerate() {
+            if i > 0 {
+                new.push(HIDDEN_DELIMITER)
+            }
             new.push_str(name);
         }
         Arc::from(new)
@@ -231,11 +237,11 @@ where
 
         {
             let projection_aexpr = expr_arena.get(*projection_node);
-            if let AExpr::Alias(_, name) = projection_aexpr {
+            if let AExpr::Alias(_, alias_name) = projection_aexpr {
                 // if this alias refers to one of the predicates in the upper nodes
                 // we rename the column of the predicate before we push it downwards.
 
-                if let Some(predicate) = acc_predicates.remove(name) {
+                if let Some(predicate) = acc_predicates.remove(alias_name) {
                     if projection_maybe_boundary {
                         local_predicates.push(predicate);
                         continue;
@@ -258,6 +264,27 @@ where
                     } else {
                         // this may be a complex binary function. The predicate may only be valid
                         // on this projected column so we do filter locally.
+                        local_predicates.push(predicate)
+                    }
+                } else {
+                    // we could not find the alias name
+                    // that could still mean that a predicate that is a complicated binary expression
+                    // refers to the aliased name. If we find it, we remove it for now
+                    // TODO! rename the expression.
+                    let mut remove_names = vec![];
+                    for (composed_name, _) in acc_predicates.iter() {
+                        if composed_name.contains(HIDDEN_DELIMITER) {
+                            for root_name in composed_name.as_ref().split(HIDDEN_DELIMITER) {
+                                if root_name == alias_name.as_ref() {
+                                    remove_names.push(composed_name.clone());
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    for composed_name in remove_names {
+                        let predicate = acc_predicates.remove(&composed_name).unwrap();
                         local_predicates.push(predicate)
                     }
                 }
