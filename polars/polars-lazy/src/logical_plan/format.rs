@@ -179,7 +179,8 @@ impl LogicalPlan {
                 writeln!(f, "{:indent$}END JOIN", "")
             }
             HStack { input, exprs, .. } => {
-                writeln!(f, "{:indent$} WITH_COLUMNS {:?}", "", exprs)?;
+                writeln!(f, "{:indent$} WITH_COLUMNS:", "",)?;
+                writeln!(f, "{:indent$} {:?}", "", exprs)?;
                 input._format(f, indent)
             }
             Distinct { input, options } => {

@@ -238,6 +238,7 @@ fn test_predicate_pd_apply() -> PolarsResult<()> {
     Ok(())
 }
 #[test]
+#[cfg(feature = "cse")]
 fn test_predicate_on_join_suffix_4788() -> PolarsResult<()> {
     let lf = df![
       "x" => [1, 2],

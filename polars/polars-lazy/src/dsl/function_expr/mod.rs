@@ -43,7 +43,7 @@ use serde::{Deserialize, Serialize};
 pub(super) use self::datetime::TemporalFunction;
 pub(super) use self::nan::NanFunction;
 #[cfg(feature = "strings")]
-pub(super) use self::strings::StringFunction;
+pub(crate) use self::strings::StringFunction;
 #[cfg(feature = "dtype-struct")]
 pub(super) use self::struct_::StructFunction;
 #[cfg(feature = "trigonometry")]
@@ -368,7 +368,9 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map!(strings::strptime, &options)
             }
             #[cfg(feature = "concat_str")]
-            Concat(delimiter) => map!(strings::concat, &delimiter),
+            ConcatVertical(delimiter) => map!(strings::concat, &delimiter),
+            #[cfg(feature = "concat_str")]
+            ConcatHorizontal(delimiter) => map_as_slice!(strings::concat_hor, &delimiter),
             #[cfg(feature = "regex")]
             Replace { all, literal } => map_as_slice!(strings::replace, literal, all),
             Uppercase => map!(strings::uppercase),

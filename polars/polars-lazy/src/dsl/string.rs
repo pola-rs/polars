@@ -103,12 +103,11 @@ impl StringNameSpace {
 
         Expr::Function {
             input: vec![self.0],
-            function: StringFunction::Concat(delimiter).into(),
+            function: StringFunction::ConcatVertical(delimiter).into(),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
                 input_wildcard_expansion: false,
                 auto_explode: true,
-                fmt_str: "str.concat",
                 ..Default::default()
             },
         }

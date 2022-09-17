@@ -616,6 +616,12 @@ impl ALogicalPlan {
         self.copy_inputs(&mut inputs);
         inputs
     }
+    /// panics if more than one input
+    pub(crate) fn get_input(&self) -> Option<Node> {
+        let mut inputs = [None];
+        self.copy_inputs(&mut inputs);
+        inputs[0]
+    }
 }
 
 pub struct ALogicalPlanBuilder<'a> {
