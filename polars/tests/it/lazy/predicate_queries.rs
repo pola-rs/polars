@@ -221,3 +221,27 @@ fn test_count_blocked_at_union_3963() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_predicate_on_join_select_4884() -> PolarsResult<()> {
+    let lf = df![
+      "x" => [0, 1],
+      "y" => [1, 2],
+    ]?
+    .lazy();
+    let out = (lf.clone().join_builder().with(lf))
+        .left_on([col("y")])
+        .right_on([col("x")])
+        .suffix("_right")
+        .finish()
+        .select([col("x"), col("y_right").alias("y")])
+        .filter(col("x").neq(col("y")).and(col("y").eq(2)))
+        .collect()?;
+
+    let expected = df![
+      "x" => [0],
+      "y" => [2],
+    ]?;
+    assert_eq!(out, expected);
+    Ok(())
+}
