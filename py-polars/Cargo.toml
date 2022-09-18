@@ -51,7 +51,7 @@ repeat_by = ["polars/repeat_by"]
 simd = ["polars/simd"]
 meta = ["polars/meta"]
 search_sorted = ["polars/search_sorted"]
-decompress-fast = ["polars/decompress-fast"]
+decompress = ["polars/decompress"]
 lazy_regex = ["polars/lazy_regex"]
 csv-file = ["polars/csv-file"]
 object = ["polars/object"]
@@ -73,7 +73,7 @@ all = [
   "pct_change",
   "search_sorted",
   "meta",
-  "decompress-fast",
+  "decompress",
   "lazy_regex",
   "csv-file",
   "extract_jsonpath",
