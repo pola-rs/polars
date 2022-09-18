@@ -1996,6 +1996,12 @@ def test_set_at_idx() -> None:
     assert s.to_list() == ["a", "x", "x"]
     assert s.set_at_idx([0, 2], 0.12345).to_list() == ["0.12345", "x", "0.12345"]
 
+    # set multiple values values
+    s = pl.Series(["z", "z", "z"])
+    assert s.set_at_idx([0, 1], ["a", "b"]).to_list() == ["a", "b", "z"]
+    s = pl.Series([True, False, True])
+    assert s.set_at_idx([0, 1], [False, True]).to_list() == [False, True, True]
+
 
 def test_repr() -> None:
     s = pl.Series("ints", [1001, 2002, 3003])

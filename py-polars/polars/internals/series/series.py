@@ -2490,6 +2490,8 @@ class Series:
         | bool
         | Sequence[int]
         | Sequence[float]
+        | Sequence[bool]
+        | Sequence[str]
         | Sequence[date]
         | Sequence[datetime]
         | date
