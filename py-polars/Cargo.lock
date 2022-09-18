@@ -1275,7 +1275,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
  "polars-algo",
  "polars-core",
@@ -1287,7 +1287,7 @@ dependencies = [
 
 [[package]]
 name = "polars-algo"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
  "polars-core",
  "polars-lazy",
@@ -1295,7 +1295,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
  "arrow2",
  "hashbrown",
@@ -1306,7 +1306,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1337,7 +1337,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1364,7 +1364,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
  "ahash",
  "bitflags",
@@ -1384,7 +1384,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -1392,7 +1392,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
  "chrono",
  "lexical",
@@ -1404,7 +1404,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
  "parking_lot",
  "rayon",
