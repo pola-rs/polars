@@ -193,12 +193,10 @@ impl SlicePushDown {
                 Ok(lp)
             }
 
-            (Union {inputs, .. }, Some(state)) => {
-                let options = UnionOptions {
-                    slice: true,
-                    slice_offset: state.offset,
-                    slice_len: state.len,
-                };
+            (Union {inputs, mut options }, Some(state)) => {
+                options.slice = true;
+                options.slice_offset = state.offset;
+                options.slice_len = state.len;
                 Ok(Union {inputs, options})
             },
             (Join {

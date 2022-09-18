@@ -561,7 +561,11 @@ pub fn duration(args: DurationArgs) -> Expr {
 }
 
 /// Concat multiple
-pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, rechunk: bool) -> PolarsResult<LazyFrame> {
+pub fn concat<L: AsRef<[LazyFrame]>>(
+    inputs: L,
+    rechunk: bool,
+    parallel: bool,
+) -> PolarsResult<LazyFrame> {
     let mut inputs = inputs.as_ref().to_vec();
     let lf = std::mem::take(
         inputs
@@ -578,10 +582,14 @@ pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, rechunk: bool) -> PolarsResult<L
         let lp = std::mem::take(&mut lf.logical_plan);
         lps.push(lp)
     }
+    let options = UnionOptions {
+        parallel,
+        ..Default::default()
+    };
 
     let lp = LogicalPlan::Union {
         inputs: lps,
-        options: Default::default(),
+        options,
     };
     let mut lf = LazyFrame::from(lp);
     lf.opt_state = opt_state;

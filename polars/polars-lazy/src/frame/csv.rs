@@ -283,7 +283,8 @@ impl<'a> LazyCsvReader<'a> {
                     builder.finish_impl()
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
-            concat(&lfs, self.rechunk)
+            // set to false, as the csv parser has full thread utilization
+            concat(&lfs, self.rechunk, false)
                 .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
                 .map(|lf| {
                     if self.skip_rows != 0 || self.n_rows.is_some() {

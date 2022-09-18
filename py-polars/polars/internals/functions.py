@@ -46,6 +46,7 @@ def concat(
     items: Sequence[pli.DataFrame],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
+    parallel: bool = True,
 ) -> pli.DataFrame:
     ...
 
@@ -55,6 +56,7 @@ def concat(
     items: Sequence[pli.Series],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
+    parallel: bool = True,
 ) -> pli.Series:
     ...
 
@@ -64,6 +66,7 @@ def concat(
     items: Sequence[pli.LazyFrame],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
+    parallel: bool = True,
 ) -> pli.LazyFrame:
     ...
 
@@ -73,6 +76,7 @@ def concat(
     items: Sequence[pli.Expr],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
+    parallel: bool = True,
 ) -> pli.Expr:
     ...
 
@@ -86,6 +90,7 @@ def concat(
     ),
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
+    parallel: bool = True,
 ) -> pli.DataFrame | pli.Series | pli.LazyFrame | pli.Expr:
     """
     Aggregate multiple Dataframes/Series to a single DataFrame/Series.
@@ -104,6 +109,9 @@ def concat(
             values with null.
         - Horizontal: stacks Series horizontally and fills with nulls if the lengths
             don't match.
+    parallel
+        Only relevant for LazyFrames. This determines if the concattenated
+        lazy computations may be executed in parallel.
 
     Examples
     --------
@@ -139,7 +147,7 @@ def concat(
                 f"how must be one of {{'vertical', 'diagonal'}}, got {how}"
             )
     elif isinstance(first, pli.LazyFrame):
-        return pli.wrap_ldf(_concat_lf(items, rechunk))
+        return pli.wrap_ldf(_concat_lf(items, rechunk, parallel))
     elif isinstance(first, pli.Series):
         out = pli.wrap_s(_concat_series(items))
     elif isinstance(first, pli.Expr):
