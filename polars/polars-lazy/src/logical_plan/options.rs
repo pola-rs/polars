@@ -86,6 +86,7 @@ pub struct UnionOptions {
     pub(crate) slice: bool,
     pub(crate) slice_offset: i64,
     pub(crate) slice_len: IdxSize,
+    pub(crate) parallel: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

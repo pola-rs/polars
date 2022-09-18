@@ -610,7 +610,7 @@ impl LazyFrame {
             let alp = lp_arena.take(lp_top);
             let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
             lp_arena.replace(lp_top, alp);
-            cache_states::set_cache_states(lp_top, lp_arena, expr_arena, &mut scratch);
+            cache_states::set_cache_states(lp_top, lp_arena, expr_arena, &mut scratch, cse_changed);
         }
 
         if predicate_pushdown {

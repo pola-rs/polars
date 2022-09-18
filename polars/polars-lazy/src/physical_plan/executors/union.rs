@@ -21,9 +21,15 @@ impl Executor for UnionExec {
         }
         let mut inputs = std::mem::take(&mut self.inputs);
 
-        if self.options.slice && self.options.slice_offset >= 0 {
+        let sliced_path = self.options.slice && self.options.slice_offset >= 0;
+
+        if self.options.parallel || sliced_path {
             if state.verbose() {
-                println!("SLICE AT UNION: union is run sequentially")
+                if self.options.parallel {
+                    println!("UNION: `parallel=false` union is run sequentially")
+                } else {
+                    println!("UNION: `slice is set` union is run sequentially")
+                }
             }
 
             let mut offset = self.options.slice_offset as usize;
@@ -35,6 +41,10 @@ impl Executor for UnionExec {
                     let mut state = state.split();
                     state.branch_idx += idx;
                     let df = input.execute(&mut state)?;
+
+                    if !sliced_path {
+                        return Ok(Some(df));
+                    }
 
                     Ok(if offset > df.height() {
                         offset -= df.height();

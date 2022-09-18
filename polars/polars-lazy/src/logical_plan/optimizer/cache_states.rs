@@ -32,6 +32,7 @@ pub(crate) fn set_cache_states(
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
+    has_caches: bool,
 ) {
     scratch.clear();
 
@@ -52,10 +53,18 @@ pub(crate) fn set_cache_states(
 
         use ALogicalPlan::*;
         match lp {
-            // don't allow parallelism if underneath a cache
-            Join { .. } if cache_id.is_some() => {
+            // don't allow parallelism as caches need eachothers work
+            // also self-referencing plans can deadlock on the files they lock
+            Join { options, .. } if has_caches && options.allow_parallel => {
                 if let Join { options, .. } = lp_arena.get_mut(node) {
                     options.allow_parallel = false;
+                }
+            }
+            // don't allow parallelism as caches need eachothers work
+            // also self-referencing plans can deadlock on the files they lock
+            Union { options, .. } if has_caches && options.parallel => {
+                if let Union { options, .. } = lp_arena.get_mut(node) {
+                    options.parallel = false;
                 }
             }
             Cache { input, id, .. } => {

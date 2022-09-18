@@ -30,7 +30,7 @@ fn test_cse_unions() -> PolarsResult<()> {
 
     let lf1 = lf.clone().with_column(col("category").str().to_uppercase());
 
-    let lf = concat(&[lf1.clone(), lf, lf1], false)?
+    let lf = concat(&[lf1.clone(), lf, lf1], false, false)?
         .select([col("category"), col("fats_g")])
         .with_common_subplan_elimination(true);
 

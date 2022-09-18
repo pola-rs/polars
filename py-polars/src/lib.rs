@@ -298,7 +298,7 @@ fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
 }
 
 #[pyfunction]
-fn concat_lf(lfs: &PyAny, rechunk: bool) -> PyResult<PyLazyFrame> {
+fn concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame> {
     let (seq, len) = get_pyseq(lfs)?;
     let mut lfs = Vec::with_capacity(len);
 
@@ -308,7 +308,7 @@ fn concat_lf(lfs: &PyAny, rechunk: bool) -> PyResult<PyLazyFrame> {
         lfs.push(lf);
     }
 
-    let lf = polars::lazy::dsl::concat(lfs, rechunk).map_err(PyPolarsErr::from)?;
+    let lf = polars::lazy::dsl::concat(lfs, rechunk, parallel).map_err(PyPolarsErr::from)?;
     Ok(lf.into())
 }
 
