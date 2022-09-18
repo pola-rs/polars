@@ -1,4 +1,4 @@
-use arrow::array::{Array, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
+use arrow::array::{Array, BinaryArray, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
 use arrow::types::NativeType;
 
 use crate::is_valid::IsValid;
@@ -15,6 +15,28 @@ pub trait ArrowGetItem {
 
 impl<T: NativeType> ArrowGetItem for PrimitiveArray<T> {
     type Item = T;
+
+    #[inline]
+    fn get(&self, item: usize) -> Option<Self::Item> {
+        if item >= self.len() {
+            None
+        } else {
+            unsafe { self.get_unchecked(item) }
+        }
+    }
+
+    #[inline]
+    unsafe fn get_unchecked(&self, item: usize) -> Option<Self::Item> {
+        if self.is_null_unchecked(item) {
+            None
+        } else {
+            Some(self.value_unchecked(item))
+        }
+    }
+}
+
+impl<'a> ArrowGetItem for &'a BinaryArray<i64> {
+    type Item = &'a [u8];
 
     #[inline]
     fn get(&self, item: usize) -> Option<Self::Item> {
