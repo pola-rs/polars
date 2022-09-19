@@ -932,7 +932,7 @@ def read_parquet(
     -------
     DataFrame
 
-    """  # noqa: E501
+    """
     if use_pyarrow and n_rows:
         raise ValueError("``n_rows`` cannot be used with ``use_pyarrow=True``.")
 
