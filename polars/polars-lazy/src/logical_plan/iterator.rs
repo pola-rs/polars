@@ -31,8 +31,8 @@ macro_rules! push_expr {
             Agg(agg_e) => {
                 use AggExpr::*;
                 match agg_e {
-                    Max(e) => $push(e),
-                    Min(e) => $push(e),
+                    Max { input, .. } => $push(input),
+                    Min { input, .. } => $push(input),
                     Mean(e) => $push(e),
                     Median(e) => $push(e),
                     NUnique(e) => $push(e),
@@ -193,8 +193,8 @@ impl AExpr {
             Agg(agg_e) => {
                 use AAggExpr::*;
                 match agg_e {
-                    Max(e) => push(e),
-                    Min(e) => push(e),
+                    Max { input, .. } => push(input),
+                    Min { input, .. } => push(input),
                     Mean(e) => push(e),
                     Median(e) => push(e),
                     NUnique(e) => push(e),

@@ -1,4 +1,6 @@
 mod list;
+#[cfg(feature = "propagate_nans")]
+pub mod nan_propagating_aggregate;
 mod set;
 mod strings;
 #[cfg(feature = "to_dummies")]

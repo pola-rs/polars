@@ -189,6 +189,42 @@ impl PhysicalExpr for AggregationExpr {
                     // implemented explicitly in AggQuantile struct
                     unimplemented!()
                 }
+                GroupByMethod::NanMin => {
+                    #[cfg(feature = "propagate_nans")]
+                    {
+                        check_flat()?;
+                        let agg_s = ac.flat_naive().into_owned();
+                        let groups = ac.groups();
+                        let agg_s = if agg_s.dtype().is_float() {
+                            nan_propagating_aggregate::group_agg_nan_min_s(&agg_s, groups)
+                        } else {
+                            agg_s.agg_min(groups)
+                        };
+                        rename_series(agg_s, &keep_name)
+                    }
+                    #[cfg(not(feature = "propagate_nans"))]
+                    {
+                        panic!("activate 'propagate_nans' feature")
+                    }
+                }
+                GroupByMethod::NanMax => {
+                    #[cfg(feature = "propagate_nans")]
+                    {
+                        check_flat()?;
+                        let agg_s = ac.flat_naive().into_owned();
+                        let groups = ac.groups();
+                        let agg_s = if agg_s.dtype().is_float() {
+                            nan_propagating_aggregate::group_agg_nan_max_s(&agg_s, groups)
+                        } else {
+                            agg_s.agg_max(groups)
+                        };
+                        rename_series(agg_s, &keep_name)
+                    }
+                    #[cfg(not(feature = "propagate_nans"))]
+                    {
+                        panic!("activate 'propagate_nans' feature")
+                    }
+                }
             }
         };
 

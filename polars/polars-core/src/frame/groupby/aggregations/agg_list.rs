@@ -330,7 +330,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
                             (group_vals, idx.len() as IdxSize)
                         }
                         GroupsIndicator::Slice([first, len]) => {
-                            let group_vals = slice_from_offsets(self, first, len);
+                            let group_vals = _slice_from_offsets(self, first, len);
 
                             (group_vals, len)
                         }

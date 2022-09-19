@@ -88,6 +88,8 @@ Aggregation
     Expr.mean
     Expr.median
     Expr.min
+    Expr.nan_max
+    Expr.nan_min
     Expr.product
     Expr.quantile
     Expr.std

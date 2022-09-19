@@ -2362,6 +2362,26 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.min())
 
+    def nan_max(self) -> Expr:
+        """
+        Get maximum value, but propagate/poison encountered NaN values.
+
+        This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
+        whereas polars defaults to ignoring them.
+
+        """
+        return wrap_expr(self._pyexpr.nan_max())
+
+    def nan_min(self) -> Expr:
+        """
+        Get minimum value, but propagate/poison encountered NaN values.
+
+        This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
+        whereas polars defaults to ignoring them.
+
+        """
+        return wrap_expr(self._pyexpr.nan_min())
+
     def sum(self) -> Expr:
         """
         Get sum value.

@@ -58,6 +58,7 @@ object = ["polars/object"]
 extract_jsonpath = ["polars/extract_jsonpath"]
 pivot = ["polars/pivot"]
 top_k = ["polars/top_k"]
+propagate_nans = ["polars/propagate_nans"]
 
 all = [
   "json",
@@ -85,6 +86,7 @@ all = [
   # remove this once polars-algo is released
   "polars/algo",
   "polars/cse",
+  "propagate_nans",
 ]
 
 # we cannot conditionaly activate simd

@@ -51,6 +51,8 @@ Aggregation
     Series.median
     Series.min
     Series.mode
+    Series.nan_max
+    Series.nan_min
     Series.product
     Series.quantile
     Series.std

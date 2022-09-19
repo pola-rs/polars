@@ -900,7 +900,9 @@ unsafe fn take_df(df: &DataFrame, g: GroupsIndicator) -> DataFrame {
 #[derive(Copy, Clone, Debug)]
 pub enum GroupByMethod {
     Min,
+    NanMin,
     Max,
+    NanMax,
     Median,
     Mean,
     First,
@@ -920,7 +922,9 @@ impl Display for GroupByMethod {
         use GroupByMethod::*;
         let s = match self {
             Min => "min",
+            NanMin => "nan_min",
             Max => "max",
+            NanMax => "nan_max",
             Median => "median",
             Mean => "mean",
             First => "first",
@@ -944,6 +948,8 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
     match method {
         Min => format!("{}_min", name),
         Max => format!("{}_max", name),
+        NanMin => format!("{}_nan_min", name),
+        NanMax => format!("{}_nan_max", name),
         Median => format!("{}_median", name),
         Mean => format!("{}_mean", name),
         First => format!("{}_first", name),

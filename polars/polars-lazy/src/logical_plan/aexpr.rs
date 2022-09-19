@@ -12,8 +12,14 @@ use crate::prelude::*;
 
 #[derive(Clone, Debug)]
 pub enum AAggExpr {
-    Min(Node),
-    Max(Node),
+    Min {
+        input: Node,
+        propagate_nans: bool,
+    },
+    Max {
+        input: Node,
+        propagate_nans: bool,
+    },
     Median(Node),
     NUnique(Node),
     First(Node),
@@ -275,7 +281,11 @@ impl AExpr {
             Agg(agg) => {
                 use AAggExpr::*;
                 match agg {
-                    Max(expr) | Sum(expr) | Min(expr) | First(expr) | Last(expr) => {
+                    Max { input: expr, .. }
+                    | Sum(expr)
+                    | Min { input: expr, .. }
+                    | First(expr)
+                    | Last(expr) => {
                         // default context because `col()` would return a list in aggregation context
                         arena.get(*expr).to_field(schema, Context::Default, arena)
                     }

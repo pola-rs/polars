@@ -145,6 +145,11 @@ impl DataType {
             _ => true,
         }
     }
+
+    pub fn is_float(&self) -> bool {
+        matches!(self, DataType::Float32 | DataType::Float64)
+    }
+
     pub fn is_signed(&self) -> bool {
         // allow because it cannot be replaced when object feature is activated
         #[allow(clippy::match_like_matches_macro)]

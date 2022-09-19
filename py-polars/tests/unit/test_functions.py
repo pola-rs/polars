@@ -183,3 +183,23 @@ def test_align_frames() -> None:
             pl.from_pandas(df2.reset_index()),
             on="date",
         )
+
+
+def test_nan_aggregations() -> None:
+    df = pl.DataFrame({"a": [1.0, float("nan"), 2.0, 3.0], "b": [1, 1, 1, 1]})
+
+    aggs = [
+        pl.col("a").max().alias("max"),
+        pl.col("a").min().alias("min"),
+        pl.col("a").nan_max().alias("nan_max"),
+        pl.col("a").nan_min().alias("nan_min"),
+    ]
+
+    assert (
+        str(df.select(aggs).to_dict(False))
+        == "{'max': [3.0], 'min': [1.0], 'nan_max': [nan], 'nan_min': [nan]}"
+    )
+    assert (
+        str(df.groupby("b").agg(aggs).to_dict(False))
+        == "{'b': [1], 'max': [3.0], 'min': [2.0], 'nan_max': [nan], 'nan_min': [nan]}"
+    )
