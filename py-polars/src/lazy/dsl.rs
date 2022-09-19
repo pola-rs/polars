@@ -138,6 +138,14 @@ impl PyExpr {
     pub fn max(&self) -> PyExpr {
         self.clone().inner.max().into()
     }
+    #[cfg(feature = "propagate_nans")]
+    pub fn nan_max(&self) -> PyExpr {
+        self.clone().inner.nan_max().into()
+    }
+    #[cfg(feature = "propagate_nans")]
+    pub fn nan_min(&self) -> PyExpr {
+        self.clone().inner.nan_min().into()
+    }
     pub fn mean(&self) -> PyExpr {
         self.clone().inner.mean().into()
     }

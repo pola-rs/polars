@@ -210,8 +210,14 @@ where
 #[derive(PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AggExpr {
-    Min(Box<Expr>),
-    Max(Box<Expr>),
+    Min {
+        input: Box<Expr>,
+        propagate_nans: bool,
+    },
+    Max {
+        input: Box<Expr>,
+        propagate_nans: bool,
+    },
     Median(Box<Expr>),
     NUnique(Box<Expr>),
     First(Box<Expr>),
@@ -234,8 +240,8 @@ impl AsRef<Expr> for AggExpr {
     fn as_ref(&self) -> &Expr {
         use AggExpr::*;
         match self {
-            Min(e) => e,
-            Max(e) => e,
+            Min { input, .. } => input,
+            Max { input, .. } => input,
             Median(e) => e,
             NUnique(e) => e,
             First(e) => e,

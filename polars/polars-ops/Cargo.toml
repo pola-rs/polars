@@ -22,6 +22,7 @@ dtype-duration = ["polars-core/dtype-duration", "polars-core/temporal"]
 dtype-struct = ["polars-core/dtype-struct", "polars-core/temporal"]
 dtype-u8 = ["polars-core/dtype-u8"]
 object = ["polars-core/object"]
+propagate_nans = []
 
 # ops
 to_dummies = []

@@ -304,12 +304,38 @@ impl Expr {
 
     /// Reduce groups to minimal value.
     pub fn min(self) -> Self {
-        AggExpr::Min(Box::new(self)).into()
+        AggExpr::Min {
+            input: Box::new(self),
+            propagate_nans: false,
+        }
+        .into()
     }
 
     /// Reduce groups to maximum value.
     pub fn max(self) -> Self {
-        AggExpr::Max(Box::new(self)).into()
+        AggExpr::Max {
+            input: Box::new(self),
+            propagate_nans: false,
+        }
+        .into()
+    }
+
+    /// Reduce groups to minimal value.
+    pub fn nan_min(self) -> Self {
+        AggExpr::Min {
+            input: Box::new(self),
+            propagate_nans: true,
+        }
+        .into()
+    }
+
+    /// Reduce groups to maximum value.
+    pub fn nan_max(self) -> Self {
+        AggExpr::Max {
+            input: Box::new(self),
+            propagate_nans: true,
+        }
+        .into()
     }
 
     /// Reduce groups to the mean value.

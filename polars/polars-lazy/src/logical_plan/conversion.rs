@@ -50,8 +50,20 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         },
         Expr::Agg(agg) => {
             let a_agg = match agg {
-                AggExpr::Min(expr) => AAggExpr::Min(to_aexpr(*expr, arena)),
-                AggExpr::Max(expr) => AAggExpr::Max(to_aexpr(*expr, arena)),
+                AggExpr::Min {
+                    input,
+                    propagate_nans,
+                } => AAggExpr::Min {
+                    input: to_aexpr(*input, arena),
+                    propagate_nans,
+                },
+                AggExpr::Max {
+                    input,
+                    propagate_nans,
+                } => AAggExpr::Max {
+                    input: to_aexpr(*input, arena),
+                    propagate_nans,
+                },
                 AggExpr::Median(expr) => AAggExpr::Median(to_aexpr(*expr, arena)),
                 AggExpr::NUnique(expr) => AAggExpr::NUnique(to_aexpr(*expr, arena)),
                 AggExpr::First(expr) => AAggExpr::First(to_aexpr(*expr, arena)),
@@ -496,13 +508,27 @@ pub(crate) fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             }
         }
         AExpr::Agg(agg) => match agg {
-            AAggExpr::Min(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Min(Box::new(exp)).into()
+            AAggExpr::Min {
+                input,
+                propagate_nans,
+            } => {
+                let exp = node_to_expr(input, expr_arena);
+                AggExpr::Min {
+                    input: Box::new(exp),
+                    propagate_nans,
+                }
+                .into()
             }
-            AAggExpr::Max(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Max(Box::new(exp)).into()
+            AAggExpr::Max {
+                input,
+                propagate_nans,
+            } => {
+                let exp = node_to_expr(input, expr_arena);
+                AggExpr::Max {
+                    input: Box::new(exp),
+                    propagate_nans,
+                }
+                .into()
             }
 
             AAggExpr::Median(expr) => {
