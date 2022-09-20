@@ -25,14 +25,23 @@ impl FileCache {
 
         Self { inner }
     }
+
+    #[cfg(debug_assertions)]
+    pub(crate) fn assert_empty(&self) {
+        for (_, guard) in self.inner.iter() {
+            let state = guard.lock();
+            assert!(state.1.is_empty());
+        }
+    }
+
     pub(crate) fn read<F>(
         &self,
         finger_print: FileFingerPrint,
         total_read_count: FileCount,
         reader: &mut F,
-    ) -> Result<DataFrame>
+    ) -> PolarsResult<DataFrame>
     where
-        F: FnMut() -> Result<DataFrame>,
+        F: FnMut() -> PolarsResult<DataFrame>,
     {
         if total_read_count == 1 {
             if total_read_count == 0 {

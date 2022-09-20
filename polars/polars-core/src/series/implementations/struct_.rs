@@ -40,7 +40,7 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
     }
 
     #[cfg(feature = "zip_with")]
-    fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
+    fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         let other = other.struct_()?;
         let fields = self
             .0
@@ -48,7 +48,7 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
             .iter()
             .zip(other.fields())
             .map(|(lhs, rhs)| lhs.zip_with_same_type(mask, rhs))
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
         Ok(StructChunked::new_unchecked(self.0.name(), &fields).into_series())
     }
 
@@ -114,7 +114,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             .into_series()
     }
 
-    fn append(&mut self, other: &Series) -> Result<()> {
+    fn append(&mut self, other: &Series) -> PolarsResult<()> {
         let other = other.struct_()?;
         let offset = self.chunks().len();
 
@@ -130,7 +130,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         Ok(())
     }
 
-    fn extend(&mut self, other: &Series) -> Result<()> {
+    fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         let other = other.struct_()?;
 
         for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
@@ -146,14 +146,14 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     /// Filter by boolean mask. This operation clones data.
-    fn filter(&self, _filter: &BooleanChunked) -> Result<Series> {
+    fn filter(&self, _filter: &BooleanChunked) -> PolarsResult<Series> {
         self.0
             .try_apply_fields(|s| s.filter(_filter))
             .map(|ca| ca.into_series())
     }
 
     /// Take by index from an iterator. This operation clones the data.
-    fn take_iter(&self, iter: &mut dyn TakeIterator) -> Result<Series> {
+    fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
         self.0
             .try_apply_fields(|s| {
                 let mut iter = iter.boxed_clone();
@@ -195,7 +195,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     ///
     /// # Safety
     /// This doesn't check any bounds.
-    unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
+    unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
         self.0
             .try_apply_fields(|s| s.take_unchecked(idx))
             .map(|ca| ca.into_series())
@@ -217,7 +217,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     /// Take by index. This operation is clone.
-    fn take(&self, indices: &IdxCa) -> Result<Series> {
+    fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
         self.0
             .try_apply_fields(|s| s.take(indices))
             .map(|ca| ca.into_series())
@@ -241,7 +241,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             .into_series()
     }
 
-    fn cast(&self, dtype: &DataType) -> Result<Series> {
+    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         self.0.cast(dtype)
     }
 
@@ -289,7 +289,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     /// Get unique values in the Series.
-    fn unique(&self) -> Result<Series> {
+    fn unique(&self) -> PolarsResult<Series> {
         let groups = self.group_tuples(true, false);
         // safety:
         // groups are in bounds
@@ -297,13 +297,13 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     /// Get unique values in the Series.
-    fn n_unique(&self) -> Result<usize> {
+    fn n_unique(&self) -> PolarsResult<usize> {
         let groups = self.group_tuples(true, false);
         Ok(groups.len())
     }
 
     /// Get first indexes of unique values.
-    fn arg_unique(&self) -> Result<IdxCa> {
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
         let groups = self.group_tuples(true, false);
         let first = groups.take_group_firsts();
         Ok(IdxCa::from_vec(self.name(), first))
@@ -335,14 +335,14 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.apply_fields(|s| s.shift(periods)).into_series()
     }
 
-    fn fill_null(&self, strategy: FillNullStrategy) -> Result<Series> {
+    fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Series> {
         self.0
             .try_apply_fields(|s| s.fill_null(strategy))
             .map(|ca| ca.into_series())
     }
 
     #[cfg(feature = "is_in")]
-    fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
+    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
         self.0.is_in(other)
     }
 

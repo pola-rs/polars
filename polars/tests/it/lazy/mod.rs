@@ -1,5 +1,6 @@
 mod explodes;
 mod expressions;
+mod functions;
 mod groupby;
 mod groupby_dynamic;
 mod predicate_queries;

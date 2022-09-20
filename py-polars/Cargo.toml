@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.14.1"
+version = "0.14.12"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
 edition = "2021"
@@ -41,7 +41,7 @@ avro = ["polars/avro"]
 parquet = ["polars/parquet"]
 ipc = ["polars/ipc"]
 is_in = ["polars/is_in"]
-json = ["polars/serde", "serde_json"]
+json = ["polars/serde", "serde_json", "polars/json"]
 trigonometry = ["polars/trigonometry"]
 sign = ["polars/sign"]
 asof_join = ["polars/asof_join"]
@@ -49,6 +49,16 @@ cross_join = ["polars/cross_join"]
 pct_change = ["polars/pct_change"]
 repeat_by = ["polars/repeat_by"]
 simd = ["polars/simd"]
+meta = ["polars/meta"]
+search_sorted = ["polars/search_sorted"]
+decompress = ["polars/decompress"]
+lazy_regex = ["polars/lazy_regex"]
+csv-file = ["polars/csv-file"]
+object = ["polars/object"]
+extract_jsonpath = ["polars/extract_jsonpath"]
+pivot = ["polars/pivot"]
+top_k = ["polars/top_k"]
+propagate_nans = ["polars/propagate_nans"]
 
 all = [
   "json",
@@ -56,13 +66,27 @@ all = [
   "ipc",
   "avro",
   "is_in",
-  "json",
   "repeat_by",
   "trigonometry",
   "sign",
   "asof_join",
   "cross_join",
   "pct_change",
+  "search_sorted",
+  "meta",
+  "decompress",
+  "lazy_regex",
+  "csv-file",
+  "extract_jsonpath",
+  "polars/timezones",
+  "object",
+  "pivot",
+  "top_k",
+  # we need to add this, as maturin fails if we don't
+  # remove this once polars-algo is released
+  "polars/algo",
+  "polars/cse",
+  "propagate_nans",
 ]
 
 # we cannot conditionaly activate simd
@@ -84,8 +108,6 @@ features = [
   "strings",
   "temporal",
   "random",
-  "object",
-  "csv-file",
   "fmt",
   "performant",
   "dtype-full",
@@ -97,11 +119,7 @@ features = [
   "concat_str",
   "row_hash",
   "reinterpret",
-  # Use "decompress" instead of "decompress-fast" till zlib-ng is fixed.
-  "decompress",
   "mode",
-  "extract_jsonpath",
-  "lazy_regex",
   "cum_agg",
   "rolling_window",
   "interpolate",
@@ -118,7 +136,6 @@ features = [
   "ewma",
   "dot_diagram",
   "dataframe_arithmetic",
-  "json",
   "string_encoding",
   "product",
   "ndarray",
@@ -133,12 +150,11 @@ features = [
   "to_dummies",
   "string_justify",
   "arg_where",
-  "timezones",
   "date_offset",
 ]
 
-# [patch.crates-io]
-# packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd" }
+[patch.crates-io]
+cmake = { git = "https://github.com/messense/cmake-rs.git", branch = "cross-compile" }
 
 [lib]
 name = "polars"

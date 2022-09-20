@@ -387,7 +387,7 @@ fn test_missing_value() {
 
 #[test]
 #[cfg(feature = "temporal")]
-fn test_with_dtype() -> Result<()> {
+fn test_with_dtype() -> PolarsResult<()> {
     // test if timestamps can be parsed as Datetime
     let csv = r#"a,b,c,d,e
 AUDCAD,1616455919,0.91212,0.95556,1
@@ -417,7 +417,7 @@ AUDCAD,1616455921,0.96212,0.95666,1
 }
 
 #[test]
-fn test_skip_rows() -> Result<()> {
+fn test_skip_rows() -> PolarsResult<()> {
     let csv = r"#doc source pos typeindex type topic
 #alpha : 25.0 25.0
 #beta : 0.1
@@ -439,7 +439,7 @@ fn test_skip_rows() -> Result<()> {
 }
 
 #[test]
-fn test_projection_idx() -> Result<()> {
+fn test_projection_idx() -> PolarsResult<()> {
     let csv = r"#0 NA 0 0 57 0
 0 NA 0 0 57 0
 0 NA 5 5 513 0
@@ -467,7 +467,7 @@ fn test_projection_idx() -> Result<()> {
 }
 
 #[test]
-fn test_missing_fields() -> Result<()> {
+fn test_missing_fields() -> PolarsResult<()> {
     let csv = r"1,2,3,4,5
 1,2,3
 1,2,3,4,5
@@ -490,7 +490,7 @@ fn test_missing_fields() -> Result<()> {
 }
 
 #[test]
-fn test_comment_lines() -> Result<()> {
+fn test_comment_lines() -> PolarsResult<()> {
     let csv = r"1,2,3,4,5
 # this is a comment
 1,2,3,4,5
@@ -524,7 +524,7 @@ fn test_comment_lines() -> Result<()> {
 }
 
 #[test]
-fn test_null_values_argument() -> Result<()> {
+fn test_null_values_argument() -> PolarsResult<()> {
     let csv = r"1,a,foo
 null-value,b,bar,
 3,null-value,ham
@@ -540,7 +540,7 @@ null-value,b,bar,
 }
 
 #[test]
-fn test_no_newline_at_end() -> Result<()> {
+fn test_no_newline_at_end() -> PolarsResult<()> {
     let csv = r"a,b
 foo,foo
 bar,bar";
@@ -558,7 +558,7 @@ bar,bar";
 
 #[test]
 #[cfg(feature = "temporal")]
-fn test_automatic_datetime_parsing() -> Result<()> {
+fn test_automatic_datetime_parsing() -> PolarsResult<()> {
     let csv = r"timestamp,open,high
 2021-01-01 00:00:00,0.00305500,0.00306000
 2021-01-01 00:15:00,0.00298800,0.00300400
@@ -580,7 +580,7 @@ fn test_automatic_datetime_parsing() -> Result<()> {
 }
 
 #[test]
-fn test_no_quotes() -> Result<()> {
+fn test_no_quotes() -> PolarsResult<()> {
     let rolling_stones = r#"linenum,last_name,first_name
 1,Jagger,Mick
 2,O"Brian,Mary
@@ -601,7 +601,7 @@ fn test_no_quotes() -> Result<()> {
 }
 
 #[test]
-fn test_utf8() -> Result<()> {
+fn test_utf8() -> PolarsResult<()> {
     // first part is valid ascii. later we have removed some bytes from the emoji.
     let invalid_utf8 = [
         111, 10, 98, 97, 114, 10, 104, 97, 109, 10, 115, 112, 97, 109, 10, 106, 97, 109, 10, 107,
@@ -615,7 +615,7 @@ fn test_utf8() -> Result<()> {
 }
 
 #[test]
-fn test_header_inference() -> Result<()> {
+fn test_header_inference() -> PolarsResult<()> {
     let csv = r#"not_a_header,really,even_if,it_looks_like_one
 1,2,3,4
 4,3,2,1
@@ -627,7 +627,7 @@ fn test_header_inference() -> Result<()> {
 }
 
 #[test]
-fn test_header_with_comments() -> Result<()> {
+fn test_header_with_comments() -> PolarsResult<()> {
     let csv = "# ignore me\na,b,c\nd,e,f";
 
     let file = Cursor::new(csv);
@@ -642,7 +642,7 @@ fn test_header_with_comments() -> Result<()> {
 
 #[test]
 #[cfg(feature = "temporal")]
-fn test_ignore_parse_dates() -> Result<()> {
+fn test_ignore_parse_dates() -> PolarsResult<()> {
     // if parse dates is set, a given schema should still prevail above date parsing.
     let csv = r#"a,b,c
 1,i,16200126
@@ -662,7 +662,7 @@ fn test_ignore_parse_dates() -> Result<()> {
 }
 
 #[test]
-fn test_projection_and_quoting() -> Result<()> {
+fn test_projection_and_quoting() -> PolarsResult<()> {
     let csv = "a,b,c,d
 A1,'B1',C1,1
 A2,\"B2\",C2,2
@@ -691,7 +691,7 @@ A3,\"B4_\"\"with_embedded_double_quotes\"\"\",C4,4";
 }
 
 #[test]
-fn test_infer_schema_0_rows() -> Result<()> {
+fn test_infer_schema_0_rows() -> PolarsResult<()> {
     let csv = r#"a,b,c,d
 1,a,1.0,true
 1,a,1.0,false
@@ -711,7 +711,7 @@ fn test_infer_schema_0_rows() -> Result<()> {
 }
 
 #[test]
-fn test_infer_schema_eol() -> Result<()> {
+fn test_infer_schema_eol() -> PolarsResult<()> {
     // no eol after header
     let no_eol = "colx,coly\nabcdef,1234";
     let file = Cursor::new(no_eol);
@@ -721,7 +721,7 @@ fn test_infer_schema_eol() -> Result<()> {
 }
 
 #[test]
-fn test_whitespace_delimiters() -> Result<()> {
+fn test_whitespace_delimiters() -> PolarsResult<()> {
     let tsv = "\ta\tb\tc\n1\ta1\tb1\tc1\n2\ta2\tb2\tc2\n".to_string();
     let mut contents = Vec::with_capacity(3);
     contents.push((tsv.replace('\t', " "), b' '));
@@ -740,7 +740,7 @@ fn test_whitespace_delimiters() -> Result<()> {
 }
 
 #[test]
-fn test_scientific_floats() -> Result<()> {
+fn test_scientific_floats() -> PolarsResult<()> {
     let csv = r#"foo,bar
 10000001,1e-5
 10000002,.04
@@ -754,7 +754,7 @@ fn test_scientific_floats() -> Result<()> {
 }
 
 #[test]
-fn test_tsv_header_offset() -> Result<()> {
+fn test_tsv_header_offset() -> PolarsResult<()> {
     let csv = "foo\tbar\n\t1000011\t1\n\t1000026\t2\n\t1000949\t2";
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).with_delimiter(b'\t').finish()?;
@@ -769,7 +769,7 @@ fn test_tsv_header_offset() -> Result<()> {
 }
 
 #[test]
-fn test_null_values_infer_schema() -> Result<()> {
+fn test_null_values_infer_schema() -> PolarsResult<()> {
     let csv = r#"a,b
 1,2
 3,NA
@@ -784,7 +784,7 @@ fn test_null_values_infer_schema() -> Result<()> {
 }
 
 #[test]
-fn test_comma_separated_field_in_tsv() -> Result<()> {
+fn test_comma_separated_field_in_tsv() -> PolarsResult<()> {
     let csv = "first\tsecond\n1\t2.3,2.4\n3\t4.5,4.6\n";
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).with_delimiter(b'\t').finish()?;
@@ -793,7 +793,7 @@ fn test_comma_separated_field_in_tsv() -> Result<()> {
 }
 
 #[test]
-fn test_quoted_projection() -> Result<()> {
+fn test_quoted_projection() -> PolarsResult<()> {
     let csv = r#"c1,c2,c3,c4,c5
 a,"b",c,d,1
 a,"b",c,d,1
@@ -808,7 +808,7 @@ a,b,c,d,1"#;
 }
 
 #[test]
-fn test_last_line_incomplete() -> Result<()> {
+fn test_last_line_incomplete() -> PolarsResult<()> {
     // test a last line that is incomplete and not finishes with a new line char
     let csv = "b5bbf310dffe3372fd5d37a18339fea5,6a2752ffad059badb5f1f3c7b9e4905d,-2,0.033191,811.619 0.487341,16,GGTGTGAAATTTCACACC,TTTAATTATAATTAAG,+
 b5bbf310dffe3372fd5d37a18339fea5,e3fd7b95be3453a34361da84f815687d,-2,0.0335936,821.465 0.490834,1";
@@ -819,7 +819,7 @@ b5bbf310dffe3372fd5d37a18339fea5,e3fd7b95be3453a34361da84f815687d,-2,0.0335936,8
 }
 
 #[test]
-fn test_quoted_bool_ints() -> Result<()> {
+fn test_quoted_bool_ints() -> PolarsResult<()> {
     let csv = r#"foo,bar,baz
 1,"4","false"
 3,"5","false"
@@ -838,7 +838,7 @@ fn test_quoted_bool_ints() -> Result<()> {
 }
 
 #[test]
-fn test_skip_inference() -> Result<()> {
+fn test_skip_inference() -> PolarsResult<()> {
     let csv = r#"metadata
 line
 foo,bar
@@ -863,7 +863,7 @@ foo,bar
 }
 
 #[test]
-fn test_with_row_count() -> Result<()> {
+fn test_with_row_count() -> PolarsResult<()> {
     let df = CsvReader::from_path(FOODS_CSV)?
         .with_row_count(Some(RowCount {
             name: "rc".into(),
@@ -890,7 +890,7 @@ fn test_with_row_count() -> Result<()> {
 }
 
 #[test]
-fn test_empty_string_cols() -> Result<()> {
+fn test_empty_string_cols() -> PolarsResult<()> {
     let csv = "\nabc\n\nxyz\n";
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).has_header(false).finish()?;
@@ -913,7 +913,7 @@ fn test_empty_string_cols() -> Result<()> {
 }
 
 #[test]
-fn test_trailing_empty_string_cols() -> Result<()> {
+fn test_trailing_empty_string_cols() -> PolarsResult<()> {
     let csv = "colx\nabc\nxyz\n\"\"";
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).finish()?;
@@ -938,7 +938,7 @@ fn test_trailing_empty_string_cols() -> Result<()> {
 }
 
 #[test]
-fn test_escaping_quotes() -> Result<()> {
+fn test_escaping_quotes() -> PolarsResult<()> {
     let csv = "a\n\"\"\"\"";
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).finish()?;
@@ -949,7 +949,7 @@ fn test_escaping_quotes() -> Result<()> {
 }
 
 #[test]
-fn test_header_only() -> Result<()> {
+fn test_header_only() -> PolarsResult<()> {
     let csv = "a,b,c";
     let file = Cursor::new(csv);
 
@@ -985,7 +985,7 @@ fn test_empty_csv() {
 }
 
 #[test]
-fn test_parse_dates() -> Result<()> {
+fn test_parse_dates() -> PolarsResult<()> {
     let csv = "date
 1745-04-02
 1742-03-21
@@ -1003,7 +1003,7 @@ fn test_parse_dates() -> Result<()> {
 }
 
 #[test]
-fn test_whitespace_skipping() -> Result<()> {
+fn test_whitespace_skipping() -> PolarsResult<()> {
     let csv = "a,b
   12,   1435";
     let file = Cursor::new(csv);
@@ -1018,15 +1018,7 @@ fn test_whitespace_skipping() -> Result<()> {
 }
 
 #[test]
-fn test_duplicate_column_err() {
-    let csv = "a,b,a
-  12,1435,1";
-    let file = Cursor::new(csv);
-    assert!(CsvReader::new(file).finish().is_err());
-}
-
-#[test]
-fn test_parse_dates_3380() -> Result<()> {
+fn test_parse_dates_3380() -> PolarsResult<()> {
     let csv = "lat;lon;validdate;t_2m:C;precip_1h:mm
 46.685;7.953;2022-05-10T07:07:12Z;6.1;0.00
 46.685;7.953;2022-05-10T08:07:12Z;8.8;0.00";

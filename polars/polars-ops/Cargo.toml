@@ -1,6 +1,6 @@
 [package]
 name = "polars-ops"
-version = "0.23.0"
+version = "0.24.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -10,8 +10,8 @@ description = "More operations on polars data structures"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-polars-arrow = { version = "0.23.0", path = "../polars-arrow", default-features = false }
-polars-core = { version = "0.23.0", path = "../polars-core", features = ["private"], default-features = false }
+polars-arrow = { version = "0.24.0", path = "../polars-arrow", default-features = false }
+polars-core = { version = "0.24.0", path = "../polars-core", features = ["private"], default-features = false }
 
 [features]
 dtype-categorical = ["polars-core/dtype-categorical"]
@@ -22,6 +22,7 @@ dtype-duration = ["polars-core/dtype-duration", "polars-core/temporal"]
 dtype-struct = ["polars-core/dtype-struct", "polars-core/temporal"]
 dtype-u8 = ["polars-core/dtype-u8"]
 object = ["polars-core/object"]
+propagate_nans = []
 
 # ops
 to_dummies = []
@@ -34,3 +35,6 @@ log = []
 hash = []
 rolling_window = ["polars-core/rolling_window"]
 moment = ["polars-core/moment"]
+search_sorted = []
+top_k = []
+pivot = []

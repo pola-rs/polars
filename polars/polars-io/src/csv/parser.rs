@@ -27,7 +27,7 @@ pub(crate) fn next_line_position_naive(input: &[u8], eol_char: u8) -> Option<usi
 /// Find the nearest next line position that is not embedded in a String field.
 pub(crate) fn next_line_position(
     mut input: &[u8],
-    expected_fields: usize,
+    expected_fields: Option<usize>,
     delimiter: u8,
     quote_char: Option<u8>,
     eol_char: u8,
@@ -45,30 +45,39 @@ pub(crate) fn next_line_position(
         let new_input = unsafe { input.get_unchecked(pos..) };
         let line = SplitLines::new(new_input, eol_char).next();
 
-        if let Some(line) = line {
-            if SplitFields::new(line, delimiter, quote_char, eol_char)
-                .into_iter()
-                .count()
-                == expected_fields
+        match (line, expected_fields) {
+            // count the fields, and determine if they are equal to what we expect from the schema
+            (Some(line), Some(expected_fields))
+                if {
+                    SplitFields::new(line, delimiter, quote_char, eol_char)
+                        .into_iter()
+                        .count()
+                        == expected_fields
+                } =>
             {
-                return Some(total_pos + pos);
-            } else {
+                return Some(total_pos + pos)
+            }
+            (Some(_), Some(_)) => {
                 debug_assert!(pos < input.len());
                 unsafe {
                     input = input.get_unchecked(pos + 1..);
                 }
                 total_pos += pos + 1;
             }
-        } else {
+            // don't count the fields
+            (Some(_), None) => return Some(total_pos + pos),
             // no new line found, check latest line (without eol) for number of fields
-            if SplitFields::new(new_input, delimiter, quote_char, eol_char)
-                .into_iter()
-                .count()
-                == expected_fields
+            (None, Some(expected_fields))
+                if {
+                    SplitFields::new(new_input, delimiter, quote_char, eol_char)
+                        .into_iter()
+                        .count()
+                        == expected_fields
+                } =>
             {
-                return Some(total_pos + pos);
+                return Some(total_pos + pos)
             }
-            return None;
+            _ => return None,
         }
     }
 }
@@ -148,33 +157,49 @@ pub(crate) fn skip_line_ending(input: &[u8], eol_char: u8) -> &[u8] {
 }
 
 /// Get the mean and standard deviation of length of lines in bytes
-pub(crate) fn get_line_stats(bytes: &[u8], n_lines: usize, eol_char: u8) -> Option<(f32, f32)> {
-    let mut n_read = 0;
+pub(crate) fn get_line_stats(
+    bytes: &[u8],
+    n_lines: usize,
+    eol_char: u8,
+    expected_fields: usize,
+    delimiter: u8,
+    quote_char: Option<u8>,
+) -> Option<(f32, f32)> {
     let mut lengths = Vec::with_capacity(n_lines);
-    let file_len = bytes.len();
-    let mut bytes_trunc;
 
-    for _ in 0..n_lines {
-        if n_read >= file_len {
-            return None;
-        }
-        bytes_trunc = &bytes[n_read..];
-        match memchr::memchr(eol_char, bytes_trunc) {
-            Some(position) => {
-                n_read += position + 1;
-                lengths.push(position + 1);
-            }
-            None => {
-                return None;
-            }
+    let mut bytes_trunc;
+    let n_lines_per_iter = n_lines / 2;
+
+    let mut n_read = 0;
+
+    // sample from start and 75% in the file
+    for offset in [0, (bytes.len() as f32 * 0.75) as usize] {
+        bytes_trunc = &bytes[offset..];
+        let pos = next_line_position(
+            bytes_trunc,
+            Some(expected_fields),
+            delimiter,
+            quote_char,
+            eol_char,
+        )?;
+        bytes_trunc = &bytes_trunc[pos + 1..];
+
+        for _ in offset..(offset + n_lines_per_iter) {
+            let pos = next_line_position_naive(bytes_trunc, eol_char)? + 1;
+            n_read += pos;
+            lengths.push(pos);
+            bytes_trunc = &bytes_trunc[pos..];
         }
     }
-    let mean = (n_read as f32) / (n_lines as f32);
+
+    let n_samples = lengths.len();
+
+    let mean = (n_read as f32) / (n_samples as f32);
     let mut std = 0.0;
-    for &len in lengths.iter().take(n_lines) {
+    for &len in lengths.iter() {
         std += (len as f32 - mean).pow(2.0)
     }
-    std = (std / n_lines as f32).pow(0.5);
+    std = (std / n_samples as f32).sqrt();
     Some((mean, std))
 }
 
@@ -432,7 +457,7 @@ pub(super) fn parse_lines(
     n_lines: usize,
     // length or original schema
     schema_len: usize,
-) -> Result<usize> {
+) -> PolarsResult<usize> {
     assert!(
         !projection.is_empty(),
         "at least one column should be projected"

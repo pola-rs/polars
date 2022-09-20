@@ -20,7 +20,6 @@ where
         // 9f: all nanoseconds
         let options = write_impl::SerializeOptions {
             time_format: Some("%T%.9f".to_string()),
-            datetime_format: Some("%FT%H:%M:%S.%9f".to_string()),
             ..Default::default()
         };
 
@@ -32,13 +31,13 @@ where
         }
     }
 
-    fn finish(&mut self, df: &mut DataFrame) -> Result<()> {
+    fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         df.as_single_chunk_par();
         let names = df.get_column_names();
         if self.header {
             write_impl::write_header(&mut self.buffer, &names, &self.options)?;
         }
-        write_impl::write(&mut self.buffer, df, self.batch_size, &self.options)
+        write_impl::write(&mut self.buffer, df, self.batch_size, &mut self.options)
     }
 }
 
@@ -79,7 +78,7 @@ where
         self
     }
 
-    /// Set the CSV file's timestamp format array
+    /// Set the CSV file's datetime format
     pub fn with_datetime_format(mut self, format: Option<String>) -> Self {
         if format.is_some() {
             self.options.datetime_format = format;
@@ -87,9 +86,23 @@ where
         self
     }
 
+    /// Set the CSV file's float precision
+    pub fn with_float_precision(mut self, precision: Option<usize>) -> Self {
+        if precision.is_some() {
+            self.options.float_precision = precision;
+        }
+        self
+    }
+
     /// Set the single byte character used for quoting
     pub fn with_quoting_char(mut self, char: u8) -> Self {
         self.options.quote = char;
+        self
+    }
+
+    /// Set the CSV file's null value representation
+    pub fn with_null_value(mut self, null_value: String) -> Self {
+        self.options.null = null_value;
         self
     }
 }

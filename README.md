@@ -7,15 +7,23 @@
 [![NPM Latest Release](https://img.shields.io/npm/v/nodejs-polars.svg)](https://www.npmjs.com/package/nodejs-polars)
 
 <p align="center">
-  <a href="https://pola-rs.github.io/polars/py-polars/html/reference/index.html">Python Documentation</a>
+  <b>Documentation</b>:
+  <a href="https://pola-rs.github.io/polars/py-polars/html/reference/index.html">Python</a>
+  -
+  <a href="https://pola-rs.github.io/polars/polars/index.html">Rust</a>
+  -
+  <a href="https://pola-rs.github.io/nodejs-polars/index.html">Node.js</a>
   |
-  <a href="https://pola-rs.github.io/polars/polars/index.html">Rust Documentation</a>
+  <b>StackOverflow</b>:
+  <a href="https://stackoverflow.com/questions/tagged/python-polars">Python</a>
+  -
+  <a href="https://stackoverflow.com/questions/tagged/rust-polars">Rust</a>
+  -
+  <a href="https://stackoverflow.com/questions/tagged/nodejs-polars">Node.js</a>
   |
   <a href="https://pola-rs.github.io/polars-book/">User Guide</a>
   |
   <a href="https://discord.gg/4UfP5cfBE7">Discord</a>
-  |
-  <a href="https://stackoverflow.com/questions/tagged/python-polars">StackOverflow</a>
 </p>
 
 
@@ -94,7 +102,31 @@ See the results in [h2oai's db-benchmark](https://h2oai.github.io/db-benchmark/)
 Install the latest polars version with:
 
 ```
+# Install Polars only.
+$ pip3 install -U 'polars'
+
+# Install Polars with all optional dependencies.
+$ pip3 install -U 'polars[all]'
+
+# Install Polars and numpy.
+$ pip3 install -U 'polars[numpy]'
+
+# Install Polars and pyarrow/pandas/numpy to be able to convert to/from pandas and/or read data with pyarrow.
 $ pip3 install -U 'polars[pyarrow]'
+
+# Install Polars and pyarrow/pandas/numpy and fsspec (read from e.g. remote filesystems, compressed files).
+$ pip3 install -U 'polars[pyarrow,fsspec]'
+
+# Install Polars and connectorx (read data from SQL databases).
+$ pip3 install -U 'polars[connectorx]'
+
+# Install Polars and xlsx2csv (read data from Excel).
+$ pip3 install -U 'polars[xlsx2csv]'
+
+# Install Polars with timezone support, only needed if
+#   1. you are on Python < 3.9, Python 3.9+ has this in stdlib
+#   2. you are on Windows
+$ pip3 install -U 'polars[timezone]'
 ```
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.
@@ -133,8 +165,9 @@ Want to know about all the features Polars supports? Read the docs!
 #### Node
 
   * Installation guide: `$ yarn add nodejs-polars`
-  * [Node documentation](https://pola-rs.github.io/polars/nodejs-polars/html/index.html)
+  * [Node documentation](https://pola-rs.github.io/nodejs-polars/index.html)
   * [User guide](https://pola-rs.github.io/polars-book/)
+  * [Github](https://github.com/pola-rs/nodejs-polars)
 
 
 ## Contribution
@@ -180,6 +213,10 @@ Do you expect more than `2^32` ~4,2 billion rows? Compile polars with the `bigid
 Or for python users install `$ pip install -U polars-u64-idx`.
 
 Don't use this unless you hit the row boundary as the default polars is faster and consumes less memory.
+
+# Legacy
+Do you want polars to run on an old CPU (e.g. dating from before 2011)? Install `$pip -U polars-lts-cpu`. This polars project is 
+compiled without [avx](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target features.
 
 ## Acknowledgements
 

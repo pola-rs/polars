@@ -38,7 +38,8 @@ enum DeDataType<'a> {
     Float64,
     Utf8,
     Date,
-    Datetime,
+    Datetime(TimeUnit, Option<TimeZone>),
+    Duration(TimeUnit),
     #[serde(with = "TimeUnitDef")]
     Time64(ArrowTimeUnit),
     List,
@@ -55,7 +56,8 @@ impl From<&DataType> for DeDataType<'_> {
             DataType::Int64 => DeDataType::Int64,
             DataType::UInt64 => DeDataType::UInt64,
             DataType::Date => DeDataType::Date,
-            DataType::Datetime(_, _) => DeDataType::Datetime,
+            DataType::Datetime(tu, tz) => DeDataType::Datetime(*tu, tz.clone()),
+            DataType::Duration(tu) => DeDataType::Duration(*tu),
             DataType::Float32 => DeDataType::Float32,
             DataType::Float64 => DeDataType::Float64,
             DataType::Utf8 => DeDataType::Utf8,
@@ -74,7 +76,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_serde() -> Result<()> {
+    fn test_serde() -> PolarsResult<()> {
         let ca = UInt32Chunked::new("foo", &[Some(1), None, Some(2)]);
 
         let json = serde_json::to_string(&ca).unwrap();

@@ -5,9 +5,11 @@ use polars_core::series::ops::NullBehavior;
 use polars_ops::prelude::*;
 use rayon::prelude::*;
 
-#[cfg(feature = "list_eval")]
-use crate::dsl::eval::prepare_eval_expr;
 use crate::dsl::function_expr::FunctionExpr;
+#[cfg(feature = "list_eval")]
+use crate::physical_plan::exotic::prepare_eval_expr;
+#[cfg(feature = "list_eval")]
+use crate::physical_plan::exotic::prepare_expression_for_context;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -190,7 +192,7 @@ impl ListNameSpace {
                 move |s| Ok(s.list()?.lst_shift(periods).into_series()),
                 GetOutput::same_type(),
             )
-            .with_fmt("arr.diff")
+            .with_fmt("arr.shift")
     }
 
     /// Slice every sublist.
@@ -221,15 +223,13 @@ impl ListNameSpace {
 
         let expr2 = expr.clone();
         let func = move |s: Series| {
-            let expr = expr.clone();
-            let mut arena = Arena::with_capacity(10);
-            let aexpr = to_aexpr(expr, &mut arena);
-            let planner = DefaultPlanner::default();
-            let phys_expr = planner.create_physical_expr(aexpr, Context::Default, &mut arena)?;
+            let lst = s.list()?;
+
+            let phys_expr =
+                prepare_expression_for_context("", &expr, &lst.inner_dtype(), Context::Default)?;
 
             let state = ExecutionState::new();
 
-            let lst = s.list()?;
             let mut err = None;
             let mut ca: ListChunked = if parallel {
                 let m_err = Mutex::new(None);
@@ -352,6 +352,7 @@ impl ListNameSpace {
                 input_wildcard_expansion: true,
                 auto_explode: true,
                 fmt_str: "arr.contains",
+                ..Default::default()
             },
         }
     }

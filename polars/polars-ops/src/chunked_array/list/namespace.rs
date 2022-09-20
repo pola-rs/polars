@@ -5,7 +5,7 @@ use polars_arrow::kernels::list::sublist_get;
 use polars_arrow::prelude::ValueSize;
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::{get_supertype, CustomIterTools};
+use polars_core::utils::{try_get_supertype, CustomIterTools};
 
 use super::*;
 
@@ -15,7 +15,7 @@ fn cast_rhs(
     dtype: &DataType,
     length: usize,
     allow_broadcast: bool,
-) -> Result<()> {
+) -> PolarsResult<()> {
     for s in other.iter_mut() {
         // make sure that inner types match before we coerce into list
         if !matches!(s.dtype(), DataType::List(_)) {
@@ -58,7 +58,7 @@ fn cast_rhs(
 pub trait ListNameSpaceImpl: AsList {
     /// In case the inner dtype [`DataType::Utf8`], the individual items will be joined into a
     /// single string separated by `separator`.
-    fn lst_join(&self, separator: &str) -> Result<Utf8Chunked> {
+    fn lst_join(&self, separator: &str) -> PolarsResult<Utf8Chunked> {
         let ca = self.as_list();
         match ca.inner_dtype() {
             DataType::Utf8 => {
@@ -144,7 +144,7 @@ pub trait ListNameSpaceImpl: AsList {
         ca.apply_amortized(|s| s.as_ref().reverse())
     }
 
-    fn lst_unique(&self) -> Result<ListChunked> {
+    fn lst_unique(&self) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
         ca.try_apply_amortized(|s| s.as_ref().unique())
     }
@@ -204,7 +204,7 @@ pub trait ListNameSpaceImpl: AsList {
     /// So index `0` would return the first item of every sublist
     /// and index `-1` would return the last item of every sublist
     /// if an index is out of bounds, it will return a `None`.
-    fn lst_get(&self, idx: i64) -> Result<Series> {
+    fn lst_get(&self, idx: i64) -> PolarsResult<Series> {
         let ca = self.as_list();
         let chunks = ca
             .downcast_iter()
@@ -213,7 +213,7 @@ pub trait ListNameSpaceImpl: AsList {
         Series::try_from((ca.name(), chunks))
     }
 
-    fn lst_concat(&self, other: &[Series]) -> Result<ListChunked> {
+    fn lst_concat(&self, other: &[Series]) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
         let other_len = other.len();
         let length = ca.len();
@@ -223,10 +223,18 @@ pub trait ListNameSpaceImpl: AsList {
         for s in &other {
             match s.dtype() {
                 DataType::List(inner_type) => {
-                    inner_super_type = get_supertype(&inner_super_type, inner_type)?;
+                    inner_super_type = try_get_supertype(&inner_super_type, inner_type)?;
+                    #[cfg(feature = "dtype-categorical")]
+                    if let DataType::Categorical(_) = &inner_super_type {
+                        inner_super_type = merge_dtypes(&inner_super_type, inner_type)?;
+                    }
                 }
                 dt => {
-                    inner_super_type = get_supertype(&inner_super_type, dt)?;
+                    inner_super_type = try_get_supertype(&inner_super_type, dt)?;
+                    #[cfg(feature = "dtype-categorical")]
+                    if let DataType::Categorical(_) = &inner_super_type {
+                        inner_super_type = merge_dtypes(&inner_super_type, dt)?;
+                    }
                 }
             }
         }
@@ -238,7 +246,7 @@ pub trait ListNameSpaceImpl: AsList {
 
         // broadcasting path in case all unit length
         // this path will not expand the series, so saves memory
-        if other.iter().all(|s| s.len() == 1) && ca.len() != 1 {
+        let out = if other.iter().all(|s| s.len() == 1) && ca.len() != 1 {
             cast_rhs(&mut other, &inner_super_type, dtype, length, false)?;
             let to_append = other
                 .iter()
@@ -283,7 +291,7 @@ pub trait ListNameSpaceImpl: AsList {
                 });
                 builder.append_opt_series(opt_s.as_ref())
             });
-            Ok(builder.finish())
+            builder.finish()
         } else {
             // normal path which may contain same length list or unit length lists
             cast_rhs(&mut other, &inner_super_type, dtype, length, true)?;
@@ -345,8 +353,9 @@ pub trait ListNameSpaceImpl: AsList {
                 }
                 builder.append_series(&acc);
             }
-            Ok(builder.finish())
-        }
+            builder.finish()
+        };
+        Ok(out)
     }
 }
 

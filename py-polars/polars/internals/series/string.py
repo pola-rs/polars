@@ -3,21 +3,27 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
-from polars.datatypes import Date, Datetime, Time
+from polars.datatypes import TemporalDataType
+from polars.internals.series.utils import expr_dispatch
+from polars.utils import deprecated_alias
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TransferEncoding
+    from polars.polars import PySeries
 
 
+@expr_dispatch
 class StringNameSpace:
     """Series.str namespace."""
 
+    _accessor = "str"
+
     def __init__(self, series: pli.Series):
-        self._s = series._s
+        self._s: PySeries = series._s
 
     def strptime(
         self,
-        datatype: type[Date] | type[Datetime] | type[Time],
+        datatype: TemporalDataType,
         fmt: str | None = None,
         strict: bool = True,
         exact: bool = True,
@@ -84,12 +90,6 @@ class StringNameSpace:
         └────────────┘
 
         """
-        s = pli.wrap_s(self._s)
-        return (
-            s.to_frame()
-            .select(pli.col(s.name).str.strptime(datatype, fmt, strict, exact))
-            .to_series()
-        )
 
     def lengths(self) -> pli.Series:
         """
@@ -113,7 +113,6 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_lengths())
 
     def concat(self, delimiter: str = "-") -> pli.Series:
         """
@@ -134,8 +133,6 @@ class StringNameSpace:
         '1-null-2'
 
         """
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.concat(delimiter)).to_series()
 
     def contains(self, pattern: str, literal: bool = False) -> pli.Series:
         """
@@ -175,7 +172,6 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_contains(pattern, literal))
 
     def ends_with(self, sub: str) -> pli.Series:
         """
@@ -204,8 +200,6 @@ class StringNameSpace:
         starts_with : Check if string values start with a substring.
 
         """
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.ends_with(sub)).to_series()
 
     def starts_with(self, sub: str) -> pli.Series:
         """
@@ -234,8 +228,6 @@ class StringNameSpace:
         ends_with : Check if string values end with a substring.
 
         """
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.starts_with(sub)).to_series()
 
     def decode(self, encoding: TransferEncoding, strict: bool = False) -> pli.Series:
         """
@@ -264,18 +256,10 @@ class StringNameSpace:
         ]
 
         """
-        if encoding == "hex":
-            return pli.wrap_s(self._s.str_hex_decode(strict))
-        elif encoding == "base64":
-            return pli.wrap_s(self._s.str_base64_decode(strict))
-        else:
-            raise ValueError(
-                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
-            )
 
     def encode(self, encoding: TransferEncoding) -> pli.Series:
         """
-        Encode a value using the provided encoding
+        Encode a value using the provided encoding.
 
         Parameters
         ----------
@@ -299,18 +283,11 @@ class StringNameSpace:
         ]
 
         """
-        if encoding == "hex":
-            return pli.wrap_s(self._s.str_hex_encode())
-        elif encoding == "base64":
-            return pli.wrap_s(self._s.str_base64_encode())
-        else:
-            raise ValueError(
-                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
-            )
 
     def json_path_match(self, json_path: str) -> pli.Series:
         """
         Extract the first match of json string with provided JSONPath expression.
+
         Throw errors if encounter invalid json strings.
         All return value will be casted to Utf8 regardless of the original value.
 
@@ -344,7 +321,6 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_json_path_match(json_path))
 
     def extract(self, pattern: str, group_index: int = 1) -> pli.Series:
         r"""
@@ -389,10 +365,11 @@ class StringNameSpace:
         └─────────┘
 
         """
-        return pli.wrap_s(self._s.str_extract(pattern, group_index))
 
     def extract_all(self, pattern: str) -> pli.Series:
         r"""
+        Extracts all matches for the given regex pattern.
+
         Extract each successive non-overlapping regex match in an individual string as
         an array
 
@@ -418,8 +395,6 @@ class StringNameSpace:
         ]
 
         """
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.extract_all(pattern)).to_series()
 
     def count_match(self, pattern: str) -> pli.Series:
         r"""
@@ -447,8 +422,6 @@ class StringNameSpace:
         ]
 
         """
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.count_match(pattern)).to_series()
 
     def split(self, by: str, inclusive: bool = False) -> pli.Series:
         """
@@ -466,12 +439,12 @@ class StringNameSpace:
         List of Utf8 type
 
         """
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.split(by, inclusive)).to_series()
 
     def split_exact(self, by: str, n: int, inclusive: bool = False) -> pli.Series:
         """
-        Split the string by a substring into a struct of ``n`` fields.
+        Split the string by a substring using ``n`` splits.
+
+        Results in a struct of ``n+1`` fields.
 
         If it cannot make ``n`` splits, the remaining field elements will be null.
 
@@ -487,37 +460,27 @@ class StringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"x": ["a_1", None, "c", "d_4"]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("x").str.split_exact("_", 1).alias("fields"),
-        ...     ]
+        >>> df["x"].str.split_exact("_", 1).alias("fields")
+        shape: (4,)
+        Series: 'fields' [struct[2]]
+        [
+                {"a","1"}
+                {null,null}
+                {"c",null}
+                {"d","4"}
+        ]
+
+        Split string values in column x in exactly 2 parts and assign
+        each part to a new column.
+
+        >>> (
+        ...     df["x"]
+        ...     .str.split_exact("_", 1)
+        ...     .struct.rename_fields(["first_part", "second_part"])
+        ...     .alias("fields")
+        ...     .to_frame()
+        ...     .unnest("fields")
         ... )
-        shape: (4, 1)
-        ┌─────────────┐
-        │ fields      │
-        │ ---         │
-        │ struct[2]   │
-        ╞═════════════╡
-        │ {"a","1"}   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {null,null} │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {"c",null}  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {"d","4"}   │
-        └─────────────┘
-
-        Split column in ``n`` fields, give them a proper name in the struct and add them
-        as columns.
-
-        >>> df.select(
-        ...     [
-        ...         pl.col("x")
-        ...         .str.split_exact("_", 1)
-        ...         .struct.rename_fields(["first_part", "second_part"])
-        ...         .alias("fields"),
-        ...     ]
-        ... ).unnest("fields")
         shape: (4, 2)
         ┌────────────┬─────────────┐
         │ first_part ┆ second_part │
@@ -538,12 +501,68 @@ class StringNameSpace:
         Struct of Utf8 type
 
         """
+
+    def splitn(self, by: str, n: int) -> pli.Series:
+        """
+        Split the string by a substring, restricted to returning at most ``n`` items.
+
+        If the number of possible splits is less than ``n-1``, the remaining field
+        elements will be null. If the number of possible splits is ``n-1`` or greater,
+        the last (nth) substring will contain the remainder of the string.
+
+        Parameters
+        ----------
+        by
+            Substring to split by.
+        n
+            Max number of items to return.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"s": ["foo bar", None, "foo-bar", "foo bar baz"]})
+        >>> df["s"].str.splitn(" ", 2).alias("fields")
+        shape: (4,)
+        Series: 'fields' [struct[2]]
+        [
+                {"foo","bar"}
+                {null,null}
+                {"foo-bar",null}
+                {"foo","bar baz"}
+        ]
+
+        Split string values in column s in exactly 2 parts and assign
+        each part to a new column.
+
+        >>> (
+        ...     df["s"]
+        ...     .str.splitn(" ", 2)
+        ...     .struct.rename_fields(["first_part", "second_part"])
+        ...     .alias("fields")
+        ...     .to_frame()
+        ...     .unnest("fields")
+        ... )
+        shape: (4, 2)
+        ┌────────────┬─────────────┐
+        │ first_part ┆ second_part │
+        │ ---        ┆ ---         │
+        │ str        ┆ str         │
+        ╞════════════╪═════════════╡
+        │ foo        ┆ bar         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null       ┆ null        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ foo-bar    ┆ null        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ foo        ┆ bar baz     │
+        └────────────┴─────────────┘
+
+        Returns
+        -------
+        Struct of Utf8 type
+
+        """
         s = pli.wrap_s(self._s)
-        return (
-            s.to_frame()
-            .select(pli.col(s.name).str.split_exact(by, n, inclusive))
-            .to_series()
-        )
+        return s.to_frame().select(pli.col(s.name).str.splitn(by, n)).to_series()
 
     def replace(self, pattern: str, value: str, literal: bool = False) -> pli.Series:
         r"""
@@ -574,7 +593,6 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_replace(pattern, value, literal))
 
     def replace_all(
         self, pattern: str, value: str, literal: bool = False
@@ -607,29 +625,26 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_replace_all(pattern, value, literal))
 
     def strip(self) -> pli.Series:
         """Remove leading and trailing whitespace."""
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.strip()).to_series()
 
     def lstrip(self) -> pli.Series:
         """Remove leading whitespace."""
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.lstrip()).to_series()
 
     def rstrip(self) -> pli.Series:
         """Remove trailing whitespace."""
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.rstrip()).to_series()
 
     def zfill(self, alignment: int) -> pli.Series:
         """
+        Fills the string with zeroes.
+
         Return a copy of the string left filled with ASCII '0' digits to make a string
-        of length width. A leading sign prefix ('+'/'-') is handled by inserting the
-        padding after the sign character rather than before.
-        The original string is returned if width is less than or equal to ``len(s)``.
+        of length width.
+
+        A leading sign prefix ('+'/'-') is handled by inserting the padding after the
+        sign character rather than before. The original string is returned if width is
+        less than or equal to ``len(s)``.
 
         Parameters
         ----------
@@ -637,8 +652,6 @@ class StringNameSpace:
             Fill the value up to this length.
 
         """
-        s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.zfill(alignment)).to_series()
 
     def ljust(self, width: int, fillchar: str = " ") -> pli.Series:
         """
@@ -668,10 +681,6 @@ class StringNameSpace:
         ]
 
         """
-        s = pli.wrap_s(self._s)
-        return (
-            s.to_frame().select(pli.col(s.name).str.ljust(width, fillchar)).to_series()
-        )
 
     def rjust(self, width: int, fillchar: str = " ") -> pli.Series:
         """
@@ -701,35 +710,30 @@ class StringNameSpace:
         ]
 
         """
-        s = pli.wrap_s(self._s)
-        return (
-            s.to_frame().select(pli.col(s.name).str.rjust(width, fillchar)).to_series()
-        )
 
     def to_lowercase(self) -> pli.Series:
         """Modify the strings to their lowercase equivalent."""
-        return pli.wrap_s(self._s.str_to_lowercase())
 
     def to_uppercase(self) -> pli.Series:
         """Modify the strings to their uppercase equivalent."""
-        return pli.wrap_s(self._s.str_to_uppercase())
 
-    def slice(self, start: int, length: int | None = None) -> pli.Series:
+    @deprecated_alias(start="offset")
+    def slice(self, offset: int, length: int | None = None) -> pli.Series:
         """
         Create subslices of the string values of a Utf8 Series.
 
         Parameters
         ----------
-        start
-            Starting index of the slice (zero-indexed). Negative indexing
-            may be used.
+        offset
+            Start index. Negative indexing is supported.
         length
-            Optional length of the slice. If None (default), the slice is taken to the
+            Length of the slice. If set to ``None`` (default), the slice is taken to the
             end of the string.
 
         Returns
         -------
-        Series of Utf8 type
+        Series
+            Series of dtype Utf8.
 
         Examples
         --------
@@ -757,4 +761,7 @@ class StringNameSpace:
         ]
 
         """
-        return pli.wrap_s(self._s.str_slice(start, length))
+        s = pli.wrap_s(self._s)
+        return (
+            s.to_frame().select(pli.col(s.name).str.slice(offset, length)).to_series()
+        )

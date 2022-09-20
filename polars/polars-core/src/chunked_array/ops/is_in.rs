@@ -3,9 +3,9 @@ use std::hash::Hash;
 use hashbrown::hash_set::HashSet;
 
 use crate::prelude::*;
-use crate::utils::{get_supertype, CustomIterTools};
+use crate::utils::{try_get_supertype, CustomIterTools};
 
-unsafe fn is_in_helper<T, P>(ca: &ChunkedArray<T>, other: &Series) -> Result<BooleanChunked>
+unsafe fn is_in_helper<T, P>(ca: &ChunkedArray<T>, other: &Series) -> PolarsResult<BooleanChunked>
 where
     T: PolarsNumericType,
     P: Eq + Hash + Copy,
@@ -42,11 +42,11 @@ impl<T> IsIn for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
+    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
         // We check implicitly cast to supertype here
         match other.dtype() {
             DataType::List(dt) => {
-                let st = get_supertype(self.dtype(), dt)?;
+                let st = try_get_supertype(self.dtype(), dt)?;
                 if &st != self.dtype() {
                     let left = self.cast(&st)?;
                     let right = other.cast(&DataType::List(Box::new(st)))?;
@@ -83,7 +83,7 @@ where
             }
             _ => {
                 // first make sure that the types are equal
-                let st = get_supertype(self.dtype(), other.dtype())?;
+                let st = try_get_supertype(self.dtype(), other.dtype())?;
                 if self.dtype() != other.dtype() {
                     let left = self.cast(&st)?;
                     let right = other.cast(&st)?;
@@ -122,7 +122,7 @@ where
     }
 }
 impl IsIn for Utf8Chunked {
-    fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
+    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
         match other.dtype() {
             #[cfg(feature = "dtype-categorical")]
             DataType::List(dt) if matches!(&**dt, DataType::Categorical(_)) => {
@@ -231,7 +231,7 @@ impl IsIn for Utf8Chunked {
 }
 
 impl IsIn for BooleanChunked {
-    fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
+    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
         match other.dtype() {
             DataType::List(dt) if self.dtype() == &**dt => {
                 let mut ca: BooleanChunked = if self.len() == 1 && other.len() != 1 {
@@ -283,7 +283,7 @@ impl IsIn for BooleanChunked {
 
 #[cfg(feature = "dtype-struct")]
 impl IsIn for StructChunked {
-    fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
+    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
         match other.dtype() {
             DataType::List(_) => {
                 let mut ca: BooleanChunked = if self.len() == 1 && other.len() != 1 {
@@ -329,7 +329,7 @@ impl IsIn for StructChunked {
                     .iter()
                     .zip(other.fields())
                     .map(|(lhs, rhs)| lhs.is_in(rhs))
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
                 let out = out.into_iter().reduce(|acc, val| {
                     // all false
@@ -350,7 +350,7 @@ mod test {
     use crate::prelude::*;
 
     #[test]
-    fn test_is_in() -> Result<()> {
+    fn test_is_in() -> PolarsResult<()> {
         let a = Int32Chunked::new("a", &[1, 2, 3, 4]);
         let b = Int64Chunked::new("b", &[4, 5, 1]);
 

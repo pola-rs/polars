@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars.internals as pli
@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
 class ExprListNameSpace:
     """Namespace for list related expressions."""
+
+    _accessor = "arr"
 
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr
@@ -128,7 +130,7 @@ class ExprListNameSpace:
 
     def sort(self, reverse: bool = False) -> pli.Expr:
         """
-        Sort the arrays in the list
+        Sort the arrays in the list.
 
         Examples
         --------
@@ -154,7 +156,7 @@ class ExprListNameSpace:
 
     def reverse(self) -> pli.Expr:
         """
-        Reverse the arrays in the list
+        Reverse the arrays in the list.
 
         Examples
         --------
@@ -251,6 +253,7 @@ class ExprListNameSpace:
     def get(self, index: int) -> pli.Expr:
         """
         Get the value by index in the sublists.
+
         So index `0` would return the first item of every sublist
         and index `-1` would return the last item of every sublist
         if an index is out of bounds, it will return a `None`.
@@ -329,7 +332,7 @@ class ExprListNameSpace:
         return self.get(-1)
 
     def contains(
-        self, item: float | str | bool | int | date | datetime | pli.Expr
+        self, item: float | str | bool | int | date | datetime | time | pli.Expr
     ) -> pli.Expr:
         """
         Check if sublists contain the given item.
@@ -368,6 +371,7 @@ class ExprListNameSpace:
     def join(self, separator: str) -> pli.Expr:
         """
         Join all string items in a sublist and place a separator between them.
+
         This errors if inner type of list `!= Utf8`.
 
         Parameters
@@ -399,7 +403,7 @@ class ExprListNameSpace:
 
     def arg_min(self) -> pli.Expr:
         """
-        Retrieve the index of the minimal value in every sublist
+        Retrieve the index of the minimal value in every sublist.
 
         Returns
         -------
@@ -429,7 +433,7 @@ class ExprListNameSpace:
 
     def arg_max(self) -> pli.Expr:
         """
-        Retrieve the index of the maximum value in every sublist
+        Retrieve the index of the maximum value in every sublist.
 
         Returns
         -------
@@ -484,8 +488,7 @@ class ExprListNameSpace:
 
     def shift(self, periods: int = 1) -> pli.Expr:
         """
-        Shift the values by a given period and fill the parts that will be empty due to
-        this operation with nulls.
+        Shift values by the given period.
 
         Parameters
         ----------
@@ -506,16 +509,17 @@ class ExprListNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.lst_shift(periods))
 
-    def slice(self, offset: int, length: int) -> pli.Expr:
+    def slice(self, offset: int, length: int | None = None) -> pli.Expr:
         """
-        Slice every sublist
+        Slice every sublist.
 
         Parameters
         ----------
         offset
-            Take the values from this index offset.
+            Start index. Negative indexing is supported.
         length
-            The length of the slice to take.
+            Length of the slice. If set to ``None`` (default), the slice is taken to the
+            end of the list.
 
         Examples
         --------
@@ -533,12 +537,12 @@ class ExprListNameSpace:
 
     def head(self, n: int = 5) -> pli.Expr:
         """
-        Slice the head of every sublist
+        Slice the first `n` values of every sublist.
 
         Parameters
         ----------
         n
-            How many values to take in the slice.
+            Number of values to return for each sublist.
 
         Examples
         --------
@@ -556,12 +560,12 @@ class ExprListNameSpace:
 
     def tail(self, n: int = 5) -> pli.Expr:
         """
-        Slice the tail of every sublist
+        Slice the last `n` values of every sublist.
 
         Parameters
         ----------
         n
-            How many values to take in the slice.
+            Number of values to return for each sublist.
 
         Examples
         --------
@@ -624,7 +628,7 @@ class ExprListNameSpace:
 
     def eval(self, expr: pli.Expr, parallel: bool = False) -> pli.Expr:
         """
-        Run any polars expression against the lists' elements
+        Run any polars expression against the lists' elements.
 
         Parameters
         ----------

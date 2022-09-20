@@ -3,7 +3,7 @@ use crate::chunked_array::ops::append::new_chunks;
 use crate::series::IsSorted;
 
 impl CategoricalChunked {
-    pub fn append(&mut self, other: &Self) -> Result<()> {
+    pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
         let new_rev_map = self.merge_categorical_map(other)?;
         unsafe { self.set_rev_map(new_rev_map, false) };
 

@@ -6,13 +6,13 @@ use polars_core::utils::parallel_op_series;
 use super::super::expressions as phys_expr;
 use crate::prelude::*;
 
-impl DefaultPlanner {
+impl PhysicalPlanner {
     pub fn create_physical_expr(
         &self,
         expression: Node,
         ctxt: Context,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<Arc<dyn PhysicalExpr>> {
+    ) -> PolarsResult<Arc<dyn PhysicalExpr>> {
         use AExpr::*;
 
         match expr_arena.get(expression).clone() {
@@ -29,7 +29,7 @@ impl DefaultPlanner {
                 let phys_function =
                     self.create_physical_expr(function, Context::Aggregation, expr_arena)?;
                 let mut out_name = None;
-                let mut apply_columns = aexpr_to_root_names(function, expr_arena);
+                let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
                 // sort and then dedup removes consecutive duplicates == all duplicates
                 apply_columns.sort();
                 apply_columns.dedup();
@@ -122,13 +122,6 @@ impl DefaultPlanner {
                     node_to_expr(expression, expr_arena),
                 )))
             }
-            Not(expr) => {
-                let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                Ok(Arc::new(NotExpr::new(
-                    phys_expr,
-                    node_to_expr(expression, expr_arena),
-                )))
-            }
             Alias(expr, name) => {
                 let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
                 Ok(Arc::new(AliasExpr::new(
@@ -137,32 +130,41 @@ impl DefaultPlanner {
                     node_to_expr(expression, expr_arena),
                 )))
             }
-            IsNull(expr) => {
-                let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                Ok(Arc::new(IsNullExpr::new(
-                    phys_expr,
-                    node_to_expr(expression, expr_arena),
-                )))
-            }
-            IsNotNull(expr) => {
-                let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                Ok(Arc::new(IsNotNullExpr::new(
-                    phys_expr,
-                    node_to_expr(expression, expr_arena),
-                )))
-            }
             Agg(agg) => {
                 match agg {
-                    AAggExpr::Min(expr) => {
-                        // todo! Output type is dependent on schema.
+                    AAggExpr::Min {
+                        input: expr,
+                        propagate_nans,
+                    } => {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
                             Context::Aggregation => {
-                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Min)))
+                                if propagate_nans {
+                                    Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::NanMin)))
+                                } else {
+                                    Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Min)))
+                                }
                             }
                             Context::Default => {
                                 let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
+
+                                    if propagate_nans && s.dtype().is_float() {
+                                        #[cfg(feature = "propagate_nans")]
+                                        {
+                                            return parallel_op_series(
+                                                |s| {
+                                                    Ok(polars_ops::prelude::nan_propagating_aggregate::nan_min_s(&s, s.name()))
+                                                },
+                                                s,
+                                                None,
+                                            );
+                                        }
+                                        #[cfg(not(feature = "propagate_nans"))]
+                                        {
+                                            panic!("activate 'propagate_nans' feature")
+                                        }
+                                    }
 
                                     match s.is_sorted() {
                                         IsSorted::Ascending | IsSorted::Descending => {
@@ -174,25 +176,48 @@ impl DefaultPlanner {
                                     }
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
-                    AAggExpr::Max(expr) => {
+                    AAggExpr::Max {
+                        input: expr,
+                        propagate_nans,
+                    } => {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
                             Context::Aggregation => {
-                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Max)))
+                                if propagate_nans {
+                                    Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::NanMax)))
+                                } else {
+                                    Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Max)))
+                                }
                             }
                             Context::Default => {
                                 let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
+
+                                    if propagate_nans && s.dtype().is_float() {
+                                        #[cfg(feature = "propagate_nans")]
+                                        {
+                                            return parallel_op_series(
+                                                |s| {
+                                                    Ok(polars_ops::prelude::nan_propagating_aggregate::nan_max_s(&s, s.name()))
+                                                },
+                                                s,
+                                                None,
+                                            );
+                                        }
+                                        #[cfg(not(feature = "propagate_nans"))]
+                                        {
+                                            panic!("activate 'propagate_nans' feature")
+                                        }
+                                    }
 
                                     match s.is_sorted() {
                                         IsSorted::Ascending | IsSorted::Descending => {
@@ -204,13 +229,12 @@ impl DefaultPlanner {
                                     }
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -226,13 +250,12 @@ impl DefaultPlanner {
                                     parallel_op_series(|s| Ok(s.sum_as_series()), s, None)
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -249,13 +272,12 @@ impl DefaultPlanner {
                                     Ok(s.std_as_series(ddof))
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -272,13 +294,12 @@ impl DefaultPlanner {
                                     Ok(s.var_as_series(ddof))
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -294,13 +315,12 @@ impl DefaultPlanner {
                                     Ok(s.mean_as_series())
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -316,13 +336,12 @@ impl DefaultPlanner {
                                     Ok(s.median_as_series())
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -338,13 +357,12 @@ impl DefaultPlanner {
                                     Ok(s.head(Some(1)))
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -360,13 +378,12 @@ impl DefaultPlanner {
                                     Ok(s.tail(Some(1)))
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -382,13 +399,12 @@ impl DefaultPlanner {
                                     s.to_list().map(|ca| ca.into_series())
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -408,13 +424,12 @@ impl DefaultPlanner {
                                     })
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -435,13 +450,12 @@ impl DefaultPlanner {
                                     s.quantile_as_series(quantile, interpol)
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -469,13 +483,12 @@ impl DefaultPlanner {
                                         .into_series())
                                 })
                                     as Arc<dyn SeriesUdf>);
-                                Ok(Arc::new(ApplyExpr {
-                                    inputs: vec![input],
+                                Ok(Arc::new(ApplyExpr::new_minimal(
+                                    vec![input],
                                     function,
-                                    expr: node_to_expr(expression, expr_arena),
-                                    collect_groups: ApplyOptions::ApplyFlat,
-                                    auto_explode: false,
-                                }))
+                                    node_to_expr(expression, expr_arena),
+                                    ApplyOptions::ApplyFlat,
+                                )))
                             }
                         }
                     }
@@ -523,6 +536,7 @@ impl DefaultPlanner {
                     expr: node_to_expr(expression, expr_arena),
                     collect_groups: options.collect_groups,
                     auto_explode: options.auto_explode,
+                    allow_rename: options.allow_rename,
                 }))
             }
             Function {
@@ -539,14 +553,7 @@ impl DefaultPlanner {
                     expr: node_to_expr(expression, expr_arena),
                     collect_groups: options.collect_groups,
                     auto_explode: options.auto_explode,
-                }))
-            }
-            Shift { input, periods } => {
-                let input = self.create_physical_expr(input, ctxt, expr_arena)?;
-                Ok(Arc::new(phys_expr::ShiftExpr {
-                    input,
-                    periods,
-                    expr: node_to_expr(expression, expr_arena),
+                    allow_rename: options.allow_rename,
                 }))
             }
             Slice {
@@ -564,61 +571,18 @@ impl DefaultPlanner {
                     expr: node_to_expr(expression, expr_arena),
                 }))
             }
-            Reverse(expr) => {
-                let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                    let s = std::mem::take(&mut s[0]);
-                    Ok(s.reverse())
-                }) as Arc<dyn SeriesUdf>);
-                Ok(Arc::new(ApplyExpr {
-                    inputs: vec![input],
-                    function,
-                    expr: node_to_expr(expression, expr_arena),
-                    collect_groups: ApplyOptions::ApplyGroups,
-                    auto_explode: false,
-                }))
-            }
-            Duplicated(expr) => {
-                let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                    let s = std::mem::take(&mut s[0]);
-                    s.is_duplicated().map(|ca| ca.into_series())
-                }) as Arc<dyn SeriesUdf>);
-                Ok(Arc::new(ApplyExpr {
-                    inputs: vec![input],
-                    function,
-                    expr: node_to_expr(expression, expr_arena),
-                    collect_groups: ApplyOptions::ApplyGroups,
-                    auto_explode: false,
-                }))
-            }
-            IsUnique(expr) => {
-                let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                    let s = std::mem::take(&mut s[0]);
-                    s.is_unique().map(|ca| ca.into_series())
-                }) as Arc<dyn SeriesUdf>);
-                Ok(Arc::new(ApplyExpr {
-                    inputs: vec![input],
-                    function,
-                    expr: node_to_expr(expression, expr_arena),
-                    collect_groups: ApplyOptions::ApplyGroups,
-                    auto_explode: false,
-                }))
-            }
             Explode(expr) => {
                 let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                 let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                     let s = std::mem::take(&mut s[0]);
                     s.explode()
                 }) as Arc<dyn SeriesUdf>);
-                Ok(Arc::new(ApplyExpr {
-                    inputs: vec![input],
+                Ok(Arc::new(ApplyExpr::new_minimal(
+                    vec![input],
                     function,
-                    expr: node_to_expr(expression, expr_arena),
-                    collect_groups: ApplyOptions::ApplyFlat,
-                    auto_explode: false,
-                }))
+                    node_to_expr(expression, expr_arena),
+                    ApplyOptions::ApplyGroups,
+                )))
             }
             Wildcard => panic!("should be no wildcard at this point"),
             Nth(_) => panic!("should be no nth at this point"),

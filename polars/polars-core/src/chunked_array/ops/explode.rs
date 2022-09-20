@@ -1,7 +1,8 @@
 use std::convert::TryFrom;
 
-use arrow::bitmap::Bitmap;
-use arrow::{array::*, bitmap::MutableBitmap, buffer::Buffer};
+use arrow::array::*;
+use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::buffer::Buffer;
 use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::prelude::{FromDataUtf8, ValueSize};
@@ -326,7 +327,7 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSiz
 }
 
 impl ChunkExplode for ListChunked {
-    fn explode_and_offsets(&self) -> Result<(Series, Buffer<i64>)> {
+    fn explode_and_offsets(&self) -> PolarsResult<(Series, Buffer<i64>)> {
         // A list array's memory layout is actually already 'exploded', so we can just take the values array
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
@@ -411,7 +412,7 @@ impl ChunkExplode for ListChunked {
 }
 
 impl ChunkExplode for Utf8Chunked {
-    fn explode_and_offsets(&self) -> Result<(Series, Buffer<i64>)> {
+    fn explode_and_offsets(&self) -> PolarsResult<(Series, Buffer<i64>)> {
         // A list array's memory layout is actually already 'exploded', so we can just take the values array
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
@@ -528,7 +529,7 @@ mod test {
     use crate::chunked_array::builder::get_list_builder;
 
     #[test]
-    fn test_explode_list() -> Result<()> {
+    fn test_explode_list() -> PolarsResult<()> {
         let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a")?;
 
         builder.append_series(&Series::new("", &[1, 2, 3, 3]));
@@ -552,7 +553,7 @@ mod test {
     }
 
     #[test]
-    fn test_explode_list_nulls() -> Result<()> {
+    fn test_explode_list_nulls() -> PolarsResult<()> {
         let ca = Int32Chunked::from_slice_options("", &[None, Some(1), Some(2)]);
         let offsets = &[0, 3, 3];
         let out = ca.explode_by_offsets(offsets);
@@ -578,7 +579,7 @@ mod test {
     }
 
     #[test]
-    fn test_explode_empty_list() -> Result<()> {
+    fn test_explode_empty_list() -> PolarsResult<()> {
         let mut builder = get_list_builder(&DataType::Int32, 1, 1, "a")?;
 
         let vals: [i32; 0] = [];
@@ -595,7 +596,7 @@ mod test {
     }
 
     #[test]
-    fn test_explode_empty_list_slot() -> Result<()> {
+    fn test_explode_empty_list_slot() -> PolarsResult<()> {
         // primitive
         let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a")?;
         builder.append_series(&Series::new("", &[1i32, 2]));

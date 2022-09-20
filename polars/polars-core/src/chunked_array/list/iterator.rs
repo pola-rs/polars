@@ -150,9 +150,9 @@ impl ListChunked {
         ca
     }
 
-    pub fn try_apply_amortized<'a, F>(&'a self, mut f: F) -> Result<Self>
+    pub fn try_apply_amortized<'a, F>(&'a self, mut f: F) -> PolarsResult<Self>
     where
-        F: FnMut(UnstableSeries<'a>) -> Result<Series>,
+        F: FnMut(UnstableSeries<'a>) -> PolarsResult<Series>,
     {
         if self.is_empty() {
             return Ok(self.clone());
@@ -173,7 +173,7 @@ impl ListChunked {
                     })
                     .transpose()
             })
-            .collect::<Result<_>>()?;
+            .collect::<PolarsResult<_>>()?;
         ca.rename(self.name());
         if fast_explode {
             ca.set_fast_explode();

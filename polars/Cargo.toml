@@ -1,6 +1,6 @@
 [package]
 name = "polars"
-version = "0.23.0"
+version = "0.24.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 keywords = ["dataframe", "query-engine", "arrow"]
@@ -40,7 +40,7 @@ strings = ["polars-core/strings", "polars-lazy/strings", "polars-ops/strings"]
 object = ["polars-core/object", "polars-lazy/object"]
 
 # support for arrows json parsing
-json = ["polars-io", "polars-io/json"]
+json = ["polars-io", "polars-io/json", "polars-lazy/json"]
 
 # support for arrows ipc file parsing
 ipc = ["polars-io", "polars-io/ipc", "polars-lazy/ipc"]
@@ -55,7 +55,7 @@ avro = ["polars-io", "polars-io/avro"]
 csv-file = ["polars-io", "polars-io/csv-file", "polars-lazy/csv-file"]
 
 # slower builds
-performant = ["polars-core/performant", "chunked_ids", "dtype-u8", "dtype-u16"]
+performant = ["polars-core/performant", "chunked_ids", "dtype-u8", "dtype-u16", "cse"]
 
 # Dataframe formatting.
 fmt = ["polars-core/fmt"]
@@ -106,7 +106,7 @@ product = ["polars-core/product"]
 unique_counts = ["polars-core/unique_counts", "polars-lazy/unique_counts"]
 log = ["polars-ops/log", "polars-lazy/log"]
 partition_by = ["polars-core/partition_by"]
-semi_anti_join = ["polars-core/semi_anti_join"]
+semi_anti_join = ["polars-core/semi_anti_join", "polars-lazy/semi_anti_join"]
 list_eval = ["polars-lazy/list_eval"]
 cumulative_eval = ["polars-lazy/cumulative_eval"]
 chunked_ids = ["polars-core/chunked_ids", "polars-lazy/chunked_ids"]
@@ -117,9 +117,16 @@ describe = ["polars-core/describe"]
 timezones = ["polars-core/timezones"]
 string_justify = ["polars-lazy/string_justify", "polars-ops/string_justify"]
 arg_where = ["polars-lazy/arg_where"]
+search_sorted = ["polars-lazy/search_sorted"]
+meta = ["polars-lazy/meta"]
 date_offset = ["polars-lazy/date_offset"]
 trigonometry = ["polars-lazy/trigonometry"]
 sign = ["polars-lazy/sign"]
+pivot = ["polars-lazy/pivot"]
+top_k = ["polars-lazy/top_k"]
+algo = ["polars-algo"]
+cse = ["polars-lazy/cse"]
+propagate_nans = ["polars-lazy/propagate_nans"]
 
 test = [
   "lazy",
@@ -137,6 +144,7 @@ test = [
   "parquet",
   "ipc",
   "ipc_streaming",
+  "json",
 ]
 
 # don't use this
@@ -195,7 +203,12 @@ dtype-categorical = [
   "polars-lazy/dtype-categorical",
   "polars-ops/dtype-categorical",
 ]
-dtype-struct = ["polars-core/dtype-struct", "polars-lazy/dtype-struct", "polars-ops/dtype-struct"]
+dtype-struct = [
+  "polars-core/dtype-struct",
+  "polars-lazy/dtype-struct",
+  "polars-ops/dtype-struct",
+  "polars-io/dtype-struct",
+]
 
 docs-selection = [
   "csv-file",
@@ -245,6 +258,7 @@ docs-selection = [
   "cumulative_eval",
   "timezones",
   "arg_where",
+  "propagate_nans",
 ]
 
 bench = [
@@ -252,11 +266,12 @@ bench = [
 ]
 
 [dependencies]
-polars-core = { version = "0.23.0", path = "./polars-core", features = ["docs", "private"], default-features = false }
-polars-io = { version = "0.23.0", path = "./polars-io", features = ["private"], default-features = false, optional = true }
-polars-lazy = { version = "0.23.0", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
-polars-ops = { version = "0.23.0", path = "./polars-ops" }
-polars-time = { version = "0.23.0", path = "./polars-time", default-features = false, optional = true }
+polars-algo = { version = "0.24.0", path = "./polars-algo", optional = true }
+polars-core = { version = "0.24.0", path = "./polars-core", features = ["docs", "private"], default-features = false }
+polars-io = { version = "0.24.0", path = "./polars-io", features = ["private"], default-features = false, optional = true }
+polars-lazy = { version = "0.24.0", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
+polars-ops = { version = "0.24.0", path = "./polars-ops" }
+polars-time = { version = "0.24.0", path = "./polars-time", default-features = false, optional = true }
 
 [dev-dependencies]
 ahash = "0.7"

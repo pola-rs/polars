@@ -1,10 +1,10 @@
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::series::ops::NullBehavior;
+use polars_core::utils::concat_df;
 use polars_time::prelude::DateMethods;
 
 use super::*;
-use crate::dsl::AggExpr::List;
 
 #[test]
 fn test_lazy_with_column() {
@@ -20,7 +20,7 @@ fn test_lazy_with_column() {
 #[test]
 fn test_lazy_exec() {
     let df = get_df();
-    let new = df
+    let _new = df
         .clone()
         .lazy()
         .select([col("sepal.width"), col("variety")])
@@ -200,7 +200,7 @@ fn test_lazy_shift() {
 }
 
 #[test]
-fn test_shift_and_fill() -> Result<()> {
+fn test_shift_and_fill() -> PolarsResult<()> {
     let out = df![
         "a" => [1, 2, 3]
     ]?
@@ -348,7 +348,7 @@ fn test_lazy_query_5() {
 
 #[test]
 #[cfg(feature = "is_in")]
-fn test_lazy_query_8() -> Result<()> {
+fn test_lazy_query_8() -> PolarsResult<()> {
     // https://github.com/pola-rs/polars/issues/842
     let df = df![
         "A" => [1, 2, 3],
@@ -378,7 +378,7 @@ fn test_lazy_query_8() -> Result<()> {
 }
 
 #[test]
-fn test_lazy_query_9() -> Result<()> {
+fn test_lazy_query_9() -> PolarsResult<()> {
     // https://github.com/pola-rs/polars/issues/958
     let cities = df![
         "Cities.City"=> ["Moscow", "Berlin", "Paris","Hamburg", "Lyon", "Novosibirsk"],
@@ -894,7 +894,7 @@ fn test_lazy_groupby_binary_expr() {
 }
 
 #[test]
-fn test_lazy_groupby_filter() -> Result<()> {
+fn test_lazy_groupby_filter() -> PolarsResult<()> {
     let df = df! {
         "a" => ["a", "a", "a", "b", "b", "c"],
         "b" => [1, 2, 3, 4, 5, 6]
@@ -952,7 +952,7 @@ fn test_lazy_groupby_filter() -> Result<()> {
 }
 
 #[test]
-fn test_groupby_projection_pd_same_column() -> Result<()> {
+fn test_groupby_projection_pd_same_column() -> PolarsResult<()> {
     // this query failed when projection pushdown was enabled
 
     let a = || {
@@ -978,7 +978,7 @@ fn test_groupby_projection_pd_same_column() -> Result<()> {
 }
 
 #[test]
-fn test_groupby_sort_slice() -> Result<()> {
+fn test_groupby_sort_slice() -> PolarsResult<()> {
     let df = df![
         "groups" => [1, 2, 2, 3, 3, 3],
         "vals" => [1, 5, 6, 3, 9, 8]
@@ -1019,7 +1019,7 @@ fn test_groupby_sort_slice() -> Result<()> {
 }
 
 #[test]
-fn test_groupby_cumsum() -> Result<()> {
+fn test_groupby_cumsum() -> PolarsResult<()> {
     let df = df![
         "groups" => [1, 2, 2, 3, 3, 3],
         "vals" => [1, 5, 6, 3, 9, 8]
@@ -1047,7 +1047,7 @@ fn test_groupby_cumsum() -> Result<()> {
 }
 
 #[test]
-fn test_argsort_multiple() -> Result<()> {
+fn test_argsort_multiple() -> PolarsResult<()> {
     let df = df![
         "int" => [1, 2, 3, 1, 2],
         "flt" => [3.0, 2.0, 1.0, 2.0, 1.0],
@@ -1078,7 +1078,7 @@ fn test_argsort_multiple() -> Result<()> {
 }
 
 #[test]
-fn test_multiple_explode() -> Result<()> {
+fn test_multiple_explode() -> PolarsResult<()> {
     let df = df![
         "a" => [0, 1, 2, 0, 2],
         "b" => [5, 4, 3, 2, 1],
@@ -1100,7 +1100,7 @@ fn test_multiple_explode() -> Result<()> {
 }
 
 #[test]
-fn test_filter_and_alias() -> Result<()> {
+fn test_filter_and_alias() -> PolarsResult<()> {
     let df = df![
         "a" => [0, 1, 2, 0, 2]
     ]?;
@@ -1134,7 +1134,7 @@ fn test_filter_lit() {
 }
 
 #[test]
-fn test_ternary_null() -> Result<()> {
+fn test_ternary_null() -> PolarsResult<()> {
     let df = df![
         "a" => ["a", "b", "c"]
     ]?;
@@ -1155,7 +1155,7 @@ fn test_ternary_null() -> Result<()> {
 }
 
 #[test]
-fn test_fill_forward() -> Result<()> {
+fn test_fill_forward() -> PolarsResult<()> {
     let df = df![
         "a" => ["a", "b", "a"],
         "b" => [Some(1), None, None]
@@ -1178,7 +1178,7 @@ fn test_fill_forward() -> Result<()> {
 
 #[cfg(feature = "cross_join")]
 #[test]
-fn test_cross_join() -> Result<()> {
+fn test_cross_join() -> PolarsResult<()> {
     let df1 = df![
         "a" => ["a", "b", "a"],
         "b" => [Some(1), None, None]
@@ -1195,7 +1195,7 @@ fn test_cross_join() -> Result<()> {
 }
 
 #[test]
-fn test_fold_wildcard() -> Result<()> {
+fn test_fold_wildcard() -> PolarsResult<()> {
     let df1 = df![
     "a" => [1, 2, 3],
     "b" => [1, 2, 3]
@@ -1221,7 +1221,7 @@ fn test_fold_wildcard() -> Result<()> {
 }
 
 #[test]
-fn test_select_empty_df() -> Result<()> {
+fn test_select_empty_df() -> PolarsResult<()> {
     // https://github.com/pola-rs/polars/issues/1056
     let df1 = df![
     "a" => [1, 2, 3],
@@ -1241,7 +1241,7 @@ fn test_select_empty_df() -> Result<()> {
 }
 
 #[test]
-fn test_keep_name() -> Result<()> {
+fn test_keep_name() -> PolarsResult<()> {
     let df = df![
     "a" => [1, 2, 3],
     "b" => [1, 2, 3]
@@ -1260,7 +1260,7 @@ fn test_keep_name() -> Result<()> {
 }
 
 #[test]
-fn test_exclude() -> Result<()> {
+fn test_exclude() -> PolarsResult<()> {
     let df = df![
     "a" => [1, 2, 3],
     "b" => [1, 2, 3],
@@ -1275,7 +1275,7 @@ fn test_exclude() -> Result<()> {
 
 #[test]
 #[cfg(feature = "regex")]
-fn test_regex_selection() -> Result<()> {
+fn test_regex_selection() -> PolarsResult<()> {
     let df = df![
     "anton" => [1, 2, 3],
     "arnold schwars" => [1, 2, 3],
@@ -1289,7 +1289,7 @@ fn test_regex_selection() -> Result<()> {
 }
 
 #[test]
-fn test_filter_in_groupby_agg() -> Result<()> {
+fn test_filter_in_groupby_agg() -> PolarsResult<()> {
     // This tests if the filter is correctly handled by the binary expression.
     // This could lead to UB if it were not the case. The filter creates an empty column.
     // but the group tuples could still be untouched leading to out of bounds aggregation.
@@ -1324,7 +1324,7 @@ fn test_filter_in_groupby_agg() -> Result<()> {
 }
 
 #[test]
-fn test_sort_by() -> Result<()> {
+fn test_sort_by() -> PolarsResult<()> {
     let df = df![
         "a" => [1, 2, 3, 4, 5],
         "b" => [1, 1, 1, 2, 2],
@@ -1374,7 +1374,7 @@ fn test_sort_by() -> Result<()> {
 }
 
 #[test]
-fn test_filter_after_shift_in_groups() -> Result<()> {
+fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
     let df = fruits_cars();
 
     let out = df
@@ -1416,7 +1416,7 @@ fn test_filter_after_shift_in_groups() -> Result<()> {
 }
 
 #[test]
-fn test_lazy_ternary_predicate_pushdown() -> Result<()> {
+fn test_lazy_ternary_predicate_pushdown() -> PolarsResult<()> {
     let df = df![
         "a" => &[10, 1, 2, 3]
     ]?;
@@ -1438,7 +1438,7 @@ fn test_lazy_ternary_predicate_pushdown() -> Result<()> {
 }
 
 #[test]
-fn test_categorical_addition() -> Result<()> {
+fn test_categorical_addition() -> PolarsResult<()> {
     let df = fruits_cars();
 
     // test if we can do that arithmetic operation with utf8 and categorical
@@ -1463,7 +1463,7 @@ fn test_error_duplicate_names() {
 }
 
 #[test]
-fn test_filter_count() -> Result<()> {
+fn test_filter_count() -> PolarsResult<()> {
     let df = fruits_cars();
     let out = df
         .lazy()
@@ -1477,7 +1477,7 @@ fn test_filter_count() -> Result<()> {
 
 #[test]
 #[cfg(feature = "dtype-i16")]
-fn test_groupby_small_ints() -> Result<()> {
+fn test_groupby_small_ints() -> PolarsResult<()> {
     let df = df![
         "id_32" => [1i32, 2],
         "id_16" => [1i16, 2]
@@ -1502,7 +1502,7 @@ fn test_groupby_small_ints() -> Result<()> {
 }
 
 #[test]
-fn test_when_then_schema() -> Result<()> {
+fn test_when_then_schema() -> PolarsResult<()> {
     let df = fruits_cars();
 
     let schema = df
@@ -1517,7 +1517,7 @@ fn test_when_then_schema() -> Result<()> {
 }
 
 #[test]
-fn test_singleton_broadcast() -> Result<()> {
+fn test_singleton_broadcast() -> PolarsResult<()> {
     let df = fruits_cars();
     let out = df
         .lazy()
@@ -1529,7 +1529,7 @@ fn test_singleton_broadcast() -> Result<()> {
 }
 
 #[test]
-fn test_sort_by_suffix() -> Result<()> {
+fn test_sort_by_suffix() -> PolarsResult<()> {
     let df = fruits_cars();
     let out = df
         .lazy()
@@ -1553,7 +1553,7 @@ fn test_sort_by_suffix() -> Result<()> {
 }
 
 #[test]
-fn test_list_in_select_context() -> Result<()> {
+fn test_list_in_select_context() -> PolarsResult<()> {
     let s = Series::new("a", &[1, 2, 3]);
     let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name()).unwrap();
     builder.append_series(&s);
@@ -1570,7 +1570,7 @@ fn test_list_in_select_context() -> Result<()> {
 }
 
 #[test]
-fn test_round_after_agg() -> Result<()> {
+fn test_round_after_agg() -> PolarsResult<()> {
     let df = fruits_cars();
 
     let out = df
@@ -1630,7 +1630,7 @@ fn test_round_after_agg() -> Result<()> {
 
 #[test]
 #[cfg(feature = "dtype-date")]
-fn test_fill_nan() -> Result<()> {
+fn test_fill_nan() -> PolarsResult<()> {
     let s0 = Series::new("date", &[1, 2, 3]).cast(&DataType::Date)?;
     let s1 = Series::new("float", &[Some(1.0), Some(f32::NAN), Some(3.0)]);
 
@@ -1643,7 +1643,7 @@ fn test_fill_nan() -> Result<()> {
 }
 
 #[test]
-fn test_exclude_regex() -> Result<()> {
+fn test_exclude_regex() -> PolarsResult<()> {
     let df = fruits_cars();
     let out = df
         .lazy()
@@ -1655,7 +1655,7 @@ fn test_exclude_regex() -> Result<()> {
 }
 
 #[test]
-fn test_groupby_rank() -> Result<()> {
+fn test_groupby_rank() -> PolarsResult<()> {
     let df = fruits_cars();
     let out = df
         .lazy()
@@ -1675,7 +1675,7 @@ fn test_groupby_rank() -> Result<()> {
 }
 
 #[test]
-fn test_apply_multiple_columns() -> Result<()> {
+fn test_apply_multiple_columns() -> PolarsResult<()> {
     let df = fruits_cars();
 
     let multiply = |s: &mut [Series]| Ok(&(&s[0] * &s[0]) * &s[1]);
@@ -1715,7 +1715,7 @@ fn test_apply_multiple_columns() -> Result<()> {
 }
 
 #[test]
-pub fn test_select_by_dtypes() -> Result<()> {
+pub fn test_select_by_dtypes() -> PolarsResult<()> {
     let df = df![
         "bools" => [true, false, true],
         "ints" => [1, 2, 3],
@@ -1732,7 +1732,7 @@ pub fn test_select_by_dtypes() -> Result<()> {
 }
 
 #[test]
-fn test_binary_expr() -> Result<()> {
+fn test_binary_expr() -> PolarsResult<()> {
     // test panic in schema names
     let df = fruits_cars();
     let _ = df.lazy().select([col("A").neq(lit(1))]).collect()?;
@@ -1757,7 +1757,7 @@ fn test_binary_expr() -> Result<()> {
 }
 
 #[test]
-fn test_drop_and_select() -> Result<()> {
+fn test_drop_and_select() -> PolarsResult<()> {
     let df = fruits_cars();
 
     // we test that the schema is still correct for drop to work.
@@ -1783,7 +1783,7 @@ fn test_drop_and_select() -> Result<()> {
 }
 
 #[test]
-fn test_groupby_on_lists() -> Result<()> {
+fn test_groupby_on_lists() -> PolarsResult<()> {
     let s0 = Series::new("", [1i32, 2, 3]);
     let s1 = Series::new("groups", [4i32, 5]);
 
@@ -1822,7 +1822,7 @@ fn test_groupby_on_lists() -> Result<()> {
 }
 
 #[test]
-fn test_single_group_result() -> Result<()> {
+fn test_single_group_result() -> PolarsResult<()> {
     // the argsort should not auto explode
     let df = df![
         "a" => [1, 2],
@@ -1831,7 +1831,14 @@ fn test_single_group_result() -> Result<()> {
 
     let out = df
         .lazy()
-        .select([col("a").arg_sort(false).list().over([col("a")]).flatten()])
+        .select([col("a")
+            .arg_sort(SortOptions {
+                descending: false,
+                nulls_last: false,
+            })
+            .list()
+            .over([col("a")])
+            .flatten()])
         .collect()?;
 
     let a = out.column("a")?.idx()?;
@@ -1841,7 +1848,7 @@ fn test_single_group_result() -> Result<()> {
 }
 
 #[test]
-fn test_single_ranked_group() -> Result<()> {
+fn test_single_ranked_group() -> PolarsResult<()> {
     // tests type consistency of rank algorithm
     let df = df!["group" => [1, 2, 2],
         "value"=> [100, 50, 10]
@@ -1869,7 +1876,7 @@ fn test_single_ranked_group() -> Result<()> {
 }
 
 #[test]
-fn empty_df() -> Result<()> {
+fn empty_df() -> PolarsResult<()> {
     let df = fruits_cars();
     let df = df.filter(&BooleanChunked::full("", false, df.height()))?;
 
@@ -1890,7 +1897,7 @@ fn empty_df() -> Result<()> {
 }
 
 #[test]
-fn test_apply_flatten() -> Result<()> {
+fn test_apply_flatten() -> PolarsResult<()> {
     let df = df![
          "A"=> [1.1435, 2.223456, 3.44732, -1.5234, -2.1238, -3.2923],
         "B"=> ["a", "b", "a", "b", "a", "b"]
@@ -1911,7 +1918,7 @@ fn test_apply_flatten() -> Result<()> {
 
 #[test]
 #[cfg(feature = "is_in")]
-fn test_is_in() -> Result<()> {
+fn test_is_in() -> PolarsResult<()> {
     let df = fruits_cars();
 
     // // this will be executed by apply
@@ -1948,7 +1955,7 @@ fn test_is_in() -> Result<()> {
 }
 
 #[test]
-fn test_partitioned_gb_1() -> Result<()> {
+fn test_partitioned_gb_1() -> PolarsResult<()> {
     // don't move these to integration tests
     // keep these dtypes
     let out = df![
@@ -1974,7 +1981,7 @@ fn test_partitioned_gb_1() -> Result<()> {
 }
 
 #[test]
-fn test_partitioned_gb_count() -> Result<()> {
+fn test_partitioned_gb_count() -> PolarsResult<()> {
     // don't move these to integration tests
     let out = df![
         "col" => (0..100).map(|_| Some(0)).collect::<Int32Chunked>().into_series(),
@@ -1998,7 +2005,7 @@ fn test_partitioned_gb_count() -> Result<()> {
 }
 
 #[test]
-fn test_partitioned_gb_mean() -> Result<()> {
+fn test_partitioned_gb_mean() -> PolarsResult<()> {
     // don't move these to integration tests
     let out = df![
         "key" => (0..100).map(|_| Some(0)).collect::<Int32Chunked>().into_series(),
@@ -2022,7 +2029,7 @@ fn test_partitioned_gb_mean() -> Result<()> {
 }
 
 #[test]
-fn test_partitioned_gb_binary() -> Result<()> {
+fn test_partitioned_gb_binary() -> PolarsResult<()> {
     // don't move these to integration tests
     let df = df![
         "col" => (0..20).map(|_| Some(0)).collect::<Int32Chunked>().into_series(),
@@ -2057,7 +2064,7 @@ fn test_partitioned_gb_binary() -> Result<()> {
 }
 
 #[test]
-fn test_partitioned_gb_ternary() -> Result<()> {
+fn test_partitioned_gb_ternary() -> PolarsResult<()> {
     // don't move these to integration tests
     let df = df![
         "col" => (0..20).map(|_| Some(0)).collect::<Int32Chunked>().into_series(),

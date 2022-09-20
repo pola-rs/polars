@@ -20,7 +20,7 @@
 //! use polars::prelude::*;
 //! use polars::df;
 //!
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //! let df = df![
 //!     "a" => [1, 2, 3],
 //!     "b" => [None, Some("a"), Some("b")]
@@ -29,12 +29,12 @@
 //! let lf: LazyFrame = df.lazy();
 //!
 //! // scan a csv file lazily
-//! let lf: LazyFrame = LazyCsvReader::new("some_path".into())
-//!                     .has_header(true)
-//!                     .finish();
+//! let lf: LazyFrame = LazyCsvReader::new("some_path")
+//!     .has_header(true)
+//!     .finish()?;
 //!
 //! // scan a parquet file lazily
-//! let lf: LazyFrame = LazyFrame::scan_parquet("some_path".into(), None, true);
+//! let lf: LazyFrame = LazyFrame::scan_parquet("some_path", Default::default())?;
 //!
 //! # Ok(())
 //! # }
@@ -45,7 +45,7 @@
 //! use polars::prelude::*;
 //! use polars::df;
 //!
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //! let df = df![
 //!     "a" => [1, 2, 3],
 //!     "b" => [None, Some("a"), Some("b")]
@@ -74,7 +74,7 @@
 //! use polars::prelude::*;
 //! use polars::df;
 //!
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //! let df = df![
 //!     "a" => [1, 2, 3],
 //!     "b" => ["a", "a", "b"]
@@ -85,7 +85,7 @@
 //! let reverse = vec![true, false];
 //!
 //! let sorted = df.lazy()
-//!     .sort_by_exprs(vec![col("b"), col("a")], reverse)
+//!     .sort_by_exprs(vec![col("b"), col("a")], reverse, false)
 //!     .collect()?;
 //!
 //! // sorted:
@@ -112,12 +112,12 @@
 //!
 //! ```
 //! use polars::prelude::*;
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //!
-//!  let df = LazyCsvReader::new("reddit.csv".into())
+//!  let df = LazyCsvReader::new("reddit.csv")
 //!     .has_header(true)
 //!     .with_delimiter(b',')
-//!     .finish()
+//!     .finish()?
 //!     .groupby([col("comment_karma")])
 //!     .agg([col("name").n_unique().alias("unique_names"), col("link_karma").max()])
 //!     // take only 100 rows.
@@ -131,7 +131,7 @@
 //! ```
 //! use polars::prelude::*;
 //! use polars::df;
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //! let df_a = df![
 //!     "a" => [1, 2, 1, 1],
 //!     "b" => ["a", "b", "c", "c"],
@@ -206,7 +206,7 @@
 //! ```
 //! use polars::prelude::*;
 //! use polars::df;
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //! let df = df![
 //!     "range" => [1, 2, 3, 4, 5, 6, 8, 9, 10],
 //!     "left" => (0..10).map(|_| Some("foo")).collect::<Vec<_>>(),
@@ -264,7 +264,7 @@
 //!     a
 //! }
 //!
-//! fn apply_multiples(lf: LazyFrame) -> Result<DataFrame> {
+//! fn apply_multiples(lf: LazyFrame) -> PolarsResult<DataFrame> {
 //!     df![
 //!         "a" => [1.0, 2.0, 3.0],
 //!         "b" => [3.0, 5.1, 0.3]

@@ -3,20 +3,14 @@ use std::borrow::Cow;
 use ahash::RandomState;
 use polars_arrow::prelude::QuantileInterpolOptions;
 
-use super::private;
-use super::IntoSeries;
-use super::SeriesTrait;
-use super::SeriesWrap;
-use super::*;
+use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::{
-    ops::{
-        aggregate::{ChunkAggSeries, QuantileAggSeries, VarAggSeries},
-        compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
-        explode::ExplodeByOffsets,
-    },
-    AsSinglePtr,
+use crate::chunked_array::ops::aggregate::{ChunkAggSeries, QuantileAggSeries, VarAggSeries};
+use crate::chunked_array::ops::compare_inner::{
+    IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner,
 };
+use crate::chunked_array::ops::explode::ExplodeByOffsets;
+use crate::chunked_array::AsSinglePtr;
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::ZipOuterJoinColumn;
@@ -65,7 +59,11 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "zip_with")]
-            fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
+            fn zip_with_same_type(
+                &self,
+                mask: &BooleanChunked,
+                other: &Series,
+            ) -> PolarsResult<Series> {
                 ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref())
                     .map(|ca| ca.into_series())
             }
@@ -127,19 +125,19 @@ macro_rules! impl_dyn_series {
             ) -> Series {
                 ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
             }
-            fn subtract(&self, rhs: &Series) -> Result<Series> {
+            fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
                 NumOpsDispatch::subtract(&self.0, rhs)
             }
-            fn add_to(&self, rhs: &Series) -> Result<Series> {
+            fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
                 NumOpsDispatch::add_to(&self.0, rhs)
             }
-            fn multiply(&self, rhs: &Series) -> Result<Series> {
+            fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
                 NumOpsDispatch::multiply(&self.0, rhs)
             }
-            fn divide(&self, rhs: &Series) -> Result<Series> {
+            fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
                 NumOpsDispatch::divide(&self.0, rhs)
             }
-            fn remainder(&self, rhs: &Series) -> Result<Series> {
+            fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
                 NumOpsDispatch::remainder(&self.0, rhs)
             }
             fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
@@ -147,7 +145,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "sort_multiple")]
-            fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
+            fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
                 self.0.argsort_multiple(by, reverse)
             }
         }
@@ -168,7 +166,7 @@ macro_rules! impl_dyn_series {
                 &self,
                 _f: &dyn Fn(&Series) -> Series,
                 _options: RollingOptionsFixedWindow,
-            ) -> Result<Series> {
+            ) -> PolarsResult<Series> {
                 ChunkRollApply::rolling_apply(&self.0, _f, _options).map(|ca| ca.into_series())
             }
 
@@ -195,7 +193,7 @@ macro_rules! impl_dyn_series {
                 self.0.shrink_to_fit()
             }
 
-            fn append_array(&mut self, other: ArrayRef) -> Result<()> {
+            fn append_array(&mut self, other: ArrayRef) -> PolarsResult<()> {
                 self.0.append_array(other)
             }
 
@@ -203,7 +201,7 @@ macro_rules! impl_dyn_series {
                 return self.0.slice(offset, length).into_series();
             }
 
-            fn append(&mut self, other: &Series) -> Result<()> {
+            fn append(&mut self, other: &Series) -> PolarsResult<()> {
                 if self.0.dtype() == other.dtype() {
                     self.0.append(other.as_ref().as_ref());
                     Ok(())
@@ -214,7 +212,7 @@ macro_rules! impl_dyn_series {
                 }
             }
 
-            fn extend(&mut self, other: &Series) -> Result<()> {
+            fn extend(&mut self, other: &Series) -> PolarsResult<()> {
                 if self.0.dtype() == other.dtype() {
                     self.0.extend(other.as_ref().as_ref());
                     Ok(())
@@ -225,7 +223,7 @@ macro_rules! impl_dyn_series {
                 }
             }
 
-            fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
+            fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
                 ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
             }
 
@@ -247,7 +245,7 @@ macro_rules! impl_dyn_series {
                 self.0.take_opt_chunked_unchecked(by).into_series()
             }
 
-            fn take(&self, indices: &IdxCa) -> Result<Series> {
+            fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
                 let indices = if indices.chunks.len() > 1 {
                     Cow::Owned(indices.rechunk())
                 } else {
@@ -256,7 +254,7 @@ macro_rules! impl_dyn_series {
                 Ok(ChunkTake::take(&self.0, (&*indices).into())?.into_series())
             }
 
-            fn take_iter(&self, iter: &mut dyn TakeIterator) -> Result<Series> {
+            fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
                 Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
             }
 
@@ -268,7 +266,7 @@ macro_rules! impl_dyn_series {
                 ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
             }
 
-            unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
+            unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
                 let idx = if idx.chunks.len() > 1 {
                     Cow::Owned(idx.rechunk())
                 } else {
@@ -289,7 +287,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "take_opt_iter")]
-            fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
+            fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
                 Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
             }
 
@@ -305,7 +303,7 @@ macro_rules! impl_dyn_series {
                 ChunkExpandAtIndex::expand_at_index(&self.0, index, length).into_series()
             }
 
-            fn cast(&self, data_type: &DataType) -> Result<Series> {
+            fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
                 self.0.cast(data_type)
             }
 
@@ -335,15 +333,15 @@ macro_rules! impl_dyn_series {
                 self.0.has_validity()
             }
 
-            fn unique(&self) -> Result<Series> {
+            fn unique(&self) -> PolarsResult<Series> {
                 ChunkUnique::unique(&self.0).map(|ca| ca.into_series())
             }
 
-            fn n_unique(&self) -> Result<usize> {
+            fn n_unique(&self) -> PolarsResult<usize> {
                 ChunkUnique::n_unique(&self.0)
             }
 
-            fn arg_unique(&self) -> Result<IdxCa> {
+            fn arg_unique(&self) -> PolarsResult<IdxCa> {
                 ChunkUnique::arg_unique(&self.0)
             }
 
@@ -363,11 +361,11 @@ macro_rules! impl_dyn_series {
                 self.0.is_not_null()
             }
 
-            fn is_unique(&self) -> Result<BooleanChunked> {
+            fn is_unique(&self) -> PolarsResult<BooleanChunked> {
                 ChunkUnique::is_unique(&self.0)
             }
 
-            fn is_duplicated(&self) -> Result<BooleanChunked> {
+            fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
                 ChunkUnique::is_duplicated(&self.0)
             }
 
@@ -375,7 +373,7 @@ macro_rules! impl_dyn_series {
                 ChunkReverse::reverse(&self.0).into_series()
             }
 
-            fn as_single_ptr(&mut self) -> Result<usize> {
+            fn as_single_ptr(&mut self) -> PolarsResult<usize> {
                 self.0.as_single_ptr()
             }
 
@@ -383,7 +381,7 @@ macro_rules! impl_dyn_series {
                 ChunkShift::shift(&self.0, periods).into_series()
             }
 
-            fn fill_null(&self, strategy: FillNullStrategy) -> Result<Series> {
+            fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Series> {
                 ChunkFillNull::fill_null(&self.0, strategy).map(|ca| ca.into_series())
             }
 
@@ -409,7 +407,7 @@ macro_rules! impl_dyn_series {
                 &self,
                 quantile: f64,
                 interpol: QuantileInterpolOptions,
-            ) -> Result<Series> {
+            ) -> PolarsResult<Series> {
                 QuantileAggSeries::quantile_as_series(&self.0, quantile, interpol)
             }
 
@@ -429,7 +427,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "is_in")]
-            fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
+            fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
                 IsIn::is_in(&self.0, other)
             }
             #[cfg(feature = "repeat_by")]
@@ -438,17 +436,17 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "checked_arithmetic")]
-            fn checked_div(&self, rhs: &Series) -> Result<Series> {
+            fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
                 self.0.checked_div(rhs)
             }
 
             #[cfg(feature = "is_first")]
-            fn is_first(&self) -> Result<BooleanChunked> {
+            fn is_first(&self) -> PolarsResult<BooleanChunked> {
                 self.0.is_first()
             }
 
             #[cfg(feature = "mode")]
-            fn mode(&self) -> Result<Series> {
+            fn mode(&self) -> PolarsResult<Series> {
                 Ok(self.0.mode()?.into_series())
             }
         }

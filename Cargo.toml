@@ -7,6 +7,7 @@ members = [
   "polars/polars-time",
   "polars/polars-utils",
   "polars/polars-ops",
+  "polars/polars-algo",
   "examples/read_csv",
   "examples/read_parquet",
   "examples/python_rust_compiled_function",

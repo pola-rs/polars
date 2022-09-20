@@ -7,9 +7,8 @@ use crate::series::ops::SeriesSealed;
 pub trait SeriesMethods: SeriesSealed {
     /// Create a [`DataFrame`] with the unique `values` of this [`Series`] and a column `"counts"`
     /// with dtype [`IdxType`]
-    fn value_counts(&self, multithreaded: bool, sorted: bool) -> Result<DataFrame> {
-        let s = self.as_series().to_physical_repr();
-        let s = s.as_ref();
+    fn value_counts(&self, multithreaded: bool, sorted: bool) -> PolarsResult<DataFrame> {
+        let s = self.as_series();
         // we need to sort here as well in case of `maintain_order` because duplicates behavior is undefined
         let groups = s.group_tuples(multithreaded, sorted);
         let values = unsafe { s.agg_first(&groups) };
@@ -28,8 +27,8 @@ pub trait SeriesMethods: SeriesSealed {
         let s = self.as_series().to_physical_repr();
         match s.dtype() {
             DataType::List(_) => {
-                let ca = s.list().unwrap();
-                crate::chunked_array::hash::hash(ca, build_hasher)
+                let mut ca = s.list().unwrap().clone();
+                crate::chunked_array::hash::hash(&mut ca, build_hasher)
             }
             _ => UInt64Chunked::from_vec(s.name(), s.0.vec_hash(build_hasher)),
         }

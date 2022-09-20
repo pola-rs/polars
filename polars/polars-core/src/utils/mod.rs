@@ -3,13 +3,11 @@ pub(crate) mod series;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
-pub use arrow;
 use arrow::bitmap::Bitmap;
-pub use polars_arrow::utils::TrustMyLength;
-pub use polars_arrow::utils::*;
-pub use rayon;
+pub use polars_arrow::utils::{TrustMyLength, *};
 use rayon::prelude::*;
 pub use series::*;
+pub use {arrow, rayon};
 
 #[cfg(feature = "private")]
 pub use crate::chunked_array::ops::sort::argsort_no_nulls;
@@ -104,7 +102,7 @@ macro_rules! split_array {
 }
 
 #[cfg(feature = "private")]
-pub fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> Result<Vec<ChunkedArray<T>>>
+pub fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> PolarsResult<Vec<ChunkedArray<T>>>
 where
     T: PolarsDataType,
 {
@@ -112,8 +110,9 @@ where
 }
 
 // prefer this one over split_ca, as this can push the null_count into the thread pool
+// returns an `(offset, length)` tuple
 #[doc(hidden)]
-pub fn split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
+pub fn _split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
     if n == 1 {
         vec![(0, len)]
     } else {
@@ -135,7 +134,7 @@ pub fn split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
 
 #[cfg(feature = "private")]
 #[doc(hidden)]
-pub fn split_series(s: &Series, n: usize) -> Result<Vec<Series>> {
+pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
     split_array!(s, n, i64)
 }
 
@@ -158,10 +157,13 @@ fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
 
 #[cfg(feature = "private")]
 #[doc(hidden)]
-pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
+/// Split a [`DataFrame`] into `n` parts. We take a `&mut` to be able to repartition/align chunks.
+pub fn split_df(df: &mut DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
     if n == 0 {
         return Ok(vec![df.clone()]);
     }
+    // make sure that chunks are aligned.
+    df.rechunk();
     let total_len = df.height();
     let chunk_size = total_len / n;
 
@@ -327,6 +329,62 @@ macro_rules! downcast_as_macro_arg_physical {
     }};
 }
 
+/// Apply a macro on the Downcasted ChunkedArray's of DataTypes that are logical numerics.
+/// So no logical.
+#[macro_export]
+macro_rules! downcast_as_macro_arg_physical_mut {
+    ($self:expr, $macro:ident $(, $opt_args:expr)*) => {{
+        // clone so that we do not borrow
+        match $self.dtype().clone() {
+            #[cfg(feature = "dtype-u8")]
+            DataType::UInt8 => {
+                let ca: &mut UInt8Chunked = $self.as_mut();
+                $macro!(UInt8Type, ca $(, $opt_args)*)
+            },
+            #[cfg(feature = "dtype-u16")]
+            DataType::UInt16 => {
+                let ca: &mut UInt16Chunked = $self.as_mut();
+                $macro!(UInt16Type, ca $(, $opt_args)*)
+            },
+            DataType::UInt32 => {
+                let ca: &mut UInt32Chunked = $self.as_mut();
+                $macro!(UInt32Type, ca $(, $opt_args)*)
+            },
+            DataType::UInt64 => {
+                let ca: &mut UInt64Chunked = $self.as_mut();
+                $macro!(UInt64Type, ca $(, $opt_args)*)
+            },
+            #[cfg(feature = "dtype-i8")]
+            DataType::Int8 => {
+                let ca: &mut Int8Chunked = $self.as_mut();
+                $macro!(Int8Type, ca $(, $opt_args)*)
+            },
+            #[cfg(feature = "dtype-i16")]
+            DataType::Int16 => {
+                let ca: &mut Int16Chunked = $self.as_mut();
+                $macro!(Int16Type, ca $(, $opt_args)*)
+            },
+            DataType::Int32 => {
+                let ca: &mut Int32Chunked = $self.as_mut();
+                $macro!(Int32Type, ca $(, $opt_args)*)
+            },
+            DataType::Int64 => {
+                let ca: &mut Int64Chunked = $self.as_mut();
+                $macro!(Int64Type, ca $(, $opt_args)*)
+            },
+            DataType::Float32 => {
+                let ca: &mut Float32Chunked = $self.as_mut();
+                $macro!(Float32Type, ca $(, $opt_args)*)
+            },
+            DataType::Float64 => {
+                let ca: &mut Float64Chunked = $self.as_mut();
+                $macro!(Float64Type, ca $(, $opt_args)*)
+            },
+            dt => panic!("not implemented for {:?}", dt),
+        }
+    }};
+}
+
 #[macro_export]
 macro_rules! apply_method_all_arrow_series {
     ($self:expr, $method:ident, $($args:expr),*) => {
@@ -393,7 +451,7 @@ macro_rules! apply_method_physical_numeric {
 macro_rules! df {
     ($($col_name:expr => $slice:expr), + $(,)?) => {
         {
-            DataFrame::new(vec![$(Series::new($col_name, $slice),)+])
+            $crate::prelude::DataFrame::new(vec![$($crate::prelude::Series::new($col_name, $slice),)+])
         }
     }
 }
@@ -410,19 +468,18 @@ pub fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to
 #[cfg(feature = "private")]
-pub fn get_supertype(l: &DataType, r: &DataType) -> Result<DataType> {
-    match _get_supertype(l, r) {
+pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
+    match get_supertype(l, r) {
         Some(dt) => Ok(dt),
-        None => _get_supertype(r, l).ok_or_else(|| {
-            PolarsError::ComputeError(
-                format!("Failed to determine supertype of {:?} and {:?}", l, r).into(),
-            )
-        }),
+        None => Err(PolarsError::ComputeError(
+            format!("Failed to determine supertype of {:?} and {:?}", l, r).into(),
+        )),
     }
 }
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to
-fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
+#[cfg(feature = "private")]
+pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
     fn inner(l: &DataType, r: &DataType) -> Option<DataType> {
         use DataType::*;
         if l == r {
@@ -614,11 +671,10 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             #[cfg(all(feature = "dtype-date", feature = "dtype-time"))]
             (Date, Time) => Some(Int64),
 
-            // everything can be cast to a string
-            (_, Utf8) => Some(Utf8),
+            // every known type can be casted to a string
+            (dt, Utf8) if dt != &DataType::Unknown => Some(Utf8),
 
             (dt, Null) => Some(dt.clone()),
-            (Null, dt) => Some(dt.clone()),
 
             #[cfg(all(feature = "dtype-duration", feature = "dtype-datetime"))]
             (Duration(lu), Datetime(ru, Some(tz))) | (Datetime(lu, Some(tz)), Duration(ru)) => {
@@ -633,9 +689,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                 Some(Datetime(get_time_units(lu, ru), None))
             }
             #[cfg(all(feature = "dtype-duration", feature = "dtype-date"))]
-            (Duration(_), Date) | (Date, Duration(_)) => {
-                Some(Datetime(TimeUnit::Milliseconds, None))
-            }
+            (Duration(_), Date) | (Date, Duration(_)) => Some(Date),
             #[cfg(feature = "dtype-duration")]
             (Duration(lu), Duration(ru)) => Some(Duration(get_time_units(lu, ru))),
 
@@ -656,11 +710,16 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                 let tu = get_time_units(tu_l, tu_r);
                 Some(Datetime(tu, tz_r.clone()))
             }
-            (List(inner), other) | (other, List(inner)) => {
-                let st = _get_supertype(inner, other)?;
+            (List(inner_left), List(inner_right)) => {
+                let st = get_supertype(inner_left, inner_right)?;
                 Some(DataType::List(Box::new(st)))
             }
-            (dt, Unknown) => Some(dt.clone()),
+            // todo! check if can be removed
+            (List(inner), other) | (other, List(inner)) => {
+                let st = get_supertype(inner, other)?;
+                Some(DataType::List(Box::new(st)))
+            }
+            (_, Unknown) => Some(Unknown),
             _ => None,
         }
     }
@@ -689,7 +748,7 @@ where
 }
 
 /// This takes ownership of the DataFrame so that drop is called earlier.
-pub fn accumulate_dataframes_vertical<I>(dfs: I) -> Result<DataFrame>
+pub fn accumulate_dataframes_vertical<I>(dfs: I) -> PolarsResult<DataFrame>
 where
     I: IntoIterator<Item = DataFrame>,
 {
@@ -704,7 +763,7 @@ where
 }
 
 /// Concat the DataFrames to a single DataFrame.
-pub fn concat_df<'a, I>(dfs: I) -> Result<DataFrame>
+pub fn concat_df<'a, I>(dfs: I) -> PolarsResult<DataFrame>
 where
     I: IntoIterator<Item = &'a DataFrame>,
 {
@@ -733,7 +792,7 @@ where
     acc_df
 }
 
-pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> Result<DataFrame> {
+pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> PolarsResult<DataFrame> {
     let mut iter = dfs.into_iter();
     let mut acc_df = iter.next().unwrap();
     for df in iter {
@@ -745,12 +804,12 @@ pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> Result<DataFrame
 /// Simple wrapper to parallelize functions that can be divided over threads aggregated and
 /// finally aggregated in the main thread. This can be done for sum, min, max, etc.
 #[cfg(feature = "private")]
-pub fn parallel_op_series<F>(f: F, s: Series, n_threads: Option<usize>) -> Result<Series>
+pub fn parallel_op_series<F>(f: F, s: Series, n_threads: Option<usize>) -> PolarsResult<Series>
 where
-    F: Fn(Series) -> Result<Series> + Send + Sync,
+    F: Fn(Series) -> PolarsResult<Series> + Send + Sync,
 {
     let n_threads = n_threads.unwrap_or_else(|| POOL.current_num_threads());
-    let splits = split_offsets(s.len(), n_threads);
+    let splits = _split_offsets(s.len(), n_threads);
 
     let chunks = POOL.install(|| {
         splits
@@ -759,7 +818,7 @@ where
                 let s = s.slice(offset as i64, len);
                 f(s)
             })
-            .collect::<Result<Vec<_>>>()
+            .collect::<PolarsResult<Vec<_>>>()
     })?;
 
     let mut iter = chunks.into_iter();

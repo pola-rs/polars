@@ -1,11 +1,10 @@
-use base64;
-use hex;
+use {base64, hex};
 
 use crate::prelude::*;
 
 impl Utf8Chunked {
     #[cfg(feature = "string_encoding")]
-    pub fn hex_decode(&self, strict: Option<bool>) -> Result<Utf8Chunked> {
+    pub fn hex_decode(&self, strict: Option<bool>) -> PolarsResult<Utf8Chunked> {
         let ca = self.apply_on_opt(|e| {
             e.and_then(|s| {
                 hex::decode(s)
@@ -29,7 +28,7 @@ impl Utf8Chunked {
     }
 
     #[cfg(feature = "string_encoding")]
-    pub fn base64_decode(&self, strict: Option<bool>) -> Result<Utf8Chunked> {
+    pub fn base64_decode(&self, strict: Option<bool>) -> PolarsResult<Utf8Chunked> {
         let ca = self.apply_on_opt(|e| {
             e.and_then(|s| {
                 base64::decode(s)

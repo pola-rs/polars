@@ -10,16 +10,16 @@ use serde::{Deserialize, Serialize};
 use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::*;
 
-/// A wrapper trait for any closure `Fn(Vec<Series>) -> Result<Series>`
+/// A wrapper trait for any closure `Fn(Vec<Series>) -> PolarsResult<Series>`
 pub trait SeriesUdf: Send + Sync {
-    fn call_udf(&self, s: &mut [Series]) -> Result<Series>;
+    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Series>;
 }
 
 impl<F> SeriesUdf for F
 where
-    F: Fn(&mut [Series]) -> Result<Series> + Send + Sync,
+    F: Fn(&mut [Series]) -> PolarsResult<Series> + Send + Sync,
 {
-    fn call_udf(&self, s: &mut [Series]) -> Result<Series> {
+    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Series> {
         self(s)
     }
 }
@@ -30,16 +30,16 @@ impl Debug for dyn SeriesUdf {
     }
 }
 
-/// A wrapper trait for any binary closure `Fn(Series, Series) -> Result<Series>`
+/// A wrapper trait for any binary closure `Fn(Series, Series) -> PolarsResult<Series>`
 pub trait SeriesBinaryUdf: Send + Sync {
-    fn call_udf(&self, a: Series, b: Series) -> Result<Series>;
+    fn call_udf(&self, a: Series, b: Series) -> PolarsResult<Series>;
 }
 
 impl<F> SeriesBinaryUdf for F
 where
-    F: Fn(Series, Series) -> Result<Series> + Send + Sync,
+    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync,
 {
-    fn call_udf(&self, a: Series, b: Series) -> Result<Series> {
+    fn call_udf(&self, a: Series, b: Series) -> PolarsResult<Series> {
         self(a, b)
     }
 }
@@ -178,7 +178,7 @@ impl GetOutput {
         Self::map_dtypes(|dtypes| {
             let mut st = dtypes[0].clone();
             for dt in &dtypes[1..] {
-                st = get_supertype(&st, dt).unwrap()
+                st = get_supertype(&st, dt).unwrap();
             }
             st
         })
@@ -210,8 +210,14 @@ where
 #[derive(PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AggExpr {
-    Min(Box<Expr>),
-    Max(Box<Expr>),
+    Min {
+        input: Box<Expr>,
+        propagate_nans: bool,
+    },
+    Max {
+        input: Box<Expr>,
+        propagate_nans: bool,
+    },
     Median(Box<Expr>),
     NUnique(Box<Expr>),
     First(Box<Expr>),
@@ -234,8 +240,8 @@ impl AsRef<Expr> for AggExpr {
     fn as_ref(&self) -> &Expr {
         use AggExpr::*;
         match self {
-            Min(e) => e,
-            Max(e) => e,
+            Min { input, .. } => input,
+            Max { input, .. } => input,
             Median(e) => e,
             NUnique(e) => e,
             First(e) => e,
@@ -268,9 +274,6 @@ pub enum Expr {
         op: Operator,
         right: Box<Expr>,
     },
-    Not(Box<Expr>),
-    IsNotNull(Box<Expr>),
-    IsNull(Box<Expr>),
     Cast {
         expr: Box<Expr>,
         data_type: DataType,
@@ -314,13 +317,6 @@ pub enum Expr {
         function: FunctionExpr,
         options: FunctionOptions,
     },
-    Shift {
-        input: Box<Expr>,
-        periods: i64,
-    },
-    Reverse(Box<Expr>),
-    Duplicated(Box<Expr>),
-    IsUnique(Box<Expr>),
     Explode(Box<Expr>),
     Filter {
         input: Box<Expr>,
@@ -386,11 +382,19 @@ pub enum Excluded {
 
 impl Expr {
     /// Get Field result of the expression. The schema is the input data.
-    pub(crate) fn to_field(&self, schema: &Schema, ctxt: Context) -> Result<Field> {
+    pub(crate) fn to_field(&self, schema: &Schema, ctxt: Context) -> PolarsResult<Field> {
         // this is not called much and th expression depth is typically shallow
         let mut arena = Arena::with_capacity(5);
-        let root = to_aexpr(self.clone(), &mut arena);
-        arena.get(root).to_field(schema, ctxt, &arena)
+        self.to_field_amortized(schema, ctxt, &mut arena)
+    }
+    pub(crate) fn to_field_amortized(
+        &self,
+        schema: &Schema,
+        ctxt: Context,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> PolarsResult<Field> {
+        let root = to_aexpr(self.clone(), expr_arena);
+        expr_arena.get(root).to_field(schema, ctxt, expr_arena)
     }
 }
 

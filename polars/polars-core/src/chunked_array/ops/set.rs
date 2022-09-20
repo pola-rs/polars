@@ -12,7 +12,7 @@ macro_rules! impl_set_at_idx_with {
         let mut ca_iter = $self.into_iter().enumerate();
 
         while let Some(current_idx) = idx_iter.next() {
-            if current_idx > $self.len() {
+            if current_idx as usize > $self.len() {
                 return Err(PolarsError::ComputeError(
                     format!(
                         "index: {} outside of ChunkedArray with length: {}",
@@ -23,7 +23,7 @@ macro_rules! impl_set_at_idx_with {
                 ));
             }
             while let Some((cnt_idx, opt_val)) = ca_iter.next() {
-                if cnt_idx == current_idx {
+                if cnt_idx == current_idx as usize {
                     $builder.append_option($f(opt_val));
                     break;
                 } else {
@@ -55,11 +55,11 @@ impl<'a, T> ChunkSet<'a, T::Native, T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn set_at_idx<I: IntoIterator<Item = usize>>(
+    fn set_at_idx<I: IntoIterator<Item = IdxSize>>(
         &'a self,
         idx: I,
         value: Option<T::Native>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         if !self.has_validity() {
             if let Some(value) = value {
                 // fast path uses kernel
@@ -77,8 +77,8 @@ where
                     let mut av = self.into_no_null_iter().collect::<Vec<_>>();
                     let data = av.as_mut_slice();
 
-                    idx.into_iter().try_for_each::<_, Result<_>>(|idx| {
-                        let val = data.get_mut(idx).ok_or_else(|| {
+                    idx.into_iter().try_for_each::<_, PolarsResult<_>>(|idx| {
+                        let val = data.get_mut(idx as usize).ok_or_else(|| {
                             PolarsError::ComputeError(
                                 format!("{} out of bounds on array of length: {}", idx, self.len())
                                     .into(),
@@ -94,7 +94,11 @@ where
         self.set_at_idx_with(idx, |_| value)
     }
 
-    fn set_at_idx_with<I: IntoIterator<Item = usize>, F>(&'a self, idx: I, f: F) -> Result<Self>
+    fn set_at_idx_with<I: IntoIterator<Item = IdxSize>, F>(
+        &'a self,
+        idx: I,
+        f: F,
+    ) -> PolarsResult<Self>
     where
         F: Fn(Option<T::Native>) -> Option<T::Native>,
     {
@@ -102,7 +106,7 @@ where
         impl_set_at_idx_with!(self, builder, idx, f)
     }
 
-    fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> Result<Self> {
+    fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> PolarsResult<Self> {
         check_bounds!(self, mask);
 
         // Fast path uses the kernel in polars-arrow
@@ -136,15 +140,19 @@ where
 }
 
 impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
-    fn set_at_idx<I: IntoIterator<Item = usize>>(
+    fn set_at_idx<I: IntoIterator<Item = IdxSize>>(
         &'a self,
         idx: I,
         value: Option<bool>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         self.set_at_idx_with(idx, |_| value)
     }
 
-    fn set_at_idx_with<I: IntoIterator<Item = usize>, F>(&'a self, idx: I, f: F) -> Result<Self>
+    fn set_at_idx_with<I: IntoIterator<Item = IdxSize>, F>(
+        &'a self,
+        idx: I,
+        f: F,
+    ) -> PolarsResult<Self>
     where
         F: Fn(Option<bool>) -> Option<bool>,
     {
@@ -161,14 +169,14 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
         }
 
         for i in idx {
-            let input = if validity.get(i) {
-                Some(values.get(i))
+            let input = if validity.get(i as usize) {
+                Some(values.get(i as usize))
             } else {
                 None
             };
             match f(input) {
-                None => validity.set(i, false),
-                Some(v) => values.set(i, v),
+                None => validity.set(i as usize, false),
+                Some(v) => values.set(i as usize, v),
             }
         }
         let arr = BooleanArray::from_data_default(values.into(), Some(validity.into()));
@@ -179,7 +187,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
         ))
     }
 
-    fn set(&'a self, mask: &BooleanChunked, value: Option<bool>) -> Result<Self> {
+    fn set(&'a self, mask: &BooleanChunked, value: Option<bool>) -> PolarsResult<Self> {
         check_bounds!(self, mask);
         let ca = mask
             .into_iter()
@@ -194,11 +202,11 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
 }
 
 impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
-    fn set_at_idx<I: IntoIterator<Item = usize>>(
+    fn set_at_idx<I: IntoIterator<Item = IdxSize>>(
         &'a self,
         idx: I,
         opt_value: Option<&'a str>,
-    ) -> Result<Self>
+    ) -> PolarsResult<Self>
     where
         Self: Sized,
     {
@@ -207,7 +215,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
 
         for current_idx in idx_iter {
-            if current_idx > self.len() {
+            if current_idx as usize > self.len() {
                 return Err(PolarsError::ComputeError(
                     format!(
                         "index: {} outside of ChunkedArray with length: {}",
@@ -218,7 +226,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
                 ));
             }
             for (cnt_idx, opt_val_self) in &mut ca_iter {
-                if cnt_idx == current_idx {
+                if cnt_idx == current_idx as usize {
                     builder.append_option(opt_value);
                     break;
                 } else {
@@ -235,7 +243,11 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         Ok(ca)
     }
 
-    fn set_at_idx_with<I: IntoIterator<Item = usize>, F>(&'a self, idx: I, f: F) -> Result<Self>
+    fn set_at_idx_with<I: IntoIterator<Item = IdxSize>, F>(
+        &'a self,
+        idx: I,
+        f: F,
+    ) -> PolarsResult<Self>
     where
         Self: Sized,
         F: Fn(Option<&'a str>) -> Option<String>,
@@ -244,7 +256,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         impl_set_at_idx_with!(self, builder, idx, f)
     }
 
-    fn set(&'a self, mask: &BooleanChunked, value: Option<&'a str>) -> Result<Self>
+    fn set(&'a self, mask: &BooleanChunked, value: Option<&'a str>) -> PolarsResult<Self>
     where
         Self: Sized,
     {

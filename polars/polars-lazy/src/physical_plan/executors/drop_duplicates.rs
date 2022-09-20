@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use polars_core::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;
@@ -9,7 +11,7 @@ pub(crate) struct DropDuplicatesExec {
 }
 
 impl Executor for DropDuplicatesExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
@@ -20,9 +22,12 @@ impl Executor for DropDuplicatesExec {
         let subset = self.options.subset.as_ref().map(|v| &***v);
         let keep = self.options.keep_strategy;
 
-        match self.options.maintain_order {
-            true => df.unique_stable(subset, keep),
-            false => df.unique(subset, keep),
-        }
+        state.record(
+            || match self.options.maintain_order {
+                true => df.unique_stable(subset, keep),
+                false => df.unique(subset, keep),
+            },
+            Cow::Borrowed("unique()"),
+        )
     }
 }

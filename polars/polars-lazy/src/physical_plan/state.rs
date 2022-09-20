@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use bitflags::bitflags;
 use parking_lot::Mutex;
 use polars_core::frame::groupby::GroupsProxy;
@@ -6,6 +8,7 @@ use polars_core::prelude::*;
 
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use super::file_cache::FileCache;
+use crate::physical_plan::node_timer::NodeTimer;
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use crate::prelude::file_caching::FileFingerPrint;
 
@@ -14,9 +17,14 @@ pub type GroupsProxyCache = Arc<Mutex<PlHashMap<String, GroupsProxy>>>;
 
 bitflags! {
     pub(super) struct StateFlags: u8 {
+        /// More verbose logging
         const VERBOSE = 0x01;
+        /// Indicates that window expression's [`GroupTuples`] may be cached.
         const CACHE_WINDOW_EXPR = 0x02;
-        const FILTER_NODE = 0x03;
+        /// Indicates that a groupby operations groups may overlap.
+        /// If this is the case, an `explode` will yield more values than rows in original `df`,
+        /// this breaks some assumptions
+        const OVERLAPPING_GROUPS = 0x04;
     }
 }
 
@@ -40,10 +48,10 @@ impl StateFlags {
 /// State/ cache that is maintained during the Execution of the physical plan.
 pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
-    df_cache: Arc<Mutex<PlHashMap<String, DataFrame>>>,
+    df_cache: Arc<Mutex<PlHashMap<usize, DataFrame>>>,
     // cache file reads until all branches got there file, then we delete it
     #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-    pub(super) file_cache: FileCache,
+    pub(crate) file_cache: FileCache,
     pub(super) schema_cache: Option<SchemaRef>,
     /// Used by Window Expression to prevent redundant grouping
     pub(super) group_tuples: GroupsProxyCache,
@@ -53,9 +61,36 @@ pub struct ExecutionState {
     pub(super) branch_idx: usize,
     pub(super) flags: StateFlags,
     pub(super) ext_contexts: Arc<Vec<DataFrame>>,
+    node_timer: Option<NodeTimer>,
 }
 
 impl ExecutionState {
+    /// Toggle this to measure execution times.
+    pub(crate) fn time_nodes(&mut self) {
+        self.node_timer = Some(NodeTimer::new())
+    }
+    pub(super) fn has_node_timer(&self) -> bool {
+        self.node_timer.is_some()
+    }
+
+    pub(crate) fn finish_timer(self) -> PolarsResult<DataFrame> {
+        self.node_timer.unwrap().finish()
+    }
+
+    pub(super) fn record<T, F: FnOnce() -> T>(&self, func: F, name: Cow<'static, str>) -> T {
+        match &self.node_timer {
+            None => func(),
+            Some(timer) => {
+                let start = std::time::Instant::now();
+                let out = func();
+                let end = std::time::Instant::now();
+
+                timer.store(start, end, name.as_ref().to_string());
+                out
+            }
+        }
+    }
+
     /// Partially clones and partially clears state
     pub(super) fn split(&self) -> Self {
         Self {
@@ -68,6 +103,23 @@ impl ExecutionState {
             branch_idx: self.branch_idx,
             flags: self.flags,
             ext_contexts: self.ext_contexts.clone(),
+            node_timer: self.node_timer.clone(),
+        }
+    }
+
+    /// clones and partially clears state
+    pub(super) fn clone(&self) -> Self {
+        Self {
+            df_cache: self.df_cache.clone(),
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            file_cache: self.file_cache.clone(),
+            schema_cache: self.schema_cache.clone(),
+            group_tuples: self.group_tuples.clone(),
+            join_tuples: self.join_tuples.clone(),
+            branch_idx: self.branch_idx,
+            flags: self.flags,
+            ext_contexts: self.ext_contexts.clone(),
+            node_timer: self.node_timer.clone(),
         }
     }
 
@@ -87,6 +139,7 @@ impl ExecutionState {
             branch_idx: 0,
             flags: StateFlags::init(),
             ext_contexts: Default::default(),
+            node_timer: None,
         }
     }
 
@@ -97,15 +150,16 @@ impl ExecutionState {
             flags |= StateFlags::VERBOSE;
         }
         Self {
-            df_cache: Arc::new(Mutex::new(PlHashMap::default())),
+            df_cache: Default::default(),
             schema_cache: Default::default(),
             #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
             file_cache: FileCache::new(None),
-            group_tuples: Arc::new(Mutex::new(PlHashMap::default())),
-            join_tuples: Arc::new(Mutex::new(PlHashMap::default())),
+            group_tuples: Default::default(),
+            join_tuples: Default::default(),
             branch_idx: 0,
             flags: StateFlags::init(),
             ext_contexts: Default::default(),
+            node_timer: None,
         }
     }
     pub(crate) fn set_schema(&mut self, schema: SchemaRef) {
@@ -131,13 +185,13 @@ impl ExecutionState {
     }
 
     /// Check if we have DataFrame in cache
-    pub(crate) fn cache_hit(&self, key: &str) -> Option<DataFrame> {
+    pub(crate) fn cache_hit(&self, key: &usize) -> Option<DataFrame> {
         let guard = self.df_cache.lock();
         guard.get(key).cloned()
     }
 
     /// Store DataFrame in cache.
-    pub(crate) fn store_cache(&self, key: String, df: DataFrame) {
+    pub(crate) fn store_cache(&self, key: usize, df: DataFrame) {
         let mut guard = self.df_cache.lock();
         guard.insert(key, df);
     }
@@ -152,10 +206,19 @@ impl ExecutionState {
         lock.clear();
     }
 
+    /// Indicates that window expression's [`GroupTuples`] may be cached.
     pub(super) fn cache_window(&self) -> bool {
         self.flags.contains(StateFlags::CACHE_WINDOW_EXPR)
     }
 
+    /// Indicates that a groupby operations groups may overlap.
+    /// If this is the case, an `explode` will yield more values than rows in original `df`,
+    /// this breaks some assumptions
+    pub(super) fn overlapping_groups(&self) -> bool {
+        self.flags.contains(StateFlags::OVERLAPPING_GROUPS)
+    }
+
+    /// More verbose logging
     pub(super) fn verbose(&self) -> bool {
         self.flags.contains(StateFlags::VERBOSE)
     }

@@ -3,7 +3,7 @@ use polars_core::prelude::*;
 use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{aexpr_to_root_nodes, has_aexpr};
+use crate::utils::{aexpr_to_leaf_nodes, has_aexpr};
 
 pub(crate) struct AggregatePushdown {
     accumulated_projections: Vec<Node>,
@@ -36,7 +36,7 @@ impl AggregatePushdown {
         if !self.processed_state
             && expr.iter().all(|node| {
                 has_aexpr(*node, expr_arena, |e| matches!(e, AExpr::Agg(_))) && {
-                    let roots = aexpr_to_root_nodes(*node, expr_arena);
+                    let roots = aexpr_to_leaf_nodes(*node, expr_arena);
                     roots.len() == 1
                 }
             })

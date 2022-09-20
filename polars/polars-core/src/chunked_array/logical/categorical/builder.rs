@@ -5,9 +5,10 @@ use arrow::array::*;
 use hashbrown::hash_map::RawEntryMut;
 use polars_arrow::trusted_len::PushUnchecked;
 
+use crate::datatypes::PlHashMap;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::*;
-use crate::{datatypes::PlHashMap, use_string_cache, StrHashGlobal, StringCache, POOL};
+use crate::{using_string_cache, StrHashGlobal, StringCache, POOL};
 
 pub enum RevMappingBuilder {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
@@ -57,7 +58,14 @@ pub enum RevMapping {
 impl Default for RevMapping {
     fn default() -> Self {
         let slice: &[Option<&str>] = &[];
-        RevMapping::Local(Utf8Array::<i64>::from(slice))
+        let cats = Utf8Array::<i64>::from(slice);
+        if using_string_cache() {
+            let cache = &mut crate::STRING_CACHE.lock_map();
+            let id = cache.uuid;
+            RevMapping::Global(Default::default(), cats, id)
+        } else {
+            RevMapping::Local(cats)
+        }
     }
 }
 
@@ -381,7 +389,7 @@ impl CategoricalChunkedBuilder {
     where
         I: IntoIterator<Item = Option<&'a str>>,
     {
-        if use_string_cache() {
+        if using_string_cache() {
             self.build_global_map_contention(i)
         } else {
             let _ = self.build_local_map(i, false);
@@ -414,7 +422,7 @@ mod test {
     use crate::{reset_string_cache, toggle_string_cache, SINGLE_LOCK};
 
     #[test]
-    fn test_categorical_rev() -> Result<()> {
+    fn test_categorical_rev() -> PolarsResult<()> {
         let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
         let slice = &[

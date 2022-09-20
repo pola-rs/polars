@@ -50,9 +50,9 @@ where
 
 impl Schema {
     // could not implement TryFrom
-    pub fn try_from_fallible<I>(flds: I) -> Result<Self>
+    pub fn try_from_fallible<I>(flds: I) -> PolarsResult<Self>
     where
-        I: IntoIterator<Item = Result<Field>>,
+        I: IntoIterator<Item = PolarsResult<Field>>,
     {
         let iter = flds.into_iter();
         let mut map: PlIndexMap<_, _> =
@@ -181,7 +181,7 @@ pub trait IndexOfSchema: Debug {
     /// Get the index of column by name.
     fn index_of(&self, name: &str) -> Option<usize>;
 
-    fn try_index_of(&self, name: &str) -> Result<usize> {
+    fn try_index_of(&self, name: &str) -> PolarsResult<usize> {
         self.index_of(name).ok_or_else(|| {
             PolarsError::SchemaMisMatch(
                 format!(

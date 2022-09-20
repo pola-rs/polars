@@ -25,6 +25,7 @@ Attributes
    Series.shape
    Series.str
    Series.time_unit
+   Series.flags
 
 Conversion
 ----------
@@ -50,6 +51,8 @@ Aggregation
     Series.median
     Series.min
     Series.mode
+    Series.nan_max
+    Series.nan_min
     Series.product
     Series.quantile
     Series.std
@@ -142,6 +145,7 @@ Computations
     Series.rolling_std
     Series.rolling_sum
     Series.rolling_var
+    Series.search_sorted
     Series.sign
     Series.sin
     Series.sinh
@@ -158,11 +162,14 @@ Manipulation/ selection
 
     Series.alias
     Series.append
+    Series.arg_sort
     Series.argsort
     Series.cast
     Series.ceil
     Series.cleared
     Series.clip
+    Series.clip_max
+    Series.clip_min
     Series.clone
     Series.drop_nans
     Series.drop_nulls
@@ -193,6 +200,7 @@ Manipulation/ selection
     Series.take
     Series.take_every
     Series.to_dummies
+    Series.top_k
     Series.view
     Series.zip_with
 
@@ -246,6 +254,7 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.weekday
     DateTimeNameSpace.with_time_unit
     DateTimeNameSpace.year
+    DateTimeNameSpace.iso_year
 
 
 Strings
@@ -277,6 +286,7 @@ The following methods are available under the `Series.str` attribute.
     StringNameSpace.slice
     StringNameSpace.split
     StringNameSpace.split_exact
+    StringNameSpace.splitn
     StringNameSpace.starts_with
     StringNameSpace.strip
     StringNameSpace.strptime

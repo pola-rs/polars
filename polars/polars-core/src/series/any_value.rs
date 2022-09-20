@@ -64,7 +64,7 @@ impl Series {
         name: &str,
         av: &[AnyValue<'a>],
         dtype: &DataType,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         let mut s = match dtype {
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => any_values_to_primitive::<Int8Type>(av).into_series(),
@@ -135,7 +135,7 @@ impl Series {
         Ok(s)
     }
 
-    pub fn from_any_values<'a>(name: &str, av: &[AnyValue<'a>]) -> Result<Series> {
+    pub fn from_any_values<'a>(name: &str, av: &[AnyValue<'a>]) -> PolarsResult<Series> {
         match av.iter().find(|av| !matches!(av, AnyValue::Null)) {
             None => Ok(Series::full_null(name, av.len(), &DataType::Int32)),
             Some(av_) => {

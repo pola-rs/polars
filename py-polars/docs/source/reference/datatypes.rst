@@ -6,7 +6,7 @@ Data Types
 .. autosummary::
     :toctree: api/
     :nosignatures:
-    
+
     DataType
 
 Numeric
@@ -56,6 +56,7 @@ Other
     Null
     Object
     Utf8
+    Unknown
 
 Functions
 ~~~~~~~~~

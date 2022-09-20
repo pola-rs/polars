@@ -1,7 +1,8 @@
+#[cfg(feature = "date_offset")]
 use super::*;
 
 #[cfg(feature = "date_offset")]
-pub(super) fn date_offset(s: Series, offset: Duration) -> Result<Series> {
+pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
     match s.dtype().clone() {
         DataType::Date => {
             let s = s

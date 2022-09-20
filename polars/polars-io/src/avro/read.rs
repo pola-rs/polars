@@ -16,7 +16,7 @@ use crate::prelude::*;
 /// use polars_io::avro::AvroReader;
 /// use polars_io::SerReader;
 ///
-/// fn example() -> Result<DataFrame> {
+/// fn example() -> PolarsResult<DataFrame> {
 ///     let file = File::open("file.avro").expect("file not found");
 ///
 ///     AvroReader::new(file)
@@ -34,13 +34,13 @@ pub struct AvroReader<R> {
 
 impl<R: Read + Seek> AvroReader<R> {
     /// Get schema of the Avro File
-    pub fn schema(&mut self) -> Result<Schema> {
+    pub fn schema(&mut self) -> PolarsResult<Schema> {
         let schema = self.arrow_schema()?;
         Ok((&schema.fields).into())
     }
 
     /// Get arrow schema of the avro File, this is faster than a polars schema.
-    pub fn arrow_schema(&mut self) -> Result<ArrowSchema> {
+    pub fn arrow_schema(&mut self) -> PolarsResult<ArrowSchema> {
         let metadata =
             avro::avro_schema::read::read_metadata(&mut self.reader).map_err(convert_err)?;
         let schema = read::infer_schema(&metadata.record)?;
@@ -95,13 +95,13 @@ where
         self
     }
 
-    fn finish(mut self) -> Result<DataFrame> {
+    fn finish(mut self) -> PolarsResult<DataFrame> {
         let rechunk = self.rechunk;
         let metadata =
             avro::avro_schema::read::read_metadata(&mut self.reader).map_err(convert_err)?;
         let schema = read::infer_schema(&metadata.record)?;
 
-        if let Some(columns) = self.columns {
+        if let Some(columns) = &self.columns {
             self.projection = Some(columns_to_projection(columns, &schema)?);
         }
 

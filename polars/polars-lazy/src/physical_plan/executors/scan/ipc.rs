@@ -10,7 +10,7 @@ pub struct IpcExec {
 }
 
 impl IpcExec {
-    fn read(&mut self, verbose: bool) -> Result<DataFrame> {
+    fn read(&mut self, verbose: bool) -> PolarsResult<DataFrame> {
         let (file, projection, n_rows, aggregate, predicate) = prepare_scan_args(
             &self.path,
             &self.predicate,
@@ -30,7 +30,7 @@ impl IpcExec {
 }
 
 impl Executor for IpcExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let finger_print = FileFingerPrint {
             path: self.path.clone(),
             predicate: self
@@ -39,10 +39,27 @@ impl Executor for IpcExec {
                 .map(|ae| ae.as_expression().unwrap().clone()),
             slice: (0, self.options.n_rows),
         };
-        state
-            .file_cache
-            .read(finger_print, self.options.file_counter, &mut || {
-                self.read(state.verbose())
-            })
+
+        let profile_name = if state.has_node_timer() {
+            let mut ids = vec![self.path.to_string_lossy().to_string()];
+            if self.predicate.is_some() {
+                ids.push("predicate".to_string())
+            }
+            let name = column_delimited("ipc".to_string(), &ids);
+            Cow::Owned(name)
+        } else {
+            Cow::Borrowed("")
+        };
+
+        state.record(
+            || {
+                state
+                    .file_cache
+                    .read(finger_print, self.options.file_counter, &mut || {
+                        self.read(state.verbose())
+                    })
+            },
+            profile_name,
+        )
     }
 }

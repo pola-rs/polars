@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use parking_lot::Mutex;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
-use polars_core::utils::get_supertype;
+use polars_core::utils::try_get_supertype;
 #[cfg(feature = "csv-file")]
 use polars_io::csv::utils::infer_file_schema;
 use polars_io::csv::CsvEncoding;
@@ -19,12 +19,17 @@ use polars_io::{
     csv::NullValues,
 };
 
+use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::projection::rewrite_projections;
+use crate::logical_plan::schema::det_join_schema;
 use crate::prelude::*;
 use crate::utils;
 use crate::utils::{combine_predicates_expr, has_expr};
 
-pub(crate) fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> Result<(Vec<Expr>, Schema)> {
+pub(crate) fn prepare_projection(
+    exprs: Vec<Expr>,
+    schema: &Schema,
+) -> PolarsResult<(Vec<Expr>, Schema)> {
     let exprs = rewrite_projections(exprs, schema, &[]);
     let schema = utils::expressions_to_schema(&exprs, schema, Context::Default)?;
     Ok((exprs, schema))
@@ -61,7 +66,7 @@ impl LogicalPlanBuilder {
         skip_rows: Option<usize>,
         n_rows: Option<usize>,
         name: &'static str,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         let schema = Arc::new(match schema {
             Some(s) => s,
             None => function.schema(infer_schema_length)?,
@@ -94,7 +99,7 @@ impl LogicalPlanBuilder {
         row_count: Option<RowCount>,
         rechunk: bool,
         low_memory: bool,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         use polars_io::SerReader as _;
 
         let path = path.into();
@@ -122,7 +127,7 @@ impl LogicalPlanBuilder {
 
     #[cfg(feature = "ipc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
-    pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: IpcScanOptions) -> Result<Self> {
+    pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: IpcScanOptions) -> PolarsResult<Self> {
         use polars_io::SerReader as _;
 
         let path = path.into();
@@ -162,7 +167,7 @@ impl LogicalPlanBuilder {
         encoding: CsvEncoding,
         row_count: Option<RowCount>,
         parse_dates: bool,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         let path = path.into();
         let mut file = std::fs::File::open(&path)?;
         let mut magic_nr = [0u8; 2];
@@ -185,6 +190,7 @@ impl LogicalPlanBuilder {
                 has_header,
                 schema_overwrite,
                 &mut skip_rows,
+                skip_rows_after_header,
                 comment_char,
                 quote_char,
                 eol_char,
@@ -224,8 +230,12 @@ impl LogicalPlanBuilder {
     }
 
     pub fn cache(self) -> Self {
+        let input = Box::new(self.0);
+        let id = input.as_ref() as *const LogicalPlan as usize;
         LogicalPlan::Cache {
-            input: Box::new(self.0),
+            input,
+            id,
+            count: usize::MAX,
         }
         .into()
     }
@@ -297,9 +307,13 @@ impl LogicalPlanBuilder {
         let mut new_schema = (**schema).clone();
         let (exprs, _) = try_delayed!(prepare_projection(exprs, &schema), &self.0, into);
 
+        let mut arena = Arena::with_capacity(8);
         for e in &exprs {
-            let field = e.to_field(&schema, Context::Default).unwrap();
+            let field = e
+                .to_field_amortized(&schema, Context::Default, &mut arena)
+                .unwrap();
             new_schema.with_column(field.name().to_string(), field.data_type().clone());
+            arena.clear();
         }
 
         LogicalPlan::HStack {
@@ -390,7 +404,7 @@ impl LogicalPlanBuilder {
             let dtype = try_delayed!(
                 current_schema
                     .get(name)
-                    .ok_or_else(|| PolarsError::NotFound(name.clone())),
+                    .ok_or_else(|| PolarsError::NotFound(name.to_string().into())),
                 self.0,
                 into
             );
@@ -422,6 +436,7 @@ impl LogicalPlanBuilder {
         LogicalPlan::DataFrameScan {
             df: Arc::new(df),
             schema,
+            output_schema: None,
             projection: None,
             selection: None,
         }
@@ -510,35 +525,34 @@ impl LogicalPlanBuilder {
     ) -> Self {
         let schema_left = try_delayed!(self.0.schema(), &self.0, into);
         let schema_right = try_delayed!(other.schema(), &self.0, into);
+        let mut arena = Arena::with_capacity(8);
+        let right_names = try_delayed!(
+            right_on
+                .iter()
+                .map(|e| {
+                    let name = e
+                        .to_field_amortized(&schema_right, Context::Default, &mut arena)
+                        .map(|field| field.name);
+                    arena.clear();
+                    name
+                })
+                .collect::<PolarsResult<Vec<_>>>(),
+            &self.0,
+            into
+        );
 
-        // column names of left table
-        let mut names: PlHashSet<&str> = PlHashSet::default();
-        let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len());
+        let schema = try_delayed!(
+            det_join_schema(
+                &schema_left,
+                &schema_right,
+                &left_on,
+                &right_names,
+                &options
+            ),
+            self.0,
+            into
+        );
 
-        for (name, dtype) in schema_left.iter() {
-            names.insert(name);
-            new_schema.with_column(name.to_string(), dtype.clone())
-        }
-
-        let right_names: PlHashSet<_> = right_on
-            .iter()
-            .map(|e| utils::expr_output_name(e).expect("could not find name"))
-            .collect();
-
-        for (name, dtype) in schema_right.iter() {
-            if !right_names.iter().any(|s| s.as_ref() == name) {
-                if names.contains(&**name) {
-                    let new_name = format!("{}{}", name, options.suffix.as_ref());
-                    new_schema.with_column(new_name, dtype.clone())
-                } else {
-                    new_schema.with_column(name.to_string(), dtype.clone())
-                }
-            }
-        }
-
-        let schema = Arc::new(new_schema);
-
-        drop(names);
         LogicalPlan::Join {
             input_left: Box::new(self.0),
             input_right: Box::new(other),
@@ -549,6 +563,14 @@ impl LogicalPlanBuilder {
         }
         .into()
     }
+    pub(crate) fn map_private(self, function: FunctionNode) -> Self {
+        LogicalPlan::MapFunction {
+            input: Box::new(self.0),
+            function,
+        }
+        .into()
+    }
+
     pub fn map<F>(
         self,
         function: F,
@@ -559,17 +581,17 @@ impl LogicalPlanBuilder {
     where
         F: DataFrameUdf + 'static,
     {
-        let options = LogicalPlanUdfOptions {
-            predicate_pd: optimizations.predicate_pushdown,
-            projection_pd: optimizations.projection_pushdown,
-            fmt_str: name,
-        };
+        let function = Arc::new(function);
 
-        LogicalPlan::Udf {
+        LogicalPlan::MapFunction {
             input: Box::new(self.0),
-            function: Arc::new(function),
-            options,
-            schema,
+            function: FunctionNode::Opaque {
+                function,
+                schema,
+                predicate_pd: optimizations.predicate_pushdown,
+                projection_pd: optimizations.projection_pushdown,
+                fmt_str: name,
+            },
         }
         .into()
     }
@@ -604,7 +626,7 @@ pub(crate) fn det_melt_schema(args: &MeltArgs, input_schema: &Schema) -> SchemaR
             if !id_vars.contains(name) {
                 match &st {
                     None => st = Some(dtype.clone()),
-                    Some(st_) => st = Some(get_supertype(st_, dtype).unwrap()),
+                    Some(st_) => st = Some(try_get_supertype(st_, dtype).unwrap()),
                 }
             }
         }
@@ -613,7 +635,7 @@ pub(crate) fn det_melt_schema(args: &MeltArgs, input_schema: &Schema) -> SchemaR
             let dtype = input_schema.get(name).unwrap();
             match &st {
                 None => st = Some(dtype.clone()),
-                Some(st_) => st = Some(get_supertype(st_, dtype).unwrap()),
+                Some(st_) => st = Some(try_get_supertype(st_, dtype).unwrap()),
             }
         }
     }

@@ -96,13 +96,13 @@ macro_rules! is_unique_duplicated {
 
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
-    fn unique(&self) -> Result<ChunkedArray<ObjectType<T>>> {
+    fn unique(&self) -> PolarsResult<ChunkedArray<ObjectType<T>>> {
         Err(PolarsError::InvalidOperation(
             "unique not supported for object".into(),
         ))
     }
 
-    fn arg_unique(&self) -> Result<IdxCa> {
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
         Err(PolarsError::InvalidOperation(
             "unique not supported for object".into(),
         ))
@@ -177,7 +177,7 @@ where
     T::Native: Hash + Eq + Ord,
     ChunkedArray<T>: IntoSeries,
 {
-    fn unique(&self) -> Result<Self> {
+    fn unique(&self) -> PolarsResult<Self> {
         // prevent stackoverflow repeated sorted.unique call
         if self.is_empty() {
             return Ok(self.clone());
@@ -194,19 +194,19 @@ where
         }
     }
 
-    fn arg_unique(&self) -> Result<IdxCa> {
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
         Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
     }
 
-    fn is_unique(&self) -> Result<BooleanChunked> {
+    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
         is_unique_duplicated!(self, false)
     }
 
-    fn is_duplicated(&self) -> Result<BooleanChunked> {
+    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
         is_unique_duplicated!(self, true)
     }
 
-    fn n_unique(&self) -> Result<usize> {
+    fn n_unique(&self) -> PolarsResult<usize> {
         if self.null_count() > 0 {
             Ok(fill_set(self.into_iter().flatten()).len() + 1)
         } else {
@@ -215,13 +215,13 @@ where
     }
 
     #[cfg(feature = "mode")]
-    fn mode(&self) -> Result<Self> {
+    fn mode(&self) -> PolarsResult<Self> {
         Ok(mode(self))
     }
 }
 
 impl ChunkUnique<Utf8Type> for Utf8Chunked {
-    fn unique(&self) -> Result<Self> {
+    fn unique(&self) -> PolarsResult<Self> {
         match self.null_count() {
             0 => {
                 let mut set =
@@ -248,18 +248,18 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
         }
     }
 
-    fn arg_unique(&self) -> Result<IdxCa> {
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
         Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
     }
 
-    fn is_unique(&self) -> Result<BooleanChunked> {
+    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
         is_unique_duplicated!(self, false)
     }
-    fn is_duplicated(&self) -> Result<BooleanChunked> {
+    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
         is_unique_duplicated!(self, true)
     }
 
-    fn n_unique(&self) -> Result<usize> {
+    fn n_unique(&self) -> PolarsResult<usize> {
         if self.null_count() > 0 {
             Ok(fill_set(self.into_iter().flatten()).len() + 1)
         } else {
@@ -268,13 +268,13 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     }
 
     #[cfg(feature = "mode")]
-    fn mode(&self) -> Result<Self> {
+    fn mode(&self) -> PolarsResult<Self> {
         Ok(mode(self))
     }
 }
 
 impl ChunkUnique<BooleanType> for BooleanChunked {
-    fn unique(&self) -> Result<Self> {
+    fn unique(&self) -> PolarsResult<Self> {
         // can be None, Some(true), Some(false)
         let mut unique = Vec::with_capacity(3);
         for v in self {
@@ -288,52 +288,52 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
         Ok(ChunkedArray::new(self.name(), &unique))
     }
 
-    fn arg_unique(&self) -> Result<IdxCa> {
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
         Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
     }
 
-    fn is_unique(&self) -> Result<BooleanChunked> {
+    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
         is_unique_duplicated!(self, false)
     }
-    fn is_duplicated(&self) -> Result<BooleanChunked> {
+    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
         is_unique_duplicated!(self, true)
     }
 }
 
 impl ChunkUnique<Float32Type> for Float32Chunked {
-    fn unique(&self) -> Result<ChunkedArray<Float32Type>> {
+    fn unique(&self) -> PolarsResult<ChunkedArray<Float32Type>> {
         let ca = self.bit_repr_small();
         let ca = ca.unique()?;
         Ok(ca.reinterpret_float())
     }
 
-    fn arg_unique(&self) -> Result<IdxCa> {
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.bit_repr_small().arg_unique()
     }
 
-    fn is_unique(&self) -> Result<BooleanChunked> {
+    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
         self.bit_repr_small().is_unique()
     }
-    fn is_duplicated(&self) -> Result<BooleanChunked> {
+    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
         self.bit_repr_small().is_duplicated()
     }
 }
 
 impl ChunkUnique<Float64Type> for Float64Chunked {
-    fn unique(&self) -> Result<ChunkedArray<Float64Type>> {
+    fn unique(&self) -> PolarsResult<ChunkedArray<Float64Type>> {
         let ca = self.bit_repr_large();
         let ca = ca.unique()?;
         Ok(ca.reinterpret_float())
     }
 
-    fn arg_unique(&self) -> Result<IdxCa> {
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.bit_repr_large().arg_unique()
     }
 
-    fn is_unique(&self) -> Result<BooleanChunked> {
+    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
         self.bit_repr_large().is_unique()
     }
-    fn is_duplicated(&self) -> Result<BooleanChunked> {
+    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
         self.bit_repr_large().is_duplicated()
     }
 }
@@ -369,7 +369,7 @@ mod is_first {
     where
         T: PolarsNumericType,
     {
-        fn is_first(&self) -> Result<BooleanChunked> {
+        fn is_first(&self) -> PolarsResult<BooleanChunked> {
             use DataType::*;
             match self.dtype() {
                 // cast types to reduce compiler bloat
@@ -391,7 +391,7 @@ mod is_first {
     }
 
     impl IsFirst<Utf8Type> for Utf8Chunked {
-        fn is_first(&self) -> Result<BooleanChunked> {
+        fn is_first(&self) -> PolarsResult<BooleanChunked> {
             let mut unique = PlHashSet::new();
             let chunks = self
                 .downcast_iter()

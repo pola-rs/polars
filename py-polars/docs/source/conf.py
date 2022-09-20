@@ -9,9 +9,12 @@
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
-#
+
+import datetime
+import inspect
 import os
 import sys
+import warnings
 
 # add polars directory
 sys.path.insert(0, os.path.abspath("../.."))
@@ -19,8 +22,8 @@ sys.path.insert(0, os.path.abspath("../.."))
 # -- Project information -----------------------------------------------------
 
 project = "Polars"
-copyright = "2021, Ritchie Vink"
 author = "Ritchie Vink"
+copyright = f"{datetime.date.today().year}, {author}"
 
 
 # -- General configuration ---------------------------------------------------
@@ -32,13 +35,14 @@ extensions = [
     "numpydoc",  # numpy docstrings
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
+    "sphinx.ext.coverage",
     "sphinx.ext.doctest",
     "sphinx.ext.extlinks",
-    "sphinx.ext.todo",
-    "sphinx.ext.intersphinx",
-    "sphinx.ext.coverage",
-    "sphinx.ext.mathjax",
     "sphinx.ext.ifconfig",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.linkcode",
+    "sphinx.ext.mathjax",
+    "sphinx.ext.todo",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -54,8 +58,7 @@ exclude_patterns = []
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-#
-# html_theme = 'alabaster'
+
 html_theme = "pydata_sphinx_theme"
 
 # Add any paths that contain custom static files (such as style sheets) here,
@@ -63,6 +66,8 @@ html_theme = "pydata_sphinx_theme"
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 html_css_files = ["css/custom.css"]  # relative to html_static_path
+
+html_show_sourcelink = False
 
 html_logo = "../img/polars_logo.png"
 autosummary_generate = True
@@ -82,4 +87,85 @@ html_theme_options = {
             "icon": "fab fa-github-square",
         },
     ],
+    "favicons": [
+        {
+            "rel": "icon",
+            "sizes": "32x32",
+            "href": "https://raw.githubusercontent.com/pola-rs/polars-static/master/icons/favicon-32x32.png",  # noqa: E501
+        },
+        {
+            "rel": "apple-touch-icon",
+            "sizes": "180x180",
+            "href": "https://raw.githubusercontent.com/pola-rs/polars-static/master/icons/touchicon-180x180.png",  # noqa: E501
+        },
+    ],
 }
+
+intersphinx_mapping = {
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "pandas": ("https://pandas.pydata.org/docs/", None),
+    "pyarrow": ("https://arrow.apache.org/docs/", None),
+    "python": ("https://docs.python.org/3", None),
+}
+
+
+def linkcode_resolve(domain, info):
+    """
+    Determine the URL corresponding to Python object.
+
+    Based on pandas equivalent:
+    https://github.com/pandas-dev/pandas/blob/main/doc/source/conf.py#L629-L686
+    """
+    if domain != "py":
+        return None
+
+    modname = info["module"]
+    fullname = info["fullname"]
+
+    submod = sys.modules.get(modname)
+    if submod is None:
+        return None
+
+    obj = submod
+    for part in fullname.split("."):
+        try:
+            with warnings.catch_warnings():
+                # Accessing deprecated objects will generate noisy warnings
+                warnings.simplefilter("ignore", FutureWarning)
+                obj = getattr(obj, part)
+        except AttributeError:
+            return None
+
+    try:
+        fn = inspect.getsourcefile(inspect.unwrap(obj))
+    except TypeError:
+        try:  # property
+            fn = inspect.getsourcefile(inspect.unwrap(obj.fget))
+        except (AttributeError, TypeError):
+            fn = None
+    if not fn:
+        return None
+
+    try:
+        source, lineno = inspect.getsourcelines(obj)
+    except TypeError:
+        try:  # property
+            source, lineno = inspect.getsourcelines(obj.fget)
+        except (AttributeError, TypeError):
+            lineno = None
+    except OSError:
+        lineno = None
+
+    if lineno:
+        linespec = f"#L{lineno}-L{lineno + len(source) - 1}"
+    else:
+        linespec = ""
+
+    conf_dir_path = os.path.dirname(os.path.realpath(__file__))
+    polars_root = os.path.abspath(f"{conf_dir_path}/../../polars")
+
+    fn = os.path.relpath(fn, start=polars_root)
+
+    return (
+        f"https://github.com/pola-rs/polars/blob/master/py-polars/polars/{fn}{linespec}"
+    )

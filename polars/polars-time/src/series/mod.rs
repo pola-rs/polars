@@ -123,7 +123,7 @@ impl AsSeries for Series {
 pub trait TemporalMethods: AsSeries {
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
-    fn hour(&self) -> Result<UInt32Chunked> {
+    fn hour(&self) -> PolarsResult<UInt32Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-datetime")]
@@ -138,7 +138,7 @@ pub trait TemporalMethods: AsSeries {
 
     /// Extract minute from underlying NaiveDateTime representation.
     /// Returns the minute number from 0 to 59.
-    fn minute(&self) -> Result<UInt32Chunked> {
+    fn minute(&self) -> PolarsResult<UInt32Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-datetime")]
@@ -153,7 +153,7 @@ pub trait TemporalMethods: AsSeries {
 
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the second number from 0 to 59.
-    fn second(&self) -> Result<UInt32Chunked> {
+    fn second(&self) -> PolarsResult<UInt32Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-datetime")]
@@ -168,7 +168,7 @@ pub trait TemporalMethods: AsSeries {
 
     /// Returns the number of nanoseconds since the whole non-leap second.
     /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
-    fn nanosecond(&self) -> Result<UInt32Chunked> {
+    fn nanosecond(&self) -> PolarsResult<UInt32Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-datetime")]
@@ -185,7 +185,7 @@ pub trait TemporalMethods: AsSeries {
     /// Returns the day of month starting from 1.
     ///
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
-    fn day(&self) -> Result<UInt32Chunked> {
+    fn day(&self) -> PolarsResult<UInt32Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
@@ -198,7 +198,7 @@ pub trait TemporalMethods: AsSeries {
         }
     }
     /// Returns the weekday number where monday = 0 and sunday = 6
-    fn weekday(&self) -> Result<UInt32Chunked> {
+    fn weekday(&self) -> PolarsResult<UInt32Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
@@ -213,7 +213,7 @@ pub trait TemporalMethods: AsSeries {
 
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
-    fn week(&self) -> Result<UInt32Chunked> {
+    fn week(&self) -> PolarsResult<UInt32Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
@@ -229,7 +229,7 @@ pub trait TemporalMethods: AsSeries {
     /// Returns the day of year starting from 1.
     ///
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
-    fn ordinal_day(&self) -> Result<UInt32Chunked> {
+    fn ordinal_day(&self) -> PolarsResult<UInt32Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
@@ -242,9 +242,37 @@ pub trait TemporalMethods: AsSeries {
         }
     }
 
-    /// Extract month from underlying NaiveDateTime representation.
+    /// Extract year from underlying NaiveDateTime representation.
     /// Returns the year number in the calendar date.
-    fn year(&self) -> Result<Int32Chunked> {
+    fn year(&self) -> PolarsResult<Int32Chunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => s.date().map(|ca| ca.year()),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.year()),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", s.dtype()).into(),
+            )),
+        }
+    }
+
+    fn iso_year(&self) -> PolarsResult<Int32Chunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => s.date().map(|ca| ca.iso_year()),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.iso_year()),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", s.dtype()).into(),
+            )),
+        }
+    }
+
+    /// Extract ordinal year from underlying NaiveDateTime representation.
+    /// Returns the year number in the calendar date.
+    fn ordinal_year(&self) -> PolarsResult<Int32Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
@@ -259,7 +287,7 @@ pub trait TemporalMethods: AsSeries {
 
     /// Extract quarter from underlying NaiveDateTime representation.
     /// Quarters range from 1 to 4.
-    fn quarter(&self) -> Result<UInt32Chunked> {
+    fn quarter(&self) -> PolarsResult<UInt32Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
@@ -276,7 +304,7 @@ pub trait TemporalMethods: AsSeries {
     /// Returns the month number starting from 1.
     ///
     /// The return value ranges from 1 to 12.
-    fn month(&self) -> Result<UInt32Chunked> {
+    fn month(&self) -> PolarsResult<UInt32Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
@@ -290,7 +318,7 @@ pub trait TemporalMethods: AsSeries {
     }
 
     /// Format Date/Datetimewith a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    fn strftime(&self, fmt: &str) -> Result<Series> {
+    fn strftime(&self, fmt: &str) -> PolarsResult<Series> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
@@ -307,7 +335,7 @@ pub trait TemporalMethods: AsSeries {
 
     #[cfg(all(feature = "dtype-date", feature = "dtype-datetime"))]
     /// Convert date(time) object to timestamp in [`TimeUnit`].
-    fn timestamp(&self, tu: TimeUnit) -> Result<Int64Chunked> {
+    fn timestamp(&self, tu: TimeUnit) -> PolarsResult<Int64Chunked> {
         let s = self.as_series();
         s.cast(&DataType::Datetime(tu, None))
             .map(|s| s.datetime().unwrap().deref().clone())

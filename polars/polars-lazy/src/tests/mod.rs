@@ -2,6 +2,8 @@
 mod aggregations;
 #[cfg(feature = "test")]
 mod arity;
+#[cfg(all(feature = "test", feature = "strings", feature = "cse"))]
+mod cse;
 #[cfg(feature = "parquet")]
 mod io;
 #[cfg(feature = "test")]
@@ -17,6 +19,12 @@ mod queries;
 #[cfg(feature = "strings")]
 mod tpch;
 
+fn get_arenas() -> (Arena<AExpr>, Arena<ALogicalPlan>) {
+    let expr_arena = Arena::with_capacity(16);
+    let lp_arena = Arena::with_capacity(8);
+    (expr_arena, lp_arena)
+}
+
 fn load_df() -> DataFrame {
     df!("a" => &[1, 2, 3, 4, 5],
                  "b" => &["a", "a", "b", "c", "c"],
@@ -27,7 +35,6 @@ fn load_df() -> DataFrame {
 
 use std::io::Cursor;
 use std::iter::FromIterator;
-use std::sync::Mutex;
 
 use optimization_checks::*;
 use polars_core::chunked_array::builder::get_list_builder;
@@ -51,12 +58,15 @@ static FOODS_CSV: &str = "../../examples/datasets/foods1.csv";
 static FOODS_IPC: &str = "../../examples/datasets/foods1.ipc";
 static FOODS_PARQUET: &str = "../../examples/datasets/foods1.parquet";
 
+#[cfg(feature = "csv-file")]
 fn scan_foods_csv() -> LazyFrame {
-    LazyCsvReader::new(FOODS_CSV.to_string()).finish().unwrap()
+    LazyCsvReader::new(FOODS_CSV).finish().unwrap()
 }
 
+#[cfg(feature = "ipc")]
 fn scan_foods_ipc() -> LazyFrame {
-    LazyFrame::scan_ipc(FOODS_IPC.to_string(), Default::default()).unwrap()
+    init_files();
+    LazyFrame::scan_ipc(FOODS_IPC, Default::default()).unwrap()
 }
 
 fn init_files() {
@@ -89,7 +99,7 @@ fn init_files() {
 #[cfg(feature = "parquet")]
 fn scan_foods_parquet(parallel: bool) -> LazyFrame {
     init_files();
-    let out_path = FOODS_PARQUET.to_string();
+    let out_path = FOODS_PARQUET;
     let parallel = if parallel {
         ParallelStrategy::Auto
     } else {

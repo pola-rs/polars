@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use polars_core::prelude::*;
 use polars_io::RowCount;
 
@@ -25,7 +27,7 @@ impl Default for ScanArgsIpc {
 }
 
 impl LazyFrame {
-    fn scan_ipc_impl(path: String, args: ScanArgsIpc) -> Result<Self> {
+    fn scan_ipc_impl(path: impl AsRef<Path>, args: ScanArgsIpc) -> PolarsResult<Self> {
         let options = IpcScanOptions {
             n_rows: args.n_rows,
             cache: args.cache,
@@ -35,7 +37,9 @@ impl LazyFrame {
             memmap: args.memmap,
         };
         let row_count = args.row_count;
-        let mut lf: LazyFrame = LogicalPlanBuilder::scan_ipc(path, options)?.build().into();
+        let mut lf: LazyFrame = LogicalPlanBuilder::scan_ipc(path.as_ref(), options)?
+            .build()
+            .into();
         lf.opt_state.file_caching = true;
 
         // it is a bit hacky, but this row_count function updates the schema
@@ -48,21 +52,22 @@ impl LazyFrame {
 
     /// Create a LazyFrame directly from a ipc scan.
     #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
-    pub fn scan_ipc(path: String, args: ScanArgsIpc) -> Result<Self> {
-        if path.contains('*') {
-            let paths = glob::glob(&path)
+    pub fn scan_ipc(path: impl AsRef<Path>, args: ScanArgsIpc) -> PolarsResult<Self> {
+        let path = path.as_ref();
+        let path_str = path.to_string_lossy();
+        if path_str.contains('*') {
+            let paths = glob::glob(&path_str)
                 .map_err(|_| PolarsError::ComputeError("invalid glob pattern given".into()))?;
             let lfs = paths
                 .map(|r| {
                     let path = r.map_err(|e| PolarsError::ComputeError(format!("{}", e).into()))?;
-                    let path_string = path.to_string_lossy().into_owned();
                     let mut args = args.clone();
                     args.row_count = None;
-                    Self::scan_ipc_impl(path_string, args)
+                    Self::scan_ipc_impl(path, args)
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
 
-            concat(&lfs, args.rechunk)
+            concat(&lfs, args.rechunk, true)
                 .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
                 .map(|mut lf| {
                     if let Some(n_rows) = args.n_rows {

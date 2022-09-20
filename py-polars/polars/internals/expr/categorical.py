@@ -11,6 +11,8 @@ if TYPE_CHECKING:
 class ExprCatNameSpace:
     """Namespace for categorical related expressions."""
 
+    _accessor = "cat"
+
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr
 

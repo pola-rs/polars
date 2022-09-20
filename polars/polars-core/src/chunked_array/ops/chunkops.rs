@@ -93,7 +93,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                     self.clone()
                 } else {
                     let chunks = inner_rechunk(&self.chunks);
-                    ChunkedArray::from_chunks(self.name(), chunks)
+                    self.copy_with_chunks(chunks, true)
                 }
             }
         }
@@ -182,6 +182,7 @@ impl<T: PolarsObject> ObjectChunked<T> {
 
 #[cfg(test)]
 mod test {
+    #[cfg(feature = "dtype-categorical")]
     use crate::prelude::*;
 
     #[test]

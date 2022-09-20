@@ -1,11 +1,18 @@
 """Functions for reading and writing data."""
 from __future__ import annotations
 
+import sys
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, TextIO
+from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, TextIO, overload
+from warnings import warn
 
-from polars.utils import format_path, handle_projection_columns
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
+
+from polars.utils import deprecated_alias, format_path, handle_projection_columns
 
 try:
     import pyarrow as pa
@@ -20,7 +27,7 @@ except ImportError:
     _PYARROW_AVAILABLE = False
 
 from polars.convert import from_arrow
-from polars.datatypes import DataType, Utf8
+from polars.datatypes import DataType, PolarsDataType, Utf8
 from polars.internals import DataFrame, LazyFrame, _scan_ds
 from polars.internals.io import _prepare_file_arg
 
@@ -63,6 +70,12 @@ def _update_columns(df: DataFrame, new_columns: list[str]) -> DataFrame:
     return df
 
 
+@deprecated_alias(
+    has_headers="has_header",
+    dtype="dtypes",
+    stop_after_n_rows="n_rows",
+    projection="columns",
+)
 def read_csv(
     file: str | TextIO | BytesIO | Path | BinaryIO | bytes,
     has_header: bool = True,
@@ -80,7 +93,7 @@ def read_csv(
     infer_schema_length: int | None = 100,
     batch_size: int = 8192,
     n_rows: int | None = None,
-    encoding: CsvEncoding = "utf8",
+    encoding: CsvEncoding | str = "utf8",
     low_memory: bool = False,
     rechunk: bool = True,
     use_pyarrow: bool = False,
@@ -90,7 +103,6 @@ def read_csv(
     row_count_offset: int = 0,
     sample_size: int = 1024,
     eol_char: str = "\n",
-    **kwargs: Any,
 ) -> DataFrame:
     """
     Read a CSV file into a DataFrame.
@@ -132,7 +144,7 @@ def read_csv(
         Values to interpret as null values. You can provide a:
 
         - ``str``: All values equal to this string will be null.
-        - ``List[str]``: A null value per column.
+        - ``List[str]``: All values equal to any string in this list will be null.
         - ``Dict[str, str]``: A dictionary that maps column name to a
           null value string.
     ignore_errors
@@ -142,6 +154,7 @@ def read_csv(
     parse_dates
         Try to automatically parse dates. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
+        If ``use_pyarrow=True``, dates will always be parsed.
     n_threads
         Number of threads to use in csv parsing.
         Defaults to the number of physical cpu's of your system.
@@ -156,16 +169,19 @@ def read_csv(
         Stop reading from CSV file after reading ``n_rows``.
         During multi-threaded parsing, an upper bound of ``n_rows``
         rows cannot be guaranteed.
-    encoding : {'utf8', 'utf8-lossy'}
+    encoding : {'utf8', 'utf8-lossy', ...}
         Lossy means that invalid utf8 values are replaced with ``�``
-        characters. Defaults to "utf8".
+        characters. When using other encodings than ``utf8`` or
+        ``utf8-lossy``, the input is first decoded im memory with
+        python. Defaults to ``utf8``.
     low_memory
         Reduce memory usage at expense of performance.
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
     use_pyarrow
-        Try to use pyarrow's native CSV parser.
+        Try to use pyarrow's native CSV parser. This will always
+        parse dates, even if ``parse_dates=False``.
         This is not always possible. The set of arguments given to
         this function determines if it is possible to use pyarrow's
         native parser. Note that pyarrow and polars may have a
@@ -185,7 +201,7 @@ def read_csv(
         Set the sample size. This is used to sample statistics to estimate the
         allocation needed.
     eol_char
-        Single byte end of line character
+        Single byte end of line character.
 
     Returns
     -------
@@ -196,17 +212,10 @@ def read_csv(
     scan_csv : Lazily read from a CSV file or multiple files via glob patterns.
 
     """
-    # Map legacy arguments to current ones and remove them from kwargs.
-    has_header = kwargs.pop("has_headers", has_header)
-    dtypes = kwargs.pop("dtype", dtypes)
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
-    if columns is None:
-        columns = kwargs.pop("projection", None)
-
     _check_arg_is_1byte("sep", sep, False)
     _check_arg_is_1byte("comment_char", comment_char, False)
     _check_arg_is_1byte("quote_char", quote_char, True)
+    _check_arg_is_1byte("eol_char", eol_char, False)
 
     projection, columns = handle_projection_columns(columns)
 
@@ -233,10 +242,8 @@ def read_csv(
         and dtypes is None
         and n_rows is None
         and n_threads is None
-        and encoding == "utf8"
         and not low_memory
         and null_values is None
-        and parse_dates
     ):
         include_columns = None
 
@@ -253,13 +260,21 @@ def read_csv(
             # for pyarrow.
             include_columns = [f"f{column_idx}" for column_idx in projection]
 
-        with _prepare_file_arg(file, **storage_options) as data:
+        with _prepare_file_arg(
+            file, encoding=None, use_pyarrow=True, **storage_options
+        ) as data:
             tbl = pa.csv.read_csv(
                 data,
                 pa.csv.ReadOptions(
-                    skip_rows=skip_rows, autogenerate_column_names=not has_header
+                    skip_rows=skip_rows,
+                    autogenerate_column_names=not has_header,
+                    encoding=encoding,
                 ),
-                pa.csv.ParseOptions(delimiter=sep),
+                pa.csv.ParseOptions(
+                    delimiter=sep,
+                    quote_char=quote_char if quote_char else False,
+                    double_quote=quote_char is not None and quote_char == '"',
+                ),
                 pa.csv.ConvertOptions(
                     column_types=None,
                     include_columns=include_columns,
@@ -370,7 +385,9 @@ def read_csv(
                 for column_name, column_dtype in dtypes.items()
             }
 
-    with _prepare_file_arg(file, **storage_options) as data:
+    with _prepare_file_arg(
+        file, encoding=encoding, use_pyarrow=False, **storage_options
+    ) as data:
         df = DataFrame._read_csv(
             file=data,
             has_header=has_header,
@@ -387,7 +404,7 @@ def read_csv(
             infer_schema_length=infer_schema_length,
             batch_size=batch_size,
             n_rows=n_rows,
-            encoding=encoding,
+            encoding=encoding if encoding == "utf8-lossy" else "utf8",
             low_memory=low_memory,
             rechunk=rechunk,
             skip_rows_after_header=skip_rows_after_header,
@@ -402,6 +419,7 @@ def read_csv(
     return df
 
 
+@deprecated_alias(has_headers="has_header", dtype="dtypes", stop_after_n_rows="n_rows")
 def scan_csv(
     file: str | Path,
     has_header: bool = True,
@@ -409,7 +427,7 @@ def scan_csv(
     comment_char: str | None = None,
     quote_char: str | None = r'"',
     skip_rows: int = 0,
-    dtypes: dict[str, type[DataType]] | None = None,
+    dtypes: dict[str, PolarsDataType] | None = None,
     null_values: str | list[str] | dict[str, str] | None = None,
     ignore_errors: bool = False,
     cache: bool = True,
@@ -424,7 +442,6 @@ def scan_csv(
     row_count_offset: int = 0,
     parse_dates: bool = False,
     eol_char: str = "\n",
-    **kwargs: Any,
 ) -> LazyFrame:
     """
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -459,7 +476,7 @@ def scan_csv(
         Values to interpret as null values. You can provide a:
 
         - ``str``: All values equal to this string will be null.
-        - ``List[str]``: A null value per column.
+        - ``List[str]``: All values equal to any string in this list will be null.
         - ``Dict[str, str]``: A dictionary that maps column name to a
           null value string.
     ignore_errors
@@ -547,11 +564,6 @@ def scan_csv(
     └─────────┴──────────┘
 
     """
-    # Map legacy arguments to current ones and remove them from kwargs.
-    has_header = kwargs.pop("has_headers", has_header)
-    dtypes = kwargs.pop("dtype", dtypes)
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
     _check_arg_is_1byte("sep", sep, False)
     _check_arg_is_1byte("comment_char", comment_char, False)
     _check_arg_is_1byte("quote_char", quote_char, True)
@@ -559,7 +571,7 @@ def scan_csv(
     if isinstance(file, (str, Path)):
         file = format_path(file)
 
-    return LazyFrame.scan_csv(
+    return LazyFrame._scan_csv(
         file=file,
         has_header=has_header,
         sep=sep,
@@ -584,6 +596,7 @@ def scan_csv(
     )
 
 
+@deprecated_alias(stop_after_n_rows="n_rows")
 def scan_ipc(
     file: str | Path,
     n_rows: int | None = None,
@@ -593,7 +606,6 @@ def scan_ipc(
     row_count_offset: int = 0,
     storage_options: dict[str, object] | None = None,
     memory_map: bool = True,
-    **kwargs: Any,
 ) -> LazyFrame:
     """
     Lazily read from an Arrow IPC (Feather v2) file or multiple files via glob patterns.
@@ -626,10 +638,7 @@ def scan_ipc(
         Only uncompressed IPC files can be memory mapped.
 
     """
-    # Map legacy arguments to current ones and remove them from kwargs.
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
-    return LazyFrame.scan_ipc(
+    return LazyFrame._scan_ipc(
         file=file,
         n_rows=n_rows,
         cache=cache,
@@ -641,6 +650,7 @@ def scan_ipc(
     )
 
 
+@deprecated_alias(stop_after_n_rows="n_rows")
 def scan_parquet(
     file: str | Path,
     n_rows: int | None = None,
@@ -651,7 +661,6 @@ def scan_parquet(
     row_count_offset: int = 0,
     storage_options: dict[str, object] | None = None,
     low_memory: bool = False,
-    **kwargs: Any,
 ) -> LazyFrame:
     """
     Lazily read from a parquet file or multiple files via glob patterns.
@@ -686,13 +695,10 @@ def scan_parquet(
         Reduce memory pressure at the expense of performance.
 
     """
-    # Map legacy arguments to current ones and remove them from kwargs.
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
     if isinstance(file, (str, Path)):
         file = format_path(file)
 
-    return LazyFrame.scan_parquet(
+    return LazyFrame._scan_parquet(
         file=file,
         n_rows=n_rows,
         cache=cache,
@@ -705,11 +711,63 @@ def scan_parquet(
     )
 
 
+def scan_ndjson(
+    file: str | Path,
+    infer_schema_length: int | None = 100,
+    batch_size: int | None = 1024,
+    n_rows: int | None = None,
+    low_memory: bool = False,
+    rechunk: bool = True,
+    row_count_name: str | None = None,
+    row_count_offset: int = 0,
+) -> LazyFrame:
+    """
+    Lazily read from a newline delimited JSON file.
+
+    This allows the query optimizer to push down predicates and projections to the scan
+    level, thereby potentially reducing memory overhead.
+
+    Parameters
+    ----------
+    file
+        Path to a file.
+    infer_schema_length
+        Infer the schema length from the first ``infer_schema_length`` rows.
+    batch_size
+        Number of rows to read in each batch.
+    n_rows
+        Stop reading from JSON file after reading ``n_rows``.
+    low_memory
+        Reduce memory pressure at the expense of performance.
+    rechunk
+        Reallocate to contiguous memory when all chunks/ files are parsed.
+    row_count_name
+        If not None, this will insert a row count column with give name into the
+        DataFrame
+    row_count_offset
+        Offset to start the row_count column (only use if the name is set)
+
+    """
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
+
+    return LazyFrame._scan_ndjson(
+        file=file,
+        infer_schema_length=infer_schema_length,
+        batch_size=batch_size,
+        n_rows=n_rows,
+        low_memory=low_memory,
+        rechunk=rechunk,
+        row_count_name=row_count_name,
+        row_count_offset=row_count_offset,
+    )
+
+
+@deprecated_alias(projection="columns")
 def read_avro(
     file: str | Path | BytesIO | BinaryIO,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
-    **kwargs: Any,
 ) -> DataFrame:
     """
     Read into a DataFrame from Apache Avro format.
@@ -731,12 +789,11 @@ def read_avro(
     """
     if isinstance(file, (str, Path)):
         file = format_path(file)
-    if columns is None:
-        columns = kwargs.pop("projection", None)
 
     return DataFrame._read_avro(file, n_rows=n_rows, columns=columns)
 
 
+@deprecated_alias(stop_after_n_rows="n_rows", projection="columns")
 def read_ipc(
     file: str | BinaryIO | BytesIO | Path | bytes,
     columns: list[int] | list[str] | None = None,
@@ -747,7 +804,6 @@ def read_ipc(
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     rechunk: bool = True,
-    **kwargs: Any,
 ) -> DataFrame:
     """
     Read into a DataFrame from Arrow IPC (Feather v2) file.
@@ -785,12 +841,6 @@ def read_ipc(
     DataFrame
 
     """
-    # Map legacy arguments to current ones and remove them from kwargs.
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
-    if columns is None:
-        columns = kwargs.pop("projection", None)
-
     if use_pyarrow:
         if n_rows and not memory_map:
             raise ValueError(
@@ -799,7 +849,7 @@ def read_ipc(
             )
 
     storage_options = storage_options or {}
-    with _prepare_file_arg(file, **storage_options) as data:
+    with _prepare_file_arg(file, use_pyarrow=use_pyarrow, **storage_options) as data:
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
                 raise ImportError(
@@ -826,6 +876,7 @@ def read_ipc(
         )
 
 
+@deprecated_alias(stop_after_n_rows="n_rows", projection="columns")
 def read_parquet(
     source: str | Path | BinaryIO | BytesIO | bytes,
     columns: list[int] | list[str] | None = None,
@@ -837,7 +888,7 @@ def read_parquet(
     row_count_name: str | None = None,
     row_count_offset: int = 0,
     low_memory: bool = False,
-    **kwargs: Any,
+    pyarrow_options: dict[str, object] | None = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
@@ -873,27 +924,24 @@ def read_parquet(
         Offset to start the row_count column (only use if the name is set).
     low_memory
         Reduce memory pressure at the expense of performance.
-    **kwargs
-        kwargs for `pyarrow.parquet.read_table
+    pyarrow_options
+        Keyword arguments for `pyarrow.parquet.read_table
         <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html>`_.
 
     Returns
     -------
     DataFrame
 
-    """  # noqa: E501
-    # Map legacy arguments to current ones and remove them from kwargs.
-    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
-
-    if columns is None:
-        columns = kwargs.pop("projection", None)
-
-    if use_pyarrow:
-        if n_rows:
-            raise ValueError("``n_rows`` cannot be used with ``use_pyarrow=True``.")
+    """
+    if use_pyarrow and n_rows:
+        raise ValueError("``n_rows`` cannot be used with ``use_pyarrow=True``.")
 
     storage_options = storage_options or {}
-    with _prepare_file_arg(source, **storage_options) as source_prep:
+    pyarrow_options = pyarrow_options or {}
+
+    with _prepare_file_arg(
+        source, use_pyarrow=use_pyarrow, **storage_options
+    ) as source_prep:
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
                 raise ImportError(
@@ -906,7 +954,7 @@ def read_parquet(
                     source_prep,
                     memory_map=memory_map,
                     columns=columns,
-                    **kwargs,
+                    **pyarrow_options,
                 )
             )
 
@@ -921,19 +969,50 @@ def read_parquet(
         )
 
 
-def read_json(source: str | IOBase, json_lines: bool = False) -> DataFrame:
+@deprecated_alias(source="file")
+def read_json(file: str | Path | IOBase, json_lines: bool | None = None) -> DataFrame:
     """
-    Read into a DataFrame from JSON format.
+    Read into a DataFrame from a JSON file.
 
     Parameters
     ----------
-    source
+    file
         Path to a file or a file-like object.
     json_lines
-        Toggle between "JSON" and "NDJSON" format
+        Deprecated argument. Toggle between `JSON` and `NDJSON` format.
+
+    See Also
+    --------
+    read_ndjson
 
     """
-    return DataFrame._read_json(source, json_lines)
+    if json_lines is not None:
+        warn(
+            "`json_lines` argument for `read_json` will be removed in a future version."
+            " Remove the argument or use `pl.read_ndjson`.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    else:
+        json_lines = False
+
+    if json_lines:
+        return read_ndjson(file)
+
+    return DataFrame._read_json(file)
+
+
+def read_ndjson(file: str | Path | IOBase) -> DataFrame:
+    """
+    Read into a DataFrame from a newline delimited JSON file.
+
+    Parameters
+    ----------
+    file
+        Path to a file or a file-like object.
+
+    """
+    return DataFrame._read_ndjson(file)
 
 
 def read_sql(
@@ -946,10 +1025,6 @@ def read_sql(
 ) -> DataFrame:
     """
     Read a SQL query into a DataFrame.
-
-    .. note::
-        Make sure to install connectorx>=0.2.2. Read the documentation
-        `here <https://sfu-db.github.io/connector-x/intro.html>`_.
 
     Reading a SQL query from the following data sources are supported:
 
@@ -982,6 +1057,11 @@ def read_sql(
     protocol
         Backend-specific transfer protocol directive; see connectorx documentation for
         details.
+
+    Notes
+    -----
+    Make sure to install connectorx>=0.2.2. Read the documentation
+    `here <https://sfu-db.github.io/connector-x/intro.html>`_.
 
     Examples
     --------
@@ -1028,13 +1108,46 @@ def read_sql(
         )
 
 
+@overload
+def read_excel(
+    file: str | BytesIO | Path | BinaryIO | bytes,
+    sheet_id: Literal[None],
+    sheet_name: Literal[None],
+    xlsx2csv_options: dict[str, object] | None,
+    read_csv_options: dict[str, object] | None,
+) -> dict[str, DataFrame]:
+    ...
+
+
+@overload
+def read_excel(
+    file: str | BytesIO | Path | BinaryIO | bytes,
+    sheet_id: Literal[None],
+    sheet_name: str,
+    xlsx2csv_options: dict[str, object] | None = None,
+    read_csv_options: dict[str, object] | None = None,
+) -> DataFrame:
+    ...
+
+
+@overload
+def read_excel(
+    file: str | BytesIO | Path | BinaryIO | bytes,
+    sheet_id: int,
+    sheet_name: Literal[None],
+    xlsx2csv_options: dict[str, object] | None = None,
+    read_csv_options: dict[str, object] | None = None,
+) -> DataFrame:
+    ...
+
+
 def read_excel(
     file: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: int | None = 1,
     sheet_name: str | None = None,
     xlsx2csv_options: dict[str, object] | None = None,
     read_csv_options: dict[str, object] | None = None,
-) -> DataFrame:
+) -> DataFrame | dict[str, DataFrame]:
     """
     Read Excel (XLSX) sheet into a DataFrame.
 
@@ -1100,8 +1213,6 @@ def read_excel(
     ...     read_csv_options={"infer_schema_length": None},
     ... )  # doctest: +SKIP
 
-    Alternative
-    -----------
     If :func:`read_excel` does not work or you need to read other types of spreadsheet
     files, you can try pandas ``pd.read_excel()``
     (supports `xls`, `xlsx`, `xlsm`, `xlsb`, `odf`, `ods` and `odt`).
@@ -1126,12 +1237,30 @@ def read_excel(
     if not read_csv_options:
         read_csv_options = {}
 
+    # Convert sheets from XSLX document to CSV.
+    parser = xlsx2csv.Xlsx2csv(file, **xlsx2csv_options)
+
+    if (sheet_name is not None) or ((sheet_id is not None) and (sheet_id > 0)):
+        return _read_excel_sheet(parser, sheet_id, sheet_name, read_csv_options)
+    else:
+        return {
+            sheet["name"]: _read_excel_sheet(
+                parser, sheet["index"], None, read_csv_options
+            )
+            for sheet in parser.workbook.sheets
+        }
+
+
+def _read_excel_sheet(
+    parser: Any,
+    sheet_id: int | None,
+    sheet_name: str | None,
+    read_csv_options: dict[str, object] | None,
+) -> DataFrame:
     csv_buffer = StringIO()
 
-    # Convert sheet from XSLX document to CSV.
-    xlsx2csv.Xlsx2csv(file, **xlsx2csv_options).convert(
-        outfile=csv_buffer, sheetid=sheet_id, sheetname=sheet_name
-    )
+    # Parse XLSX sheet to CSV.
+    parser.convert(outfile=csv_buffer, sheetid=sheet_id, sheetname=sheet_name)
 
     # Rewind buffer to start.
     csv_buffer.seek(0)
@@ -1146,14 +1275,15 @@ def scan_ds(ds: pa.dataset.dataset) -> LazyFrame:
 
     This can be useful to connect to cloud or partitioned datasets.
 
-    .. warning::
-        This API is experimental and may change without it being considered a breaking
-        change.
-
     Parameters
     ----------
     ds
         Pyarrow dataset to scan.
+
+    Warnings
+    --------
+    This API is experimental and may change without it being considered a breaking
+    change.
 
     Examples
     --------

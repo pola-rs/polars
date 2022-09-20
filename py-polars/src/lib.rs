@@ -4,20 +4,6 @@
 extern crate core;
 extern crate polars;
 
-use pyo3::prelude::*;
-use pyo3::wrap_pyfunction;
-
-use crate::lazy::dsl::PyExpr;
-use crate::{
-    dataframe::PyDataFrame,
-    file::EitherRustPythonFile,
-    lazy::{
-        dataframe::{PyLazyFrame, PyLazyGroupBy},
-        dsl,
-    },
-    series::PySeries,
-};
-
 pub mod apply;
 pub mod arrow_interop;
 pub mod conversion;
@@ -34,29 +20,36 @@ pub mod series;
 mod set;
 pub mod utils;
 
-use dsl::ToExprs;
 #[cfg(target_os = "linux")]
 use jemallocator::Jemalloc;
+use lazy::ToExprs;
 #[cfg(not(target_os = "linux"))]
 use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
 use polars::prelude::Null;
 use polars_core::datatypes::TimeUnit;
-use polars_core::prelude::IntoSeries;
-use polars_core::prelude::{DataFrame, IDX_DTYPE};
+use polars_core::prelude::{DataFrame, IntoSeries, IDX_DTYPE};
 use polars_core::POOL;
+use pyo3::exceptions::PyValueError;
 use pyo3::panic::PanicException;
+use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
+use pyo3::wrap_pyfunction;
 
 use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};
+use crate::dataframe::PyDataFrame;
 use crate::error::{
     ArrowErrorException, ComputeError, DuplicateError, NoDataError, NotFoundError, PyPolarsErr,
     SchemaError,
 };
-use crate::file::get_either_file;
+use crate::file::{get_either_file, EitherRustPythonFile};
+use crate::lazy::dataframe::{PyLazyFrame, PyLazyGroupBy};
+use crate::lazy::dsl;
+use crate::lazy::dsl::PyExpr;
 use crate::prelude::{
     vec_extract_wrapped, ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs,
 };
+use crate::series::PySeries;
 
 #[global_allocator]
 #[cfg(target_os = "linux")]
@@ -104,8 +97,8 @@ fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {
 }
 
 #[pyfunction]
-fn lit(value: &PyAny) -> dsl::PyExpr {
-    dsl::lit(value)
+fn lit(value: &PyAny, allow_object: bool) -> PyResult<dsl::PyExpr> {
+    dsl::lit(value, allow_object)
 }
 
 #[pyfunction]
@@ -124,30 +117,33 @@ fn arange(low: PyExpr, high: PyExpr, step: usize) -> PyExpr {
 }
 
 #[pyfunction]
-fn repeat(value: &PyAny, n_times: PyExpr) -> PyExpr {
+fn repeat(value: &PyAny, n_times: PyExpr) -> PyResult<PyExpr> {
     if let Ok(true) = value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
-        polars::lazy::dsl::repeat(val, n_times.inner).into()
+        Ok(polars::lazy::dsl::repeat(val, n_times.inner).into())
     } else if let Ok(int) = value.downcast::<PyInt>() {
         let val = int.extract::<i64>().unwrap();
 
         if val > 0 && val < i32::MAX as i64 || val < 0 && val > i32::MIN as i64 {
-            polars::lazy::dsl::repeat(val as i32, n_times.inner).into()
+            Ok(polars::lazy::dsl::repeat(val as i32, n_times.inner).into())
         } else {
-            polars::lazy::dsl::repeat(val, n_times.inner).into()
+            Ok(polars::lazy::dsl::repeat(val, n_times.inner).into())
         }
     } else if let Ok(float) = value.downcast::<PyFloat>() {
         let val = float.extract::<f64>().unwrap();
-        polars::lazy::dsl::repeat(val, n_times.inner).into()
+        Ok(polars::lazy::dsl::repeat(val, n_times.inner).into())
     } else if let Ok(pystr) = value.downcast::<PyString>() {
         let val = pystr
             .to_str()
             .expect("could not transform Python string to Rust Unicode");
-        polars::lazy::dsl::repeat(val, n_times.inner).into()
+        Ok(polars::lazy::dsl::repeat(val, n_times.inner).into())
     } else if value.is_none() {
-        polars::lazy::dsl::repeat(Null {}, n_times.inner).into()
+        Ok(polars::lazy::dsl::repeat(Null {}, n_times.inner).into())
     } else {
-        panic!("could not convert value {:?} as a Literal", value)
+        Err(PyValueError::new_err(format!(
+            "could not convert value {:?} as a Literal",
+            value.str()?
+        )))
     }
 }
 
@@ -189,6 +185,11 @@ fn version() -> &'static str {
 #[pyfunction]
 fn toggle_string_cache(toggle: bool) {
     polars::toggle_string_cache(toggle)
+}
+
+#[pyfunction]
+fn using_string_cache() -> bool {
+    polars::using_string_cache()
 }
 
 #[pyfunction]
@@ -256,7 +257,8 @@ fn py_duration(
 
 #[pyfunction]
 fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
-    use polars_core::{error::Result, utils::rayon::prelude::*};
+    use polars_core::error::PolarsResult;
+    use polars_core::utils::rayon::prelude::*;
 
     let (seq, _len) = get_pyseq(dfs)?;
     let mut iter = seq.iter()?;
@@ -265,7 +267,7 @@ fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
     let first_rdf = get_df(first)?;
     let identity_df = first_rdf.slice(0, 0);
 
-    let mut rdfs: Vec<Result<DataFrame>> = vec![Ok(first_rdf)];
+    let mut rdfs: Vec<PolarsResult<DataFrame>> = vec![Ok(first_rdf)];
 
     for item in iter {
         let rdf = get_df(item?)?;
@@ -278,7 +280,7 @@ fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
         .allow_threads(|| {
             polars_core::POOL.install(|| {
                 rdfs.into_par_iter()
-                    .fold(identity, |acc: Result<DataFrame>, df| {
+                    .fold(identity, |acc: PolarsResult<DataFrame>, df| {
                         let mut acc = acc?;
                         acc.vstack_mut(&df?)?;
                         Ok(acc)
@@ -296,7 +298,7 @@ fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
 }
 
 #[pyfunction]
-fn concat_lf(lfs: &PyAny, rechunk: bool) -> PyResult<PyLazyFrame> {
+fn concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame> {
     let (seq, len) = get_pyseq(lfs)?;
     let mut lfs = Vec::with_capacity(len);
 
@@ -306,7 +308,7 @@ fn concat_lf(lfs: &PyAny, rechunk: bool) -> PyResult<PyLazyFrame> {
         lfs.push(lf);
     }
 
-    let lf = polars::lazy::dsl::concat(lfs, rechunk).map_err(PyPolarsErr::from)?;
+    let lf = polars::lazy::dsl::concat(lfs, rechunk, parallel).map_err(PyPolarsErr::from)?;
     Ok(lf.into())
 }
 
@@ -407,7 +409,7 @@ fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFrame>> 
                     let df = lf.ldf.clone().collect()?;
                     Ok(PyDataFrame::new(df))
                 })
-                .collect::<polars_core::error::Result<Vec<_>>>()
+                .collect::<polars_core::error::PolarsResult<Vec<_>>>()
                 .map_err(PyPolarsErr::from)
         })
     });
@@ -450,6 +452,12 @@ fn min_exprs(exprs: Vec<PyExpr>) -> PyExpr {
 fn max_exprs(exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
     polars::lazy::dsl::max_exprs(exprs).into()
+}
+
+#[pyfunction]
+fn sum_exprs(exprs: Vec<PyExpr>) -> PyExpr {
+    let exprs = exprs.to_exprs();
+    polars::lazy::dsl::sum_exprs(exprs).into()
 }
 
 #[pyfunction]
@@ -512,6 +520,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(version)).unwrap();
     m.add_wrapped(wrap_pyfunction!(toggle_string_cache))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(using_string_cache)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_str)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_lst)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_df)).unwrap();
@@ -529,6 +538,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(py_datetime)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_duration)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_date_range)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(sum_exprs)).unwrap();
     m.add_wrapped(wrap_pyfunction!(min_exprs)).unwrap();
     m.add_wrapped(wrap_pyfunction!(max_exprs)).unwrap();
     m.add_wrapped(wrap_pyfunction!(as_struct)).unwrap();

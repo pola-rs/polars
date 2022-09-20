@@ -29,6 +29,7 @@ FillNullStrategy: TypeAlias = Literal[
 IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
 NullStrategy: TypeAlias = Literal["ignore", "propagate"]
+UnstackDirection: TypeAlias = Literal["vertical", "horizontal"]
 ParallelStrategy: TypeAlias = Literal["auto", "columns", "row_groups", "none"]
 ParquetCompression: TypeAlias = Literal[
     "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
@@ -39,6 +40,18 @@ PivotAgg: TypeAlias = Literal[
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last"]
+SizeUnit: TypeAlias = Literal[
+    "b",
+    "kb",
+    "mb",
+    "gb",
+    "tb",
+    "bytes",
+    "kilobytes",
+    "megabytes",
+    "gigabytes",
+    "terabytes",
+]
 
 # The following have a Rust enum equivalent with a different name
 AsofJoinStrategy: TypeAlias = Literal["backward", "forward"]  # AsofStrategy

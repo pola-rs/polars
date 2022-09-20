@@ -27,9 +27,19 @@ fn fields_to_struct_array(fields: &[Series]) -> (ArrayRef, Vec<Series>) {
 }
 
 impl StructChunked {
-    pub fn new(name: &str, fields: &[Series]) -> Result<Self> {
+    pub fn new(name: &str, fields: &[Series]) -> PolarsResult<Self> {
         let mut names = PlHashSet::with_capacity(fields.len());
+        let first_len = fields.get(0).map(|s| s.len()).unwrap_or(0);
+        let mut max_len = first_len;
+
+        let mut all_equal_len = true;
         for s in fields {
+            let s_len = s.len();
+            max_len = std::cmp::max(max_len, s_len);
+
+            if s_len != first_len {
+                all_equal_len = false;
+            }
             let name = s.name();
             if !names.insert(name) {
                 return Err(PolarsError::Duplicate(
@@ -37,10 +47,22 @@ impl StructChunked {
                 ));
             }
         }
-        if !fields.iter().map(|s| s.len()).all_equal() {
-            Err(PolarsError::ShapeMisMatch(
-                "expected all fields to have equal length".into(),
-            ))
+
+        if !all_equal_len {
+            let mut new_fields = Vec::with_capacity(fields.len());
+            for s in fields {
+                let s_len = s.len();
+                if s_len == max_len {
+                    new_fields.push(s.clone())
+                } else if s_len == 1 {
+                    new_fields.push(s.expand_at_index(0, max_len))
+                } else {
+                    return Err(PolarsError::ShapeMisMatch(
+                        "expected all fields to have equal length".into(),
+                    ));
+                }
+            }
+            Ok(Self::new_unchecked(name, &new_fields))
         } else {
             Ok(Self::new_unchecked(name, fields))
         }
@@ -103,11 +125,11 @@ impl StructChunked {
     }
 
     /// Get access to one of this `[StructChunked]`'s fields
-    pub fn field_by_name(&self, name: &str) -> Result<Series> {
+    pub fn field_by_name(&self, name: &str) -> PolarsResult<Series> {
         self.fields
             .iter()
             .find(|s| s.name() == name)
-            .ok_or_else(|| PolarsError::NotFound(name.to_string()))
+            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
             .map(|s| s.clone())
     }
 
@@ -139,11 +161,15 @@ impl StructChunked {
         self.field.set_name(name.to_string())
     }
 
-    pub(crate) fn try_apply_fields<F>(&self, func: F) -> Result<Self>
+    pub(crate) fn try_apply_fields<F>(&self, func: F) -> PolarsResult<Self>
     where
-        F: Fn(&Series) -> Result<Series>,
+        F: Fn(&Series) -> PolarsResult<Series>,
     {
-        let fields = self.fields.iter().map(func).collect::<Result<Vec<_>>>()?;
+        let fields = self
+            .fields
+            .iter()
+            .map(func)
+            .collect::<PolarsResult<Vec<_>>>()?;
         Ok(Self::new_unchecked(self.field.name(), &fields))
     }
 
@@ -171,12 +197,12 @@ impl LogicalType for StructChunked {
     }
 
     // in case of a struct, a cast will coerce the inner types
-    fn cast(&self, dtype: &DataType) -> Result<Series> {
+    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         let fields = self
             .fields
             .iter()
             .map(|s| s.cast(dtype))
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
         Ok(Self::new_unchecked(self.field.name(), &fields).into_series())
     }
 }

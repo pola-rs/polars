@@ -36,6 +36,7 @@ use sort_merge::*;
 
 #[cfg(feature = "private")]
 pub use self::multiple_keys::private_left_join_multiple_keys;
+use crate::datatypes::PlHashMap;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 use crate::frame::hash_join::multiple_keys::{
     inner_join_multiple_keys, left_join_multiple_keys, outer_join_multiple_keys,
@@ -49,7 +50,7 @@ use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded, this_partition,
     AsU64, StrHash,
 };
-use crate::{datatypes::PlHashMap, POOL};
+use crate::POOL;
 
 pub type LeftJoinIds = (JoinIds, JoinOptIds);
 
@@ -102,7 +103,7 @@ use crate::series::IsSorted;
 /// If Categorical types are created without a global string cache or under
 /// a different global string cache the mapping will be incorrect.
 #[cfg(feature = "dtype-categorical")]
-pub(crate) fn check_categorical_src(l: &DataType, r: &DataType) -> Result<()> {
+pub(crate) fn check_categorical_src(l: &DataType, r: &DataType) -> PolarsResult<()> {
     match (l, r) {
         (DataType::Categorical(Some(l)), DataType::Categorical(Some(r))) => {
             if !l.same_src(r) {
@@ -270,7 +271,7 @@ impl DataFrame {
         mut df_left: DataFrame,
         mut df_right: DataFrame,
         suffix: Option<String>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         let mut left_names = PlHashSet::with_capacity(df_left.width());
 
         df_left.columns.iter().for_each(|series| {
@@ -303,7 +304,12 @@ impl DataFrame {
             self.clone()
         } else {
             // left join keys are in ascending order
-            self.take_chunked_unchecked(chunk_ids, IsSorted::Ascending)
+            let sorted = if left_join {
+                IsSorted::Ascending
+            } else {
+                IsSorted::Not
+            };
+            self.take_chunked_unchecked(chunk_ids, sorted)
         }
     }
 
@@ -313,11 +319,19 @@ impl DataFrame {
         &self,
         join_tuples: &[IdxSize],
         left_join: bool,
+        sorted: bool,
     ) -> DataFrame {
         if left_join && join_tuples.len() == self.height() {
             self.clone()
         } else {
-            self._take_unchecked_slice(join_tuples, true)
+            let sorted = if left_join || sorted {
+                IsSorted::Ascending
+            } else {
+                IsSorted::Not
+            };
+
+            // left join tuples are always in ascending order
+            self._take_unchecked_slice2(join_tuples, true, sorted)
         }
     }
 
@@ -333,7 +347,7 @@ impl DataFrame {
         slice: Option<(i64, usize)>,
         _check_rechunk: bool,
         _verbose: bool,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = how {
             return self.cross_join(other, suffix, slice);
@@ -471,8 +485,9 @@ impl DataFrame {
             JoinType::Inner => {
                 let left = DataFrame::new_no_checks(selected_left_physical);
                 let right = DataFrame::new_no_checks(selected_right_physical);
-                let (left, right, swap) = det_hash_prone_order!(left, right);
-                let (join_idx_left, join_idx_right) = inner_join_multiple_keys(&left, &right, swap);
+                let (mut left, mut right, swap) = det_hash_prone_order!(left, right);
+                let (join_idx_left, join_idx_right) =
+                    inner_join_multiple_keys(&mut left, &mut right, swap);
                 let mut join_idx_left = &*join_idx_left;
                 let mut join_idx_right = &*join_idx_right;
 
@@ -483,7 +498,7 @@ impl DataFrame {
 
                 let (df_left, df_right) = POOL.join(
                     // safety: join indices are known to be in bounds
-                    || unsafe { self.create_left_df_from_slice(join_idx_left, false) },
+                    || unsafe { self.create_left_df_from_slice(join_idx_left, false, !swap) },
                     || unsafe {
                         // remove join columns
                         remove_selected(other, &selected_right)
@@ -493,9 +508,9 @@ impl DataFrame {
                 self.finish_join(df_left, df_right, suffix)
             }
             JoinType::Left => {
-                let left = DataFrame::new_no_checks(selected_left_physical);
-                let right = DataFrame::new_no_checks(selected_right_physical);
-                let ids = left_join_multiple_keys(&left, &right, None, None);
+                let mut left = DataFrame::new_no_checks(selected_left_physical);
+                let mut right = DataFrame::new_no_checks(selected_right_physical);
+                let ids = left_join_multiple_keys(&mut left, &mut right, None, None);
 
                 self.finish_left_join(ids, &remove_selected(other, &selected_right), suffix, slice)
             }
@@ -503,8 +518,8 @@ impl DataFrame {
                 let left = DataFrame::new_no_checks(selected_left_physical);
                 let right = DataFrame::new_no_checks(selected_right_physical);
 
-                let (left, right, swap) = det_hash_prone_order!(left, right);
-                let opt_join_tuples = outer_join_multiple_keys(&left, &right, swap);
+                let (mut left, mut right, swap) = det_hash_prone_order!(left, right);
+                let opt_join_tuples = outer_join_multiple_keys(&mut left, &mut right, swap);
 
                 let mut opt_join_tuples = &*opt_join_tuples;
 
@@ -546,13 +561,13 @@ impl DataFrame {
             )),
             #[cfg(feature = "semi_anti_join")]
             JoinType::Anti | JoinType::Semi => {
-                let left = DataFrame::new_no_checks(selected_left_physical);
-                let right = DataFrame::new_no_checks(selected_right_physical);
+                let mut left = DataFrame::new_no_checks(selected_left_physical);
+                let mut right = DataFrame::new_no_checks(selected_right_physical);
 
                 let idx = if matches!(how, JoinType::Anti) {
-                    left_anti_multiple_keys(&left, &right)
+                    left_anti_multiple_keys(&mut left, &mut right)
                 } else {
-                    left_semi_multiple_keys(&left, &right)
+                    left_semi_multiple_keys(&mut left, &mut right)
                 };
                 // Safety:
                 // indices are in bounds
@@ -604,7 +619,7 @@ impl DataFrame {
         right_on: I,
         how: JoinType,
         suffix: Option<String>,
-    ) -> Result<DataFrame>
+    ) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -633,11 +648,16 @@ impl DataFrame {
     ///
     /// ```
     /// # use polars_core::prelude::*;
-    /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
+    /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> PolarsResult<DataFrame> {
     ///     left.inner_join(right, ["join_column_left"], ["join_column_right"])
     /// }
     /// ```
-    pub fn inner_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> Result<DataFrame>
+    pub fn inner_join<I, S>(
+        &self,
+        other: &DataFrame,
+        left_on: I,
+        right_on: I,
+    ) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -652,14 +672,14 @@ impl DataFrame {
         s_right: &Series,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
-        let (join_tuples_left, join_tuples_right) = if use_sort_merge(s_left, s_right) {
+        let ((join_tuples_left, join_tuples_right), sorted) = if use_sort_merge(s_left, s_right) {
             #[cfg(feature = "performant")]
             {
-                par_sorted_merge_inner(s_left, s_right)
+                (par_sorted_merge_inner(s_left, s_right), true)
             }
             #[cfg(not(feature = "performant"))]
             {
@@ -679,7 +699,7 @@ impl DataFrame {
 
         let (df_left, df_right) = POOL.join(
             // safety: join indices are known to be in bounds
-            || unsafe { self.create_left_df_from_slice(join_tuples_left, false) },
+            || unsafe { self.create_left_df_from_slice(join_tuples_left, false, sorted) },
             || unsafe {
                 other
                     .drop(s_right.name())
@@ -724,7 +744,12 @@ impl DataFrame {
     /// | 100             | null   |
     /// +-----------------+--------+
     /// ```
-    pub fn left_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> Result<DataFrame>
+    pub fn left_join<I, S>(
+        &self,
+        other: &DataFrame,
+        left_on: I,
+        right_on: I,
+    ) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -739,14 +764,14 @@ impl DataFrame {
         other: &DataFrame,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         let (left_idx, right_idx) = ids;
         let materialize_left = || {
             let mut left_idx = &*left_idx;
             if let Some((offset, len)) = slice {
                 left_idx = slice_slice(left_idx, offset, len);
             }
-            unsafe { self.create_left_df_from_slice(left_idx, true) }
+            unsafe { self.create_left_df_from_slice(left_idx, true, true) }
         };
 
         let materialize_right = || {
@@ -772,7 +797,7 @@ impl DataFrame {
         other: &DataFrame,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         let (left_idx, right_idx) = ids;
         let materialize_left = || match left_idx {
             JoinIds::Left(left_idx) => {
@@ -780,7 +805,7 @@ impl DataFrame {
                 if let Some((offset, len)) = slice {
                     left_idx = slice_slice(left_idx, offset, len);
                 }
-                unsafe { self.create_left_df_from_slice(left_idx, true) }
+                unsafe { self.create_left_df_from_slice(left_idx, true, true) }
             }
             JoinIds::Right(left_idx) => {
                 let mut left_idx = &*left_idx;
@@ -823,7 +848,7 @@ impl DataFrame {
         s_right: &Series,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
@@ -863,7 +888,8 @@ impl DataFrame {
         if let Some((offset, len)) = slice {
             idx = slice_slice(idx, offset, len);
         }
-        self._take_unchecked_slice(idx, true)
+        // idx from anti-semi join should always be sorted
+        self._take_unchecked_slice2(idx, true, IsSorted::Ascending)
     }
 
     #[cfg(feature = "semi_anti_join")]
@@ -873,7 +899,7 @@ impl DataFrame {
         s_right: &Series,
         slice: Option<(i64, usize)>,
         anti: bool,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
@@ -888,11 +914,16 @@ impl DataFrame {
     ///
     /// ```
     /// # use polars_core::prelude::*;
-    /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
+    /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> PolarsResult<DataFrame> {
     ///     left.outer_join(right, ["join_column_left"], ["join_column_right"])
     /// }
     /// ```
-    pub fn outer_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> Result<DataFrame>
+    pub fn outer_join<I, S>(
+        &self,
+        other: &DataFrame,
+        left_on: I,
+        right_on: I,
+    ) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -906,7 +937,7 @@ impl DataFrame {
         s_right: &Series,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
@@ -1052,7 +1083,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_outer_join() -> Result<()> {
+    fn test_outer_join() -> PolarsResult<()> {
         let (temp, rain) = create_frames();
         let joined = temp.outer_join(&rain, ["days"], ["days"])?;
         println!("{:?}", &joined);
@@ -1245,7 +1276,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn empty_df_join() -> Result<()> {
+    fn empty_df_join() -> PolarsResult<()> {
         let empty: Vec<String> = vec![];
         let empty_df = DataFrame::new(vec![
             Series::new("key", &empty),
@@ -1297,7 +1328,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn unit_df_join() -> Result<()> {
+    fn unit_df_join() -> PolarsResult<()> {
         let df1 = df![
             "a" => [1],
             "b" => [2]
@@ -1320,7 +1351,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_join_err() -> Result<()> {
+    fn test_join_err() -> PolarsResult<()> {
         let df1 = df![
             "a" => [1, 2],
             "b" => ["foo", "bar"]
@@ -1344,7 +1375,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_joins_with_duplicates() -> Result<()> {
+    fn test_joins_with_duplicates() -> PolarsResult<()> {
         // test joins with duplicates in both dataframes
 
         let df_left = df![
@@ -1396,7 +1427,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_multi_joins_with_duplicates() -> Result<()> {
+    fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
         // test joins with multiple join columns and duplicates in both
         // dataframes
 
@@ -1467,7 +1498,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_join_floats() -> Result<()> {
+    fn test_join_floats() -> PolarsResult<()> {
         let df_a = df! {
             "a" => &[1.0, 2.0, 1.0, 1.0],
             "b" => &["a", "b", "c", "c"],
@@ -1513,7 +1544,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_join_nulls() -> Result<()> {
+    fn test_join_nulls() -> PolarsResult<()> {
         let a = df![
             "a" => [Some(1), None, None]
         ]?;
@@ -1529,7 +1560,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_4_threads_bit_offset() -> Result<()> {
+    fn test_4_threads_bit_offset() -> PolarsResult<()> {
         // run this locally with a thread pool size of 4
         // this was an obscure bug caused by not taking the offset of a bit into account.
         let n = 8i64;

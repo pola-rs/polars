@@ -9,15 +9,16 @@ use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "rank")]
 use polars_core::utils::coalesce_nulls_series;
-use polars_core::utils::get_supertype;
-#[cfg(feature = "list")]
-use polars_ops::prelude::ListNameSpaceImpl;
 use rayon::prelude::*;
 
 #[cfg(feature = "arg_where")]
 use crate::dsl::function_expr::FunctionExpr;
+#[cfg(feature = "list")]
+use crate::dsl::function_expr::ListFunction;
+#[cfg(feature = "strings")]
+use crate::dsl::function_expr::StringFunction;
+use crate::dsl::*;
 use crate::prelude::*;
-use crate::utils::has_wildcard;
 
 /// Compute the covariance between two columns.
 pub fn cov(a: Expr, b: Expr) -> Expr {
@@ -219,32 +220,61 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
-            auto_explode: false,
             fmt_str: "argsort_by",
+            ..Default::default()
         },
     }
 }
 
-#[cfg(feature = "concat_str")]
+#[cfg(all(feature = "concat_str", feature = "strings"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "concat_str")))]
 /// Horizontally concat string columns in linear time
 pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
-    let s = s.as_ref().to_vec();
+    let input = s.as_ref().to_vec();
     let sep = sep.to_string();
-    let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-        polars_core::functions::concat_str(s, &sep).map(|ca| ca.into_series())
-    }) as Arc<dyn SeriesUdf>);
-    Expr::AnonymousFunction {
-        input: s,
-        function,
-        output_type: GetOutput::from_type(DataType::Utf8),
+
+    Expr::Function {
+        input,
+        function: StringFunction::ConcatHorizontal(sep).into(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
             auto_explode: true,
-            fmt_str: "concat_by",
+            ..Default::default()
         },
     }
+}
+
+#[cfg(all(feature = "concat_str", feature = "strings"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "format_str")))]
+/// Format the results of an array of expressions using a format string
+pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr> {
+    let mut args: std::collections::VecDeque<Expr> = args.as_ref().to_vec().into();
+
+    // Parse the format string, and seperate substrings between placeholders
+    let segments: Vec<&str> = format.split("{}").collect();
+
+    if segments.len() - 1 != args.len() {
+        return Err(PolarsError::ShapeMisMatch(
+            "number of placeholders should equal the number of arguments".into(),
+        ));
+    }
+
+    let mut exprs: Vec<Expr> = Vec::new();
+
+    for (i, s) in segments.iter().enumerate() {
+        if i > 0 {
+            if let Some(arg) = args.pop_front() {
+                exprs.push(arg);
+            }
+        }
+
+        if !s.is_empty() {
+            exprs.push(lit(s.to_string()))
+        }
+    }
+
+    Ok(concat_str(exprs, ""))
 }
 
 /// Concat lists entries.
@@ -253,44 +283,14 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
 pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
     let s = s.as_ref().iter().map(|e| e.clone().into()).collect();
 
-    let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-        let mut first = std::mem::take(&mut s[0]);
-        let other = &s[1..];
-
-        let first_ca = match first.list().ok() {
-            Some(ca) => ca,
-            None => {
-                first = first.reshape(&[-1, 1]).unwrap();
-                first.list().unwrap()
-            }
-        };
-        first_ca.lst_concat(other).map(|ca| ca.into_series())
-    }) as Arc<dyn SeriesUdf>);
-    Expr::AnonymousFunction {
+    Expr::Function {
         input: s,
-        function,
-        output_type: GetOutput::map_dtypes(|dts| {
-            let mut super_type_inner = None;
-
-            for dt in dts {
-                match dt {
-                    DataType::List(inner) => match super_type_inner {
-                        None => super_type_inner = Some(*inner.clone()),
-                        Some(st_inner) => super_type_inner = get_supertype(&st_inner, inner).ok(),
-                    },
-                    dt => match super_type_inner {
-                        None => super_type_inner = Some((*dt).clone()),
-                        Some(st_inner) => super_type_inner = get_supertype(&st_inner, dt).ok(),
-                    },
-                }
-            }
-            DataType::List(Box::new(super_type_inner.unwrap()))
-        }),
+        function: FunctionExpr::ListExpr(ListFunction::Concat),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
-            auto_explode: false,
             fmt_str: "concat_list",
+            ..Default::default()
         },
     }
 }
@@ -476,8 +476,8 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
-            auto_explode: false,
             fmt_str: "datetime",
+            ..Default::default()
         },
     }
     .alias("datetime")
@@ -553,15 +553,19 @@ pub fn duration(args: DurationArgs) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
-            auto_explode: false,
             fmt_str: "duration",
+            ..Default::default()
         },
     }
     .alias("duration")
 }
 
 /// Concat multiple
-pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, rechunk: bool) -> Result<LazyFrame> {
+pub fn concat<L: AsRef<[LazyFrame]>>(
+    inputs: L,
+    rechunk: bool,
+    parallel: bool,
+) -> PolarsResult<LazyFrame> {
     let mut inputs = inputs.as_ref().to_vec();
     let lf = std::mem::take(
         inputs
@@ -578,31 +582,27 @@ pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, rechunk: bool) -> Result<LazyFra
         let lp = std::mem::take(&mut lf.logical_plan);
         lps.push(lp)
     }
+    let options = UnionOptions {
+        parallel,
+        ..Default::default()
+    };
 
     let lp = LogicalPlan::Union {
         inputs: lps,
-        options: Default::default(),
+        options,
     };
     let mut lf = LazyFrame::from(lp);
     lf.opt_state = opt_state;
 
     if rechunk {
-        Ok(lf.map(
-            |mut df: DataFrame| {
-                df.as_single_chunk_par();
-                Ok(df)
-            },
-            Some(AllowedOptimizations::default()),
-            None,
-            Some("RECHUNK"),
-        ))
+        Ok(lf.map_private(FunctionNode::Rechunk))
     } else {
         Ok(lf)
     }
 }
 
 /// Collect all `LazyFrame` computations.
-pub fn collect_all<I>(lfs: I) -> Result<Vec<DataFrame>>
+pub fn collect_all<I>(lfs: I) -> PolarsResult<Vec<DataFrame>>
 where
     I: IntoParallelIterator<Item = LazyFrame>,
 {
@@ -712,7 +712,7 @@ macro_rules! prepare_binary_function {
 /// Apply a closure on the two columns that are evaluated from `Expr` a and `Expr` b.
 pub fn map_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr
 where
-    F: Fn(Series, Series) -> Result<Series> + Send + Sync,
+    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync,
 {
     let function = prepare_binary_function!(f);
     a.map_many(function, &[b], output_type)
@@ -720,61 +720,54 @@ where
 
 pub fn apply_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr
 where
-    F: Fn(Series, Series) -> Result<Series> + Send + Sync,
+    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync,
 {
     let function = prepare_binary_function!(f);
     a.apply_many(function, &[b], output_type)
 }
 
 /// Accumulate over multiple columns horizontally / row wise.
-pub fn fold_exprs<F: 'static, E: AsRef<[Expr]>>(mut acc: Expr, f: F, exprs: E) -> Expr
+pub fn fold_exprs<F: 'static, E: AsRef<[Expr]>>(acc: Expr, f: F, exprs: E) -> Expr
 where
-    F: Fn(Series, Series) -> Result<Series> + Send + Sync + Clone,
+    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync + Clone,
 {
     let mut exprs = exprs.as_ref().to_vec();
-    if exprs.iter().any(|e| has_wildcard(e) | has_regex(e)) {
-        exprs.push(acc);
+    exprs.push(acc);
 
-        let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
-            let mut series = series.to_vec();
-            let mut acc = series.pop().unwrap();
+    let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
+        let mut series = series.to_vec();
+        let mut acc = series.pop().unwrap();
 
-            for s in series {
-                acc = f(acc, s)?;
-            }
-            Ok(acc)
-        }) as Arc<dyn SeriesUdf>);
-
-        // Todo! make sure that output type is correct
-        Expr::AnonymousFunction {
-            input: exprs,
-            function,
-            output_type: GetOutput::same_type(),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: true,
-                auto_explode: true,
-                fmt_str: "",
-            },
+        for s in series {
+            acc = f(acc, s)?;
         }
-    } else {
-        for e in exprs {
-            acc = map_binary(
-                acc,
-                e,
-                f.clone(),
-                GetOutput::map_dtypes(|dt| get_supertype(dt[0], dt[1]).unwrap()),
-            );
-        }
-        acc
+        Ok(acc)
+    }) as Arc<dyn SeriesUdf>);
+
+    Expr::AnonymousFunction {
+        input: exprs,
+        function,
+        output_type: GetOutput::super_type(),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            fmt_str: "fold",
+            ..Default::default()
+        },
     }
 }
 
 /// Get the the sum of the values per row
 pub fn sum_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let exprs = exprs.as_ref().to_vec();
+    let mut exprs = exprs.as_ref().to_vec();
     let func = |s1, s2| Ok(&s1 + &s2);
-    fold_exprs(lit(0), func, exprs)
+    let init = match exprs.pop() {
+        Some(e) => e,
+        // use u32 as that is not cast to float as eagerly
+        _ => lit(0u32),
+    };
+    fold_exprs(init, func, exprs).alias("sum")
 }
 
 /// Get the the maximum value per row
@@ -843,17 +836,17 @@ pub fn all_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
 
 /// [Not](Expr::Not) expression.
 pub fn not(expr: Expr) -> Expr {
-    Expr::Not(Box::new(expr))
+    expr.not()
 }
 
 /// [IsNull](Expr::IsNotNull) expression
 pub fn is_null(expr: Expr) -> Expr {
-    Expr::IsNull(Box::new(expr))
+    expr.is_null()
 }
 
 /// [IsNotNull](Expr::IsNotNull) expression.
 pub fn is_not_null(expr: Expr) -> Expr {
-    Expr::IsNotNull(Box::new(expr))
+    expr.is_not_null()
 }
 
 /// [Cast](Expr::Cast) expression.
@@ -927,9 +920,8 @@ pub fn arg_where<E: Into<Expr>>(condition: E) -> Expr {
         function: FunctionExpr::ArgWhere,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: false,
-            auto_explode: false,
             fmt_str: "arg_where",
+            ..Default::default()
         },
     }
 }

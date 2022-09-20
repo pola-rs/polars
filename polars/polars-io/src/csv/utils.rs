@@ -39,7 +39,7 @@ pub(crate) fn get_file_chunks(
 
         let end_pos = match next_line_position(
             &bytes[search_pos..],
-            expected_fields,
+            Some(expected_fields),
             delimiter,
             quote_char,
             eol_char,
@@ -56,7 +56,9 @@ pub(crate) fn get_file_chunks(
     offsets
 }
 
-pub fn get_reader_bytes<R: Read + MmapBytesReader>(reader: &mut R) -> Result<ReaderBytes<'_>> {
+pub fn get_reader_bytes<R: Read + MmapBytesReader>(
+    reader: &mut R,
+) -> PolarsResult<ReaderBytes<'_>> {
     // we have a file so we can mmap
     if let Some(file) = reader.to_file() {
         let mmap = unsafe { memmap::Mmap::map(file)? };
@@ -145,7 +147,10 @@ fn infer_field_schema(string: &str, parse_dates: bool) -> DataType {
 }
 
 #[inline]
-pub(crate) fn parse_bytes_with_encoding(bytes: &[u8], encoding: CsvEncoding) -> Result<Cow<str>> {
+pub(crate) fn parse_bytes_with_encoding(
+    bytes: &[u8],
+    encoding: CsvEncoding,
+) -> PolarsResult<Cow<str>> {
     let s = match encoding {
         CsvEncoding::Utf8 => simdutf8::basic::from_utf8(bytes)
             .map_err(anyhow::Error::from)?
@@ -171,12 +176,13 @@ pub fn infer_file_schema(
     // we take &mut because we maybe need to skip more rows dependent
     // on the schema inference
     skip_rows: &mut usize,
+    skip_rows_after_header: usize,
     comment_char: Option<u8>,
     quote_char: Option<u8>,
     eol_char: u8,
     null_values: Option<&NullValues>,
     parse_dates: bool,
-) -> Result<(Schema, usize)> {
+) -> PolarsResult<(Schema, usize)> {
     // We use lossy utf8 here because we don't want the schema inference to fail on utf8.
     // It may later.
     let encoding = CsvEncoding::LossyUtf8;
@@ -233,16 +239,24 @@ pub fn infer_file_schema(
                         slice
                     };
                     let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
-                    Ok(s.into())
+                    Ok(s)
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
 
-            if PlHashSet::from_iter(headers.iter()).len() != headers.len() {
-                return Err(PolarsError::ComputeError(
-                    "CSV header contains duplicate column names".into(),
-                ));
+            let mut final_headers = Vec::with_capacity(headers.len());
+
+            let mut header_names = PlHashMap::with_capacity(headers.len());
+
+            for name in &headers {
+                let count = header_names.entry(name.as_ref()).or_insert(0usize);
+                if *count != 0 {
+                    final_headers.push(format!("{}_duplicated_{}", name, *count - 1))
+                } else {
+                    final_headers.push(name.to_string())
+                }
+                *count += 1;
             }
-            headers
+            final_headers
         } else {
             let mut column_names: Vec<String> = byterecord
                 .enumerate()
@@ -269,6 +283,7 @@ pub fn infer_file_schema(
             has_header,
             schema_overwrite,
             skip_rows,
+            skip_rows_after_header,
             comment_char,
             quote_char,
             eol_char,
@@ -285,7 +300,8 @@ pub fn infer_file_schema(
 
     let header_length = headers.len();
     // keep track of inferred field types
-    let mut column_types: Vec<PlHashSet<DataType>> = vec![PlHashSet::new(); header_length];
+    let mut column_types: Vec<PlHashSet<DataType>> =
+        vec![PlHashSet::with_capacity(4); header_length];
     // keep track of columns with nulls
     let mut nulls: Vec<bool> = vec![false; header_length];
 
@@ -295,7 +311,10 @@ pub fn infer_file_schema(
     // needed to prevent ownership going into the iterator loop
     let records_ref = &mut lines;
 
-    for mut line in records_ref.take(max_read_lines.unwrap_or(usize::MAX)) {
+    for mut line in records_ref
+        .take(max_read_lines.unwrap_or(usize::MAX))
+        .skip(skip_rows_after_header)
+    {
         rows_count += 1;
 
         if let Some(c) = comment_char {
@@ -422,6 +441,7 @@ pub fn infer_file_schema(
             has_header,
             schema_overwrite,
             skip_rows,
+            skip_rows_after_header,
             comment_char,
             quote_char,
             eol_char,
@@ -450,7 +470,6 @@ pub fn is_compressed(bytes: &[u8]) -> bool {
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 fn decompress_impl<R: Read>(
     decoder: &mut R,
-    bytes: &[u8],
     n_rows: Option<usize>,
     delimiter: u8,
     quote_char: Option<u8>,
@@ -459,8 +478,9 @@ fn decompress_impl<R: Read>(
     let chunk_size = 4096;
     Some(match n_rows {
         None => {
-            // decompression will likely be an order of magnitude larger
-            let mut out = Vec::with_capacity(bytes.len() * 10);
+            // decompression in a preallocated buffer does not work with zlib-ng
+            // and will put the original compressed data in the buffer.
+            let mut out = Vec::new();
             decoder.read_to_end(&mut out).ok()?;
             out
         }
@@ -496,7 +516,7 @@ fn decompress_impl<R: Read>(
             while line_count < n_rows {
                 match next_line_position(
                     &out[buf_pos + 1..],
-                    expected_fields,
+                    Some(expected_fields),
                     delimiter,
                     quote_char,
                     eol_char,
@@ -531,10 +551,10 @@ pub(crate) fn decompress(
 ) -> Option<Vec<u8>> {
     if bytes.starts_with(&GZIP) {
         let mut decoder = flate2::read::MultiGzDecoder::new(bytes);
-        decompress_impl(&mut decoder, bytes, n_rows, delimiter, quote_char, eol_char)
+        decompress_impl(&mut decoder, n_rows, delimiter, quote_char, eol_char)
     } else if bytes.starts_with(&ZLIB0) || bytes.starts_with(&ZLIB1) || bytes.starts_with(&ZLIB2) {
         let mut decoder = flate2::read::ZlibDecoder::new(bytes);
-        decompress_impl(&mut decoder, bytes, n_rows, delimiter, quote_char, eol_char)
+        decompress_impl(&mut decoder, n_rows, delimiter, quote_char, eol_char)
     } else {
         None
     }

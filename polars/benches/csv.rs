@@ -3,7 +3,7 @@ use std::fs::File;
 use criterion::{criterion_group, criterion_main, Criterion};
 use polars::prelude::*;
 
-fn prepare_reader() -> Result<CsvReader<'static, File>> {
+fn prepare_reader() -> PolarsResult<CsvReader<'static, File>> {
     let path =
         std::env::var("CSV_SRC").expect("env var CSV_SRC pointing to the csv_file is not set");
 

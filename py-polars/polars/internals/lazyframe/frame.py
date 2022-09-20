@@ -1,22 +1,19 @@
-"""
-Module containing all expressions and classes needed for lazy computation/query
-execution.
-"""
 from __future__ import annotations
 
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import typing
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Sequence, TypeVar, overload
+from warnings import warn
 
 from polars import internals as pli
 from polars.cfg import Config
-from polars.datatypes import DataType, py_type_to_dtype
+from polars.datatypes import DataType, PolarsDataType, Schema, py_type_to_dtype
+from polars.internals import selection_to_pyexpr_list
 from polars.internals.lazyframe.groupby import LazyGroupBy
 from polars.internals.slice import LazyPolarsSlice
 from polars.utils import (
@@ -27,7 +24,7 @@ from polars.utils import (
 )
 
 try:
-    from polars.polars import PyExpr, PyLazyFrame
+    from polars.polars import PyLazyFrame
 
     _DOCUMENTING = False
 except ImportError:
@@ -40,10 +37,6 @@ try:
 except ImportError:
     _PYARROW_AVAILABLE = False
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
@@ -80,7 +73,7 @@ class LazyFrame:
         return self
 
     @classmethod
-    def scan_csv(
+    def _scan_csv(
         cls: type[LDF],
         file: str,
         has_header: bool = True,
@@ -88,7 +81,7 @@ class LazyFrame:
         comment_char: str | None = None,
         quote_char: str | None = r'"',
         skip_rows: int = 0,
-        dtypes: dict[str, type[DataType]] | None = None,
+        dtypes: dict[str, PolarsDataType] | None = None,
         null_values: str | list[str] | dict[str, str] | None = None,
         ignore_errors: bool = False,
         cache: bool = True,
@@ -114,7 +107,7 @@ class LazyFrame:
         polars.io.scan_csv
 
         """
-        dtype_list: list[tuple[str, type[DataType]]] | None = None
+        dtype_list: list[tuple[str, PolarsDataType]] | None = None
         if dtypes is not None:
             dtype_list = []
             for k, v in dtypes.items():
@@ -147,7 +140,7 @@ class LazyFrame:
         return self
 
     @classmethod
-    def scan_parquet(
+    def _scan_parquet(
         cls: type[LDF],
         file: str,
         n_rows: int | None = None,
@@ -191,7 +184,7 @@ class LazyFrame:
         return self
 
     @classmethod
-    def scan_ipc(
+    def _scan_ipc(
         cls: type[LDF],
         file: str | Path,
         n_rows: int | None = None,
@@ -203,9 +196,14 @@ class LazyFrame:
         memory_map: bool = True,
     ) -> LDF:
         """
+        Lazily read from an Arrow IPC (Feather v2) file.
+
+        Use ``pl.scan_ipc`` to dispatch to this method.
+
         See Also
         --------
-        scan_parquet, scan_csv
+        polars.io.scan_ipc
+
         """
         if isinstance(file, (str, Path)):
             file = format_path(file)
@@ -231,14 +229,57 @@ class LazyFrame:
         return self
 
     @classmethod
+    def _scan_ndjson(
+        cls: type[LDF],
+        file: str,
+        infer_schema_length: int | None = None,
+        batch_size: int | None = None,
+        n_rows: int | None = None,
+        low_memory: bool = False,
+        rechunk: bool = True,
+        row_count_name: str | None = None,
+        row_count_offset: int = 0,
+    ) -> LDF:
+        """
+        Lazily read from a newline delimited JSON file.
+
+        Use ``pl.scan_ndjson`` to dispatch to this method.
+
+        See Also
+        --------
+        polars.io.scan_ndjson
+
+        """
+        self = cls.__new__(cls)
+        self._ldf = PyLazyFrame.new_from_ndjson(
+            file,
+            infer_schema_length,
+            batch_size,
+            n_rows,
+            low_memory,
+            rechunk,
+            _prepare_row_count_args(row_count_name, row_count_offset),
+        )
+        return self
+
+    @classmethod
     def from_json(cls, json: str) -> LazyFrame:
         """
+        Read a logical plan from a JSON string to construct a LazyFrame.
+
+        Parameters
+        ----------
+        json
+            String in JSON format.
+
         See Also
         --------
         read_json
+
         """
-        f = StringIO(json)
-        return cls.read_json(f)
+        bytes = StringIO(json).getvalue().encode()
+        file = BytesIO(bytes)
+        return wrap_ldf(PyLazyFrame.read_json(file))
 
     @classmethod
     def read_json(
@@ -246,11 +287,16 @@ class LazyFrame:
         file: str | Path | IOBase,
     ) -> LazyFrame:
         """
-        Read into a DataFrame from JSON format.
+        Read a logical plan from a JSON file to construct a LazyFrame.
+
+        Parameters
+        ----------
+        file
+            Path to a file or a file-like object.
 
         See Also
         --------
-        write_json
+        LazyFrame.from_json, LazyFrame.write_json
 
         """
         if isinstance(file, StringIO):
@@ -259,71 +305,6 @@ class LazyFrame:
             file = format_path(file)
 
         return wrap_ldf(PyLazyFrame.read_json(file))
-
-    @overload
-    def write_json(
-        self,
-        file: IOBase | str | Path | None = ...,
-        *,
-        to_string: Literal[True],
-    ) -> str:
-        ...
-
-    @overload
-    def write_json(
-        self,
-        file: IOBase | str | Path | None = ...,
-        *,
-        to_string: Literal[False] = ...,
-    ) -> None:
-        ...
-
-    @overload
-    def write_json(
-        self,
-        file: IOBase | str | Path | None = ...,
-        *,
-        to_string: bool = ...,
-    ) -> str | None:
-        ...
-
-    def write_json(
-        self,
-        file: IOBase | str | Path | None = None,
-        *,
-        to_string: bool = False,
-    ) -> str | None:
-        """
-        Serialize LogicalPlan to JSON representation.
-
-        Parameters
-        ----------
-        file
-            Write to this file instead of returning a string.
-        to_string
-            Ignore file argument and return a string.
-
-        See Also
-        --------
-        read_json
-
-        """
-        if isinstance(file, (str, Path)):
-            file = format_path(file)
-        to_string_io = (file is not None) and isinstance(file, StringIO)
-        if to_string or file is None or to_string_io:
-            with BytesIO() as buf:
-                self._ldf.write_json(buf)
-                json_bytes = buf.getvalue()
-
-            json_str = json_bytes.decode("utf8")
-            if to_string_io:
-                file.write(json_str)  # type: ignore[union-attr]
-            else:
-                return json_str
-        else:
-            self._ldf.write_json(file)
-        return None
 
     @classmethod
     def _scan_python_function(
@@ -338,367 +319,6 @@ class LazyFrame:
             self._ldf = PyLazyFrame.scan_from_python_function_arrow_schema(
                 list(schema), scan_fn
             )
-        return self
-
-    def __getitem__(self: LDF, item: int | range | slice) -> LazyFrame:
-        if not isinstance(item, slice):
-            raise TypeError(
-                "'LazyFrame' object is not subscriptable (aside from slicing). Use"
-                " 'select()' or 'filter()' instead."
-            )
-        return LazyPolarsSlice(self).apply(item)
-
-    def __contains__(self: LDF, key: str) -> bool:
-        return key in self.columns
-
-    def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-        """
-        Apply a function on Self.
-
-        Parameters
-        ----------
-        func
-            Callable.
-        args
-            Arguments.
-        kwargs
-            Keyword arguments.
-
-        Examples
-        --------
-        >>> def cast_str_to_int(data, col_name):
-        ...     return data.with_column(pl.col(col_name).cast(pl.Int64))
-        ...
-        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["10", "20", "30", "40"]}).lazy()
-        >>> df.pipe(cast_str_to_int, col_name="b").collect()
-        shape: (4, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 1   ┆ 10  │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 2   ┆ 20  │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 3   ┆ 30  │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 4   ┆ 40  │
-        └─────┴─────┘
-
-        """
-        return func(self, *args, **kwargs)
-
-    def _repr_html_(self) -> str:
-        try:
-            dot = self._ldf.to_dot(optimized=False)
-            svg = subprocess.check_output(
-                ["dot", "-Nshape=box", "-Tsvg"], input=f"{dot}".encode()
-            )
-            return (
-                "<h4>NAIVE QUERY PLAN</h4><p>run <b>LazyFrame.show_graph()</b> to see"
-                f" the optimized version</p>{svg.decode()}"
-            )
-        except Exception:
-            insert = self.describe_plan().replace("\n", "<p></p>")
-
-            return f"""\
-<i>naive plan: (run <b>LazyFrame.describe_optimized_plan()</b> to see the optimized plan)</i>
-    <p></p>
-    <div>{insert}</div>\
-"""  # noqa: E501
-
-    def __str__(self) -> str:
-        return f"""\
-naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
-
-{self.describe_plan()}\
-"""
-
-    def describe_plan(self) -> str:
-        """Create a string representation of the unoptimized query plan."""
-        return self._ldf.describe_plan()
-
-    def describe_optimized_plan(
-        self,
-        type_coercion: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-    ) -> str:
-        """Create a string representation of the optimized query plan."""
-        ldf = self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            string_cache=False,
-            slice_pushdown=slice_pushdown,
-        )
-
-        return ldf.describe_optimized_plan()
-
-    def show_graph(
-        self,
-        optimized: bool = True,
-        show: bool = True,
-        output_path: str | None = None,
-        raw_output: bool = False,
-        figsize: tuple[float, float] = (16.0, 12.0),
-    ) -> str | None:
-        """
-        Show a plot of the query plan. Note that you should have graphviz installed.
-
-        Parameters
-        ----------
-        optimized
-            Optimize the query plan.
-        show
-            Show the figure.
-        output_path
-            Write the figure to disk.
-        raw_output
-            Return dot syntax. This cannot be combined with `show`
-        figsize
-            Passed to matplotlib if `show` == True.
-
-        """
-        if raw_output:
-            show = False
-
-        if show and _in_notebook():
-            try:
-                from IPython.display import SVG, display
-
-                dot = self._ldf.to_dot(optimized)
-                svg = subprocess.check_output(
-                    ["dot", "-Nshape=box", "-Tsvg"], input=f"{dot}".encode()
-                )
-                return display(SVG(svg))
-            except Exception as exc:
-                raise ImportError(
-                    "Graphviz dot binary should be on your PATH and matplotlib should"
-                    " be installed to show graph."
-                ) from exc
-        try:
-            import matplotlib.image as mpimg
-            import matplotlib.pyplot as plt
-        except ImportError:
-            raise ImportError(
-                "Graphviz dot binary should be on your PATH and matplotlib should be"
-                " installed to show graph."
-            ) from None
-        dot = self._ldf.to_dot(optimized)
-        if raw_output:
-            return dot
-        with tempfile.TemporaryDirectory() as tmpdir_name:
-            dot_path = os.path.join(tmpdir_name, "dot")
-            with open(dot_path, "w", encoding="utf8") as f:
-                f.write(dot)
-
-            subprocess.run(["dot", "-Nshape=box", "-Tpng", "-O", dot_path])
-            out_path = os.path.join(tmpdir_name, "dot.png")
-
-            if output_path is not None:
-                shutil.copy(out_path, output_path)
-
-            if show:
-                plt.figure(figsize=figsize)
-                img = mpimg.imread(out_path)
-                plt.imshow(img)
-                plt.show()
-        return None
-
-    def inspect(self: LDF, fmt: str = "{}") -> LDF:
-        """
-        Print the value that this node in the computation graph evaluates to and passes
-        on the value.
-
-        >>> df = pl.DataFrame({"foo": [1, 1, -2, 3]}).lazy()
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("foo").cumsum().alias("bar"),
-        ...         ]
-        ...     )
-        ...     .inspect()  # print the node before the filter
-        ...     .filter(pl.col("bar") == pl.col("foo"))
-        ... )  # doctest: +ELLIPSIS
-        <polars.internals.lazyframe.frame.LazyFrame object at ...>
-
-        """
-
-        def inspect(s: pli.DataFrame) -> pli.DataFrame:
-            print(fmt.format(s))
-            return s
-
-        return self.map(inspect, predicate_pushdown=True, projection_pushdown=True)
-
-    def sort(
-        self: LDF,
-        by: str | pli.Expr | list[str] | list[pli.Expr],
-        reverse: bool | list[bool] = False,
-        nulls_last: bool = False,
-    ) -> LDF:
-        """
-        Sort the DataFrame by:
-
-            - A single column name
-            - An expression
-            - Multiple expressions
-
-        Parameters
-        ----------
-        by
-            Column (expressions) to sort by.
-        reverse
-            Sort in descending order.
-        nulls_last
-            Place null values last. Can only be used if sorted by a single column.
-
-        """
-        if type(by) is str:
-            return self._from_pyldf(self._ldf.sort(by, reverse, nulls_last))
-        if type(reverse) is bool:
-            reverse = [reverse]
-
-        by = pli.selection_to_pyexpr_list(by)
-        return self._from_pyldf(self._ldf.sort_by_exprs(by, reverse, nulls_last))
-
-    def collect(
-        self,
-        type_coercion: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        string_cache: bool = False,
-        no_optimization: bool = False,
-        slice_pushdown: bool = True,
-    ) -> pli.DataFrame:
-        """
-        Collect into a DataFrame.
-
-        Note: use :func:`fetch` if you want to run your query on the first `n` rows
-        only. This can be a huge time saver in debugging queries.
-
-        Parameters
-        ----------
-        type_coercion
-            Do type coercion optimization.
-        predicate_pushdown
-            Do predicate pushdown optimization.
-        projection_pushdown
-            Do projection pushdown optimization.
-        simplify_expression
-            Run simplify expressions optimization.
-        string_cache
-            This argument is deprecated. Please set the string cache globally.
-
-            Use a global string cache in this query.
-            This is needed if you want to join on categorical columns.
-
-            Caution!
-                If you already have set a global string cache, set this to `False` as
-                this will reset the global cache when the query is finished.
-        no_optimization
-            Turn off (certain) optimizations.
-        slice_pushdown
-            Slice pushdown optimization.
-
-        Returns
-        -------
-        DataFrame
-
-        """
-        if no_optimization:
-            predicate_pushdown = False
-            projection_pushdown = False
-
-        ldf = self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            string_cache,
-            slice_pushdown,
-        )
-        return pli.wrap_df(ldf.collect())
-
-    def fetch(
-        self,
-        n_rows: int = 500,
-        type_coercion: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        string_cache: bool = False,
-        no_optimization: bool = False,
-        slice_pushdown: bool = True,
-    ) -> pli.DataFrame:
-        """
-        Fetch is like a :func:`collect` operation, but it overwrites the number of rows
-        read by every scan operation. This is a utility that helps debug a query on a
-        smaller number of rows.
-
-        Note that the fetch does not guarantee the final number of rows in the
-        DataFrame. Filter, join operations and a lower number of rows available in the
-        scanned file influence the final number of rows.
-
-        Parameters
-        ----------
-        n_rows
-            Collect n_rows from the data sources.
-        type_coercion
-            Run type coercion optimization.
-        predicate_pushdown
-            Run predicate pushdown optimization.
-        projection_pushdown
-            Run projection pushdown optimization.
-        simplify_expression
-            Run simplify expressions optimization.
-        string_cache
-            This argument is deprecated. Please set the string cache globally.
-
-            Use a global string cache in this query.
-            This is needed if you want to join on categorical columns.
-        no_optimization
-            Turn off optimizations.
-        slice_pushdown
-            Slice pushdown optimization
-
-        Returns
-        -------
-        DataFrame
-
-        """
-        if no_optimization:
-            predicate_pushdown = False
-            projection_pushdown = False
-            slice_pushdown = False
-
-        ldf = self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            string_cache,
-            slice_pushdown,
-        )
-        return pli.wrap_df(ldf.fetch(n_rows))
-
-    def lazy(self: LDF) -> LDF:
-        """
-        Return lazy representation, i.e. itself.
-
-        Useful for writing code that expects either a :class:`DataFrame` or
-        :class:`LazyFrame`.
-
-        Returns
-        -------
-        LazyFrame
-
-        """
         return self
 
     @property
@@ -751,9 +371,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         return self._ldf.dtypes()
 
     @property
-    def schema(self) -> dict[str, type[DataType]]:
+    def schema(self) -> Schema:
         """
-        Get a dict[column name, DataType]
+        Get a dict[column name, DataType].
 
         Examples
         --------
@@ -769,6 +389,533 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """  # noqa: E501
         return self._ldf.schema()
+
+    def __contains__(self: LDF, key: str) -> bool:
+        return key in self.columns
+
+    def __copy__(self: LDF) -> LDF:
+        return self.clone()
+
+    def __deepcopy__(self: LDF, memo: None = None) -> LDF:
+        return self.clone()
+
+    def __getitem__(self: LDF, item: int | range | slice) -> LazyFrame:
+        if not isinstance(item, slice):
+            raise TypeError(
+                "'LazyFrame' object is not subscriptable (aside from slicing). Use"
+                " 'select()' or 'filter()' instead."
+            )
+        return LazyPolarsSlice(self).apply(item)
+
+    def __str__(self) -> str:
+        return f"""\
+naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
+
+{self.describe_plan()}\
+"""
+
+    def _repr_html_(self) -> str:
+        try:
+            dot = self._ldf.to_dot(optimized=False)
+            svg = subprocess.check_output(
+                ["dot", "-Nshape=box", "-Tsvg"], input=f"{dot}".encode()
+            )
+            return (
+                "<h4>NAIVE QUERY PLAN</h4><p>run <b>LazyFrame.show_graph()</b> to see"
+                f" the optimized version</p>{svg.decode()}"
+            )
+        except Exception:
+            insert = self.describe_plan().replace("\n", "<p></p>")
+
+            return f"""\
+<i>naive plan: (run <b>LazyFrame.describe_optimized_plan()</b> to see the optimized plan)</i>
+    <p></p>
+    <div>{insert}</div>\
+"""  # noqa: E501
+
+    @overload
+    def write_json(
+        self,
+        file: None = None,
+        *,
+        to_string: bool | None = ...,
+    ) -> str:
+        ...
+
+    @overload
+    def write_json(
+        self,
+        file: IOBase | str | Path,
+        *,
+        to_string: bool | None = ...,
+    ) -> None:
+        ...
+
+    def write_json(
+        self,
+        file: IOBase | str | Path | None = None,
+        *,
+        to_string: bool | None = None,
+    ) -> str | None:
+        """
+        Write the logical plan of this LazyFrame to a file or string in JSON format.
+
+        Parameters
+        ----------
+        file
+            File path to which the result should be written. If set to ``None``
+            (default), the output is returned as a string instead.
+        to_string
+            Deprecated argument. Ignore file argument and return a string.
+
+        See Also
+        --------
+        LazyFrame.read_json
+
+        """
+        if to_string is not None:
+            warn(
+                "`to_string` argument for `LazyFrame.write_json` will be removed in a"
+                " future version. Remove the argument and set `file=None` (default).",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        else:
+            to_string = False
+
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
+        to_string_io = (file is not None) and isinstance(file, StringIO)
+        if to_string or file is None or to_string_io:
+            with BytesIO() as buf:
+                self._ldf.write_json(buf)
+                json_bytes = buf.getvalue()
+
+            json_str = json_bytes.decode("utf8")
+            if to_string_io:
+                file.write(json_str)  # type: ignore[union-attr]
+            else:
+                return json_str
+        else:
+            self._ldf.write_json(file)
+        return None
+
+    def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        """
+        Apply a function on Self.
+
+        Parameters
+        ----------
+        func
+            Callable.
+        args
+            Arguments.
+        kwargs
+            Keyword arguments.
+
+        Examples
+        --------
+        >>> def cast_str_to_int(data, col_name):
+        ...     return data.with_column(pl.col(col_name).cast(pl.Int64))
+        ...
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["10", "20", "30", "40"]}).lazy()
+        >>> df.pipe(cast_str_to_int, col_name="b").collect()
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 10  │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 20  │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 30  │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 4   ┆ 40  │
+        └─────┴─────┘
+
+        """
+        return func(self, *args, **kwargs)
+
+    def describe_plan(self) -> str:
+        """Create a string representation of the unoptimized query plan."""
+        return self._ldf.describe_plan()
+
+    def describe_optimized_plan(
+        self,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        common_subplan_elimination: bool = True,
+    ) -> str:
+        """Create a string representation of the optimized query plan."""
+        ldf = self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+            common_subplan_elimination,
+        )
+
+        return ldf.describe_optimized_plan()
+
+    def show_graph(
+        self,
+        optimized: bool = True,
+        show: bool = True,
+        output_path: str | None = None,
+        raw_output: bool = False,
+        figsize: tuple[float, float] = (16.0, 12.0),
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        common_subplan_elimination: bool = True,
+    ) -> str | None:
+        """
+        Show a plot of the query plan. Note that you should have graphviz installed.
+
+        Parameters
+        ----------
+        optimized
+            Optimize the query plan.
+        show
+            Show the figure.
+        output_path
+            Write the figure to disk.
+        raw_output
+            Return dot syntax. This cannot be combined with `show`
+        figsize
+            Passed to matplotlib if `show` == True.
+        type_coercion
+            Do type coercion optimization.
+        predicate_pushdown
+            Do predicate pushdown optimization.
+        projection_pushdown
+            Do projection pushdown optimization.
+        simplify_expression
+            Run simplify expressions optimization.
+        slice_pushdown
+            Slice pushdown optimization.
+        common_subplan_elimination
+            Will try to cache branching subplans that occur on self-joins or unions.
+
+        """
+        if raw_output:
+            show = False
+
+        _ldf = self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+            common_subplan_elimination,
+        )
+
+        if show and _in_notebook():
+            try:
+                from IPython.display import SVG, display
+
+                dot = _ldf.to_dot(optimized)
+                svg = subprocess.check_output(
+                    ["dot", "-Nshape=box", "-Tsvg"], input=f"{dot}".encode()
+                )
+                return display(SVG(svg))
+            except Exception as exc:
+                raise ImportError(
+                    "Graphviz dot binary should be on your PATH and matplotlib should"
+                    " be installed to show graph."
+                ) from exc
+        try:
+            import matplotlib.image as mpimg
+            import matplotlib.pyplot as plt
+        except ImportError:
+            raise ImportError(
+                "Graphviz dot binary should be on your PATH and matplotlib should be"
+                " installed to show graph."
+            ) from None
+        dot = _ldf.to_dot(optimized)
+        if raw_output:
+            return dot
+        with tempfile.TemporaryDirectory() as tmpdir_name:
+            dot_path = os.path.join(tmpdir_name, "dot")
+            with open(dot_path, "w", encoding="utf8") as f:
+                f.write(dot)
+
+            subprocess.run(["dot", "-Nshape=box", "-Tpng", "-O", dot_path])
+            out_path = os.path.join(tmpdir_name, "dot.png")
+
+            if output_path is not None:
+                shutil.copy(out_path, output_path)
+
+            if show:
+                plt.figure(figsize=figsize)
+                img = mpimg.imread(out_path)
+                plt.imshow(img)
+                plt.show()
+        return None
+
+    def inspect(self: LDF, fmt: str = "{}") -> LDF:
+        """
+        Inspect a node in the computation graph.
+
+        Print the value that this node in the computation graph evaluates to and passes
+        on the value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 1, -2, 3]}).lazy()
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("foo").cumsum().alias("bar"),
+        ...         ]
+        ...     )
+        ...     .inspect()  # print the node before the filter
+        ...     .filter(pl.col("bar") == pl.col("foo"))
+        ... )  # doctest: +ELLIPSIS
+        <polars.internals.lazyframe.frame.LazyFrame object at ...>
+
+        """
+
+        def inspect(s: pli.DataFrame) -> pli.DataFrame:
+            print(fmt.format(s))
+            return s
+
+        return self.map(inspect, predicate_pushdown=True, projection_pushdown=True)
+
+    def sort(
+        self: LDF,
+        by: str
+        | pli.Expr
+        | Sequence[str]
+        | Sequence[pli.Expr]
+        | Sequence[str | pli.Expr],
+        reverse: bool | Sequence[bool] = False,
+        nulls_last: bool = False,
+    ) -> LDF:
+        """
+        Sort the DataFrame.
+
+        Sorting can be done by:
+
+        - A single column name
+        - An expression
+        - Multiple expressions
+
+        Parameters
+        ----------
+        by
+            Column (expressions) to sort by.
+        reverse
+            Sort in descending order.
+        nulls_last
+            Place null values last. Can only be used if sorted by a single column.
+
+        """
+        if type(by) is str:
+            return self._from_pyldf(self._ldf.sort(by, reverse, nulls_last))
+        if type(reverse) is bool:
+            reverse = [reverse]
+
+        by = pli.selection_to_pyexpr_list(by)
+        return self._from_pyldf(self._ldf.sort_by_exprs(by, reverse, nulls_last))
+
+    def profile(
+        self,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
+    ) -> tuple[pli.DataFrame, pli.DataFrame]:
+        """
+        Profile a LazyFrame.
+
+        This will run the query and return a tuple
+        containing the materialized DataFrame and a DataFrame that
+        contains profiling information of each node that is executed.
+
+        The units of the timings are microseconds.
+
+        Parameters
+        ----------
+        type_coercion
+            Do type coercion optimization.
+        predicate_pushdown
+            Do predicate pushdown optimization.
+        projection_pushdown
+            Do projection pushdown optimization.
+        simplify_expression
+            Run simplify expressions optimization.
+        no_optimization
+            Turn off (certain) optimizations.
+        slice_pushdown
+            Slice pushdown optimization.
+
+        Returns
+        -------
+        DataFrame
+
+        """
+        if no_optimization:
+            predicate_pushdown = False
+            projection_pushdown = False
+
+        ldf = self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+        )
+        df, timings = ldf.profile()
+        return pli.wrap_df(df), pli.wrap_df(timings)
+
+    def collect(
+        self,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        string_cache: bool = False,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
+        common_subplan_elimination: bool = True,
+    ) -> pli.DataFrame:
+        """
+        Collect into a DataFrame.
+
+        Note: use :func:`fetch` if you want to run your query on the first `n` rows
+        only. This can be a huge time saver in debugging queries.
+
+        Parameters
+        ----------
+        type_coercion
+            Do type coercion optimization.
+        predicate_pushdown
+            Do predicate pushdown optimization.
+        projection_pushdown
+            Do projection pushdown optimization.
+        simplify_expression
+            Run simplify expressions optimization.
+        string_cache
+            This argument is deprecated. Please set the string cache globally.
+            The argument will be ignored
+        no_optimization
+            Turn off (certain) optimizations.
+        slice_pushdown
+            Slice pushdown optimization.
+        common_subplan_elimination
+            Will try to cache branching subplans that occur on self-joins or unions.
+
+        Returns
+        -------
+        DataFrame
+
+        """
+        if no_optimization:
+            predicate_pushdown = False
+            projection_pushdown = False
+            slice_pushdown = False
+            common_subplan_elimination = False
+
+        ldf = self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+            common_subplan_elimination,
+        )
+        return pli.wrap_df(ldf.collect())
+
+    def fetch(
+        self,
+        n_rows: int = 500,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        string_cache: bool = False,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
+        common_subplan_elimination: bool = True,
+    ) -> pli.DataFrame:
+        """
+        Collect a small number of rows for debugging purposes.
+
+        Fetch is like a :func:`collect` operation, but it overwrites the number of rows
+        read by every scan operation. This is a utility that helps debug a query on a
+        smaller number of rows.
+
+        Note that the fetch does not guarantee the final number of rows in the
+        DataFrame. Filter, join operations and a lower number of rows available in the
+        scanned file influence the final number of rows.
+
+        Parameters
+        ----------
+        n_rows
+            Collect n_rows from the data sources.
+        type_coercion
+            Run type coercion optimization.
+        predicate_pushdown
+            Run predicate pushdown optimization.
+        projection_pushdown
+            Run projection pushdown optimization.
+        simplify_expression
+            Run simplify expressions optimization.
+        string_cache
+            This argument is deprecated. Please set the string cache globally.
+            The argument will be ignored
+        no_optimization
+            Turn off optimizations.
+        slice_pushdown
+            Slice pushdown optimization
+        common_subplan_elimination
+            Will try to cache branching subplans that occur on self-joins or unions.
+
+        Returns
+        -------
+        DataFrame
+
+        """
+        if no_optimization:
+            predicate_pushdown = False
+            projection_pushdown = False
+            slice_pushdown = False
+            common_subplan_elimination = False
+
+        ldf = self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+            common_subplan_elimination,
+        )
+        return pli.wrap_df(ldf.fetch(n_rows))
+
+    def lazy(self: LDF) -> LDF:
+        """
+        Return lazy representation, i.e. itself.
+
+        Useful for writing code that expects either a :class:`DataFrame` or
+        :class:`LazyFrame`.
+
+        Returns
+        -------
+        LazyFrame
+
+        """
+        return self
 
     def cache(self: LDF) -> LDF:
         """Cache the result once the execution of the physical plan hits this node."""
@@ -816,12 +963,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         """
         return self._from_pyldf(self._ldf.clone())
-
-    def __copy__(self: LDF) -> LDF:
-        return self.clone()
-
-    def __deepcopy__(self: LDF, memo: None = None) -> LDF:
-        return self.clone()
 
     def filter(self: LDF, predicate: pli.Expr | str | pli.Series | list[bool]) -> LDF:
         """
@@ -962,8 +1103,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         └─────┴─────┘
 
         """
-        new_by = _prepare_groupby_inputs(by)
-        lgb = self._ldf.groupby(new_by, maintain_order)
+        pyexprs_by = selection_to_pyexpr_list(by)
+        lgb = self._ldf.groupby(pyexprs_by, maintain_order)
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
     def groupby_rolling(
@@ -975,17 +1116,13 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
     ) -> LazyGroupBy[LDF]:
         """
-        Create rolling groups based on a time column (or index value of type Int32,
-        Int64).
+        Create rolling groups based on a time column.
 
-        Different from a rolling groupby the windows are now determined by the
+        Also works for index values of type Int32 or Int64.
+
+        Different from a ``dynamic_groupby`` the windows are now determined by the
         individual values and are not of constant intervals. For constant intervals use
         *groupby_dynamic*
-
-        .. seealso::
-
-            groupby_dynamic
-
 
         The `period` and `offset` arguments are created with
         the following string language:
@@ -1029,6 +1166,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Define whether the temporal window interval is closed or not.
         by
             Also group by this column/these columns
+
+        See Also
+        --------
+        groupby_dynamic
 
         Examples
         --------
@@ -1076,9 +1217,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         if offset is None:
             offset = f"-{period}"
-        by = _prepare_groupby_inputs(by)
+        pyexprs_by = [] if by is None else selection_to_pyexpr_list(by)
 
-        lgb = self._ldf.groupby_rolling(index_column, period, offset, closed, by)
+        lgb = self._ldf.groupby_rolling(
+            index_column, period, offset, closed, pyexprs_by
+        )
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
     def groupby_dynamic(
@@ -1099,10 +1242,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         normal groupby is that a row can be member of multiple groups. The time/index
         window could be seen as a rolling window, with a window size determined by
         dates/times/values instead of slots in the DataFrame.
-
-        .. seealso::
-
-            groupby_rolling
 
         A window is defined by:
 
@@ -1162,6 +1301,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         by
             Also group by this column/these columns
 
+        See Also
+        --------
+        groupby_rolling
+
         """
         if offset is None:
             if period is None:
@@ -1170,7 +1313,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 offset = "0ns"
         if period is None:
             period = every
-        by = _prepare_groupby_inputs(by)
+        pyexprs_by = [] if by is None else selection_to_pyexpr_list(by)
         lgb = self._ldf.groupby_dynamic(
             index_column,
             every,
@@ -1179,7 +1322,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             truncate,
             include_boundaries,
             closed,
-            by,
+            pyexprs_by,
         )
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
@@ -1199,8 +1342,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         force_parallel: bool = False,
     ) -> LDF:
         """
-        Perform an asof join. This is similar to a left-join except that we
-        match on nearest key rather than equal keys.
+        Perform an asof join.
+
+        This is similar to a left-join except that we match on nearest key rather than
+        equal keys.
 
         Both DataFrames must be sorted by the join_asof key.
 
@@ -1319,9 +1464,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     def join(
         self: LDF,
         other: LazyFrame,
-        left_on: str | pli.Expr | list[str | pli.Expr] | None = None,
-        right_on: str | pli.Expr | list[str | pli.Expr] | None = None,
-        on: str | pli.Expr | list[str | pli.Expr] | None = None,
+        left_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        right_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
         how: JoinStrategy = "inner",
         suffix: str = "_right",
         allow_parallel: bool = True,
@@ -1409,44 +1554,21 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                 )
             )
 
-        left_on_: list[str | pli.Expr] | None
-        if isinstance(left_on, (str, pli.Expr)):
-            left_on_ = [left_on]
+        if on is not None:
+            pyexprs = selection_to_pyexpr_list(on)
+            pyexprs_left = pyexprs
+            pyexprs_right = pyexprs
+        elif left_on is not None and right_on is not None:
+            pyexprs_left = selection_to_pyexpr_list(left_on)
+            pyexprs_right = selection_to_pyexpr_list(right_on)
         else:
-            left_on_ = left_on
-
-        right_on_: list[str | pli.Expr] | None
-        if isinstance(right_on, (str, pli.Expr)):
-            right_on_ = [right_on]
-        else:
-            right_on_ = right_on
-
-        if isinstance(on, (str, pli.Expr)):
-            left_on_ = [on]
-            right_on_ = [on]
-        elif isinstance(on, list):
-            left_on_ = on
-            right_on_ = on
-
-        if left_on_ is None or right_on_ is None:
-            raise ValueError("You should pass the column to join on as an argument.")
-
-        new_left_on = []
-        for column in left_on_:
-            if isinstance(column, str):
-                column = pli.col(column)
-            new_left_on.append(column._pyexpr)
-        new_right_on = []
-        for column in right_on_:
-            if isinstance(column, str):
-                column = pli.col(column)
-            new_right_on.append(column._pyexpr)
+            raise ValueError("must specify `on` OR `left_on` and `right_on`")
 
         return self._from_pyldf(
             self._ldf.join(
                 other._ldf,
-                new_left_on,
-                new_right_on,
+                pyexprs_left,
+                pyexprs_right,
                 allow_parallel,
                 force_parallel,
                 how,
@@ -1528,7 +1650,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         if named_exprs and not Config.with_columns_kwargs:
             raise RuntimeError(
                 "**kwargs support is experimental; requires opt-in via"
-                " `pl.Config.set_with_columns_kwargs(True)`"
+                " `pl.Config.with_columns_kwargs = True`"
             )
         elif exprs is None and not named_exprs:
             raise ValueError("Expected at least one of 'exprs' or **named_exprs")
@@ -1572,14 +1694,14 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         return self._from_pyldf(self._ldf.with_context([lf._ldf for lf in other]))
 
-    def with_column(self: LDF, expr: pli.Expr) -> LDF:
+    def with_column(self: LDF, column: pli.Series | pli.Expr) -> LDF:
         """
         Add or overwrite column in a DataFrame.
 
         Parameters
         ----------
-        expr
-            Expression that evaluates to column.
+        column
+            Expression that evaluates to column or a Series to use.
 
         Examples
         --------
@@ -1617,7 +1739,12 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         └──────┴─────┘
 
         """
-        return self.with_columns([expr])
+        if not isinstance(column, (pli.Expr, pli.Series)):
+            raise TypeError(
+                "`with_column` expects a single Expr or Series. "
+                "Consider using `with_columns` if you need multiple columns."
+            )
+        return self.with_columns([column])
 
     def drop(self: LDF, columns: str | list[str]) -> LDF:
         """
@@ -1654,8 +1781,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def shift(self: LDF, periods: int) -> LDF:
         """
-        Shift the values by a given period and fill the parts that will be empty due to
-        this operation with `Nones`.
+        Shift the values by a given period.
 
         Parameters
         ----------
@@ -1706,8 +1832,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         fill_value: pli.Expr | int | str | float,
     ) -> LDF:
         """
-        Shift the values by a given period and fill the parts that will be empty due to
-        this operation with the result of the `fill_value` expression.
+        Shift the values by a given period and fill the resulting null values.
 
         Parameters
         ----------
@@ -1758,14 +1883,15 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def slice(self: LDF, offset: int, length: int | None = None) -> LDF:
         """
-        Slice the DataFrame.
+        Get a slice of this DataFrame.
 
         Parameters
         ----------
         offset
-            Start index.
+            Start index. Negative indexing is supported.
         length
-            Length of the slice.
+            Length of the slice. If set to ``None``, all rows starting at the offset
+            will be selected.
 
         Examples
         --------
@@ -1798,44 +1924,45 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
     def limit(self: LDF, n: int = 5) -> LDF:
         """
-        Limit the LazyFrame to the first `n` rows.
+        Get the first `n` rows.
 
-        .. note::
-            Consider using the :func:`fetch` operation when you only want to test your
-            query. The :func:`fetch` operation will load the first `n` rows at the scan
-            level, whereas the :func:`head`/:func:`limit` are applied at the end.
+        Alias for :func:`LazyFrame.head`.
 
         Parameters
         ----------
         n
-            Number of rows.
+            Number of rows to return.
+
+        Notes
+        -----
+        Consider using the :func:`fetch` operation if you only want to test your
+        query. The :func:`fetch` operation will load the first `n` rows at the scan
+        level, whereas the :func:`head`/:func:`limit` are applied at the end.
+
+        """
+        return self.head(n)
+
+    def head(self: LDF, n: int = 5) -> LDF:
+        """
+        Get the first `n` rows.
+
+        Parameters
+        ----------
+        n
+            Number of rows to return.
+
+        Notes
+        -----
+        Consider using the :func:`fetch` operation if you only want to test your
+        query. The :func:`fetch` operation will load the first `n` rows at the scan
+        level, whereas the :func:`head`/:func:`limit` are applied at the end.
 
         """
         return self.slice(0, n)
 
-    def head(self: LDF, n: int = 5) -> LDF:
-        """
-        Get the first `n` rows of the DataFrame.
-
-        .. note::
-            Consider using the :func:`fetch` operation when you only want to test your
-            query. The :func:`fetch` operation will load the first `n` rows at the scan
-            level, whereas the :func:`head`/:func:`limit` are applied at the end.
-
-        This operation instead loads all the rows and only applies the ``head`` at the
-        end.
-
-        Parameters
-        ----------
-        n
-            Number of rows.
-
-        """
-        return self.limit(n)
-
     def tail(self: LDF, n: int = 5) -> LDF:
         """
-        Get the last `n` rows of the DataFrame.
+        Get the last `n` rows.
 
         Parameters
         ----------
@@ -1857,16 +1984,17 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         Add a column at index 0 that counts the rows.
 
-        .. warning::
-            This can have a negative effect on query performance.
-            This may, for instance, block predicate pushdown optimization.
-
         Parameters
         ----------
         name
             Name of the column to add.
         offset
             Start the row count at this offset.
+
+        Warnings
+        --------
+        This can have a negative effect on query performance.
+        This may, for instance, block predicate pushdown optimization.
 
         Examples
         --------
@@ -1937,18 +2065,19 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         """
         return self.select(pli.all().fill_null(value, strategy, limit))
 
-    def fill_nan(self: LDF, fill_value: int | str | float | pli.Expr) -> LDF:
+    def fill_nan(self: LDF, fill_value: int | str | float | pli.Expr | None) -> LDF:
         """
         Fill floating point NaN values.
-
-        .. warning::
-            Note that floating point NaN (Not a Number) are not missing values!
-            To replace missing values, use :func:`fill_null` instead.
 
         Parameters
         ----------
         fill_value
             Value to fill the NaN values with.
+
+        Warnings
+        --------
+        Note that floating point NaN (Not a Number) are not missing values!
+        To replace missing values, use :func:`fill_null` instead.
 
         """
         if not isinstance(fill_value, pli.Expr):
@@ -1956,31 +2085,143 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         return self._from_pyldf(self._ldf.fill_nan(fill_value._pyexpr))
 
     def std(self: LDF, ddof: int = 1) -> LDF:
-        """Aggregate the columns in the DataFrame to their standard deviation value."""
+        """
+        Aggregate the columns in the DataFrame to their standard deviation value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
+        >>> df.std().collect()
+        shape: (1, 2)
+        ┌──────────┬─────┐
+        │ a        ┆ b   │
+        │ ---      ┆ --- │
+        │ f64      ┆ f64 │
+        ╞══════════╪═════╡
+        │ 1.290994 ┆ 0.5 │
+        └──────────┴─────┘
+
+        """
         return self._from_pyldf(self._ldf.std(ddof))
 
     def var(self: LDF, ddof: int = 1) -> LDF:
-        """Aggregate the columns in the DataFrame to their variance value."""
+        """
+        Aggregate the columns in the DataFrame to their variance value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
+        >>> df.var().collect()
+        shape: (1, 2)
+        ┌──────────┬──────┐
+        │ a        ┆ b    │
+        │ ---      ┆ ---  │
+        │ f64      ┆ f64  │
+        ╞══════════╪══════╡
+        │ 1.666667 ┆ 0.25 │
+        └──────────┴──────┘
+
+        """
         return self._from_pyldf(self._ldf.var(ddof))
 
     def max(self: LDF) -> LDF:
-        """Aggregate the columns in the DataFrame to their maximum value."""
+        """
+        Aggregate the columns in the DataFrame to their maximum value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
+        >>> df.max().collect()
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 4   ┆ 2   │
+        └─────┴─────┘
+
+        """
         return self._from_pyldf(self._ldf.max())
 
     def min(self: LDF) -> LDF:
-        """Aggregate the columns in the DataFrame to their minimum value."""
+        """
+        Aggregate the columns in the DataFrame to their minimum value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
+        >>> df.min().collect()
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 1   │
+        └─────┴─────┘
+
+        """
         return self._from_pyldf(self._ldf.min())
 
     def sum(self: LDF) -> LDF:
-        """Aggregate the columns in the DataFrame to their sum value."""
+        """
+        Aggregate the columns in the DataFrame to their sum value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
+        >>> df.sum().collect()
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 10  ┆ 5   │
+        └─────┴─────┘
+
+        """
         return self._from_pyldf(self._ldf.sum())
 
     def mean(self: LDF) -> LDF:
-        """Aggregate the columns in the DataFrame to their mean value."""
+        """
+        Aggregate the columns in the DataFrame to their mean value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
+        >>> df.mean().collect()
+        shape: (1, 2)
+        ┌─────┬──────┐
+        │ a   ┆ b    │
+        │ --- ┆ ---  │
+        │ f64 ┆ f64  │
+        ╞═════╪══════╡
+        │ 2.5 ┆ 1.25 │
+        └─────┴──────┘
+
+        """
         return self._from_pyldf(self._ldf.mean())
 
     def median(self: LDF) -> LDF:
-        """Aggregate the columns in the DataFrame to their median value."""
+        """
+        Aggregate the columns in the DataFrame to their median value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
+        >>> df.median().collect()
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ f64 ┆ f64 │
+        ╞═════╪═════╡
+        │ 2.5 ┆ 1.0 │
+        └─────┴─────┘
+
+        """
         return self._from_pyldf(self._ldf.median())
 
     def quantile(
@@ -1996,6 +2237,19 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
             Interpolation method.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
+        >>> df.quantile(0.7).collect()
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ f64 ┆ f64 │
+        ╞═════╪═════╡
+        │ 3.0 ┆ 1.0 │
+        └─────┴─────┘
+
         """
         return self._from_pyldf(self._ldf.quantile(quantile, interpolation))
 
@@ -2010,54 +2264,33 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "letters": ["c", "c", "a", "c", "a", "b"],
-        ...         "nrs": [[1, 2], [1, 3], [4, 3], [5, 5, 5], [6], [2, 1, 2]],
+        ...         "letters": ["a", "a", "b", "c"],
+        ...         "numbers": [[1], [2, 3], [4, 5], [6, 7, 8]],
         ...     }
-        ... )
-        >>> df
-        shape: (6, 2)
-        ┌─────────┬───────────┐
-        │ letters ┆ nrs       │
-        │ ---     ┆ ---       │
-        │ str     ┆ list[i64] │
-        ╞═════════╪═══════════╡
-        │ c       ┆ [1, 2]    │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ c       ┆ [1, 3]    │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ a       ┆ [4, 3]    │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ c       ┆ [5, 5, 5] │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ a       ┆ [6]       │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-        │ b       ┆ [2, 1, 2] │
-        └─────────┴───────────┘
-        >>> df.explode("nrs")
-        shape: (13, 2)
-        ┌─────────┬─────┐
-        │ letters ┆ nrs │
-        │ ---     ┆ --- │
-        │ str     ┆ i64 │
-        ╞═════════╪═════╡
-        │ c       ┆ 1   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c       ┆ 2   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c       ┆ 1   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c       ┆ 3   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ ...     ┆ ... │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ a       ┆ 6   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b       ┆ 2   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b       ┆ 1   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b       ┆ 2   │
-        └─────────┴─────┘
+        ... ).lazy()
+        >>> df.explode("numbers").collect()
+        shape: (8, 2)
+        ┌─────────┬─────────┐
+        │ letters ┆ numbers │
+        │ ---     ┆ ---     │
+        │ str     ┆ i64     │
+        ╞═════════╪═════════╡
+        │ a       ┆ 1       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ a       ┆ 2       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ a       ┆ 3       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ b       ┆ 4       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ b       ┆ 5       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ c       ┆ 6       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ c       ┆ 7       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ c       ┆ 8       │
+        └─────────┴─────────┘
 
         """
         columns = pli.selection_to_pyexpr_list(columns)
@@ -2071,6 +2304,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
     ) -> LDF:
         """
         Drop duplicate rows from this DataFrame.
+
         Note that this fails if there is a column of type `List` in the DataFrame or
         subset.
 
@@ -2186,8 +2420,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         value_name: str | None = None,
     ) -> LDF:
         """
-        Unpivot a DataFrame from wide to long format, optionally leaving identifiers
-        set.
+        Unpivot a DataFrame from wide to long format.
+
+        Optionally leaves identifiers set.
 
         This function is useful to massage a DataFrame into a format where one or more
         columns are identifier variables (id_vars), while all other columns, considered
@@ -2253,11 +2488,15 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         f: Callable[[pli.DataFrame], pli.DataFrame],
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
+        slice_pushdown: bool = True,
         no_optimizations: bool = False,
+        schema: None | Schema = None,
+        validate_output_schema: bool = True,
     ) -> LDF:
         """
-        Apply a custom function. It is important that the function returns a Polars
-        DataFrame.
+        Apply a custom function.
+
+        It is important that the function returns a Polars DataFrame.
 
         Parameters
         ----------
@@ -2267,15 +2506,42 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Allow predicate pushdown optimization to pass this node.
         projection_pushdown
             Allow projection pushdown optimization to pass this node.
+        slice_pushdown
+            Allow slice pushdown optimization to pass this node.
         no_optimizations
             Turn off all optimizations past this point.
+        schema
+            Output schema of the function, if set to ``None`` we assume that the schema
+            will remain unchanged by the applied function.
+        validate_output_schema
+            It is paramount that polars' schema is correct. This flag will ensure that
+            the output schema of this function will be checked with the expected schema.
+            Setting this to ``False`` will not do this check, but may lead to hard to
+            debug bugs.
+
+        Warnings
+        --------
+        The ``schema`` of a `LazyFrame` must always be correct. It is up to the caller
+        of this function to ensure that this invariant is upheld.
+
+        It is important that the optimization flags are correct. If the custom function
+        for instance does an aggregation of a column, ``predicate_pushdown`` should not
+        be allowed, as this prunes rows and will influence your aggregation results.
 
         """
         if no_optimizations:
             predicate_pushdown = False
             projection_pushdown = False
+            slice_pushdown = False
         return self._from_pyldf(
-            self._ldf.map(f, predicate_pushdown, projection_pushdown)
+            self._ldf.map(
+                f,
+                predicate_pushdown,
+                projection_pushdown,
+                slice_pushdown,
+                schema,
+                validate_output_schema,
+            )
         )
 
     def interpolate(self: LDF) -> LDF:
@@ -2367,21 +2633,3 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         if isinstance(names, str):
             names = [names]
         return self._from_pyldf(self._ldf.unnest(names))
-
-
-def _prepare_groupby_inputs(
-    by: str | list[str] | pli.Expr | list[pli.Expr] | None,
-) -> list[PyExpr]:
-    if isinstance(by, list):
-        new_by = []
-        for e in by:
-            if isinstance(e, str):
-                e = pli.col(e)
-            new_by.append(e._pyexpr)
-    elif isinstance(by, str):
-        new_by = [pli.col(by)._pyexpr]
-    elif isinstance(by, pli.Expr):
-        new_by = [by._pyexpr]
-    elif by is None:
-        return []
-    return new_by

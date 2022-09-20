@@ -6,7 +6,7 @@ use memmap::Mmap;
 
 use super::*;
 use crate::mmap::MmapBytesReader;
-use crate::utils::apply_projection;
+use crate::utils::{apply_projection, columns_to_projection};
 
 struct MMapChunkIter<'a> {
     dictionaries: Dictionaries,
@@ -18,7 +18,11 @@ struct MMapChunkIter<'a> {
 }
 
 impl<'a> MMapChunkIter<'a> {
-    fn new(mmap: Mmap, metadata: FileMetadata, projection: &'a Option<Vec<usize>>) -> Result<Self> {
+    fn new(
+        mmap: Mmap,
+        metadata: FileMetadata,
+        projection: &'a Option<Vec<usize>>,
+    ) -> PolarsResult<Self> {
         let mmap = Arc::new(mmap);
 
         let end = metadata.blocks.len();
@@ -65,14 +69,20 @@ impl ArrowReader for MMapChunkIter<'_> {
 
 impl<R: MmapBytesReader> IpcReader<R> {
     pub(super) fn finish_memmapped(
-        &self,
+        &mut self,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&[ScanAggregation]>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         match self.reader.to_file() {
             Some(file) => {
                 let mmap = unsafe { memmap::Mmap::map(file).unwrap() };
                 let metadata = read::read_file_metadata(&mut std::io::Cursor::new(mmap.as_ref()))?;
+
+                if let Some(columns) = &self.columns {
+                    let schema = &metadata.schema;
+                    let prj = columns_to_projection(columns, schema)?;
+                    self.projection = Some(prj);
+                }
 
                 let schema = if let Some(projection) = &self.projection {
                     apply_projection(&metadata.schema, projection)

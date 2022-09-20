@@ -4,9 +4,10 @@ use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 use utils::*;
 
+use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::{optimizer, Context};
 use crate::prelude::*;
-use crate::utils::{aexpr_to_root_names, aexprs_to_schema, check_input_node, has_aexpr};
+use crate::utils::{aexpr_to_leaf_names, aexprs_to_schema, check_input_node, has_aexpr};
 
 #[derive(Default)]
 pub(crate) struct PredicatePushDown {}
@@ -35,7 +36,7 @@ impl PredicatePushDown {
         acc_predicates: PlHashMap<Arc<str>, Node>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<()> {
+    ) -> PolarsResult<()> {
         let alp = lp_arena.take(input);
         let lp = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
         lp_arena.replace(input, lp);
@@ -50,7 +51,7 @@ impl PredicatePushDown {
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
         has_projections: bool,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         let inputs = lp.get_inputs();
         let exprs = lp.get_exprs();
 
@@ -111,7 +112,7 @@ impl PredicatePushDown {
                     lp_arena.replace(node, alp);
                     Ok(node)
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
 
             let lp = lp.with_exprs_and_input(exprs, new_inputs);
             Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
@@ -125,7 +126,7 @@ impl PredicatePushDown {
         acc_predicates: PlHashMap<Arc<str>, Node>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         let inputs = lp.get_inputs();
         let exprs = lp.get_exprs();
 
@@ -142,7 +143,7 @@ impl PredicatePushDown {
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
         let lp = lp.with_exprs_and_input(exprs, new_inputs);
 
         // all predicates are done locally
@@ -167,7 +168,7 @@ impl PredicatePushDown {
         mut acc_predicates: PlHashMap<Arc<str>, Node>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         use ALogicalPlan::*;
 
         match lp {
@@ -177,7 +178,7 @@ impl PredicatePushDown {
                 // we remove it and apply it locally
                 let local_predicates = transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena));
 
-                let name = roots_to_key(&aexpr_to_root_names(predicate, expr_arena));
+                let name = roots_to_key(&aexpr_to_leaf_names(predicate, expr_arena));
                 insert_and_combine_predicate(&mut acc_predicates, name, predicate, expr_arena);
                 let alp = lp_arena.take(input);
                 let new_input = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
@@ -192,6 +193,7 @@ impl PredicatePushDown {
             DataFrameScan {
                 df,
                 schema,
+                output_schema,
                 projection,
                 selection,
             } => {
@@ -199,6 +201,7 @@ impl PredicatePushDown {
                 let lp = DataFrameScan {
                     df,
                     schema,
+                    output_schema,
                     projection,
                     selection,
                 };
@@ -258,6 +261,7 @@ impl PredicatePushDown {
                 aggregate,
                 options,
             } => {
+                let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
                 let lp = IpcScan {
@@ -268,7 +272,7 @@ impl PredicatePushDown {
                     aggregate,
                     options,
                 };
-                Ok(lp)
+                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
             #[cfg(feature = "parquet")]
             ParquetScan {
@@ -279,6 +283,8 @@ impl PredicatePushDown {
                 aggregate,
                 options,
             } => {
+                let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
+
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
                 let lp = ParquetScan {
@@ -289,7 +295,7 @@ impl PredicatePushDown {
                     aggregate,
                     options,
                 };
-                Ok(lp)
+                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
             #[cfg(feature = "csv-file")]
             CsvScan {
@@ -300,17 +306,35 @@ impl PredicatePushDown {
                 predicate,
                 aggregate,
             } => {
+                let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
-                let lp = CsvScan {
-                    path,
-                    schema,
-                    output_schema,
-                    options,
-                    predicate,
-                    aggregate,
+                let lp = if let (Some(predicate), Some(_)) = (predicate, options.n_rows) {
+                    let lp = CsvScan {
+                        path,
+                        schema,
+                        output_schema,
+                        options,
+                        predicate: None,
+                        aggregate,
+                    };
+                    let input = lp_arena.add(lp);
+                    Selection {
+                        input,
+                        predicate
+                    }
+                } else {
+                    CsvScan {
+                        path,
+                        schema,
+                        output_schema,
+                        options,
+                        predicate,
+                        aggregate,
+                    }
                 };
-                Ok(lp)
+
+                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
             AnonymousScan {
                 function,
@@ -321,6 +345,7 @@ impl PredicatePushDown {
                 aggregate
             } => {
                 if function.allows_predicate_pushdown() {
+                    let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
                     let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
                     let lp = AnonymousScan {
                         function,
@@ -330,7 +355,7 @@ impl PredicatePushDown {
                         predicate,
                         aggregate
                     };
-                    Ok(lp)
+                    Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
                 } else {
                     let lp = AnonymousScan {
                         function,
@@ -403,10 +428,10 @@ impl PredicatePushDown {
                 for (_, predicate) in acc_predicates {
                     // unique and duplicated can be caused by joins
                     let matches =
-                        |e: &AExpr| matches!(e, AExpr::IsUnique(_) | AExpr::Duplicated(_));
+                        |e: &AExpr| matches!(e, AExpr::Function{function: FunctionExpr::IsDuplicated | FunctionExpr::IsUnique, ..});
 
                     let checks_nulls =
-                        |e: &AExpr| matches!(e, AExpr::IsNull(_) | AExpr::IsNotNull(_)) ||
+                        |e: &AExpr| matches!(e, AExpr::Function{function: FunctionExpr::IsNotNull | FunctionExpr::IsNull, ..} ) ||
                             // any operation that checks for equality or ordering can be wrong because
                             // the join can produce null values
                             matches!(e, AExpr::BinaryExpr {op, ..} if !matches!(op, Operator::NotEq));
@@ -424,6 +449,7 @@ impl PredicatePushDown {
 
                     // predicate should not have an aggregation or window function as that would
                     // be influenced by join
+                    #[allow(clippy::suspicious_else_formatting)]
                     if !predicate_is_pushdown_boundary(predicate, expr_arena) {
                         // no else if. predicate can be in both tables.
                         if check_input_node(predicate, &schema_left, expr_arena) {
@@ -436,8 +462,11 @@ impl PredicatePushDown {
                             );
                             filter_left = true;
                         }
-
-                        if check_input_node(predicate, &schema_right, expr_arena)  {
+                        // this is `else if` because if the predicate is in the left hand side
+                        // the right hand side should be renamed with the suffix.
+                        // in that case we should not push down as the user wants to filter on `x`
+                        // not on `x_rhs`.
+                        else if check_input_node(predicate, &schema_right, expr_arena)  {
                             let name = get_insertion_name(expr_arena, predicate, &schema_right);
                             insert_and_combine_predicate(
                                 &mut pushdown_right,
@@ -449,7 +478,7 @@ impl PredicatePushDown {
                         }
                     }
                     match (filter_left, filter_right, &options.how) {
-                        // if not pushed down on of the tables we have to do it locally.
+                        // if not pushed down on one of the tables we have to do it locally.
                         (false, false, _) |
                         // if left join and predicate only available in right table,
                         // 'we should not filter right, because that would lead to
@@ -478,13 +507,8 @@ impl PredicatePushDown {
                 };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
-
-            lp @ Udf { .. } => {
-                if let ALogicalPlan::Udf {
-                    options: LogicalPlanUdfOptions {
-                        predicate_pd: true, ..
-                    }, ..
-                } = lp
+            MapFunction { ref function, .. } => {
+                if function.allow_predicate_pd()
                 {
                     self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
                 } else {
@@ -507,7 +531,7 @@ impl PredicatePushDown {
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
             // Pushed down passed these nodes
-            lp @ Cache { .. } |  lp @ Sort { .. } => {
+            lp @ Sort { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             }
             lp @ HStack {..} | lp @ Projection {..} | lp @ ExtContext {..} => {
@@ -516,6 +540,8 @@ impl PredicatePushDown {
             // NOT Pushed down passed these nodes
             // predicates influence slice sizes
             lp @ Slice { .. }
+            // caches will be different
+            | lp @ Cache { .. }
             // dont push down predicates. An aggregation needs all rows
             | lp @ Aggregate {..} => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
@@ -534,7 +560,7 @@ impl PredicatePushDown {
         logical_plan: ALogicalPlan,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         let acc_predicates = PlHashMap::new();
         self.push_down(logical_plan, acc_predicates, lp_arena, expr_arena)
     }

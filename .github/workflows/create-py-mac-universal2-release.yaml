@@ -16,17 +16,15 @@ jobs:
         python-version: ["3.7"]
     steps:
       - uses: actions/checkout@v3
-      - name: Install latest Rust nightly
-        uses: actions-rs/toolchain@v1
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2022-07-24
-          override: true
-          components: rustfmt, clippy
+          toolchain: nightly-2022-08-22
       - name: Setup universal2 targets for Rust
         run: |
           rustup target add aarch64-apple-darwin
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
       - name: Prepare maturin publish
@@ -35,13 +33,12 @@ jobs:
           rm py-polars/README.md
           cp README.md py-polars/README.md
           cd py-polars
-          rustup override set nightly-2022-07-24
       - name: maturin publish
         uses: messense/maturin-action@v1
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
         with:
-          maturin-version: '0.13.0'
+          maturin-version: '0.13.2'
           command: publish
           args: -m py-polars/Cargo.toml --target aarch64-apple-darwin --no-sdist -o wheels -i python -u ritchie46
            # uncomment to build a universal2 wheel

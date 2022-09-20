@@ -13,7 +13,7 @@ use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowCount;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ParallelStrategy {
     /// Don't parallelize
@@ -54,7 +54,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&[ScanAggregation]>,
         projection: Option<&[usize]>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         // this path takes predicates and parallelism into account
         let metadata = read::read_metadata(&mut self.reader)?;
         let schema = read::schema::infer_schema(&metadata)?;
@@ -119,7 +119,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
-    pub fn schema(mut self) -> Result<Schema> {
+    pub fn schema(mut self) -> PolarsResult<Schema> {
         let metadata = read::read_metadata(&mut self.reader)?;
 
         let schema = read::infer_schema(&metadata)?;
@@ -147,11 +147,11 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
         self
     }
 
-    fn finish(mut self) -> Result<DataFrame> {
+    fn finish(mut self) -> PolarsResult<DataFrame> {
         let metadata = read::read_metadata(&mut self.reader)?;
         let schema = read::schema::infer_schema(&metadata)?;
 
-        if let Some(cols) = self.columns {
+        if let Some(cols) = &self.columns {
             self.projection = Some(columns_to_projection(cols, &schema)?);
         }
 

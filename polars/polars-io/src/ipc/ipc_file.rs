@@ -42,7 +42,8 @@ use polars_core::prelude::*;
 
 use super::{finish_reader, ArrowReader, ArrowResult};
 use crate::predicates::PhysicalIoExpr;
-use crate::{prelude::*, WriterFactory};
+use crate::prelude::*;
+use crate::WriterFactory;
 
 /// Read Arrows IPC format into a DataFrame
 ///
@@ -53,7 +54,7 @@ use crate::{prelude::*, WriterFactory};
 /// use polars_io::ipc::IpcReader;
 /// use polars_io::SerReader;
 ///
-/// fn example() -> Result<DataFrame> {
+/// fn example() -> PolarsResult<DataFrame> {
 ///     let file = File::open("file.ipc").expect("file not found");
 ///
 ///     IpcReader::new(file)
@@ -68,20 +69,20 @@ pub struct IpcReader<R: MmapBytesReader> {
     rechunk: bool,
     pub(super) n_rows: Option<usize>,
     pub(super) projection: Option<Vec<usize>>,
-    columns: Option<Vec<String>>,
+    pub(crate) columns: Option<Vec<String>>,
     pub(super) row_count: Option<RowCount>,
     memmap: bool,
 }
 
 impl<R: MmapBytesReader> IpcReader<R> {
     /// Get schema of the Ipc File
-    pub fn schema(&mut self) -> Result<Schema> {
+    pub fn schema(&mut self) -> PolarsResult<Schema> {
         let metadata = read::read_file_metadata(&mut self.reader)?;
         Ok((&metadata.schema.fields).into())
     }
 
     /// Get arrow schema of the Ipc File, this is faster than creating a polars schema.
-    pub fn arrow_schema(&mut self) -> Result<ArrowSchema> {
+    pub fn arrow_schema(&mut self) -> PolarsResult<ArrowSchema> {
         let metadata = read::read_file_metadata(&mut self.reader)?;
         Ok(metadata.schema)
     }
@@ -124,7 +125,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&[ScanAggregation]>,
         verbose: bool,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         if self.memmap && self.reader.to_file().is_some() {
             if verbose {
                 eprintln!("memory map ipc file")
@@ -194,7 +195,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
         self
     }
 
-    fn finish(mut self) -> Result<DataFrame> {
+    fn finish(mut self) -> PolarsResult<DataFrame> {
         if self.memmap && self.reader.to_file().is_some() {
             match self.finish_memmapped(None, None) {
                 Ok(df) => return Ok(df),
@@ -215,7 +216,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
         let metadata = read::read_file_metadata(&mut self.reader)?;
         let schema = &metadata.schema;
 
-        if let Some(columns) = self.columns {
+        if let Some(columns) = &self.columns {
             let prj = columns_to_projection(columns, schema)?;
             self.projection = Some(prj);
         }
@@ -250,7 +251,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
 /// use std::fs::File;
 /// use polars_io::SerWriter;
 ///
-/// fn example(df: &mut DataFrame) -> Result<()> {
+/// fn example(df: &mut DataFrame) -> PolarsResult<()> {
 ///     let mut file = File::create("file.ipc").expect("could not create file");
 ///
 ///     IpcWriter::new(&mut file)
@@ -290,7 +291,7 @@ where
         }
     }
 
-    fn finish(&mut self, df: &mut DataFrame) -> Result<()> {
+    fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         let mut ipc_writer = write::FileWriter::try_new(
             &mut self.writer,
             &df.schema().to_arrow(),

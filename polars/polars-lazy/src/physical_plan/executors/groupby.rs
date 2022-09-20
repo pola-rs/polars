@@ -44,7 +44,7 @@ pub(super) fn groupby_helper(
     state: &mut ExecutionState,
     maintain_order: bool,
     slice: Option<(i64, usize)>,
-) -> Result<DataFrame> {
+) -> PolarsResult<DataFrame> {
     df.as_single_chunk_par();
     let gb = df.groupby_with_series(keys, true, maintain_order)?;
 
@@ -80,7 +80,7 @@ pub(super) fn groupby_helper(
                 }
                 Ok(agg)
             })
-            .collect::<Result<Vec<_>>>();
+            .collect::<PolarsResult<Vec<_>>>();
 
         rayon::join(get_columns, get_agg)
     });
@@ -91,8 +91,32 @@ pub(super) fn groupby_helper(
     DataFrame::new(columns)
 }
 
+impl GroupByExec {
+    fn execute_impl(
+        &mut self,
+        state: &mut ExecutionState,
+        df: DataFrame,
+    ) -> PolarsResult<DataFrame> {
+        state.set_schema(self.input_schema.clone());
+        let keys = self
+            .keys
+            .iter()
+            .map(|e| e.evaluate(&df, state))
+            .collect::<PolarsResult<_>>()?;
+        groupby_helper(
+            df,
+            keys,
+            &self.aggs,
+            self.apply.as_ref(),
+            state,
+            self.maintain_order,
+            self.slice,
+        )
+    }
+}
+
 impl Executor for GroupByExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
@@ -103,20 +127,24 @@ impl Executor for GroupByExec {
             eprintln!("keys/aggregates are not partitionable: running default HASH AGGREGATION")
         }
         let df = self.input.execute(state)?;
-        state.set_schema(self.input_schema.clone());
-        let keys = self
-            .keys
-            .iter()
-            .map(|e| e.evaluate(&df, state))
-            .collect::<Result<_>>()?;
-        groupby_helper(
-            df,
-            keys,
-            &self.aggs,
-            self.apply.as_ref(),
-            state,
-            self.maintain_order,
-            self.slice,
-        )
+
+        let profile_name = if state.has_node_timer() {
+            let by = self
+                .keys
+                .iter()
+                .map(|s| Ok(s.to_field(&self.input_schema)?.name))
+                .collect::<PolarsResult<Vec<_>>>()?;
+            let name = column_delimited("groupby".to_string(), &by);
+            Cow::Owned(name)
+        } else {
+            Cow::Borrowed("")
+        };
+
+        if state.has_node_timer() {
+            let new_state = state.clone();
+            new_state.record(|| self.execute_impl(state, df), profile_name)
+        } else {
+            self.execute_impl(state, df)
+        }
     }
 }

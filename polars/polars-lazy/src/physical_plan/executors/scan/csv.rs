@@ -10,7 +10,7 @@ pub struct CsvExec {
 }
 
 impl CsvExec {
-    fn read(&mut self) -> Result<DataFrame> {
+    fn read(&mut self) -> PolarsResult<DataFrame> {
         let mut with_columns = mem::take(&mut self.options.with_columns);
         let mut projected_len = 0;
         with_columns.as_ref().map(|columns| {
@@ -59,7 +59,7 @@ impl CsvExec {
 }
 
 impl Executor for CsvExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let finger_print = FileFingerPrint {
             path: self.path.clone(),
             predicate: self
@@ -68,8 +68,25 @@ impl Executor for CsvExec {
                 .map(|ae| ae.as_expression().unwrap().clone()),
             slice: (self.options.skip_rows, self.options.n_rows),
         };
-        state
-            .file_cache
-            .read(finger_print, self.options.file_counter, &mut || self.read())
+
+        let profile_name = if state.has_node_timer() {
+            let mut ids = vec![self.path.to_string_lossy().to_string()];
+            if self.predicate.is_some() {
+                ids.push("predicate".to_string())
+            }
+            let name = column_delimited("csv".to_string(), &ids);
+            Cow::Owned(name)
+        } else {
+            Cow::Borrowed("")
+        };
+
+        state.record(
+            || {
+                state
+                    .file_cache
+                    .read(finger_print, self.options.file_counter, &mut || self.read())
+            },
+            profile_name,
+        )
     }
 }

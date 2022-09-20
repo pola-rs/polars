@@ -5,7 +5,7 @@ use polars_utils::flatten;
 
 use super::*;
 #[cfg(feature = "performant")]
-use crate::utils::split_offsets;
+use crate::utils::_split_offsets;
 
 pub(super) fn use_sort_merge(s_left: &Series, s_right: &Series) -> bool {
     // only use for numeric data for now
@@ -32,7 +32,7 @@ fn par_sorted_merge_left_impl<T>(
 where
     T: PolarsNumericType,
 {
-    let offsets = split_offsets(s_left.len(), POOL.current_num_threads());
+    let offsets = _split_offsets(s_left.len(), POOL.current_num_threads());
     let s_left = s_left.rechunk();
     let s_right = s_right.rechunk();
 
@@ -99,7 +99,7 @@ fn par_sorted_merge_inner_impl<T>(
 where
     T: PolarsNumericType,
 {
-    let offsets = split_offsets(s_left.len(), POOL.current_num_threads());
+    let offsets = _split_offsets(s_left.len(), POOL.current_num_threads());
     let s_left = s_left.rechunk();
     let s_right = s_right.rechunk();
 

@@ -10,7 +10,10 @@
 //! in parallel and your queries are optimized just in time.
 //!
 //! ```rust no_run
-//! let lf1 = LazyFrame::scan_parquet("myfile_1.parquet".into(), Default::default())?
+//! use polars::prelude::*;
+//! # fn example() -> PolarsResult<()> {
+//!
+//! let lf1 = LazyFrame::scan_parquet("myfile_1.parquet", Default::default())?
 //!     .groupby([col("ham")])
 //!     .agg([
 //!         // expressions can be combined into powerful aggregations
@@ -24,13 +27,15 @@
 //!         col("foo").reverse().list().alias("reverse_group"),
 //!     ]);
 //!
-//! let lf2 = LazyFrame::scan_parquet("myfile_2.parquet".into(), Default::default())?
+//! let lf2 = LazyFrame::scan_parquet("myfile_2.parquet", Default::default())?
 //!     .select([col("ham"), col("spam")]);
 //!
 //! let df = lf1
-//!     .join(lf2, [col("reverse_group")], [col("foo")], JoinType::Left)
+//!     .join(lf2, [col("reverse")], [col("foo")], JoinType::Left)
 //!     // now we finally materialize the result.
 //!     .collect()?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! This means that Polars data structures can be shared zero copy with processes in many different
@@ -50,7 +55,7 @@
 //! * [Performance](#performance-and-string-data)
 //!     - [Custom allocator](#custom-allocator)
 //! * [Config](#config-with-env-vars)
-//! * [WASM target](#compile-for-wasm)
+//! * [User Guide](#user-guide)
 //!
 //! ## Cookbooks
 //! See examples in the cookbooks:
@@ -90,6 +95,9 @@
 //! more verbose and less capable of building elegant composite queries. We recommend to use the Lazy API
 //! whenever you can.
 //!
+//! As neither API is async they should be wrapped in `spawn_blocking` when used in an async context
+//! to avoid blocking the async thread pool of the runtime.
+//!
 //! ## Expressions
 //! Polars has a powerful concept called expressions.
 //! Polars expressions can be used in various contexts and are a functional mapping of
@@ -110,6 +118,7 @@
 //!
 //! ```no_run
 //! # use polars::prelude::*;
+//! # fn example() -> PolarsResult<()> {
 //! # let df = DataFrame::default();
 //!   df.lazy()
 //!    .select([
@@ -117,6 +126,8 @@
 //!        col("bar").filter(col("foo").eq(lit(1))).sum(),
 //!    ])
 //!    .collect()?;
+//! # Ok(())
+//! # }
 //! ```
 //! All expressions are ran in parallel, meaning that separate polars expressions are embarrassingly parallel.
 //! (Note that within an expression there may be more parallelization going on).
@@ -172,6 +183,7 @@
 //!                  This allows polars to scale up way beyond that by using `u64` as an index.
 //!                  Polars will be a bit slower with this feature activated as many data structures
 //!                  are less cache efficient.
+//!     - `cse` - Activate common subplan elimination optimization
 //! * IO related:
 //!     - `serde` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization.
 //!                 Can be used for JSON and more serde supported serialization formats.
@@ -231,10 +243,12 @@
 //!     - `list_to_struct` - Convert `List` to `Struct` dtypes.
 //!     - `list_eval` - Apply expressions over list elements.
 //!     - `cumulative_eval` - Apply expressions over cumulatively increasing windows.
-//!     - `argwhere` Get indices where condition holds.
+//!     - `arg_where` - Get indices where condition holds.
+//!     - `search_sorted` - Find indices where elements should be inserted to maintain order.
 //!     - `date_offset` Add an offset to dates that take months and leap years into account.
 //!     - `trigonometry` Trigonometric functions.
 //!     - `sign` Compute the element-wise sign of a Series.
+//!     - `propagate_nans` NaN propagating min/max aggregations.
 //! * `DataFrame` pretty printing
 //!     - `fmt` - Activate DataFrame formatting
 //!
@@ -286,6 +300,16 @@
 //! #[global_allocator]
 //! static GLOBAL: MiMalloc = MiMalloc;
 //! ```
+//! ```ignore
+//! use jemallocator::Jemalloc;
+//!
+//! #[global_allocator]
+//! static GLOBAL: Jemalloc = Jemalloc;
+//! ```
+//!
+//! #### Notes
+//! [Benchmarks](https://github.com/pola-rs/polars/pull/3108) have shown that on Linux JeMalloc
+//! outperforms Mimalloc on all tasks and is therefor the default Linux allocator used for the Python bindings.
 //!
 //! #### Cargo.toml
 //! ```ignore
@@ -294,7 +318,30 @@
 //! ```
 //! ## Config with ENV vars
 //!
-//! * `POLARS_FMT_NO_UTF8` -> use ascii tables in favor of utf8.
+//! * `POLARS_FMT_TABLE_FORMATTING` -> define styling of tables using any of the following options (default = UTF8_FULL):
+//!     
+//!                                    ASCII_FULL
+//!                                    ASCII_NO_BORDERS
+//!                                    ASCII_BORDERS_ONLY
+//!                                    ASCII_BORDERS_ONLY_CONDENSED
+//!                                    ASCII_HORIZONTAL_ONLY
+//!                                    ASCII_MARKDOWN
+//!                                    UTF8_FULL
+//!                                    UTF8_NO_BORDERS
+//!                                    UTF8_BORDERS_ONLY
+//!                                    UTF8_HORIZONTAL_ONLY
+//!                                    NOTHING
+//!                                     
+//!                                    These options are defined by comfy-table which provides examples for each at:
+//!                                    https://github.com/Nukesor/comfy-table/blob/main/src/style/presets.rs
+//! * `POLARS_FMT_TABLE_CELL_ALIGNMENT` -> define cell alignment using any of the following options (default = LEFT):
+//!                                    LEFT
+//!                                    CENTER
+//!                                    RIGHT
+//! * `POLARS_FMT_TABLE_HIDE_COLUMN_NAMES` -> Hide column names
+//! * `POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES` -> Hide data types for columns
+//! * `POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR` -> Hide separator that separates column names from rows
+//! * `POLARS_FMT_TABLE_CHANGE_COLUMN_DATA_TYPE_POSITION_FORMAT"` -> changes the position and format of data, putting it directly below column name
 //! * `POLARS_FMT_MAX_COLS` -> maximum number of columns shown when formatting DataFrames.
 //! * `POLARS_FMT_MAX_ROWS` -> maximum number of rows shown when formatting DataFrames.
 //! * `POLARS_FMT_STR_LEN` -> maximum number of characters printed per string value.
@@ -311,6 +358,7 @@
 //! * `POLARS_ALLOW_EXTENSION` -> allows for `[ObjectChunked<T>]` to be used in arrow, opening up possibilities like using
 //!                               `T` in complex lazy expressions. However this does require `unsafe` code allow this.
 //! * `POLARS_NO_PARQUET_STATISTICS` -> if set, statistics in parquet files are ignored.
+//! * `POLARS_PANIC_ON_ERR` -> panic instead of returning an Error..
 //!
 //! ## User Guide
 //! If you want to read more, [check the User Guide](https://pola-rs.github.io/polars-book/).
@@ -319,11 +367,12 @@ pub mod docs;
 pub mod export;
 pub mod prelude;
 
-pub use polars_core::apply_method_all_arrow_series;
-pub use polars_core::df;
+pub use polars_core::{
+    apply_method_all_arrow_series, chunked_array, datatypes, df, doc, error, frame, functions,
+    series, testing,
+};
 #[cfg(feature = "dtype-categorical")]
-pub use polars_core::toggle_string_cache;
-pub use polars_core::{chunked_array, datatypes, doc, error, frame, functions, series, testing};
+pub use polars_core::{toggle_string_cache, using_string_cache};
 #[cfg(feature = "polars-io")]
 pub use polars_io as io;
 #[cfg(feature = "lazy")]

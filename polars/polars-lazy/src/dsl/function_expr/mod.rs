@@ -1,9 +1,14 @@
 #[cfg(feature = "arg_where")]
 mod arg_where;
+#[cfg(feature = "round_series")]
+mod clip;
+#[cfg(feature = "temporal")]
+mod datetime;
+mod dispatch;
 mod fill_null;
 #[cfg(feature = "is_in")]
 mod is_in;
-#[cfg(feature = "is_in")]
+#[cfg(any(feature = "is_in", feature = "list"))]
 mod list;
 mod nan;
 mod pow;
@@ -11,23 +16,38 @@ mod pow;
 mod rolling;
 #[cfg(feature = "row_hash")]
 mod row_hash;
+mod schema;
+#[cfg(feature = "search_sorted")]
+mod search_sorted;
 mod shift_and_fill;
 #[cfg(feature = "sign")]
 mod sign;
 #[cfg(feature = "strings")]
 mod strings;
+#[cfg(feature = "dtype-struct")]
+mod struct_;
 #[cfg(any(feature = "temporal", feature = "date_offset"))]
 mod temporal;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
 
+use std::fmt::{Display, Formatter};
+
+#[cfg(feature = "list")]
+pub(super) use list::ListFunction;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "temporal")]
+pub(super) use self::datetime::TemporalFunction;
 pub(super) use self::nan::NanFunction;
 #[cfg(feature = "strings")]
-pub(super) use self::strings::StringFunction;
+pub(crate) use self::strings::StringFunction;
+#[cfg(feature = "dtype-struct")]
+pub(super) use self::struct_::StructFunction;
+#[cfg(feature = "trigonometry")]
+pub(super) use self::trigonometry::TrigonometricFunction;
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -41,8 +61,12 @@ pub enum FunctionExpr {
     IsIn,
     #[cfg(feature = "arg_where")]
     ArgWhere,
+    #[cfg(feature = "search_sorted")]
+    SearchSorted,
     #[cfg(feature = "strings")]
     StringExpr(StringFunction),
+    #[cfg(feature = "temporal")]
+    TemporalExpr(TemporalFunction),
     #[cfg(feature = "date_offset")]
     DateOffset(Duration),
     #[cfg(feature = "trigonometry")]
@@ -64,97 +88,81 @@ pub enum FunctionExpr {
         periods: i64,
     },
     Nan(NanFunction),
+    #[cfg(feature = "round_series")]
+    Clip {
+        min: Option<AnyValue<'static>>,
+        max: Option<AnyValue<'static>>,
+    },
+    #[cfg(feature = "list")]
+    ListExpr(ListFunction),
+    #[cfg(feature = "dtype-struct")]
+    StructExpr(StructFunction),
+    #[cfg(feature = "top_k")]
+    TopK {
+        k: usize,
+        reverse: bool,
+    },
+    Shift(i64),
+    Reverse,
+    IsNull,
+    IsNotNull,
+    Not,
+    IsUnique,
+    IsDuplicated,
 }
 
-#[cfg(feature = "trigonometry")]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
-pub enum TrigonometricFunction {
-    Sin,
-    Cos,
-    Tan,
-    ArcSin,
-    ArcCos,
-    ArcTan,
-    Sinh,
-    Cosh,
-    Tanh,
-    ArcSinh,
-    ArcCosh,
-    ArcTanh,
-}
-
-impl FunctionExpr {
-    pub(crate) fn get_field(
-        &self,
-        _input_schema: &Schema,
-        _cntxt: Context,
-        fields: &[Field],
-    ) -> Result<Field> {
-        let with_dtype = |dtype: DataType| Ok(Field::new(fields[0].name(), dtype));
-        let map_dtype = |func: &dyn Fn(&DataType) -> DataType| {
-            let dtype = func(fields[0].data_type());
-            Ok(Field::new(fields[0].name(), dtype))
-        };
-        #[cfg(any(feature = "rolling_window", feature = "trigonometry"))]
-        let float_dtype = || {
-            map_dtype(&|dtype| match dtype {
-                DataType::Float32 => DataType::Float32,
-                _ => DataType::Float64,
-            })
-        };
-
-        let same_type = || map_dtype(&|dtype| dtype.clone());
-        let super_type = || {
-            let mut first = fields[0].clone();
-            let mut st = first.data_type().clone();
-            for field in &fields[1..] {
-                st = get_supertype(&st, field.data_type())?
-            }
-            first.coerce(st);
-            Ok(first)
-        };
-
+impl Display for FunctionExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use FunctionExpr::*;
-        match self {
-            NullCount => with_dtype(IDX_DTYPE),
-            Pow => super_type(),
-            #[cfg(feature = "row_hash")]
-            Hash(..) => with_dtype(DataType::UInt64),
-            #[cfg(feature = "is_in")]
-            IsIn => with_dtype(DataType::Boolean),
-            #[cfg(feature = "arg_where")]
-            ArgWhere => with_dtype(IDX_DTYPE),
-            #[cfg(feature = "strings")]
-            StringExpr(s) => {
-                use StringFunction::*;
-                match s {
-                    Contains { .. } | EndsWith(_) | StartsWith(_) => with_dtype(DataType::Boolean),
-                    Extract { .. } => same_type(),
-                    ExtractAll(_) => with_dtype(DataType::List(Box::new(DataType::Utf8))),
-                    CountMatch(_) => with_dtype(DataType::UInt32),
-                    #[cfg(feature = "string_justify")]
-                    Zfill { .. } | LJust { .. } | RJust { .. } => same_type(),
-                    #[cfg(feature = "temporal")]
-                    Strptime(options) => with_dtype(options.date_dtype.clone()),
-                    #[cfg(feature = "concat_str")]
-                    Concat(_) => with_dtype(DataType::Utf8),
-                }
-            }
 
-            #[cfg(feature = "date_offset")]
-            DateOffset(_) => same_type(),
-            #[cfg(feature = "trigonometry")]
-            Trigonometry(_) => float_dtype(),
-            #[cfg(feature = "sign")]
-            Sign => with_dtype(DataType::Int64),
-            FillNull { super_type, .. } => with_dtype(super_type.clone()),
+        match self {
+            NullCount => write!(f, "null_count"),
+            Pow => write!(f, "pow"),
+            #[cfg(feature = "row_hash")]
+            Hash(_, _, _, _) => write!(f, "hash"),
             #[cfg(feature = "is_in")]
-            ListContains => with_dtype(DataType::Boolean),
+            IsIn => write!(f, "is_in"),
+            #[cfg(feature = "arg_where")]
+            ArgWhere => write!(f, "arg_where"),
+            #[cfg(feature = "search_sorted")]
+            SearchSorted => write!(f, "search_sorted"),
+            #[cfg(feature = "strings")]
+            StringExpr(s) => write!(f, "{}", s),
+            #[cfg(feature = "temporal")]
+            TemporalExpr(fun) => write!(f, "{}", fun),
+            #[cfg(feature = "date_offset")]
+            DateOffset(_) => write!(f, "dt.offset_by"),
+            #[cfg(feature = "trigonometry")]
+            Trigonometry(func) => write!(f, "{}", func),
+            #[cfg(feature = "sign")]
+            Sign => write!(f, "sign"),
+            FillNull { .. } => write!(f, "fill_null"),
+            #[cfg(feature = "is_in")]
+            ListContains => write!(f, "arr.contains"),
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
-            RollingSkew { .. } => float_dtype(),
-            ShiftAndFill { .. } => same_type(),
-            Nan(n) => n.get_field(fields),
+            RollingSkew { .. } => write!(f, "rolling_skew"),
+            ShiftAndFill { .. } => write!(f, "shift_and_fill"),
+            Nan(_) => write!(f, "nan"),
+            #[cfg(feature = "round_series")]
+            Clip { min, max } => match (min, max) {
+                (Some(_), Some(_)) => write!(f, "clip"),
+                (None, Some(_)) => write!(f, "clip_max"),
+                (Some(_), None) => write!(f, "clip_min"),
+                _ => unreachable!(),
+            },
+            #[cfg(feature = "list")]
+            ListExpr(func) => write!(f, "{}", func),
+            #[cfg(feature = "dtype-struct")]
+            StructExpr(func) => write!(f, "{}", func),
+            #[cfg(feature = "top_k")]
+            TopK { .. } => write!(f, "top_k"),
+            Shift(_) => write!(f, "shift"),
+            Reverse => write!(f, "reverse"),
+            Not => write!(f, "is_not"),
+            IsNull => write!(f, "is_null"),
+            IsNotNull => write!(f, "is_not_null"),
+            IsUnique => write!(f, "is_unique"),
+            IsDuplicated => write!(f, "is_duplicated"),
         }
     }
 }
@@ -178,22 +186,10 @@ macro_rules! map_as_slice {
     }};
 }
 
-// Fn(&Series)
-#[macro_export(super)]
-macro_rules! map_without_args {
-    ($func:path) => {{
-        let f = move |s: &mut [Series]| {
-            let s = &s[0];
-            $func(s)
-        };
-
-        SpecialEq::new(Arc::new(f))
-    }};
-}
-
 // FnOnce(Series)
+// FnOnce(Series, args)
 #[macro_export(super)]
-macro_rules! map_owned_without_args {
+macro_rules! map_owned {
     ($func:path) => {{
         let f = move |s: &mut [Series]| {
             let s = std::mem::take(&mut s[0]);
@@ -202,13 +198,10 @@ macro_rules! map_owned_without_args {
 
         SpecialEq::new(Arc::new(f))
     }};
-}
 
-// Fn(&Series, args)
-macro_rules! map_with_args {
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
-            let s = &s[0];
+            let s = std::mem::take(&mut s[0]);
             $func(s, $($args),*)
         };
 
@@ -216,12 +209,21 @@ macro_rules! map_with_args {
     }};
 }
 
-// FnOnce(Series, args)
+// Fn(&Series, args)
 #[macro_export(super)]
-macro_rules! map_owned_with_args {
+macro_rules! map {
+    ($func:path) => {{
+        let f = move |s: &mut [Series]| {
+            let s = &s[0];
+            $func(s)
+        };
+
+        SpecialEq::new(Arc::new(f))
+    }};
+
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
-            let s = std::mem::take(&mut s[0]);
+            let s = &s[0];
             $func(s, $($args),*)
         };
 
@@ -245,7 +247,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             }
             #[cfg(feature = "row_hash")]
             Hash(k0, k1, k2, k3) => {
-                map_with_args!(row_hash::row_hash, k0, k1, k2, k3)
+                map!(row_hash::row_hash, k0, k1, k2, k3)
             }
             #[cfg(feature = "is_in")]
             IsIn => {
@@ -255,20 +257,26 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             ArgWhere => {
                 wrap!(arg_where::arg_where)
             }
+            #[cfg(feature = "search_sorted")]
+            SearchSorted => {
+                wrap!(search_sorted::search_sorted_impl)
+            }
             #[cfg(feature = "strings")]
             StringExpr(s) => s.into(),
+            #[cfg(feature = "temporal")]
+            TemporalExpr(func) => func.into(),
 
             #[cfg(feature = "date_offset")]
             DateOffset(offset) => {
-                map_owned_with_args!(temporal::date_offset, offset)
+                map_owned!(temporal::date_offset, offset)
             }
             #[cfg(feature = "trigonometry")]
             Trigonometry(trig_function) => {
-                map_with_args!(trigonometry::apply_trigonometric_function, trig_function)
+                map!(trigonometry::apply_trigonometric_function, trig_function)
             }
             #[cfg(feature = "sign")]
             Sign => {
-                map_without_args!(sign::sign)
+                map!(sign::sign)
             }
             FillNull { super_type } => {
                 map_as_slice!(fill_null::fill_null, &super_type)
@@ -280,12 +288,42 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             }
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { window_size, bias } => {
-                map_with_args!(rolling::rolling_skew, window_size, bias)
+                map!(rolling::rolling_skew, window_size, bias)
             }
             ShiftAndFill { periods } => {
                 map_as_slice!(shift_and_fill::shift_and_fill, periods)
             }
             Nan(n) => n.into(),
+            #[cfg(feature = "round_series")]
+            Clip { min, max } => {
+                map_owned!(clip::clip, min.clone(), max.clone())
+            }
+            #[cfg(feature = "list")]
+            ListExpr(lf) => {
+                use ListFunction::*;
+                match lf {
+                    Concat => wrap!(list::concat),
+                }
+            }
+            #[cfg(feature = "dtype-struct")]
+            StructExpr(sf) => {
+                use StructFunction::*;
+                match sf {
+                    FieldByIndex(index) => map!(struct_::get_by_index, index),
+                    FieldByName(name) => map!(struct_::get_by_name, name.clone()),
+                }
+            }
+            #[cfg(feature = "top_k")]
+            TopK { k, reverse } => {
+                map!(top_k, k, reverse)
+            }
+            Shift(periods) => map!(dispatch::shift, periods),
+            Reverse => map!(dispatch::reverse),
+            IsNull => map!(dispatch::is_null),
+            IsNotNull => map!(dispatch::is_not_null),
+            Not => map!(dispatch::is_not),
+            IsUnique => map!(dispatch::is_unique),
+            IsDuplicated => map!(dispatch::is_duplicated),
         }
     }
 }
@@ -296,41 +334,69 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
         use StringFunction::*;
         match func {
             Contains { pat, literal } => {
-                map_with_args!(strings::contains, &pat, literal)
+                map!(strings::contains, &pat, literal)
             }
             EndsWith(sub) => {
-                map_with_args!(strings::ends_with, &sub)
+                map!(strings::ends_with, &sub)
             }
             StartsWith(sub) => {
-                map_with_args!(strings::starts_with, &sub)
+                map!(strings::starts_with, &sub)
             }
             Extract { pat, group_index } => {
-                map_with_args!(strings::extract, &pat, group_index)
+                map!(strings::extract, &pat, group_index)
             }
             ExtractAll(pat) => {
-                map_with_args!(strings::extract_all, &pat)
+                map!(strings::extract_all, &pat)
             }
             CountMatch(pat) => {
-                map_with_args!(strings::count_match, &pat)
+                map!(strings::count_match, &pat)
             }
             #[cfg(feature = "string_justify")]
             Zfill(alignment) => {
-                map_with_args!(strings::zfill, alignment)
+                map!(strings::zfill, alignment)
             }
             #[cfg(feature = "string_justify")]
             LJust { width, fillchar } => {
-                map_with_args!(strings::ljust, width, fillchar)
+                map!(strings::ljust, width, fillchar)
             }
             #[cfg(feature = "string_justify")]
             RJust { width, fillchar } => {
-                map_with_args!(strings::rjust, width, fillchar)
+                map!(strings::rjust, width, fillchar)
             }
             #[cfg(feature = "temporal")]
             Strptime(options) => {
-                map_with_args!(strings::strptime, &options)
+                map!(strings::strptime, &options)
             }
             #[cfg(feature = "concat_str")]
-            Concat(delimiter) => map_with_args!(strings::concat, &delimiter),
+            ConcatVertical(delimiter) => map!(strings::concat, &delimiter),
+            #[cfg(feature = "concat_str")]
+            ConcatHorizontal(delimiter) => map_as_slice!(strings::concat_hor, &delimiter),
+            #[cfg(feature = "regex")]
+            Replace { all, literal } => map_as_slice!(strings::replace, literal, all),
+            Uppercase => map!(strings::uppercase),
+            Lowercase => map!(strings::lowercase),
+        }
+    }
+}
+
+#[cfg(feature = "temporal")]
+impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+    fn from(func: TemporalFunction) -> Self {
+        use TemporalFunction::*;
+        match func {
+            Year => map!(datetime::year),
+            IsoYear => map!(datetime::iso_year),
+            Month => map!(datetime::month),
+            Quarter => map!(datetime::quarter),
+            Week => map!(datetime::week),
+            WeekDay => map!(datetime::weekday),
+            Day => map!(datetime::day),
+            OrdinalDay => map!(datetime::ordinal_day),
+            Hour => map!(datetime::hour),
+            Minute => map!(datetime::minute),
+            Second => map!(datetime::second),
+            NanoSecond => map!(datetime::nanosecond),
+            TimeStamp(tu) => map!(datetime::timestamp, tu),
         }
     }
 }

@@ -1,5 +1,6 @@
 *.iml
 *.so
+*.ipynb
 .DS_Store
 .ENV
 .coverage
@@ -10,6 +11,7 @@
 .mypy_cache/
 .pytest_cache/
 .python-version
+.yarn/
 .vscode/
 __pycache__/
 AUTO_CHANGELOG.md

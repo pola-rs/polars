@@ -8,6 +8,8 @@
 //!
 #[cfg(feature = "serde")]
 mod _serde;
+mod dtype;
+mod field;
 
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
@@ -22,10 +24,16 @@ use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
+pub use dtype::*;
+pub use field::*;
 use num::{Bounded, FromPrimitive, Num, NumCast, Zero};
 use polars_arrow::data_types::IsFloat;
 #[cfg(feature = "serde")]
+use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "serde")]
+use serde::{Deserializer, Serializer};
 
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
@@ -231,7 +239,6 @@ impl PolarsFloatType for Float32Type {}
 impl PolarsFloatType for Float64Type {}
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AnyValue<'a> {
     Null,
     /// A binary true or false.
@@ -265,7 +272,6 @@ pub enum AnyValue<'a> {
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in nanoseconds (64 bits).
     #[cfg(feature = "dtype-datetime")]
-    #[cfg_attr(feature = "serde", serde(skip))]
     Datetime(i64, TimeUnit, &'a Option<TimeZone>),
     // A 64-bit integer representing difference between date-times in [`TimeUnit`]
     #[cfg(feature = "dtype-duration")]
@@ -274,22 +280,246 @@ pub enum AnyValue<'a> {
     #[cfg(feature = "dtype-time")]
     Time(i64),
     #[cfg(feature = "dtype-categorical")]
-    #[cfg_attr(feature = "serde", serde(skip))]
     Categorical(u32, &'a RevMapping),
     /// Nested type, contains arrays that are filled with one of the datetypes.
     List(Series),
     #[cfg(feature = "object")]
     /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
-    #[cfg_attr(feature = "serde", serde(skip))]
     Object(&'a dyn PolarsObjectSafe),
     #[cfg(feature = "dtype-struct")]
-    #[cfg_attr(feature = "serde", serde(skip))]
     Struct(Vec<AnyValue<'a>>, &'a [Field]),
     #[cfg(feature = "dtype-struct")]
-    #[cfg_attr(feature = "serde", serde(skip))]
     StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
     /// A UTF8 encoded string type.
     Utf8Owned(String),
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for AnyValue<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let name = "AnyValue";
+        match self {
+            AnyValue::Null => serializer.serialize_unit_variant(name, 0, "Null"),
+            AnyValue::Int8(v) => serializer.serialize_newtype_variant(name, 1, "Int8", v),
+            AnyValue::Int16(v) => serializer.serialize_newtype_variant(name, 2, "Int16", v),
+            AnyValue::Int32(v) => serializer.serialize_newtype_variant(name, 3, "Int32", v),
+            AnyValue::Int64(v) => serializer.serialize_newtype_variant(name, 4, "Int64", v),
+            AnyValue::UInt8(v) => serializer.serialize_newtype_variant(name, 5, "UInt8", v),
+            AnyValue::UInt16(v) => serializer.serialize_newtype_variant(name, 6, "UInt16", v),
+            AnyValue::UInt32(v) => serializer.serialize_newtype_variant(name, 7, "UInt32", v),
+            AnyValue::UInt64(v) => serializer.serialize_newtype_variant(name, 8, "UInt64", v),
+            AnyValue::Float32(v) => serializer.serialize_newtype_variant(name, 9, "Float32", v),
+            AnyValue::Float64(v) => serializer.serialize_newtype_variant(name, 10, "Float64", v),
+            AnyValue::List(v) => serializer.serialize_newtype_variant(name, 11, "List", v),
+            AnyValue::Boolean(v) => serializer.serialize_newtype_variant(name, 12, "Bool", v),
+            // both utf8 variants same number
+            AnyValue::Utf8(v) => serializer.serialize_newtype_variant(name, 13, "Utf8Owned", v),
+            AnyValue::Utf8Owned(v) => {
+                serializer.serialize_newtype_variant(name, 13, "Utf8Owned", v)
+            }
+            _ => todo!(),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'a> Deserialize<'a> for AnyValue<'static> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'a>,
+    {
+        #[repr(u8)]
+        enum AvField {
+            Null,
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
+            Float32,
+            Float64,
+            List,
+            Bool,
+            Utf8Owned,
+        }
+        const VARIANTS: &[&str] = &[
+            "Null",
+            "UInt8",
+            "UInt16",
+            "UInt32",
+            "UInt64",
+            "Int8",
+            "Int16",
+            "Int32",
+            "Int64",
+            "Float32",
+            "Float64",
+            "List",
+            "Boolean",
+            "Utf8Owned",
+        ];
+        const LAST: u8 = unsafe { std::mem::transmute::<_, u8>(AvField::Utf8Owned) };
+
+        struct FieldVisitor;
+
+        impl Visitor<'_> for FieldVisitor {
+            type Value = AvField;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                write!(formatter, "an integer between 0-{}", LAST)
+            }
+
+            fn visit_i64<E>(self, v: i64) -> std::result::Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                let field: u8 = NumCast::from(v).ok_or_else(|| {
+                    serde::de::Error::invalid_value(
+                        Unexpected::Signed(v),
+                        &"expected value that fits into u8",
+                    )
+                })?;
+
+                // safety:
+                // we are repr: u8 and check last value that we are in bounds
+                let field = unsafe {
+                    if field <= LAST {
+                        std::mem::transmute::<u8, AvField>(field)
+                    } else {
+                        return Err(serde::de::Error::invalid_value(
+                            Unexpected::Signed(v),
+                            &"expected value that fits into AnyValue's number of fields",
+                        ));
+                    }
+                };
+                Ok(field)
+            }
+
+            fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                self.visit_bytes(v.as_bytes())
+            }
+
+            fn visit_bytes<E>(self, v: &[u8]) -> std::result::Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                let field = match v {
+                    b"Null" => AvField::Null,
+                    b"Int8" => AvField::Int8,
+                    b"Int16" => AvField::Int16,
+                    b"Int32" => AvField::Int32,
+                    b"Int64" => AvField::Int64,
+                    b"UInt8" => AvField::UInt8,
+                    b"UInt16" => AvField::UInt16,
+                    b"UInt32" => AvField::UInt32,
+                    b"UInt64" => AvField::UInt64,
+                    b"Float32" => AvField::Float32,
+                    b"Float64" => AvField::Float64,
+                    b"List" => AvField::List,
+                    b"Bool" => AvField::Bool,
+                    b"Utf8Owned" | b"Utf8" => AvField::Utf8Owned,
+                    _ => {
+                        return Err(serde::de::Error::unknown_variant(
+                            &String::from_utf8_lossy(v),
+                            VARIANTS,
+                        ))
+                    }
+                };
+                Ok(field)
+            }
+        }
+
+        impl<'a> Deserialize<'a> for AvField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+            where
+                D: Deserializer<'a>,
+            {
+                deserializer.deserialize_identifier(FieldVisitor)
+            }
+        }
+
+        struct OuterVisitor;
+
+        impl<'b> Visitor<'b> for OuterVisitor {
+            type Value = AnyValue<'static>;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                write!(formatter, "enum AnyValue")
+            }
+
+            fn visit_enum<A>(self, data: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: EnumAccess<'b>,
+            {
+                let out = match data.variant()? {
+                    (AvField::Null, _variant) => AnyValue::Null,
+                    (AvField::Int8, variant) => {
+                        let value = variant.newtype_variant()?;
+                        AnyValue::Int8(value)
+                    }
+                    (AvField::Int16, variant) => {
+                        let value = variant.newtype_variant()?;
+                        AnyValue::Int16(value)
+                    }
+                    (AvField::Int32, variant) => {
+                        let value = variant.newtype_variant()?;
+                        AnyValue::Int32(value)
+                    }
+                    (AvField::Int64, variant) => {
+                        let value = variant.newtype_variant()?;
+                        AnyValue::Int64(value)
+                    }
+                    (AvField::UInt8, variant) => {
+                        let value = variant.newtype_variant()?;
+                        AnyValue::UInt8(value)
+                    }
+                    (AvField::UInt16, variant) => {
+                        let value = variant.newtype_variant()?;
+                        AnyValue::UInt16(value)
+                    }
+                    (AvField::UInt32, variant) => {
+                        let value = variant.newtype_variant()?;
+                        AnyValue::UInt32(value)
+                    }
+                    (AvField::UInt64, variant) => {
+                        let value = variant.newtype_variant()?;
+                        AnyValue::UInt64(value)
+                    }
+                    (AvField::Float32, variant) => {
+                        let value = variant.newtype_variant()?;
+                        AnyValue::Float32(value)
+                    }
+                    (AvField::Float64, variant) => {
+                        let value = variant.newtype_variant()?;
+                        AnyValue::Float64(value)
+                    }
+                    (AvField::Bool, variant) => {
+                        let value = variant.newtype_variant()?;
+                        AnyValue::Boolean(value)
+                    }
+                    (AvField::List, variant) => {
+                        let value = variant.newtype_variant()?;
+                        AnyValue::List(value)
+                    }
+                    (AvField::Utf8Owned, variant) => {
+                        let value = variant.newtype_variant()?;
+                        AnyValue::Utf8Owned(value)
+                    }
+                };
+                Ok(out)
+            }
+        }
+        deserializer.deserialize_enum("AnyValue", VARIANTS, OuterVisitor)
+    }
 }
 
 impl<'a> AnyValue<'a> {
@@ -316,6 +546,13 @@ impl<'a> AnyValue<'a> {
             Datetime(v, _, _) => NumCast::from(*v),
             #[cfg(feature = "dtype-duration")]
             Duration(v, _) => NumCast::from(*v),
+            Boolean(v) => {
+                if *v {
+                    NumCast::from(1)
+                } else {
+                    NumCast::from(0)
+                }
+            }
             _ => unimplemented!(),
         }
     }
@@ -463,7 +700,7 @@ impl<'a> AnyValue<'a> {
 
     /// Try to coerce to an AnyValue with static lifetime.
     /// This can be done if it does not borrow any values.
-    pub fn into_static(self) -> Result<AnyValue<'static>> {
+    pub fn into_static(self) -> PolarsResult<AnyValue<'static>> {
         use AnyValue::*;
         let av = match self {
             Null => AnyValue::Null,
@@ -504,45 +741,6 @@ impl<'a> From<AnyValue<'a>> for Option<i64> {
             UInt32(v) => Some(v as i64),
             _ => todo!(),
         }
-    }
-}
-
-impl Display for DataType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            DataType::Null => "null",
-            DataType::Boolean => "bool",
-            DataType::UInt8 => "u8",
-            DataType::UInt16 => "u16",
-            DataType::UInt32 => "u32",
-            DataType::UInt64 => "u64",
-            DataType::Int8 => "i8",
-            DataType::Int16 => "i16",
-            DataType::Int32 => "i32",
-            DataType::Int64 => "i64",
-            DataType::Float32 => "f32",
-            DataType::Float64 => "f64",
-            DataType::Utf8 => "str",
-            DataType::Date => "date",
-            DataType::Datetime(tu, tz) => {
-                let s = match tz {
-                    None => format!("datetime[{}]", tu),
-                    Some(tz) => format!("datetime[{}, {}]", tu, tz),
-                };
-                return f.write_str(&s);
-            }
-            DataType::Duration(tu) => return write!(f, "duration[{}]", tu),
-            DataType::Time => "time",
-            DataType::List(tp) => return write!(f, "list[{}]", tp),
-            #[cfg(feature = "object")]
-            DataType::Object(s) => s,
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => "cat",
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
-            DataType::Unknown => unreachable!(),
-        };
-        f.write_str(s)
     }
 }
 
@@ -670,379 +868,6 @@ impl TimeUnit {
     }
 }
 
-pub type TimeZone = String;
-
-#[derive(Clone, Debug)]
-pub enum DataType {
-    Boolean,
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Float32,
-    Float64,
-    /// String data
-    Utf8,
-    /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
-    /// in days (32 bits).
-    Date,
-    /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
-    /// in milliseconds (64 bits).
-    Datetime(TimeUnit, Option<TimeZone>),
-    // 64-bit integer representing difference between times in milliseconds or nanoseconds
-    Duration(TimeUnit),
-    /// A 64-bit time representing the elapsed time since midnight in nanoseconds
-    Time,
-    List(Box<DataType>),
-    #[cfg(feature = "object")]
-    /// A generic type that can be used in a `Series`
-    /// &'static str can be used to determine/set inner type
-    Object(&'static str),
-    Null,
-    #[cfg(feature = "dtype-categorical")]
-    // The RevMapping has the internal state.
-    // This is ignored with casts, comparisons, hashing etc.
-    Categorical(Option<Arc<RevMapping>>),
-    #[cfg(feature = "dtype-struct")]
-    Struct(Vec<Field>),
-    // some logical types we cannot know statically, e.g. Datetime
-    Unknown,
-}
-
-impl Default for DataType {
-    fn default() -> Self {
-        DataType::Unknown
-    }
-}
-
-impl Hash for DataType {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        std::mem::discriminant(self).hash(state)
-    }
-}
-
-impl PartialEq for DataType {
-    fn eq(&self, other: &Self) -> bool {
-        use DataType::*;
-        {
-            match (self, other) {
-                // Don't include rev maps in comparisons
-                #[cfg(feature = "dtype-categorical")]
-                (Categorical(_), Categorical(_)) => true,
-                (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) => tu_l == tu_r && tz_l == tz_r,
-                (List(left_inner), List(right_inner)) => left_inner == right_inner,
-                #[cfg(feature = "dtype-duration")]
-                (Duration(tu_l), Duration(tu_r)) => tu_l == tu_r,
-                #[cfg(feature = "object")]
-                (Object(lhs), Object(rhs)) => lhs == rhs,
-                #[cfg(feature = "dtype-struct")]
-                (Struct(lhs), Struct(rhs)) => lhs == rhs,
-                _ => std::mem::discriminant(self) == std::mem::discriminant(other),
-            }
-        }
-    }
-}
-
-impl Eq for DataType {}
-
-impl DataType {
-    pub fn value_within_range(&self, other: AnyValue) -> bool {
-        use DataType::*;
-        match self {
-            UInt8 => other.extract::<u8>().is_some(),
-            #[cfg(feature = "dtype-u16")]
-            UInt16 => other.extract::<u16>().is_some(),
-            UInt32 => other.extract::<u32>().is_some(),
-            UInt64 => other.extract::<u64>().is_some(),
-            #[cfg(feature = "dtype-i8")]
-            Int8 => other.extract::<i8>().is_some(),
-            #[cfg(feature = "dtype-i16")]
-            Int16 => other.extract::<i16>().is_some(),
-            Int32 => other.extract::<i32>().is_some(),
-            Int64 => other.extract::<i64>().is_some(),
-            _ => false,
-        }
-    }
-
-    pub fn inner_dtype(&self) -> Option<&DataType> {
-        if let DataType::List(inner) = self {
-            Some(inner)
-        } else {
-            None
-        }
-    }
-
-    /// Convert to the physical data type
-    #[must_use]
-    pub fn to_physical(&self) -> DataType {
-        use DataType::*;
-        match self {
-            Date => Int32,
-            Datetime(_, _) => Int64,
-            Duration(_) => Int64,
-            Time => Int64,
-            #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => UInt32,
-            _ => self.clone(),
-        }
-    }
-
-    /// Check if this [`DataType`] is a logical type
-    pub fn is_logical(&self) -> bool {
-        self != &self.to_physical()
-    }
-
-    /// Check if this [`DataType`] is a numeric type
-    pub fn is_numeric(&self) -> bool {
-        // allow because it cannot be replaced when object feature is activated
-        #[allow(clippy::match_like_matches_macro)]
-        match self {
-            DataType::Utf8
-            | DataType::List(_)
-            | DataType::Date
-            | DataType::Datetime(_, _)
-            | DataType::Duration(_)
-            | DataType::Boolean
-            | DataType::Null => false,
-            #[cfg(feature = "object")]
-            DataType::Object(_) => false,
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => false,
-            _ => true,
-        }
-    }
-    pub fn is_signed(&self) -> bool {
-        // allow because it cannot be replaced when object feature is activated
-        #[allow(clippy::match_like_matches_macro)]
-        match self {
-            #[cfg(feature = "dtype-i8")]
-            DataType::Int8 => true,
-            #[cfg(feature = "dtype-i16")]
-            DataType::Int16 => true,
-            DataType::Int32 | DataType::Int64 => true,
-            _ => false,
-        }
-    }
-    pub fn is_unsigned(&self) -> bool {
-        self.is_numeric() && !self.is_signed()
-    }
-
-    /// Convert to an Arrow data type.
-    pub fn to_arrow(&self) -> ArrowDataType {
-        use DataType::*;
-        match self {
-            Boolean => ArrowDataType::Boolean,
-            UInt8 => ArrowDataType::UInt8,
-            UInt16 => ArrowDataType::UInt16,
-            UInt32 => ArrowDataType::UInt32,
-            UInt64 => ArrowDataType::UInt64,
-            Int8 => ArrowDataType::Int8,
-            Int16 => ArrowDataType::Int16,
-            Int32 => ArrowDataType::Int32,
-            Int64 => ArrowDataType::Int64,
-            Float32 => ArrowDataType::Float32,
-            Float64 => ArrowDataType::Float64,
-            Utf8 => ArrowDataType::LargeUtf8,
-            Date => ArrowDataType::Date32,
-            Datetime(unit, tz) => ArrowDataType::Timestamp(unit.to_arrow(), tz.clone()),
-            Duration(unit) => ArrowDataType::Duration(unit.to_arrow()),
-            Time => ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
-            List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
-                "item",
-                dt.to_arrow(),
-                true,
-            ))),
-            Null => ArrowDataType::Null,
-            #[cfg(feature = "object")]
-            Object(_) => panic!("cannot convert object to arrow"),
-            #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => ArrowDataType::Dictionary(
-                IntegerType::UInt32,
-                Box::new(ArrowDataType::LargeUtf8),
-                false,
-            ),
-            #[cfg(feature = "dtype-struct")]
-            Struct(fields) => {
-                let fields = fields.iter().map(|fld| fld.to_arrow()).collect();
-                ArrowDataType::Struct(fields)
-            }
-            Unknown => unreachable!(),
-        }
-    }
-}
-
-impl PartialEq<ArrowDataType> for DataType {
-    fn eq(&self, other: &ArrowDataType) -> bool {
-        let dt: DataType = other.into();
-        self == &dt
-    }
-}
-
-/// Characterizes the name and the [`DataType`] of a column.
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(
-    any(feature = "serde", feature = "serde-lazy"),
-    derive(Serialize, Deserialize)
-)]
-pub struct Field {
-    pub name: String,
-    pub dtype: DataType,
-}
-
-impl Field {
-    /// Creates a new `Field`.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use polars_core::prelude::*;
-    /// let f1 = Field::new("Fruit name", DataType::Utf8);
-    /// let f2 = Field::new("Lawful", DataType::Boolean);
-    /// let f2 = Field::new("Departure", DataType::Time);
-    /// ```
-    #[inline]
-    pub fn new(name: &str, dtype: DataType) -> Self {
-        Field {
-            name: name.to_string(),
-            dtype,
-        }
-    }
-
-    pub fn from_owned(name: String, dtype: DataType) -> Self {
-        Field { name, dtype }
-    }
-
-    /// Returns a reference to the `Field` name.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use polars_core::prelude::*;
-    /// let f = Field::new("Year", DataType::Int32);
-    ///
-    /// assert_eq!(f.name(), "Year");
-    /// ```
-    #[inline]
-    pub fn name(&self) -> &String {
-        &self.name
-    }
-
-    /// Returns a reference to the `Field` datatype.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use polars_core::prelude::*;
-    /// let f = Field::new("Birthday", DataType::Date);
-    ///
-    /// assert_eq!(f.data_type(), &DataType::Date);
-    /// ```
-    #[inline]
-    pub fn data_type(&self) -> &DataType {
-        &self.dtype
-    }
-
-    /// Sets the `Field` datatype.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use polars_core::prelude::*;
-    /// let mut f = Field::new("Temperature", DataType::Int32);
-    /// f.coerce(DataType::Float32);
-    ///
-    /// assert_eq!(f, Field::new("Temperature", DataType::Float32));
-    /// ```
-    pub fn coerce(&mut self, dtype: DataType) {
-        self.dtype = dtype;
-    }
-
-    /// Sets the `Field` name.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use polars_core::prelude::*;
-    /// let mut f = Field::new("Atomic number", DataType::UInt32);
-    /// f.set_name("Proton".to_owned());
-    ///
-    /// assert_eq!(f, Field::new("Proton", DataType::UInt32));
-    /// ```
-    pub fn set_name(&mut self, name: String) {
-        self.name = name;
-    }
-
-    /// Converts the `Field` to an `arrow::datatypes::Field`.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use polars_core::prelude::*;
-    /// let f = Field::new("Value", DataType::Int64);
-    /// let af = arrow::datatypes::Field::new("Value", arrow::datatypes::DataType::Int64, true);
-    ///
-    /// assert_eq!(f.to_arrow(), af);
-    /// ```
-    pub fn to_arrow(&self) -> ArrowField {
-        ArrowField::new(&self.name, self.dtype.to_arrow(), true)
-    }
-}
-
-impl From<&ArrowDataType> for DataType {
-    fn from(dt: &ArrowDataType) -> Self {
-        match dt {
-            ArrowDataType::Null => DataType::Null,
-            ArrowDataType::UInt8 => DataType::UInt8,
-            ArrowDataType::UInt16 => DataType::UInt16,
-            ArrowDataType::UInt32 => DataType::UInt32,
-            ArrowDataType::UInt64 => DataType::UInt64,
-            ArrowDataType::Int8 => DataType::Int8,
-            ArrowDataType::Int16 => DataType::Int16,
-            ArrowDataType::Int32 => DataType::Int32,
-            ArrowDataType::Int64 => DataType::Int64,
-            ArrowDataType::Boolean => DataType::Boolean,
-            ArrowDataType::Float32 => DataType::Float32,
-            ArrowDataType::Float64 => DataType::Float64,
-            ArrowDataType::LargeList(f) => DataType::List(Box::new(f.data_type().into())),
-            ArrowDataType::List(f) => DataType::List(Box::new(f.data_type().into())),
-            ArrowDataType::Date32 => DataType::Date,
-            ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), tz.clone()),
-            ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
-            ArrowDataType::Date64 => DataType::Datetime(TimeUnit::Milliseconds, None),
-            ArrowDataType::LargeUtf8 => DataType::Utf8,
-            ArrowDataType::Utf8 => DataType::Utf8,
-            ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
-            #[cfg(feature = "dtype-categorical")]
-            ArrowDataType::Dictionary(_, _, _) => DataType::Categorical(None),
-            #[cfg(feature = "dtype-struct")]
-            ArrowDataType::Struct(fields) => {
-                let fields: Vec<Field> = fields.iter().map(|fld| fld.into()).collect();
-                DataType::Struct(fields)
-            }
-            ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => {
-                #[cfg(feature = "object")]
-                {
-                    DataType::Object("extension")
-                }
-                #[cfg(not(feature = "object"))]
-                {
-                    panic!("activate the 'object' feature to be able to load POLARS_EXTENSION_TYPE")
-                }
-            }
-            dt => panic!("Arrow datatype {:?} not supported by Polars. You probably need to activate that data-type feature.", dt),
-        }
-    }
-}
-
-impl From<&ArrowField> for Field {
-    fn from(f: &ArrowField) -> Self {
-        Field::new(&f.name, f.data_type().into())
-    }
-}
 #[cfg(feature = "private")]
 pub type PlHashMap<K, V> = hashbrown::HashMap<K, V, RandomState>;
 #[cfg(feature = "private")]
@@ -1072,6 +897,7 @@ pub const NULL_DTYPE: DataType = DataType::Int32;
 
 #[cfg(test)]
 mod test {
+    #[cfg(feature = "dtype-categorical")]
     use super::*;
 
     #[test]

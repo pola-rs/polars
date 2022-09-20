@@ -1,4 +1,5 @@
 use std::convert::TryFrom;
+use std::process::exit;
 
 use arrow::array::*;
 use polars_arrow::is_valid::IsValid;
@@ -9,6 +10,10 @@ use crate::prelude::*;
 
 macro_rules! impl_take_random_get {
     ($self:ident, $index:ident, $array_type:ty) => {{
+        if $index >= $self.len() {
+            dbg!($self, $index);
+            exit(1);
+        }
         assert!($index < $self.len());
         let (chunk_idx, idx) = $self.index_to_chunked_index($index);
         // Safety:

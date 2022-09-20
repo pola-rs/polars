@@ -88,6 +88,8 @@ Aggregation
     Expr.mean
     Expr.median
     Expr.min
+    Expr.nan_max
+    Expr.nan_min
     Expr.product
     Expr.quantile
     Expr.std
@@ -163,6 +165,7 @@ Computations
     Expr.rolling_std
     Expr.rolling_sum
     Expr.rolling_var
+    Expr.search_sorted
     Expr.sign
     Expr.sin
     Expr.sinh
@@ -186,6 +189,8 @@ Manipulation/ selection
     Expr.cast
     Expr.ceil
     Expr.clip
+    Expr.clip_max
+    Expr.clip_min
     Expr.drop_nans
     Expr.drop_nulls
     Expr.explode
@@ -199,6 +204,7 @@ Manipulation/ selection
     Expr.head
     Expr.inspect
     Expr.interpolate
+    Expr.limit
     Expr.lower_bound
     Expr.rechunk
     Expr.reinterpret
@@ -217,6 +223,7 @@ Manipulation/ selection
     Expr.take
     Expr.take_every
     Expr.to_physical
+    Expr.top_k
     Expr.upper_bound
     Expr.where
 
@@ -293,6 +300,7 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.weekday
     ExprDateTimeNameSpace.with_time_unit
     ExprDateTimeNameSpace.year
+    ExprDateTimeNameSpace.iso_year
 
 Strings
 -------
@@ -323,6 +331,7 @@ The following methods are available under the `Expr.str` attribute.
     ExprStringNameSpace.slice
     ExprStringNameSpace.split
     ExprStringNameSpace.split_exact
+    ExprStringNameSpace.splitn
     ExprStringNameSpace.starts_with
     ExprStringNameSpace.strip
     ExprStringNameSpace.strptime
@@ -385,3 +394,18 @@ The following methods are available under the `expr.struct` attribute.
 
     ExprStructNameSpace.field
     ExprStructNameSpace.rename_fields
+
+
+Meta
+----
+The following methods are available under the `expr.meta` attribute.
+
+.. currentmodule:: polars.internals.expr.meta
+
+.. autosummary::
+   :toctree: api/
+
+    ExprMetaNameSpace.output_name
+    ExprMetaNameSpace.pop
+    ExprMetaNameSpace.root_names
+    ExprMetaNameSpace.undo_aliases

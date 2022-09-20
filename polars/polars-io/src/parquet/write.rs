@@ -2,12 +2,10 @@ use std::io::Write;
 
 use arrow::array::Array;
 use arrow::chunk::Chunk;
-use arrow::datatypes::DataType as ArrowDataType;
-use arrow::datatypes::PhysicalType;
+use arrow::datatypes::{DataType as ArrowDataType, PhysicalType};
 use arrow::error::Error as ArrowError;
 use arrow::io::parquet::read::ParquetError;
-use arrow::io::parquet::write::{self, FileWriter, *};
-use arrow::io::parquet::write::{DynIter, DynStreamingIterator, Encoding};
+use arrow::io::parquet::write::{self, DynIter, DynStreamingIterator, Encoding, FileWriter, *};
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df};
 use rayon::prelude::*;
@@ -63,7 +61,7 @@ where
     }
 
     /// Write the given DataFrame in the the writer `W`.
-    pub fn finish(mut self, df: &mut DataFrame) -> Result<()> {
+    pub fn finish(mut self, df: &mut DataFrame) -> PolarsResult<()> {
         // ensures all chunks are aligned.
         df.rechunk();
 
@@ -140,7 +138,12 @@ fn create_serializer(
                     let pages = DynStreamingIterator::new(
                         Compressor::new_from_vec(
                             encoded_pages.map(|result| {
-                                result.map_err(|e| ParquetError::General(format!("{}", e)))
+                                result.map_err(|e| {
+                                    ParquetError::FeatureNotSupported(format!(
+                                        "reraised in polars: {}",
+                                        e
+                                    ))
+                                })
                             }),
                             options.compression,
                             vec![],

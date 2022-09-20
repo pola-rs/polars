@@ -3,15 +3,14 @@
 use chrono::{NaiveDate, NaiveDateTime};
 
 #[inline]
-unsafe fn update_and_parse<T: lexical::FromLexical>(
+fn update_and_parse<T: lexical::FromLexical>(
     incr: usize,
     offset: usize,
     vals: &[u8],
 ) -> Option<(T, usize)> {
+    // this maybe oob because we cannot entirely sure about fmt lengths
     let new_offset = offset + incr;
-    debug_assert!(new_offset <= vals.len());
-
-    lexical::parse(vals.get_unchecked(offset..new_offset))
+    lexical::parse(vals.get(offset..new_offset)?)
         .ok()
         .map(|v| (v, new_offset))
 }
@@ -35,9 +34,11 @@ pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<Naive
     if val.len() < fmt_len as usize {
         return None;
     }
-    let mut year: i32 = 0;
-    let mut month: u32 = 0;
-    let mut day: u32 = 0;
+    let mut year: i32 = 1;
+    // minimal day/month is always 1
+    // otherwise chrono may panic.
+    let mut month: u32 = 1;
+    let mut day: u32 = 1;
     let mut hour: u32 = 0;
     let mut min: u32 = 0;
     let mut sec: u32 = 0;
@@ -81,16 +82,16 @@ pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<Naive
                     offset = new_offset;
                 }
                 b'9' => {
-                    (nano, _) = update_and_parse(9, offset, val)?;
+                    (nano, offset) = update_and_parse(9, offset, val)?;
                     break;
                 }
                 b'6' => {
-                    (nano, _) = update_and_parse(6, offset, val)?;
+                    (nano, offset) = update_and_parse(6, offset, val)?;
                     nano *= 1000;
                     break;
                 }
                 b'3' => {
-                    (nano, _) = update_and_parse(3, offset, val)?;
+                    (nano, offset) = update_and_parse(3, offset, val)?;
                     nano *= 1_000_000;
                     break;
                 }
@@ -106,8 +107,14 @@ pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<Naive
             return None;
         }
     }
-
-    Some(NaiveDate::from_ymd(year, month, day).and_hms_nano(hour, min, sec, nano))
+    // all values processed
+    if offset == val.len() {
+        Some(NaiveDate::from_ymd(year, month, day).and_hms_nano(hour, min, sec, nano))
+    }
+    // remaining values did not match pattern
+    else {
+        None
+    }
 }
 
 pub(super) fn fmt_len(fmt: &[u8]) -> Option<u16> {

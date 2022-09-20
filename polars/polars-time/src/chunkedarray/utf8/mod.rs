@@ -13,7 +13,7 @@ use crate::chunkedarray::time::time_to_time64ns;
 
 #[cfg(feature = "dtype-time")]
 fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
-// (string, fmt) -> result
+// (string, fmt) -> PolarsResult
 where
     F: Fn(&str, &str) -> chrono::ParseResult<K>,
 {
@@ -23,7 +23,7 @@ where
 }
 
 fn datetime_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
-// (string, fmt) -> result
+// (string, fmt) -> PolarsResult
 where
     F: Fn(&str, &str) -> chrono::ParseResult<K>,
 {
@@ -36,7 +36,6 @@ where
         "%y/%m/%d %H:%M:%S",
         //210319 23:58:50
         "%y%m%d %H:%M:%S",
-        // 2019-04-18T02:45:55
         // 2021/12/31 12:54:98
         "%Y/%m/%d %H:%M:%S",
         // 2021-12-31 24:58:01
@@ -45,13 +44,18 @@ where
         "%Y/%m/%d %H:%M:%S",
         // 20210319 23:58:50
         "%Y%m%d %H:%M:%S",
+        // note: '%F' cannot be parsed by polars native parser
         // 2019-04-18T02:45:55
-        // %F cannot be parse by polars native parser
         "%Y-%m-%dT%H:%M:%S",
-        // 2019-04-18T02:45:55.555000000
+        // 2019-04-18T02:45:55[...]
+        // milliseconds
+        "%Y-%m-%d %H:%M:%S.%3f",
+        "%Y-%m-%dT%H:%M:%S.%3f",
         // microseconds
+        "%Y-%m-%d %H:%M:%S.%6f",
         "%Y-%m-%dT%H:%M:%S.%6f",
         // nanoseconds
+        "%Y-%m-%d %H:%M:%S.%9f",
         "%Y-%m-%dT%H:%M:%S.%9f",
     ]
     .into_iter()
@@ -59,7 +63,7 @@ where
 }
 
 fn date_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
-// (string, fmt) -> result
+// (string, fmt) -> PolarsResult
 where
     F: Fn(&str, &str) -> chrono::ParseResult<K>,
 {
@@ -98,30 +102,34 @@ enum ParseErrorKind {
 pub trait Utf8Methods {
     #[cfg(feature = "dtype-time")]
     /// Parsing string values and return a [`TimeChunked`]
-    fn as_time(&self, fmt: Option<&str>) -> Result<TimeChunked>;
+    fn as_time(&self, fmt: Option<&str>) -> PolarsResult<TimeChunked>;
 
     #[cfg(feature = "dtype-date")]
     /// Parsing string values and return a [`DateChunked`]
     /// Different from `as_date` this function allows matches that not contain the whole string
     /// e.g. "foo-2021-01-01-bar" could match "2021-01-01"
-    fn as_date_not_exact(&self, fmt: Option<&str>) -> Result<DateChunked>;
+    fn as_date_not_exact(&self, fmt: Option<&str>) -> PolarsResult<DateChunked>;
 
     #[cfg(feature = "dtype-datetime")]
     /// Parsing string values and return a [`DatetimeChunked`]
     /// Different from `as_datetime` this function allows matches that not contain the whole string
     /// e.g. "foo-2021-01-01-bar" could match "2021-01-01"
-    fn as_datetime_not_exact(&self, fmt: Option<&str>, tu: TimeUnit) -> Result<DatetimeChunked>;
+    fn as_datetime_not_exact(
+        &self,
+        fmt: Option<&str>,
+        tu: TimeUnit,
+    ) -> PolarsResult<DatetimeChunked>;
 
     #[cfg(feature = "dtype-date")]
     /// Parsing string values and return a [`DateChunked`]
-    fn as_date(&self, fmt: Option<&str>) -> Result<DateChunked>;
+    fn as_date(&self, fmt: Option<&str>) -> PolarsResult<DateChunked>;
 
     #[cfg(feature = "dtype-datetime")]
     /// Parsing string values and return a [`DatetimeChunked`]
-    fn as_datetime(&self, fmt: Option<&str>, tu: TimeUnit) -> Result<DatetimeChunked>;
+    fn as_datetime(&self, fmt: Option<&str>, tu: TimeUnit) -> PolarsResult<DatetimeChunked>;
 }
 
-fn get_first_val(ca: &Utf8Chunked) -> Result<&str> {
+fn get_first_val(ca: &Utf8Chunked) -> PolarsResult<&str> {
     let idx = match ca.first_non_null() {
         Some(idx) => idx,
         None => {
@@ -135,7 +143,7 @@ fn get_first_val(ca: &Utf8Chunked) -> Result<&str> {
 }
 
 #[cfg(feature = "dtype-datetime")]
-fn sniff_fmt_datetime(ca_utf8: &Utf8Chunked) -> Result<&'static str> {
+fn sniff_fmt_datetime(ca_utf8: &Utf8Chunked) -> PolarsResult<&'static str> {
     let val = get_first_val(ca_utf8)?;
     if let Some(pattern) = datetime_pattern(val, NaiveDateTime::parse_from_str) {
         return Ok(pattern);
@@ -146,7 +154,7 @@ fn sniff_fmt_datetime(ca_utf8: &Utf8Chunked) -> Result<&'static str> {
 }
 
 #[cfg(feature = "dtype-date")]
-fn sniff_fmt_date(ca_utf8: &Utf8Chunked) -> Result<&'static str> {
+fn sniff_fmt_date(ca_utf8: &Utf8Chunked) -> PolarsResult<&'static str> {
     let val = get_first_val(ca_utf8)?;
     if let Some(pattern) = date_pattern(val, NaiveDate::parse_from_str) {
         return Ok(pattern);
@@ -157,7 +165,7 @@ fn sniff_fmt_date(ca_utf8: &Utf8Chunked) -> Result<&'static str> {
 }
 
 #[cfg(feature = "dtype-time")]
-fn sniff_fmt_time(ca_utf8: &Utf8Chunked) -> Result<&'static str> {
+fn sniff_fmt_time(ca_utf8: &Utf8Chunked) -> PolarsResult<&'static str> {
     let val = get_first_val(ca_utf8)?;
     if let Some(pattern) = time_pattern(val, NaiveTime::parse_from_str) {
         return Ok(pattern);
@@ -170,7 +178,7 @@ fn sniff_fmt_time(ca_utf8: &Utf8Chunked) -> Result<&'static str> {
 impl Utf8Methods for Utf8Chunked {
     #[cfg(feature = "dtype-time")]
     /// Parsing string values and return a [`TimeChunked`]
-    fn as_time(&self, fmt: Option<&str>) -> Result<TimeChunked> {
+    fn as_time(&self, fmt: Option<&str>) -> PolarsResult<TimeChunked> {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => sniff_fmt_time(self)?,
@@ -211,7 +219,7 @@ impl Utf8Methods for Utf8Chunked {
     /// Parsing string values and return a [`DateChunked`]
     /// Different from `as_date` this function allows matches that not contain the whole string
     /// e.g. "foo-2021-01-01-bar" could match "2021-01-01"
-    fn as_date_not_exact(&self, fmt: Option<&str>) -> Result<DateChunked> {
+    fn as_date_not_exact(&self, fmt: Option<&str>) -> PolarsResult<DateChunked> {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => sniff_fmt_date(self)?,
@@ -254,7 +262,11 @@ impl Utf8Methods for Utf8Chunked {
     /// Parsing string values and return a [`DatetimeChunked`]
     /// Different from `as_datetime` this function allows matches that not contain the whole string
     /// e.g. "foo-2021-01-01-bar" could match "2021-01-01"
-    fn as_datetime_not_exact(&self, fmt: Option<&str>, tu: TimeUnit) -> Result<DatetimeChunked> {
+    fn as_datetime_not_exact(
+        &self,
+        fmt: Option<&str>,
+        tu: TimeUnit,
+    ) -> PolarsResult<DatetimeChunked> {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => sniff_fmt_datetime(self)?,
@@ -302,7 +314,7 @@ impl Utf8Methods for Utf8Chunked {
 
     #[cfg(feature = "dtype-date")]
     /// Parsing string values and return a [`DateChunked`]
-    fn as_date(&self, fmt: Option<&str>) -> Result<DateChunked> {
+    fn as_date(&self, fmt: Option<&str>) -> PolarsResult<DateChunked> {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => return infer::to_date(self),
@@ -347,7 +359,7 @@ impl Utf8Methods for Utf8Chunked {
 
     #[cfg(feature = "dtype-datetime")]
     /// Parsing string values and return a [`DatetimeChunked`]
-    fn as_datetime(&self, fmt: Option<&str>, tu: TimeUnit) -> Result<DatetimeChunked> {
+    fn as_datetime(&self, fmt: Option<&str>, tu: TimeUnit) -> PolarsResult<DatetimeChunked> {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => return infer::to_datetime(self, tu),

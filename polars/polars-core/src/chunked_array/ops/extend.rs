@@ -1,4 +1,5 @@
-use arrow::{compute::concatenate::concatenate, Either};
+use arrow::compute::concatenate::concatenate;
+use arrow::Either;
 
 use crate::prelude::*;
 
@@ -21,7 +22,7 @@ where
 {
     /// Extend the memory backed by this array with the values from `other`.
     ///
-    /// Different from [`ChunkedArray::append`] which adds chunks to this [`ChunkedArray`] `extent`
+    /// Different from [`ChunkedArray::append`] which adds chunks to this [`ChunkedArray`] `extend`
     /// appends the data from `other` to the underlying `PrimitiveArray` and thus may cause a reallocation.
     ///
     /// However if this does not cause a reallocation, the resulting data structure will not have any extra chunks
@@ -156,10 +157,10 @@ impl BooleanChunked {
 
 #[doc(hidden)]
 impl ListChunked {
-    pub fn extend(&mut self, other: &Self) {
+    pub fn extend(&mut self, other: &Self) -> PolarsResult<()> {
         // TODO! properly implement mutation
         // this is harder because we don't know the inner type of the list
-        self.append(other);
+        self.append(other)
     }
 }
 

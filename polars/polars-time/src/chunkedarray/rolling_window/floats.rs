@@ -1,4 +1,5 @@
-use num::{pow::Pow, Float};
+use num::pow::Pow;
+use num::Float;
 use polars_core::export::num;
 
 use super::*;
@@ -23,7 +24,7 @@ where
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their mean.
-    fn rolling_mean(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_mean(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         rolling_agg(
             &self.0,
             options,
@@ -37,7 +38,7 @@ where
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their sum.
-    fn rolling_sum(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_sum(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         rolling_agg(
             &self.0,
             options,
@@ -51,7 +52,7 @@ where
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their min.
-    fn rolling_min(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_min(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         rolling_agg(
             &self.0,
             options,
@@ -65,7 +66,7 @@ where
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their max.
-    fn rolling_max(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_max(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         rolling_agg(
             &self.0,
             options,
@@ -78,7 +79,7 @@ where
     /// Apply a rolling median (moving median) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be weighted according to the `weights` vector.
-    fn rolling_median(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_median(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         if options.by.is_some() {
             panic!("'rolling by' not yet supported for 'rolling_median', consider using 'groupby_rolling'")
         }
@@ -99,7 +100,7 @@ where
         quantile: f64,
         interpolation: QuantileInterpolOptions,
         options: RollingOptionsImpl,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         if options.by.is_some() {
             panic!("'rolling by' not yet supported for 'rolling_quantile', consider using 'groupby_rolling'")
         }
@@ -132,7 +133,7 @@ where
         Series::try_from((self.0.name(), arr))
     }
 
-    fn rolling_var(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_var(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         rolling_agg(
             &self.0,
             options,
@@ -146,7 +147,7 @@ where
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their std.
-    fn rolling_std(&self, options: RollingOptionsImpl) -> Result<Series> {
+    fn rolling_std(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         if options.window_size.parsed_int {
             let options_fixed: RollingOptionsFixedWindow = options.clone().into();
             check_input(options_fixed.window_size, options.min_periods)?;

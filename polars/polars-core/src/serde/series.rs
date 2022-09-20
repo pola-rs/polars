@@ -42,15 +42,17 @@ impl Serialize for Series {
                 }
                 #[cfg(feature = "dtype-datetime")]
                 DataType::Datetime(_, _) => {
-                    let s = self
-                        .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
-                        .unwrap();
-                    let ca = s.datetime().unwrap();
+                    let ca = self.datetime().unwrap();
                     ca.serialize(serializer)
                 }
                 #[cfg(feature = "dtype-categorical")]
                 DataType::Categorical(_) => {
                     let ca = self.categorical().unwrap();
+                    ca.serialize(serializer)
+                }
+                #[cfg(feature = "dtype-duration")]
+                DataType::Duration(_) => {
+                    let ca = self.duration().unwrap();
                     ca.serialize(serializer)
                 }
                 _ => {
@@ -151,10 +153,17 @@ impl<'de> Deserialize<'de> for Series {
                         Ok(Series::new(&name, values).cast(&DataType::Date).unwrap())
                     }
                     #[cfg(feature = "dtype-datetime")]
-                    DeDataType::Datetime => {
+                    DeDataType::Datetime(tu, tz) => {
                         let values: Vec<Option<i64>> = map.next_value()?;
                         Ok(Series::new(&name, values)
-                            .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+                            .cast(&DataType::Datetime(tu, tz))
+                            .unwrap())
+                    }
+                    #[cfg(feature = "dtype-duration")]
+                    DeDataType::Duration(tu) => {
+                        let values: Vec<Option<i64>> = map.next_value()?;
+                        Ok(Series::new(&name, values)
+                            .cast(&DataType::Duration(tu))
                             .unwrap())
                     }
                     DeDataType::Boolean => {

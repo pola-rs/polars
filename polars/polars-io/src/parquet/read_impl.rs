@@ -27,7 +27,7 @@ fn column_idx_to_series(
     schema: &ArrowSchema,
     bytes: &[u8],
     chunk_size: usize,
-) -> Result<Series> {
+) -> PolarsResult<Series> {
     let field = &schema.fields[column_i];
     let columns = mmap_columns(bytes, md.columns(), &field.name);
     let iter = mmap::to_deserializer(columns, field.clone(), remaining_rows, Some(chunk_size))?;
@@ -43,7 +43,7 @@ fn array_iter_to_series(
     iter: ArrayIter,
     field: &ArrowField,
     num_rows: Option<usize>,
-) -> Result<Series> {
+) -> PolarsResult<Series> {
     let mut total_count = 0;
     let chunks = match num_rows {
         None => iter.collect::<arrow::error::Result<Vec<_>>>()?,
@@ -84,7 +84,7 @@ fn rg_to_dfs(
     row_count: Option<RowCount>,
     parallel: ParallelStrategy,
     projection: &[usize],
-) -> Result<Vec<DataFrame>> {
+) -> PolarsResult<Vec<DataFrame>> {
     let mut dfs = Vec::with_capacity(n_row_groups);
 
     let mut remaining_rows = limit;
@@ -94,7 +94,7 @@ fn rg_to_dfs(
         let md = &file_metadata.row_groups[rg];
         let current_row_count = md.num_rows() as IdxSize;
 
-        if !read_this_row_group(predicate.as_ref(), file_metadata, schema)? {
+        if !read_this_row_group(predicate.as_ref(), file_metadata, schema, rg)? {
             previous_row_count += current_row_count;
             continue;
         }
@@ -119,7 +119,7 @@ fn rg_to_dfs(
                             chunk_size,
                         )
                     })
-                    .collect::<Result<Vec<_>>>()
+                    .collect::<PolarsResult<Vec<_>>>()
             })?
         } else {
             projection
@@ -127,7 +127,7 @@ fn rg_to_dfs(
                 .map(|column_i| {
                     column_idx_to_series(*column_i, md, remaining_rows, schema, bytes, chunk_size)
                 })
-                .collect::<Result<Vec<_>>>()?
+                .collect::<PolarsResult<Vec<_>>>()?
         };
 
         remaining_rows =
@@ -162,7 +162,7 @@ fn rg_to_dfs_par(
     aggregate: Option<&[ScanAggregation]>,
     row_count: Option<RowCount>,
     projection: &[usize],
-) -> Result<Vec<DataFrame>> {
+) -> PolarsResult<Vec<DataFrame>> {
     let mut remaining_rows = limit;
     let mut previous_row_count = 0;
 
@@ -170,21 +170,23 @@ fn rg_to_dfs_par(
     let row_groups = file_metadata
         .row_groups
         .iter()
-        .map(|rg_md| {
+        .enumerate()
+        .map(|(rg_idx, rg_md)| {
             let row_count_start = previous_row_count;
             let num_rows = rg_md.num_rows();
             previous_row_count += num_rows;
             let local_limit = remaining_rows;
             remaining_rows = remaining_rows.saturating_sub(num_rows);
 
-            (rg_md, local_limit, row_count_start)
+            (rg_idx, rg_md, local_limit, row_count_start)
         })
         .collect::<Vec<_>>();
 
     let dfs = row_groups
         .into_par_iter()
-        .map(|(md, local_limit, row_count_start)| {
-            if local_limit == 0 || !read_this_row_group(predicate.as_ref(), file_metadata, schema)?
+        .map(|(rg_idx, md, local_limit, row_count_start)| {
+            if local_limit == 0
+                || !read_this_row_group(predicate.as_ref(), file_metadata, schema, rg_idx)?
             {
                 return Ok(None);
             }
@@ -200,7 +202,7 @@ fn rg_to_dfs_par(
                 .map(|column_i| {
                     column_idx_to_series(*column_i, md, local_limit, schema, bytes, chunk_size)
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
 
             let mut df = DataFrame::new_no_checks(columns);
 
@@ -213,7 +215,7 @@ fn rg_to_dfs_par(
 
             Ok(Some(df))
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<PolarsResult<Vec<_>>>()?;
     Ok(dfs.into_iter().flatten().collect())
 }
 
@@ -229,7 +231,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     mut parallel: ParallelStrategy,
     row_count: Option<RowCount>,
     low_memory: bool,
-) -> Result<DataFrame> {
+) -> PolarsResult<DataFrame> {
     let file_metadata = metadata
         .map(Ok)
         .unwrap_or_else(|| read::read_metadata(&mut reader))?;

@@ -38,11 +38,11 @@
 //! ```rust
 //! use polars::prelude::*;
 //!
-//! fn example(path: &str) -> Result<DataFrame> {
+//! fn example(path: &str) -> PolarsResult<DataFrame> {
 //!     let mut df = CsvReader::from_path(path)?
 //!                 .finish()?;
 //!
-//!     df.try_apply("utf8-column", |s| s.cast::<CategoricalType>())?;
+//!     df.try_apply("utf8-column", |s| s.categorical().cloned())?;
 //!     Ok(df)
 //! }
 //!
@@ -58,13 +58,13 @@
 //! use polars::prelude::*;
 //! use polars::toggle_string_cache;
 //!
-//! fn example(mut df_a: DataFrame, mut df_b: DataFrame) -> Result<DataFrame> {
+//! fn example(mut df_a: DataFrame, mut df_b: DataFrame) -> PolarsResult<DataFrame> {
 //!     // Set a global string cache
 //!     toggle_string_cache(true);
 //!
-//!     df_a.try_apply("a", |s| s.cast::<CategoricalType>())?;
-//!     df_b.try_apply("b", |s| s.cast::<CategoricalType>())?;
-//!     df_a.join(&df_b, "a", "b", JoinType::Inner)
+//!     df_a.try_apply("a", |s| s.categorical().cloned())?;
+//!     df_b.try_apply("b", |s| s.categorical().cloned())?;
+//!     df_a.join(&df_b, ["a"], ["b"], JoinType::Inner, None)
 //! }
 //! ```
 //!
@@ -77,16 +77,16 @@
 //! # {
 //! use polars::prelude::*;
 //!
-//! fn lazy_example(mut df_a: LazyFrame, mut df_b: LazyFrame) -> Result<DataFrame> {
+//! fn lazy_example(mut df_a: LazyFrame, mut df_b: LazyFrame) -> PolarsResult<DataFrame> {
 //!
 //!     let q1 = df_a.with_columns(vec![
-//!         col("a").cast(DataType::Categorical),
+//!         col("a").cast(DataType::Categorical(None)),
 //!     ]);
 //!
 //!     let q2 = df_b.with_columns(vec![
-//!         col("b").cast(DataType::Categorical)
+//!         col("b").cast(DataType::Categorical(None))
 //!     ]);
-//!     q1.inner_join(q2, col("a"), col("b"), None).collect()
+//!     q1.inner_join(q2, col("a"), col("b")).collect()
 //! }
 //! # }
 //! ```

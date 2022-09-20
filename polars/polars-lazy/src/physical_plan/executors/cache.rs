@@ -4,27 +4,28 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub struct CacheExec {
-    pub key: String,
     pub input: Box<dyn Executor>,
+    pub id: usize,
+    pub count: usize,
 }
 
 impl Executor for CacheExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
-        #[cfg(debug_assertions)]
-        {
-            if state.verbose() {
-                println!("run Cache")
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        if self.count > 0 {
+            if let Some(df) = state.cache_hit(&self.id) {
+                if state.verbose() {
+                    println!("CACHE HIT: cache id: {:x}", self.id);
+                }
+                self.count -= 0;
+                return Ok(df);
             }
-        }
-        if let Some(df) = state.cache_hit(&self.key) {
-            return Ok(df);
         }
 
         // cache miss
         let df = self.input.execute(state)?;
-        state.store_cache(std::mem::take(&mut self.key), df.clone());
+        state.store_cache(self.id, df.clone());
         if state.verbose() {
-            println!("cache set {:?}", self.key);
+            println!("CACHE SET: cache id: {:x}", self.id);
         }
         Ok(df)
     }

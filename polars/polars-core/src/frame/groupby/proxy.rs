@@ -428,6 +428,12 @@ impl<'a> GroupsIndicator<'a> {
             GroupsIndicator::Slice([_, len]) => *len as usize,
         }
     }
+    pub fn first(&self) -> IdxSize {
+        match self {
+            GroupsIndicator::Idx(g) => g.0,
+            GroupsIndicator::Slice([first, _]) => *first,
+        }
+    }
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }

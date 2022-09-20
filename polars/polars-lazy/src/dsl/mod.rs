@@ -10,9 +10,12 @@ mod expr;
 mod from;
 pub(crate) mod function_expr;
 #[cfg(feature = "compile")]
-mod functions;
+pub mod functions;
 #[cfg(feature = "list")]
 mod list;
+#[cfg(feature = "meta")]
+mod meta;
+pub(crate) mod names;
 mod options;
 #[cfg(feature = "strings")]
 pub mod string;
@@ -20,29 +23,25 @@ pub mod string;
 mod struct_;
 
 use std::fmt::Debug;
-use std::{
-    ops::{Add, Div, Mul, Rem, Sub},
-    sync::Arc,
-};
+use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::sync::Arc;
 
 pub use expr::*;
 pub use functions::*;
 pub use options::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
 use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
-use polars_core::utils::{get_supertype, NoNull};
+use polars_core::utils::{try_get_supertype, NoNull};
 use polars_ops::prelude::SeriesOps;
 #[cfg(feature = "rolling_window")]
 use polars_time::series::SeriesOpsTime;
 
-use crate::dsl::function_expr::FunctionExpr;
-use crate::dsl::function_expr::NanFunction;
 #[cfg(feature = "trigonometry")]
 use crate::dsl::function_expr::TrigonometricFunction;
+use crate::dsl::function_expr::{FunctionExpr, NanFunction};
 // reexport the lazy method
 pub use crate::frame::IntoLazy;
 pub use crate::logical_plan::lit;
@@ -273,7 +272,7 @@ impl Expr {
     /// Negate `Expr`
     #[allow(clippy::should_implement_trait)]
     pub fn not(self) -> Expr {
-        Expr::Not(Box::new(self))
+        self.map_private(FunctionExpr::Not)
     }
 
     /// Rename Column.
@@ -284,13 +283,13 @@ impl Expr {
     /// Run is_null operation on `Expr`.
     #[allow(clippy::wrong_self_convention)]
     pub fn is_null(self) -> Self {
-        Expr::IsNull(Box::new(self))
+        self.map_private(FunctionExpr::IsNull)
     }
 
     /// Run is_not_null operation on `Expr`.
     #[allow(clippy::wrong_self_convention)]
     pub fn is_not_null(self) -> Self {
-        Expr::IsNotNull(Box::new(self))
+        self.map_private(FunctionExpr::IsNotNull)
     }
 
     /// Drop null values
@@ -300,17 +299,43 @@ impl Expr {
 
     /// Drop NaN values
     pub fn drop_nans(self) -> Self {
-        self.apply_private(NanFunction::DropNans.into(), "drop_nans")
+        self.apply_private(NanFunction::DropNans.into())
     }
 
     /// Reduce groups to minimal value.
     pub fn min(self) -> Self {
-        AggExpr::Min(Box::new(self)).into()
+        AggExpr::Min {
+            input: Box::new(self),
+            propagate_nans: false,
+        }
+        .into()
     }
 
     /// Reduce groups to maximum value.
     pub fn max(self) -> Self {
-        AggExpr::Max(Box::new(self)).into()
+        AggExpr::Max {
+            input: Box::new(self),
+            propagate_nans: false,
+        }
+        .into()
+    }
+
+    /// Reduce groups to minimal value.
+    pub fn nan_min(self) -> Self {
+        AggExpr::Min {
+            input: Box::new(self),
+            propagate_nans: true,
+        }
+        .into()
+    }
+
+    /// Reduce groups to maximum value.
+    pub fn nan_max(self) -> Self {
+        AggExpr::Max {
+            input: Box::new(self),
+            propagate_nans: true,
+        }
+        .into()
     }
 
     /// Reduce groups to the mean value.
@@ -423,7 +448,7 @@ impl Expr {
             other.into(),
             move |mut a, mut b| {
                 if upcast {
-                    let dtype = get_supertype(a.dtype(), b.dtype())?;
+                    let dtype = try_get_supertype(a.dtype(), b.dtype())?;
                     a = a.cast(&dtype)?;
                     b = b.cast(&dtype)?;
                 }
@@ -471,9 +496,9 @@ impl Expr {
     pub fn arg_min(self) -> Self {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "arg_min",
+            ..Default::default()
         };
 
         self.function_with_options(
@@ -487,9 +512,9 @@ impl Expr {
     pub fn arg_max(self) -> Self {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "arg_max",
+            ..Default::default()
         };
 
         self.function_with_options(
@@ -500,29 +525,34 @@ impl Expr {
     }
 
     /// Get the index values that would sort this expression.
-    pub fn arg_sort(self, reverse: bool) -> Self {
-        assert!(
-            !has_expr(&self, |e| matches!(e, Expr::Wildcard)),
-            "wildcard not supported in argsort expr"
-        );
+    pub fn arg_sort(self, sort_options: SortOptions) -> Self {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: true,
-            auto_explode: false,
             fmt_str: "arg_sort",
+            ..Default::default()
         };
 
         self.function_with_options(
-            move |s: Series| {
-                Ok(s.argsort(SortOptions {
-                    descending: reverse,
-                    ..Default::default()
-                })
-                .into_series())
-            },
+            move |s: Series| Ok(s.argsort(sort_options).into_series()),
             GetOutput::from_type(IDX_DTYPE),
             options,
         )
+    }
+
+    #[cfg(feature = "search_sorted")]
+    /// Find indices where elements should be inserted to maintain order.
+    pub fn search_sorted<E: Into<Expr>>(self, element: E) -> Expr {
+        let element = element.into();
+        Expr::Function {
+            input: vec![self, element],
+            function: FunctionExpr::SearchSorted,
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyGroups,
+                auto_explode: true,
+                fmt_str: "search_sorted",
+                ..Default::default()
+            },
+        }
     }
 
     /// Cast expression to another data type.
@@ -571,9 +601,17 @@ impl Expr {
         }
     }
 
+    /// Returns the `k` largest elements.
+    ///
+    /// This has time complexity `O(n + k log(n))`.
+    #[cfg(feature = "top_k")]
+    pub fn top_k(self, k: usize, reverse: bool) -> Self {
+        self.apply_private(FunctionExpr::TopK { k, reverse })
+    }
+
     /// Reverse column
     pub fn reverse(self) -> Self {
-        Expr::Reverse(Box::new(self))
+        self.apply_private(FunctionExpr::Reverse)
     }
 
     /// Apply a function/closure once the logical plan get executed.
@@ -587,7 +625,7 @@ impl Expr {
     /// the correct output_type. If None given the output type of the input expr is used.
     pub fn map<F>(self, function: F, output_type: GetOutput) -> Self
     where
-        F: Fn(Series) -> Result<Series> + 'static + Send + Sync,
+        F: Fn(Series) -> PolarsResult<Series> + 'static + Send + Sync,
     {
         let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
 
@@ -600,11 +638,13 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "map",
+                cast_to_supertypes: false,
+                allow_rename: false,
             },
         }
     }
 
-    fn map_private(self, function_expr: FunctionExpr, fmt_str: &'static str) -> Self {
+    fn map_private(self, function_expr: FunctionExpr) -> Self {
         Expr::Function {
             input: vec![self],
             function: function_expr,
@@ -612,7 +652,9 @@ impl Expr {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: false,
                 auto_explode: false,
-                fmt_str,
+                cast_to_supertypes: false,
+                allow_rename: false,
+                ..Default::default()
             },
         }
     }
@@ -622,7 +664,7 @@ impl Expr {
     /// See the [`Expr::map`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
     pub fn map_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
     where
-        F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
+        F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
     {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
@@ -633,9 +675,8 @@ impl Expr {
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "",
+                ..Default::default()
             },
         }
     }
@@ -649,7 +690,7 @@ impl Expr {
     ///  * `map_list` should be used when the function expects a list aggregated series.
     pub fn map_list<F>(self, function: F, output_type: GetOutput) -> Self
     where
-        F: Fn(Series) -> Result<Series> + 'static + Send + Sync,
+        F: Fn(Series) -> PolarsResult<Series> + 'static + Send + Sync,
     {
         let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
 
@@ -659,9 +700,8 @@ impl Expr {
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyList,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "map_list",
+                ..Default::default()
             },
         }
     }
@@ -674,7 +714,7 @@ impl Expr {
         options: FunctionOptions,
     ) -> Self
     where
-        F: Fn(Series) -> Result<Series> + 'static + Send + Sync,
+        F: Fn(Series) -> PolarsResult<Series> + 'static + Send + Sync,
     {
         let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
 
@@ -697,7 +737,7 @@ impl Expr {
     /// * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
     pub fn apply<F>(self, function: F, output_type: GetOutput) -> Self
     where
-        F: Fn(Series) -> Result<Series> + 'static + Send + Sync,
+        F: Fn(Series) -> PolarsResult<Series> + 'static + Send + Sync,
     {
         let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
 
@@ -707,22 +747,19 @@ impl Expr {
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "",
+                ..Default::default()
             },
         }
     }
 
-    fn apply_private(self, function_expr: FunctionExpr, fmt_str: &'static str) -> Self {
+    fn apply_private(self, function_expr: FunctionExpr) -> Self {
         Expr::Function {
             input: vec![self],
             function: function_expr,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
-                input_wildcard_expansion: false,
-                auto_explode: false,
-                fmt_str,
+                ..Default::default()
             },
         }
     }
@@ -732,7 +769,7 @@ impl Expr {
     /// See the [`Expr::apply`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
     pub fn apply_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
     where
-        F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
+        F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
     {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
@@ -743,9 +780,9 @@ impl Expr {
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
-                input_wildcard_expansion: false,
-                auto_explode: true,
                 fmt_str: "",
+                auto_explode: true,
+                ..Default::default()
             },
         }
     }
@@ -754,8 +791,8 @@ impl Expr {
         self,
         function_expr: FunctionExpr,
         arguments: &[Expr],
-        fmt_str: &'static str,
         auto_explode: bool,
+        cast_to_supertypes: bool,
     ) -> Self {
         let mut input = Vec::with_capacity(arguments.len() + 1);
         input.push(self);
@@ -766,9 +803,9 @@ impl Expr {
             function: function_expr,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
-                input_wildcard_expansion: false,
                 auto_explode,
-                fmt_str,
+                cast_to_supertypes,
+                ..Default::default()
             },
         }
     }
@@ -777,7 +814,7 @@ impl Expr {
         self,
         function_expr: FunctionExpr,
         arguments: &[Expr],
-        fmt_str: &'static str,
+        cast_to_supertypes: bool,
     ) -> Self {
         let mut input = Vec::with_capacity(arguments.len() + 1);
         input.push(self);
@@ -788,9 +825,9 @@ impl Expr {
             function: function_expr,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
                 auto_explode: true,
-                fmt_str,
+                cast_to_supertypes,
+                ..Default::default()
             },
         }
     }
@@ -817,20 +854,17 @@ impl Expr {
 
     /// Get mask of NaN values if dtype is Float
     pub fn is_nan(self) -> Self {
-        self.map_private(NanFunction::IsNan.into(), "is_nan")
+        self.map_private(NanFunction::IsNan.into())
     }
 
     /// Get inverse mask of NaN values if dtype is Float
     pub fn is_not_nan(self) -> Self {
-        self.map_private(NanFunction::IsNotNan.into(), "is_not_nan")
+        self.map_private(NanFunction::IsNotNan.into())
     }
 
     /// Shift the values in the array by some period. See [the eager implementation](polars_core::series::SeriesTrait::shift).
     pub fn shift(self, periods: i64) -> Self {
-        Expr::Shift {
-            input: Box::new(self),
-            periods,
-        }
+        self.apply_private(FunctionExpr::Shift(periods))
     }
 
     /// Shift the values in the array by some period and fill the resulting empty values.
@@ -838,8 +872,8 @@ impl Expr {
         self.apply_many_private(
             FunctionExpr::ShiftAndFill { periods },
             &[fill_value.into()],
-            "shift_and_fill",
             false,
+            true,
         )
     }
 
@@ -902,9 +936,9 @@ impl Expr {
     pub fn product(self) -> Self {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "product",
+            ..Default::default()
         };
 
         self.function_with_options(
@@ -966,9 +1000,31 @@ impl Expr {
     /// Clip underlying values to a set boundary.
     #[cfg(feature = "round_series")]
     #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
-    pub fn clip(self, min: f64, max: f64) -> Self {
-        self.map(move |s: Series| s.clip(min, max), GetOutput::same_type())
-            .with_fmt("clip")
+    pub fn clip(self, min: AnyValue<'_>, max: AnyValue<'_>) -> Self {
+        self.map_private(FunctionExpr::Clip {
+            min: Some(min.into_static().unwrap()),
+            max: Some(max.into_static().unwrap()),
+        })
+    }
+
+    /// Clip underlying values to a set boundary.
+    #[cfg(feature = "round_series")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
+    pub fn clip_max(self, max: AnyValue<'_>) -> Self {
+        self.map_private(FunctionExpr::Clip {
+            min: None,
+            max: Some(max.into_static().unwrap()),
+        })
+    }
+
+    /// Clip underlying values to a set boundary.
+    #[cfg(feature = "round_series")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
+    pub fn clip_min(self, min: AnyValue<'_>) -> Self {
+        self.map_private(FunctionExpr::Clip {
+            min: Some(min.into_static().unwrap()),
+            max: None,
+        })
     }
 
     /// Convert all values to their absolute/positive value.
@@ -990,7 +1046,7 @@ impl Expr {
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
     ///
-    /// fn example() -> Result<()> {
+    /// fn example() -> PolarsResult<()> {
     ///     let df = df! {
     ///             "groups" => &[1, 1, 2, 2, 1, 2, 3, 3, 1],
     ///             "values" => &[1, 2, 3, 4, 5, 6, 7, 8, 8]
@@ -1064,9 +1120,8 @@ impl Expr {
             },
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
-                fmt_str: "fill_null",
+                cast_to_supertypes: true,
+                ..Default::default()
             },
         }
     }
@@ -1105,13 +1160,13 @@ impl Expr {
     /// Get a mask of duplicated values
     #[allow(clippy::wrong_self_convention)]
     pub fn is_duplicated(self) -> Self {
-        Expr::Duplicated(Box::new(self))
+        self.apply_private(FunctionExpr::IsDuplicated)
     }
 
     /// Get a mask of unique values
     #[allow(clippy::wrong_self_convention)]
     pub fn is_unique(self) -> Self {
-        Expr::IsUnique(Box::new(self))
+        self.apply_private(FunctionExpr::IsUnique)
     }
 
     /// and operation
@@ -1139,6 +1194,8 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "pow",
+                cast_to_supertypes: false,
+                allow_rename: false,
             },
         }
     }
@@ -1151,9 +1208,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Sin),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "sin",
+                ..Default::default()
             },
         }
     }
@@ -1166,9 +1222,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Cos),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "cos",
+                ..Default::default()
             },
         }
     }
@@ -1181,9 +1236,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Tan),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "tan",
+                ..Default::default()
             },
         }
     }
@@ -1196,9 +1250,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcSin),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "arcsin",
+                ..Default::default()
             },
         }
     }
@@ -1211,9 +1264,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcCos),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "arccos",
+                ..Default::default()
             },
         }
     }
@@ -1226,9 +1278,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcTan),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "arctan",
+                ..Default::default()
             },
         }
     }
@@ -1241,9 +1292,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Sinh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "sinh",
+                ..Default::default()
             },
         }
     }
@@ -1256,9 +1306,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Cosh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "cosh",
+                ..Default::default()
             },
         }
     }
@@ -1271,9 +1320,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Tanh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "tanh",
+                ..Default::default()
             },
         }
     }
@@ -1286,9 +1334,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcSinh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "arcsinh",
+                ..Default::default()
             },
         }
     }
@@ -1301,9 +1348,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcCosh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "arccosh",
+                ..Default::default()
             },
         }
     }
@@ -1316,9 +1362,8 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcTanh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "arctanh",
+                ..Default::default()
             },
         }
     }
@@ -1331,9 +1376,8 @@ impl Expr {
             function: FunctionExpr::Sign,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "sign",
+                ..Default::default()
             },
         }
     }
@@ -1358,20 +1402,22 @@ impl Expr {
     pub fn is_in<E: Into<Expr>>(self, other: E) -> Self {
         let other = other.into();
         let has_literal = has_root_literal_expr(&other);
-        if has_literal {
-            if let Expr::Literal(LiteralValue::Series(s)) = &other {
-                // nothing is in an empty list return all False
-                if s.is_empty() {
-                    return Expr::Literal(LiteralValue::Boolean(false));
-                }
+        if has_literal
+            && match &other {
+                Expr::Literal(LiteralValue::Series(s)) if s.is_empty() => true,
+                Expr::Literal(LiteralValue::Null) => true,
+                _ => false,
             }
+        {
+            return Expr::Literal(LiteralValue::Boolean(false));
         }
+
         let arguments = &[other];
         // we don't have to apply on groups, so this is faster
         if has_literal {
-            self.map_many_private(FunctionExpr::IsIn, arguments, "is_in_map")
+            self.map_many_private(FunctionExpr::IsIn, arguments, true)
         } else {
-            self.apply_many_private(FunctionExpr::IsIn, arguments, "is_in_apply", true)
+            self.apply_many_private(FunctionExpr::IsIn, arguments, true, true)
         }
     }
 
@@ -1546,7 +1592,9 @@ impl Expr {
         options: RollingOptions,
         expr_name: &'static str,
         expr_name_by: &'static str,
-        rolling_fn: Arc<dyn (Fn(&Series, RollingOptionsImpl) -> Result<Series>) + Send + Sync>,
+        rolling_fn: Arc<
+            dyn (Fn(&Series, RollingOptionsImpl) -> PolarsResult<Series>) + Send + Sync,
+        >,
     ) -> Expr {
         if let Some(ref by) = options.by {
             self.apply_many(
@@ -1713,10 +1761,7 @@ impl Expr {
     #[cfg(feature = "rolling_window")]
     #[cfg(feature = "moment")]
     pub fn rolling_skew(self, window_size: usize, bias: bool) -> Expr {
-        self.apply_private(
-            FunctionExpr::RollingSkew { window_size, bias },
-            "rolling_skew",
-        )
+        self.apply_private(FunctionExpr::RollingSkew { window_size, bias })
     }
 
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
@@ -1969,9 +2014,24 @@ impl Expr {
     }
 
     #[cfg(feature = "random")]
-    pub fn shuffle(self, seed: u64) -> Self {
+    pub fn shuffle(self, seed: Option<u64>) -> Self {
         self.apply(move |s| Ok(s.shuffle(seed)), GetOutput::same_type())
             .with_fmt("shuffle")
+    }
+
+    #[cfg(feature = "random")]
+    pub fn sample_n(
+        self,
+        n: usize,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> Self {
+        self.apply(
+            move |s| s.sample_n(n, with_replacement, shuffle, seed),
+            GetOutput::same_type(),
+        )
+        .with_fmt("sample_n")
     }
 
     #[cfg(feature = "random")]
@@ -1986,7 +2046,7 @@ impl Expr {
             move |s| s.sample_frac(frac, with_replacement, shuffle, seed),
             GetOutput::same_type(),
         )
-        .with_fmt("shuffle")
+        .with_fmt("sample_frac")
     }
 
     #[cfg(feature = "ewma")]
@@ -1999,7 +2059,7 @@ impl Expr {
                 _ => Float64,
             }),
         )
-        .with_fmt("emw_mean")
+        .with_fmt("ewm_mean")
     }
 
     #[cfg(feature = "ewma")]
@@ -2012,7 +2072,7 @@ impl Expr {
                 _ => Float64,
             }),
         )
-        .with_fmt("emw_std")
+        .with_fmt("ewm_std")
     }
 
     #[cfg(feature = "ewma")]
@@ -2025,7 +2085,7 @@ impl Expr {
                 _ => Float64,
             }),
         )
-        .with_fmt("emw_var")
+        .with_fmt("ewm_var")
     }
 
     /// Check if any boolean value is `true`
@@ -2150,7 +2210,7 @@ impl Expr {
                 }
             }),
         )
-        .with_fmt("log")
+        .with_fmt("exp")
     }
 
     #[cfg(feature = "log")]
@@ -2176,7 +2236,7 @@ impl Expr {
     }
     /// Get the null count of the column/group
     pub fn null_count(self) -> Expr {
-        self.apply_private(FunctionExpr::NullCount, "null_count")
+        self.apply_private(FunctionExpr::NullCount)
             .with_function_options(|mut options| {
                 options.auto_explode = true;
                 options
@@ -2201,7 +2261,7 @@ impl Expr {
     #[cfg(feature = "row_hash")]
     /// Compute the hash of every element
     pub fn hash(self, k0: u64, k1: u64, k2: u64, k3: u64) -> Expr {
-        self.map_private(FunctionExpr::Hash(k0, k1, k2, k3), "hash")
+        self.map_private(FunctionExpr::Hash(k0, k1, k2, k3))
     }
 
     #[cfg(feature = "strings")]
@@ -2224,6 +2284,10 @@ impl Expr {
     #[cfg(feature = "dtype-struct")]
     pub fn struct_(self) -> struct_::StructNameSpace {
         struct_::StructNameSpace(self)
+    }
+    #[cfg(feature = "meta")]
+    pub fn meta(self) -> meta::MetaNameSpace {
+        meta::MetaNameSpace(self)
     }
 }
 
@@ -2279,7 +2343,7 @@ impl Rem for Expr {
 /// the correct output_type. If None given the output type of the input expr is used.
 pub fn map_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
 where
-    F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
+    F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();
@@ -2290,9 +2354,8 @@ where
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
-            input_wildcard_expansion: false,
-            auto_explode: false,
             fmt_str: "",
+            ..Default::default()
         },
     }
 }
@@ -2306,7 +2369,7 @@ where
 ///  * `map_list_mul` should be used when the function expects a list aggregated series.
 pub fn map_list_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
 where
-    F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
+    F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();
@@ -2317,9 +2380,9 @@ where
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyList,
-            input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "",
+            ..Default::default()
         },
     }
 }
@@ -2335,7 +2398,7 @@ where
 /// * `[apply_mul]` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
 pub fn apply_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
 where
-    F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
+    F: Fn(&mut [Series]) -> PolarsResult<Series> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let input = expr.as_ref().to_vec();
@@ -2346,9 +2409,9 @@ where
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: false,
             auto_explode: true,
             fmt_str: "",
+            ..Default::default()
         },
     }
 }

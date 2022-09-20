@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn test_df_macro_trailing_commas() -> Result<()> {
+fn test_df_macro_trailing_commas() -> PolarsResult<()> {
     let a = df! {
         "a" => &["a one", "a two"],
         "b" => &["b one", "b two"],

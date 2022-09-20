@@ -3,7 +3,7 @@ use polars_core::prelude::*;
 use super::*;
 
 #[test]
-fn test_slice_args() -> Result<()> {
+fn test_slice_args() -> PolarsResult<()> {
     let groups: Utf8Chunked = std::iter::repeat("a")
         .take(10)
         .chain(std::iter::repeat("b").take(20))

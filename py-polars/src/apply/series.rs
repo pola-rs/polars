@@ -108,14 +108,21 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
             .apply_extract_any_values(py, lambda, null_count, av.0)
             .map(|s| s.into())
     } else {
-        applyer
-            .apply_lambda_with_object_out_type(
-                py,
-                lambda,
-                null_count,
-                Some(out.to_object(py).into()),
-            )
-            .map(|ca| ca.into_series().into())
+        #[cfg(feature = "object")]
+        {
+            applyer
+                .apply_lambda_with_object_out_type(
+                    py,
+                    lambda,
+                    null_count,
+                    Some(out.to_object(py).into()),
+                )
+                .map(|ca| ca.into_series().into())
+        }
+        #[cfg(not(feature = "object"))]
+        {
+            todo!()
+        }
     }
 }
 
@@ -183,6 +190,7 @@ pub trait ApplyLambda<'a> {
     ) -> PyResult<Series>;
 
     /// Apply a lambda with list output type
+    #[cfg(feature = "object")]
     fn apply_lambda_with_object_out_type(
         &'a self,
         py: Python,
@@ -230,7 +238,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
-                let arg = PyTuple::new(py, &[v]);
+                let arg = PyTuple::new(py, [v]);
                 let out = lambda.call1(arg)?;
                 if out.is_none() {
                     null_count += 1;
@@ -474,6 +482,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         Ok(Series::new(self.name(), &avs))
     }
 
+    #[cfg(feature = "object")]
     fn apply_lambda_with_object_out_type(
         &'a self,
         py: Python,
@@ -525,7 +534,7 @@ where
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
-                let arg = PyTuple::new(py, &[v]);
+                let arg = PyTuple::new(py, [v]);
                 let out = lambda.call1(arg)?;
                 if out.is_none() {
                     null_count += 1;
@@ -769,6 +778,7 @@ where
         Ok(Series::new(self.name(), &avs))
     }
 
+    #[cfg(feature = "object")]
     fn apply_lambda_with_object_out_type(
         &'a self,
         py: Python,
@@ -815,7 +825,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
-                let arg = PyTuple::new(py, &[v]);
+                let arg = PyTuple::new(py, [v]);
                 let out = lambda.call1(arg)?;
                 if out.is_none() {
                     null_count += 1;
@@ -1058,6 +1068,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
         Ok(Series::new(self.name(), &avs))
     }
 
+    #[cfg(feature = "object")]
     fn apply_lambda_with_object_out_type(
         &'a self,
         py: Python,
@@ -1565,12 +1576,13 @@ impl<'a> ApplyLambda<'a> for ListChunked {
             let iter = self
                 .into_no_null_iter()
                 .skip(init_null_count + 1)
-                .map(|val| call_with_value(val));
+                .map(call_with_value);
             avs.extend(iter);
         }
         Ok(Series::new(self.name(), &avs))
     }
 
+    #[cfg(feature = "object")]
     fn apply_lambda_with_object_out_type(
         &'a self,
         py: Python,
@@ -1633,12 +1645,13 @@ impl<'a> ApplyLambda<'a> for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
 impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
     fn apply_lambda_unknown(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
-                let arg = PyTuple::new(py, &[v]);
+                let arg = PyTuple::new(py, [v]);
                 let out = lambda.call1(arg)?;
                 if out.is_none() {
                     null_count += 1;
@@ -1655,8 +1668,15 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
     }
 
     fn apply_lambda(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
-        self.apply_lambda_with_object_out_type(py, lambda, 0, None)
-            .map(|ca| PySeries::new(ca.into_series()))
+        #[cfg(feature = "object")]
+        {
+            self.apply_lambda_with_object_out_type(py, lambda, 0, None)
+                .map(|ca| PySeries::new(ca.into_series()))
+        }
+        #[cfg(not(feature = "object"))]
+        {
+            todo!()
+        }
     }
 
     fn apply_to_struct(
@@ -1869,6 +1889,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         Ok(Series::new(self.name(), &avs))
     }
 
+    #[cfg(feature = "object")]
     fn apply_lambda_with_object_out_type(
         &'a self,
         py: Python,
@@ -2083,6 +2104,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         Ok(Series::new(self.name(), &avs))
     }
 
+    #[cfg(feature = "object")]
     fn apply_lambda_with_object_out_type(
         &'a self,
         py: Python,

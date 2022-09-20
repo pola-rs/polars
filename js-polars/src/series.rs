@@ -142,7 +142,7 @@ impl Series {
         series.into()
     }
 
-    pub fn append(&mut self, other: &Series) -> Result<(), JsValue> {
+    pub fn append(&mut self, other: &Series) -> PolarsResult<(), JsValue> {
         let res = self.series.append(&other.series);
         if let Err(e) = res {
             Err(format!("{:?}", e).into())
@@ -151,7 +151,7 @@ impl Series {
         }
     }
 
-    pub fn filter(&self, filter: &Series) -> Result<Series, JsValue> {
+    pub fn filter(&self, filter: &Series) -> PolarsResult<Series, JsValue> {
         let filter_series = &filter.series;
         if let Ok(ca) = filter_series.bool() {
             let series = self.series.filter(ca).unwrap();

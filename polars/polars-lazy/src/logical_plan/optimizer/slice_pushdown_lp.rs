@@ -19,7 +19,7 @@ impl SlicePushDown {
         lp: ALogicalPlan,
         state: Option<State>,
         lp_arena: &mut Arena<ALogicalPlan>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         match state {
             Some(state) => {
                 let input = lp_arena.add(lp);
@@ -42,7 +42,7 @@ impl SlicePushDown {
         state: Option<State>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         let inputs = lp.get_inputs();
         let exprs = lp.get_exprs();
 
@@ -56,7 +56,7 @@ impl SlicePushDown {
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
         let lp = lp.with_exprs_and_input(exprs, new_inputs);
 
         self.no_pushdown_finish_opt(lp, state, lp_arena)
@@ -69,7 +69,7 @@ impl SlicePushDown {
         state: Option<State>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         let inputs = lp.get_inputs();
         let exprs = lp.get_exprs();
 
@@ -81,7 +81,7 @@ impl SlicePushDown {
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
         Ok(lp.with_exprs_and_input(exprs, new_inputs))
     }
 
@@ -91,7 +91,7 @@ impl SlicePushDown {
         state: Option<State>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         use ALogicalPlan::*;
 
         match (lp, state) {
@@ -193,12 +193,10 @@ impl SlicePushDown {
                 Ok(lp)
             }
 
-            (Union {inputs, .. }, Some(state)) => {
-                let options = UnionOptions {
-                    slice: true,
-                    slice_offset: state.offset,
-                    slice_len: state.len,
-                };
+            (Union {inputs, mut options }, Some(state)) => {
+                options.slice = true;
+                options.slice_offset = state.offset;
+                options.slice_len = state.len;
                 Ok(Union {inputs, options})
             },
             (Join {
@@ -306,15 +304,23 @@ impl SlicePushDown {
             | m @ (Melt {..}, _)
             | m @ (Cache {..}, _)
             | m @ (Distinct {..}, _)
-            | m @ (Udf {options: LogicalPlanUdfOptions{ predicate_pd: false, ..}, ..}, _)
             | m @ (HStack {..},_)
             => {
                 let (lp, state) = m;
                 self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
             }
             // [Pushdown]
+            (MapFunction {input, function}, _) if function.allow_predicate_pd() => {
+                let lp = MapFunction {input, function};
+                self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
+            },
+            // [NO Pushdown]
+            m @ (MapFunction {..}, _) => {
+                let (lp, state) = m;
+                self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
+            }
+            // [Pushdown]
             // these nodes will be pushed down.
-             m @(Udf{options: LogicalPlanUdfOptions{ predicate_pd: true, ..}, .. }, _) |
              // State is None, we can continue
              m @(Projection{..}, None)
             => {
@@ -359,7 +365,7 @@ impl SlicePushDown {
         logical_plan: ALogicalPlan,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<ALogicalPlan> {
+    ) -> PolarsResult<ALogicalPlan> {
         self.pushdown(logical_plan, None, lp_arena, expr_arena)
     }
 }

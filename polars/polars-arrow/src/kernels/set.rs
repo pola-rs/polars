@@ -1,10 +1,12 @@
 use std::ops::BitOr;
 
 use arrow::array::*;
-use arrow::{datatypes::DataType, types::NativeType};
+use arrow::datatypes::DataType;
+use arrow::types::NativeType;
 
 use crate::array::default_arrays::FromData;
 use crate::error::{PolarsError, Result};
+use crate::index::IdxSize;
 use crate::kernels::BinaryMaskedSliceIterator;
 use crate::trusted_len::PushUnchecked;
 
@@ -75,7 +77,7 @@ pub fn set_at_idx_no_null<T, I>(
 ) -> Result<PrimitiveArray<T>>
 where
     T: NativeType,
-    I: IntoIterator<Item = usize>,
+    I: IntoIterator<Item = IdxSize>,
 {
     let mut buf = Vec::with_capacity(array.len());
     buf.extend_from_slice(array.values().as_slice());
@@ -83,7 +85,7 @@ where
 
     idx.into_iter().try_for_each::<_, Result<_>>(|idx| {
         let val = mut_slice
-            .get_mut(idx)
+            .get_mut(idx as usize)
             .ok_or_else(|| PolarsError::ComputeError("idx is out of bounds".into()))?;
         *val = set_value;
         Ok(())

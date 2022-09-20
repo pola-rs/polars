@@ -41,8 +41,8 @@ where
     T: PolarsNumericType,
     Standard: Distribution<T::Native>,
 {
-    pub fn init_rand(size: usize, null_density: f32, seed: u64) -> Self {
-        let mut rng = SmallRng::seed_from_u64(seed);
+    pub fn init_rand(size: usize, null_density: f32, seed: Option<u64>) -> Self {
+        let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_random_seed));
         (0..size)
             .map(|_| {
                 if rng.gen::<f32>() < null_density {
@@ -62,10 +62,11 @@ impl Series {
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         if !with_replacement && n > self.len() {
             return Err(PolarsError::ShapeMisMatch(
-                "n is larger than the number of elements in this array".into(),
+                "cannot take a larger sample than the total population when `with_replacement=false`"
+                    .into(),
             ));
         }
         if n == 0 {
@@ -96,15 +97,15 @@ impl Series {
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         let n = (self.len() as f64 * frac) as usize;
         self.sample_n(n, with_replacement, shuffle, seed)
     }
 
-    pub fn shuffle(&self, seed: u64) -> Self {
+    pub fn shuffle(&self, seed: Option<u64>) -> Self {
         let len = self.len();
         let n = len;
-        let idx = create_rand_index_no_replacement(n, len, Some(seed), true);
+        let idx = create_rand_index_no_replacement(n, len, seed, true);
         // Safety we know that we never go out of bounds
         debug_assert_eq!(len, self.len());
         unsafe { self.take_unchecked(&idx).unwrap() }
@@ -123,10 +124,11 @@ where
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         if !with_replacement && n > self.len() {
             return Err(PolarsError::ShapeMisMatch(
-                "n is larger than the number of elements in this array".into(),
+                "cannot take a larger sample than the total population when `with_replacement=false`"
+                    .into(),
             ));
         }
         let len = self.len();
@@ -154,7 +156,7 @@ where
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         let n = (self.len() as f64 * frac) as usize;
         self.sample_n(n, with_replacement, shuffle, seed)
     }
@@ -168,10 +170,11 @@ impl DataFrame {
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         if !with_replacement && n > self.height() {
             return Err(PolarsError::ShapeMisMatch(
-                "n is larger than the number of elements in this array".into(),
+                "cannot take a larger sample than the total population when `with_replacement=false`"
+                    .into(),
             ));
         }
         // all columns should used the same indices. So we first create the indices.
@@ -191,7 +194,7 @@ impl DataFrame {
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         let n = (self.height() as f64 * frac) as usize;
         self.sample_n(n, with_replacement, shuffle, seed)
     }
@@ -203,7 +206,7 @@ where
     T::Native: Float,
 {
     /// Create `ChunkedArray` with samples from a Normal distribution.
-    pub fn rand_normal(name: &str, length: usize, mean: f64, std_dev: f64) -> Result<Self> {
+    pub fn rand_normal(name: &str, length: usize, mean: f64, std_dev: f64) -> PolarsResult<Self> {
         let normal = match Normal::new(mean, std_dev) {
             Ok(dist) => dist,
             Err(e) => return Err(PolarsError::ComputeError(format!("{:?}", e).into())),
@@ -246,7 +249,7 @@ where
 
 impl BooleanChunked {
     /// Create `ChunkedArray` with samples from a Bernoulli distribution.
-    pub fn rand_bernoulli(name: &str, length: usize, p: f64) -> Result<Self> {
+    pub fn rand_bernoulli(name: &str, length: usize, p: f64) -> PolarsResult<Self> {
         let dist = match Bernoulli::new(p) {
             Ok(dist) => dist,
             Err(e) => return Err(PolarsError::ComputeError(format!("{:?}", e).into())),

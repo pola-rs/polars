@@ -1,0 +1,14 @@
+hypothesis==6.54.5
+
+ghp-import==2.1.0
+sphinx==5.1.1
+pydata-sphinx-theme==0.10.1
+sphinxcontrib-applehelp==1.0.2
+sphinxcontrib-devhelp==1.0.2
+sphinxcontrib-htmlhelp==2.0.0
+sphinxcontrib-jsmath==1.0.1
+sphinxcontrib-qthelp==1.0.3
+sphinxcontrib-serializinghtml==1.1.5
+sphinxcontrib-napoleon==0.7
+commonmark==0.9.1
+numpydoc==1.4.0

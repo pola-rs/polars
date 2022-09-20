@@ -1,6 +1,6 @@
 use polars::prelude::*;
 
-pub fn reinterpret(s: &Series, signed: bool) -> polars::prelude::Result<Series> {
+pub fn reinterpret(s: &Series, signed: bool) -> polars::prelude::PolarsResult<Series> {
     match (s.dtype(), signed) {
         (DataType::UInt64, true) => {
             let ca = s.u64().unwrap();

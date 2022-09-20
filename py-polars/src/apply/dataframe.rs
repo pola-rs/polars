@@ -1,5 +1,5 @@
 use polars::prelude::*;
-use polars_core::frame::row::{rows_to_schema, Row};
+use polars_core::frame::row::{rows_to_schema_first_non_null, Row};
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString, PyTuple};
@@ -243,7 +243,7 @@ pub fn apply_lambda_with_rows_output<'a>(
     init_null_count: usize,
     first_value: Row<'a>,
     inference_size: usize,
-) -> Result<DataFrame> {
+) -> PolarsResult<DataFrame> {
     let columns = df.get_columns();
     let width = first_value.0.len();
     let null_row = Row::new(vec![AnyValue::Null; width]);
@@ -282,7 +282,7 @@ pub fn apply_lambda_with_rows_output<'a>(
     let mut buf = Vec::with_capacity(inference_size);
     buf.push(first_value);
     buf.extend((&mut row_iter).take(inference_size).cloned());
-    let schema = rows_to_schema(&buf, Some(50));
+    let schema = rows_to_schema_first_non_null(&buf, Some(50));
 
     if init_null_count > 0 {
         // Safety: we know the iterators size

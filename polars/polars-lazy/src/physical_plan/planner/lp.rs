@@ -19,24 +19,30 @@ fn aggregate_expr_to_scan_agg(
             };
             if let AExpr::Agg(agg) = expr_arena.get(expr) {
                 match agg {
-                    AAggExpr::Min(e) => ScanAggregation::Min {
-                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).to_string(),
+                    AAggExpr::Min {
+                        input: e,
+                        propagate_nans: false,
+                    } => ScanAggregation::Min {
+                        column: (*aexpr_to_leaf_names(*e, expr_arena).pop().unwrap()).to_string(),
                         alias,
                     },
-                    AAggExpr::Max(e) => ScanAggregation::Max {
-                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).to_string(),
+                    AAggExpr::Max {
+                        input: e,
+                        propagate_nans: false,
+                    } => ScanAggregation::Max {
+                        column: (*aexpr_to_leaf_names(*e, expr_arena).pop().unwrap()).to_string(),
                         alias,
                     },
                     AAggExpr::Sum(e) => ScanAggregation::Sum {
-                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).to_string(),
+                        column: (*aexpr_to_leaf_names(*e, expr_arena).pop().unwrap()).to_string(),
                         alias,
                     },
                     AAggExpr::First(e) => ScanAggregation::First {
-                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).to_string(),
+                        column: (*aexpr_to_leaf_names(*e, expr_arena).pop().unwrap()).to_string(),
                         alias,
                     },
                     AAggExpr::Last(e) => ScanAggregation::Last {
-                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).to_string(),
+                        column: (*aexpr_to_leaf_names(*e, expr_arena).pop().unwrap()).to_string(),
                         alias,
                     },
                     _ => todo!(),
@@ -49,15 +55,15 @@ fn aggregate_expr_to_scan_agg(
 }
 
 #[derive(Default)]
-pub struct DefaultPlanner {}
+pub struct PhysicalPlanner {}
 
-impl DefaultPlanner {
+impl PhysicalPlanner {
     pub fn create_physical_expressions(
         &self,
         exprs: &[Node],
         context: Context,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<Vec<Arc<dyn PhysicalExpr>>> {
+    ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>> {
         exprs
             .iter()
             .map(|e| self.create_physical_expr(*e, context, expr_arena))
@@ -68,7 +74,7 @@ impl DefaultPlanner {
         root: Node,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<Box<dyn Executor>> {
+    ) -> PolarsResult<Box<dyn Executor>> {
         use ALogicalPlan::*;
         let logical_plan = lp_arena.take(root);
         match logical_plan {
@@ -78,7 +84,7 @@ impl DefaultPlanner {
                 let inputs = inputs
                     .into_iter()
                     .map(|node| self.create_physical_plan(node, lp_arena, expr_arena))
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<PolarsResult<Vec<_>>>()?;
                 Ok(Box::new(executors::UnionExec { inputs, options }))
             }
             Melt { input, args, .. } => {
@@ -163,7 +169,7 @@ impl DefaultPlanner {
                 ..
             } => {
                 let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-                let has_windows = expr.iter().any(|node| has_window_aexpr(*node, expr_arena));
+                let has_windows = expr.iter().any(|node| has_aexpr_window(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
                     self.create_physical_expressions(&expr, Context::Default, expr_arena)?;
@@ -185,7 +191,7 @@ impl DefaultPlanner {
             } => {
                 let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
 
-                let has_windows = expr.iter().any(|node| has_window_aexpr(*node, expr_arena));
+                let has_windows = expr.iter().any(|node| has_aexpr_window(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
                     self.create_physical_expressions(&expr, Context::Default, expr_arena)?;
@@ -204,27 +210,13 @@ impl DefaultPlanner {
                 selection,
                 ..
             } => {
-                let has_windows = if let Some(projection) = &projection {
-                    projection
-                        .iter()
-                        .any(|node| has_window_aexpr(*node, expr_arena))
-                } else {
-                    false
-                };
-
                 let selection = selection
                     .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
-                    .map_or(Ok(None), |v| v.map(Some))?;
-                let projection = projection
-                    .map(|proj| {
-                        self.create_physical_expressions(&proj, Context::Default, expr_arena)
-                    })
                     .map_or(Ok(None), |v| v.map(Some))?;
                 Ok(Box::new(executors::DataFrameExec {
                     df,
                     projection,
                     selection,
-                    has_windows,
                 }))
             }
             AnonymousScan {
@@ -260,21 +252,9 @@ impl DefaultPlanner {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 Ok(Box::new(executors::ExplodeExec { input, columns }))
             }
-            Cache { input } => {
-                let schema = lp_arena.get(input).schema(lp_arena);
-                // todo! fix the unique constraint in the schema. Probably in projection pushdown at joins
-                let mut unique = PlHashSet::with_capacity(schema.len());
-                // assumption of 80 characters per column name
-                let mut key = String::with_capacity(schema.len() * 80);
-                for name in schema.iter_names() {
-                    if unique.insert(name) {
-                        key.push_str(name)
-                    }
-                }
-                // mutable borrow otherwise
-                drop(unique);
+            Cache { input, id, count } => {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
-                Ok(Box::new(executors::CacheExec { key, input }))
+                Ok(Box::new(executors::CacheExec { id, input, count }))
             }
             Distinct { input, options } => {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
@@ -390,16 +370,17 @@ impl DefaultPlanner {
                                     Agg(agg_e) => {
                                         matches!(
                                             agg_e,
-                                            AAggExpr::Min(_)
-                                                | AAggExpr::Max(_)
+                                            AAggExpr::Min{..}
+                                                | AAggExpr::Max{..}
                                                 | AAggExpr::Sum(_)
                                                 | AAggExpr::Last(_)
                                                 | AAggExpr::First(_)
                                                 | AAggExpr::Count(_)
                                         )
                                     },
-                                    Not(input) | IsNull(input) | IsNotNull(input) => {
-                                        !has_aggregation(*input)
+                                    Function {input, options, ..} => {
+                                        matches!(options.collect_groups, ApplyOptions::ApplyFlat) && input.len() == 1 &&
+                                            !has_aggregation(input[0])
                                     }
                                     BinaryExpr {left, right, ..} => {
                                         !has_aggregation(*left) && !has_aggregation(*right)
@@ -424,7 +405,7 @@ impl DefaultPlanner {
 
                             #[cfg(feature = "object")]
                             {
-                                for name in aexpr_to_root_names(*agg, expr_arena) {
+                                for name in aexpr_to_leaf_names(*agg, expr_arena) {
                                     let dtype = input_schema.get(&name).unwrap();
 
                                     if let DataType::Object(_) = dtype {
@@ -475,10 +456,10 @@ impl DefaultPlanner {
                 } else if options.allow_parallel {
                     // check if two DataFrames come from a separate source.
                     // If they don't we can parallelize,
-                    // Otherwise it is in cache.
-                    let mut sources_left = PlHashSet::with_capacity(16);
+                    // we may deadlock if we don't check this
+                    let mut sources_left = PlHashSet::new();
                     agg_source_paths(input_left, &mut sources_left, lp_arena);
-                    let mut sources_right = PlHashSet::with_capacity(16);
+                    let mut sources_right = PlHashSet::new();
                     agg_source_paths(input_right, &mut sources_right, lp_arena);
                     sources_left.intersection(&sources_right).next().is_none()
                 } else {
@@ -504,7 +485,7 @@ impl DefaultPlanner {
             }
             HStack { input, exprs, .. } => {
                 let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-                let has_windows = exprs.iter().any(|node| has_window_aexpr(*node, expr_arena));
+                let has_windows = exprs.iter().any(|node| has_aexpr_window(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
                     self.create_physical_expressions(&exprs, Context::Default, expr_arena)?;
@@ -515,7 +496,7 @@ impl DefaultPlanner {
                     input_schema,
                 }))
             }
-            Udf {
+            MapFunction {
                 input, function, ..
             } => {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
@@ -528,7 +509,7 @@ impl DefaultPlanner {
                 let contexts = contexts
                     .into_iter()
                     .map(|node| self.create_physical_plan(node, lp_arena, expr_arena))
-                    .collect::<Result<_>>()?;
+                    .collect::<PolarsResult<_>>()?;
                 Ok(Box::new(executors::ExternalContext { input, contexts }))
             }
         }

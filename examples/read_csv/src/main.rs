@@ -1,7 +1,7 @@
 use polars::prelude::*;
 
-fn main() -> Result<()> {
-    let mut df = LazyCsvReader::new("../datasets/foods1.csv".into())
+fn main() -> PolarsResult<()> {
+    let mut df = LazyCsvReader::new("../datasets/foods1.csv")
         .finish()?
         .select([
             // select all columns
@@ -17,7 +17,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn write_other_formats(df: &mut DataFrame) -> Result<()> {
+fn write_other_formats(df: &mut DataFrame) -> PolarsResult<()> {
     let parquet_out = "../datasets/foods1.parquet";
     if std::fs::metadata(&parquet_out).is_err() {
         let f = std::fs::File::create(&parquet_out).unwrap();

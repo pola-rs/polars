@@ -1,12 +1,15 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use polars_arrow::export::arrow::{array::*, compute::concatenate::concatenate};
+use polars_arrow::export::arrow::array::*;
+use polars_arrow::export::arrow::compute::concatenate::concatenate;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::{GroupByMethod, GroupsProxy};
+use polars_core::prelude::*;
 use polars_core::utils::NoNull;
-use polars_core::{prelude::*, POOL};
+#[cfg(feature = "dtype-struct")]
+use polars_core::POOL;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PartitionedAggregation;
@@ -31,7 +34,7 @@ impl PhysicalExpr for AggregationExpr {
         None
     }
 
-    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series> {
         unimplemented!()
     }
     #[allow(clippy::ptr_arg)]
@@ -40,32 +43,51 @@ impl PhysicalExpr for AggregationExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.series().name().to_string();
+
+        let check_flat = || {
+            if matches!(ac.agg_state(), AggState::AggregatedFlat(_)) {
+                Err(PolarsError::ComputeError(
+                    format!(
+                        "Cannot aggregate as {}. The column is already aggregated.",
+                        self.agg_type
+                    )
+                    .into(),
+                ))
+            } else {
+                Ok(())
+            }
+        };
 
         // Safety:
         // groups must always be in bounds.
         let out = unsafe {
             match self.agg_type {
                 GroupByMethod::Min => {
+                    check_flat()?;
                     let agg_s = ac.flat_naive().into_owned().agg_min(ac.groups());
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Max => {
+                    check_flat()?;
                     let agg_s = ac.flat_naive().into_owned().agg_max(ac.groups());
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Median => {
+                    check_flat()?;
                     let agg_s = ac.flat_naive().into_owned().agg_median(ac.groups());
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Mean => {
+                    check_flat()?;
                     let agg_s = ac.flat_naive().into_owned().agg_mean(ac.groups());
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Sum => {
+                    check_flat()?;
                     let agg_s = ac.flat_naive().into_owned().agg_sum(ac.groups());
                     rename_series(agg_s, &keep_name)
                 }
@@ -128,16 +150,19 @@ impl PhysicalExpr for AggregationExpr {
                     }
                 }
                 GroupByMethod::First => {
+                    check_flat()?;
                     let mut agg_s = ac.flat_naive().into_owned().agg_first(ac.groups());
                     agg_s.rename(&keep_name);
                     agg_s
                 }
                 GroupByMethod::Last => {
+                    check_flat()?;
                     let mut agg_s = ac.flat_naive().into_owned().agg_last(ac.groups());
                     agg_s.rename(&keep_name);
                     agg_s
                 }
                 GroupByMethod::NUnique => {
+                    check_flat()?;
                     let agg_s = ac.flat_naive().into_owned().agg_n_unique(ac.groups());
                     rename_series(agg_s, &keep_name)
                 }
@@ -151,10 +176,12 @@ impl PhysicalExpr for AggregationExpr {
                     column.into_series()
                 }
                 GroupByMethod::Std(ddof) => {
+                    check_flat()?;
                     let agg_s = ac.flat_naive().into_owned().agg_std(ac.groups(), ddof);
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Var(ddof) => {
+                    check_flat()?;
                     let agg_s = ac.flat_naive().into_owned().agg_var(ac.groups(), ddof);
                     rename_series(agg_s, &keep_name)
                 }
@@ -162,13 +189,49 @@ impl PhysicalExpr for AggregationExpr {
                     // implemented explicitly in AggQuantile struct
                     unimplemented!()
                 }
+                GroupByMethod::NanMin => {
+                    #[cfg(feature = "propagate_nans")]
+                    {
+                        check_flat()?;
+                        let agg_s = ac.flat_naive().into_owned();
+                        let groups = ac.groups();
+                        let agg_s = if agg_s.dtype().is_float() {
+                            nan_propagating_aggregate::group_agg_nan_min_s(&agg_s, groups)
+                        } else {
+                            agg_s.agg_min(groups)
+                        };
+                        rename_series(agg_s, &keep_name)
+                    }
+                    #[cfg(not(feature = "propagate_nans"))]
+                    {
+                        panic!("activate 'propagate_nans' feature")
+                    }
+                }
+                GroupByMethod::NanMax => {
+                    #[cfg(feature = "propagate_nans")]
+                    {
+                        check_flat()?;
+                        let agg_s = ac.flat_naive().into_owned();
+                        let groups = ac.groups();
+                        let agg_s = if agg_s.dtype().is_float() {
+                            nan_propagating_aggregate::group_agg_nan_max_s(&agg_s, groups)
+                        } else {
+                            agg_s.agg_max(groups)
+                        };
+                        rename_series(agg_s, &keep_name)
+                    }
+                    #[cfg(not(feature = "propagate_nans"))]
+                    {
+                        panic!("activate 'propagate_nans' feature")
+                    }
+                }
             }
         };
 
         Ok(AggregationContext::new(out, Cow::Borrowed(groups), true))
     }
 
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
     }
 
@@ -192,7 +255,7 @@ impl PartitionedAggregation for AggregationExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         let expr = self.input.as_partitioned_aggregator().unwrap();
         let series = expr.evaluate_partitioned(df, groups, state)?;
 
@@ -268,7 +331,7 @@ impl PartitionedAggregation for AggregationExpr {
         partitioned: Series,
         groups: &GroupsProxy,
         _state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         match self.agg_type {
             GroupByMethod::Count | GroupByMethod::Sum => {
                 let mut agg = unsafe { partitioned.agg_sum(groups) };
@@ -279,7 +342,6 @@ impl PartitionedAggregation for AggregationExpr {
             GroupByMethod::Mean => {
                 let new_name = partitioned.name();
                 match partitioned.dtype() {
-                    #[cfg(feature = "dtype-struct")]
                     DataType::Struct(_) => {
                         let ca = partitioned.struct_().unwrap();
                         let sum = &ca.fields()[0];
@@ -309,7 +371,7 @@ impl PartitionedAggregation for AggregationExpr {
                 let mut length_so_far = 0i64;
                 offsets.push(length_so_far);
 
-                let mut process_group = |ca: ListChunked| -> Result<()> {
+                let mut process_group = |ca: ListChunked| -> PolarsResult<()> {
                     let s = ca.explode()?;
                     length_so_far += s.len() as i64;
                     offsets.push(length_so_far);
@@ -411,7 +473,7 @@ impl PhysicalExpr for AggQuantileExpr {
         None
     }
 
-    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series> {
         unimplemented!()
     }
     #[allow(clippy::ptr_arg)]
@@ -420,7 +482,7 @@ impl PhysicalExpr for AggQuantileExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.expr.evaluate_on_groups(df, groups, state)?;
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.series().name().to_string();
@@ -436,7 +498,7 @@ impl PhysicalExpr for AggQuantileExpr {
         Ok(AggregationContext::new(agg, Cow::Borrowed(groups), true))
     }
 
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.expr.to_field(input_schema)
     }
 

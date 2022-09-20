@@ -1,20 +1,21 @@
 use std::hash::{BuildHasher, Hash};
 
 use ahash::CallHasher;
-use hashbrown::hash_map::Entry;
-use hashbrown::{hash_map::RawEntryMut, HashMap};
+use hashbrown::hash_map::{Entry, RawEntryMut};
+use hashbrown::HashMap;
 use polars_utils::flatten;
 use rayon::prelude::*;
 
 use super::GroupsProxy;
+use crate::datatypes::PlHashMap;
 use crate::frame::groupby::{GroupsIdx, IdxItem};
 use crate::prelude::compare_inner::PartialEqInner;
 use crate::prelude::*;
-use crate::utils::CustomIterTools;
-use crate::vector_hasher::{df_rows_to_hashes_threaded, IdBuildHasher, IdxHash};
-use crate::vector_hasher::{this_partition, AsU64};
+use crate::utils::{split_df, CustomIterTools};
+use crate::vector_hasher::{
+    df_rows_to_hashes_threaded, this_partition, AsU64, IdBuildHasher, IdxHash,
+};
 use crate::POOL;
-use crate::{datatypes::PlHashMap, utils::split_df};
 
 fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
     if sorted {
@@ -22,6 +23,13 @@ fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
         let mut out = if out.len() == 1 {
             out.pop().unwrap()
         } else {
+            // pre-sort every array
+            // this will make the final single threaded sort much faster
+            POOL.install(|| {
+                out.par_iter_mut()
+                    .for_each(|g| g.sort_unstable_by_key(|g| g.0))
+            });
+
             flatten(&out, None)
         };
         out.sort_unstable_by_key(|g| g.0);
@@ -273,11 +281,11 @@ pub(crate) fn populate_multiple_key_hashmap2<'a, V, H, F, G>(
 }
 
 pub(crate) fn groupby_threaded_multiple_keys_flat(
-    keys: DataFrame,
+    mut keys: DataFrame,
     n_partitions: usize,
     sorted: bool,
 ) -> GroupsProxy {
-    let dfs = split_df(&keys, n_partitions).unwrap();
+    let dfs = split_df(&mut keys, n_partitions).unwrap();
     let (hashes, _random_state) = df_rows_to_hashes_threaded(&dfs, None);
     let n_partitions = n_partitions as u64;
 

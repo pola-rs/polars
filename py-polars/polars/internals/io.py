@@ -25,9 +25,12 @@ except ImportError:
     pass
 
 
-def _process_http_file(path: str) -> BytesIO:
+def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
     with urlopen(path) as f:
-        return BytesIO(f.read())
+        if not encoding or encoding in {"utf8", "utf8-lossy"}:
+            return BytesIO(f.read())
+        else:
+            return BytesIO(f.read().decode(encoding).encode("utf8"))
 
 
 @overload
@@ -52,7 +55,10 @@ def _prepare_file_arg(
 
 
 def _prepare_file_arg(
-    file: str | list[str] | TextIO | Path | BinaryIO | bytes, **kwargs: Any
+    file: str | list[str] | TextIO | Path | BinaryIO | bytes,
+    encoding: str | None = None,
+    use_pyarrow: bool | None = None,
+    **kwargs: Any,
 ) -> ContextManager[str | BinaryIO | list[str] | list[BinaryIO]]:
     """
     Prepare file argument.
@@ -60,12 +66,20 @@ def _prepare_file_arg(
     Utility for read_[csv, parquet]. (not to be used by scan_[csv, parquet]).
     Returned value is always usable as a context.
 
-    A `StringIO`, `BytesIO` file is returned as a `BytesIO`.
+    A :class:`StringIO`, :class:`BytesIO` file is returned as a :class:`BytesIO`.
     A local path is returned as a string.
-    An http URL is read into a buffer and returned as a `BytesIO`.
+    An http URL is read into a buffer and returned as a :class:`BytesIO`.
+
+    When ``encoding`` is not ``utf8`` or ``utf8-lossy``, the whole file is
+    first read in python and decoded using the specified encoding and
+    returned as a :class:`BytesIO` (for usage with ``read_csv``).
+
+    A `bytes` file is returned as a :class:`BytesIO` if ``use_pyarrow=True``.
 
     When fsspec is installed, remote file(s) is (are) opened with
     `fsspec.open(file, **kwargs)` or `fsspec.open_files(file, **kwargs)`.
+    If encoding is not ``utf8`` or ``utf8-lossy``, decoding is handled by
+    fsspec too.
 
     """
     # Small helper to use a variable as context
@@ -76,29 +90,50 @@ def _prepare_file_arg(
         finally:
             pass
 
+    has_non_utf8_non_utf8_lossy_encoding = (
+        encoding not in {"utf8", "utf8-lossy"} if encoding else False
+    )
+    encoding_str = encoding if encoding else "utf8"
+
+    if isinstance(file, bytes):
+        if has_non_utf8_non_utf8_lossy_encoding:
+            return BytesIO(file.decode(encoding_str).encode("utf8"))
+        if use_pyarrow:
+            return BytesIO(file)
     if isinstance(file, StringIO):
-        return BytesIO(file.read().encode("utf8"))
+        return BytesIO(file.getvalue().encode("utf8"))
     if isinstance(file, BytesIO):
+        if has_non_utf8_non_utf8_lossy_encoding:
+            return BytesIO(file.getvalue().decode(encoding_str).encode("utf8"))
         return managed_file(file)
     if isinstance(file, Path):
+        if has_non_utf8_non_utf8_lossy_encoding:
+            return BytesIO(file.read_bytes().decode(encoding_str).encode("utf8"))
         return managed_file(format_path(file))
     if isinstance(file, str):
         # make sure that this is before fsspec
         # as fsspec needs requests to be installed
         # to read from http
         if file.startswith("http"):
-            return _process_http_file(file)
+            return _process_http_file(file, encoding_str)
         if _WITH_FSSPEC:
-            if infer_storage_options(file)["protocol"] == "file":
-                return managed_file(format_path(file))
+            if not has_non_utf8_non_utf8_lossy_encoding:
+                if infer_storage_options(file)["protocol"] == "file":
+                    return managed_file(format_path(file))
+            kwargs["encoding"] = encoding
             return fsspec.open(file, **kwargs)
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _WITH_FSSPEC:
-            if all(infer_storage_options(f)["protocol"] == "file" for f in file):
-                return managed_file([format_path(f) for f in file])
+            if not has_non_utf8_non_utf8_lossy_encoding:
+                if all(infer_storage_options(f)["protocol"] == "file" for f in file):
+                    return managed_file([format_path(f) for f in file])
+            kwargs["encoding"] = encoding
             return fsspec.open_files(file, **kwargs)
     if isinstance(file, str):
         file = format_path(file)
+        if has_non_utf8_non_utf8_lossy_encoding:
+            with open(file, encoding=encoding_str) as f:
+                return BytesIO(f.read().encode("utf8"))
     return managed_file(file)
 
 

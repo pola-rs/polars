@@ -1,11 +1,10 @@
 use std::hash::Hash;
 
-use polars_core::export::{
-    _boost_hash_combine,
-    ahash::{self, CallHasher},
-    rayon::prelude::*,
-};
+use polars_core::export::_boost_hash_combine;
+use polars_core::export::ahash::{self, CallHasher};
+use polars_core::export::rayon::prelude::*;
 use polars_core::utils::NoNull;
+use polars_core::POOL;
 
 use super::*;
 
@@ -43,7 +42,7 @@ where
     hash_agg
 }
 
-pub(crate) fn hash(ca: &ListChunked, build_hasher: ahash::RandomState) -> UInt64Chunked {
+pub(crate) fn hash(ca: &mut ListChunked, build_hasher: ahash::RandomState) -> UInt64Chunked {
     if !ca.inner_dtype().to_physical().is_numeric() {
         panic!(
             "Hashing a list with a non-numeric inner type not supported. Got dtype: {:?}",
@@ -54,22 +53,24 @@ pub(crate) fn hash(ca: &ListChunked, build_hasher: ahash::RandomState) -> UInt64
     // just some large prime
     let null_hash = 1969099309u64;
 
-    let out: NoNull<UInt64Chunked> = ca
-        .par_iter()
-        .map(|opt_s: Option<Series>| match opt_s {
-            None => null_hash,
-            Some(s) => {
-                let s = s.to_physical_repr();
-                if s.bit_repr_is_large() {
-                    let ca = s.bit_repr_large();
-                    hash_agg(&ca, &build_hasher)
-                } else {
-                    let ca = s.bit_repr_small();
-                    hash_agg(&ca, &build_hasher)
+    ca.set_inner_dtype(ca.inner_dtype().to_physical());
+
+    let out: NoNull<UInt64Chunked> = POOL.install(|| {
+        ca.par_iter()
+            .map(|opt_s: Option<Series>| match opt_s {
+                None => null_hash,
+                Some(s) => {
+                    if s.bit_repr_is_large() {
+                        let ca = s.bit_repr_large();
+                        hash_agg(&ca, &build_hasher)
+                    } else {
+                        let ca = s.bit_repr_small();
+                        hash_agg(&ca, &build_hasher)
+                    }
                 }
-            }
-        })
-        .collect();
+            })
+            .collect()
+    });
 
     let mut out = out.into_inner();
     out.rename(ca.name());

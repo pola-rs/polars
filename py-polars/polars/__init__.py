@@ -44,6 +44,7 @@ from polars.datatypes import (
     UInt16,
     UInt32,
     UInt64,
+    Unknown,
     Utf8,
     get_idx_type,
 )
@@ -62,7 +63,13 @@ from polars.exceptions import (
 from polars.internals.dataframe import wrap_df  # noqa: F401
 from polars.internals.dataframe import DataFrame
 from polars.internals.expr import Expr
-from polars.internals.functions import concat, cut, date_range, get_dummies
+from polars.internals.functions import (
+    align_frames,
+    concat,
+    cut,
+    date_range,
+    get_dummies,
+)
 from polars.internals.io import read_ipc_schema, read_parquet_schema
 from polars.internals.lazy_functions import _date as date
 from polars.internals.lazy_functions import _datetime as datetime
@@ -120,15 +127,17 @@ from polars.io import (
     read_excel,
     read_ipc,
     read_json,
+    read_ndjson,
     read_parquet,
     read_sql,
     scan_csv,
     scan_ds,
     scan_ipc,
+    scan_ndjson,
     scan_parquet,
 )
 from polars.show_versions import show_versions
-from polars.string_cache import StringCache, toggle_string_cache
+from polars.string_cache import StringCache, toggle_string_cache, using_string_cache
 from polars.utils import threadpool_size
 
 __all__ = [
@@ -168,6 +177,7 @@ __all__ = [
     "Field",
     "Struct",
     "Null",
+    "Unknown",
     "PolarsDataType",
     "get_idx_type",
     # polars.io
@@ -175,25 +185,29 @@ __all__ = [
     "read_excel",
     "read_parquet",
     "read_json",
+    "read_ndjson",
     "read_sql",
     "read_ipc",
     "scan_csv",
     "scan_ipc",
     "scan_ds",
     "scan_parquet",
+    "scan_ndjson",
     "read_ipc_schema",
     "read_parquet_schema",
     "read_avro",
     # polars.stringcache
     "StringCache",
     "toggle_string_cache",
+    "using_string_cache",
     # polars.config
     "Config",
-    # polars.internal.when
+    # polars.internals.whenthen
     "when",
-    # polars.internal.expr
+    # polars.internals.expr
     "Expr",
-    # polars.internal.functions
+    # polars.internals.functions
+    "align_frames",
     "arg_where",
     "concat",
     "date_range",
@@ -201,7 +215,7 @@ __all__ = [
     "repeat",
     "element",
     "cut",
-    # polars.internal.lazy_functions
+    # polars.internals.lazy_functions
     "col",
     "count",
     "std",

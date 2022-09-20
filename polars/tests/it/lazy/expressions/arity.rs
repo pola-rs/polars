@@ -17,7 +17,7 @@ fn test_list_broadcast() {
 }
 
 #[test]
-fn ternary_expand_sizes() -> Result<()> {
+fn ternary_expand_sizes() -> PolarsResult<()> {
     let df = df! {
         "a" => [Some("a1"), None, None],
         "b" => [Some("b1"), Some("b2"), None]
@@ -46,7 +46,7 @@ fn ternary_expand_sizes() -> Result<()> {
 
 #[test]
 #[cfg(feature = "strings")]
-fn includes_null_predicate_3038() -> Result<()> {
+fn includes_null_predicate_3038() -> PolarsResult<()> {
     let df = df! {
         "a" => [Some("a1"), None, None],
     }?;
@@ -114,7 +114,7 @@ fn includes_null_predicate_3038() -> Result<()> {
 }
 
 #[test]
-fn test_when_then_otherwise_cats() -> Result<()> {
+fn test_when_then_otherwise_cats() -> PolarsResult<()> {
     let lf = df!["book" => [Some("bookA"),
         None,
         Some("bookB"),
@@ -150,7 +150,7 @@ fn test_when_then_otherwise_cats() -> Result<()> {
 }
 
 #[test]
-fn test_when_then_otherwise_single_bool() -> Result<()> {
+fn test_when_then_otherwise_single_bool() -> PolarsResult<()> {
     let df = df![
         "key" => ["a", "b", "b"],
         "val" => [Some(1), Some(2), None]
@@ -177,7 +177,7 @@ fn test_when_then_otherwise_single_bool() -> Result<()> {
 
 #[test]
 #[cfg(feature = "unique_counts")]
-fn test_update_groups_in_cast() -> Result<()> {
+fn test_update_groups_in_cast() -> PolarsResult<()> {
     let df = df![
         "group" =>  ["A" ,"A", "A", "B", "B", "B", "B"],
         "id"=> [1, 2, 1, 4, 5, 4, 6],
@@ -202,7 +202,7 @@ fn test_update_groups_in_cast() -> Result<()> {
 }
 
 #[test]
-fn test_when_then_otherwise_sum_in_agg() -> Result<()> {
+fn test_when_then_otherwise_sum_in_agg() -> PolarsResult<()> {
     let df = df![
         "groups" => [1, 1, 2, 2],
         "dist_a" => [0.1, 0.2, 0.5, 0.5],
@@ -244,7 +244,7 @@ fn test_null_commutativity() {
 }
 
 #[test]
-fn test_binary_over_3930() -> Result<()> {
+fn test_binary_over_3930() -> PolarsResult<()> {
     let df = df![
         "class" => ["a", "a", "a", "b", "b", "b"],
         "score" => [0.2, 0.5, 0.1, 0.3, 0.4, 0.2]
@@ -273,7 +273,7 @@ fn test_binary_over_3930() -> Result<()> {
 }
 
 #[test]
-fn test_ternary_aggregation_set_literals() -> Result<()> {
+fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
     let df = df![
         "name" => ["a", "b", "a", "b"],
         "value" => [1, 3, 2, 4]

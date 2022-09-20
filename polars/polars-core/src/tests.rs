@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
 #[test]
-fn test_initial_empty_sort() -> Result<()> {
+fn test_initial_empty_sort() -> PolarsResult<()> {
     // https://github.com/pola-rs/polars/issues/1396
     let data = vec![1.3; 42];
     let mut series = Series::new("data", Vec::<f64>::new());

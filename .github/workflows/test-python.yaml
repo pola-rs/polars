@@ -1,4 +1,4 @@
-name: Test python
+name: Test Python
 
 on:
   pull_request:
@@ -6,106 +6,127 @@ on:
       - 'py-polars/**'
       - 'polars/**'
       - '.github/workflows/test-python.yaml'
-jobs:
-  test-python:
-    name: Build and test Python
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: [ "3.10" ]
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install latest Rust nightly
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly-2022-07-24
-          override: true
-          components: rustfmt, clippy
-      - name: Set up Python
-        uses: actions/setup-python@v3
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r py-polars/build.requirements.txt
-      - name: Run formatting checks
-        run: |
-          cd py-polars
-          black --check .
-          blackdoc --check .
-          isort --check .
-          pyupgrade --py37-plus `find . -name "*.py" -type f`
-          rustup override set nightly-2022-07-24 && cargo fmt --all -- --check
-          cd ..
-      - name: Run linting
-        run: |
-          cd py-polars && flake8 && cd ..
-      - name: Run type checking
-        run: |
-          cd py-polars && mypy && cd ..
-      - name: Run tests
-        run: |
-          export RUSTFLAGS="-C debuginfo=0"
-          cd py-polars && rustup override set nightly-2022-07-24 && make venv && make test-with-cov
-          cargo clippy
-      - name: Check doc examples
-        run: |
-          cd py-polars && make doctest
-      # test if we can import polars without any requirements
-      - name: Import polars
-        run: |
-          pip uninstall pandas -y
-          python -c "import polars"
 
-  test-python-37:
-    name: Build and test Python 3.7
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: py-polars
+
+jobs:
+  ubuntu:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: [ "3.7" ]
+        python-version: ['3.7', '3.10']
+
     steps:
       - uses: actions/checkout@v3
-      - name: Install latest Rust nightly
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly-2022-07-24
-          override: true
-          components: rustfmt, clippy
+
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: 'py-polars/requirements-dev.txt'
+
+      - name: Create virtual environment
+        run: |
+          python -m venv venv
+          echo "$GITHUB_WORKSPACE/py-polars/venv/bin" >> $GITHUB_PATH
+
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r py-polars/build.requirements.txt
-      - name: Run formatting checks
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      # Allow untyped calls for older Python versions
+      - name: Run mypy
+        run: mypy ${{ (matrix.python-version == '3.7') && '--allow-untyped-calls' || '' }}
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2022-08-22
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: py-polars
+
+      - name: Install Polars
+        env:
+          RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
         run: |
-          cd py-polars
-          black --check .
-          blackdoc --check .
-          isort --check .
-          pyupgrade --py37-plus `find . -name "*.py" -type f`
-          rustup override set nightly-2022-07-24 && cargo fmt --all -- --check
-          cd ..
-      - name: Run linting
-        run: |
-          cd py-polars && flake8 && cd ..
-      # this step is different, note the flag
-      - name: Run type checking
-        run: |
-          cd py-polars && mypy --allow-untyped-calls && cd ..
-      - name: Run tests
-        run: |
-          export RUSTFLAGS="-C debuginfo=0"
-          cd py-polars && rustup override set nightly-2022-07-24 && make venv && make test-with-cov
-          cargo clippy
-      - name: Check doc examples
-        run: |
-          cd py-polars && make doctest
-      # test if we can import polars without any requirements
-      - name: Import polars
+          source activate
+          maturin develop
+
+      - name: Run tests and report coverage
+        run: pytest --cov
+
+      - name: Run doctests
+        run: python tests/docs/run_doc_examples.py
+
+      - name: Check import without optional dependencies
         run: |
           pip uninstall pandas -y
-          python -c "import polars"
+          python -c 'import polars'
+          pip uninstall numpy -y
+          python -c 'import polars'
+          pip uninstall pyarrow -y
+          python -c 'import polars'
+
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10']
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: 'py-polars/requirements-dev.txt'
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2022-08-22
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: py-polars
+
+      - name: Install Polars
+        shell: bash
+        env:
+          RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+        run: |
+          maturin build
+          pip install target/wheels/polars-*.whl
+
+      - name: Run tests
+        run: pytest
+
+      - name: Check import without optional dependencies
+        run: |
+          pip uninstall pandas -y
+          python -c 'import polars'
+          pip uninstall numpy -y
+          python -c 'import polars'
+          pip uninstall pyarrow -y
+          python -c 'import polars'

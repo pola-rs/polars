@@ -2,7 +2,7 @@ use polars::prelude::*;
 
 #[test]
 #[cfg(feature = "lazy")]
-fn join_nans_outer() -> Result<()> {
+fn join_nans_outer() -> PolarsResult<()> {
     let df1 = df! {
              "w" => [Some(2.5), None, Some(f64::NAN), None, Some(2.5), Some(f64::NAN), None, Some(3.0)],
              "t" => [Some("xl"), Some("xl"), Some("xl"), Some("xl"), Some("xl"), Some("xl"), Some("xl"), Some("l")],
@@ -32,7 +32,7 @@ fn join_nans_outer() -> Result<()> {
 
 #[test]
 #[cfg(feature = "lazy")]
-fn join_empty_datasets() -> Result<()> {
+fn join_empty_datasets() -> PolarsResult<()> {
     let a = DataFrame::new(Vec::from([Series::new_empty("foo", &DataType::Int64)])).unwrap();
     let b = DataFrame::new(Vec::from([
         Series::new_empty("foo", &DataType::Int64),

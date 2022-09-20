@@ -3,7 +3,7 @@ use polars_core::prelude::*;
 
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{aexpr_to_root_names, check_input_node, has_aexpr, rename_aexpr_root_names};
+use crate::utils::{aexpr_to_leaf_names, check_input_node, has_aexpr, rename_aexpr_leaf_names};
 
 trait Dsl {
     fn and(self, right: Node, arena: &mut Arena<AExpr>) -> Node;
@@ -74,13 +74,19 @@ pub(super) fn predicate_at_scan(
     }
 }
 
+// an invisible ascii token we use as delimiter
+const HIDDEN_DELIMITER: char = '\u{1D17A}';
+
 /// Determine the hashmap key by combining all the root column names of a predicate
 pub(super) fn roots_to_key(roots: &[Arc<str>]) -> Arc<str> {
     if roots.len() == 1 {
         roots[0].clone()
     } else {
         let mut new = String::with_capacity(32 * roots.len());
-        for name in roots {
+        for (i, name) in roots.iter().enumerate() {
+            if i > 0 {
+                new.push(HIDDEN_DELIMITER)
+            }
             new.push_str(name);
         }
         Arc::from(new)
@@ -114,9 +120,8 @@ pub(super) fn predicate_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExp
     let matches = |e: &AExpr| {
         matches!(
             e,
-            AExpr::Shift { .. } | AExpr::Sort { .. } | AExpr::SortBy { .. }
+            AExpr::Sort { .. } | AExpr::SortBy { .. }
             | AExpr::Agg(_) // an aggregation needs all rows
-            | AExpr::Reverse(_)
             // Apply groups can be something like shift, sort, or an aggregation like skew
             // both need all values
             | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
@@ -142,9 +147,8 @@ pub(super) fn project_other_column_is_predicate_pushdown_boundary(
     let matches = |e: &AExpr| {
         matches!(
             e,
-            AExpr::Shift { .. } | AExpr::Sort { .. } | AExpr::SortBy { .. }
+            AExpr::Sort { .. } | AExpr::SortBy { .. }
             | AExpr::Agg(_) // an aggregation needs all rows
-            | AExpr::Reverse(_)
             // Apply groups can be something like shift, sort, or an aggregation like skew
             // both need all values
             | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
@@ -167,7 +171,12 @@ pub(super) fn project_other_column_is_predicate_pushdown_boundary(
     has_aexpr(node, expr_arena, matches)
 }
 
-/// This checks the boundary of same columns. So that means columns that are referred in the predicate
+/// This checks the boundary of same columns.
+/// So that means columns that are referred in the predicate
+/// for instance `predicate = col(A) == col(B).`
+/// and `col().some_func().alias(B)` is projected.
+/// then the projection can not pass, as column `B` maybe
+/// changed by `some_func`
 pub(super) fn projection_column_is_predicate_pushdown_boundary(
     node: Node,
     expr_arena: &Arena<AExpr>,
@@ -175,9 +184,8 @@ pub(super) fn projection_column_is_predicate_pushdown_boundary(
     let matches = |e: &AExpr| {
         matches!(
             e,
-            AExpr::Shift { .. } | AExpr::Sort { .. } | AExpr::SortBy { .. }
+            AExpr::Sort { .. } | AExpr::SortBy { .. }
             | AExpr::Agg(_) // an aggregation needs all rows
-            | AExpr::Reverse(_)
             // everything that works on groups likely changes to order of elements w/r/t the other columns
             | AExpr::AnonymousFunction {..}
             | AExpr::Function {..}
@@ -225,15 +233,15 @@ where
         let output_field = projection_expr
             .to_field(&input_schema, Context::Default, expr_arena)
             .unwrap();
-        let projection_roots = aexpr_to_root_names(*projection_node, expr_arena);
+        let projection_roots = aexpr_to_leaf_names(*projection_node, expr_arena);
 
         {
             let projection_aexpr = expr_arena.get(*projection_node);
-            if let AExpr::Alias(_, name) = projection_aexpr {
+            if let AExpr::Alias(_, alias_name) = projection_aexpr {
                 // if this alias refers to one of the predicates in the upper nodes
                 // we rename the column of the predicate before we push it downwards.
 
-                if let Some(predicate) = acc_predicates.remove(name) {
+                if let Some(predicate) = acc_predicates.remove(alias_name) {
                     if projection_maybe_boundary {
                         local_predicates.push(predicate);
                         continue;
@@ -241,7 +249,11 @@ where
                     if projection_roots.len() == 1 {
                         // we were able to rename the alias column with the root column name
                         // before pushing down the predicate
-                        rename_aexpr_root_names(predicate, expr_arena, projection_roots[0].clone());
+                        let predicate = rename_aexpr_leaf_names(
+                            predicate,
+                            expr_arena,
+                            projection_roots[0].clone(),
+                        );
 
                         insert_and_combine_predicate(
                             acc_predicates,
@@ -252,6 +264,27 @@ where
                     } else {
                         // this may be a complex binary function. The predicate may only be valid
                         // on this projected column so we do filter locally.
+                        local_predicates.push(predicate)
+                    }
+                } else {
+                    // we could not find the alias name
+                    // that could still mean that a predicate that is a complicated binary expression
+                    // refers to the aliased name. If we find it, we remove it for now
+                    // TODO! rename the expression.
+                    let mut remove_names = vec![];
+                    for (composed_name, _) in acc_predicates.iter() {
+                        if composed_name.contains(HIDDEN_DELIMITER) {
+                            for root_name in composed_name.as_ref().split(HIDDEN_DELIMITER) {
+                                if root_name == alias_name.as_ref() {
+                                    remove_names.push(composed_name.clone());
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    for composed_name in remove_names {
+                        let predicate = acc_predicates.remove(&composed_name).unwrap();
                         local_predicates.push(predicate)
                     }
                 }
@@ -319,7 +352,7 @@ pub(super) fn no_pushdown_preds<F>(
     // matching expr are typically explode, shift, etc. expressions that mess up predicates when pushed down
     if has_aexpr(node, arena, matches) {
         // columns that are projected. We check if we can push down the predicates past this projection
-        let columns = aexpr_to_root_names(node, arena);
+        let columns = aexpr_to_leaf_names(node, arena);
 
         let condition = |name: Arc<str>| columns.contains(&name);
         local_predicates.extend(transfer_to_local_by_name(arena, acc_predicates, condition));
@@ -339,7 +372,7 @@ where
     let mut remove_keys = Vec::with_capacity(acc_predicates.len());
 
     for (key, predicate) in &*acc_predicates {
-        let root_names = aexpr_to_root_names(*predicate, expr_arena);
+        let root_names = aexpr_to_leaf_names(*predicate, expr_arena);
         for name in root_names {
             if condition(name) {
                 remove_keys.push(key.clone());
@@ -380,4 +413,21 @@ where
         }
     }
     local_predicates
+}
+
+/// predicates that need the full context should not be pushed down to the scans
+/// example: min(..) == null_count
+pub(super) fn partition_by_full_context(
+    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
+    expr_arena: &Arena<AExpr>,
+) -> Vec<Node> {
+    transfer_to_local_by_node(acc_predicates, |node| {
+        has_aexpr(node, expr_arena, |ae| match ae {
+            AExpr::BinaryExpr { left, right, .. } => {
+                expr_arena.get(*left).groups_sensitive()
+                    || expr_arena.get(*right).groups_sensitive()
+            }
+            ae => ae.groups_sensitive(),
+        })
+    })
 }

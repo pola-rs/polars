@@ -8,7 +8,7 @@ use crate::prelude::*;
 
 pub type FileCount = u32;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvParserOptions {
     pub(crate) delimiter: u8,
@@ -30,7 +30,7 @@ pub struct CsvParserOptions {
     pub(crate) file_counter: FileCount,
 }
 #[cfg(feature = "parquet")]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetOptions {
     pub(crate) n_rows: Option<usize>,
@@ -54,7 +54,7 @@ pub struct IpcScanOptions {
     pub memmap: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptionsInner {
     pub(crate) n_rows: Option<usize>,
@@ -80,15 +80,16 @@ impl From<IpcScanOptions> for IpcScanOptionsInner {
     }
 }
 
-#[derive(Clone, Debug, Copy, Default)]
+#[derive(Clone, Debug, Copy, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
     pub(crate) slice: bool,
     pub(crate) slice_offset: i64,
     pub(crate) slice_len: IdxSize,
+    pub(crate) parallel: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GroupbyOptions {
     pub(crate) dynamic: Option<DynamicGroupOptions>,
@@ -96,7 +97,7 @@ pub struct GroupbyOptions {
     pub(crate) slice: Option<(i64, usize)>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DistinctOptions {
     pub(crate) subset: Option<Arc<Vec<String>>>,
@@ -160,9 +161,26 @@ pub struct FunctionOptions {
     /// head_1(x) -> {1}
     /// sum(x) -> {4}
     pub(crate) auto_explode: bool,
-    // used for formatting
+    // used for formatting, (only for anonymous functions)
     #[cfg_attr(feature = "serde", serde(skip_deserializing))]
     pub(crate) fmt_str: &'static str,
+
+    // if the expression and its inputs should be cast to supertypes
+    pub(crate) cast_to_supertypes: bool,
+    pub(crate) allow_rename: bool,
+}
+
+impl Default for FunctionOptions {
+    fn default() -> Self {
+        FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: false,
+            auto_explode: false,
+            fmt_str: "",
+            cast_to_supertypes: false,
+            allow_rename: false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -188,7 +206,7 @@ pub struct SortArguments {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg(feature = "python")]
 pub struct PythonOptions {
-    // Serialized Fn() -> Result<DataFrame>
+    // Serialized Fn() -> PolarsResult<DataFrame>
     pub(crate) scan_fn: Vec<u8>,
     pub(crate) schema: SchemaRef,
     pub(crate) output_schema: Option<SchemaRef>,

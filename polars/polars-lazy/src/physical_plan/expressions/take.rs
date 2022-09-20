@@ -15,7 +15,12 @@ pub struct TakeExpr {
 }
 
 impl TakeExpr {
-    fn finish(&self, df: &DataFrame, state: &ExecutionState, series: Series) -> Result<Series> {
+    fn finish(
+        &self,
+        df: &DataFrame,
+        state: &ExecutionState,
+        series: Series,
+    ) -> PolarsResult<Series> {
         let idx = self.idx.evaluate(df, state)?.cast(&IDX_DTYPE)?;
         let idx_ca = idx.idx()?;
 
@@ -27,7 +32,7 @@ impl PhysicalExpr for TakeExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let series = self.phys_expr.evaluate(df, state)?;
         self.finish(df, state, series)
     }
@@ -38,7 +43,7 @@ impl PhysicalExpr for TakeExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.phys_expr.evaluate_on_groups(df, groups, state)?;
         let mut idx = self.idx.evaluate_on_groups(df, groups, state)?;
 
@@ -165,7 +170,7 @@ impl PhysicalExpr for TakeExpr {
         let s = idx.cast(&DataType::List(Box::new(IDX_DTYPE)))?;
         let idx = s.list().unwrap();
 
-        let taken = ac
+        let mut taken = ac
             .aggregated()
             .list()
             .unwrap()
@@ -180,14 +185,16 @@ impl PhysicalExpr for TakeExpr {
                 })
                 .transpose()
             })
-            .collect::<Result<ListChunked>>()?;
+            .collect::<PolarsResult<ListChunked>>()?;
+
+        taken.rename(ac.series().name());
 
         ac.with_series(taken.into_series(), true);
         ac.with_update_groups(UpdateGroups::WithGroupsLen);
         Ok(ac)
     }
 
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.phys_expr.to_field(input_schema)
     }
 

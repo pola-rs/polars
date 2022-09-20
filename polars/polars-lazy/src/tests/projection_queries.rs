@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn test_join_suffix_and_drop() -> Result<()> {
+fn test_join_suffix_and_drop() -> PolarsResult<()> {
     let weight = df![
         "id" => [1, 2, 3, 4, 5, 0],
         "wgt" => [4.32, 5.23, 2.33, 23.399, 392.2, 0.0]
@@ -36,7 +36,7 @@ fn test_join_suffix_and_drop() -> Result<()> {
 
 #[test]
 #[cfg(feature = "cross_join")]
-fn test_cross_join_pd() -> Result<()> {
+fn test_cross_join_pd() -> PolarsResult<()> {
     let food = df![
         "name"=> ["Omelette", "Fried Egg"],
         "price" => [8, 5]
@@ -65,7 +65,7 @@ fn test_cross_join_pd() -> Result<()> {
 }
 
 #[test]
-fn test_row_count_pd() -> Result<()> {
+fn test_row_count_pd() -> PolarsResult<()> {
     let df = df![
         "x" => [1, 2, 3],
         "y" => [3, 2, 1],
@@ -88,27 +88,33 @@ fn test_row_count_pd() -> Result<()> {
 }
 
 #[test]
-fn scan_join_same_file() -> Result<()> {
+#[cfg(feature = "cse")]
+fn scan_join_same_file() -> PolarsResult<()> {
     let lf = LazyCsvReader::new(FOODS_CSV.to_string()).finish()?;
 
-    let partial = lf.clone().select([col("category")]).limit(5);
-    let lf = lf.join(
-        partial,
-        [col("category")],
-        [col("category")],
-        JoinType::Inner,
-    );
-    let out = lf.collect()?;
-    assert_eq!(
-        out.get_column_names(),
-        &["category", "calories", "fats_g", "sugars_g"]
-    );
+    for cse in [true, false] {
+        let partial = lf.clone().select([col("category")]).limit(5);
+        let q = lf
+            .clone()
+            .join(
+                partial,
+                [col("category")],
+                [col("category")],
+                JoinType::Inner,
+            )
+            .with_common_subplan_elimination(cse);
+        let out = q.collect()?;
+        assert_eq!(
+            out.get_column_names(),
+            &["category", "calories", "fats_g", "sugars_g"]
+        );
+    }
     Ok(())
 }
 
 #[test]
 #[cfg(all(feature = "regex", feature = "concat_str"))]
-fn concat_str_regex_expansion() -> Result<()> {
+fn concat_str_regex_expansion() -> PolarsResult<()> {
     let df = df![
         "a"=> [1, 1, 1],
         "b_a_1"=> ["a--", "", ""],

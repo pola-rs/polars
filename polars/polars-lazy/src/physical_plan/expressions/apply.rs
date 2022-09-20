@@ -4,8 +4,13 @@ use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
+#[cfg(feature = "parquet")]
+use polars_io::parquet::predicates::BatchStats;
+#[cfg(feature = "parquet")]
+use polars_io::predicates::StatsEvaluator;
 use rayon::prelude::*;
 
+use crate::dsl::function_expr::FunctionExpr;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -15,16 +20,33 @@ pub struct ApplyExpr {
     pub expr: Expr,
     pub collect_groups: ApplyOptions,
     pub auto_explode: bool,
+    pub allow_rename: bool,
 }
 
 impl ApplyExpr {
+    pub(crate) fn new_minimal(
+        inputs: Vec<Arc<dyn PhysicalExpr>>,
+        function: SpecialEq<Arc<dyn SeriesUdf>>,
+        expr: Expr,
+        collect_groups: ApplyOptions,
+    ) -> Self {
+        Self {
+            inputs,
+            function,
+            expr,
+            collect_groups,
+            auto_explode: false,
+            allow_rename: false,
+        }
+    }
+
     #[allow(clippy::ptr_arg)]
     fn prepare_multiple_inputs<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Vec<AggregationContext<'a>>> {
+    ) -> PolarsResult<Vec<AggregationContext<'a>>> {
         POOL.install(|| {
             self.inputs
                 .par_iter()
@@ -57,7 +79,7 @@ fn all_unit_length(ca: &ListChunked) -> bool {
     (offset[offset.len() - 1] as usize) == list_arr.len() as usize
 }
 
-fn check_map_output_len(input_len: usize, output_len: usize) -> Result<()> {
+fn check_map_output_len(input_len: usize, output_len: usize) -> PolarsResult<()> {
     if input_len != output_len {
         Err(PolarsError::ComputeError("A 'map' functions output length must be equal to that of the input length. Consider using 'apply' in favor of 'map'.".into()))
     } else {
@@ -70,12 +92,16 @@ impl PhysicalExpr for ApplyExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let mut inputs = self
             .inputs
             .par_iter()
             .map(|e| e.evaluate(df, state))
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        if self.allow_rename {
+            return self.function.call_udf(&mut inputs);
+        }
         let in_name = inputs[0].name().to_string();
         let mut out = self.function.call_udf(&mut inputs)?;
         if in_name != out.name() {
@@ -89,13 +115,29 @@ impl PhysicalExpr for ApplyExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         if self.inputs.len() == 1 {
             let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
-            match self.collect_groups {
-                ApplyOptions::ApplyGroups => {
+            match (state.overlapping_groups(), self.collect_groups) {
+                (_, ApplyOptions::ApplyList) => {
+                    let s = self.function.call_udf(&mut [ac.aggregated()])?;
+                    ac.with_series(s, true);
+                    Ok(ac)
+                }
+                // overlapping groups always take this branch as explode/flat_naive bloats data size
+                (_, ApplyOptions::ApplyGroups) | (true, _) => {
                     let s = ac.series();
+
+                    if matches!(ac.agg_state(), AggState::AggregatedFlat(_)) {
+                        return Err(PolarsError::ComputeError(
+                            format!(
+                                "Cannot aggregate {:?}. The column is already aggregated.",
+                                self.expr
+                            )
+                            .into(),
+                        ));
+                    }
 
                     // collection of empty list leads to a null dtype
                     // see: #3687
@@ -131,31 +173,54 @@ impl PhysicalExpr for ApplyExpr {
                     ca.rename(&name);
                     Ok(self.finish_apply_groups(ac, ca))
                 }
-                ApplyOptions::ApplyFlat => {
+                (_, ApplyOptions::ApplyFlat) => {
                     // make sure the groups are updated because we are about to throw away
-                    // the series length information
+                    // the series' length information
+                    let set_update_groups = match ac.update_groups {
+                        UpdateGroups::WithSeriesLen => {
+                            ac.groups();
+                            true
+                        }
+                        UpdateGroups::WithSeriesLenOwned(_) => false,
+                        UpdateGroups::No | UpdateGroups::WithGroupsLen => false,
+                    };
+
                     if let UpdateGroups::WithSeriesLen = ac.update_groups {
                         ac.groups();
                     }
+
                     let input = ac.flat_naive().into_owned();
                     let input_len = input.len();
                     let s = self.function.call_udf(&mut [input])?;
 
                     check_map_output_len(input_len, s.len())?;
                     ac.with_series(s, false);
-                    Ok(ac)
-                }
-                ApplyOptions::ApplyList => {
-                    let s = self.function.call_udf(&mut [ac.aggregated()])?;
-                    ac.with_series(s, true);
+
+                    if set_update_groups {
+                        // The flat_naive orders by groups, so we must create new groups
+                        // not by series length as we don't have an agg_list, but by original
+                        // groups length
+                        ac.update_groups = UpdateGroups::WithGroupsLen;
+                    }
                     Ok(ac)
                 }
             }
         } else {
             let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
 
-            match self.collect_groups {
-                ApplyOptions::ApplyGroups => {
+            match (state.overlapping_groups(), self.collect_groups) {
+                (_, ApplyOptions::ApplyList) => {
+                    let mut s = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
+                    let s = self.function.call_udf(&mut s)?;
+                    // take the first aggregation context that as that is the input series
+                    let mut ac = acs.swap_remove(0);
+                    ac.with_update_groups(UpdateGroups::WithGroupsLen);
+                    ac.with_series(s, true);
+                    Ok(ac)
+                }
+
+                // overlapping groups always take this branch as explode bloats data size
+                (_, ApplyOptions::ApplyGroups) | (true, _) => {
                     let mut container = vec![Default::default(); acs.len()];
                     let name = acs[0].series().name().to_string();
 
@@ -189,7 +254,7 @@ impl PhysicalExpr for ApplyExpr {
                     let ac = self.finish_apply_groups(ac, ca);
                     Ok(ac)
                 }
-                ApplyOptions::ApplyFlat => {
+                (_, ApplyOptions::ApplyFlat) => {
                     let mut s = acs
                         .iter_mut()
                         .map(|ac| {
@@ -212,22 +277,93 @@ impl PhysicalExpr for ApplyExpr {
                     ac.with_series(s, false);
                     Ok(ac)
                 }
-                ApplyOptions::ApplyList => {
-                    let mut s = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
-                    let s = self.function.call_udf(&mut s)?;
-                    // take the first aggregation context that as that is the input series
-                    let mut ac = acs.swap_remove(0);
-                    ac.with_update_groups(UpdateGroups::WithGroupsLen);
-                    ac.with_series(s, true);
-                    Ok(ac)
-                }
             }
         }
     }
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        self.inputs[0].to_field(input_schema)
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
+        self.expr.to_field(input_schema, Context::Default)
     }
     fn is_valid_aggregation(&self) -> bool {
         matches!(self.collect_groups, ApplyOptions::ApplyGroups)
+    }
+    #[cfg(feature = "parquet")]
+    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
+        if matches!(
+            self.expr,
+            Expr::Function {
+                function: FunctionExpr::IsNull,
+                ..
+            }
+        ) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        if self.inputs.len() == 1 && matches!(self.collect_groups, ApplyOptions::ApplyFlat) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(feature = "parquet")]
+impl StatsEvaluator for ApplyExpr {
+    fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
+        if matches!(
+            self.expr,
+            Expr::Function {
+                function: FunctionExpr::IsNull,
+                ..
+            }
+        ) {
+            let root = expr_to_root_column_name(&self.expr)?;
+
+            let read = true;
+            let skip = false;
+
+            match stats.get_stats(&root).ok() {
+                Some(st) => match st.null_count() {
+                    Some(0) => Ok(skip),
+                    _ => Ok(read),
+                },
+                None => Ok(read),
+            }
+        } else {
+            Ok(true)
+        }
+    }
+}
+
+impl PartitionedAggregation for ApplyExpr {
+    fn evaluate_partitioned(
+        &self,
+        df: &DataFrame,
+        groups: &GroupsProxy,
+        state: &ExecutionState,
+    ) -> PolarsResult<Series> {
+        let a = self.inputs[0].as_partitioned_aggregator().unwrap();
+        let s = a.evaluate_partitioned(df, groups, state)?;
+
+        if self.allow_rename {
+            return self.function.call_udf(&mut [s]);
+        }
+        let in_name = s.name().to_string();
+        let mut out = self.function.call_udf(&mut [s])?;
+        if in_name != out.name() {
+            out.rename(&in_name);
+        }
+        Ok(out)
+    }
+
+    fn finalize(
+        &self,
+        partitioned: Series,
+        _groups: &GroupsProxy,
+        _state: &ExecutionState,
+    ) -> PolarsResult<Series> {
+        Ok(partitioned)
     }
 }

@@ -15,7 +15,15 @@ where
     ca.shift_and_fill(periods, fill_value)
 }
 
-fn shift_and_fill_with_mask(s: &Series, periods: i64, fill_value: &Series) -> Result<Series> {
+#[cfg(any(
+    feature = "object",
+    feature = "dtype-struct",
+    feature = "dtype-categorical"
+))]
+fn shift_and_fill_with_mask(s: &Series, periods: i64, fill_value: &Series) -> PolarsResult<Series> {
+    use polars_core::export::arrow::array::BooleanArray;
+    use polars_core::export::arrow::bitmap::MutableBitmap;
+
     let mask: BooleanChunked = if periods > 0 {
         let len = s.len();
         let mut bits = MutableBitmap::with_capacity(s.len());
@@ -36,7 +44,7 @@ fn shift_and_fill_with_mask(s: &Series, periods: i64, fill_value: &Series) -> Re
     s.shift(periods).zip_with_same_type(&mask, fill_value)
 }
 
-pub(super) fn shift_and_fill(args: &mut [Series], periods: i64) -> Result<Series> {
+pub(super) fn shift_and_fill(args: &mut [Series], periods: i64) -> PolarsResult<Series> {
     let s = &args[0];
     let logical = s.dtype();
     let physical = s.to_physical_repr();

@@ -8,7 +8,7 @@ pub(crate) mod aggregations;
 #[cfg(feature = "avro")]
 #[cfg_attr(docsrs, doc(cfg(feature = "avro")))]
 pub mod avro;
-#[cfg(feature = "csv-file")]
+#[cfg(any(feature = "csv-file", feature = "json"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "csv-file")))]
 pub mod csv;
 #[cfg(feature = "parquet")]
@@ -24,7 +24,12 @@ pub mod json;
 #[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 pub mod ndjson_core;
 
-#[cfg(any(feature = "csv-file", feature = "parquet", feature = "ipc"))]
+#[cfg(any(
+    feature = "csv-file",
+    feature = "parquet",
+    feature = "ipc",
+    feature = "json"
+))]
 pub mod mmap;
 mod options;
 #[cfg(feature = "parquet")]
@@ -83,7 +88,7 @@ where
     }
 
     /// Take the SerReader and return a parsed DataFrame.
-    fn finish(self) -> Result<DataFrame>;
+    fn finish(self) -> PolarsResult<DataFrame>;
 }
 
 pub trait SerWriter<W>
@@ -93,7 +98,7 @@ where
     fn new(writer: W) -> Self
     where
         Self: Sized;
-    fn finish(&mut self, df: &mut DataFrame) -> Result<()>;
+    fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()>;
 }
 
 pub trait WriterFactory {
@@ -119,7 +124,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     aggregate: Option<&[ScanAggregation]>,
     arrow_schema: &ArrowSchema,
     row_count: Option<RowCount>,
-) -> Result<DataFrame> {
+) -> PolarsResult<DataFrame> {
     use polars_core::utils::accumulate_dataframes_vertical;
 
     let mut num_rows = 0;
@@ -167,7 +172,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
                 .map(|fld| {
                     Series::try_from((fld.name.as_str(), new_empty_array(fld.data_type.clone())))
                 })
-                .collect::<Result<_>>()?;
+                .collect::<PolarsResult<_>>()?;
             DataFrame::new(empty_cols)?
         } else {
             // If there are any rows, accumulate them into a df

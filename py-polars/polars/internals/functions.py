@@ -5,11 +5,7 @@ from typing import TYPE_CHECKING, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import Categorical, Date, Float64
-from polars.utils import (
-    _datetime_to_pl_timestamp,
-    _timedelta_to_pl_duration,
-    in_nanoseconds_window,
-)
+from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_duration
 
 try:
     from polars.polars import concat_df as _concat_df
@@ -27,7 +23,9 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import ClosedWindow, ConcatMethod, TimeUnit
 
 
-def get_dummies(df: pli.DataFrame) -> pli.DataFrame:
+def get_dummies(
+    df: pli.DataFrame, *, columns: list[str] | None = None
+) -> pli.DataFrame:
     """
     Convert categorical variables into dummy/indicator variables.
 
@@ -35,9 +33,12 @@ def get_dummies(df: pli.DataFrame) -> pli.DataFrame:
     ----------
     df
         DataFrame to convert.
+    columns
+        A subset of columns to convert to dummy variables. ``None`` means
+        "all columns".
 
     """
-    return df.to_dummies()
+    return df.to_dummies(columns=columns)
 
 
 @overload
@@ -45,6 +46,7 @@ def concat(
     items: Sequence[pli.DataFrame],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
+    parallel: bool = True,
 ) -> pli.DataFrame:
     ...
 
@@ -54,6 +56,7 @@ def concat(
     items: Sequence[pli.Series],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
+    parallel: bool = True,
 ) -> pli.Series:
     ...
 
@@ -63,6 +66,7 @@ def concat(
     items: Sequence[pli.LazyFrame],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
+    parallel: bool = True,
 ) -> pli.LazyFrame:
     ...
 
@@ -72,6 +76,7 @@ def concat(
     items: Sequence[pli.Expr],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
+    parallel: bool = True,
 ) -> pli.Expr:
     ...
 
@@ -85,6 +90,7 @@ def concat(
     ),
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
+    parallel: bool = True,
 ) -> pli.DataFrame | pli.Series | pli.LazyFrame | pli.Expr:
     """
     Aggregate multiple Dataframes/Series to a single DataFrame/Series.
@@ -94,15 +100,18 @@ def concat(
     items
         DataFrames/Series/LazyFrames to concatenate.
     rechunk
-        rechunk the final DataFrame/Series.
+        Make sure that all data is in contiguous memory.
     how : {'vertical', 'diagonal', 'horizontal'}
         Only used if the items are DataFrames.
 
-        - Vertical: Applies multiple `vstack` operations.
-        - Diagonal: Finds a union between the column schemas and fills missing column
+        - Vertical: applies multiple `vstack` operations.
+        - Diagonal: finds a union between the column schemas and fills missing column
             values with null.
-        - Horizontal: Stacks Series horizontally and fills with nulls if the lengths
+        - Horizontal: stacks Series horizontally and fills with nulls if the lengths
             don't match.
+    parallel
+        Only relevant for LazyFrames. This determines if the concattenated
+        lazy computations may be executed in parallel.
 
     Examples
     --------
@@ -138,7 +147,7 @@ def concat(
                 f"how must be one of {{'vertical', 'diagonal'}}, got {how}"
             )
     elif isinstance(first, pli.LazyFrame):
-        return pli.wrap_ldf(_concat_lf(items, rechunk))
+        return pli.wrap_ldf(_concat_lf(items, rechunk, parallel))
     elif isinstance(first, pli.Series):
         out = pli.wrap_s(_concat_series(items))
     elif isinstance(first, pli.Expr):
@@ -241,17 +250,19 @@ def date_range(
     """
     if isinstance(interval, timedelta):
         interval = _timedelta_to_pl_duration(interval)
+    elif " " in interval:
+        interval = interval.replace(" ", "")
 
     low, low_is_date = _ensure_datetime(low)
     high, high_is_date = _ensure_datetime(high)
 
     tu: TimeUnit
-    if in_nanoseconds_window(low) and in_nanoseconds_window(high) and time_unit is None:
-        tu = "ns"
-    elif time_unit is not None:
+    if time_unit is not None:
         tu = time_unit
+    elif "ns" in interval:
+        tu = "ns"
     else:
-        tu = "ms"
+        tu = "us"
 
     start = _datetime_to_pl_timestamp(low, tu)
     stop = _datetime_to_pl_timestamp(high, tu)
@@ -279,10 +290,6 @@ def cut(
     """
     Bin values into discrete values.
 
-    .. warning::
-        This function is experimental and might change without it being considered a
-        breaking change.
-
     Parameters
     ----------
     s
@@ -300,6 +307,11 @@ def cut(
     Returns
     -------
     DataFrame
+
+    Warnings
+    --------
+    This functionality is experimental and may change without it being considered a
+    breaking change.
 
     Examples
     --------
@@ -367,3 +379,183 @@ def cut(
         )
     )
     return result
+
+
+@overload
+def align_frames(
+    *frames: pli.DataFrame,
+    on: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | Sequence[str | pli.Expr],
+    select: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+) -> list[pli.DataFrame]:
+    ...
+
+
+@overload
+def align_frames(
+    *frames: pli.LazyFrame,
+    on: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | Sequence[str | pli.Expr],
+    select: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+) -> list[pli.LazyFrame]:
+    ...
+
+
+def align_frames(
+    *frames: pli.DataFrame | pli.LazyFrame,
+    on: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | Sequence[str | pli.Expr],
+    select: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+) -> list[pli.DataFrame] | list[pli.LazyFrame]:
+    """
+    Align a sequence of frames using the values from one or more columns as a key.
+
+    Frames that do not contain the given key values have rows injected (with nulls
+    filling the non-key columns), and each resulting frame is sorted by the key.
+
+    The original column order of input frames is not changed unless `select` is
+    specified (in which case the final column order is determined from that).
+
+    Note that this does not result in a joined frame - you receive the same number
+    of frames back that you passed in, but each is now aligned by key and has
+    the same number of rows.
+
+    Parameters
+    ----------
+    frames
+        sequence of DataFrames or LazyFrames.
+    on
+        one or more columns whose values will be used to align the frames.
+    select
+        optional post-alignment column select to constrain and/or order
+        the columns returned from the newly aligned frames.
+
+    Examples
+    --------
+    >>> df1 = pl.DataFrame(
+    ...     {
+    ...         "dt": [date(2022, 9, 1), date(2022, 9, 2), date(2022, 9, 3)],
+    ...         "x": [3.5, 4.0, 1.0],
+    ...         "y": [10.0, 2.5, 1.5],
+    ...     }
+    ... )
+    >>> df2 = pl.DataFrame(
+    ...     {
+    ...         "dt": [date(2022, 9, 2), date(2022, 9, 3), date(2022, 9, 1)],
+    ...         "x": [8.0, 1.0, 3.5],
+    ...         "y": [1.5, 12.0, 5.0],
+    ...     }
+    ... )
+    >>> df3 = pl.DataFrame(
+    ...     {
+    ...         "dt": [date(2022, 9, 3), date(2022, 9, 2)],
+    ...         "x": [2.0, 5.0],
+    ...         "y": [2.5, 2.0],
+    ...     }
+    ... )
+
+    # df1                              df2                              df3
+    # shape: (3, 3)                    shape: (3, 3)                    shape: (2, 3)
+    # ┌────────────┬─────┬──────┐      ┌────────────┬─────┬──────┐      ┌────────────┬─────┬─────┐
+    # │ dt         ┆ x   ┆ y    │      │ dt         ┆ x   ┆ y    │      │ dt         ┆ x   ┆ y   │
+    # │ ---        ┆ --- ┆ ---  │      │ ---        ┆ --- ┆ ---  │      │ ---        ┆ --- ┆ --- │
+    # │ date       ┆ f64 ┆ f64  │      │ date       ┆ f64 ┆ f64  │      │ date       ┆ f64 ┆ f64 │
+    # ╞════════════╪═════╪══════╡      ╞════════════╪═════╪══════╡      ╞════════════╪═════╪═════╡
+    # │ 2022-09-01 ┆ 3.5 ┆ 10.0 │      │ 2022-09-02 ┆ 8.0 ┆ 1.5  │      │ 2022-09-03 ┆ 2.0 ┆ 2.5 │
+    # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+    # │ 2022-09-02 ┆ 4.0 ┆ 2.5  │      │ 2022-09-03 ┆ 1.0 ┆ 12.0 │      │ 2022-09-02 ┆ 5.0 ┆ 2.0 │
+    # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      └────────────┴─────┴─────┘
+    # │ 2022-09-03 ┆ 1.0 ┆ 1.5  │      │ 2022-09-01 ┆ 3.5 ┆ 5.0  │
+    # └────────────┴─────┴──────┘      └────────────┴─────┴──────┘
+
+    >>> # align frames on the values in "dt", but keep only cols "x" and "y":
+    >>> af1, af2, af3 = pl.align_frames(df1, df2, df3, on="dt", select=["x", "y"])
+
+    # af1                 af2                 af3
+    # shape: (3, 3)       shape: (3, 3)       shape: (3, 3)
+    # ┌─────┬──────┐      ┌─────┬──────┐      ┌──────┬──────┐
+    # │ x   ┆ y    │      │ x   ┆ y    │      │ x    ┆ y    │
+    # │ --- ┆ ---  │      │ --- ┆ ---  │      │ ---  ┆ ---  │
+    # │ f64 ┆ f64  │      │ f64 ┆ f64  │      │ f64  ┆ f64  │
+    # ╞═════╪══════╡      ╞═════╪══════╡      ╞══════╪══════╡
+    # │ 3.5 ┆ 10.0 │      │ 3.5 ┆ 5.0  │      │ null ┆ null │
+    # ├╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    # │ 4.0 ┆ 2.5  │      │ 8.0 ┆ 1.5  │      │ 5.0  ┆ 2.0  │
+    # ├╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    # │ 1.0 ┆ 1.5  │      │ 1.0 ┆ 12.0 │      │ 2.0  ┆ 2.5  │
+    # └─────┴──────┘      └─────┴──────┘      └──────┴──────┘
+
+    >>> # now frames are aligned, can easily calculate the row-wise dot product:
+    >>> (af1 * af2 * af3).fill_null(0).select(pl.sum(pl.col("*")).alias("dot"))
+    shape: (3, 1)
+    ┌───────┐
+    │ dot   │
+    │ ---   │
+    │ f64   │
+    ╞═══════╡
+    │ 0.0   │
+    ├╌╌╌╌╌╌╌┤
+    │ 167.5 │
+    ├╌╌╌╌╌╌╌┤
+    │ 47.0  │
+    └───────┘
+
+    >>> # as above, but keeping the alignment column ("dt") in the final frame:
+    >>> af1, af2, af3 = pl.align_frames(df1, df2, df3, on="dt")
+
+    # af1                              af2                              af3
+    # shape: (3, 3)                    shape: (3, 3)                    shape: (3, 3)
+    # ┌────────────┬─────┬──────┐      ┌────────────┬─────┬──────┐      ┌────────────┬──────┬──────┐
+    # │ dt         ┆ x   ┆ y    │      │ dt         ┆ x   ┆ y    │      │ dt         ┆ x    ┆ y    │
+    # │ ---        ┆ --- ┆ ---  │      │ ---        ┆ --- ┆ ---  │      │ ---        ┆ ---  ┆ ---  │
+    # │ date       ┆ f64 ┆ f64  │      │ date       ┆ f64 ┆ f64  │      │ date       ┆ f64  ┆ f64  │
+    # ╞════════════╪═════╪══════╡      ╞════════════╪═════╪══════╡      ╞════════════╪══════╪══════╡
+    # │ 2022-09-01 ┆ 3.5 ┆ 10.0 │      │ 2022-09-01 ┆ 3.5 ┆ 5.0  │      │ 2022-09-01 ┆ null ┆ null │
+    # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    # │ 2022-09-02 ┆ 4.0 ┆ 2.5  │      │ 2022-09-02 ┆ 8.0 ┆ 1.5  │      │ 2022-09-02 ┆ 5.0  ┆ 2.0  │
+    # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    # │ 2022-09-03 ┆ 1.0 ┆ 1.5  │      │ 2022-09-03 ┆ 1.0 ┆ 12.0 │      │ 2022-09-03 ┆ 2.0  ┆ 2.5  │
+    # └────────────┴─────┴──────┘      └────────────┴─────┴──────┘      └────────────┴──────┴──────┘
+
+    >>> (af1[["x", "y"]] * af2[["x", "y"]] * af3[["x", "y"]]).fill_null(0).select(
+    ...     pl.sum(pl.col("*")).alias("dot")
+    ... ).insert_at_idx(0, af1["dt"])
+    shape: (3, 2)
+    ┌────────────┬───────┐
+    │ dt         ┆ dot   │
+    │ ---        ┆ ---   │
+    │ date       ┆ f64   │
+    ╞════════════╪═══════╡
+    │ 2022-09-01 ┆ 0.0   │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 2022-09-02 ┆ 167.5 │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 2022-09-03 ┆ 47.0  │
+    └────────────┴───────┘
+
+    """  # noqa: E501
+    if not frames:
+        return []  # type: ignore[return-value]
+    elif len({type(f) for f in frames}) != 1:
+        raise TypeError(
+            "Input frames must be of a consistent type (all LazyFrame or all DataFrame)"
+        )
+
+    eager = isinstance(frames[0], pli.DataFrame)
+    alignment_frame = concat([df.lazy().select(on) for df in frames]).unique(
+        maintain_order=False
+    )
+    if eager:  # collect once, outside the alignment joins
+        alignment_frame = alignment_frame.collect().lazy()
+
+    aligned_frames = [
+        alignment_frame.join(
+            other=df.lazy(),
+            on=alignment_frame.columns,
+            how="left",
+        )
+        .select(df.columns)
+        .sort(by=on)
+        for df in frames
+    ]
+    if select is not None:
+        aligned_frames = [df.select(select) for df in aligned_frames]
+
+    return [df.collect() for df in aligned_frames] if eager else aligned_frames

@@ -1,4 +1,5 @@
-use polars_arrow::{array::list::AnonymousBuilder, prelude::*};
+use polars_arrow::array::list::AnonymousBuilder;
+use polars_arrow::prelude::*;
 
 use super::*;
 
@@ -335,10 +336,10 @@ pub fn get_list_builder(
     value_capacity: usize,
     list_capacity: usize,
     name: &str,
-) -> Result<Box<dyn ListBuilderTrait>> {
+) -> PolarsResult<Box<dyn ListBuilderTrait>> {
     let physical_type = dt.to_physical();
 
-    let _err = || -> Result<Box<dyn ListBuilderTrait>> {
+    let _err = || -> PolarsResult<Box<dyn ListBuilderTrait>> {
         Err(PolarsError::ComputeError(
             format!(
                 "list builder not supported for this dtype: {}",
@@ -362,8 +363,6 @@ pub fn get_list_builder(
             list_capacity,
             Some(physical_type),
         ))),
-        #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_) => _err(),
         _ => {
             macro_rules! get_primitive_builder {
                 ($type:ty) => {{

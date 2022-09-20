@@ -6,7 +6,7 @@ use sqlparser::ast::{
     Function as SQLFunction, Value as SqlValue, WindowSpec,
 };
 
-fn map_sql_polars_datatype(data_type: &SQLDataType) -> Result<DataType> {
+fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<DataType> {
     Ok(match data_type {
         SQLDataType::Char(_)
         | SQLDataType::Varchar(_)
@@ -46,12 +46,12 @@ fn map_sql_polars_datatype(data_type: &SQLDataType) -> Result<DataType> {
     })
 }
 
-fn cast_(expr: Expr, data_type: &SQLDataType) -> Result<Expr> {
+fn cast_(expr: Expr, data_type: &SQLDataType) -> PolarsResult<Expr> {
     let polars_type = map_sql_polars_datatype(data_type)?;
     Ok(expr.cast(polars_type))
 }
 
-fn binary_op_(left: Expr, right: Expr, op: &SQLBinaryOperator) -> Result<Expr> {
+fn binary_op_(left: Expr, right: Expr, op: &SQLBinaryOperator) -> PolarsResult<Expr> {
     Ok(match op {
         SQLBinaryOperator::Plus => left + right,
         SQLBinaryOperator::Minus => left - right,
@@ -76,7 +76,7 @@ fn binary_op_(left: Expr, right: Expr, op: &SQLBinaryOperator) -> Result<Expr> {
     })
 }
 
-fn literal_expr(value: &SqlValue) -> Result<Expr> {
+fn literal_expr(value: &SqlValue) -> PolarsResult<Expr> {
     Ok(match value {
         SqlValue::Number(s, _) => {
             // Check for existence of decimal separator dot
@@ -108,7 +108,7 @@ fn literal_expr(value: &SqlValue) -> Result<Expr> {
     })
 }
 
-pub(crate) fn parse_sql_expr(expr: &SqlExpr) -> Result<Expr> {
+pub(crate) fn parse_sql_expr(expr: &SqlExpr) -> PolarsResult<Expr> {
     Ok(match expr {
         SqlExpr::Identifier(e) => col(&e.value),
         SqlExpr::BinaryOp { left, op, right } => {
@@ -132,7 +132,7 @@ pub(crate) fn parse_sql_expr(expr: &SqlExpr) -> Result<Expr> {
     })
 }
 
-fn apply_window_spec(expr: Expr, window_spec: &Option<WindowSpec>) -> Result<Expr> {
+fn apply_window_spec(expr: Expr, window_spec: &Option<WindowSpec>) -> PolarsResult<Expr> {
     Ok(match &window_spec {
         Some(window_spec) => {
             // Process for simple window specification, partition by first
@@ -148,7 +148,7 @@ fn apply_window_spec(expr: Expr, window_spec: &Option<WindowSpec>) -> Result<Exp
     })
 }
 
-fn parse_sql_function(sql_function: &SQLFunction) -> Result<Expr> {
+fn parse_sql_function(sql_function: &SQLFunction) -> PolarsResult<Expr> {
     use sqlparser::ast::{FunctionArg, FunctionArgExpr};
     // Function name mostly do not have name space, so it mostly take the first args
     let function_name = sql_function.name.0[0].value.to_lowercase();

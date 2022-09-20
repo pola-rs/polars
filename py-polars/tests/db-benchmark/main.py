@@ -11,7 +11,7 @@ print(pl.__version__)
 
 x = pl.read_csv(
     "G1_1e7_1e2_5_0.csv",
-    dtype={
+    dtypes={
         "id4": pl.Int32,
         "id5": pl.Int32,
         "id6": pl.Int32,
@@ -23,7 +23,7 @@ x = pl.read_csv(
 ON_STRINGS = sys.argv.pop() == "on_strings"
 
 if not ON_STRINGS:
-    x.with_columns([pl.col(["id1", "id2", "id3"]).cast(pl.Categorical)])
+    x = x.with_columns([pl.col(["id1", "id2", "id3"]).cast(pl.Categorical)])
 df = x.clone()
 x = df.lazy()
 
@@ -119,9 +119,8 @@ t0 = time.time()
 print("q8")
 out = (
     x.drop_nulls("v3")
-    .sort("v3", reverse=True)
     .groupby("id6")
-    .agg(pl.col("v3").head(2).alias("largest2_v3"))
+    .agg(pl.col("v3").top_k(2).alias("largest2_v3"))
     .explode("largest2_v3")
     .collect()
 )

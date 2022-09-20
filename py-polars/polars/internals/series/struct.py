@@ -1,15 +1,39 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import polars.internals as pli
+from polars.internals.series.utils import expr_dispatch
+
+if TYPE_CHECKING:
+    from polars.polars import PySeries
 
 
+@expr_dispatch
 class StructNameSpace:
-    def __init__(self, s: pli.Series):
-        self.s = s
+    """Series.struct namespace."""
+
+    _accessor = "struct"
+
+    def __init__(self, series: pli.Series):
+        self._s: PySeries = series._s
+
+    def __getitem__(self, item: int | str) -> pli.Series:
+        if isinstance(item, int):
+            return self.field(self.fields[item])
+        elif isinstance(item, str):
+            return self.field(item)
+        else:
+            raise ValueError(f"expected type 'int | str', got {type(item)}")
 
     def to_frame(self) -> pli.DataFrame:
         """Convert this Struct Series to a DataFrame."""
-        return pli.wrap_df(self.s._s.struct_to_frame())
+        return pli.wrap_df(self._s.struct_to_frame())
+
+    @property
+    def fields(self) -> list[str]:
+        """Get the names of the fields."""
+        return self._s.struct_fields()
 
     def field(self, name: str) -> pli.Series:
         """
@@ -21,16 +45,10 @@ class StructNameSpace:
             Name of the field
 
         """
-        return pli.select(pli.lit(self.s).struct.field(name)).to_series()
-
-    @property
-    def fields(self) -> list[str]:
-        """Get the names of the fields."""
-        return self.s._s.struct_fields()
 
     def rename_fields(self, names: list[str]) -> pli.Series:
         """
-        Rename the fields of the struct
+        Rename the fields of the struct.
 
         Parameters
         ----------
@@ -38,4 +56,3 @@ class StructNameSpace:
             New names in the order of the struct's fields
 
         """
-        return pli.select(pli.lit(self.s).struct.rename_fields(names)).to_series()

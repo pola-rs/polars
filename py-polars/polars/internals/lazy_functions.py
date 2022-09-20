@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from inspect import isclass
 from typing import TYPE_CHECKING, Any, Callable, Sequence, cast, overload
 
@@ -12,12 +12,15 @@ from polars.datatypes import (
     Datetime,
     Duration,
     PolarsDataType,
+    Time,
+    UInt32,
+    is_polars_dtype,
     py_type_to_dtype,
 )
 from polars.utils import (
     _datetime_to_pl_timestamp,
+    _time_to_pl_time,
     _timedelta_to_pl_timedelta,
-    timedelta_in_nanoseconds_window,
 )
 
 try:
@@ -44,6 +47,7 @@ try:
     from polars.polars import py_datetime, py_duration
     from polars.polars import repeat as _repeat
     from polars.polars import spearman_rank_corr as pyspearman_rank_corr
+    from polars.polars import sum_exprs as _sum_exprs
 
     _DOCUMENTING = False
 except ImportError:
@@ -66,7 +70,7 @@ if TYPE_CHECKING:
 
 
 def col(
-    name: str | list[str] | Sequence[PolarsDataType] | pli.Series | PolarsDataType,
+    name: str | Sequence[str] | Sequence[PolarsDataType] | pli.Series | PolarsDataType,
 ) -> pli.Expr:
     """
     Return an expression representing a column in a DataFrame.
@@ -170,23 +174,19 @@ def col(
     if isinstance(name, DataType):
         return pli.wrap_expr(_dtype_cols([name]))
 
-    if isinstance(name, list):
+    elif not isinstance(name, str) and isinstance(name, Sequence):
         if len(name) == 0 or isinstance(name[0], str):
             return pli.wrap_expr(pycols(name))
-        elif (
-            isclass(name[0])
-            and issubclass(name[0], DataType)
-            or isinstance(name[0], DataType)
-        ):
+        elif is_polars_dtype(name[0]):
             return pli.wrap_expr(_dtype_cols(name))
         else:
-            raise ValueError("did expect argument of List[str] or List[DataType]")
+            raise ValueError("Expected list values to be all `str` or all `DataType`")
     return pli.wrap_expr(pycol(name))
 
 
 def element() -> pli.Expr:
     """
-    Alias for an element in evaluated in an `eval` expression
+    Alias for an element in evaluated in an `eval` expression.
 
     Examples
     --------
@@ -314,7 +314,7 @@ def var(column: str | pli.Series, ddof: int = 1) -> pli.Expr | float | None:
 
 
 @overload
-def max(column: str | list[pli.Expr | str]) -> pli.Expr:
+def max(column: str | Sequence[pli.Expr | str]) -> pli.Expr:
     ...
 
 
@@ -323,7 +323,7 @@ def max(column: pli.Series) -> int | float:
     ...
 
 
-def max(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
+def max(column: str | Sequence[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     """
     Get the maximum value. Can be used horizontally or vertically.
 
@@ -338,15 +338,15 @@ def max(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     """
     if isinstance(column, pli.Series):
         return column.max()
-    elif isinstance(column, list):
+    elif isinstance(column, str):
+        return col(column).max()
+    else:
         exprs = pli.selection_to_pyexpr_list(column)
         return pli.wrap_expr(_max_exprs(exprs))
-    else:
-        return col(column).max()
 
 
 @overload
-def min(column: str | list[pli.Expr | str]) -> pli.Expr:
+def min(column: str | Sequence[pli.Expr | str]) -> pli.Expr:
     ...
 
 
@@ -355,7 +355,7 @@ def min(column: pli.Series) -> int | float:
     ...
 
 
-def min(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
+def min(column: str | Sequence[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     """
     Get the minimum value.
 
@@ -368,15 +368,15 @@ def min(column: str | list[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
     """
     if isinstance(column, pli.Series):
         return column.min()
-    elif isinstance(column, list):
+    elif isinstance(column, str):
+        return col(column).min()
+    else:
         exprs = pli.selection_to_pyexpr_list(column)
         return pli.wrap_expr(_min_exprs(exprs))
-    else:
-        return col(column).min()
 
 
 @overload
-def sum(column: str | list[pli.Expr | str] | pli.Expr) -> pli.Expr:
+def sum(column: str | Sequence[pli.Expr | str] | pli.Expr) -> pli.Expr:
     ...
 
 
@@ -385,28 +385,105 @@ def sum(column: pli.Series) -> int | float:
     ...
 
 
-def sum(column: str | list[pli.Expr | str] | pli.Series | pli.Expr) -> pli.Expr | Any:
+def sum(
+    column: str | Sequence[pli.Expr | str] | pli.Series | pli.Expr,
+) -> pli.Expr | Any:
     """
-    Get the sum value.
+    Sum values in a column/Series, or horizontally across list of columns/expressions.
 
+    ``pl.sum(str)`` is syntactic sugar for:
+
+    >>> pl.col(str).sum()  # doctest: +SKIP
+
+    ``pl.sum(list)`` is syntactic sugar for:
+
+    >>> pl.fold(pl.lit(0), lambda x, y: x + y, list).alias("sum")  # doctest: +SKIP
+
+    Parameters
+    ----------
     column
-        Column(s) to be used in aggregation. Will lead to different behavior based on
-        the input:
-        - Union[str, Series] -> aggregate the sum value of that column.
-        - List[Expr] -> aggregate the sum value horizontally.
+        Column(s) to be used in aggregation.
+        This can be:
+
+        - a column name, or Series -> aggregate the sum value of that column/Series.
+        - a List[Expr] -> aggregate the sum value horizontally across the Expr result.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2],
+    ...         "b": [3, 4],
+    ...         "c": [5, 6],
+    ...     }
+    ... )
+    >>> df
+    shape: (2, 3)
+    ┌─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 3   ┆ 5   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 4   ┆ 6   │
+    └─────┴─────┴─────┘
+
+    Sum a column by name:
+
+    >>> df.select(pl.sum("a"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 3   │
+    └─────┘
+
+    Sum a list of columns/expressions horizontally:
+
+    >>> df.with_column(pl.sum(["a", "c"]))
+    shape: (2, 4)
+    ┌─────┬─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   ┆ sum │
+    │ --- ┆ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╪═════╡
+    │ 1   ┆ 3   ┆ 5   ┆ 6   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 4   ┆ 6   ┆ 8   │
+    └─────┴─────┴─────┴─────┘
+
+    Sum a series:
+
+    >>> pl.sum(df.get_column("a"))
+    3
+
+    To aggregate the sums for more than one column/expression use ``pl.col(list).sum()``
+    instead:
+
+    >>> df.select(pl.col(["a", "c"]).sum())
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ a   ┆ c   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 3   ┆ 11  │
+    └─────┴─────┘
 
     """
     if isinstance(column, pli.Series):
         return column.sum()
-    elif isinstance(column, list):
-        first = column[0]
-        if isinstance(first, str):
-            first = col(first)
-        return fold(first, lambda a, b: a + b, column[1:]).alias("sum")
-    elif isinstance(column, pli.Expr):
-        return fold(lit(0), lambda a, b: a + b, column).alias("sum")
-    else:
+    elif isinstance(column, str):
         return col(column).sum()
+    elif isinstance(column, Sequence):
+        exprs = pli.selection_to_pyexpr_list(column)
+        return pli.wrap_expr(_sum_exprs(exprs))
+    else:
+        # (Expr): use u32 as that will not cast to float as eagerly
+        return fold(lit(0).cast(UInt32), lambda a, b: a + b, column).alias("sum")
 
 
 @overload
@@ -552,25 +629,25 @@ def last(column: str | pli.Series | None = None) -> pli.Expr:
 
 
 @overload
-def head(column: str, n: int | None) -> pli.Expr:
+def head(column: str, n: int = 10) -> pli.Expr:
     ...
 
 
 @overload
-def head(column: pli.Series, n: int | None) -> pli.Series:
+def head(column: pli.Series, n: int = 10) -> pli.Series:
     ...
 
 
-def head(column: str | pli.Series, n: int | None = None) -> pli.Expr | pli.Series:
+def head(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
     """
-    Get the first n rows of an Expression.
+    Get the first `n` rows.
 
     Parameters
     ----------
     column
         Column name or Series.
     n
-        Number of rows to take.
+        Number of rows to return.
 
     """
     if isinstance(column, pli.Series):
@@ -579,25 +656,25 @@ def head(column: str | pli.Series, n: int | None = None) -> pli.Expr | pli.Serie
 
 
 @overload
-def tail(column: str, n: int | None) -> pli.Expr:
+def tail(column: str, n: int = 10) -> pli.Expr:
     ...
 
 
 @overload
-def tail(column: pli.Series, n: int | None) -> pli.Series:
+def tail(column: pli.Series, n: int = 10) -> pli.Series:
     ...
 
 
-def tail(column: str | pli.Series, n: int | None = None) -> pli.Expr | pli.Series:
+def tail(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
     """
-    Get the last n rows of an Expression.
+    Get the last `n` rows.
 
     Parameters
     ----------
     column
         Column name or Series.
     n
-        Number of rows to take.
+        Number of rows to return.
 
     """
     if isinstance(column, pli.Series):
@@ -605,7 +682,9 @@ def tail(column: str | pli.Series, n: int | None = None) -> pli.Expr | pli.Serie
     return col(column).tail(n)
 
 
-def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
+def lit(
+    value: Any, dtype: type[DataType] | None = None, allow_object: bool = False
+) -> pli.Expr:
     """
     Return an expression representing a literal value.
 
@@ -615,6 +694,10 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
         Value that should be used as a `literal`.
     dtype
         Optionally define a dtype.
+    allow_object
+        If type is unknown use an 'object' type.
+        By default, we will raise a `ValueException`
+        if the type is unknown.
 
     Examples
     --------
@@ -644,22 +727,21 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
     if isinstance(value, datetime):
         tu = "us"
         return lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime(tu))
-    if isinstance(value, timedelta):
-        # TODO: python timedelta should also default to 'us' units.
-        #  (needs some corresponding work on the Rust side first)
-        if timedelta_in_nanoseconds_window(value):
-            tu = "ns"
-        else:
-            tu = "ms"
+
+    elif isinstance(value, timedelta):
+        tu = "us"
         return lit(_timedelta_to_pl_timedelta(value, tu)).cast(Duration(tu))
 
-    if isinstance(value, date):
+    elif isinstance(value, time):
+        return lit(_time_to_pl_time(value)).cast(Time)
+
+    elif isinstance(value, date):
         return lit(datetime(value.year, value.month, value.day)).cast(Date)
 
-    if isinstance(value, pli.Series):
+    elif isinstance(value, pli.Series):
         name = value.name
         value = value._s
-        e = pli.wrap_expr(pylit(value))
+        e = pli.wrap_expr(pylit(value, allow_object))
         if name == "":
             return e
         return e.alias(name)
@@ -668,7 +750,7 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
         return lit(pli.Series("", value))
 
     if dtype:
-        return pli.wrap_expr(pylit(value)).cast(dtype)
+        return pli.wrap_expr(pylit(value, allow_object)).cast(dtype)
 
     try:
         # numpy literals like np.float32(0) have item/dtype
@@ -690,7 +772,7 @@ def lit(value: Any, dtype: type[DataType] | None = None) -> pli.Expr:
     except AttributeError:
         item = value
 
-    return pli.wrap_expr(pylit(item))
+    return pli.wrap_expr(pylit(item, allow_object))
 
 
 def spearman_rank_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Expr:
@@ -758,13 +840,14 @@ def cov(
 
 
 def map(
-    exprs: list[str] | list[pli.Expr],
-    f: Callable[[list[pli.Series]], pli.Series],
+    exprs: Sequence[str] | Sequence[pli.Expr],
+    f: Callable[[Sequence[pli.Series]], pli.Series],
     return_dtype: type[DataType] | None = None,
 ) -> pli.Expr:
     """
-    Map a custom function over multiple columns/expressions and produce a single Series
-    result.
+    Map a custom function over multiple columns/expressions.
+
+    Produces a single Series result.
 
     Parameters
     ----------
@@ -785,8 +868,8 @@ def map(
 
 
 def apply(
-    exprs: list[str | pli.Expr],
-    f: Callable[[list[pli.Series]], pli.Series | Any],
+    exprs: Sequence[str | pli.Expr],
+    f: Callable[[Sequence[pli.Series]], pli.Series | Any],
     return_dtype: type[DataType] | None = None,
 ) -> pli.Expr:
     """
@@ -847,19 +930,20 @@ def fold(
     return pli.wrap_expr(pyfold(acc._pyexpr, f, exprs))
 
 
-def any(name: str | list[pli.Expr] | pli.Expr) -> pli.Expr:
+def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:
     """Evaluate columnwise or elementwise with a bitwise OR operation."""
-    if isinstance(name, (list, pli.Expr)):
+    if isinstance(name, str):
+        return col(name).any()
+    else:
         return fold(lit(False), lambda a, b: a.cast(bool) | b.cast(bool), name).alias(
             "any"
         )
-    return col(name).any()
 
 
 def exclude(
     columns: (
         str
-        | list[str]
+        | Sequence[str]
         | DataType
         | type[DataType]
         | DataType
@@ -958,7 +1042,7 @@ def exclude(
     return col("*").exclude(columns)
 
 
-def all(name: str | list[pli.Expr] | pli.Expr | None = None) -> pli.Expr:
+def all(name: str | Sequence[pli.Expr] | pli.Expr | None = None) -> pli.Expr:
     """
     Do one of two things.
 
@@ -990,11 +1074,12 @@ def all(name: str | list[pli.Expr] | pli.Expr | None = None) -> pli.Expr:
     """
     if name is None:
         return col("*")
-    if isinstance(name, (list, pli.Expr)):
+    elif isinstance(name, str):
+        return col(name).all()
+    else:
         return fold(lit(True), lambda a, b: a.cast(bool) & b.cast(bool), name).alias(
             "all"
         )
-    return col(name).all()
 
 
 def groups(column: str) -> pli.Expr:
@@ -1062,7 +1147,10 @@ def arange(
     eager: bool = False,
 ) -> pli.Expr | pli.Series:
     """
-    Create a range expression. This can be used in a `select`, `with_column` etc.
+    Create a range expression.
+
+    This can be used in a `select`, `with_column` etc.
+
     Be sure that the range size is equal to the DataFrame you are collecting.
 
     Examples
@@ -1093,7 +1181,7 @@ def arange(
 
 def argsort_by(
     exprs: pli.Expr | str | Sequence[pli.Expr | str],
-    reverse: list[bool] | bool = False,
+    reverse: Sequence[bool] | bool = False,
 ) -> pli.Expr:
     """
     Find the indexes that would sort the columns.
@@ -1431,14 +1519,15 @@ def concat_list(exprs: Sequence[str | pli.Expr | pli.Series] | pli.Expr) -> pli.
 
 
 def collect_all(
-    lazy_frames: list[pli.LazyFrame],
+    lazy_frames: Sequence[pli.LazyFrame],
     type_coercion: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
     string_cache: bool = False,
     no_optimization: bool = False,
-    slice_pushdown: bool = False,
+    slice_pushdown: bool = True,
+    common_subplan_elimination: bool = True,
 ) -> list[pli.DataFrame]:
     """
     Collect multiple LazyFrames at the same time.
@@ -1458,16 +1547,13 @@ def collect_all(
     simplify_expression
         Run simplify expressions optimization.
     string_cache
-        Use a global string cache in this query.
-        This is needed if you want to join on categorical columns.
-
-        Caution!
-            If you already have set a global string cache, set this to `False` as this
-            will reset the global cache when the query is finished.
+        This argument is deprecated and will be ignored
     no_optimization
         Turn off optimizations.
     slice_pushdown
         Slice pushdown optimization.
+    common_subplan_elimination
+        Will try to cache branching subplans that occur on self-joins or unions.
 
     Returns
     -------
@@ -1478,6 +1564,7 @@ def collect_all(
         predicate_pushdown = False
         projection_pushdown = False
         slice_pushdown = False
+        common_subplan_elimination = False
 
     prepared = []
 
@@ -1487,8 +1574,8 @@ def collect_all(
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
-            string_cache,
             slice_pushdown,
+            common_subplan_elimination,
         )
         prepared.append(ldf)
 

@@ -2,8 +2,10 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 use polars_core::frame::groupby::GroupsProxy;
+use polars_core::prelude::*;
 use polars_core::series::unstable::UnstableSeries;
-use polars_core::{prelude::*, POOL};
+use polars_core::POOL;
+use rayon::prelude::*;
 
 use crate::physical_plan::state::{ExecutionState, StateFlags};
 use crate::prelude::*;
@@ -32,7 +34,7 @@ impl BinaryExpr {
 }
 
 /// Can partially do operations in place.
-fn apply_operator_owned(left: Series, right: Series, op: Operator) -> Result<Series> {
+fn apply_operator_owned(left: Series, right: Series, op: Operator) -> PolarsResult<Series> {
     match op {
         Operator::Gt => ChunkCompare::<&Series>::gt(&left, &right).map(|ca| ca.into_series()),
         Operator::GtEq => ChunkCompare::<&Series>::gt_eq(&left, &right).map(|ca| ca.into_series()),
@@ -55,7 +57,7 @@ fn apply_operator_owned(left: Series, right: Series, op: Operator) -> Result<Ser
     }
 }
 
-pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> Result<Series> {
+pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResult<Series> {
     match op {
         Operator::Gt => ChunkCompare::<&Series>::gt(left, right).map(|ca| ca.into_series()),
         Operator::GtEq => ChunkCompare::<&Series>::gt_eq(left, right).map(|ca| ca.into_series()),
@@ -69,21 +71,17 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> Result<Ser
         Operator::Minus => Ok(left - right),
         Operator::Multiply => Ok(left * right),
         Operator::Divide => Ok(left / right),
-        Operator::TrueDivide => {
-            use DataType::*;
-            match left.dtype() {
-                Date | Datetime(_, _) | Float32 | Float64 => Ok(left / right),
-                _ => Ok(&left.cast(&Float64)? / &right.cast(&Float64)?),
+        Operator::TrueDivide => match left.dtype() {
+            DataType::Date | DataType::Datetime(_, _) | DataType::Float32 | DataType::Float64 => {
+                Ok(left / right)
             }
-        }
-        Operator::FloorDivide => {
-            use DataType::*;
-            match left.dtype() {
-                #[cfg(feature = "round_series")]
-                Float32 | Float64 => (left / right).floor(),
-                _ => Ok(left / right),
-            }
-        }
+            _ => Ok(&left.cast(&DataType::Float64)? / &right.cast(&DataType::Float64)?),
+        },
+        Operator::FloorDivide => match left.dtype() {
+            #[cfg(feature = "round_series")]
+            DataType::Float32 | DataType::Float64 => (left / right).floor(),
+            _ => Ok(left / right),
+        },
         Operator::And => left.bitand(right),
         Operator::Or => left.bitor(right),
         Operator::Xor => left.bitxor(right),
@@ -96,7 +94,7 @@ impl PhysicalExpr for BinaryExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let mut state = state.split();
         // don't cache window functions as they run in parallel
         state.flags.remove(StateFlags::CACHE_WINDOW_EXPR);
@@ -115,7 +113,7 @@ impl PhysicalExpr for BinaryExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let (result_a, result_b) = POOL.install(|| {
             rayon::join(
                 || self.left.evaluate_on_groups(df, groups, state),
@@ -133,28 +131,17 @@ impl PhysicalExpr for BinaryExpr {
             ));
         }
 
-        match (ac_l.agg_state(), ac_r.agg_state(), self.op) {
+        match (
+            ac_l.agg_state(),
+            ac_r.agg_state(),
+            state.overlapping_groups(),
+        ) {
             // Some aggregations must return boolean masks that fit the group. That's why not all literals can take this path.
             // only literals that are used in arithmetic
             (
-                AggState::AggregatedFlat(lhs),
-                AggState::Literal(rhs),
-                Operator::Plus
-                | Operator::Minus
-                | Operator::Divide
-                | Operator::Multiply
-                | Operator::Modulus
-                | Operator::TrueDivide,
-            )
-            | (
-                AggState::Literal(lhs),
-                AggState::AggregatedFlat(rhs),
-                Operator::Plus
-                | Operator::Minus
-                | Operator::Divide
-                | Operator::Multiply
-                | Operator::Modulus
-                | Operator::TrueDivide,
+                AggState::AggregatedFlat(lhs) | AggState::Literal(lhs),
+                AggState::AggregatedFlat(rhs) | AggState::Literal(rhs),
+                _,
             ) => {
                 // we want to be able to mutate in place
                 // so we take the lhs to make sure that we drop
@@ -172,29 +159,11 @@ impl PhysicalExpr for BinaryExpr {
                 Ok(ac_l)
             }
             // One of the two exprs is aggregated with flat aggregation, e.g. `e.min(), e.max(), e.first()`
-            // the other is a literal value. In that case it is unlikely we want to expand this to the
-            // group sizes.
-            //
-            (AggState::AggregatedFlat(_), AggState::Literal(_), _)
-            | (AggState::Literal(_), AggState::AggregatedFlat(_), _) => {
-                let l = ac_l.series().clone();
-                let r = ac_r.series().clone();
-
-                // drop lhs so that we might operate in place
-                {
-                    let _ = ac_l.take();
-                }
-                let out = apply_operator_owned(l, r, self.op)?;
-
-                ac_l.with_series(out, true);
-                Ok(ac_l)
-            }
-            // One of the two exprs is aggregated with flat aggregation, e.g. `e.min(), e.max(), e.first()`
 
             // if the groups_len == df.len we can just apply all flat.
             // within an aggregation a `col().first() - lit(0)` must still produce a boolean array of group length,
             // that's why a literal also takes this branch
-            (AggState::AggregatedFlat(s), AggState::NotAggregated(_), _)
+            (AggState::AggregatedFlat(s), AggState::NotAggregated(_), _overlapping_groups)
                 if s.len() != df.height() =>
             {
                 // this is a flat series of len eq to group tuples
@@ -234,7 +203,7 @@ impl PhysicalExpr for BinaryExpr {
                             })
                             .transpose()
                     })
-                    .collect::<Result<_>>()?;
+                    .collect::<PolarsResult<_>>()?;
                 ca.rename(l.name());
 
                 ac_l.with_series(ca.into_series(), true);
@@ -245,7 +214,7 @@ impl PhysicalExpr for BinaryExpr {
             (
                 AggState::AggregatedList(_) | AggState::NotAggregated(_),
                 AggState::AggregatedFlat(s),
-                _,
+                _overlapping_groups,
             ) if s.len() != df.height() => {
                 // this is now a list
                 let l = ac_l.aggregated_arity_operation();
@@ -283,7 +252,7 @@ impl PhysicalExpr for BinaryExpr {
                             })
                             .transpose()
                     })
-                    .collect::<Result<_>>()?;
+                    .collect::<PolarsResult<_>>()?;
                 ca.rename(l.name());
 
                 ac_l.with_series(ca.into_series(), true);
@@ -297,9 +266,25 @@ impl PhysicalExpr for BinaryExpr {
                 }
                 Ok(ac_l)
             }
-            (AggState::AggregatedList(_), AggState::NotAggregated(_) | AggState::Literal(_), _)
-            | (AggState::NotAggregated(_) | AggState::Literal(_), AggState::AggregatedList(_), _) =>
-            {
+
+            // # Align data in sort order and apply flattened.
+            // 1 we sort/aggregate by groups
+            // 2 then we flatten/explode and do the binary operation.
+            // 3 then we use the original groups length to restore the groups
+            //
+            // Overlapping groups may not take this branch.
+            // when groups overlap, step 2 creates more values than rows
+            // and the original group lengths will be incorrect
+            (
+                AggState::AggregatedList(_),
+                AggState::NotAggregated(_) | AggState::Literal(_),
+                false,
+            )
+            | (
+                AggState::NotAggregated(_) | AggState::Literal(_),
+                AggState::AggregatedList(_),
+                false,
+            ) => {
                 ac_l.sort_by_groups();
                 ac_r.sort_by_groups();
 
@@ -318,8 +303,11 @@ impl PhysicalExpr for BinaryExpr {
                 ac_l.with_series(out, false);
                 Ok(ac_l)
             }
-            // flatten the Series and apply the operators
-            (AggState::AggregatedList(_), AggState::AggregatedList(_), _) => {
+            // # Flatten the Series and apply the operators.
+            //
+            // Overlapping groups may not take this branch.
+            // the explode call would create more data and is expensive
+            (AggState::AggregatedList(_), AggState::AggregatedList(_), false) => {
                 let lhs = ac_l.flat_naive().as_ref().clone();
                 let rhs = ac_r.flat_naive().as_ref().clone();
 
@@ -334,9 +322,9 @@ impl PhysicalExpr for BinaryExpr {
                 ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
                 Ok(ac_l)
             }
-            // Both are or a flat series
+            // Both are or a flat series (if groups do not overlap)
             // so we can flatten the Series and apply the operators
-            _ => {
+            (_l, _r, false) => {
                 // Check if the group state of `ac_a` differs from the original `GroupTuples`.
                 // If this is the case we might need to align the groups. But only if `ac_b` is not a
                 // `Literal` as literals don't have any groups, the changed group order does not matter
@@ -380,10 +368,49 @@ impl PhysicalExpr for BinaryExpr {
                     Ok(ac_l)
                 }
             }
+            // overlapping groups, we iterate the separate groups, so that we don't have to explode
+            // If both sides are aggregated to a list, we can apply in parallel
+            (AggState::AggregatedList(_), AggState::AggregatedList(_), true) => {
+                let l = ac_l.aggregated();
+                let r = ac_r.aggregated();
+
+                let mut l = l.list()?.clone();
+                let mut r = r.list()?.clone();
+
+                let mut out = POOL.install(|| {
+                    l.par_iter_indexed()
+                        .zip(r.par_iter_indexed())
+                        .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
+                            (Some(l), Some(r)) => apply_operator(&l, &r, self.op).map(Some),
+                            _ => Ok(None),
+                        })
+                        .collect::<PolarsResult<ListChunked>>()
+                })?;
+
+                out.rename(ac_l.series().name());
+                ac_l.with_series(out.into_series(), true);
+                Ok(ac_l)
+            }
+            // overlapping groups, we iterate the separate groups, so that we don't have to explode
+            (_l, _r, true) => {
+                let mut out = ac_l
+                    .iter_groups()
+                    .zip(ac_r.iter_groups())
+                    .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
+                        (Some(l), Some(r)) => {
+                            apply_operator(l.as_ref(), r.as_ref(), self.op).map(Some)
+                        }
+                        _ => Ok(None),
+                    })
+                    .collect::<PolarsResult<ListChunked>>()?;
+                out.rename(ac_l.series().name());
+                ac_l.with_series(out.into_series(), true);
+                Ok(ac_l)
+            }
         }
     }
 
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.expr.to_field(input_schema, Context::Default)
     }
 
@@ -505,7 +532,7 @@ mod stats {
     }
 
     impl BinaryExpr {
-        fn impl_should_read(&self, stats: &BatchStats) -> Result<bool> {
+        fn impl_should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
             let schema = stats.schema();
             let fld_l = self.left.to_field(schema)?;
             let fld_r = self.right.to_field(schema)?;
@@ -525,8 +552,8 @@ mod stats {
             let dummy = DataFrame::new_no_checks(vec![]);
             let state = ExecutionState::new();
 
-            let out = match (fld_l.name().as_str(), fld_r.name().as_str()) {
-                (_, "literal") => {
+            let out = match (self.left.is_literal(), self.right.is_literal()) {
+                (false, true) => {
                     let l = stats.get_stats(fld_l.name())?;
                     match l.to_min_max() {
                         None => Ok(true),
@@ -538,7 +565,7 @@ mod stats {
                         }
                     }
                 }
-                ("literal", _) => {
+                (true, false) => {
                     let r = stats.get_stats(fld_r.name())?;
                     match r.to_min_max() {
                         None => Ok(true),
@@ -555,7 +582,7 @@ mod stats {
             };
             out.map(|read| {
                 if state.verbose() && read {
-                    eprintln!("parquet file must be read, statistics not sufficient to for predicate.")
+                    eprintln!("parquet file must be read, statistics not sufficient for predicate.")
                 } else if state.verbose() && !read {
                     eprintln!("parquet file can be skipped, the statistics were sufficient to apply the predicate.")
                 };
@@ -565,7 +592,7 @@ mod stats {
     }
 
     impl StatsEvaluator for BinaryExpr {
-        fn should_read(&self, stats: &BatchStats) -> Result<bool> {
+        fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
             if std::env::var("POLARS_NO_PARQUET_STATISTICS").is_ok() {
                 return Ok(true);
             }
@@ -591,7 +618,7 @@ impl PartitionedAggregation for BinaryExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         let left = self.left.as_partitioned_aggregator().unwrap();
         let right = self.right.as_partitioned_aggregator().unwrap();
         let left = left.evaluate_partitioned(df, groups, state)?;
@@ -604,7 +631,7 @@ impl PartitionedAggregation for BinaryExpr {
         partitioned: Series,
         _groups: &GroupsProxy,
         _state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         Ok(partitioned)
     }
 }

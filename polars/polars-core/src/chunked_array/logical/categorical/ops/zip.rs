@@ -5,7 +5,7 @@ impl CategoricalChunked {
         &self,
         mask: &BooleanChunked,
         other: &CategoricalChunked,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         let cats = match &**self.get_rev_map() {
             RevMapping::Local(rev_map) => {
                 // the logic for merging the rev maps will concatenate utf8 arrays

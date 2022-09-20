@@ -145,7 +145,7 @@ impl OptimizationRule for TypeCoercionRule {
                     get_aexpr_and_type(expr_arena, falsy_node, &input_schema)?;
 
                 early_escape(&type_true, &type_false)?;
-                let st = get_supertype(&type_true, &type_false).expect("supertype");
+                let st = get_supertype(&type_true, &type_false)?;
                 let st = modify_supertype(st, truthy, falsy, &type_true, &type_false);
 
                 // only cast if the type is not already the super type.
@@ -185,8 +185,10 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let (left, type_left) = get_aexpr_and_type(expr_arena, node_left, &input_schema)?;
+
                 let (right, type_right) =
                     get_aexpr_and_type(expr_arena, node_right, &input_schema)?;
+                early_escape(&type_left, &type_right)?;
 
                 // don't coerce string with number comparisons. They must error
                 match (&type_left, &type_right, op) {
@@ -301,8 +303,7 @@ impl OptimizationRule for TypeCoercionRule {
                 {
                     None
                 } else {
-                    let st = get_supertype(&type_left, &type_right)
-                        .expect("could not find supertype of binary expr");
+                    let st = get_supertype(&type_left, &type_right)?;
                     let mut st = modify_supertype(st, left, right, &type_left, &type_right);
 
                     #[allow(unused_mut, unused_assignments)]
@@ -363,37 +364,50 @@ impl OptimizationRule for TypeCoercionRule {
 
                 early_escape(&type_left, &type_other)?;
 
-                match (&type_left, type_other) {
+                let casted_expr = match (&type_left, &type_other) {
                     // cast both local and global string cache
                     // note that there might not yet be a rev
                     #[cfg(feature = "dtype-categorical")]
                     (DataType::Categorical(_), DataType::Utf8) => {
-                        let mut input = input.clone();
-
-                        let casted_expr = AExpr::Cast {
+                        AExpr::Cast {
                             expr: other_node,
                             data_type: DataType::Categorical(None),
                             // does not matter
                             strict: false,
-                        };
-                        let other_input = expr_arena.add(casted_expr);
-                        input[1] = other_input;
-
-                        Some(AExpr::Function {
-                            function: FunctionExpr::IsIn,
-                            input,
-                            options,
-                        })
+                        }
                     }
-                    _ => None,
-                }
+                    (DataType::List(_), _) | (_, DataType::List(_)) => return None,
+                    #[cfg(feature = "dtype-struct")]
+                    (DataType::Struct(_), _) | (_, DataType::Struct(_)) => return None,
+                    // if right is another type, we cast it to left
+                    // we do not use super-type as an `is_in` operation should not
+                    // cast the whole column implicitly.
+                    (a, b) if a != b => {
+                        AExpr::Cast {
+                            expr: other_node,
+                            data_type: type_left,
+                            // does not matter
+                            strict: false,
+                        }
+                    }
+                    // types are equal, do nothing
+                    _ => return None,
+                };
+
+                let mut input = input.clone();
+                let other_input = expr_arena.add(casted_expr);
+                input[1] = other_input;
+
+                Some(AExpr::Function {
+                    function: FunctionExpr::IsIn,
+                    input,
+                    options,
+                })
             }
+            // fill null has a supertype set during projection
+            // to make the schema known before the optimization phase
             AExpr::Function {
-                // only for `DataType::Unknown` as it still has to be set.
-                function:
-                    FunctionExpr::FillNull {
-                        super_type: DataType::Unknown,
-                    },
+                function: FunctionExpr::FillNull { ref super_type },
                 ref input,
                 options,
             } => {
@@ -403,34 +417,45 @@ impl OptimizationRule for TypeCoercionRule {
                 let (fill_value, type_fill_value) =
                     get_aexpr_and_type(expr_arena, other_node, &input_schema)?;
 
-                let super_type = get_supertype(&type_left, &type_fill_value).ok()?;
-                let super_type =
-                    modify_supertype(super_type, left, fill_value, &type_left, &type_fill_value);
-                Some(AExpr::Function {
-                    function: FunctionExpr::FillNull { super_type },
-                    input: input.clone(),
-                    options,
-                })
+                let new_st = get_supertype(&type_left, &type_fill_value)?;
+                let new_st =
+                    modify_supertype(new_st, left, fill_value, &type_left, &type_fill_value);
+                if &new_st != super_type {
+                    Some(AExpr::Function {
+                        function: FunctionExpr::FillNull { super_type: new_st },
+                        input: input.clone(),
+                        options,
+                    })
+                } else {
+                    None
+                }
             }
+            // generic type coercion of any function.
             AExpr::Function {
                 // only for `DataType::Unknown` as it still has to be set.
-                function: FunctionExpr::ShiftAndFill { periods },
+                ref function,
                 ref input,
-                options,
-            } => {
+                mut options,
+            } if options.cast_to_supertypes => {
+                // satisfy bchk
+                let function = function.clone();
+                let input = input.clone();
+
                 let input_schema = get_schema(lp_arena, lp_node);
                 let self_node = input[0];
-                let other_node = input[1];
-                let (left, type_self) = get_aexpr_and_type(expr_arena, self_node, &input_schema)?;
-                let (fill_value, type_other) =
-                    get_aexpr_and_type(expr_arena, other_node, &input_schema)?;
+                let (self_ae, type_self) =
+                    get_aexpr_and_type(expr_arena, self_node, &input_schema)?;
 
-                early_escape(&type_self, &type_other)?;
+                let mut super_type = type_self.clone();
+                for other in &input[1..] {
+                    let (other, type_other) =
+                        get_aexpr_and_type(expr_arena, *other, &input_schema)?;
 
-                let super_type = get_supertype(&type_self, &type_other).ok()?;
-                let super_type =
-                    modify_supertype(super_type, left, fill_value, &type_self, &type_other);
-
+                    // early return until Unknown is set
+                    early_escape(&super_type, &type_other)?;
+                    let new_st = get_supertype(&super_type, &type_other)?;
+                    super_type = modify_supertype(new_st, self_ae, other, &type_self, &type_other)
+                }
                 // only cast if the type is not already the super type.
                 // this can prevent an expensive flattening and subsequent aggregation
                 // in a groupby context. To be able to cast the groups need to be
@@ -444,23 +469,32 @@ impl OptimizationRule for TypeCoercionRule {
                 } else {
                     self_node
                 };
-                let new_node_other = if type_other != super_type {
-                    expr_arena.add(AExpr::Cast {
-                        expr: other_node,
-                        data_type: super_type,
-                        strict: false,
-                    })
-                } else {
-                    other_node
-                };
+                let mut new_nodes = Vec::with_capacity(input.len());
+                new_nodes.push(new_node_self);
 
+                for other_node in &input[1..] {
+                    let (_, type_other) =
+                        get_aexpr_and_type(expr_arena, *other_node, &input_schema)?;
+                    let new_node_other = if type_other != super_type {
+                        expr_arena.add(AExpr::Cast {
+                            expr: *other_node,
+                            data_type: super_type.clone(),
+                            strict: false,
+                        })
+                    } else {
+                        *other_node
+                    };
+
+                    new_nodes.push(new_node_other)
+                }
+                // ensure we don't go through this on next iteration
+                options.cast_to_supertypes = false;
                 Some(AExpr::Function {
-                    function: FunctionExpr::ShiftAndFill { periods },
-                    input: vec![new_node_self, new_node_other],
+                    function,
+                    input: new_nodes,
                     options,
                 })
             }
-
             _ => None,
         }
     }

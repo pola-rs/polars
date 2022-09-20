@@ -9,13 +9,15 @@ use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use arrow::{array::*, bitmap::Bitmap};
-pub use {boolean::*, list::*, primitive::*, utf8::*};
+use arrow::array::*;
+use arrow::bitmap::Bitmap;
+pub use boolean::*;
+pub use list::*;
+pub use primitive::*;
+pub use utf8::*;
 
-use crate::{
-    prelude::*,
-    utils::{get_iter_capacity, NoNull},
-};
+use crate::prelude::*;
+use crate::utils::{get_iter_capacity, NoNull};
 
 // N: the value type; T: the sentinel type
 pub trait ChunkedBuilder<N, T: PolarsDataType> {

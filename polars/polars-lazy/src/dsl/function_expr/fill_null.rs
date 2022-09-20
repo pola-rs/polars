@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn fill_null(s: &[Series], super_type: &DataType) -> Result<Series> {
+pub(super) fn fill_null(s: &[Series], super_type: &DataType) -> PolarsResult<Series> {
     let array = s[0].cast(super_type)?;
     let fill_value = s[1].cast(super_type)?;
 

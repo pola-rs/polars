@@ -2,12 +2,9 @@ use std::fmt::{Debug, Formatter};
 
 use polars::prelude::PolarsError;
 use polars_core::error::ArrowError;
-use pyo3::exceptions::{PyIOError, PyValueError};
-use pyo3::{
-    create_exception,
-    exceptions::{PyException, PyRuntimeError},
-    prelude::*,
-};
+use pyo3::create_exception;
+use pyo3::exceptions::{PyException, PyIOError, PyRuntimeError, PyValueError};
+use pyo3::prelude::*;
 use thiserror::Error;
 
 #[derive(Error)]
@@ -27,7 +24,7 @@ impl std::convert::From<PyPolarsErr> for PyErr {
         use PyPolarsErr::*;
         match &err {
             Polars(err) => match err {
-                PolarsError::NotFound(name) => NotFoundError::new_err(name.clone()),
+                PolarsError::NotFound(name) => NotFoundError::new_err(name.to_string()),
                 PolarsError::ComputeError(err) => ComputeError::new_err(err.to_string()),
                 PolarsError::NoData(err) => NoDataError::new_err(err.to_string()),
                 PolarsError::ShapeMisMatch(err) => ShapeError::new_err(err.to_string()),

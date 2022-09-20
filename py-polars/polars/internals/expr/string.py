@@ -3,7 +3,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
-from polars.datatypes import DataType, Date, Datetime, Time
+from polars.datatypes import (
+    DataType,
+    Date,
+    Datetime,
+    TemporalDataType,
+    Time,
+    is_polars_dtype,
+)
+from polars.utils import deprecated_alias
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TransferEncoding
@@ -12,12 +20,14 @@ if TYPE_CHECKING:
 class ExprStringNameSpace:
     """Namespace for string related expressions."""
 
+    _accessor = "str"
+
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr
 
     def strptime(
         self,
-        datatype: type[Date] | type[Datetime] | type[Time],
+        datatype: TemporalDataType,
         fmt: str | None = None,
         strict: bool = True,
         exact: bool = True,
@@ -28,7 +38,7 @@ class ExprStringNameSpace:
         Parameters
         ----------
         datatype
-            Date | Datetime | Time.
+            Date | Datetime | Time
         fmt
             Format to use, refer to the `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
@@ -38,6 +48,12 @@ class ExprStringNameSpace:
         exact
             - If True, require an exact format match.
             - If False, allow the format to match anywhere in the target string.
+
+        Notes
+        -----
+        When parsing a Datetime the column precision will be inferred from
+        the format string, if given, eg: "%F %T%.3f" => Datetime("ms"). If
+        no fractional second component is found then the default is "us".
 
         Examples
         --------
@@ -79,12 +95,15 @@ class ExprStringNameSpace:
         └────────────┘
 
         """
-        if not issubclass(datatype, DataType):  # pragma: no cover
+        if not is_polars_dtype(datatype):  # pragma: no cover
             raise ValueError(f"expected: {DataType} got: {datatype}")
+
         if datatype == Date:
             return pli.wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact))
         elif datatype == Datetime:
-            return pli.wrap_expr(self._pyexpr.str_parse_datetime(fmt, strict, exact))
+            tu = datatype.tu  # type: ignore[union-attr]
+            dtcol = pli.wrap_expr(self._pyexpr.str_parse_datetime(fmt, strict, exact))
+            return dtcol if (tu is None) else dtcol.dt.cast_time_unit(tu)
         elif datatype == Time:
             return pli.wrap_expr(self._pyexpr.str_parse_time(fmt, strict, exact))
         else:  # pragma: no cover
@@ -261,6 +280,8 @@ class ExprStringNameSpace:
 
     def zfill(self, alignment: int) -> pli.Expr:
         """
+        Fills the string with zeroes.
+
         Return a copy of the string left filled with ASCII '0' digits to make a string
         of length width.
 
@@ -526,6 +547,7 @@ class ExprStringNameSpace:
     def json_path_match(self, json_path: str) -> pli.Expr:
         """
         Extract the first match of json string with provided JSONPath expression.
+
         Throw errors if encounter invalid json strings.
         All return value will be casted to Utf8 regardless of the original value.
 
@@ -700,7 +722,9 @@ class ExprStringNameSpace:
 
     def extract_all(self, pattern: str) -> pli.Expr:
         r"""
-        Extract each successive non-overlapping regex match in an individual string as
+        Extracts all matches for the given regex pattern.
+
+        Extracts each successive non-overlapping regex match in an individual string as
         an array.
 
         Parameters
@@ -809,7 +833,9 @@ class ExprStringNameSpace:
 
     def split_exact(self, by: str, n: int, inclusive: bool = False) -> pli.Expr:
         """
-        Split the string by a substring into a struct of ``n`` fields.
+        Split the string by a substring using ``n`` splits.
+
+        Results in a struct of ``n+1`` fields.
 
         If it cannot make ``n`` splits, the remaining field elements will be null.
 
@@ -824,12 +850,11 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> (
-        ...     pl.DataFrame({"x": ["a_1", None, "c", "d_4"]}).select(
-        ...         [
-        ...             pl.col("x").str.split_exact("_", 1).alias("fields"),
-        ...         ]
-        ...     )
+        >>> df = pl.DataFrame({"x": ["a_1", None, "c", "d_4"]})
+        >>> df.select(
+        ...     [
+        ...         pl.col("x").str.split_exact("_", 1).alias("fields"),
+        ...     ]
         ... )
         shape: (4, 1)
         ┌─────────────┐
@@ -850,7 +875,7 @@ class ExprStringNameSpace:
         Split string values in column x in exactly 2 parts and assign
         each part to a new column.
 
-        >>> pl.DataFrame({"x": ["a_1", None, "c", "d_4"]}).with_columns(
+        >>> df.with_columns(
         ...     [
         ...         pl.col("x")
         ...         .str.split_exact("_", 1)
@@ -882,7 +907,76 @@ class ExprStringNameSpace:
             return pli.wrap_expr(self._pyexpr.str_split_exact_inclusive(by, n))
         return pli.wrap_expr(self._pyexpr.str_split_exact(by, n))
 
-    def replace(self, pattern: str, value: str, literal: bool = False) -> pli.Expr:
+    def splitn(self, by: str, n: int) -> pli.Expr:
+        """
+        Split the string by a substring, restricted to returning at most ``n`` items.
+
+        If the number of possible splits is less than ``n-1``, the remaining field
+        elements will be null. If the number of possible splits is ``n-1`` or greater,
+        the last (nth) substring will contain the remainder of the string.
+
+        Parameters
+        ----------
+        by
+            Substring to split by.
+        n
+            Max number of items to return.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"s": ["foo bar", None, "foo-bar", "foo bar baz"]})
+        >>> df.select(pl.col("s").str.splitn(" ", 2).alias("fields"))
+        shape: (4, 1)
+        ┌───────────────────┐
+        │ fields            │
+        │ ---               │
+        │ struct[2]         │
+        ╞═══════════════════╡
+        │ {"foo","bar"}     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {null,null}       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"foo-bar",null}  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"foo","bar baz"} │
+        └───────────────────┘
+
+        Split string values in column s in exactly 2 parts and assign
+        each part to a new column.
+
+        >>> df.with_columns(
+        ...     [
+        ...         pl.col("s")
+        ...         .str.splitn(" ", 2)
+        ...         .struct.rename_fields(["first_part", "second_part"])
+        ...         .alias("fields"),
+        ...     ]
+        ... ).unnest("fields")
+        shape: (4, 3)
+        ┌─────────────┬────────────┬─────────────┐
+        │ s           ┆ first_part ┆ second_part │
+        │ ---         ┆ ---        ┆ ---         │
+        │ str         ┆ str        ┆ str         │
+        ╞═════════════╪════════════╪═════════════╡
+        │ foo bar     ┆ foo        ┆ bar         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null        ┆ null       ┆ null        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ foo-bar     ┆ foo-bar    ┆ null        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ foo bar baz ┆ foo        ┆ bar baz     │
+        └─────────────┴────────────┴─────────────┘
+
+        Returns
+        -------
+        Struct of Utf8 type
+
+        """
+        return pli.wrap_expr(self._pyexpr.str_splitn(by, n))
+
+    def replace(
+        self, pattern: str | pli.Expr, value: str | pli.Expr, literal: bool = False
+    ) -> pli.Expr:
         r"""
         Replace first matching regex/literal substring with a new string value.
 
@@ -917,9 +1011,15 @@ class ExprStringNameSpace:
         └─────┴────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_replace(pattern, value, literal))
+        pattern = pli.expr_to_lit_or_expr(pattern, str_to_lit=True)
+        value = pli.expr_to_lit_or_expr(value, str_to_lit=True)
+        return pli.wrap_expr(
+            self._pyexpr.str_replace(pattern._pyexpr, value._pyexpr, literal)
+        )
 
-    def replace_all(self, pattern: str, value: str, literal: bool = False) -> pli.Expr:
+    def replace_all(
+        self, pattern: str | pli.Expr, value: str | pli.Expr, literal: bool = False
+    ) -> pli.Expr:
         """
         Replace all matching regex/literal substrings with a new string value.
 
@@ -952,24 +1052,29 @@ class ExprStringNameSpace:
         └─────┴─────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_replace_all(pattern, value, literal))
+        pattern = pli.expr_to_lit_or_expr(pattern, str_to_lit=True)
+        value = pli.expr_to_lit_or_expr(value, str_to_lit=True)
+        return pli.wrap_expr(
+            self._pyexpr.str_replace_all(pattern._pyexpr, value._pyexpr, literal)
+        )
 
-    def slice(self, start: int, length: int | None = None) -> pli.Expr:
+    @deprecated_alias(start="offset")
+    def slice(self, offset: int, length: int | None = None) -> pli.Expr:
         """
         Create subslices of the string values of a Utf8 Series.
 
         Parameters
         ----------
-        start
-            Starting index of the slice (zero-indexed). Negative indexing
-            may be used.
+        offset
+            Start index. Negative indexing is supported.
         length
-            Optional length of the slice. If None (default), the slice is taken to the
+            Length of the slice. If set to ``None`` (default), the slice is taken to the
             end of the string.
 
         Returns
         -------
-        Series of Utf8 type
+        Expr
+            Series of dtype Utf8.
 
         Examples
         --------
@@ -1013,4 +1118,4 @@ class ExprStringNameSpace:
         └─────────────┴──────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_slice(start, length))
+        return pli.wrap_expr(self._pyexpr.str_slice(offset, length))

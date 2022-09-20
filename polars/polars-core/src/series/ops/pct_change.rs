@@ -3,7 +3,7 @@ use crate::series::ops::NullBehavior;
 
 impl Series {
     #[cfg_attr(docsrs, doc(cfg(feature = "pct_change")))]
-    pub fn pct_change(&self, n: usize) -> Result<Series> {
+    pub fn pct_change(&self, n: usize) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::Float64 | DataType::Float32 => {}
             _ => return self.cast(&DataType::Float64)?.pct_change(n),
@@ -18,7 +18,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_nulls() -> Result<()> {
+    fn test_nulls() -> PolarsResult<()> {
         let s = Series::new("", &[Some(1), None, Some(2), None, Some(3)]);
         assert_eq!(
             s.pct_change(1)?,
@@ -28,7 +28,7 @@ mod test {
     }
 
     #[test]
-    fn test_same() -> Result<()> {
+    fn test_same() -> PolarsResult<()> {
         let s = Series::new("", &[Some(1), Some(1), Some(1)]);
         assert_eq!(
             s.pct_change(1)?,
@@ -38,7 +38,7 @@ mod test {
     }
 
     #[test]
-    fn test_two_periods() -> Result<()> {
+    fn test_two_periods() -> PolarsResult<()> {
         let s = Series::new("", &[Some(1), Some(2), Some(4), Some(8), Some(16)]);
         assert_eq!(
             s.pct_change(2)?,

@@ -3,12 +3,16 @@
 mod csv;
 #[cfg(feature = "ipc")]
 mod ipc;
+#[cfg(feature = "json")]
+mod ndjson;
 #[cfg(feature = "parquet")]
 mod parquet;
 #[cfg(feature = "python")]
 mod python;
 
 mod anonymous_scan;
+#[cfg(feature = "pivot")]
+pub mod pivot;
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -18,6 +22,8 @@ pub use anonymous_scan::*;
 pub use csv::*;
 #[cfg(feature = "ipc")]
 pub use ipc::*;
+#[cfg(feature = "json")]
+pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
@@ -26,34 +32,37 @@ use polars_core::datatypes::PlHashMap;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
-#[cfg(feature = "dtype-categorical")]
-use polars_core::toggle_string_cache;
 use polars_io::RowCount;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
-#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+#[cfg(any(
+    feature = "parquet",
+    feature = "csv-file",
+    feature = "ipc",
+    feature = "cse"
+))]
 use crate::logical_plan::optimizer::file_caching::FileCacher;
+use crate::logical_plan::optimizer::predicate_pushdown::PredicatePushDown;
+use crate::logical_plan::optimizer::projection_pushdown::ProjectionPushDown;
 use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
-use crate::logical_plan::optimizer::{
-    predicate_pushdown::PredicatePushDown, projection_pushdown::ProjectionPushDown,
-};
 use crate::logical_plan::FETCH_ROWS;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::delay_rechunk::DelayRechunk;
+use crate::prelude::drop_nulls::ReplaceDropNulls;
+use crate::prelude::fast_projection::FastProjectionAndCollapse;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use crate::prelude::file_caching::collect_fingerprints;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use crate::prelude::file_caching::find_column_union_and_fingerprints;
-use crate::prelude::{
-    drop_nulls::ReplaceDropNulls, fast_projection::FastProjection,
-    simplify_expr::SimplifyBooleanRule, slice_pushdown_lp::SlicePushDown, *,
-};
+use crate::prelude::simplify_expr::SimplifyBooleanRule;
+use crate::prelude::slice_pushdown_lp::SlicePushDown;
+use crate::prelude::*;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JoinOptions {
     pub allow_parallel: bool,
@@ -121,8 +130,9 @@ pub struct OptState {
     pub simplify_expr: bool,
     pub file_caching: bool,
     pub aggregate_pushdown: bool,
-    pub global_string_cache: bool,
     pub slice_pushdown: bool,
+    #[cfg(feature = "cse")]
+    pub common_subplan_elimination: bool,
 }
 
 impl Default for OptState {
@@ -132,11 +142,12 @@ impl Default for OptState {
             predicate_pushdown: true,
             type_coercion: true,
             simplify_expr: true,
-            global_string_cache: false,
             slice_pushdown: true,
             // will be toggled by a scan operation such as csv scan or parquet scan
             file_caching: false,
             aggregate_pushdown: false,
+            #[cfg(feature = "cse")]
+            common_subplan_elimination: true,
         }
     }
 }
@@ -146,7 +157,7 @@ pub type AllowedOptimizations = OptState;
 
 impl LazyFrame {
     /// Get a hold on the schema of the current LazyFrame computation.
-    pub fn schema(&self) -> Result<SchemaRef> {
+    pub fn schema(&self) -> PolarsResult<SchemaRef> {
         let logical_plan = self.clone().get_plan_builder().build();
         logical_plan.schema().map(|schema| schema.into_owned())
     }
@@ -166,14 +177,6 @@ impl LazyFrame {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn into_alp(self) -> (Node, Arena<AExpr>, Arena<ALogicalPlan>) {
-        let mut expr_arena = Arena::with_capacity(64);
-        let mut lp_arena = Arena::with_capacity(32);
-        let root = to_alp(self.logical_plan, &mut expr_arena, &mut lp_arena).unwrap();
-        (root, expr_arena, lp_arena)
-    }
-
     /// Set allowed optimizations
     pub fn with_optimizations(mut self, opt_state: OptState) -> Self {
         self.opt_state = opt_state;
@@ -187,11 +190,12 @@ impl LazyFrame {
             predicate_pushdown: false,
             type_coercion: true,
             simplify_expr: false,
-            global_string_cache: false,
             slice_pushdown: false,
             // will be toggled by a scan operation such as csv scan or parquet scan
             file_caching: false,
             aggregate_pushdown: false,
+            #[cfg(feature = "cse")]
+            common_subplan_elimination: false,
         })
     }
 
@@ -219,15 +223,17 @@ impl LazyFrame {
         self
     }
 
-    /// Toggle aggregate pushdown.
-    pub fn with_aggregate_pushdown(mut self, toggle: bool) -> Self {
-        self.opt_state.aggregate_pushdown = toggle;
+    /// Toggle common subplan elimination optimization on or off
+    #[cfg(feature = "cse")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "cse")))]
+    pub fn with_common_subplan_elimination(mut self, toggle: bool) -> Self {
+        self.opt_state.common_subplan_elimination = toggle;
         self
     }
 
-    /// Toggle global string cache.
-    pub fn with_string_cache(mut self, toggle: bool) -> Self {
-        self.opt_state.global_string_cache = toggle;
+    /// Toggle aggregate pushdown.
+    pub fn with_aggregate_pushdown(mut self, toggle: bool) -> Self {
+        self.opt_state.aggregate_pushdown = toggle;
         self
     }
 
@@ -243,9 +249,9 @@ impl LazyFrame {
     }
 
     /// Describe the optimized logical plan.
-    pub fn describe_optimized_plan(&self) -> Result<String> {
-        let mut expr_arena = Arena::with_capacity(512);
-        let mut lp_arena = Arena::with_capacity(512);
+    pub fn describe_optimized_plan(&self) -> PolarsResult<String> {
+        let mut expr_arena = Arena::with_capacity(64);
+        let mut lp_arena = Arena::with_capacity(64);
         let lp_top = self.clone().optimize(&mut lp_arena, &mut expr_arena)?;
         let logical_plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
         Ok(logical_plan.describe())
@@ -350,7 +356,7 @@ impl LazyFrame {
             for (old, new) in existing2.iter().zip(new2.iter()) {
                 new_schema
                     .rename(old, new.to_string())
-                    .ok_or_else(|| PolarsError::NotFound(old.into()))?
+                    .ok_or_else(|| PolarsError::NotFound(old.to_string().into()))?
             }
             Ok(Arc::new(new_schema))
         };
@@ -459,14 +465,26 @@ impl LazyFrame {
             .into_iter()
             .map(|a| a.as_ref().to_string())
             .collect::<Vec<_>>();
-        // todo! make delayed
-        let schema = &*self.schema().unwrap();
-        // a column gets swapped
-        if new.iter().any(|name| schema.get(name).is_some()) {
-            self.rename_impl_swapping(existing, new)
-        } else {
-            self.rename_impl(existing, new)
+
+        fn inner(lf: LazyFrame, existing: Vec<String>, new: Vec<String>) -> LazyFrame {
+            // remove mappings that map to themselves.
+            let (existing, new): (Vec<_>, Vec<_>) = existing
+                .into_iter()
+                .zip(new)
+                .flat_map(|(a, b)| if a == b { None } else { Some((a, b)) })
+                .unzip();
+
+            // todo! make delayed
+            let schema = &*lf.schema().unwrap();
+            // a column gets swapped
+            if new.iter().any(|name| schema.get(name).is_some()) {
+                lf.rename_impl_swapping(existing, new)
+            } else {
+                lf.rename_impl(existing, new)
+            }
         }
+
+        inner(self, existing, new)
     }
 
     /// Removes columns from the DataFrame.
@@ -533,7 +551,7 @@ impl LazyFrame {
     /// Note that the fetch does not guarantee the final number of rows in the DataFrame.
     /// Filter, join operations and a lower number of rows available in the scanned file influence
     /// the final number of rows.
-    pub fn fetch(self, n_rows: usize) -> Result<DataFrame> {
+    pub fn fetch(self, n_rows: usize) -> PolarsResult<DataFrame> {
         FETCH_ROWS.with(|fetch_rows| fetch_rows.set(Some(n_rows)));
         let res = self.collect();
         FETCH_ROWS.with(|fetch_rows| fetch_rows.set(None));
@@ -544,19 +562,21 @@ impl LazyFrame {
         self,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
-    ) -> Result<Node> {
+    ) -> PolarsResult<Node> {
         // get toggle values
         let predicate_pushdown = self.opt_state.predicate_pushdown;
         let projection_pushdown = self.opt_state.projection_pushdown;
         let type_coercion = self.opt_state.type_coercion;
         let simplify_expr = self.opt_state.simplify_expr;
         let slice_pushdown = self.opt_state.slice_pushdown;
+        #[cfg(feature = "cse")]
+        let cse = self.opt_state.common_subplan_elimination;
 
-        #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
         let agg_scan_projection = self.opt_state.file_caching;
         let aggregate_pushdown = self.opt_state.aggregate_pushdown;
 
         let logical_plan = self.get_plan_builder().build();
+        let mut scratch = vec![];
 
         // gradually fill the rules passed to the optimizer
         let opt = StackOptimizer {};
@@ -568,16 +588,29 @@ impl LazyFrame {
 
         let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena)?;
 
+        #[cfg(feature = "cse")]
+        let cse_changed = if cse {
+            let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+            lp_top = lp;
+            changed
+        } else {
+            false
+        };
+        #[cfg(not(feature = "cse"))]
+        let cse_changed = false;
+
         // we do simplification
         if simplify_expr {
             rules.push(Box::new(SimplifyExprRule {}));
         }
 
+        // should be run before predicate pushdown
         if projection_pushdown {
             let projection_pushdown_opt = ProjectionPushDown {};
             let alp = lp_arena.take(lp_top);
             let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
             lp_arena.replace(lp_top, alp);
+            cache_states::set_cache_states(lp_top, lp_arena, expr_arena, &mut scratch, cse_changed);
         }
 
         if predicate_pushdown {
@@ -587,8 +620,45 @@ impl LazyFrame {
             lp_arena.replace(lp_top, alp);
         }
 
-        #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-        if agg_scan_projection {
+        // make sure its before slice pushdown.
+        if projection_pushdown {
+            rules.push(Box::new(FastProjectionAndCollapse {}));
+        }
+        rules.push(Box::new(DelayRechunk {}));
+
+        if slice_pushdown {
+            let slice_pushdown_opt = SlicePushDown {};
+            let alp = lp_arena.take(lp_top);
+            let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
+
+            lp_arena.replace(lp_top, alp);
+
+            // expressions use the stack optimizer
+            rules.push(Box::new(slice_pushdown_opt));
+        }
+        if type_coercion {
+            rules.push(Box::new(TypeCoercionRule {}))
+        }
+        // this optimization removes branches, so we must do it when type coercion
+        // is completed
+        if simplify_expr {
+            rules.push(Box::new(SimplifyBooleanRule {}));
+        }
+
+        if aggregate_pushdown {
+            rules.push(Box::new(AggregatePushdown::new()))
+        }
+
+        // make sure that we do that once slice pushdown
+        // and predicate pushdown are done. At that moment
+        // the file fingerprints are finished.
+        #[cfg(any(
+            feature = "cse",
+            feature = "parquet",
+            feature = "ipc",
+            feature = "csv-file"
+        ))]
+        if agg_scan_projection || cse_changed {
             // we do this so that expressions are simplified created by the pushdown optimizations
             // we must clean up the predicates, because the agg_scan_projection
             // uses them in the hashtable to determine duplicates.
@@ -606,43 +676,21 @@ impl LazyFrame {
                 expr_arena,
             );
 
-            let rule = FileCacher::new(file_predicate_to_columns_and_count);
-            // its important that we do it now
-            // because typo coercion will change the predicates and there for
-            lp_top = opt.optimize_loop(
-                &mut [Box::new(rule) as Box<dyn OptimizationRule>],
-                expr_arena,
-                lp_arena,
-                lp_top,
-            );
-        }
+            let mut file_cacher = FileCacher::new(file_predicate_to_columns_and_count);
+            file_cacher.assign_unions(lp_top, lp_arena, expr_arena, &mut scratch, false);
+            scratch.clear();
 
-        // make sure its before slice pushdown.
-        rules.push(Box::new(FastProjection {}));
-        rules.push(Box::new(DelayRechunk {}));
-
-        if slice_pushdown {
-            let slice_pushdown_opt = SlicePushDown {};
-            let alp = lp_arena.take(lp_top);
-            let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
-
-            lp_arena.replace(lp_top, alp);
-
-            // expressions use the stack optimizer
-            rules.push(Box::new(slice_pushdown_opt));
-        }
-
-        if type_coercion {
-            rules.push(Box::new(TypeCoercionRule {}))
-        }
-        // this optimization removes branches, so we must do it when type coercion
-        // is completed
-        if simplify_expr {
-            rules.push(Box::new(SimplifyBooleanRule {}));
-        }
-
-        if aggregate_pushdown {
-            rules.push(Box::new(AggregatePushdown::new()))
+            #[cfg(feature = "cse")]
+            if cse_changed {
+                // this must run after cse
+                cse::decrement_file_counters_by_cache_hits(
+                    lp_top,
+                    lp_arena,
+                    expr_arena,
+                    0,
+                    &mut scratch,
+                );
+            }
         }
 
         rules.push(Box::new(ReplaceDropNulls {}));
@@ -666,39 +714,11 @@ impl LazyFrame {
         Ok(lp_top)
     }
 
-    /// Execute all the lazy operations and collect them into a [DataFrame](polars_core::frame::DataFrame).
-    /// Before execution the query is being optimized.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use polars_core::prelude::*;
-    /// use polars_lazy::prelude::*;
-    ///
-    /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.lazy()
-    ///       .groupby([col("foo")])
-    ///       .agg([col("bar").sum(), col("ham").mean().alias("avg_ham")])
-    ///       .collect()
-    /// }
-    /// ```
-    pub fn collect(self) -> Result<DataFrame> {
+    fn prepare_collect(self) -> PolarsResult<(ExecutionState, Box<dyn Executor>)> {
         let file_caching = self.opt_state.file_caching;
-        #[cfg(feature = "dtype-categorical")]
-        let use_string_cache = self.opt_state.global_string_cache;
-        #[cfg(feature = "dtype-categorical")]
-        if use_string_cache {
-            eprint!("global string cache in combination with LazyFrames is deprecated; please set the global string cache globally.")
-        }
         let mut expr_arena = Arena::with_capacity(256);
         let mut lp_arena = Arena::with_capacity(128);
         let lp_top = self.optimize(&mut lp_arena, &mut expr_arena)?;
-
-        // if string cache was already set, we skip this and global settings are respected
-        #[cfg(feature = "dtype-categorical")]
-        if use_string_cache {
-            toggle_string_cache(use_string_cache);
-        }
 
         let finger_prints = if file_caching {
             #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
@@ -715,17 +735,53 @@ impl LazyFrame {
             None
         };
 
-        let planner = DefaultPlanner::default();
-        let mut physical_plan =
-            planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
+        let planner = PhysicalPlanner::default();
+        let physical_plan = planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
-        let mut state = ExecutionState::with_finger_prints(finger_prints);
+        let state = ExecutionState::with_finger_prints(finger_prints);
+        Ok((state, physical_plan))
+    }
+
+    /// Execute all the lazy operations and collect them into a [DataFrame](polars_core::frame::DataFrame).
+    /// Before execution the query is being optimized.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    ///
+    /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
+    ///     df.lazy()
+    ///       .groupby([col("foo")])
+    ///       .agg([col("bar").sum(), col("ham").mean().alias("avg_ham")])
+    ///       .collect()
+    /// }
+    /// ```
+    pub fn collect(self) -> PolarsResult<DataFrame> {
+        let (mut state, mut physical_plan) = self.prepare_collect()?;
         let out = physical_plan.execute(&mut state);
-        #[cfg(feature = "dtype-categorical")]
-        if use_string_cache {
-            toggle_string_cache(!use_string_cache);
+        #[cfg(debug_assertions)]
+        {
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            state.file_cache.assert_empty();
         }
         out
+    }
+
+    //// Profile a LazyFrame.
+    ////
+    //// This will run the query and return a tuple
+    //// containing the materialized DataFrame and a DataFrame that contains profiling information
+    //// of each node that is executed.
+    ////
+    //// The units of the timings are microseconds.
+    pub fn profile(self) -> PolarsResult<(DataFrame, DataFrame)> {
+        let (mut state, mut physical_plan) = self.prepare_collect()?;
+        state.time_nodes();
+        let out = physical_plan.execute(&mut state)?;
+        let timer_df = state.finish_timer()?;
+        Ok((out, timer_df))
     }
 
     /// Filter by some predicate expression.
@@ -826,6 +882,13 @@ impl LazyFrame {
         }
     }
 
+    /// Create rolling groups based on a time column.
+    ///
+    /// Also works for index values of type Int32 or Int64.
+    ///
+    /// Different from a [`dynamic_groupby`] the windows are now determined by the
+    /// individual values and are not of constant intervals. For constant intervals use
+    /// *groupby_dynamic*
     pub fn groupby_rolling<E: AsRef<[Expr]>>(
         self,
         by: E,
@@ -842,6 +905,21 @@ impl LazyFrame {
         }
     }
 
+    /// Group based on a time value (or index value of type Int32, Int64).
+    ///
+    /// Time windows are calculated and rows are assigned to windows. Different from a
+    /// normal groupby is that a row can be member of multiple groups. The time/index
+    /// window could be seen as a rolling window, with a window size determined by
+    /// dates/times/values instead of slots in the DataFrame.
+    ///
+    /// A window is defined by:
+    ///
+    /// - every: interval of the window
+    /// - period: length of the window
+    /// - offset: offset of the window
+    ///
+    /// The `by` argument should be empty `[]` if you don't want to combine this
+    /// with a ordinary groupby on these keys.
     pub fn groupby_dynamic<E: AsRef<[Expr]>>(
         self,
         by: E,
@@ -858,7 +936,7 @@ impl LazyFrame {
         }
     }
 
-    /// Similar to groupby, but order of the DataFrame is maintained.
+    /// Similar to [`groupby`], but order of the DataFrame is maintained.
     pub fn groupby_stable<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
         let keys = by
             .as_ref()
@@ -1172,7 +1250,7 @@ impl LazyFrame {
         name: Option<&'static str>,
     ) -> LazyFrame
     where
-        F: 'static + Fn(DataFrame) -> Result<DataFrame> + Send + Sync,
+        F: 'static + Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
         let opt_state = self.get_opt_state();
         let lp = self
@@ -1184,6 +1262,12 @@ impl LazyFrame {
                 name.unwrap_or("ANONYMOUS UDF"),
             )
             .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    pub(crate) fn map_private(self, function: FunctionNode) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().map_private(function).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -1297,7 +1381,7 @@ impl LazyFrame {
 /// Utility struct for lazy groupby operation.
 #[derive(Clone)]
 pub struct LazyGroupBy {
-    pub(crate) logical_plan: LogicalPlan,
+    pub logical_plan: LogicalPlan,
     opt_state: OptState,
     keys: Vec<Expr>,
     maintain_order: bool,
@@ -1367,21 +1451,24 @@ impl LazyGroupBy {
     }
 
     /// Apply a function over the groups as a new `DataFrame`. It is not recommended that you use
-    /// this as materializing the `DataFrame` is quite expensive.
-    pub fn apply<F>(self, f: F) -> LazyFrame
+    /// this as materializing the `DataFrame` is very expensive.
+    pub fn apply<F>(self, f: F, schema: SchemaRef) -> LazyFrame
     where
-        F: 'static + Fn(DataFrame) -> Result<DataFrame> + Send + Sync,
+        F: 'static + Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
-        let lp = LogicalPlanBuilder::from(self.logical_plan)
-            .groupby(
-                Arc::new(self.keys),
-                vec![],
-                Some(Arc::new(f)),
-                self.maintain_order,
-                None,
-                None,
-            )
-            .build();
+        let lp = LogicalPlan::Aggregate {
+            input: Box::new(self.logical_plan),
+            keys: Arc::new(self.keys),
+            aggs: vec![],
+            schema,
+            apply: Some(Arc::new(f)),
+            maintain_order: self.maintain_order,
+            options: GroupbyOptions {
+                dynamic: None,
+                rolling: None,
+                slice: None,
+            },
+        };
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
 }

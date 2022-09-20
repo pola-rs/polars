@@ -1,10 +1,11 @@
 {
   "incremental": true,
-  "toml": {
-  },
-  "includes": ["**/*.{toml}"],
+  "toml": {},
+  "includes": [
+    "**/*.{toml}"
+  ],
   "excludes": [],
   "plugins": [
-    "https://plugins.dprint.dev/toml-0.5.3.wasm"
+    "https://plugins.dprint.dev/toml-0.5.4.wasm"
   ]
 }

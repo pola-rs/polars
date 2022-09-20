@@ -3,7 +3,7 @@ use arrow::datatypes::IntegerType;
 use polars_arrow::compute::cast::cast;
 
 use super::*;
-use crate::use_string_cache;
+use crate::using_string_cache;
 
 impl From<&CategoricalChunked> for DictionaryArray<u32> {
     fn from(ca: &CategoricalChunked) -> Self {
@@ -91,7 +91,7 @@ impl CategoricalChunked {
         keys: &PrimitiveArray<u32>,
         values: &Utf8Array<i64>,
     ) -> Self {
-        if use_string_cache() {
+        if using_string_cache() {
             let mut builder = CategoricalChunkedBuilder::new(name, keys.len());
             builder.global_map_from_local(keys, values.clone());
             builder.finish()

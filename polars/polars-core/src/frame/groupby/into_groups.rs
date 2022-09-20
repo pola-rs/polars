@@ -3,7 +3,7 @@ use polars_arrow::prelude::*;
 use polars_utils::flatten;
 
 use super::*;
-use crate::utils::{copy_from_slice_unchecked, split_offsets};
+use crate::utils::{_split_offsets, copy_from_slice_unchecked};
 
 /// Used to create the tuples for a groupby operation.
 pub trait IntoGroupsProxy {
@@ -239,7 +239,7 @@ impl IntoGroupsProxy for Utf8Chunked {
         if multithreaded {
             let n_partitions = set_partition_size();
 
-            let split = split_offsets(self.len(), n_partitions);
+            let split = _split_offsets(self.len(), n_partitions);
 
             let str_hashes = POOL.install(|| {
                 split
@@ -415,7 +415,7 @@ pub(super) fn pack_utf8_columns(
     n_partitions: usize,
     sorted: bool,
 ) -> GroupsProxy {
-    let splits = split_offsets(lhs.len(), n_partitions);
+    let splits = _split_offsets(lhs.len(), n_partitions);
     let hb = RandomState::default();
     let null_h = get_null_hash_value(hb.clone());
 

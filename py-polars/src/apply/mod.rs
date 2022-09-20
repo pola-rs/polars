@@ -3,8 +3,9 @@ pub mod series;
 
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
+use polars_core::export::rayon::prelude::*;
 use polars_core::utils::CustomIterTools;
-use polars_core::{export::rayon::prelude::*, POOL};
+use polars_core::POOL;
 use pyo3::types::PyDict;
 use pyo3::{PyAny, PyResult};
 
@@ -162,6 +163,7 @@ fn iterator_to_bool(
     ca
 }
 
+#[cfg(feature = "object")]
 fn iterator_to_object(
     it: impl Iterator<Item = Option<ObjectValue>>,
     init_null_count: usize,
@@ -237,7 +239,16 @@ fn iterator_to_list(
     }
     builder.append_opt_series(first_value);
     for opt_val in it {
-        builder.append_opt_series(opt_val.as_ref())
+        match opt_val {
+            None => builder.append_null(),
+            Some(s) => {
+                if s.len() == 0 && s.dtype() != dt {
+                    builder.append_series(&Series::full_null("", 0, dt))
+                } else {
+                    builder.append_series(&s)
+                }
+            }
+        }
     }
     Ok(builder.finish())
 }

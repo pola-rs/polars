@@ -3,15 +3,15 @@ use std::ops::Add;
 
 use arrow::compute;
 use arrow::types::simd::Simd;
-use num::Float;
-use num::ToPrimitive;
+use num::{Float, ToPrimitive};
 use polars_arrow::prelude::QuantileInterpolOptions;
 
 use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::ChunkedArray;
-use crate::datatypes::BooleanChunked;
+use crate::datatypes::{BooleanChunked, PolarsNumericType};
+use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::{datatypes::PolarsNumericType, prelude::*, utils::CustomIterTools};
+use crate::utils::CustomIterTools;
 
 /// Aggregations that return Series of unit length. Those can be used in broadcasting operations.
 pub trait ChunkAggSeries {
@@ -48,7 +48,7 @@ pub trait QuantileAggSeries {
         &self,
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
-    ) -> Result<Series>;
+    ) -> PolarsResult<Series>;
 }
 
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
@@ -205,7 +205,11 @@ where
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
 {
-    fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f64>> {
+    fn quantile(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> PolarsResult<Option<f64>> {
         if !(0.0..=1.0).contains(&quantile) {
             return Err(PolarsError::ComputeError(
                 "quantile should be between 0.0 and 1.0".into(),
@@ -275,7 +279,11 @@ where
 }
 
 impl ChunkQuantile<f32> for Float32Chunked {
-    fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f32>> {
+    fn quantile(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> PolarsResult<Option<f32>> {
         if !(0.0..=1.0).contains(&quantile) {
             return Err(PolarsError::ComputeError(
                 "quantile should be between 0.0 and 1.0".into(),
@@ -345,7 +353,11 @@ impl ChunkQuantile<f32> for Float32Chunked {
 }
 
 impl ChunkQuantile<f64> for Float64Chunked {
-    fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f64>> {
+    fn quantile(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> PolarsResult<Option<f64>> {
         if !(0.0..=1.0).contains(&quantile) {
             return Err(PolarsError::ComputeError(
                 "quantile should be between 0.0 and 1.0".into(),
@@ -701,7 +713,7 @@ where
         &self,
         quantile: f64,
         interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         impl_quantile_as_series!(self, quantile, Float64Chunked, quantile, interpol)
     }
 
@@ -715,7 +727,7 @@ impl QuantileAggSeries for Float32Chunked {
         &self,
         quantile: f64,
         interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         impl_quantile_as_series!(self, quantile, Float32Chunked, quantile, interpol)
     }
 
@@ -729,7 +741,7 @@ impl QuantileAggSeries for Float64Chunked {
         &self,
         quantile: f64,
         interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         impl_quantile_as_series!(self, quantile, Float64Chunked, quantile, interpol)
     }
 
@@ -743,7 +755,7 @@ impl QuantileAggSeries for BooleanChunked {
         &self,
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         Ok(Self::full_null(self.name(), 1).into_series())
     }
 
@@ -756,7 +768,7 @@ impl QuantileAggSeries for ListChunked {
         &self,
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         Ok(Self::full_null(self.name(), 1).into_series())
     }
 
@@ -770,7 +782,7 @@ impl<T: PolarsObject> QuantileAggSeries for ObjectChunked<T> {
         &self,
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         unimplemented!()
     }
 
@@ -783,7 +795,7 @@ impl QuantileAggSeries for Utf8Chunked {
         &self,
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         Ok(Self::full_null(self.name(), 1).into_series())
     }
 
@@ -813,23 +825,27 @@ impl ChunkAggSeries for BooleanChunked {
     }
 }
 
-macro_rules! one_null_utf8 {
-    ($self:ident) => {{
-        let mut builder = Utf8ChunkedBuilder::new($self.name(), 1, 0);
-        builder.append_null();
-        builder.finish().into_series()
-    }};
-}
-
 impl ChunkAggSeries for Utf8Chunked {
     fn sum_as_series(&self) -> Series {
-        one_null_utf8!(self)
+        Utf8Chunked::full_null(self.name(), 1).into_series()
     }
     fn max_as_series(&self) -> Series {
-        one_null_utf8!(self)
+        Series::new(
+            self.name(),
+            &[self
+                .downcast_iter()
+                .filter_map(compute::aggregate::max_string)
+                .fold_first_(|acc, v| if acc > v { acc } else { v })],
+        )
     }
     fn min_as_series(&self) -> Series {
-        one_null_utf8!(self)
+        Series::new(
+            self.name(),
+            &[self
+                .downcast_iter()
+                .filter_map(compute::aggregate::min_string)
+                .fold_first_(|acc, v| if acc < v { acc } else { v })],
+        )
     }
 }
 
@@ -989,11 +1005,10 @@ mod test {
     fn test_mean() {
         let ca = Float32Chunked::new("", &[Some(1.0), Some(2.0), None]);
         assert_eq!(ca.mean().unwrap(), 1.5);
-        // all mean_as_series are cast to f64.
         assert_eq!(
             ca.into_series()
                 .mean_as_series()
-                .f64()
+                .f32()
                 .unwrap()
                 .get(0)
                 .unwrap(),
@@ -1003,7 +1018,7 @@ mod test {
         let ca = Float32Chunked::full_null("", 3);
         assert_eq!(ca.mean(), None);
         assert_eq!(
-            ca.into_series().mean_as_series().f64().unwrap().get(0),
+            ca.into_series().mean_as_series().f32().unwrap().get(0),
             None
         );
     }

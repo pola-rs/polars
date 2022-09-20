@@ -3,7 +3,9 @@ use std::io::Write;
 use arrow::temporal_conversions;
 use lexical_core::{FormattedSize, ToLexical};
 use memchr::{memchr, memchr2};
-use polars_core::{prelude::*, series::SeriesIter, POOL};
+use polars_core::prelude::*;
+use polars_core::series::SeriesIter;
+use polars_core::POOL;
 use polars_utils::contention_pool::LowContentionPool;
 use rayon::prelude::*;
 
@@ -34,9 +36,20 @@ fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> s
     }
 }
 
+fn fast_float_write<N: ToLexical>(f: &mut Vec<u8>, n: N, write_size: usize) -> std::io::Result<()> {
+    let len = f.len();
+    f.reserve(write_size);
+    unsafe {
+        let buffer = std::slice::from_raw_parts_mut(f.as_mut_ptr().add(len), write_size);
+        let written_n = n.to_lexical(buffer).len();
+        f.set_len(len + written_n);
+    }
+    Ok(())
+}
+
 fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) {
     match value {
-        AnyValue::Null => write!(f, ""),
+        AnyValue::Null => write!(f, "{}", &options.null),
         AnyValue::Int8(v) => write!(f, "{}", v),
         AnyValue::Int16(v) => write!(f, "{}", v),
         AnyValue::Int32(v) => write!(f, "{}", v),
@@ -45,30 +58,14 @@ fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) 
         AnyValue::UInt16(v) => write!(f, "{}", v),
         AnyValue::UInt32(v) => write!(f, "{}", v),
         AnyValue::UInt64(v) => write!(f, "{}", v),
-        AnyValue::Float32(v) => {
-            let len = f.len();
-            let write_size = f32::FORMATTED_SIZE_DECIMAL;
-            f.reserve(write_size);
-            unsafe {
-                let buf = std::slice::from_raw_parts_mut(f.as_mut_ptr().add(len), write_size);
-
-                let written_n = v.to_lexical(buf).len();
-                f.set_len(len + written_n);
-            }
-            Ok(())
-        }
-        AnyValue::Float64(v) => {
-            let len = f.len();
-            let write_size = f64::FORMATTED_SIZE_DECIMAL;
-            f.reserve(write_size);
-            unsafe {
-                let buf = std::slice::from_raw_parts_mut(f.as_mut_ptr().add(len), write_size);
-
-                let written_n = v.to_lexical(buf).len();
-                f.set_len(len + written_n);
-            }
-            Ok(())
-        }
+        AnyValue::Float32(v) => match &options.float_precision {
+            None => fast_float_write(f, v, f32::FORMATTED_SIZE_DECIMAL),
+            Some(precision) => write!(f, "{v:.precision$}", v = v, precision = precision),
+        },
+        AnyValue::Float64(v) => match &options.float_precision {
+            None => fast_float_write(f, v, f64::FORMATTED_SIZE_DECIMAL),
+            Some(precision) => write!(f, "{v:.precision$}", v = v, precision = precision),
+        },
         AnyValue::Boolean(v) => write!(f, "{}", v),
         AnyValue::Utf8(v) => fmt_and_escape_str(f, v, options),
         #[cfg(feature = "dtype-categorical")]
@@ -126,14 +123,18 @@ fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) 
 pub struct SerializeOptions {
     /// used for [`DataType::Date`]
     pub date_format: Option<String>,
-    /// used for [`DataType::Time64`]
+    /// used for [`DataType::Time`]
     pub time_format: Option<String>,
-    /// used for [`DataType::Timestamp`]
+    /// used for [`DataType::Datetime]
     pub datetime_format: Option<String>,
+    /// used for [`DataType::Float64`] and [`DataType::Float32`]
+    pub float_precision: Option<usize>,
     /// used as separator/delimiter
     pub delimiter: u8,
     /// quoting character
     pub quote: u8,
+    /// null value representation
+    pub null: String,
 }
 
 impl Default for SerializeOptions {
@@ -142,8 +143,10 @@ impl Default for SerializeOptions {
             date_format: None,
             time_format: None,
             datetime_format: None,
+            float_precision: None,
             delimiter: b',',
             quote: b'"',
+            null: String::new(),
         }
     }
 }
@@ -162,18 +165,38 @@ pub(crate) fn write<W: Write>(
     writer: &mut W,
     df: &DataFrame,
     chunk_size: usize,
-    options: &SerializeOptions,
-) -> Result<()> {
+    options: &mut SerializeOptions,
+) -> PolarsResult<()> {
     // check that the double quote is valid utf8
     std::str::from_utf8(&[options.quote, options.quote])
         .map_err(|_| PolarsError::ComputeError("quote char leads invalid utf8".into()))?;
     let delimiter = char::from(options.delimiter);
 
+    // if datetime format not specified, infer the maximum required precision
+    if options.datetime_format.is_none() {
+        for col in df.get_columns() {
+            match col.dtype() {
+                DataType::Datetime(TimeUnit::Microseconds, _)
+                    if options.datetime_format.is_none() =>
+                {
+                    options.datetime_format = Some("%FT%H:%M:%S.%6f".to_string());
+                }
+                DataType::Datetime(TimeUnit::Nanoseconds, _) => {
+                    options.datetime_format = Some("%FT%H:%M:%S.%9f".to_string());
+                    break; // highest precision; no need to check further
+                }
+                _ => {}
+            }
+        }
+        // if still not set, no cols require higher precision than "ms" (or no datetime cols)
+        if options.datetime_format.is_none() {
+            options.datetime_format = Some("%FT%H:%M:%S.%3f".to_string());
+        }
+    }
+
     let len = df.height();
     let n_threads = POOL.current_num_threads();
-
     let total_rows_per_pool_iter = n_threads * chunk_size;
-
     let any_value_iter_pool = LowContentionPool::<Vec<_>>::new(n_threads);
     let write_buffer_pool = LowContentionPool::<Vec<_>>::new(n_threads);
 
@@ -186,7 +209,6 @@ pub(crate) fn write<W: Write>(
             let thread_offset = thread_no * chunk_size;
             let total_offset = n_rows_finished + thread_offset;
             let df = df.slice(total_offset as i64, chunk_size);
-
             let cols = df.get_columns();
 
             // Safety:
@@ -255,7 +277,7 @@ pub(crate) fn write_header<W: Write>(
     writer: &mut W,
     names: &[&str],
     options: &SerializeOptions,
-) -> Result<()> {
+) -> PolarsResult<()> {
     writer.write_all(
         names
             .join(std::str::from_utf8(&[options.delimiter]).unwrap())

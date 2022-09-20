@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 import warnings
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import reduce
 from typing import Any, Sequence
 
@@ -61,13 +61,22 @@ from polars.datatypes import (
 if HYPOTHESIS_INSTALLED:
     # TODO: increase the number of iterations during CI checkins?
     # https://hypothesis.readthedocs.io/en/latest/settings.html#settings-profiles
-    settings.register_profile(name="polars.default", max_examples=100, print_blob=True)
-    settings.register_profile(name="polars.ci", max_examples=500, print_blob=True)
-
+    common_settings = {"print_blob": True, "deadline": timedelta(milliseconds=300)}
+    settings.register_profile(
+        name="polars.default",
+        max_examples=100,
+        **common_settings,  # type: ignore[arg-type]
+    )
+    settings.register_profile(
+        name="polars.ci",
+        max_examples=500,
+        **common_settings,  # type: ignore[arg-type]
+    )
     # if os.getenv("CI")
     #   settings.load_profile("polars.ci")
     # else:
     settings.load_profile("polars.default")
+
 
 MAX_DATA_SIZE = 20
 MAX_COLS = 8
@@ -248,7 +257,9 @@ def _assert_series_inner(
         else:
             # apply check with tolerance, but only to the known-unequal matches
             left, right = left.filter(unequal), right.filter(unequal)
-            if ((left - right).abs() > (atol + rtol * right.abs())).sum() != 0:
+            if (((left - right).abs() > (atol + rtol * right.abs())).sum() != 0) or (
+                (left.is_null() != right.is_null()).any()
+            ):
                 raise_assert_detail(
                     obj, "Value mismatch", left=list(left), right=list(right)
                 )
@@ -398,7 +409,7 @@ if HYPOTHESIS_INSTALLED:
 
         name: str
         dtype: PolarsDataType | None = None
-        strategy: SearchStrategy[pli.Series] | None = None
+        strategy: SearchStrategy[pli.Series | int] | None = None
         null_probability: float | None = None
         unique: bool = False
 

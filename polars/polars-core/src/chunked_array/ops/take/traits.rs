@@ -1,17 +1,15 @@
 //! Traits that indicate the allowed arguments in a ChunkedArray::take operation.
-use polars_arrow::array::PolarsArray;
-
 use crate::frame::groupby::GroupsProxyIter;
 use crate::prelude::*;
 
 // Utility traits
 pub trait TakeIterator: Iterator<Item = usize> + TrustedLen {
-    fn check_bounds(&self, bound: usize) -> Result<()>;
+    fn check_bounds(&self, bound: usize) -> PolarsResult<()>;
     // a sort of clone
     fn boxed_clone(&self) -> Box<dyn TakeIterator + '_>;
 }
 pub trait TakeIteratorNulls: Iterator<Item = Option<usize>> + TrustedLen {
-    fn check_bounds(&self, bound: usize) -> Result<()>;
+    fn check_bounds(&self, bound: usize) -> PolarsResult<()>;
 
     fn boxed_clone(&self) -> Box<dyn TakeIteratorNulls + '_>;
 }
@@ -22,7 +20,7 @@ unsafe impl TrustedLen for GroupsProxyIter<'_> {}
 
 // Implement for the ref as well
 impl TakeIterator for &mut dyn TakeIterator {
-    fn check_bounds(&self, bound: usize) -> Result<()> {
+    fn check_bounds(&self, bound: usize) -> PolarsResult<()> {
         (**self).check_bounds(bound)
     }
 
@@ -31,7 +29,7 @@ impl TakeIterator for &mut dyn TakeIterator {
     }
 }
 impl TakeIteratorNulls for &mut dyn TakeIteratorNulls {
-    fn check_bounds(&self, bound: usize) -> Result<()> {
+    fn check_bounds(&self, bound: usize) -> PolarsResult<()> {
         (**self).check_bounds(bound)
     }
 
@@ -45,15 +43,15 @@ impl<I> TakeIterator for I
 where
     I: Iterator<Item = usize> + Clone + Sized + TrustedLen,
 {
-    fn check_bounds(&self, bound: usize) -> Result<()> {
+    fn check_bounds(&self, bound: usize) -> PolarsResult<()> {
         // clone so that the iterator can be used again.
         let iter = self.clone();
         let mut inbounds = true;
 
         for i in iter {
             if i >= bound {
+                // we will not break here as that prevents SIMD
                 inbounds = false;
-                break;
             }
         }
         if inbounds {
@@ -73,15 +71,15 @@ impl<I> TakeIteratorNulls for I
 where
     I: Iterator<Item = Option<usize>> + Clone + Sized + TrustedLen,
 {
-    fn check_bounds(&self, bound: usize) -> Result<()> {
+    fn check_bounds(&self, bound: usize) -> PolarsResult<()> {
         // clone so that the iterator can be used again.
         let iter = self.clone();
         let mut inbounds = true;
 
         for i in iter.flatten() {
             if i >= bound {
+                // we will not break here as that prevents SIMD
                 inbounds = false;
-                break;
             }
         }
         if inbounds {
@@ -115,18 +113,19 @@ where
     I: TakeIterator,
     INulls: TakeIteratorNulls,
 {
-    pub(crate) fn check_bounds(&self, bound: usize) -> Result<()> {
+    pub(crate) fn check_bounds(&self, bound: usize) -> PolarsResult<()> {
         match self {
             TakeIdx::Iter(i) => i.check_bounds(bound),
             TakeIdx::IterNulls(i) => i.check_bounds(bound),
             TakeIdx::Array(arr) => {
+                let values = arr.values().as_slice();
                 let mut inbounds = true;
                 let len = bound as IdxSize;
-                if !arr.has_validity() {
-                    for &i in arr.values().as_slice() {
+                if arr.null_count() == 0 {
+                    for &i in values {
+                        // we will not break here as that prevents SIMD
                         if i >= len {
                             inbounds = false;
-                            break;
                         }
                     }
                 } else {
@@ -134,7 +133,6 @@ where
                         match opt_v {
                             Some(&v) if v >= len => {
                                 inbounds = false;
-                                break;
                             }
                             _ => {}
                         }

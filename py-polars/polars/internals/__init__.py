@@ -1,4 +1,6 @@
 """
+Core Polars functionality.
+
 The modules within `polars.internals` are interdependent. To prevent cyclical imports,
 they all import from each other via this __init__ file using
 `import polars.internals as pli`. The imports below are being shared across this module.
@@ -25,10 +27,12 @@ from polars.internals.io import (
 )
 from polars.internals.lazy_functions import (
     all,
+    arange,
     arg_where,
     argsort_by,
     col,
     concat_list,
+    count,
     element,
     format,
     lit,
@@ -44,11 +48,13 @@ __all__ = [
     "LazyFrame",
     "Series",
     "all",
+    "arange",
     "arg_where",
     "argsort_by",
     "col",
     "concat",
     "concat_list",
+    "count",
     "date_range",
     "element",
     "expr_to_lit_or_expr",

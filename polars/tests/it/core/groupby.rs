@@ -3,7 +3,7 @@ use polars_core::series::IsSorted;
 use super::*;
 
 #[test]
-fn test_sorted_groupby() -> Result<()> {
+fn test_sorted_groupby() -> PolarsResult<()> {
     // nulls last
     let mut s = Series::new("a", &[Some(1), Some(1), Some(1), Some(6), Some(6), None]);
     s.set_sorted(IsSorted::Ascending);

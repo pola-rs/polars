@@ -1,6 +1,6 @@
 use arrow::array::{Array, PrimitiveArray};
-use arrow::compute::cast::CastOptions;
-use arrow::compute::{cast::cast, temporal};
+use arrow::compute::cast::{cast, CastOptions};
+use arrow::compute::temporal;
 use arrow::error::Result as ArrowResult;
 use polars_arrow::export::arrow;
 use polars_core::prelude::*;
@@ -39,6 +39,16 @@ pub trait DatetimeMethods: AsDatetime {
     /// Returns the year number in the calendar date.
     fn year(&self) -> Int32Chunked {
         cast_and_apply(self.as_datetime(), temporal::year)
+    }
+
+    fn iso_year(&self) -> Int32Chunked {
+        let ca = self.as_datetime();
+        let f = match ca.time_unit() {
+            TimeUnit::Nanoseconds => datetime_to_iso_year_ns,
+            TimeUnit::Microseconds => datetime_to_iso_year_us,
+            TimeUnit::Milliseconds => datetime_to_iso_year_ms,
+        };
+        ca.apply_kernel_cast::<Int32Type>(&f)
     }
 
     /// Extract quarter from underlying NaiveDateTime representation.

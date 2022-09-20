@@ -1,7 +1,7 @@
 use polars::export::arrow::array::Array;
 use polars::prelude::*;
 
-pub(crate) fn set_at_idx(mut s: Series, idx: &Series, values: &Series) -> Result<Series> {
+pub(crate) fn set_at_idx(mut s: Series, idx: &Series, values: &Series) -> PolarsResult<Series> {
     let logical_dtype = s.dtype().clone();
     let idx = idx.cast(&IDX_DTYPE)?;
     let idx = idx.rechunk();
@@ -74,8 +74,18 @@ pub(crate) fn set_at_idx(mut s: Series, idx: &Series, values: &Series) -> Result
             let values = values.f64()?;
             std::mem::take(ca).set_at_idx2(idx, values.into_iter())
         }
+        DataType::Boolean => {
+            let ca = s.bool()?;
+            let values = values.bool()?;
+            ca.set_at_idx2(idx, values)
+        }
+        DataType::Utf8 => {
+            let ca = s.utf8()?;
+            let values = values.utf8()?;
+            ca.set_at_idx2(idx, values)
+        }
         _ => panic!("not yet implemented for dtype: {}", logical_dtype),
     };
 
-    s.cast(&logical_dtype)
+    s.and_then(|s| s.cast(&logical_dtype))
 }

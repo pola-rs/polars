@@ -33,18 +33,18 @@ impl PartitionGroupByExec {
         }
     }
 
-    fn keys(&self, df: &DataFrame, state: &ExecutionState) -> Result<Vec<Series>> {
+    fn keys(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Vec<Series>> {
         self.keys.iter().map(|s| s.evaluate(df, state)).collect()
     }
 }
 
 fn run_partitions(
-    df: &DataFrame,
+    df: &mut DataFrame,
     exec: &PartitionGroupByExec,
     state: &ExecutionState,
     n_threads: usize,
     maintain_order: bool,
-) -> Result<Vec<DataFrame>> {
+) -> PolarsResult<Vec<DataFrame>> {
     // We do a partitioned groupby.
     // Meaning that we first do the groupby operation arbitrarily
     // split on several threads. Than the final result we apply the same groupby again.
@@ -84,7 +84,7 @@ fn run_partitions(
                         } else {
                             Ok(agg)
                         }
-                    }).collect::<Result<Vec<_>>>()?;
+                    }).collect::<PolarsResult<Vec<_>>>()?;
 
                 columns.extend_from_slice(&agg_columns);
 
@@ -192,17 +192,13 @@ fn can_run_partitioned(keys: &[Series], original_df: &DataFrame, state: &Executi
     }
 }
 
-impl Executor for PartitionGroupByExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
-        #[cfg(debug_assertions)]
-        {
-            if state.verbose() {
-                println!("run PartititonGroupbyExec")
-            }
-        }
+impl PartitionGroupByExec {
+    fn execute_impl(
+        &mut self,
+        state: &mut ExecutionState,
+        mut original_df: DataFrame,
+    ) -> PolarsResult<DataFrame> {
         let dfs = {
-            let original_df = self.input.execute(state)?;
-
             // already get the keys. This is the very last minute decision which groupby method we choose.
             // If the column is a categorical, we know the number of groups we have and can decide to continue
             // partitioned or go for the standard groupby. The partitioned is likely to be faster on a small number
@@ -229,7 +225,13 @@ impl Executor for PartitionGroupByExec {
 
             // set it here, because `self.input.execute` will clear the schema cache.
             state.set_schema(self.input_schema.clone());
-            run_partitions(&original_df, self, state, n_threads, self.maintain_order)?
+            run_partitions(
+                &mut original_df,
+                self,
+                state,
+                n_threads,
+                self.maintain_order,
+            )?
         };
         state.clear_schema_cache();
 
@@ -254,7 +256,7 @@ impl Executor for PartitionGroupByExec {
 
         let get_columns = || gb.keys_sliced(self.slice);
         let get_agg = || {
-            let out: Result<Vec<_>> = self
+            let out: PolarsResult<Vec<_>> = self
                 .phys_aggs
                 .par_iter()
                 // we slice the keys off and finalize every aggregation
@@ -274,5 +276,35 @@ impl Executor for PartitionGroupByExec {
         state.clear_schema_cache();
 
         Ok(DataFrame::new(columns).unwrap())
+    }
+}
+
+impl Executor for PartitionGroupByExec {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        #[cfg(debug_assertions)]
+        {
+            if state.verbose() {
+                println!("run PartititonGroupbyExec")
+            }
+        }
+        let original_df = self.input.execute(state)?;
+
+        let profile_name = if state.has_node_timer() {
+            let by = self
+                .keys
+                .iter()
+                .map(|s| Ok(s.to_field(&self.input_schema)?.name))
+                .collect::<PolarsResult<Vec<_>>>()?;
+            let name = column_delimited("groupby_paritioned".to_string(), &by);
+            Cow::Owned(name)
+        } else {
+            Cow::Borrowed("")
+        };
+        if state.has_node_timer() {
+            let new_state = state.clone();
+            new_state.record(|| self.execute_impl(state, original_df), profile_name)
+        } else {
+            self.execute_impl(state, original_df)
+        }
     }
 }

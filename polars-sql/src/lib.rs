@@ -8,14 +8,14 @@ mod test {
     use super::*;
     use polars::prelude::*;
 
-    fn create_sample_df() -> Result<DataFrame> {
+    fn create_sample_df() -> PolarsResult<DataFrame> {
         let a = Series::new("a", (1..10000i64).map(|i| i / 100).collect::<Vec<_>>());
         let b = Series::new("b", 1..10000i64);
         DataFrame::new(vec![a, b])
     }
 
     #[test]
-    fn test_simple_select() -> Result<()> {
+    fn test_simple_select() -> PolarsResult<()> {
         let df = create_sample_df()?;
         let mut context = SQLContext::new();
         context.register("df", &df);
@@ -40,7 +40,7 @@ mod test {
     }
 
     #[test]
-    fn test_groupby_simple() -> Result<()> {
+    fn test_groupby_simple() -> PolarsResult<()> {
         let df = create_sample_df()?;
         let mut context = SQLContext::new();
         context.register("df", &df);

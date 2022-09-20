@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from contextlib import suppress
+from dataclasses import astuple, is_dataclass
 from datetime import date, datetime, time, timedelta
 from itertools import zip_longest
-from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
+from sys import version_info
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, get_type_hints
 
 from polars import internals as pli
 from polars.datatypes import (
+    DTYPE_TEMPORAL_UNITS,
     Categorical,
     ColumnsType,
     Date,
@@ -28,6 +31,17 @@ from polars.datatypes_constructor import (
     py_type_to_constructor,
 )
 from polars.utils import threadpool_size
+
+if version_info >= (3, 10):
+
+    def dataclass_type_hints(obj: type) -> dict[str, Any]:
+        return get_type_hints(obj)
+
+else:
+
+    def dataclass_type_hints(obj: type) -> dict[str, Any]:
+        return obj.__annotations__
+
 
 try:
     from polars.polars import PyDataFrame, PySeries
@@ -64,7 +78,7 @@ if TYPE_CHECKING:
 def series_to_pyseries(name: str, values: pli.Series) -> PySeries:
     """Construct a PySeries from a Polars Series."""
     values.rename(name, in_place=True)
-    return values.inner()
+    return values._s
 
 
 def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySeries:
@@ -76,6 +90,8 @@ def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySe
             pys = PySeries.from_arrow(name, next(it))
             for a in it:
                 pys.append(PySeries.from_arrow(name, a))
+        elif array.num_chunks == 0:
+            pys = PySeries.from_arrow(name, pa.array([], array.type))
         else:
             pys = PySeries.from_arrow(name, array.combine_chunks())
 
@@ -101,9 +117,18 @@ def numpy_to_pyseries(
         if dtype == np.float16:
             values = values.astype(np.float32)
             dtype = values.dtype.type
+        elif (
+            dtype == np.datetime64
+            and np.datetime_data(values.dtype)[0] not in DTYPE_TEMPORAL_UNITS
+        ):
+            dtype = object
+
         constructor = numpy_type_to_constructor(dtype)
+
         if dtype == np.float32 or dtype == np.float64:
             return constructor(name, values, nan_to_null)
+        elif dtype == np.datetime64:
+            return constructor(name, values.astype(np.int64), strict)
         else:
             return constructor(name, values, strict)
     else:
@@ -140,15 +165,22 @@ def sequence_to_pyseries(
     values: Sequence[Any],
     dtype: PolarsDataType | None = None,
     strict: bool = True,
+    dtype_if_empty: PolarsDataType | None = None,
 ) -> PySeries:
     """Construct a PySeries from a sequence."""
     python_dtype: type | None = None
     nested_dtype: PolarsDataType | type | None = None
     temporal_unit: str | None = None
 
-    # empty sequence defaults to Float32 type
+    # empty sequence
     if not values and dtype is None:
-        dtype = Float32
+        if dtype_if_empty:
+            # if dtype for empty sequence could be guessed
+            # (e.g comparisons between self and other)
+            dtype = dtype_if_empty
+        else:
+            # default to Float32 type
+            dtype = Float32
     # lists defer to subsequent handling; identify nested type
     elif dtype == List:
         nested_dtype = getattr(dtype, "inner", None)
@@ -160,11 +192,10 @@ def sequence_to_pyseries(
 
     value = _get_first_non_none(values)
     if value is not None:
-        # this branch is for dtypes set with python types.
-        # eg. 'datetime.date/datetime.datetime'
-        # and values that are integers
-        # if this holds we take the physical branch
-        # if the values are also python types we take the temporal branch
+        # for temporal dtypes:
+        # * if the values are integer, we take the physical branch.
+        # * if the values are python types, take the temporal branch.
+        # * if the values are ISO-8601 strings, init then convert via strptime.
         if dtype in py_temporal_types and isinstance(value, int):
             dtype = py_type_to_dtype(dtype)  # construct from integer
         elif (
@@ -270,7 +301,7 @@ def sequence_to_pyseries(
             return PySeries.new_object(name, values, strict)
 
         elif python_dtype == pli.Series:
-            return PySeries.new_series_list(name, [v.inner() for v in values], strict)
+            return PySeries.new_series_list(name, [v._s for v in values], strict)
         elif python_dtype == PySeries:
             return PySeries.new_series_list(name, values, strict)
         else:
@@ -283,7 +314,35 @@ def sequence_to_pyseries(
                 except RuntimeError:
                     return sequence_from_anyvalue_or_object(name, values)
 
-            return constructor(name, values, strict)
+            while True:
+                try:
+                    return constructor(name, values, strict)
+                except TypeError as error:
+                    str_val = str(error)
+
+                    # from x to float
+                    # error message can be:
+                    #   - integers: "'float' object cannot be interpreted as an integer"
+                    if "'float'" in str_val:
+                        constructor = py_type_to_constructor(float)
+
+                    # from x to string
+                    # error message can be:
+                    #   - integers: "'str' object cannot be interpreted as an integer"
+                    #   - floats: "must be real number, not str"
+                    elif (
+                        "'str'" in str_val or str_val == "must be real number, not str"
+                    ):
+                        constructor = py_type_to_constructor(str)
+
+                    # from x to int
+                    # error message can be:
+                    #   - bools: "'int' object cannot be converted to 'PyBool'"
+                    elif str_val == "'int' object cannot be converted to 'PyBool'":
+                        constructor = py_type_to_constructor(int)
+
+                    else:
+                        raise error
 
 
 def _pandas_series_to_arrow(
@@ -296,20 +355,20 @@ def _pandas_series_to_arrow(
 
     Parameters
     ----------
-    values
+    values : :class:`pandas.Series` or :class:`pandas.DatetimeIndex`
         Series to convert to arrow
-    nan_to_none
+    nan_to_none : bool, default = True
         Interpret `NaN` as missing values
-    min_len
+    min_len : int, optional
         in case of null values, this length will be used to create a dummy f64 array
         (with all values set to null)
 
     Returns
     -------
-    Arrow Array
+    :class:`pyarrow.Array`
 
     """
-    dtype = values.dtype
+    dtype = getattr(values, "dtype", None)
     if dtype == "object" and len(values) > 0:
         first_non_none = _get_first_non_none(values.values)  # type: ignore[arg-type]
 
@@ -319,8 +378,15 @@ def _pandas_series_to_arrow(
             return pa.nulls(min_len, pa.large_utf8())
 
         return pa.array(values, from_pandas=nan_to_none)
-    else:
+    elif dtype:
         return pa.array(values, from_pandas=nan_to_none)
+    else:
+        # Pandas Series is actually a Pandas DataFrame when the original dataframe
+        # contains duplicated columns and a duplicated column is requested with df["a"].
+        raise ValueError(
+            "Duplicate column names found: "
+            + f"{str(values.columns.tolist())}"  # type: ignore[union-attr]
+        )
 
 
 def pandas_to_pyseries(
@@ -352,7 +418,7 @@ def _handle_columns_arg(
         return data
     else:
         if not data:
-            return [pli.Series(c, None).inner() for c in columns]
+            return [pli.Series(c, None)._s for c in columns]
         elif len(data) == len(columns):
             for i, c in enumerate(columns):
                 data[i].rename(c)
@@ -420,11 +486,11 @@ def dict_to_pydf(
 
         if not data and dtypes:
             data_series = [
-                pli.Series(name, [], dtypes.get(name)).inner() for name in columns
+                pli.Series(name, [], dtypes.get(name))._s for name in columns
             ]
         else:
             data_series = [
-                pli.Series(name, values, dtypes.get(name)).inner()
+                pli.Series(name, values, dtypes.get(name))._s
                 for name, values in data.items()
             ]
         data_series = _handle_columns_arg(data_series, columns=columns)
@@ -450,7 +516,7 @@ def dict_to_pydf(
             pool_size = threadpool_size()
             pool = multiprocessing.dummy.Pool(pool_size)
             data_series = pool.map(
-                lambda t: pli.Series(t[0], t[1]).inner(),
+                lambda t: pli.Series(t[0], t[1])._s,
                 [(k, v) for k, v in data.items()],
             )
             return PyDataFrame(data_series)
@@ -463,6 +529,7 @@ def sequence_to_pydf(
     data: Sequence[Any],
     columns: ColumnsType | None = None,
     orient: Orientation | None = None,
+    infer_schema_length: int | None = 50,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a sequence."""
     data_series: list[PySeries]
@@ -482,38 +549,56 @@ def sequence_to_pydf(
             if new_dtype and new_dtype != s.dtype:
                 s = s.cast(new_dtype)
 
-            data_series.append(s.inner())
+            data_series.append(s._s)
 
     elif isinstance(data[0], dict):
-        pydf = PyDataFrame.read_dicts(data)
+        pydf = PyDataFrame.read_dicts(data, infer_schema_length)
         if columns:
             pydf = _post_apply_columns(pydf, columns)
         return pydf
 
     elif isinstance(data[0], Sequence) and not isinstance(data[0], str):
-        # Infer orientation
+        # infer orientation
+        if all(
+            hasattr(data[0], attr)
+            for attr in ("_fields", "_field_defaults", "_replace")
+        ):  # namedtuple
+            if columns is None:
+                columns = data[0]._fields  # type: ignore[attr-defined]
+            elif orient is None:
+                orient = "row"
+
         if orient is None and columns is not None:
             orient = "col" if len(columns) == len(data) else "row"
 
         if orient == "row":
-            pydf = PyDataFrame.read_rows(data)
+            pydf = PyDataFrame.read_rows(data, infer_schema_length)
             if columns:
                 pydf = _post_apply_columns(pydf, columns)
             return pydf
         elif orient == "col" or orient is None:
             columns, dtypes = _unpack_columns(columns, n_expected=len(data))
             data_series = [
-                pli.Series(columns[i], data[i], dtypes.get(columns[i])).inner()
+                pli.Series(columns[i], data[i], dtypes.get(columns[i]))._s
                 for i in range(len(data))
             ]
         else:
             raise ValueError(
                 f"orient must be one of {{'col', 'row', None}}, got {orient} instead."
             )
-
+    elif is_dataclass(data[0]):
+        columns = columns or [
+            (col, py_type_to_dtype(tp, raise_unmatched=False))
+            for col, tp in dataclass_type_hints(data[0].__class__).items()
+        ]
+        pydf = _post_apply_columns(
+            PyDataFrame.read_rows([astuple(dc) for dc in data], infer_schema_length),
+            columns=columns,
+        )
+        return pydf
     else:
         columns, dtypes = _unpack_columns(columns, n_expected=1)
-        data_series = [pli.Series(columns[0], data, dtypes.get(columns[0])).inner()]
+        data_series = [pli.Series(columns[0], data, dtypes.get(columns[0]))._s]
 
     data_series = _handle_columns_arg(data_series, columns=columns)
     return PyDataFrame(data_series)
@@ -535,13 +620,24 @@ def numpy_to_pydf(
         n_columns = 1
 
     elif len(shape) == 2:
-        # Infer orientation
-        if orient is None and columns is not None:
-            orient = "col" if len(columns) == shape[0] else "row"
-
-        if orient == "row":
+        # default convention
+        # first axis is rows, second axis is columns
+        if orient is None and columns is None:
             n_columns = shape[1]
-        elif orient == "col" or orient is None:
+            orient = "row"
+
+        # Infer orientation if columns argument is given
+        elif orient is None and columns is not None:
+            if len(columns) == shape[0]:
+                orient = "col"
+                n_columns = shape[0]
+            else:
+                orient = "row"
+                n_columns = shape[1]
+
+        elif orient == "row":
+            n_columns = shape[1]
+        elif orient == "col":
             n_columns = shape[0]
         else:
             raise ValueError(
@@ -563,17 +659,17 @@ def numpy_to_pydf(
         data_series = []
 
     elif len(shape) == 1:
-        data_series = [pli.Series(columns[0], data, dtypes.get(columns[0])).inner()]
+        data_series = [pli.Series(columns[0], data, dtypes.get(columns[0]))._s]
 
     else:
         if orient == "row":
             data_series = [
-                pli.Series(columns[i], data[:, i], dtypes.get(columns[i])).inner()
+                pli.Series(columns[i], data[:, i], dtypes.get(columns[i]))._s
                 for i in range(n_columns)
             ]
         else:
             data_series = [
-                pli.Series(columns[i], data[i], dtypes.get(columns[i])).inner()
+                pli.Series(columns[i], data[i], dtypes.get(columns[i]))._s
                 for i in range(n_columns)
             ]
 
@@ -624,7 +720,12 @@ def arrow_to_pydf(
 
         # path for table without rows that keeps datatype
         if tbl.shape[0] == 0:
-            pydf = pli.DataFrame._from_pandas(tbl.to_pandas())._df
+            pydf = pli.DataFrame(
+                [
+                    pli.Series(name, c)
+                    for (name, c) in zip(tbl.column_names, tbl.columns)
+                ]
+            )._df
         else:
             pydf = PyDataFrame.from_arrow_record_batches(tbl.to_batches())
     else:
@@ -647,7 +748,7 @@ def arrow_to_pydf(
 
 def series_to_pydf(data: pli.Series, columns: ColumnsType | None = None) -> PyDataFrame:
     """Construct a PyDataFrame from a Polars Series."""
-    data_series = [data.inner()]
+    data_series = [data._s]
     series_name = [s.name() for s in data_series]
     columns, dtypes = _unpack_columns(columns or series_name, n_expected=1)
     if dtypes:

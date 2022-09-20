@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use polars_core::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;
@@ -9,7 +11,7 @@ pub(crate) struct ExplodeExec {
 }
 
 impl Executor for ExplodeExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
@@ -17,6 +19,6 @@ impl Executor for ExplodeExec {
             }
         }
         let df = self.input.execute(state)?;
-        df.explode(&self.columns)
+        state.record(|| df.explode(&self.columns), Cow::Borrowed("explode()"))
     }
 }

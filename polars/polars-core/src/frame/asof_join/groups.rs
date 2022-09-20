@@ -355,8 +355,8 @@ where
 // TODO! optimize this. This does a full scan backwards. Use the same strategy as in the single `by`
 // implementations
 fn asof_join_by_multiple<T>(
-    a: &DataFrame,
-    b: &DataFrame,
+    a: &mut DataFrame,
+    b: &mut DataFrame,
     left_asof: &ChunkedArray<T>,
     right_asof: &ChunkedArray<T>,
     tolerance: Option<AnyValue<'static>>,
@@ -471,7 +471,7 @@ impl DataFrame {
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
         slice: Option<(i64, usize)>,
-    ) -> Result<DataFrame>
+    ) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -487,8 +487,8 @@ impl DataFrame {
 
         check_asof_columns(left_asof, right_asof)?;
 
-        let left_by = self.select(left_by)?;
-        let right_by = other.select(right_by)?;
+        let mut left_by = self.select(left_by)?;
+        let mut right_by = other.select(right_by)?;
 
         let left_by_s = &left_by.get_columns()[0];
         let right_by_s = &right_by.get_columns()[0];
@@ -531,7 +531,13 @@ impl DataFrame {
                     #[cfg(feature = "dtype-categorical")]
                     check_categorical_src(lhs.dtype(), rhs.dtype())?;
                 }
-                asof_join_by_multiple(&left_by, &right_by, left_asof, right_asof, tolerance)
+                asof_join_by_multiple(
+                    &mut left_by,
+                    &mut right_by,
+                    left_asof,
+                    right_asof,
+                    tolerance,
+                )
             }
         } else {
             // we cannot use bit repr as that loses ordering
@@ -566,7 +572,13 @@ impl DataFrame {
                     }
                 }
             } else {
-                asof_join_by_multiple(&left_by, &right_by, left_asof, right_asof, tolerance)
+                asof_join_by_multiple(
+                    &mut left_by,
+                    &mut right_by,
+                    left_asof,
+                    right_asof,
+                    tolerance,
+                )
             }
         };
 
@@ -621,7 +633,7 @@ impl DataFrame {
         right_by: I,
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
-    ) -> Result<DataFrame>
+    ) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -637,7 +649,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_asof_by() -> Result<()> {
+    fn test_asof_by() -> PolarsResult<()> {
         let a = df![
         "a" => [-1, 2, 3, 3, 3, 4],
         "b" => ["a", "b", "c", "d", "e", "f"]
@@ -661,7 +673,7 @@ mod test {
     }
 
     #[test]
-    fn test_asof_by2() -> Result<()> {
+    fn test_asof_by2() -> PolarsResult<()> {
         let trades = df![
             "time" => [23i64, 38, 48, 48, 48],
             "ticker" => ["MSFT", "MSFT", "GOOG", "GOOG", "AAPL"],

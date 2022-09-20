@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use polars_core::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;
@@ -5,11 +7,11 @@ use crate::prelude::*;
 
 pub(crate) struct UdfExec {
     pub(crate) input: Box<dyn Executor>,
-    pub(crate) function: Arc<dyn DataFrameUdf>,
+    pub(crate) function: FunctionNode,
 }
 
 impl Executor for UdfExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
@@ -17,6 +19,12 @@ impl Executor for UdfExec {
             }
         }
         let df = self.input.execute(state)?;
-        self.function.call_udf(df)
+
+        let profile_name = if state.has_node_timer() {
+            Cow::Owned(format!("{}", self.function))
+        } else {
+            Cow::Borrowed("")
+        };
+        state.record(|| self.function.evaluate(df), profile_name)
     }
 }

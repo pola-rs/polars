@@ -6,15 +6,13 @@ use std::borrow::Cow;
 use asof::*;
 use num::Bounded;
 #[cfg(feature = "serde")]
-use serde::Deserializer;
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 use crate::utils::slice_slice;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct AsOfOptions {
     pub strategy: AsofStrategy,
     /// A tolerance in the same unit as the asof column
@@ -29,17 +27,7 @@ pub struct AsOfOptions {
     pub right_by: Option<Vec<String>>,
 }
 
-#[cfg(feature = "serde")]
-impl<'a> Deserialize<'a> for AsOfOptions {
-    fn deserialize<D>(_deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'a>,
-    {
-        todo!()
-    }
-}
-
-fn check_asof_columns(a: &Series, b: &Series) -> Result<()> {
+fn check_asof_columns(a: &Series, b: &Series) -> PolarsResult<()> {
     if a.dtype() != b.dtype() {
         return Err(PolarsError::ComputeError(
             format!(
@@ -73,7 +61,7 @@ where
         other: &Series,
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
-    ) -> Result<Vec<Option<IdxSize>>> {
+    ) -> PolarsResult<Vec<Option<IdxSize>>> {
         let other = self.unpack_series_matching_type(other)?;
 
         if self.null_count() > 0 || other.null_count() > 0 {
@@ -125,7 +113,7 @@ impl DataFrame {
         tolerance: Option<AnyValue<'static>>,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         let left_key = self.column(left_on)?;
         let right_key = other.column(right_on)?;
 
@@ -212,7 +200,7 @@ impl DataFrame {
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
         suffix: Option<String>,
-    ) -> Result<DataFrame> {
+    ) -> PolarsResult<DataFrame> {
         self._join_asof(other, left_on, right_on, strategy, tolerance, suffix, None)
     }
 }

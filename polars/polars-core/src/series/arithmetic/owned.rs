@@ -3,8 +3,8 @@ use super::*;
 use crate::utils::align_chunks_binary_owned_series;
 
 #[cfg(feature = "performant")]
-pub fn coerce_lhs_rhs_owned(lhs: Series, rhs: Series) -> Result<(Series, Series)> {
-    let dtype = get_supertype(lhs.dtype(), rhs.dtype())?;
+pub fn coerce_lhs_rhs_owned(lhs: Series, rhs: Series) -> PolarsResult<(Series, Series)> {
+    let dtype = try_get_supertype(lhs.dtype(), rhs.dtype())?;
     let left = if lhs.dtype() == &dtype {
         lhs
     } else {

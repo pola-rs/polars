@@ -19,7 +19,10 @@ numpy = ["numpy >= 1.16.0"]
 fsspec = ["fsspec"]
 connectorx = ["connectorx"]
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
-pytz = ["pytz"]
+timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
+all = [
+  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,timezone]",
+]
 
 [tool.isort]
 profile = "black"
@@ -36,7 +39,7 @@ enable_error_code = [
 ]
 
 [[tool.mypy.overrides]]
-module = ["pyarrow.*", "polars.polars", "matplotlib.*", "fsspec.*", "connectorx", "IPython.*"]
+module = ["backports", "pyarrow.*", "polars.polars", "matplotlib.*", "fsspec.*", "connectorx", "IPython.*", "zoneinfo"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -48,7 +51,19 @@ module = ["polars.*"]
 # thin wrapper around the PyO3 api to start with.
 warn_return_any = false
 
+[tool.pytest.ini_options]
+addopts = [
+  "--import-mode=importlib",
+]
+
+[tool.coverage.run]
+source = ["polars"]
+branch = true
+
 [tool.coverage.report]
+fail_under = 85
+skip_covered = true
+show_missing = true
 exclude_lines = [
   "pragma: no cover",
   "@overload",

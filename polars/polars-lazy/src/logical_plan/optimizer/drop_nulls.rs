@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use polars_core::prelude::*;
-
+use crate::dsl::function_expr::FunctionExpr;
+use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::iterator::*;
 use crate::prelude::stack_opt::OptimizationRule;
 use crate::prelude::*;
-use crate::utils::aexpr_to_root_names;
+use crate::utils::aexpr_to_leaf_names;
 
 /// If we realize that a predicate drops nulls on a subset
 /// we replace it with an explicit df.drop_nulls call, as this
@@ -37,7 +37,15 @@ impl OptimizationRule for ReplaceDropNulls {
                         }
                     )
                 };
-                let is_not_null = |e: &AExpr| matches!(e, &AExpr::IsNotNull(_));
+                let is_not_null = |e: &AExpr| {
+                    matches!(
+                        e,
+                        &AExpr::Function {
+                            function: FunctionExpr::IsNotNull,
+                            ..
+                        }
+                    )
+                };
                 let is_column = |e: &AExpr| matches!(e, &AExpr::Column(_));
                 let is_lit_true =
                     |e: &AExpr| matches!(e, &AExpr::Literal(LiteralValue::Boolean(true)));
@@ -65,25 +73,16 @@ impl OptimizationRule for ReplaceDropNulls {
                     }
                 }
                 if not_null_count == column_count && binary_and_count < column_count {
-                    let subset = aexpr_to_root_names(*predicate, expr_arena)
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<_>>();
+                    let subset = Arc::new(
+                        aexpr_to_leaf_names(*predicate, expr_arena)
+                            .iter()
+                            .map(|s| s.to_string())
+                            .collect::<Vec<_>>(),
+                    );
 
-                    let function = move |df: DataFrame| df.drop_nulls(Some(&subset));
-
-                    let options = LogicalPlanUdfOptions {
-                        // does not matter as this runs after pushdowns have occurred
-                        predicate_pd: true,
-                        projection_pd: true,
-                        fmt_str: "DROP NULLS",
-                    };
-
-                    Some(ALogicalPlan::Udf {
+                    Some(ALogicalPlan::MapFunction {
                         input: *input,
-                        function: Arc::new(function),
-                        options,
-                        schema: None,
+                        function: FunctionNode::DropNulls { subset },
                     })
                 } else {
                     None
@@ -96,13 +95,15 @@ impl OptimizationRule for ReplaceDropNulls {
 
 #[cfg(test)]
 mod test {
+    use polars_core::prelude::*;
+
     use super::*;
     use crate::prelude::stack_opt::OptimizationRule;
     use crate::tests::fruits_cars;
     use crate::utils::test::optimize_lp;
 
     #[test]
-    fn test_drop_nulls_optimization() -> Result<()> {
+    fn test_drop_nulls_optimization() -> PolarsResult<()> {
         let mut rules: Vec<Box<dyn OptimizationRule>> = vec![Box::new(ReplaceDropNulls {})];
         let df = fruits_cars();
 
@@ -114,13 +115,13 @@ mod test {
         ] {
             let lp = df.clone().lazy().drop_nulls(subset).logical_plan;
             let out = optimize_lp(lp, &mut rules);
-            assert!(matches!(out, LogicalPlan::Udf { .. }));
+            assert!(matches!(out, LogicalPlan::MapFunction { .. }));
         }
         Ok(())
     }
 
     #[test]
-    fn test_filter() -> Result<()> {
+    fn test_filter() -> PolarsResult<()> {
         // This tests if the filter does not accidentally is optimized by ReplaceNulls
 
         let data = vec![

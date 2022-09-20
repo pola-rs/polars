@@ -1,5 +1,6 @@
 pub use polars_core::frame::groupby::*;
-pub use polars_core::{prelude::*, utils::NoNull};
+pub use polars_core::prelude::*;
+pub use polars_core::utils::NoNull;
 #[cfg(feature = "polars-io")]
 pub use polars_io::prelude::*;
 #[cfg(feature = "lazy")]

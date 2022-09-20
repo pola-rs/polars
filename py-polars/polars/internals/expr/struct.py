@@ -6,8 +6,18 @@ import polars.internals as pli
 class ExprStructNameSpace:
     """Namespace for struct related expressions."""
 
+    _accessor = "struct"
+
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr
+
+    def __getitem__(self, item: str | int) -> pli.Expr:
+        if isinstance(item, str):
+            return self.field(item)
+        elif isinstance(item, int):
+            return pli.wrap_expr(self._pyexpr.struct_field_by_index(item))
+        else:
+            raise ValueError(f"expected type 'int | str', got {type(item)}")
 
     def field(self, name: str) -> pli.Expr:
         """
@@ -49,7 +59,7 @@ class ExprStructNameSpace:
 
     def rename_fields(self, names: list[str]) -> pli.Expr:
         """
-        Rename the fields of the struct
+        Rename the fields of the struct.
 
         Parameters
         ----------

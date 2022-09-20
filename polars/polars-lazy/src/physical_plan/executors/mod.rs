@@ -19,18 +19,32 @@ mod stack;
 mod udf;
 mod union;
 
+use std::borrow::Cow;
 use std::path::PathBuf;
 
 use polars_core::POOL;
 use rayon::prelude::*;
 
+pub(super) use self::cache::*;
+pub(super) use self::drop_duplicates::*;
+pub(super) use self::explode::*;
+pub(super) use self::ext_context::*;
+pub(super) use self::filter::*;
+pub(super) use self::groupby::*;
+pub(super) use self::groupby_dynamic::*;
+pub(super) use self::groupby_partitioned::*;
+pub(super) use self::groupby_rolling::*;
+pub(super) use self::join::*;
+pub(super) use self::melt::*;
+pub(super) use self::projection::*;
 #[cfg(feature = "python")]
 pub(super) use self::python_scan::*;
-pub(super) use self::{
-    cache::*, drop_duplicates::*, explode::*, ext_context::*, filter::*, groupby::*,
-    groupby_dynamic::*, groupby_partitioned::*, groupby_rolling::*, join::*, melt::*,
-    projection::*, scan::*, slice::*, sort::*, stack::*, udf::*, union::*,
-};
+pub(super) use self::scan::*;
+pub(super) use self::slice::*;
+pub(super) use self::sort::*;
+pub(super) use self::stack::*;
+pub(super) use self::udf::*;
+pub(super) use self::union::*;
 use super::*;
 use crate::logical_plan::FETCH_ROWS;
 use crate::physical_plan::state::StateFlags;
@@ -47,7 +61,7 @@ fn execute_projection_cached_window_fns(
     df: &DataFrame,
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &ExecutionState,
-) -> Result<Vec<Series>> {
+) -> PolarsResult<Vec<Series>> {
     // We partition by normal expression and window expression
     // - the normal expressions can run in parallel
     // - the window expression take more memory and often use the same groupby keys and join tuples
@@ -97,7 +111,7 @@ fn execute_projection_cached_window_fns(
         other
             .par_iter()
             .map(|(idx, expr)| expr.evaluate(df, state).map(|s| (*idx, s)))
-            .collect::<Result<Vec<_>>>()
+            .collect::<PolarsResult<Vec<_>>>()
     })?;
 
     for mut partition in windows {
@@ -149,7 +163,7 @@ pub(crate) fn evaluate_physical_expressions(
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &mut ExecutionState,
     has_windows: bool,
-) -> Result<DataFrame> {
+) -> PolarsResult<DataFrame> {
     let zero_length = df.height() == 0;
     let selected_columns = if has_windows {
         execute_projection_cached_window_fns(df, exprs, state)?
@@ -158,7 +172,7 @@ pub(crate) fn evaluate_physical_expressions(
             exprs
                 .par_iter()
                 .map(|expr| expr.evaluate(df, state))
-                .collect::<Result<_>>()
+                .collect::<PolarsResult<_>>()
         })?
     };
     state.clear_schema_cache();
@@ -169,7 +183,7 @@ pub(crate) fn evaluate_physical_expressions(
 fn check_expand_literals(
     mut selected_columns: Vec<Series>,
     zero_length: bool,
-) -> Result<DataFrame> {
+) -> PolarsResult<DataFrame> {
     let first_len = selected_columns[0].len();
     let mut df_height = 0;
     let mut all_equal_len = true;
@@ -208,7 +222,7 @@ fn check_expand_literals(
                     ))
                 }
             })
-            .collect::<Result<_>>()?
+            .collect::<PolarsResult<_>>()?
     }
 
     let df = DataFrame::new_no_checks(selected_columns);

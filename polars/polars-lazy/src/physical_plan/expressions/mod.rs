@@ -7,11 +7,7 @@ mod column;
 mod count;
 mod filter;
 mod group_iter;
-mod is_not_null;
-mod is_null;
 mod literal;
-mod not;
-mod shift;
 mod slice;
 mod sort;
 mod sortby;
@@ -20,18 +16,29 @@ mod ternary;
 mod window;
 
 use std::borrow::Cow;
+use std::fmt::{Display, Formatter};
 
+pub(crate) use aggregation::*;
+pub(crate) use alias::*;
+pub(crate) use apply::*;
+pub(crate) use binary::*;
+pub(crate) use cast::*;
+pub(crate) use column::*;
+pub(crate) use count::*;
+pub(crate) use filter::*;
+pub(crate) use literal::*;
 use polars_arrow::export::arrow::array::ListArray;
 use polars_arrow::trusted_len::PushUnchecked;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
-pub(crate) use {
-    aggregation::*, alias::*, apply::*, binary::*, cast::*, column::*, count::*, filter::*,
-    is_not_null::*, is_null::*, literal::*, not::*, shift::*, slice::*, sort::*, sortby::*,
-    take::*, ternary::*, window::*,
-};
+pub(crate) use slice::*;
+pub(crate) use sort::*;
+pub(crate) use sortby::*;
+pub(crate) use take::*;
+pub(crate) use ternary::*;
+pub(crate) use window::*;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
@@ -494,7 +501,18 @@ impl<'a> AggregationContext<'a> {
     pub(crate) fn flat_naive(&self) -> Cow<'_, Series> {
         match &self.state {
             AggState::NotAggregated(s) => Cow::Borrowed(s),
-            AggState::AggregatedList(s) => Cow::Owned(s.explode().unwrap()),
+            AggState::AggregatedList(s) => {
+                #[cfg(debug_assertions)]
+                {
+                    // panic so we find cases where we accidentally explode overlapping groups
+                    // we don't want this as this can create a lot of data
+                    if let GroupsProxy::Slice { rolling: true, .. } = self.groups.as_ref() {
+                        panic!("implementation error, polars should not hit this branch for overlapping groups")
+                    }
+                }
+
+                Cow::Owned(s.explode().unwrap())
+            }
             AggState::AggregatedFlat(s) => Cow::Borrowed(s),
             AggState::Literal(s) => Cow::Borrowed(s),
         }
@@ -520,7 +538,7 @@ pub trait PhysicalExpr: Send + Sync {
     }
 
     /// Take a DataFrame and evaluate the expression.
-    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> Result<Series>;
+    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series>;
 
     /// Some expression that are not aggregations can be done per group
     /// Think of sort, slice, filter, shift, etc.
@@ -550,10 +568,10 @@ pub trait PhysicalExpr: Send + Sync {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>>;
+    ) -> PolarsResult<AggregationContext<'a>>;
 
     /// Get the output field of this expr
-    fn to_field(&self, input_schema: &Schema) -> Result<Field>;
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field>;
 
     /// Convert to a partitioned aggregator.
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
@@ -568,10 +586,20 @@ pub trait PhysicalExpr: Send + Sync {
         None
     }
 
+    //
     fn is_valid_aggregation(&self) -> bool;
 
     fn is_literal(&self) -> bool {
         false
+    }
+}
+
+impl Display for &dyn PhysicalExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.as_expression() {
+            None => Ok(()),
+            Some(e) => write!(f, "{}", e),
+        }
     }
 }
 
@@ -583,7 +611,7 @@ pub struct PhysicalIoHelper {
 }
 
 impl PhysicalIoExpr for PhysicalIoHelper {
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame) -> PolarsResult<Series> {
         self.expr.evaluate(df, &Default::default())
     }
 
@@ -607,7 +635,7 @@ pub trait PartitionedAggregation: Send + Sync + PhysicalExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series>;
+    ) -> PolarsResult<Series>;
 
     /// Called to merge all the partitioned results in a final aggregate.
     #[allow(clippy::ptr_arg)]
@@ -616,5 +644,5 @@ pub trait PartitionedAggregation: Send + Sync + PhysicalExpr {
         partitioned: Series,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series>;
+    ) -> PolarsResult<Series>;
 }

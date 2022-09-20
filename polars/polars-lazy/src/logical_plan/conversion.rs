@@ -9,9 +9,6 @@ fn to_aexprs(input: Vec<Expr>, arena: &mut Arena<AExpr>) -> Vec<Node> {
 /// converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation
 pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
     let v = match expr {
-        Expr::IsUnique(expr) => AExpr::IsUnique(to_aexpr(*expr, arena)),
-        Expr::Duplicated(expr) => AExpr::Duplicated(to_aexpr(*expr, arena)),
-        Expr::Reverse(expr) => AExpr::Reverse(to_aexpr(*expr, arena)),
         Expr::Explode(expr) => AExpr::Explode(to_aexpr(*expr, arena)),
         Expr::Alias(e, name) => AExpr::Alias(to_aexpr(*e, arena), name),
         Expr::Literal(value) => AExpr::Literal(value),
@@ -25,10 +22,6 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
                 right: r,
             }
         }
-        Expr::Not(e) => AExpr::Not(to_aexpr(*e, arena)),
-        Expr::IsNotNull(e) => AExpr::IsNotNull(to_aexpr(*e, arena)),
-        Expr::IsNull(e) => AExpr::IsNull(to_aexpr(*e, arena)),
-
         Expr::Cast {
             expr,
             data_type,
@@ -57,8 +50,20 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         },
         Expr::Agg(agg) => {
             let a_agg = match agg {
-                AggExpr::Min(expr) => AAggExpr::Min(to_aexpr(*expr, arena)),
-                AggExpr::Max(expr) => AAggExpr::Max(to_aexpr(*expr, arena)),
+                AggExpr::Min {
+                    input,
+                    propagate_nans,
+                } => AAggExpr::Min {
+                    input: to_aexpr(*input, arena),
+                    propagate_nans,
+                },
+                AggExpr::Max {
+                    input,
+                    propagate_nans,
+                } => AAggExpr::Max {
+                    input: to_aexpr(*input, arena),
+                    propagate_nans,
+                },
                 AggExpr::Median(expr) => AAggExpr::Median(to_aexpr(*expr, arena)),
                 AggExpr::NUnique(expr) => AAggExpr::NUnique(to_aexpr(*expr, arena)),
                 AggExpr::First(expr) => AAggExpr::First(to_aexpr(*expr, arena)),
@@ -116,10 +121,6 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             function,
             options,
         },
-        Expr::Shift { input, periods } => AExpr::Shift {
-            input: to_aexpr(*input, arena),
-            periods,
-        },
         Expr::Window {
             function,
             partition_by,
@@ -159,7 +160,7 @@ pub(crate) fn to_alp(
     lp: LogicalPlan,
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<ALogicalPlan>,
-) -> Result<Node> {
+) -> PolarsResult<Node> {
     let v = match lp {
         LogicalPlan::AnonymousScan {
             function,
@@ -184,7 +185,7 @@ pub(crate) fn to_alp(
             let inputs = inputs
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
-                .collect::<Result<_>>()?;
+                .collect::<PolarsResult<_>>()?;
             ALogicalPlan::Union { inputs, options }
         }
         LogicalPlan::Selection { input, predicate } => {
@@ -268,13 +269,14 @@ pub(crate) fn to_alp(
         LogicalPlan::DataFrameScan {
             df,
             schema,
+            output_schema,
             projection,
             selection,
         } => ALogicalPlan::DataFrameScan {
             df,
             schema,
-            projection: projection
-                .map(|exprs| exprs.into_iter().map(|x| to_aexpr(x, expr_arena)).collect()),
+            output_schema,
+            projection,
             selection: selection.map(|expr| to_aexpr(expr, expr_arena)),
         },
         LogicalPlan::Projection {
@@ -331,9 +333,9 @@ pub(crate) fn to_alp(
                 schema,
             }
         }
-        LogicalPlan::Cache { input } => {
+        LogicalPlan::Cache { input, id, count } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::Cache { input }
+            ALogicalPlan::Cache { input, id, count }
         }
         LogicalPlan::Aggregate {
             input,
@@ -407,19 +409,9 @@ pub(crate) fn to_alp(
             let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Distinct { input, options }
         }
-        LogicalPlan::Udf {
-            input,
-            function,
-            options,
-            schema,
-        } => {
+        LogicalPlan::MapFunction { input, function } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::Udf {
-                input,
-                function,
-                options,
-                schema,
-            }
+            ALogicalPlan::MapFunction { input, function }
         }
         LogicalPlan::Error { err, .. } => {
             // We just take the error. The LogicalPlan should not be used anymore once this
@@ -436,7 +428,7 @@ pub(crate) fn to_alp(
             let contexts = contexts
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
-                .collect::<Result<_>>()?;
+                .collect::<PolarsResult<_>>()?;
             ALogicalPlan::ExtContext {
                 input,
                 contexts,
@@ -452,9 +444,6 @@ pub(crate) fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
     let expr = expr_arena.get(node).clone();
 
     match expr {
-        AExpr::Duplicated(node) => Expr::Duplicated(Box::new(node_to_expr(node, expr_arena))),
-        AExpr::IsUnique(node) => Expr::IsUnique(Box::new(node_to_expr(node, expr_arena))),
-        AExpr::Reverse(node) => Expr::Reverse(Box::new(node_to_expr(node, expr_arena))),
         AExpr::Explode(node) => Expr::Explode(Box::new(node_to_expr(node, expr_arena))),
         AExpr::Alias(expr, name) => {
             let exp = node_to_expr(expr, expr_arena);
@@ -470,18 +459,6 @@ pub(crate) fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 op,
                 right: Box::new(r),
             }
-        }
-        AExpr::Not(expr) => {
-            let exp = node_to_expr(expr, expr_arena);
-            Expr::Not(Box::new(exp))
-        }
-        AExpr::IsNotNull(expr) => {
-            let exp = node_to_expr(expr, expr_arena);
-            Expr::IsNotNull(Box::new(exp))
-        }
-        AExpr::IsNull(expr) => {
-            let exp = node_to_expr(expr, expr_arena);
-            Expr::IsNull(Box::new(exp))
         }
         AExpr::Cast {
             expr,
@@ -531,13 +508,27 @@ pub(crate) fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             }
         }
         AExpr::Agg(agg) => match agg {
-            AAggExpr::Min(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Min(Box::new(exp)).into()
+            AAggExpr::Min {
+                input,
+                propagate_nans,
+            } => {
+                let exp = node_to_expr(input, expr_arena);
+                AggExpr::Min {
+                    input: Box::new(exp),
+                    propagate_nans,
+                }
+                .into()
             }
-            AAggExpr::Max(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Max(Box::new(exp)).into()
+            AAggExpr::Max {
+                input,
+                propagate_nans,
+            } => {
+                let exp = node_to_expr(input, expr_arena);
+                AggExpr::Max {
+                    input: Box::new(exp),
+                    propagate_nans,
+                }
+                .into()
             }
 
             AAggExpr::Median(expr) => {
@@ -598,13 +589,6 @@ pub(crate) fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 AggExpr::Count(Box::new(exp)).into()
             }
         },
-        AExpr::Shift { input, periods } => {
-            let e = node_to_expr(input, expr_arena);
-            Expr::Shift {
-                input: Box::new(e),
-                periods,
-            }
-        }
         AExpr::Ternary {
             predicate,
             truthy,
@@ -772,14 +756,14 @@ pub(crate) fn node_to_lp(
         ALogicalPlan::DataFrameScan {
             df,
             schema,
+            output_schema,
             projection,
             selection,
         } => LogicalPlan::DataFrameScan {
             df,
             schema,
-            projection: projection
-                .as_ref()
-                .map(|nodes| nodes.iter().map(|n| node_to_expr(*n, expr_arena)).collect()),
+            output_schema,
+            projection,
             selection: selection.map(|n| node_to_expr(n, expr_arena)),
         },
         ALogicalPlan::Projection {
@@ -832,9 +816,9 @@ pub(crate) fn node_to_lp(
                 schema,
             }
         }
-        ALogicalPlan::Cache { input } => {
+        ALogicalPlan::Cache { input, id, count } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
-            LogicalPlan::Cache { input }
+            LogicalPlan::Cache { input, id, count }
         }
         ALogicalPlan::Aggregate {
             input,
@@ -909,19 +893,9 @@ pub(crate) fn node_to_lp(
                 schema,
             }
         }
-        ALogicalPlan::Udf {
-            input,
-            function,
-            options,
-            schema,
-        } => {
+        ALogicalPlan::MapFunction { input, function } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
-            LogicalPlan::Udf {
-                input,
-                function,
-                options,
-                schema,
-            }
+            LogicalPlan::MapFunction { input, function }
         }
         ALogicalPlan::ExtContext {
             input,

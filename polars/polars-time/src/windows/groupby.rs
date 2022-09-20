@@ -2,16 +2,17 @@ use std::cmp::Ordering;
 
 use polars_arrow::trusted_len::TrustedLen;
 use polars_arrow::utils::CustomIterTools;
+use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
+use polars_core::utils::_split_offsets;
 use polars_core::POOL;
-use polars_core::{export::rayon::prelude::*, utils::split_offsets};
 use polars_utils::flatten;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ClosedWindow {
     Left,
@@ -159,7 +160,7 @@ pub(crate) fn groupby_values_iter_full_lookbehind(
         .enumerate()
         .map(move |(mut i, lower)| {
             if *lower < last {
-                panic!("index column of 'groupby_rolling' must be sorted!")
+                panic!("index column of 'groupby_rolling' must be sorted in ascending order!")
             }
             last = *lower;
             i += start_offset;
@@ -386,7 +387,7 @@ pub fn groupby_values(
     tu: TimeUnit,
 ) -> GroupsSlice {
     partially_check_sorted(time);
-    let thread_offsets = split_offsets(time.len(), POOL.current_num_threads());
+    let thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
 
     // we have a (partial) lookbehind window
     if offset.negative {

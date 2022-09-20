@@ -10,7 +10,7 @@ pub struct MeltExec {
 }
 
 impl Executor for MeltExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
@@ -19,6 +19,7 @@ impl Executor for MeltExec {
         }
         let df = self.input.execute(state)?;
         let args = std::mem::take(Arc::make_mut(&mut self.args));
-        df.melt2(args)
+
+        state.record(|| df.melt2(args), "melt()".into())
     }
 }

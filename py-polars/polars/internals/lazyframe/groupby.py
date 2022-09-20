@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Callable, Generic, Sequence, TypeVar
 
 import polars.internals as pli
-from polars.internals.expr import ensure_list_of_pyexpr
+from polars.datatypes import Schema
+from polars.internals import selection_to_pyexpr_list
 from polars.utils import is_expr_sequence
 
 try:
@@ -53,17 +54,17 @@ class LazyGroupBy(Generic[LDF]):
             msg = f"expected 'Expr | Sequence[Expr]', got '{type(aggs)}'"
             raise TypeError(msg)
 
-        pyexprs = ensure_list_of_pyexpr(aggs)
+        pyexprs = selection_to_pyexpr_list(aggs)
         return self._lazyframe_class._from_pyldf(self.lgb.agg(pyexprs))
 
     def head(self, n: int = 5) -> LDF:
         """
-        Return first n rows of each group.
+        Get the first `n` rows of each group.
 
         Parameters
         ----------
         n
-            Number of values of the group to select
+            Number of rows to return.
 
         Examples
         --------
@@ -115,12 +116,12 @@ class LazyGroupBy(Generic[LDF]):
 
     def tail(self, n: int = 5) -> LDF:
         """
-        Return last n rows of each group.
+        Get the last `n` rows of each group.
 
         Parameters
         ----------
         n
-            Number of values of the group to select
+            Number of rows to return.
 
         Examples
         --------
@@ -170,7 +171,9 @@ class LazyGroupBy(Generic[LDF]):
         """
         return self._lazyframe_class._from_pyldf(self.lgb.tail(n))
 
-    def apply(self, f: Callable[[pli.DataFrame], pli.DataFrame]) -> LDF:
+    def apply(
+        self, f: Callable[[pli.DataFrame], pli.DataFrame], schema: Schema | None
+    ) -> LDF:
         """
         Apply a function over the groups as a new `DataFrame`.
 
@@ -189,6 +192,12 @@ class LazyGroupBy(Generic[LDF]):
         ----------
         f
             Function to apply over each group of the `LazyFrame`.
+        schema
+            Schema of the output function. This has to be known statically.
+            If the schema provided is incorrect, this is a bug in the callers
+            query and may lead to errors.
+            If none given, polars assumes the schema is unchanged.
+
 
         Examples
         --------
@@ -232,4 +241,4 @@ class LazyGroupBy(Generic[LDF]):
         ... )  # doctest: +IGNORE_RESULT
 
         """
-        return self._lazyframe_class._from_pyldf(self.lgb.apply(f))
+        return self._lazyframe_class._from_pyldf(self.lgb.apply(f, schema))

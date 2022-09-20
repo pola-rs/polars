@@ -22,7 +22,7 @@ impl LogicalType for DatetimeChunked {
             .into_datetime(self.time_unit(), self.time_zone())
     }
 
-    fn cast(&self, dtype: &DataType) -> Result<Series> {
+    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         use DataType::*;
         match (self.dtype(), dtype) {
             (Datetime(TimeUnit::Milliseconds, _), Datetime(TimeUnit::Nanoseconds, tz)) => {
@@ -71,6 +71,24 @@ impl LogicalType for DatetimeChunked {
                     .cast(&Int32)
                     .unwrap()
                     .into_date()
+                    .into_series()),
+            },
+            #[cfg(feature = "dtype-time")]
+            (Datetime(tu, _), Time) => match tu {
+                TimeUnit::Nanoseconds => Ok((self.0.as_ref() % NS_IN_DAY)
+                    .cast(&Int64)
+                    .unwrap()
+                    .into_time()
+                    .into_series()),
+                TimeUnit::Microseconds => Ok((self.0.as_ref() % US_IN_DAY * 1_000i64)
+                    .cast(&Int64)
+                    .unwrap()
+                    .into_time()
+                    .into_series()),
+                TimeUnit::Milliseconds => Ok((self.0.as_ref() % MS_IN_DAY * 1_000_000i64)
+                    .cast(&Int64)
+                    .unwrap()
+                    .into_time()
                     .into_series()),
             },
             _ => self.0.cast(dtype),

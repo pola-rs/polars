@@ -7,6 +7,8 @@ use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
+use crate::logical_plan::functions::FunctionNode;
+use crate::logical_plan::schema::det_join_schema;
 #[cfg(feature = "ipc")]
 use crate::logical_plan::IpcScanOptionsInner;
 #[cfg(feature = "parquet")]
@@ -79,7 +81,9 @@ pub enum ALogicalPlan {
     DataFrameScan {
         df: Arc<DataFrame>,
         schema: SchemaRef,
-        projection: Option<Vec<Node>>,
+        // schema of the projected file
+        output_schema: Option<SchemaRef>,
+        projection: Option<Arc<Vec<String>>>,
         selection: Option<Node>,
     },
     Projection {
@@ -104,6 +108,8 @@ pub enum ALogicalPlan {
     },
     Cache {
         input: Node,
+        id: usize,
+        count: usize,
     },
     Aggregate {
         input: Node,
@@ -131,11 +137,9 @@ pub enum ALogicalPlan {
         input: Node,
         options: DistinctOptions,
     },
-    Udf {
+    MapFunction {
         input: Node,
-        function: Arc<dyn DataFrameUdf>,
-        options: LogicalPlanUdfOptions,
-        schema: Option<Arc<dyn UdfSchema>>,
+        function: FunctionNode,
     },
     Union {
         inputs: Vec<Node>,
@@ -185,7 +189,7 @@ impl ALogicalPlan {
             #[cfg(feature = "python")]
             PythonScan { options } => &options.schema,
             Union { inputs, .. } => return arena.get(inputs[0]).schema(arena),
-            Cache { input } => return arena.get(*input).schema(arena),
+            Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),
             Explode { schema, .. } => schema,
             #[cfg(feature = "parquet")]
@@ -200,7 +204,11 @@ impl ALogicalPlan {
                 output_schema,
                 ..
             } => output_schema.as_ref().unwrap_or(schema),
-            DataFrameScan { schema, .. } => schema,
+            DataFrameScan {
+                schema,
+                output_schema,
+                ..
+            } => output_schema.as_ref().unwrap_or(schema),
             AnonymousScan {
                 schema,
                 output_schema,
@@ -221,11 +229,13 @@ impl ALogicalPlan {
             Distinct { input, .. } => return arena.get(*input).schema(arena),
             Slice { input, .. } => return arena.get(*input).schema(arena),
             Melt { schema, .. } => schema,
-            Udf { input, schema, .. } => {
+            MapFunction { input, function } => {
                 let input_schema = arena.get(*input).schema(arena);
-                return match schema {
-                    Some(schema) => Cow::Owned(schema.get_schema(&input_schema).unwrap()),
-                    None => input_schema,
+                return match input_schema {
+                    Cow::Owned(schema) => {
+                        Cow::Owned(function.schema(&schema).unwrap().into_owned())
+                    }
+                    Cow::Borrowed(schema) => function.schema(schema).unwrap(),
                 };
             }
             ExtContext { schema, .. } => schema,
@@ -319,7 +329,11 @@ impl ALogicalPlan {
                 columns: columns.clone(),
                 schema: schema.clone(),
             },
-            Cache { .. } => Cache { input: inputs[0] },
+            Cache { id, count, .. } => Cache {
+                input: inputs[0],
+                id: *id,
+                count: *count,
+            },
             Distinct { options, .. } => Distinct {
                 input: inputs[0],
                 options: options.clone(),
@@ -401,6 +415,7 @@ impl ALogicalPlan {
             DataFrameScan {
                 df,
                 schema,
+                output_schema,
                 projection,
                 selection,
             } => {
@@ -408,15 +423,12 @@ impl ALogicalPlan {
                 if selection.is_some() {
                     new_selection = exprs.pop()
                 }
-                let mut new_projection = None;
-                if projection.is_some() {
-                    new_projection = Some(exprs)
-                }
 
                 DataFrameScan {
                     df: df.clone(),
                     schema: schema.clone(),
-                    projection: new_projection,
+                    output_schema: output_schema.clone(),
+                    projection: projection.clone(),
                     selection: new_selection,
                 }
             }
@@ -442,16 +454,9 @@ impl ALogicalPlan {
                     options: options.clone(),
                 }
             }
-            Udf {
-                function,
-                options,
-                schema,
-                ..
-            } => Udf {
+            MapFunction { function, .. } => MapFunction {
                 input: inputs[0],
                 function: function.clone(),
-                options: *options,
-                schema: schema.clone(),
             },
             ExtContext { schema, .. } => ExtContext {
                 input: inputs.pop().unwrap(),
@@ -472,7 +477,7 @@ impl ALogicalPlan {
             | Cache { .. }
             | Distinct { .. }
             | Union { .. }
-            | Udf { .. } => {}
+            | MapFunction { .. } => {}
             Selection { predicate, .. } => container.push(*predicate),
             Projection { expr, .. } => container.extend_from_slice(expr),
             LocalProjection { expr, .. } => container.extend_from_slice(expr),
@@ -520,14 +525,7 @@ impl ALogicalPlan {
                     container.push(*node)
                 }
             }
-            DataFrameScan {
-                projection,
-                selection,
-                ..
-            } => {
-                if let Some(expr) = projection {
-                    container.extend_from_slice(expr)
-                }
+            DataFrameScan { selection, .. } => {
                 if let Some(expr) = selection {
                     container.push(*expr)
                 }
@@ -590,7 +588,7 @@ impl ALogicalPlan {
             }
             HStack { input, .. } => *input,
             Distinct { input, .. } => *input,
-            Udf { input, .. } => *input,
+            MapFunction { input, .. } => *input,
             ExtContext {
                 input, contexts, ..
             } => {
@@ -617,6 +615,12 @@ impl ALogicalPlan {
         let mut inputs = Vec::new();
         self.copy_inputs(&mut inputs);
         inputs
+    }
+    /// panics if more than one input
+    pub(crate) fn get_input(&self) -> Option<Node> {
+        let mut inputs = [None];
+        self.copy_inputs(&mut inputs);
+        inputs[0]
     }
 }
 
@@ -788,37 +792,30 @@ impl<'a> ALogicalPlanBuilder<'a> {
     ) -> Self {
         let schema_left = self.schema();
         let schema_right = self.lp_arena.get(other).schema(self.lp_arena);
-
-        // column names of left table
-        let mut names: PlHashSet<&str> =
-            PlHashSet::with_capacity(schema_left.len() + schema_right.len());
-        let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len());
-
-        for (name, dtype) in schema_left.iter() {
-            names.insert(name.as_str());
-            new_schema.with_column(name.to_string(), dtype.clone())
-        }
-
-        let right_names: PlHashSet<_> = right_on
+        let right_names = right_on
             .iter()
             .map(|e| {
-                aexpr_to_root_column_name(*e, self.expr_arena)
-                    .expect("could not determine join column names")
+                self.expr_arena
+                    .get(*e)
+                    .to_field(&schema_right, Context::Default, self.expr_arena)
+                    .unwrap()
+                    .name
             })
-            .collect();
+            .collect::<Vec<_>>();
 
-        for (name, dtype) in schema_right.iter() {
-            if !right_names.contains(name.as_str()) {
-                if names.contains(name.as_str()) {
-                    let new_name = format!("{}{}", name, options.suffix.as_ref());
-                    new_schema.with_column(new_name, dtype.clone());
-                } else {
-                    new_schema.with_column(name.to_string(), dtype.clone());
-                }
-            }
-        }
+        let left_on_exprs = left_on
+            .iter()
+            .map(|node| node_to_expr(*node, self.expr_arena))
+            .collect::<Vec<_>>();
 
-        let schema = Arc::new(new_schema);
+        let schema = det_join_schema(
+            &schema_left,
+            &schema_right,
+            &left_on_exprs,
+            &right_names,
+            &options,
+        )
+        .unwrap();
 
         let lp = ALogicalPlan::Join {
             input_left: self.root,
@@ -828,7 +825,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             right_on,
             options,
         };
-        drop(names);
+
         let root = self.lp_arena.add(lp);
         Self::new(root, self.expr_arena, self.lp_arena)
     }

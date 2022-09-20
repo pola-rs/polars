@@ -38,6 +38,18 @@ except ImportError:
         """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: E501
 
 
+class RowsException(Exception):
+    """Exception raised when the number of returned rows does not match expectation."""
+
+
+class NoRowsReturned(RowsException):
+    """Exception raised when no rows are returned, but at least one row is expected."""
+
+
+class TooManyRowsReturned(RowsException):
+    """Exception raised when more rows than expected are returned."""
+
+
 __all__ = [
     "ArrowError",
     "ComputeError",
@@ -47,4 +59,7 @@ __all__ = [
     "ShapeError",
     "DuplicateError",
     "PanicException",
+    "RowsException",
+    "NoRowsReturned",
+    "TooManyRowsReturned",
 ]

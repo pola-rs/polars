@@ -1,7 +1,7 @@
 use super::*;
 
 pub trait NumOpsDispatch: Debug {
-    fn subtract(&self, rhs: &Series) -> Result<Series> {
+    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
             format!(
                 "subtraction operation not supported for {:?} and {:?}",
@@ -10,7 +10,7 @@ pub trait NumOpsDispatch: Debug {
             .into(),
         ))
     }
-    fn add_to(&self, rhs: &Series) -> Result<Series> {
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
             format!(
                 "addition operation not supported for {:?} and {:?}",
@@ -19,7 +19,7 @@ pub trait NumOpsDispatch: Debug {
             .into(),
         ))
     }
-    fn multiply(&self, rhs: &Series) -> Result<Series> {
+    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
             format!(
                 "multiplication operation not supported for {:?} and {:?}",
@@ -28,7 +28,7 @@ pub trait NumOpsDispatch: Debug {
             .into(),
         ))
     }
-    fn divide(&self, rhs: &Series) -> Result<Series> {
+    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
             format!(
                 "division operation not supported for {:?} and {:?}",
@@ -37,7 +37,7 @@ pub trait NumOpsDispatch: Debug {
             .into(),
         ))
     }
-    fn remainder(&self, rhs: &Series) -> Result<Series> {
+    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         Err(PolarsError::InvalidOperation(
             format!(
                 "remainder operation not supported for {:?} and {:?}",
@@ -53,7 +53,7 @@ where
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
 {
-    fn subtract(&self, rhs: &Series) -> Result<Series> {
+    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // There will be UB if a ChunkedArray is alive with the wrong datatype.
         // we now only create the potentially wrong dtype for a short time.
@@ -63,28 +63,28 @@ where
         let out = self - rhs;
         Ok(out.into_series())
     }
-    fn add_to(&self, rhs: &Series) -> Result<Series> {
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // see subtract
         let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
         let out = self + rhs;
         Ok(out.into_series())
     }
-    fn multiply(&self, rhs: &Series) -> Result<Series> {
+    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // see subtract
         let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
         let out = self * rhs;
         Ok(out.into_series())
     }
-    fn divide(&self, rhs: &Series) -> Result<Series> {
+    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // see subtract
         let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
         let out = self / rhs;
         Ok(out.into_series())
     }
-    fn remainder(&self, rhs: &Series) -> Result<Series> {
+    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // see subtract
         let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
@@ -94,7 +94,7 @@ where
 }
 
 impl NumOpsDispatch for Utf8Chunked {
-    fn add_to(&self, rhs: &Series) -> Result<Series> {
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
         let rhs = self.unpack_series_matching_type(rhs)?;
         let out = self + rhs;
         Ok(out.into_series())
@@ -110,7 +110,7 @@ pub mod checked {
 
     pub trait NumOpsDispatchChecked: Debug {
         /// Checked integer division. Computes self / rhs, returning None if rhs == 0 or the division results in overflow.
-        fn checked_div(&self, rhs: &Series) -> Result<Series> {
+        fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
             Err(PolarsError::InvalidOperation(
                 format!(
                     "checked division operation not supported for {:?} and {:?}",
@@ -119,7 +119,7 @@ pub mod checked {
                 .into(),
             ))
         }
-        fn checked_div_num<T: ToPrimitive>(&self, _rhs: T) -> Result<Series> {
+        fn checked_div_num<T: ToPrimitive>(&self, _rhs: T) -> PolarsResult<Series> {
             Err(PolarsError::InvalidOperation(
                 format!(
                     "checked division by number operation not supported for {:?}",
@@ -137,7 +137,7 @@ pub mod checked {
             CheckedDiv<Output = T::Native> + CheckedDiv<Output = T::Native> + num::Zero + num::One,
         ChunkedArray<T>: IntoSeries,
     {
-        fn checked_div(&self, rhs: &Series) -> Result<Series> {
+        fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
             // Safety:
             // There will be UB if a ChunkedArray is alive with the wrong datatype.
             // we now only create the potentially wrong dtype for a short time.
@@ -166,7 +166,7 @@ pub mod checked {
     }
 
     impl NumOpsDispatchChecked for Float32Chunked {
-        fn checked_div(&self, rhs: &Series) -> Result<Series> {
+        fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
             // Safety:
             // see check_div for chunkedarray<T>
             let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
@@ -198,7 +198,7 @@ pub mod checked {
     }
 
     impl NumOpsDispatchChecked for Float64Chunked {
-        fn checked_div(&self, rhs: &Series) -> Result<Series> {
+        fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
             // Safety:
             // see check_div
             let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
@@ -230,12 +230,12 @@ pub mod checked {
     }
 
     impl NumOpsDispatchChecked for Series {
-        fn checked_div(&self, rhs: &Series) -> Result<Series> {
+        fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
             let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
             lhs.as_ref().as_ref().checked_div(rhs.as_ref())
         }
 
-        fn checked_div_num<T: ToPrimitive>(&self, rhs: T) -> Result<Series> {
+        fn checked_div_num<T: ToPrimitive>(&self, rhs: T) -> PolarsResult<Series> {
             use DataType::*;
             let s = self.to_physical_repr();
 
@@ -322,8 +322,8 @@ pub mod checked {
 pub(crate) fn coerce_lhs_rhs<'a>(
     lhs: &'a Series,
     rhs: &'a Series,
-) -> Result<(Cow<'a, Series>, Cow<'a, Series>)> {
-    if let Ok(result) = coerce_time_units(lhs, rhs) {
+) -> PolarsResult<(Cow<'a, Series>, Cow<'a, Series>)> {
+    if let Some(result) = coerce_time_units(lhs, rhs) {
         return Ok(result);
     }
     let dtype = match (lhs.dtype(), rhs.dtype()) {
@@ -331,7 +331,7 @@ pub(crate) fn coerce_lhs_rhs<'a>(
         (DataType::Struct(_), DataType::Struct(_)) => {
             return Ok((Cow::Borrowed(lhs), Cow::Borrowed(rhs)))
         }
-        _ => get_supertype(lhs.dtype(), rhs.dtype())?,
+        _ => try_get_supertype(lhs.dtype(), rhs.dtype())?,
     };
 
     let left = if lhs.dtype() == &dtype {
@@ -354,51 +354,46 @@ pub(crate) fn coerce_lhs_rhs<'a>(
 fn coerce_time_units<'a>(
     lhs: &'a Series,
     rhs: &'a Series,
-) -> Result<(Cow<'a, Series>, Cow<'a, Series>)> {
-    return if let (DataType::Datetime(lu, t), DataType::Duration(ru)) = (lhs.dtype(), rhs.dtype()) {
-        let units = get_time_units(lu, ru);
-        let left = if *lu == units {
-            Cow::Borrowed(lhs)
-        } else {
-            Cow::Owned(lhs.cast(&DataType::Datetime(units, t.clone()))?)
-        };
-        let right = if *ru == units {
-            Cow::Borrowed(rhs)
-        } else {
-            Cow::Owned(rhs.cast(&DataType::Duration(units))?)
-        };
-        Ok((left, right))
-    } else if let (DataType::Duration(lu), DataType::Duration(ru)) = (lhs.dtype(), rhs.dtype()) {
-        let units = get_time_units(lu, ru);
-        let left = if *lu == units {
-            Cow::Borrowed(lhs)
-        } else {
-            Cow::Owned(lhs.cast(&DataType::Duration(units))?)
-        };
-        let right = if *ru == units {
-            Cow::Borrowed(rhs)
-        } else {
-            Cow::Owned(rhs.cast(&DataType::Duration(units))?)
-        };
-        Ok((left, right))
-    } else if let (DataType::Date, DataType::Duration(units)) = (lhs.dtype(), rhs.dtype()) {
-        let left = Cow::Owned(lhs.cast(&DataType::Datetime(*units, None))?);
-        Ok((left, Cow::Borrowed(rhs)))
-    } else if let (DataType::Duration(_), DataType::Datetime(_, _))
-    | (DataType::Duration(_), DataType::Date) = (lhs.dtype(), rhs.dtype())
-    {
-        let (right, left) = coerce_time_units(rhs, lhs)?;
-        Ok((left, right))
-    } else {
-        Err(PolarsError::InvalidOperation(
-            format!(
-                "Cannot coerce time units for {} {}",
-                lhs.dtype(),
-                rhs.dtype()
-            )
-            .into(),
-        ))
-    };
+) -> Option<(Cow<'a, Series>, Cow<'a, Series>)> {
+    match (lhs.dtype(), rhs.dtype()) {
+        (DataType::Datetime(lu, t), DataType::Duration(ru)) => {
+            let units = get_time_units(lu, ru);
+            let left = if *lu == units {
+                Cow::Borrowed(lhs)
+            } else {
+                Cow::Owned(lhs.cast(&DataType::Datetime(units, t.clone())).ok()?)
+            };
+            let right = if *ru == units {
+                Cow::Borrowed(rhs)
+            } else {
+                Cow::Owned(rhs.cast(&DataType::Duration(units)).ok()?)
+            };
+            Some((left, right))
+        }
+        // make sure to return Some here, so we don't cast to supertype.
+        (DataType::Date, DataType::Duration(_)) => Some((Cow::Borrowed(lhs), Cow::Borrowed(rhs))),
+        (DataType::Duration(lu), DataType::Duration(ru)) => {
+            let units = get_time_units(lu, ru);
+            let left = if *lu == units {
+                Cow::Borrowed(lhs)
+            } else {
+                Cow::Owned(lhs.cast(&DataType::Duration(units)).ok()?)
+            };
+            let right = if *ru == units {
+                Cow::Borrowed(rhs)
+            } else {
+                Cow::Owned(rhs.cast(&DataType::Duration(units)).ok()?)
+            };
+            Some((left, right))
+        }
+        // swap the order
+        (DataType::Duration(_), DataType::Datetime(_, _))
+        | (DataType::Duration(_), DataType::Date) => {
+            let (right, left) = coerce_time_units(rhs, lhs)?;
+            Some((left, right))
+        }
+        _ => None,
+    }
 }
 
 impl ops::Sub for &Series {

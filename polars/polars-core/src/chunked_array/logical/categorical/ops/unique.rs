@@ -2,7 +2,7 @@ use super::*;
 use crate::prelude::groupby::IntoGroupsProxy;
 
 impl CategoricalChunked {
-    pub fn unique(&self) -> Result<Self> {
+    pub fn unique(&self) -> PolarsResult<Self> {
         let cat_map = self.get_rev_map();
         if self.can_fast_unique() {
             let ca = match &**cat_map {
@@ -34,7 +34,7 @@ impl CategoricalChunked {
         }
     }
 
-    pub fn n_unique(&self) -> Result<usize> {
+    pub fn n_unique(&self) -> PolarsResult<usize> {
         if self.can_fast_unique() {
             Ok(self.get_rev_map().len())
         } else {
@@ -42,7 +42,7 @@ impl CategoricalChunked {
         }
     }
 
-    pub fn value_counts(&self) -> Result<DataFrame> {
+    pub fn value_counts(&self) -> PolarsResult<DataFrame> {
         let groups = self.logical().group_tuples(true, false);
         let logical_values = unsafe {
             self.logical()

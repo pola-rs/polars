@@ -1,7 +1,11 @@
+use polars_core::export::chrono;
 use polars_utils::arena::Arena;
 
+#[cfg(feature = "strings")]
+use crate::dsl::function_expr::StringFunction;
 use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::*;
+use crate::prelude::function_expr::FunctionExpr;
 
 macro_rules! eval_binary_same_type {
     ($lhs:expr, $operand: tt, $rhs:expr) => {{
@@ -239,19 +243,27 @@ impl OptimizationRule for SimplifyBooleanRule {
                 AExpr::Literal(LiteralValue::Boolean(false))
             ) =>
             {
-                let names = aexpr_to_root_names(*truthy, expr_arena);
+                let names = aexpr_to_leaf_names(*truthy, expr_arena);
                 if names.is_empty() {
                     None
                 } else {
                     Some(AExpr::Alias(*falsy, names[0].clone()))
                 }
             }
-            AExpr::Not(x) => {
-                let y = expr_arena.get(*x);
+            AExpr::Function {
+                input,
+                function: FunctionExpr::Not,
+                ..
+            } => {
+                let y = expr_arena.get(input[0]);
 
                 match y {
                     // not(not x) => x
-                    AExpr::Not(expr) => Some(expr_arena.get(*expr).clone()),
+                    AExpr::Function {
+                        input,
+                        function: FunctionExpr::Not,
+                        ..
+                    } => Some(expr_arena.get(input[0]).clone()),
                     // not(lit x) => !x
                     AExpr::Literal(LiteralValue::Boolean(b)) => {
                         Some(AExpr::Literal(LiteralValue::Boolean(!b)))
@@ -279,6 +291,140 @@ where
     None
 }
 
+#[cfg(all(feature = "strings", feature = "concat_str"))]
+fn string_addition_to_linear_concat(
+    lp_arena: &Arena<ALogicalPlan>,
+    lp_node: Node,
+    expr_arena: &Arena<AExpr>,
+    left_ae: Node,
+    right_ae: Node,
+    left_aexpr: &AExpr,
+    right_aexpr: &AExpr,
+) -> Option<AExpr> {
+    {
+        let lp = lp_arena.get(lp_node);
+        let input = lp.get_input().unwrap();
+        let schema = lp_arena.get(input).schema(lp_arena);
+
+        let get_type = |ae: &AExpr| ae.get_type(&schema, Context::Default, expr_arena).ok();
+        let addition_type = get_type(left_aexpr)
+            .or_else(|| get_type(right_aexpr))
+            .unwrap();
+
+        if addition_type == DataType::Utf8 {
+            match (left_aexpr, right_aexpr) {
+                // concat + concat
+                (
+                    AExpr::Function {
+                        input: input_left,
+                        function:
+                            ref
+                            fun_l @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep_l)),
+                        options,
+                    },
+                    AExpr::Function {
+                        input: input_right,
+                        function: FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep_r)),
+                        ..
+                    },
+                ) => {
+                    if sep_l.is_empty() && sep_r.is_empty() {
+                        let mut input = Vec::with_capacity(input_left.len() + input_right.len());
+                        input.extend_from_slice(input_left);
+                        input.extend_from_slice(input_right);
+                        Some(AExpr::Function {
+                            input,
+                            function: fun_l.clone(),
+                            options: *options,
+                        })
+                    } else {
+                        None
+                    }
+                }
+                // concat + str
+                (
+                    AExpr::Function {
+                        input,
+                        function:
+                            ref fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep)),
+                        options,
+                    },
+                    _,
+                ) => {
+                    if sep.is_empty() {
+                        let mut input = input.clone();
+                        input.push(right_ae);
+                        Some(AExpr::Function {
+                            input,
+                            function: fun.clone(),
+                            options: *options,
+                        })
+                    } else {
+                        None
+                    }
+                }
+                // str + concat
+                (
+                    _,
+                    AExpr::Function {
+                        input: input_right,
+                        function:
+                            ref fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep)),
+                        options,
+                    },
+                ) => {
+                    if sep.is_empty() {
+                        let mut input = Vec::with_capacity(1 + input_right.len());
+                        input.push(left_ae);
+                        input.extend_from_slice(input_right);
+                        Some(AExpr::Function {
+                            input,
+                            function: fun.clone(),
+                            options: *options,
+                        })
+                    } else {
+                        None
+                    }
+                }
+                _ => Some(AExpr::Function {
+                    input: vec![left_ae, right_ae],
+                    function: StringFunction::ConcatHorizontal("".to_string()).into(),
+                    options: FunctionOptions {
+                        collect_groups: ApplyOptions::ApplyGroups,
+                        input_wildcard_expansion: true,
+                        auto_explode: true,
+                        ..Default::default()
+                    },
+                }),
+            }
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(all(feature = "strings", feature = "concat_str"))]
+fn is_string_concat(ae: &AExpr) -> bool {
+    matches!(ae, AExpr::Function {
+                function:FunctionExpr::StringExpr(
+                    StringFunction::ConcatHorizontal(sep),
+                ),
+                ..
+            } if sep.is_empty())
+}
+
+#[cfg(all(feature = "strings", feature = "concat_str"))]
+fn get_string_concat_input(node: Node, expr_arena: &Arena<AExpr>) -> Option<&[Node]> {
+    match expr_arena.get(node) {
+        AExpr::Function {
+            input,
+            function: FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep)),
+            ..
+        } if sep.is_empty() => Some(input),
+        _ => None,
+    }
+}
+
 pub struct SimplifyExprRule {}
 
 impl OptimizationRule for SimplifyExprRule {
@@ -287,10 +433,11 @@ impl OptimizationRule for SimplifyExprRule {
         &self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        _: &Arena<ALogicalPlan>,
-        _: Node,
+        lp_arena: &Arena<ALogicalPlan>,
+        lp_node: Node,
     ) -> Option<AExpr> {
         let expr = expr_arena.get(expr_node);
+
         match expr {
             // lit(left) + lit(right) => lit(left + right)
             // and null propagation
@@ -300,7 +447,28 @@ impl OptimizationRule for SimplifyExprRule {
 
                 // lit(left) + lit(right) => lit(left + right)
                 let out = match op {
-                    Operator::Plus => eval_binary_same_type!(left_aexpr, +, right_aexpr),
+                    Operator::Plus => match eval_binary_same_type!(left_aexpr, +, right_aexpr) {
+                        Some(new) => Some(new),
+                        None => {
+                            // try to replace addition of string columns with `concat_str`
+                            #[cfg(all(feature = "strings", feature = "concat_str"))]
+                            {
+                                string_addition_to_linear_concat(
+                                    lp_arena,
+                                    lp_node,
+                                    expr_arena,
+                                    *left,
+                                    *right,
+                                    left_aexpr,
+                                    right_aexpr,
+                                )
+                            }
+                            #[cfg(not(all(feature = "strings", feature = "concat_str")))]
+                            {
+                                None
+                            }
+                        }
+                    },
                     Operator::Minus => eval_binary_same_type!(left_aexpr, -, right_aexpr),
                     Operator::Multiply => eval_binary_same_type!(left_aexpr, *, right_aexpr),
                     Operator::Divide => eval_binary_same_type!(left_aexpr, /, right_aexpr),
@@ -372,18 +540,52 @@ impl OptimizationRule for SimplifyExprRule {
                     // all null operation null -> null
                     (true, _, true) => Some(AExpr::Literal(LiteralValue::Null)),
                     // null == column -> column.is_null()
-                    (true, Eq, false) => Some(AExpr::IsNull(*right)),
+                    (true, Eq, false) => Some(AExpr::Function {
+                        input: vec![*right],
+                        function: FunctionExpr::IsNull,
+                        options: FunctionOptions {
+                            collect_groups: ApplyOptions::ApplyGroups,
+                            ..Default::default()
+                        },
+                    }),
                     // column == null -> column.is_null()
-                    (false, Eq, true) => Some(AExpr::IsNull(*left)),
+                    (false, Eq, true) => Some(AExpr::Function {
+                        input: vec![*left],
+                        function: FunctionExpr::IsNull,
+                        options: FunctionOptions {
+                            collect_groups: ApplyOptions::ApplyGroups,
+                            ..Default::default()
+                        },
+                    }),
                     // null != column -> column.is_not_null()
-                    (true, NotEq, false) => Some(AExpr::IsNotNull(*right)),
+                    (true, NotEq, false) => Some(AExpr::Function {
+                        input: vec![*right],
+                        function: FunctionExpr::IsNotNull,
+                        options: FunctionOptions {
+                            collect_groups: ApplyOptions::ApplyGroups,
+                            ..Default::default()
+                        },
+                    }),
                     // column != null -> column.is_not_null()
-                    (false, NotEq, true) => Some(AExpr::IsNotNull(*left)),
+                    (false, NotEq, true) => Some(AExpr::Function {
+                        input: vec![*left],
+                        function: FunctionExpr::IsNotNull,
+                        options: FunctionOptions {
+                            collect_groups: ApplyOptions::ApplyGroups,
+                            ..Default::default()
+                        },
+                    }),
                     _ => None,
                 }
             }
-            AExpr::Reverse(expr) => {
-                let input = expr_arena.get(*expr);
+            // sort().reverse() -> sort(reverse)
+            // sort_by().reverse() -> sort_by(reverse)
+            AExpr::Function {
+                input,
+                function: FunctionExpr::Reverse,
+                ..
+            } => {
+                let input = expr_arena.get(input[0]);
                 match input {
                     AExpr::Sort { expr, options } => {
                         let mut options = *options;
@@ -407,88 +609,130 @@ impl OptimizationRule for SimplifyExprRule {
             } => {
                 let input = expr_arena.get(*expr);
                 // faster casts (we only do strict casts)
-                match (input, data_type) {
-                    #[cfg(feature = "dtype-i8")]
-                    (AExpr::Literal(LiteralValue::Int8(v)), DataType::Int64) => {
-                        Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
-                    }
-                    #[cfg(feature = "dtype-i16")]
-                    (AExpr::Literal(LiteralValue::Int16(v)), DataType::Int64) => {
-                        Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
-                    }
-                    (AExpr::Literal(LiteralValue::Int32(v)), DataType::Int64) => {
-                        Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
-                    }
-                    (AExpr::Literal(LiteralValue::UInt32(v)), DataType::Int64) => {
-                        Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
-                    }
-                    (AExpr::Literal(LiteralValue::Float32(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-                    }
+                inline_cast(input, data_type)
+            }
+            // flatten nested concat_str calls
+            #[cfg(all(feature = "strings", feature = "concat_str"))]
+            AExpr::Function {
+                input,
+                function:
+                    ref function @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal(sep)),
+                options,
+            } if sep.is_empty() => {
+                if input
+                    .iter()
+                    .any(|node| is_string_concat(expr_arena.get(*node)))
+                {
+                    let mut new_inputs = Vec::with_capacity(input.len() * 2);
 
-                    #[cfg(feature = "dtype-i8")]
-                    (AExpr::Literal(LiteralValue::Int8(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+                    for node in input {
+                        match get_string_concat_input(*node, expr_arena) {
+                            Some(inp) => new_inputs.extend_from_slice(inp),
+                            None => new_inputs.push(*node),
+                        }
                     }
-                    #[cfg(feature = "dtype-i16")]
-                    (AExpr::Literal(LiteralValue::Int16(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-                    }
-                    (AExpr::Literal(LiteralValue::Int32(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-                    }
-                    (AExpr::Literal(LiteralValue::Int64(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-                    }
-                    #[cfg(feature = "dtype-u8")]
-                    (AExpr::Literal(LiteralValue::UInt8(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-                    }
-                    #[cfg(feature = "dtype-u16")]
-                    (AExpr::Literal(LiteralValue::UInt16(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-                    }
-                    (AExpr::Literal(LiteralValue::UInt32(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-                    }
-                    (AExpr::Literal(LiteralValue::UInt64(v)), DataType::Float64) => {
-                        Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
-                    }
-
-                    #[cfg(feature = "dtype-i8")]
-                    (AExpr::Literal(LiteralValue::Int8(v)), DataType::Float32) => {
-                        Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-                    }
-                    #[cfg(feature = "dtype-i16")]
-                    (AExpr::Literal(LiteralValue::Int16(v)), DataType::Float32) => {
-                        Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-                    }
-                    (AExpr::Literal(LiteralValue::Int32(v)), DataType::Float32) => {
-                        Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-                    }
-                    (AExpr::Literal(LiteralValue::Int64(v)), DataType::Float32) => {
-                        Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-                    }
-                    #[cfg(feature = "dtype-u8")]
-                    (AExpr::Literal(LiteralValue::UInt8(v)), DataType::Float32) => {
-                        Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-                    }
-                    #[cfg(feature = "dtype-u16")]
-                    (AExpr::Literal(LiteralValue::UInt16(v)), DataType::Float32) => {
-                        Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-                    }
-                    (AExpr::Literal(LiteralValue::UInt32(v)), DataType::Float32) => {
-                        Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-                    }
-                    (AExpr::Literal(LiteralValue::UInt64(v)), DataType::Float32) => {
-                        Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
-                    }
-                    _ => None,
+                    Some(AExpr::Function {
+                        input: new_inputs,
+                        function: function.clone(),
+                        options: *options,
+                    })
+                } else {
+                    None
                 }
             }
 
             _ => None,
         }
+    }
+}
+
+fn inline_cast(input: &AExpr, dtype: &DataType) -> Option<AExpr> {
+    match (input, dtype) {
+        #[cfg(feature = "dtype-i8")]
+        (AExpr::Literal(LiteralValue::Int8(v)), DataType::Int64) => {
+            Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
+        }
+        #[cfg(feature = "dtype-i16")]
+        (AExpr::Literal(LiteralValue::Int16(v)), DataType::Int64) => {
+            Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
+        }
+        (AExpr::Literal(LiteralValue::Int32(v)), DataType::Int64) => {
+            Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
+        }
+        (AExpr::Literal(LiteralValue::UInt32(v)), DataType::Int64) => {
+            Some(AExpr::Literal(LiteralValue::Int64(*v as i64)))
+        }
+        (AExpr::Literal(LiteralValue::Float32(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+
+        #[cfg(feature = "dtype-i8")]
+        (AExpr::Literal(LiteralValue::Int8(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+        #[cfg(feature = "dtype-i16")]
+        (AExpr::Literal(LiteralValue::Int16(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+        (AExpr::Literal(LiteralValue::Int32(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+        (AExpr::Literal(LiteralValue::Int64(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+        #[cfg(feature = "dtype-u8")]
+        (AExpr::Literal(LiteralValue::UInt8(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+        #[cfg(feature = "dtype-u16")]
+        (AExpr::Literal(LiteralValue::UInt16(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+        (AExpr::Literal(LiteralValue::UInt32(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+        (AExpr::Literal(LiteralValue::UInt64(v)), DataType::Float64) => {
+            Some(AExpr::Literal(LiteralValue::Float64(*v as f64)))
+        }
+
+        #[cfg(feature = "dtype-i8")]
+        (AExpr::Literal(LiteralValue::Int8(v)), DataType::Float32) => {
+            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
+        }
+        #[cfg(feature = "dtype-i16")]
+        (AExpr::Literal(LiteralValue::Int16(v)), DataType::Float32) => {
+            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
+        }
+        (AExpr::Literal(LiteralValue::Int32(v)), DataType::Float32) => {
+            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
+        }
+        (AExpr::Literal(LiteralValue::Int64(v)), DataType::Float32) => {
+            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
+        }
+        #[cfg(feature = "dtype-u8")]
+        (AExpr::Literal(LiteralValue::UInt8(v)), DataType::Float32) => {
+            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
+        }
+        #[cfg(feature = "dtype-u16")]
+        (AExpr::Literal(LiteralValue::UInt16(v)), DataType::Float32) => {
+            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
+        }
+        (AExpr::Literal(LiteralValue::UInt32(v)), DataType::Float32) => {
+            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
+        }
+        (AExpr::Literal(LiteralValue::UInt64(v)), DataType::Float32) => {
+            Some(AExpr::Literal(LiteralValue::Float32(*v as f32)))
+        }
+        #[cfg(feature = "dtype-duration")]
+        (AExpr::Literal(LiteralValue::Int64(v)), DataType::Duration(tu)) => {
+            let dur = match tu {
+                TimeUnit::Nanoseconds => chrono::Duration::nanoseconds(*v),
+                TimeUnit::Microseconds => chrono::Duration::microseconds(*v),
+                TimeUnit::Milliseconds => chrono::Duration::milliseconds(*v),
+            };
+            Some(AExpr::Literal(LiteralValue::Duration(dur, *tu)))
+        }
+        _ => None,
     }
 }
 

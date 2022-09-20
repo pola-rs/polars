@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
 #[cfg_attr(docsrs, doc(cfg(feature = "moment")))]
-fn moment_precomputed_mean(s: &Series, moment: usize, mean: f64) -> Result<Option<f64>> {
+fn moment_precomputed_mean(s: &Series, moment: usize, mean: f64) -> PolarsResult<Option<f64>> {
     // see: https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L922
     let out = match moment {
         0 => Some(1.0),
@@ -49,7 +49,7 @@ impl Series {
     ///
     /// see: https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1024
     #[cfg_attr(docsrs, doc(cfg(feature = "moment")))]
-    pub fn skew(&self, bias: bool) -> Result<Option<f64>> {
+    pub fn skew(&self, bias: bool) -> PolarsResult<Option<f64>> {
         let mean = match self.mean() {
             Some(mean) => mean,
             None => return Ok(None),
@@ -78,7 +78,7 @@ impl Series {
     ///
     /// see: https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1027
     #[cfg_attr(docsrs, doc(cfg(feature = "moment")))]
-    pub fn kurtosis(&self, fisher: bool, bias: bool) -> Result<Option<f64>> {
+    pub fn kurtosis(&self, fisher: bool, bias: bool) -> PolarsResult<Option<f64>> {
         let mean = match self.mean() {
             Some(mean) => mean,
             None => return Ok(None),
@@ -107,7 +107,7 @@ mod test {
     use super::*;
 
     impl Series {
-        fn moment(&self, moment: usize) -> Result<Option<f64>> {
+        fn moment(&self, moment: usize) -> PolarsResult<Option<f64>> {
             match self.mean() {
                 Some(mean) => moment_precomputed_mean(self, moment, mean),
                 None => Ok(None),
@@ -116,7 +116,7 @@ mod test {
     }
 
     #[test]
-    fn test_moment_compute() -> Result<()> {
+    fn test_moment_compute() -> PolarsResult<()> {
         let s = Series::new("", &[1, 2, 3, 4, 5, 23]);
 
         assert_eq!(s.moment(0)?, Some(1.0));
@@ -128,7 +128,7 @@ mod test {
     }
 
     #[test]
-    fn test_skew() -> Result<()> {
+    fn test_skew() -> PolarsResult<()> {
         let s = Series::new("", &[1, 2, 3, 4, 5, 23]);
         assert!(s.skew(false)?.unwrap() - 2.2905330058490514 < 0.0001);
         assert!(s.skew(true)?.unwrap() - 2.2905330058490514 < 0.0001);
@@ -136,7 +136,7 @@ mod test {
     }
 
     #[test]
-    fn test_kurtosis() -> Result<()> {
+    fn test_kurtosis() -> PolarsResult<()> {
         let s = Series::new("", &[1, 2, 3, 4, 5, 23]);
         assert!(s.kurtosis(true, false)?.unwrap() - 5.400820058440946 < 0.0001);
         assert!(s.kurtosis(true, true)?.unwrap() - 0.9945668771797536 < 0.0001);

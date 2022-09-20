@@ -31,7 +31,7 @@ impl PhysicalExpr for AliasExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let series = self.physical_expr.evaluate(df, state)?;
         Ok(self.finish(series))
     }
@@ -42,7 +42,7 @@ impl PhysicalExpr for AliasExpr {
         df: &DataFrame,
         groups: &'a GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<AggregationContext<'a>> {
+    ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
         let s = ac.take();
         let s = self.finish(s);
@@ -55,7 +55,7 @@ impl PhysicalExpr for AliasExpr {
         Ok(ac)
     }
 
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         Ok(Field::new(
             &self.name,
             self.physical_expr
@@ -79,7 +79,7 @@ impl PartitionedAggregation for AliasExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         let agg = self.physical_expr.as_partitioned_aggregator().unwrap();
         agg.evaluate_partitioned(df, groups, state).map(|mut s| {
             s.rename(&self.name);
@@ -92,7 +92,7 @@ impl PartitionedAggregation for AliasExpr {
         partitioned: Series,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series> {
+    ) -> PolarsResult<Series> {
         let agg = self.physical_expr.as_partitioned_aggregator().unwrap();
         agg.finalize(partitioned, groups, state).map(|mut s| {
             s.rename(&self.name);

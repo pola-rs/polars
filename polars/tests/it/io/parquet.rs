@@ -3,7 +3,7 @@ use std::io::Cursor;
 use polars::prelude::*;
 
 #[test]
-fn test_vstack_empty_3220() -> Result<()> {
+fn test_vstack_empty_3220() -> PolarsResult<()> {
     let df1 = df! {
         "a" => ["1", "2"],
         "b" => [1, 2]
@@ -20,7 +20,7 @@ fn test_vstack_empty_3220() -> Result<()> {
 }
 
 #[test]
-fn test_scan_parquet_files() -> Result<()> {
+fn test_scan_parquet_files() -> PolarsResult<()> {
     let files_to_load_set = vec![
         "../examples/datasets/foods1.parquet".to_string(),
         "../examples/datasets/foods2.parquet".to_string(),

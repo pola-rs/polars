@@ -26,7 +26,6 @@ pub fn with_string_cache<F: FnOnce() -> T, T>(func: F) -> T {
 /// This allows join operations on categorical types.
 pub fn toggle_string_cache(toggle: bool) {
     USE_STRING_CACHE.store(toggle, Ordering::Release);
-
     if !toggle {
         STRING_CACHE.clear()
     }
@@ -38,7 +37,7 @@ pub fn reset_string_cache() {
 }
 
 /// Check if string cache is set.
-pub(crate) fn use_string_cache() -> bool {
+pub fn using_string_cache() -> bool {
     USE_STRING_CACHE.load(Ordering::Acquire)
 }
 

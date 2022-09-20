@@ -1,11 +1,45 @@
+use std::fmt::Formatter;
+use std::iter::FlatMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::prelude::*;
 
-use crate::logical_plan::iterator::{ArenaExprIter, ArenaLpIter};
+use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
+#[cfg(feature = "meta")]
+use crate::prelude::names::COUNT;
 use crate::prelude::*;
+
+// write some thing
+pub(crate) fn column_delimited(mut s: String, items: &[String]) -> String {
+    s.push('(');
+    for c in items {
+        s.push_str(c);
+        s.push_str(", ");
+    }
+    s.pop();
+    s.pop();
+    s.push(')');
+    s
+}
+
+// write some thing
+pub(crate) fn fmt_column_delimited<S: AsRef<str>>(
+    f: &mut Formatter<'_>,
+    items: &[S],
+    container_start: &str,
+    container_end: &str,
+) -> std::fmt::Result {
+    write!(f, "{}", container_start)?;
+    for (i, c) in items.iter().enumerate() {
+        write!(f, "{}", c.as_ref())?;
+        if i != (items.len() - 1) {
+            write!(f, ", ")?;
+        }
+    }
+    write!(f, "{}", container_end)
+}
 
 pub(crate) trait PushNode {
     fn push_node(&mut self, value: Node);
@@ -30,8 +64,8 @@ impl PushNode for [Option<Node>; 2] {
 impl PushNode for [Option<Node>; 1] {
     fn push_node(&mut self, value: Node) {
         match self {
-            [Some(_)] => self[0] = Some(value),
-            _ => panic!("cannot push more than 2 nodes"),
+            [None] => self[0] = Some(value),
+            _ => panic!("cannot push more than 1 node"),
         }
     }
 }
@@ -71,7 +105,11 @@ where
     arena.iter(current_node).any(|(_node, e)| matches(e))
 }
 
-pub(crate) fn has_window_aexpr(current_node: Node, arena: &Arena<AExpr>) -> bool {
+pub(crate) fn has_aexpr_alias(current_node: Node, arena: &Arena<AExpr>) -> bool {
+    has_aexpr(current_node, arena, |e| matches!(e, AExpr::Alias(_, _)))
+}
+
+pub(crate) fn has_aexpr_window(current_node: Node, arena: &Arena<AExpr>) -> bool {
     has_aexpr(current_node, arena, |e| matches!(e, AExpr::Window { .. }))
 }
 
@@ -87,24 +125,18 @@ where
 /// Check if root expression is a literal
 #[cfg(feature = "is_in")]
 pub(crate) fn has_root_literal_expr(e: &Expr) -> bool {
-    matches!(e.into_iter().last(), Some(Expr::Literal(_)))
+    match e {
+        Expr::Literal(_) => true,
+        _ => {
+            let roots = expr_to_root_column_exprs(e);
+            roots.iter().any(|e| matches!(e, Expr::Literal(_)))
+        }
+    }
 }
 
 // this one is used so much that it has its own function, to reduce inlining
 pub(crate) fn has_wildcard(current_expr: &Expr) -> bool {
     has_expr(current_expr, |e| matches!(e, Expr::Wildcard))
-}
-
-// this one is used so much that it has its own function, to reduce inlining
-pub(crate) fn has_regex(current_expr: &Expr) -> bool {
-    has_expr(current_expr, |e| match e {
-        Expr::Column(name) => name.starts_with('^') && name.ends_with('$'),
-        _ => false,
-    })
-}
-
-pub(crate) fn has_nth(current_expr: &Expr) -> bool {
-    has_expr(current_expr, |e| matches!(e, Expr::Nth(_)))
 }
 
 pub(crate) fn has_null(current_expr: &Expr) -> bool {
@@ -114,19 +146,32 @@ pub(crate) fn has_null(current_expr: &Expr) -> bool {
 }
 
 /// output name of expr
-pub(crate) fn expr_output_name(expr: &Expr) -> Result<Arc<str>> {
+#[cfg(feature = "meta")]
+pub(crate) fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     for e in expr {
         match e {
             // don't follow the partition by branch
             Expr::Window { function, .. } => return expr_output_name(function),
             Expr::Column(name) => return Ok(name.clone()),
             Expr::Alias(_, name) => return Ok(name.clone()),
+            Expr::KeepName(_) | Expr::Wildcard | Expr::RenameAlias { .. } => {
+                return Err(PolarsError::ComputeError(
+                    "Cannot determine an output column without a context for this expression"
+                        .into(),
+                ))
+            }
+            Expr::Columns(_) | Expr::DtypeColumn(_) => {
+                return Err(PolarsError::ComputeError(
+                    "This expression might produce multiple output names".into(),
+                ))
+            }
+            Expr::Count => return Ok(Arc::from(COUNT)),
             _ => {}
         }
     }
     Err(PolarsError::ComputeError(
         format!(
-            "No root column name could be found for expr {:?} in output name utility",
+            "No root column name could be found for expr '{:?}' when calling 'output_name'",
             expr
         )
         .into(),
@@ -135,7 +180,7 @@ pub(crate) fn expr_output_name(expr: &Expr) -> Result<Arc<str>> {
 
 /// This function should be used to find the name of the start of an expression
 /// Normal iteration would just return the first root column it found
-pub(crate) fn get_single_root(expr: &Expr) -> Result<Arc<str>> {
+pub(crate) fn get_single_root(expr: &Expr) -> PolarsResult<Arc<str>> {
     for e in expr {
         match e {
             Expr::Filter { input, .. } => return get_single_root(input),
@@ -160,7 +205,7 @@ pub(crate) fn expr_to_root_column_names(expr: &Expr) -> Vec<Arc<str>> {
 }
 
 /// unpack alias(col) to name of the root column name
-pub(crate) fn expr_to_root_column_name(expr: &Expr) -> Result<Arc<str>> {
+pub(crate) fn expr_to_root_column_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     let mut roots = expr_to_root_column_exprs(expr);
     match roots.len() {
         0 => Err(PolarsError::ComputeError(
@@ -181,15 +226,28 @@ pub(crate) fn expr_to_root_column_name(expr: &Expr) -> Result<Arc<str>> {
     }
 }
 
-pub(crate) fn aexpr_to_root_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Node> {
-    let mut out = vec![];
-    arena.iter(root).for_each(|(node, e)| match e {
-        AExpr::Column(_) | AExpr::Wildcard => {
-            out.push(node);
-        }
-        _ => {}
-    });
-    out
+fn is_leaf_aexpr(ae: &AExpr) -> bool {
+    matches!(ae, AExpr::Column(_) | AExpr::Wildcard)
+}
+
+#[allow(clippy::type_complexity)]
+pub(crate) fn aexpr_to_leaf_nodes_iter<'a>(
+    root: Node,
+    arena: &'a Arena<AExpr>,
+) -> FlatMap<AExprIter<'a>, Option<Node>, fn((Node, &'a AExpr)) -> Option<Node>> {
+    arena.iter(root).flat_map(
+        |(node, ae)| {
+            if is_leaf_aexpr(ae) {
+                Some(node)
+            } else {
+                None
+            }
+        },
+    )
+}
+
+pub(crate) fn aexpr_to_leaf_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Node> {
+    aexpr_to_leaf_nodes_iter(root, arena).collect()
 }
 
 /// Rename the roots of the expression to a single name.
@@ -197,15 +255,20 @@ pub(crate) fn aexpr_to_root_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Node>
 /// In some cases we can have multiple roots.
 /// For instance in predicate pushdown the predicates are combined by their root column
 /// When combined they may be a binary expression with the same root columns
-pub(crate) fn rename_aexpr_root_names(node: Node, arena: &mut Arena<AExpr>, new_name: Arc<str>) {
-    let roots = aexpr_to_root_nodes(node, arena);
-
-    for node in roots {
-        arena.replace_with(node, |ae| match ae {
-            AExpr::Column(_) => AExpr::Column(new_name.clone()),
-            _ => panic!("should be only a column"),
-        });
-    }
+pub(crate) fn rename_aexpr_leaf_names(
+    node: Node,
+    arena: &mut Arena<AExpr>,
+    new_name: Arc<str>,
+) -> Node {
+    // we convert to expression as we cannot easily copy the aexpr.
+    let mut new_expr = node_to_expr(node, arena);
+    new_expr.mutate().apply(|e| {
+        if let Expr::Column(name) = e {
+            *name = new_name.clone()
+        }
+        true
+    });
+    to_aexpr(new_expr, arena)
 }
 
 /// Rename the root of the expression from `current` to `new` and assign to new node in arena.
@@ -216,7 +279,7 @@ pub(crate) fn aexpr_assign_renamed_root(
     current: &str,
     new_name: &str,
 ) -> Node {
-    let roots = aexpr_to_root_nodes(node, arena);
+    let roots = aexpr_to_leaf_nodes(node, arena);
 
     for node in roots {
         match arena.get(node) {
@@ -246,60 +309,26 @@ pub(crate) fn expressions_to_schema(
     expr: &[Expr],
     schema: &Schema,
     ctxt: Context,
-) -> Result<Schema> {
+) -> PolarsResult<Schema> {
     let fields = expr.iter().map(|expr| expr.to_field(schema, ctxt));
     Schema::try_from_fallible(fields)
 }
 
-/// Get a set of the data source paths in this LogicalPlan
-pub(crate) fn agg_source_paths(
-    root_lp: Node,
-    paths: &mut PlHashSet<PathBuf>,
-    lp_arena: &Arena<ALogicalPlan>,
-) {
-    lp_arena.iter(root_lp).for_each(|(_, lp)| {
-        use ALogicalPlan::*;
-        match lp {
-            #[cfg(feature = "csv-file")]
-            CsvScan { path, .. } => {
-                paths.insert(path.clone());
-            }
-            #[cfg(feature = "parquet")]
-            ParquetScan { path, .. } => {
-                paths.insert(path.clone());
-            }
-            _ => {}
+pub(crate) fn aexpr_to_leaf_names_iter(
+    node: Node,
+    arena: &Arena<AExpr>,
+) -> impl Iterator<Item = Arc<str>> + '_ {
+    aexpr_to_leaf_nodes_iter(node, arena).map(|node| match arena.get(node) {
+        // expecting only columns here, wildcards and dtypes should already be replaced
+        AExpr::Column(name) => name.clone(),
+        e => {
+            panic!("{:?} not expected", e)
         }
     })
 }
 
-pub(crate) fn aexpr_to_root_names(node: Node, arena: &Arena<AExpr>) -> Vec<Arc<str>> {
-    aexpr_to_root_nodes(node, arena)
-        .into_iter()
-        .map(|node| aexpr_to_root_column_name(node, arena).unwrap())
-        .collect()
-}
-
-/// unpack alias(col) to name of the root column name
-pub(crate) fn aexpr_to_root_column_name(root: Node, arena: &Arena<AExpr>) -> Result<Arc<str>> {
-    let mut roots = aexpr_to_root_nodes(root, arena);
-    match roots.len() {
-        0 => Err(PolarsError::ComputeError(
-            "no root column name found".into(),
-        )),
-        1 => match arena.get(roots.pop().unwrap()) {
-            AExpr::Wildcard => Err(PolarsError::ComputeError(
-                "wildcard has not root column name".into(),
-            )),
-            AExpr::Column(name) => Ok(name.clone()),
-            _ => {
-                unreachable!();
-            }
-        },
-        _ => Err(PolarsError::ComputeError(
-            "found more than one root column name".into(),
-        )),
-    }
+pub(crate) fn aexpr_to_leaf_names(node: Node, arena: &Arena<AExpr>) -> Vec<Arc<str>> {
+    aexpr_to_leaf_names_iter(node, arena).collect()
 }
 
 /// check if a selection/projection can be done on the downwards schema
@@ -308,7 +337,7 @@ pub(crate) fn check_input_node(
     input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
 ) -> bool {
-    aexpr_to_root_names(node, expr_arena)
+    aexpr_to_leaf_names(node, expr_arena)
         .iter()
         .all(|name| input_schema.index_of(name).is_some())
 }
@@ -392,4 +421,26 @@ pub(crate) mod test {
             unreachable!()
         }
     }
+}
+
+/// Get a set of the data source paths in this LogicalPlan
+pub(crate) fn agg_source_paths(
+    root_lp: Node,
+    paths: &mut PlHashSet<PathBuf>,
+    lp_arena: &Arena<ALogicalPlan>,
+) {
+    lp_arena.iter(root_lp).for_each(|(_, lp)| {
+        use ALogicalPlan::*;
+        match lp {
+            #[cfg(feature = "csv-file")]
+            CsvScan { path, .. } => {
+                paths.insert(path.clone());
+            }
+            #[cfg(feature = "parquet")]
+            ParquetScan { path, .. } => {
+                paths.insert(path.clone());
+            }
+            _ => {}
+        }
+    })
 }

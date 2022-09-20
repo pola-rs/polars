@@ -75,7 +75,7 @@
 //! ```
 //! use polars::prelude::*;
 //! use polars::df;
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //!
 //! // use macro
 //! let df = df! [
@@ -98,7 +98,7 @@
 //!
 //! ```
 //! use polars::prelude::*;
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //! let s_int = Series::new("a", &[1, 2, 3]);
 //! let s_flt = Series::new("b", &[1.0, 2.0, 3.0]);
 //!
@@ -113,8 +113,8 @@
 //! let ca_int = s_int.i32()?;
 //! let ca_flt = s_flt.f32()?;
 //!
-//! &ca_int.cast::<Float32Type>()? * ca_flt;
-//! &ca_flt.cast::<Int32Type>()? * ca_int;
+//! ca_int.cast(&DataType::Float32)?.f32()? * ca_flt;
+//! ca_flt.cast(&DataType::Int32)?.i32()? * ca_int;
 //!
 //! // we can also do arithmetic with numeric values
 //! let multiplied = ca_int * 2.0;
@@ -157,16 +157,16 @@
 //!
 //! ```
 //! use polars::prelude::*;
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //!
 //! let s = Series::new("a", &[1, 2, 3]);
 //! let ca = UInt32Chunked::new("b", &[Some(3), None, Some(1)]);
 //!
 //! // compare Series with numeric values
 //! // ==
-//! s.eq(2);
+//! s.equal(2);
 //! // !=
-//! s.neq(2);
+//! s.not_equal(2);
 //! // >
 //! s.gt(2);
 //! // >=
@@ -179,9 +179,9 @@
 //!
 //! // compare Series with Series
 //! // ==
-//! s.eq(&s);
+//! s.equal(&s);
 //! // !=
-//! s.neq(&s);
+//! s.not_equal(&s);
 //! // >
 //! s.gt(&s);
 //! // >=
@@ -194,9 +194,9 @@
 //!
 //! // compare chunked-array with numeric values
 //! // ==
-//! ca.eq(2);
+//! ca.equal(2);
 //! // !=
-//! ca.neq(2);
+//! ca.not_equal(2);
 //! // >
 //! ca.gt(2);
 //! // >=
@@ -208,9 +208,9 @@
 //!
 //! // compare chunked-array with chunked-array
 //! // ==
-//! ca.eq(&ca);
+//! ca.equal(&ca);
 //! // !=
-//! ca.neq(&ca);
+//! ca.not_equal(&ca);
 //! // >
 //! ca.gt(&ca);
 //! // >=
@@ -241,7 +241,7 @@
 //!
 //! ```
 //! use polars::prelude::*;
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //!
 //! // apply a closure over all values
 //! let s = Series::new("foo", &[Some(1), Some(2), None]);
@@ -291,7 +291,7 @@
 //! ```
 //! use polars::prelude::*;
 //! use polars::df;
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //!
 //! let mut df = df![
 //!     "letters" => ["a", "b", "c", "d"],
@@ -300,7 +300,7 @@
 //!
 //!
 //! // coerce numbers to floats
-//! df.try_apply("number", |s: &Series| s.cast::<Float64Type>())?;
+//! df.try_apply("number", |s: &Series| s.cast(&DataType::Float64))?;
 //!
 //! // transform letters to uppercase letters
 //! df.try_apply("letters", |s: &Series| {
@@ -315,7 +315,7 @@
 //! ```
 //! use polars::prelude::*;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //! // create a mask to filter out null values
 //! let mask = df.column("sepal.width")?.is_not_null();
 //!
@@ -337,7 +337,7 @@
 //! use polars::prelude::*;
 //! use polars::df;
 //!
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //! let df = df![
 //!     "a" => [1, 2, 3],
 //!     "b" => ["a", "a", "b"]
@@ -345,7 +345,7 @@
 //! // sort this DataFrame by multiple columns
 //!
 //! // ordering of the columns
-//! let reverse = &[true, false];
+//! let reverse = vec![true, false];
 //! // columns to sort by
 //! let by = &["b", "a"];
 //! // do the sort operation
@@ -375,7 +375,7 @@
 //! use polars::prelude::*;
 //! use polars::df;
 //!
-//! # fn example() -> Result<()> {
+//! # fn example() -> PolarsResult<()> {
 //! // Create first df.
 //! let temp = df!("days" => &[0, 1, 2, 3, 4],
 //!                "temp" => &[22.1, 19.9, 7., 2., 3.],
@@ -389,12 +389,12 @@
 //! )?;
 //!
 //! // join on a single column
-//! temp.left_join(&rain, "days", "days");
-//! temp.inner_join(&rain, "days", "days");
-//! temp.outer_join(&rain, "days", "days");
+//! temp.left_join(&rain, ["days"], ["days"]);
+//! temp.inner_join(&rain, ["days"], ["days"]);
+//! temp.outer_join(&rain, ["days"], ["days"]);
 //!
 //! // join on multiple columns
-//! temp.join(&rain, vec!["days", "other"], vec!["days", "other"], JoinType::Left);
+//! temp.join(&rain, vec!["days", "other"], vec!["days", "other"], JoinType::Left, None);
 //!
 //! # Ok(())
 //! # }
@@ -413,11 +413,11 @@
 //! ```
 //! use polars::prelude::*;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //!  // groupby "groups" | sum "foo"
-//!  let out = df.groupby("groups")?
-//!  .select("foo")
-//!  .sum();
+//!  let out = df.groupby(["groups"])?
+//!     .select(["foo"])
+//!     .sum();
 //!
 //! # Ok(())
 //! # }
@@ -430,15 +430,15 @@
 //! use polars::prelude::*;
 //! use polars::df;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //!  let df = df!("foo" => ["A", "A", "B", "B", "C"],
 //!      "N" => [1, 2, 2, 4, 2],
 //!      "bar" => ["k", "l", "m", "n", "0"]
 //!      )?;
 //!
 //! // groupby "foo" | pivot "bar" column | aggregate "N"
-//!  let pivoted = df.groupby("groups")?
-//!     .pivot("bar", "N")
+//!  let pivoted = df.groupby(["groups"])?
+//!     .pivot(["bar"], ["N"])
 //!     .first();
 //!
 //! // pivoted:
@@ -464,7 +464,7 @@
 //! use polars::prelude::*;
 //! use polars::df;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //! let df = df!["A" => &["a", "b", "a"],
 //!              "B" => &[1, 3, 5],
 //!              "C" => &[10, 11, 12],
@@ -502,7 +502,7 @@
 //! use polars::prelude::*;
 //! use polars::df;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //! let s0 = Series::new("a", &[1i64, 2, 3]);
 //! let s1 = Series::new("b", &[1i64, 1, 1]);
 //! let s2 = Series::new("c", &[2i64, 2, 2]);
@@ -514,7 +514,7 @@
 //! let s1 = Series::new("C", [1, 1, 1]);
 //! let df = DataFrame::new(vec![list, s0, s1])?;
 //!
-//! let exploded = df.explode("foo")?;
+//! let exploded = df.explode(["foo"])?;
 //! // exploded:
 //!
 //! // +-----+-----+-----+
@@ -552,7 +552,7 @@
 //! ```
 //! use polars::prelude::*;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //! // read from path
 //! let df = CsvReader::from_path("iris_csv")?
 //!             .infer_schema(None)
@@ -568,7 +568,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &mut DataFrame) -> PolarsResult<()> {
 //! // create a file
 //! let mut file = File::create("example.csv").expect("could not create file");
 //!
@@ -586,7 +586,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //! // open file
 //! let file = File::open("file.ipc").expect("file not found");
 //!
@@ -602,7 +602,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &mut DataFrame) -> PolarsResult<()> {
 //! // create a file
 //! let mut file = File::create("file.ipc").expect("could not create file");
 //!
@@ -618,7 +618,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //! // open file
 //! let file = File::open("some_file.parquet").unwrap();
 //!
@@ -633,7 +633,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &DataFrame) -> Result<()> {
+//! # fn example(df: &mut DataFrame) -> PolarsResult<()> {
 //! // create a file
 //! let file = File::create("example.parquet").expect("could not create file");
 //!
@@ -653,7 +653,7 @@
 //! use polars::df;
 //!
 //! /// Replaces NaN with missing values.
-//! fn fill_nan_with_nulls() -> Result<DataFrame> {
+//! fn fill_nan_with_nulls() -> PolarsResult<DataFrame> {
 //!     let nan = f64::NAN;
 //!
 //!     let mut df = df! {
@@ -683,20 +683,20 @@
 //! use polars::prelude::*;
 //! use polars::df;
 //!
-//! fn extract_data() -> Result<()> {
+//! fn extract_data() -> PolarsResult<()> {
 //!     let df = df! [
 //!        "a" => [None, Some(1.0f32), Some(2.0)],
 //!        "str" => ["foo", "bar", "ham"]
 //!     ]?;
 //!
 //!     // first extract ChunkedArray to get the inner type.
-//!     let ca = df.column("a").f32();
+//!     let ca = df.column("a")?.f32()?;
 //!
 //!     // Then convert to vec
 //!     let to_vec: Vec<Option<f32>> = Vec::from(ca);
 //!
 //!     // We can also do this with iterators
-//!     let ca = df.column("str").utf8();
+//!     let ca = df.column("str")?.utf8()?;
 //!     let to_vec: Vec<Option<&str>> = ca.into_iter().collect();
 //!     let to_vec_no_options: Vec<&str> = ca.into_no_null_iter().collect();
 //!

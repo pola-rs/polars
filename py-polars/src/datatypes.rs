@@ -23,6 +23,7 @@ pub(crate) enum PyDataType {
     Datetime(TimeUnit, Option<TimeZone>),
     Duration(TimeUnit),
     Time,
+    #[cfg(feature = "object")]
     Object,
     Categorical,
     Struct,
@@ -49,6 +50,7 @@ impl From<&DataType> for PyDataType {
             DataType::Datetime(tu, tz) => Datetime(*tu, tz.clone()),
             DataType::Duration(tu) => Duration(*tu),
             DataType::Time => Time,
+            #[cfg(feature = "object")]
             DataType::Object(_) => Object,
             DataType::Categorical(_) => Categorical,
             DataType::Struct(_) => Struct,
@@ -65,10 +67,10 @@ impl From<DataType> for PyDataType {
     }
 }
 
-impl Into<DataType> for PyDataType {
-    fn into(self) -> DataType {
+impl From<PyDataType> for DataType {
+    fn from(pdt: PyDataType) -> DataType {
         use DataType::*;
-        match self {
+        match pdt {
             PyDataType::Int8 => Int8,
             PyDataType::Int16 => Int16,
             PyDataType::Int32 => Int32,
@@ -86,6 +88,7 @@ impl Into<DataType> for PyDataType {
             PyDataType::Datetime(tu, tz) => Datetime(tu, tz),
             PyDataType::Duration(tu) => Duration(tu),
             PyDataType::Time => Time,
+            #[cfg(feature = "object")]
             PyDataType::Object => Object("object"),
             PyDataType::Categorical => Categorical(None),
             PyDataType::Struct => Struct(vec![]),

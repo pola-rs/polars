@@ -3,19 +3,22 @@ use std::fs::File;
 use std::io::Cursor;
 use std::path::PathBuf;
 
-pub use arrow::{array::StructArray, io::ndjson};
-use polars_core::{prelude::*, utils::accumulate_dataframes_vertical, POOL};
+pub use arrow::array::StructArray;
+pub use arrow::io::ndjson as arrow_ndjson;
+use polars_core::prelude::*;
+use polars_core::utils::accumulate_dataframes_vertical;
+use polars_core::POOL;
 use rayon::prelude::*;
-use serde_json::{Deserializer, Value};
 
 use crate::csv::parser::*;
 use crate::csv::utils::*;
-use crate::mmap::MmapBytesReader;
-use crate::mmap::ReaderBytes;
+use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::ndjson_core::buffer::*;
 use crate::prelude::*;
-const QUOTE_CHAR: u8 = "\"".as_bytes()[0];
-const SEP: u8 = ",".as_bytes()[0];
+const QUOTE_CHAR: u8 = b'"';
+const SEP: u8 = b',';
+const NEWLINE: u8 = b'\n';
+const RETURN: u8 = b'\r';
 
 #[must_use]
 pub struct JsonLineReader<'a, R>
@@ -49,6 +52,7 @@ where
         self.rechunk = rechunk;
         self
     }
+
     pub fn infer_schema_len(mut self, infer_schema_len: Option<usize>) -> Self {
         self.infer_schema_len = infer_schema_len;
         self
@@ -64,8 +68,11 @@ where
         self
     }
     /// Sets the chunk size used by the parser. This influences performance
-    pub fn with_chunk_size(mut self, chunk_size: usize) -> Self {
-        self.chunk_size = chunk_size;
+    pub fn with_chunk_size(mut self, chunk_size: Option<usize>) -> Self {
+        if let Some(chunk_size) = chunk_size {
+            self.chunk_size = chunk_size;
+        };
+
         self
     }
     /// Reduce memory consumption at the expense of performance
@@ -77,7 +84,7 @@ where
 
 impl<'a> JsonLineReader<'a, File> {
     /// This is the recommended way to create a json reader as this allows for fastest parsing.
-    pub fn from_path<P: Into<PathBuf>>(path: P) -> Result<Self> {
+    pub fn from_path<P: Into<PathBuf>>(path: P) -> PolarsResult<Self> {
         let path = resolve_homedir(&path.into());
         let f = std::fs::File::open(&path)?;
         Ok(Self::new(f).with_path(Some(path)))
@@ -101,7 +108,7 @@ where
             low_memory: false,
         }
     }
-    fn finish(mut self) -> Result<DataFrame> {
+    fn finish(mut self) -> PolarsResult<DataFrame> {
         let rechunk = self.rechunk;
         let reader_bytes = get_reader_bytes(&mut self.reader)?;
         let mut json_reader = CoreJsonReader::new(
@@ -143,7 +150,7 @@ impl<'a> CoreJsonReader<'a> {
         chunk_size: usize,
         low_memory: bool,
         infer_schema_len: Option<usize>,
-    ) -> Result<CoreJsonReader<'a>> {
+    ) -> PolarsResult<CoreJsonReader<'a>> {
         let reader_bytes = reader_bytes;
 
         let schema = match schema {
@@ -152,7 +159,7 @@ impl<'a> CoreJsonReader<'a> {
                 let bytes: &[u8] = &reader_bytes;
                 let mut cursor = Cursor::new(bytes);
 
-                let data_type = ndjson::read::infer(&mut cursor, infer_schema_len).unwrap();
+                let data_type = arrow_ndjson::read::infer(&mut cursor, infer_schema_len).unwrap();
                 let schema: polars_core::prelude::Schema =
                     StructArray::get_fields(&data_type).into();
 
@@ -169,11 +176,18 @@ impl<'a> CoreJsonReader<'a> {
             low_memory,
         })
     }
-    fn parse_json(&mut self, mut n_threads: usize, bytes: &[u8]) -> Result<DataFrame> {
+    fn parse_json(&mut self, mut n_threads: usize, bytes: &[u8]) -> PolarsResult<DataFrame> {
         let mut bytes = bytes;
         let mut total_rows = 128;
 
-        if let Some((mean, std)) = get_line_stats(bytes, self.sample_size, b'\n') {
+        if let Some((mean, std)) = get_line_stats(
+            bytes,
+            self.sample_size,
+            NEWLINE,
+            self.schema.len(),
+            b',',
+            None,
+        ) {
             let line_length_upper_bound = mean + 1.1 * std;
 
             total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
@@ -183,7 +197,7 @@ impl<'a> CoreJsonReader<'a> {
                 let n_bytes = (line_length_upper_bound * (n_rows as f32)) as usize;
 
                 if n_bytes < bytes.len() {
-                    if let Some(pos) = next_line_position_naive(&bytes[n_bytes..], b'\n') {
+                    if let Some(pos) = next_line_position_naive(&bytes[n_bytes..], NEWLINE) {
                         bytes = &bytes[..n_bytes + pos]
                     }
                 }
@@ -204,46 +218,34 @@ impl<'a> CoreJsonReader<'a> {
         };
 
         let expected_fields = &self.schema.len();
+
         let file_chunks = get_file_chunks(
             bytes,
             n_threads,
-            *expected_fields,
+            *expected_fields + 1,
             SEP,
             Some(QUOTE_CHAR),
-            b'\n',
+            NEWLINE,
         );
-
         let dfs = POOL.install(|| {
             file_chunks
                 .into_par_iter()
-                .map(|(bytes_offset_thread, stop_at_nbytes)| {
-                    let mut read = bytes_offset_thread;
-
-                    let mut last_read = usize::MAX;
-
+                .map(|(start_pos, stop_at_nbytes)| {
                     let mut buffers = init_buffers(&self.schema, capacity)?;
+                    let _ = parse_lines(&bytes[start_pos..stop_at_nbytes], &mut buffers);
 
-                    loop {
-                        if read >= stop_at_nbytes || read == last_read {
-                            break;
-                        }
-                        let local_bytes = &bytes[read..stop_at_nbytes];
-
-                        last_read = read;
-                        read += parse_lines(local_bytes, &mut buffers)?;
-                    }
                     DataFrame::new(
                         buffers
                             .into_values()
                             .map(|buf| buf.into_series())
-                            .collect::<Result<_>>()?,
+                            .collect::<PolarsResult<_>>()?,
                     )
                 })
-                .collect::<Result<Vec<_>>>()
+                .collect::<PolarsResult<Vec<_>>>()
         })?;
         accumulate_dataframes_vertical(dfs)
     }
-    pub fn as_df(&mut self) -> Result<DataFrame> {
+    pub fn as_df(&mut self) -> PolarsResult<DataFrame> {
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
 
         let reader_bytes = self.reader_bytes.take().unwrap();
@@ -261,26 +263,84 @@ impl<'a> CoreJsonReader<'a> {
     }
 }
 
-fn parse_lines<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -> Result<usize> {
-    let mut stream = Deserializer::from_slice(bytes).into_iter::<Value>();
-    for value in stream.by_ref() {
-        let v = value.unwrap_or(Value::Null);
-        match v {
-            Value::Object(value) => {
-                buffers
-                    .iter_mut()
-                    .for_each(|(s, inner)| match value.get(s) {
-                        Some(v) => inner.add(v).expect("inner.add(v)"),
-                        None => inner.add_null(),
-                    });
+#[inline(always)]
+fn parse_impl<'a>(
+    bytes: &[u8],
+    buffers: &mut PlIndexMap<BufferKey, Buffer<'a>>,
+    line: &mut Vec<u8>,
+) -> PolarsResult<usize> {
+    line.clear();
+    line.extend_from_slice(bytes);
+
+    match line.len() {
+        0 => Ok(0),
+        1 => {
+            if line[0] == NEWLINE {
+                Ok(1)
+            } else {
+                Err(PolarsError::ComputeError(
+                    "Invalid JSON: unexpected end of file".into(),
+                ))
             }
-            _ => {
-                buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
+        }
+        2 => {
+            if line[0] == NEWLINE && line[1] == RETURN {
+                Ok(2)
+            } else {
+                Err(PolarsError::ComputeError(
+                    "Invalid JSON: unexpected end of file".into(),
+                ))
             }
-        };
+        }
+        n => {
+            let value: simd_json::BorrowedValue =
+                simd_json::to_borrowed_value(line).map_err(|e| {
+                    PolarsError::ComputeError(format!("Error parsing line: {}", e).into())
+                })?;
+
+            match value {
+                simd_json::BorrowedValue::Object(value) => {
+                    buffers
+                        .iter_mut()
+                        .for_each(|(s, inner)| match s.0.map_lookup(&value) {
+                            Some(v) => inner.add(v).expect("inner.add(v)"),
+                            None => inner.add_null(),
+                        });
+                }
+                _ => {
+                    buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
+                }
+            };
+            Ok(n)
+        }
+    }
+}
+
+fn parse_lines<'a>(
+    bytes: &[u8],
+    buffers: &mut PlIndexMap<BufferKey, Buffer<'a>>,
+) -> PolarsResult<()> {
+    let mut buf = vec![];
+
+    let total_bytes = bytes.len();
+    let mut offset = 0;
+    for line in SplitLines::new(bytes, NEWLINE) {
+        offset += 1; // the newline
+        offset += parse_impl(line, buffers, &mut buf)?;
     }
 
-    let byte_offset = stream.byte_offset();
+    // if file doesn't end with a newline, parse the last line
+    if offset < total_bytes {
+        let rem = &bytes[offset..];
+        offset += rem.len();
+        parse_impl(rem, buffers, &mut buf)?;
+    }
 
-    Ok(byte_offset)
+    if offset != total_bytes {
+        return Err(PolarsError::ComputeError(
+            format!("Expected {} bytes, but only parsed {}", total_bytes, offset).into(),
+        ));
+    };
+
+    Ok(())
 }

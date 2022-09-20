@@ -1,9 +1,8 @@
 use std::borrow::Cow;
 
-use polars_arrow::{
-    export::arrow::{self, compute::substring::substring},
-    kernels::string::*,
-};
+use polars_arrow::export::arrow::compute::substring::substring;
+use polars_arrow::export::arrow::{self};
+use polars_arrow::kernels::string::*;
 use polars_core::export::regex::{escape, Regex};
 
 use super::*;
@@ -103,7 +102,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     /// Check if strings contain a regex pattern; take literal fast-path if
     /// no special chars and strlen <= 96 chars (otherwise regex faster).
-    fn contains(&self, pat: &str) -> Result<BooleanChunked> {
+    fn contains(&self, pat: &str) -> PolarsResult<BooleanChunked> {
         let lit = pat.chars().all(|c| !c.is_ascii_punctuation());
         let ca = self.as_utf8();
         let reg = Regex::new(pat)?;
@@ -124,7 +123,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     }
 
     /// Check if strings contain a given literal
-    fn contains_literal(&self, lit: &str) -> Result<BooleanChunked> {
+    fn contains_literal(&self, lit: &str) -> PolarsResult<BooleanChunked> {
         self.contains(escape(lit).as_str())
     }
 
@@ -148,7 +147,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     /// Replace the leftmost regex-matched (sub)string with another string; take
     /// fast-path for small (<= 32 chars) strings (otherwise regex faster).
-    fn replace<'a>(&'a self, pat: &str, val: &str) -> Result<Utf8Chunked> {
+    fn replace<'a>(&'a self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
         let lit = pat.chars().all(|c| !c.is_ascii_punctuation());
         let ca = self.as_utf8();
         let reg = Regex::new(pat)?;
@@ -163,12 +162,12 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     }
 
     /// Replace the leftmost literal (sub)string with another string
-    fn replace_literal(&self, pat: &str, val: &str) -> Result<Utf8Chunked> {
+    fn replace_literal(&self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
         self.replace(escape(pat).as_str(), val)
     }
 
     /// Replace all regex-matched (sub)strings with another string
-    fn replace_all(&self, pat: &str, val: &str) -> Result<Utf8Chunked> {
+    fn replace_all(&self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
         let ca = self.as_utf8();
         let reg = Regex::new(pat)?;
         let f = |s| reg.replace_all(s, val);
@@ -176,19 +175,19 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     }
 
     /// Replace all matching literal (sub)strings with another string
-    fn replace_literal_all(&self, pat: &str, val: &str) -> Result<Utf8Chunked> {
+    fn replace_literal_all(&self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
         self.replace_all(escape(pat).as_str(), val)
     }
 
     /// Extract the nth capture group from pattern
-    fn extract(&self, pat: &str, group_index: usize) -> Result<Utf8Chunked> {
+    fn extract(&self, pat: &str, group_index: usize) -> PolarsResult<Utf8Chunked> {
         let ca = self.as_utf8();
         let reg = Regex::new(pat)?;
         Ok(ca.apply_on_opt(|e| e.and_then(|input| f_regex_extract(&reg, input, group_index))))
     }
 
     /// Extract each successive non-overlapping regex match in an individual string as an array
-    fn extract_all(&self, pat: &str) -> Result<ListChunked> {
+    fn extract_all(&self, pat: &str) -> PolarsResult<ListChunked> {
         let ca = self.as_utf8();
         let reg = Regex::new(pat)?;
 
@@ -211,7 +210,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     }
 
     /// Count all successive non-overlapping regex matches.
-    fn count_match(&self, pat: &str) -> Result<UInt32Chunked> {
+    fn count_match(&self, pat: &str) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_utf8();
         let reg = Regex::new(pat)?;
 
@@ -247,7 +246,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     /// Slice the string values
     /// Determines a substring starting from `start` and with optional length `length` of each of the elements in `array`.
     /// `start` can be negative, in which case the start counts from the end of the string.
-    fn str_slice(&self, start: i64, length: Option<u64>) -> Result<Utf8Chunked> {
+    fn str_slice(&self, start: i64, length: Option<u64>) -> PolarsResult<Utf8Chunked> {
         let ca = self.as_utf8();
         let chunks = ca
             .downcast_iter()

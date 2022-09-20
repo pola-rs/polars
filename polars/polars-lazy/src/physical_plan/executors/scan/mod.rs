@@ -2,6 +2,8 @@
 mod csv;
 #[cfg(feature = "ipc")]
 mod ipc;
+#[cfg(feature = "json")]
+mod ndjson;
 #[cfg(feature = "parquet")]
 mod parquet;
 
@@ -68,13 +70,12 @@ fn prepare_scan_args<'a>(
 /// Producer of an in memory DataFrame
 pub struct DataFrameExec {
     pub(crate) df: Arc<DataFrame>,
-    pub(crate) projection: Option<Vec<Arc<dyn PhysicalExpr>>>,
     pub(crate) selection: Option<Arc<dyn PhysicalExpr>>,
-    pub(crate) has_windows: bool,
+    pub(crate) projection: Option<Arc<Vec<String>>>,
 }
 
 impl Executor for DataFrameExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let df = mem::take(&mut self.df);
         let mut df = Arc::try_unwrap(df).unwrap_or_else(|df| (*df).clone());
 
@@ -82,7 +83,7 @@ impl Executor for DataFrameExec {
         // TODO: this is only the case if we don't create new columns
         if let Some(projection) = &self.projection {
             state.may_set_schema(&df, projection.len());
-            df = evaluate_physical_expressions(&df, projection, state, self.has_windows)?;
+            df = df.select(projection.as_ref())?;
         }
 
         if let Some(selection) = &self.selection {
@@ -109,15 +110,20 @@ pub(crate) struct AnonymousScanExec {
 }
 
 impl Executor for AnonymousScanExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> Result<DataFrame> {
-        let mut df = self.function.scan(self.options.clone())?;
-        if let Some(predicate) = &self.predicate {
-            let s = predicate.evaluate(&df, state)?;
-            let mask = s.bool().map_err(|_| {
-                PolarsError::ComputeError("filter predicate was not of type boolean".into())
-            })?;
-            df = df.filter(mask)?;
-        }
-        Ok(df)
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        state.record(
+            || {
+                let mut df = self.function.scan(self.options.clone())?;
+                if let Some(predicate) = &self.predicate {
+                    let s = predicate.evaluate(&df, state)?;
+                    let mask = s.bool().map_err(|_| {
+                        PolarsError::ComputeError("filter predicate was not of type boolean".into())
+                    })?;
+                    df = df.filter(mask)?;
+                }
+                Ok(df)
+            },
+            "anonymous_scan".into(),
+        )
     }
 }

@@ -1,7 +1,8 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use polars::prelude::*;
 use polars_core::utils::split_ca;
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 fn create_primitive_ca(size: u32, null_percentage: f32, n_chunks: usize) -> UInt32Chunked {
     let mut rng = StdRng::seed_from_u64(0);

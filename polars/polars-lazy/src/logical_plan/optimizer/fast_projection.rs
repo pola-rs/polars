@@ -1,6 +1,7 @@
 use polars_core::prelude::*;
 
 use crate::logical_plan::alp::ALogicalPlan;
+use crate::logical_plan::functions::FunctionNode;
 use crate::prelude::stack_opt::OptimizationRule;
 use crate::prelude::*;
 
@@ -13,12 +14,11 @@ use crate::prelude::*;
 /// It is important that this optimization is ran after projection pushdown.
 ///
 /// The schema reported after this optimization is also
-pub(crate) struct FastProjection {}
+pub(crate) struct FastProjectionAndCollapse {}
 
 fn impl_fast_projection(
     input: Node,
     expr: &[Node],
-    schema: Option<SchemaRef>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<ALogicalPlan> {
     let mut columns = Vec::with_capacity(expr.len());
@@ -30,19 +30,11 @@ fn impl_fast_projection(
         }
     }
     if columns.len() == expr.len() {
-        let function = move |df: DataFrame| df.select(&columns);
-
-        let options = LogicalPlanUdfOptions {
-            predicate_pd: true,
-            projection_pd: true,
-            fmt_str: "FAST PROJECTION",
-        };
-
-        let lp = ALogicalPlan::Udf {
+        let lp = ALogicalPlan::MapFunction {
             input,
-            function: Arc::new(function),
-            schema: schema.map(|s| Arc::new(move |_: &Schema| Ok(s.clone())) as Arc<dyn UdfSchema>),
-            options,
+            function: FunctionNode::FastProjection {
+                columns: Arc::new(columns),
+            },
         };
 
         Some(lp)
@@ -51,37 +43,73 @@ fn impl_fast_projection(
     }
 }
 
-impl OptimizationRule for FastProjection {
+impl OptimizationRule for FastProjectionAndCollapse {
     fn optimize_plan(
         &mut self,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
         node: Node,
     ) -> Option<ALogicalPlan> {
+        use ALogicalPlan::*;
         let lp = lp_arena.get(node);
 
         match lp {
-            ALogicalPlan::Projection {
-                input,
-                expr,
-                schema,
-                ..
-            } => {
-                if !matches!(lp_arena.get(*input), ALogicalPlan::ExtContext { .. }) {
-                    let schema = Some(schema.clone());
-                    impl_fast_projection(*input, expr, schema, expr_arena)
+            Projection { input, expr, .. } => {
+                if !matches!(lp_arena.get(*input), ExtContext { .. }) {
+                    impl_fast_projection(*input, expr, expr_arena)
                 } else {
                     None
                 }
             }
-            ALogicalPlan::LocalProjection {
+            LocalProjection { input, expr, .. } => impl_fast_projection(*input, expr, expr_arena),
+            MapFunction {
                 input,
-                expr,
-                schema,
+                function: FunctionNode::FastProjection { columns },
+            } => {
+                // if there are 2 subsequent fast projections, flatten them and only take the last
+                match lp_arena.get(*input) {
+                    MapFunction {
+                        function: FunctionNode::FastProjection { .. },
+                        input: prev_input,
+                    } => Some(MapFunction {
+                        input: *prev_input,
+                        function: FunctionNode::FastProjection {
+                            columns: columns.clone(),
+                        },
+                    }),
+                    // cleanup projections set in projection pushdown just above caches
+                    // they are nto needed.
+                    cache_lp @ Cache { .. } => {
+                        if cache_lp.schema(lp_arena).len() == columns.len() {
+                            Some(cache_lp.clone())
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
+            }
+            // if there are 2 subsequent caches, flatten them and only take the inner
+            Cache {
+                input,
+                count: outer_count,
                 ..
             } => {
-                let schema = Some(schema.clone());
-                impl_fast_projection(*input, expr, schema, expr_arena)
+                if let Cache {
+                    input: prev_input,
+                    id,
+                    count,
+                } = lp_arena.get(*input)
+                {
+                    Some(Cache {
+                        input: *prev_input,
+                        id: *id,
+                        // ensure the counts are updated
+                        count: count.saturating_add(*outer_count),
+                    })
+                } else {
+                    None
+                }
             }
             _ => None,
         }

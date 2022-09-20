@@ -1,11 +1,9 @@
 use std::{mem, ptr};
 
 use ndarray::IntoDimension;
-use numpy::{
-    npyffi::{self, flags, types::npy_intp},
-    ToNpyDims, PY_ARRAY_API,
-};
-use numpy::{Element, PyArray1};
+use numpy::npyffi::types::npy_intp;
+use numpy::npyffi::{self, flags};
+use numpy::{Element, PyArray1, ToNpyDims, PY_ARRAY_API};
 use polars_core::utils::arrow::types::NativeType;
 use pyo3::prelude::*;
 

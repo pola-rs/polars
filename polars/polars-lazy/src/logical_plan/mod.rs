@@ -1,7 +1,9 @@
 use std::borrow::Cow;
+use std::cell::Cell;
+use std::fmt::Debug;
 #[cfg(any(feature = "ipc", feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
-use std::{cell::Cell, fmt::Debug, sync::Arc};
+use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::prelude::*;
@@ -18,19 +20,23 @@ mod apply;
 mod builder;
 pub(crate) mod conversion;
 mod format;
+mod functions;
 pub(crate) mod iterator;
 mod lit;
 pub(crate) mod optimizer;
 pub(crate) mod options;
 mod projection;
+mod schema;
 
 pub use anonymous_scan::*;
-pub(crate) use apply::*;
+pub use apply::*;
 pub(crate) use builder::*;
 pub use lit::*;
 use polars_core::frame::explode::MeltArgs;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+pub(crate) use crate::logical_plan::functions::FunctionNode;
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
@@ -63,7 +69,11 @@ pub enum LogicalPlan {
         predicate: Expr,
     },
     /// Cache the input at this point in the LP
-    Cache { input: Box<LogicalPlan> },
+    Cache {
+        input: Box<LogicalPlan>,
+        id: usize,
+        count: usize,
+    },
     /// Scan a CSV file
     #[cfg(feature = "csv-file")]
     CsvScan {
@@ -99,7 +109,9 @@ pub enum LogicalPlan {
     DataFrameScan {
         df: Arc<DataFrame>,
         schema: SchemaRef,
-        projection: Option<Vec<Expr>>,
+        // schema of the projected file
+        output_schema: Option<SchemaRef>,
+        projection: Option<Arc<Vec<String>>>,
         selection: Option<Expr>,
     },
     // a projection that doesn't have to be optimized
@@ -170,13 +182,10 @@ pub enum LogicalPlan {
         args: Arc<MeltArgs>,
         schema: SchemaRef,
     },
-    /// A User Defined Function
-    #[cfg_attr(feature = "serde", serde(skip))]
-    Udf {
+    /// A (User Defined) Function
+    MapFunction {
         input: Box<LogicalPlan>,
-        function: Arc<dyn DataFrameUdf>,
-        options: LogicalPlanUdfOptions,
-        schema: Option<Arc<dyn UdfSchema>>,
+        function: FunctionNode,
     },
     Union {
         inputs: Vec<LogicalPlan>,
@@ -203,6 +212,7 @@ impl Default for LogicalPlan {
         DataFrameScan {
             df: Arc::new(df),
             schema: Arc::new(schema),
+            output_schema: None,
             projection: None,
             selection: None,
         }
@@ -220,13 +230,13 @@ impl LogicalPlan {
 }
 
 impl LogicalPlan {
-    pub(crate) fn schema(&self) -> Result<Cow<'_, SchemaRef>> {
+    pub(crate) fn schema(&self) -> PolarsResult<Cow<'_, SchemaRef>> {
         use LogicalPlan::*;
         match self {
             #[cfg(feature = "python")]
             PythonScan { options } => Ok(Cow::Borrowed(&options.schema)),
             Union { inputs, .. } => inputs[0].schema(),
-            Cache { input } => input.schema(),
+            Cache { input, .. } => input.schema(),
             Sort { input, .. } => input.schema(),
             Explode { schema, .. } => Ok(Cow::Borrowed(schema)),
             #[cfg(feature = "parquet")]
@@ -246,14 +256,25 @@ impl LogicalPlan {
             Distinct { input, .. } => input.schema(),
             Slice { input, .. } => input.schema(),
             Melt { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Udf { input, schema, .. } => {
+            MapFunction {
+                input, function, ..
+            } => {
                 let input_schema = input.schema()?;
-                match schema {
-                    Some(schema) => schema.get_schema(&input_schema).map(Cow::Owned),
-                    None => Ok(input_schema),
+                match input_schema {
+                    Cow::Owned(schema) => Ok(Cow::Owned(function.schema(&schema)?.into_owned())),
+                    Cow::Borrowed(schema) => function.schema(schema),
                 }
             }
-            Error { input, .. } => input.schema(),
+            Error { err, .. } => {
+                // We just take the error. The LogicalPlan should not be used anymore once this
+                let mut err = err.lock();
+                match err.take() {
+                    Some(err) => Err(err),
+                    None => Err(PolarsError::ComputeError(
+                        "LogicalPlan already failed".into(),
+                    )),
+                }
+            }
             ExtContext { schema, .. } => Ok(Cow::Borrowed(schema)),
         }
     }
@@ -376,22 +397,5 @@ mod test {
             print_plans(&lf);
             let _df = lf.collect().unwrap();
         }
-    }
-
-    #[test]
-    #[cfg(feature = "dot_diagram")]
-    fn test_dot() {
-        let left = df!("days" => &[0, 1, 2, 3, 4],
-        "temp" => [22.1, 19.9, 7., 2., 3.],
-        "rain" => &[0.1, 0.2, 0.3, 0.4, 0.5]
-        )
-        .unwrap();
-        let mut s = String::new();
-        left.lazy()
-            .select(&[col("days")])
-            .logical_plan
-            .dot(&mut s, (0, 0), "")
-            .unwrap();
-        println!("{}", s);
     }
 }
