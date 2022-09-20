@@ -86,7 +86,6 @@ pub fn rolling_kurtosis<T>(
     window_size: usize,
     min_periods: usize,
     weights: Option<&[f64]>,
-    fisher: bool,
 ) -> ArrayRef
 where
     T: NativeType
@@ -108,14 +107,12 @@ where
             window_size,
             min_periods,
             det_offsets_center,
-            fisher,
         ),
         (Some(weights)) => rolling_apply_agg_window::<KurtosisWindow<_>, _, _>(
             values,
             window_size,
             min_periods,
             det_offsets,
-            fisher,
         ),
     }
 }
@@ -128,6 +125,6 @@ mod test {
     fn test_rolling_kurtosis() {
         let values = &[1.0f64, 5.0, 3.0, 4.0];
 
-        let out = rolling_kurtosis(values, 2, 2, false, None);
+        let out = rolling_kurtosis(values, 2, 2, None);
     }
 }
