@@ -49,7 +49,10 @@ if TYPE_CHECKING:
 
 
 def selection_to_pyexpr_list(
-    exprs: str | Expr | pli.Series | Sequence[str | Expr | pli.Series],
+    exprs: str
+    | Expr
+    | pli.Series
+    | Sequence[str | Expr | pli.Series | date | datetime | int | float],
 ) -> list[PyExpr]:
     if isinstance(exprs, (str, Expr, pli.Series)):
         exprs = [exprs]

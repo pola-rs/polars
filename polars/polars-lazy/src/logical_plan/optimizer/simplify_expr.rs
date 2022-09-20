@@ -303,7 +303,7 @@ fn string_addition_to_linear_concat(
 ) -> Option<AExpr> {
     {
         let lp = lp_arena.get(lp_node);
-        let input = lp.get_input().unwrap();
+        let input = lp.get_input()?;
         let schema = lp_arena.get(input).schema(lp_arena);
 
         let get_type = |ae: &AExpr| ae.get_type(&schema, Context::Default, expr_arena).ok();

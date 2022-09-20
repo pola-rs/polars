@@ -346,7 +346,9 @@ def max(column: str | Sequence[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
 
 
 @overload
-def min(column: str | Sequence[pli.Expr | str]) -> pli.Expr:
+def min(
+    column: str | Sequence[pli.Expr | str | date | datetime | int | float],
+) -> pli.Expr:
     ...
 
 
@@ -355,7 +357,9 @@ def min(column: pli.Series) -> int | float:
     ...
 
 
-def min(column: str | Sequence[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
+def min(
+    column: str | Sequence[pli.Expr | str | date | datetime | int | float] | pli.Series,
+) -> pli.Expr | Any:
     """
     Get the minimum value.
 
