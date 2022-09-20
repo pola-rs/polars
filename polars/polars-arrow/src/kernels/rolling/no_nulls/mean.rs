@@ -18,6 +18,11 @@ impl<
         }
     }
 
+    fn new_with_base(slice: &'a [T], base: i8, start: usize, end: usize) -> Self {
+        // does nothing
+        Self::new(slice, start, end)
+    }
+
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
         let sum = self.sum.update(start, end);
         sum / NumCast::from(end - start).unwrap()

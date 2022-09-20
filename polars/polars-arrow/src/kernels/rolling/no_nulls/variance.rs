@@ -29,7 +29,18 @@ impl<
     fn new(slice: &'a [T], start: usize, end: usize) -> Self {
         // QUESTIOMN: HOW TO GET A VARIABLE BASE HERE?
         let base = 2;
+        let sum = slice[start..end].iter().map(|v| v.pow(base)).sum::<T>();
+        Self {
+            slice,
+            base,
+            sum_of_powers: sum,
+            last_start: start,
+            last_end: end,
+            last_recompute: 0,
+        }
+    }
 
+    fn new_with_base(slice: &'a [T], base: i8, start: usize, end: usize) -> Self {
         let sum = slice[start..end].iter().map(|v| v.pow(base)).sum::<T>();
         Self {
             slice,
@@ -114,6 +125,13 @@ impl<
         Self {
             mean: MeanWindow::new(slice, start, end),
             sum_of_squares: SumPowersWindow::new(slice, start, end),
+        }
+    }
+    fn new_with_base(slice: &'a [T], base: i8, start: usize, end: usize) -> Self {
+        // does nothing
+        Self {
+            mean: MeanWindow::new(slice, start, end),
+            sum_of_squares: SumPowersWindow::new_with_base(slice, base, start, end),
         }
     }
 
@@ -218,6 +236,10 @@ impl<
         Self {
             var: VarWindow::new(slice, start, end),
         }
+    }
+
+    fn new_with_base(slice: &'a [T], base: i8, start: usize, end: usize) -> Self {
+        Self::new(slice, start, end)
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {

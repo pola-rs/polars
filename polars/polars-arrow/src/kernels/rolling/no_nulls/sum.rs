@@ -23,6 +23,11 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign>
         }
     }
 
+    fn new_with_base(slice: &'a [T], base: i8, start: usize, end: usize) -> Self {
+        // does nothing
+        Self::new(slice, start, end)
+    }
+
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
         // if we exceed the end, we have a completely new window
         // so we recompute

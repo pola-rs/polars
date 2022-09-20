@@ -25,6 +25,8 @@ use crate::utils::CustomIterTools;
 pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self;
 
+    fn new_with_base(slice: &'a [T], base: i8, start: usize, end: usize) -> Self;
+
     /// Update and recompute the window
     /// # Safety
     /// `start` and `end` must be within the windows bounds

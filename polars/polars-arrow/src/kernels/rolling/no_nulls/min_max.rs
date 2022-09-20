@@ -12,6 +12,11 @@ impl<'a, T: NativeType> RollingAggWindowNoNulls<'a, T> for SortedMinMax<'a, T> {
         Self { slice }
     }
 
+    fn new_with_base(slice: &'a [T], base: i8, start: usize, end: usize) -> Self {
+        // does nothing
+        Self::new(slice, start, end)
+    }
+
     #[inline]
     unsafe fn update(&mut self, start: usize, _end: usize) -> T {
         *self.slice.get_unchecked(start)
@@ -37,6 +42,11 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
             last_start: start,
             last_end: end,
         }
+    }
+
+    fn new_with_base(slice: &'a [T], base: i8, start: usize, end: usize) -> Self {
+        // does nothing
+        Self::new(slice, start, end)
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
@@ -157,6 +167,11 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
             last_start: start,
             last_end: end,
         }
+    }
+
+    fn new_with_base(slice: &'a [T], base: i8, start: usize, end: usize) -> Self {
+        // does nothing
+        Self::new(slice, start, end)
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
