@@ -3,7 +3,6 @@ use core::panic;
 use no_nulls::{rolling_apply_agg_window, RollingAggWindowNoNulls};
 use num::pow::Pow;
 
-use super::mean::MeanWindow;
 use super::variance::SumPowersWindow;
 use super::*;
 pub struct KurtosisWindow<'a, T> {
@@ -38,12 +37,15 @@ impl<
         }
     }
 
-    fn new_with_base(slice: &'a [T], base: i8, start: usize, end: usize) -> Self {
+    fn new_with_base(slice: &'a [T], _base: i8, start: usize, end: usize) -> Self {
         Self::new(slice, start, end)
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
-        // based on https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
+        // based on
+        // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
+        // https://github.com/pandas-dev/pandas/blob/3937fbe1106c5b30b9072243920a8521d36dc301/pandas/core/nanops.py#L1250
+        // https://github.com/ajcr/rolling/commit/591e2eb91988d75c74f5704eecf7f12f1a0b63e8
         let count: T = NumCast::from(end - start).unwrap();
 
         // TODO: if count < 3 -> NAN
@@ -68,11 +70,11 @@ impl<
         r = r * a;
 
         // QUESTION??? how to multiply below?
-        let one: T = NumCast::from(1).unwrap();
-        let two: T = NumCast::from(2).unwrap();
-        let three: T = NumCast::from(3).unwrap();
-        let four: T = NumCast::from(4).unwrap();
-        let six: T = NumCast::from(6).unwrap();
+        let one = T::one();
+        let two = one + one;
+        let three = two + one;
+        let four = three + one;
+        let six = four + one + one;
 
         let c = ((sum_of_cubes / count) - r) - (three * a * b);
         r = r * a;
