@@ -41,7 +41,7 @@
 //! This means that Polars data structures can be shared zero copy with processes in many different
 //! languages.
 //!
-//! ## Tree Of Contents
+//! ## Tree of contents
 //!
 //! * [Cookbooks](#cookbooks)
 //! * [Data structures](#data-structures)
@@ -319,7 +319,7 @@
 //! ## Config with ENV vars
 //!
 //! * `POLARS_FMT_TABLE_FORMATTING` -> define styling of tables using any of the following options (default = UTF8_FULL):
-//!     
+//!
 //!                                    ASCII_FULL
 //!                                    ASCII_NO_BORDERS
 //!                                    ASCII_BORDERS_ONLY
@@ -331,7 +331,7 @@
 //!                                    UTF8_BORDERS_ONLY
 //!                                    UTF8_HORIZONTAL_ONLY
 //!                                    NOTHING
-//!                                     
+//!
 //!                                    These options are defined by comfy-table which provides examples for each at:
 //!                                    https://github.com/Nukesor/comfy-table/blob/main/src/style/presets.rs
 //! * `POLARS_FMT_TABLE_CELL_ALIGNMENT` -> define cell alignment using any of the following options (default = LEFT):
