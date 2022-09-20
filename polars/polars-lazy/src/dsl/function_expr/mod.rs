@@ -141,6 +141,8 @@ impl Display for FunctionExpr {
             ListContains => write!(f, "arr.contains"),
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { .. } => write!(f, "rolling_skew"),
+            #[cfg(all(feature = "rolling_window", feature = "moment"))]
+            RollingKurtosis { .. } => write!(f, "rolling_kurtosis"),
             ShiftAndFill { .. } => write!(f, "shift_and_fill"),
             Nan(_) => write!(f, "nan"),
             #[cfg(feature = "round_series")]
@@ -289,6 +291,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { window_size, bias } => {
                 map!(rolling::rolling_skew, window_size, bias)
+            }
+            #[cfg(all(feature = "rolling_window", feature = "moment"))]
+            RollingKurtosis { window_size, fisher, bias } => {
+                map!(rolling::rolling_kurtosis, window_size, fisher, bias)
             }
             ShiftAndFill { periods } => {
                 map_as_slice!(shift_and_fill::shift_and_fill, periods)

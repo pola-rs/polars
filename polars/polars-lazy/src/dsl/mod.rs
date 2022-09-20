@@ -1738,6 +1738,18 @@ impl Expr {
         self.apply_private(FunctionExpr::RollingSkew { window_size, bias })
     }
 
+    /// Apply a rolling kurtosis
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "rolling_window", feature = "moment"))))]
+    #[cfg(feature = "rolling_window")]
+    #[cfg(feature = "moment")]
+    pub fn rolling_kurtosis(self, window_size: usize, fisher: bool, bias: bool) -> Expr {
+        self.apply_private(FunctionExpr::RollingKurtosis {
+            window_size,
+            fisher,
+            bias,
+        })
+    }
+
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     /// Apply a custom function over a rolling/ moving window of the array.

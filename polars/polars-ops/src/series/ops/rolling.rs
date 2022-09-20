@@ -32,6 +32,32 @@ where
     })
 }
 
+#[cfg(feature = "moment")]
+fn rolling_kurtosis<T>(
+    ca: &ChunkedArray<T>,
+    window_size: usize,
+    fisher: bool,
+    bias: bool,
+) -> PolarsResult<ChunkedArray<T>>
+where
+    ChunkedArray<T>: IntoSeries,
+    T: PolarsFloatType,
+    T::Native: Float + IsFloat + SubAssign + num::pow::Pow<T::Native, Output = T::Native>,
+{
+    with_unstable_series(ca.dtype(), |us| {
+        ca.rolling_apply_float(window_size, |arr| {
+            let arr = unsafe { arr.chunks_mut().get_mut(0).unwrap() };
+
+            us.with_array(arr, |us| {
+                us.as_ref()
+                    .kurtosis(fisher, bias)
+                    .unwrap()
+                    .map(|flt| T::Native::from_f64(flt).unwrap())
+            })
+        })
+    })
+}
+
 pub trait RollingSeries: SeriesSealed {
     #[cfg(feature = "moment")]
     fn rolling_skew(&self, window_size: usize, bias: bool) -> PolarsResult<Series> {
@@ -53,6 +79,44 @@ pub trait RollingSeries: SeriesSealed {
             dt => Err(PolarsError::ComputeError(
                 format!(
                     "cannot use rolling_skew function on Series of dtype: {:?}",
+                    dt
+                )
+                .into(),
+            )),
+        }
+    }
+
+    fn rolling_kurtosis(
+        &self,
+        window_size: usize,
+        fisher: bool,
+        bias: bool,
+    ) -> PolarsResult<Series> {
+        let s = self.as_series();
+
+        if window_size < 4 {
+            Err(PolarsError::ComputeError(format!(
+                "cannot use rolling_kurtosis with window_size < 4, window_size is: {}",
+                window_size
+            )))
+        }
+
+        match s.dtype() {
+            DataType::Float64 => {
+                let ca = s.f64().unwrap();
+                rolling_kurtosis(ca, window_size, fisher, bias).map(|ca| ca.into_series())
+            }
+            DataType::Float32 => {
+                let ca = s.f32().unwrap();
+                rolling_kurtosis(ca, window_size, fisher, bias).map(|ca| ca.into_series())
+            }
+            dt if dt.is_numeric() => {
+                let s = s.cast(&DataType::Float64).unwrap();
+                s.rolling_kurtosis(window_size, fisher, bias)
+            }
+            dt => Err(PolarsError::ComputeError(
+                format!(
+                    "cannot use rolling_kurtosis function on Series of dtype: {:?}",
                     dt
                 )
                 .into(),
