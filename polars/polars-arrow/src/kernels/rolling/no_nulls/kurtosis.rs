@@ -42,6 +42,9 @@ impl<
         let count: T = NumCast::from(end - start).unwrap();
 
         // TODO: if count < 3 -> NAN
+        if count.to_usize().unwrap() < 3 {
+            Default::default()
+        }
 
         let mean = self.mean.update(start, end);
         let sum_of_squares = self.sum_of_squares.update(start, end);
@@ -53,9 +56,9 @@ impl<
         let mut r = a * a;
 
         let b = sum_of_squares / count - r;
-        // if b <= 1e-14 {
-        //     T::zero()
-        // }
+        if b.to_f64().unwrap() <= 1e-14 {
+            Default::default()
+        }
 
         r = r * a;
 
