@@ -379,7 +379,7 @@ class Expr:
         └──────────┘
 
         """
-        return self ** 0.5
+        return self**0.5
 
     def log10(self) -> Expr:
         """
