@@ -105,8 +105,6 @@ def test_from_pandas() -> None:
 
 
 def test_from_pandas_nan_to_none() -> None:
-    from pyarrow import ArrowInvalid
-
     df = pd.DataFrame(
         {
             "bools_nulls": [None, True, False],
@@ -118,20 +116,14 @@ def test_from_pandas_nan_to_none() -> None:
     )
     out_true = pl.from_pandas(df)
     out_false = pl.from_pandas(df, nan_to_none=False)
-    df.loc[2, "nulls"] = pd.NA
     assert all(val is None for val in out_true["nulls"])
     assert all(np.isnan(val) for val in out_false["nulls"][1:])
-    with pytest.raises(ArrowInvalid, match="Could not convert"):
-        pl.from_pandas(df, nan_to_none=False)
 
     df = pd.Series([2, np.nan, None], name="pd")  # type: ignore[assignment]
     out_true = pl.from_pandas(df)
     out_false = pl.from_pandas(df, nan_to_none=False)
-    df.loc[2] = pd.NA
     assert [val is None for val in out_true]
     assert [np.isnan(val) for val in out_false[1:]]
-    with pytest.raises(ArrowInvalid, match="Could not convert"):
-        pl.from_pandas(df, nan_to_none=False)
 
 
 def test_from_pandas_datetime() -> None:
