@@ -4,9 +4,10 @@ use num::pow::Pow;
 use super::mean::MeanWindow;
 use super::*;
 
-pub(super) struct SumSquaredWindow<'a, T> {
+pub(super) struct SumPowersWindow<'a, T> {
     slice: &'a [T],
-    sum_of_squares: T,
+    base: i8,
+    sum_of_powers: T,
     last_start: usize,
     last_end: usize,
     // if we don't recompute every 'n' iterations
@@ -14,14 +15,26 @@ pub(super) struct SumSquaredWindow<'a, T> {
     last_recompute: u8,
 }
 
-impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<Output = T>>
-    RollingAggWindowNoNulls<'a, T> for SumSquaredWindow<'a, T>
+impl<
+        'a,
+        T: NativeType
+            + IsFloat
+            + std::iter::Sum
+            + AddAssign
+            + SubAssign
+            + Mul<Output = T>
+            + Pow<i8, Output = T>,
+    > RollingAggWindowNoNulls<'a, T> for SumPowersWindow<'a, T>
 {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self {
-        let sum = slice[start..end].iter().map(|v| *v * *v).sum::<T>();
+        // QUESTIOMN: HOW TO GET A VARIABLE BASE HERE?
+        let base = 2;
+
+        let sum = slice[start..end].iter().map(|v| v.pow(base)).sum::<T>();
         Self {
             slice,
-            sum_of_squares: sum,
+            base,
+            sum_of_powers: sum,
             last_start: start,
             last_end: end,
             last_recompute: 0,
@@ -48,7 +61,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<
                     break;
                 }
 
-                self.sum_of_squares -= *leaving_value * *leaving_value;
+                self.sum_of_powers -= leaving_value.pow(self.base);
             }
             recompute_sum
         };
@@ -57,20 +70,20 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<
 
         // we traverse all values and compute
         if T::is_float() && recompute_sum {
-            self.sum_of_squares = self
+            self.sum_of_powers = self
                 .slice
                 .get_unchecked(start..end)
                 .iter()
-                .map(|v| *v * *v)
+                .map(|v| v.pow(self.base))
                 .sum::<T>();
         } else {
             for idx in self.last_end..end {
                 let entering_value = *self.slice.get_unchecked(idx);
-                self.sum_of_squares += entering_value * entering_value;
+                self.sum_of_powers += entering_value.pow(self.base);
             }
         }
         self.last_end = end;
-        self.sum_of_squares
+        self.sum_of_powers
     }
 }
 
@@ -79,7 +92,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<
 // E[x^2] - E[x]^2
 pub struct VarWindow<'a, T> {
     mean: MeanWindow<'a, T>,
-    sum_of_squares: SumSquaredWindow<'a, T>,
+    sum_of_squares: SumPowersWindow<'a, T>,
 }
 
 impl<
@@ -93,13 +106,14 @@ impl<
             + NumCast
             + One
             + Zero
-            + Sub<Output = T>,
+            + Sub<Output = T>
+            + Pow<i8, Output = T>,
     > RollingAggWindowNoNulls<'a, T> for VarWindow<'a, T>
 {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self {
         Self {
             mean: MeanWindow::new(slice, start, end),
-            sum_of_squares: SumSquaredWindow::new(slice, start, end),
+            sum_of_squares: SumPowersWindow::new(slice, start, end),
         }
     }
 
@@ -137,7 +151,8 @@ where
         + NumCast
         + One
         + Zero
-        + Sub<Output = T>,
+        + Sub<Output = T>
+        + Pow<i8, Output = T>,
 {
     match (center, weights) {
         (true, None) => rolling_apply_agg_window::<VarWindow<_>, _, _>(
@@ -196,7 +211,7 @@ impl<
             + One
             + Zero
             + Sub<Output = T>
-            + Pow<T, Output = T>,
+            + Pow<i8, Output = T>,
     > RollingAggWindowNoNulls<'a, T> for StdWindow<'a, T>
 {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self {
@@ -230,7 +245,7 @@ where
         + One
         + Zero
         + Sub<Output = T>
-        + Pow<T, Output = T>,
+        + Pow<i8, Output = T>,
 {
     match (center, weights) {
         (true, None) => rolling_apply_agg_window::<StdWindow<_>, _, _>(

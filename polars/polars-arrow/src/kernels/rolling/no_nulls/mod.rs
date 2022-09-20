@@ -1,3 +1,4 @@
+mod kurtosis;
 mod mean;
 mod min_max;
 mod quantile;
