@@ -261,7 +261,7 @@ impl Wrap<&DataFrame> {
                             .into_series();
 
                         update_bounds(lower, upper);
-                        update_subgroups(&sub_groups, base_g)
+                        update_subgroups_idx(&sub_groups, base_g)
                     })
                     .collect();
                 GroupsProxy::Idx(groupsidx)
@@ -280,7 +280,7 @@ impl Wrap<&DataFrame> {
                                 options.closed_window,
                                 tu,
                             );
-                            update_subgroups(&sub_groups, base_g)
+                            update_subgroups_idx(&sub_groups, base_g)
                         })
                         .collect()
                 });
@@ -361,36 +361,71 @@ impl Wrap<&DataFrame> {
             dt = unsafe { dt.agg_list(&groups).explode().unwrap() };
 
             // continue determining the rolling indexes.
-            let groups = groups.into_idx();
 
-            let groupsidx = POOL.install(|| {
-                groups
-                    .par_iter()
-                    .flat_map(|base_g| {
-                        let dt = unsafe { dt_local.take_unchecked(base_g.1.into()) };
-                        let vals = dt.downcast_iter().next().unwrap();
-                        let ts = vals.values().as_slice();
-                        let sub_groups = groupby_values(
-                            options.period,
-                            options.offset,
-                            ts,
-                            options.closed_window,
-                            tu,
-                        );
+            POOL.install(|| match groups {
+                GroupsProxy::Idx(groups) => {
+                    let idx = groups
+                        .par_iter()
+                        .flat_map(|base_g| {
+                            let dt = unsafe { dt_local.take_unchecked(base_g.1.into()) };
+                            let vals = dt.downcast_iter().next().unwrap();
+                            let ts = vals.values().as_slice();
+                            let sub_groups = groupby_values(
+                                options.period,
+                                options.offset,
+                                ts,
+                                options.closed_window,
+                                tu,
+                            );
+                            update_subgroups_idx(&sub_groups, base_g)
+                        })
+                        .collect();
 
-                        update_subgroups(&sub_groups, base_g)
-                    })
-                    .collect()
-            });
-            GroupsProxy::Idx(groupsidx)
+                    GroupsProxy::Idx(idx)
+                }
+                GroupsProxy::Slice { groups, .. } => {
+                    let slice_groups = groups
+                        .par_iter()
+                        .flat_map(|base_g| {
+                            let dt = dt_local.slice(base_g[0] as i64, base_g[1] as usize);
+                            let vals = dt.downcast_iter().next().unwrap();
+                            let ts = vals.values().as_slice();
+                            let sub_groups = groupby_values(
+                                options.period,
+                                options.offset,
+                                ts,
+                                options.closed_window,
+                                tu,
+                            );
+                            update_subgroups_slice(&sub_groups, *base_g)
+                        })
+                        .collect();
+
+                    GroupsProxy::Slice {
+                        groups: slice_groups,
+                        rolling: false,
+                    }
+                }
+            })
         };
+
         let dt = dt.cast(time_type).unwrap();
 
         Ok((dt, by, groups))
     }
 }
 
-fn update_subgroups(
+fn update_subgroups_slice(sub_groups: &[[IdxSize; 2]], base_g: [IdxSize; 2]) -> Vec<[IdxSize; 2]> {
+    sub_groups
+        .iter()
+        .map(|&[first, len]| {
+            let new_first = base_g[0] + first;
+            [new_first, len]
+        })
+        .collect_trusted::<Vec<_>>()
+}
+
+fn update_subgroups_idx(
     sub_groups: &[[IdxSize; 2]],
     base_g: (IdxSize, &Vec<IdxSize>),
 ) -> Vec<(IdxSize, Vec<IdxSize>)> {

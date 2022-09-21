@@ -298,7 +298,7 @@ where
 pub(crate) fn prepare_strs<'a>(
     been_split: &'a [Utf8Chunked],
     hb: &RandomState,
-) -> Vec<Vec<StrHash<'a>>> {
+) -> Vec<Vec<BytesHash<'a>>> {
     POOL.install(|| {
         been_split
             .par_iter()
@@ -308,7 +308,7 @@ pub(crate) fn prepare_strs<'a>(
                         let mut state = hb.build_hasher();
                         opt_s.hash(&mut state);
                         let hash = state.finish();
-                        StrHash::new(opt_s, hash)
+                        BytesHash::new_from_str(opt_s, hash)
                     })
                     .collect::<Vec<_>>()
             })

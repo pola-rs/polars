@@ -11,7 +11,7 @@ use crate::prelude::*;
 #[cfg(feature = "groupby_list")]
 use crate::utils::Wrap;
 use crate::utils::{_split_offsets, accumulate_dataframes_vertical, set_partition_size};
-use crate::vector_hasher::{get_null_hash_value, AsU64, StrHash};
+use crate::vector_hasher::{get_null_hash_value, AsU64, BytesHash};
 use crate::POOL;
 
 pub mod aggregations;
