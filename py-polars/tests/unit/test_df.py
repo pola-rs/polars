@@ -1634,11 +1634,43 @@ def test_rename_same_name() -> None:
 
 
 def test_fill_null() -> None:
+    # fill with literal, or using strategy
     df = pl.DataFrame({"a": [1, 2], "b": [3, None]})
     assert df.fill_null(4).frame_equal(pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
     assert df.fill_null(strategy="max").frame_equal(
         pl.DataFrame({"a": [1, 2], "b": [3, 3]})
     )
+
+    # coalesce-like calling pattern
+    df = pl.DataFrame(
+        data={
+            "w": [10, None, None, None],
+            "x": [20, None, None, 20000],
+            "y": [30, None, 3000, 30000],
+            "z": [40, 400, 4000, 40000],
+        }
+    )
+    assert df.fill_null([pl.col(c) for c in ["w", "x", "y", "z"]]).rows() == [
+        (10, 20, 30, 40),
+        (400, 400, 400, 400),
+        (3000, 3000, 3000, 4000),
+        (20000, 20000, 30000, 40000),
+    ]
+    assert df.fill_null([pl.col("w"), -99]).rows() == [
+        (10, 20, 30, 40),
+        (-99, -99, -99, 400),
+        (-99, -99, 3000, 4000),
+        (-99, 20000, 30000, 40000),
+    ]
+
+    with pytest.raises(ValueError, match="cannot specify both"):
+        df.fill_null(value=0, strategy="one")
+
+    with pytest.raises(ValueError, match="must specify either"):
+        df.fill_null(value=None, strategy=None)
+
+    with pytest.raises(ValueError, match="can only specify"):
+        df.fill_null(strategy="zero", limit=2)
 
 
 def test_fill_nan() -> None:

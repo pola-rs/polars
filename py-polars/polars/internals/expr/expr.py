@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import random
 from datetime import date, datetime, time
+from functools import reduce
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 from warnings import warn
 
@@ -107,6 +108,18 @@ def expr_to_lit_or_expr(
         raise ValueError(
             f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with"
             " pl.lit or pl.col"
+        )
+
+
+def coalesce(exprs: Sequence[PyExpr]) -> PyExpr | None:
+    if len(exprs) == 0:
+        return None
+    elif len(exprs) == 1:
+        return exprs[0]
+    else:
+        return reduce(
+            lambda e1, e2: e1.fill_null(e2),
+            exprs,
         )
 
 
@@ -2078,7 +2091,9 @@ class Expr:
         Parameters
         ----------
         value
-            Value used to fill null values.
+            Value used to fill null values; can also be a sequence of expressions,
+            in which case you will get "coalesce" behaviour, where the first not-null
+            value from the given input expressions is used.
         strategy : {None, 'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}
             Strategy used to fill null values.
         limit
@@ -2132,8 +2147,18 @@ class Expr:
             )
 
         if value is not None:
-            value = expr_to_lit_or_expr(value, str_to_lit=True)
-            return wrap_expr(self._pyexpr.fill_null(value._pyexpr))
+            if (
+                isinstance(value, Sequence)
+                and len(value) > 0
+                and any(isinstance(v, Expr) for v in value)
+            ):
+                pyexprs = [self._pyexpr] + [
+                    expr_to_lit_or_expr(v, str_to_lit=True)._pyexpr for v in value
+                ]
+                return wrap_expr(coalesce(pyexprs))
+            else:
+                value = expr_to_lit_or_expr(value, str_to_lit=True)
+                return wrap_expr(self._pyexpr.fill_null(value._pyexpr))
         else:
             return wrap_expr(self._pyexpr.fill_null_with_strategy(strategy, limit))
 

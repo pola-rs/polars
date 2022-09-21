@@ -2055,7 +2055,9 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         Parameters
         ----------
         value
-            Value used to fill null values.
+            Value used to fill null values; can also be a sequence of expressions,
+            in which case you will get "coalesce" behaviour, where the first not-null
+            value from the given input expressions is used.
         strategy : {None, 'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}
             Strategy used to fill null values.
         limit

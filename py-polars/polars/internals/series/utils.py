@@ -118,8 +118,8 @@ def expr_dispatch(cls: type[T]) -> type[T]:
                 # note: `co_varnames` starts with the function args, but needs to be
                 # constrained by `co_argcount` as it also includes function-level consts
                 args = attr.__code__.co_varnames[: attr.__code__.co_argcount]
-                # if an expression method with compatible method exists, further check
-                # that the series implementation has an empty function body
+                # if an expression method with compatible signature exists, further
+                # check that the series implementation has an empty function body
                 if (namespace, name, args) in expr_lookup and _is_empty_method(attr):
                     setattr(cls, name, call_expr(attr))
     return cls
