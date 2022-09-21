@@ -153,15 +153,15 @@ impl DataFrame {
                     if (lhs.get_values_size() + rhs.get_values_size()) / (lhs.len() + 1) < 128 {
                         pack_utf8_columns(lhs, rhs, n_partitions, sorted)
                     } else {
-                        groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
+                        groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)?
                     }
                 } else {
-                    groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
+                    groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)?
                 }
             }
             _ => {
                 let keys_df = prepare_dataframe_unsorted(&by);
-                groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
+                groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)?
             }
         };
         Ok(GroupBy::new(self, by, groups, None))

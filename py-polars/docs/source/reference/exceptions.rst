@@ -10,6 +10,7 @@ Exceptions
     ArrowError
     ComputeError
     DuplicateError
+    InvalidOperationError
     NoDataError
     NotFoundError
     NoRowsReturned
