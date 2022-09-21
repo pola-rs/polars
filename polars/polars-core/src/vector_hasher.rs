@@ -408,30 +408,38 @@ impl IdxHash {
 /// During rehashes, we will rehash the hash instead of the string, that makes rehashing
 /// cheap and allows cache coherent small hash tables.
 #[derive(Eq, Copy, Clone, Debug)]
-pub(crate) struct StrHash<'a> {
-    str: Option<&'a str>,
+pub(crate) struct BytesHash<'a> {
+    payload: Option<&'a [u8]>,
     hash: u64,
 }
 
-impl<'a> Hash for StrHash<'a> {
+impl<'a> Hash for BytesHash<'a> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_u64(self.hash)
     }
 }
 
-impl<'a> StrHash<'a> {
-    pub(crate) fn new(s: Option<&'a str>, hash: u64) -> Self {
-        Self { str: s, hash }
+impl<'a> BytesHash<'a> {
+    #[inline]
+    pub(crate) fn new(s: Option<&'a [u8]>, hash: u64) -> Self {
+        Self { payload: s, hash }
+    }
+    #[inline]
+    pub(crate) fn new_from_str(s: Option<&'a str>, hash: u64) -> Self {
+        Self {
+            payload: s.map(|s| s.as_bytes()),
+            hash,
+        }
     }
 }
 
-impl<'a> PartialEq for StrHash<'a> {
+impl<'a> PartialEq for BytesHash<'a> {
     fn eq(&self, other: &Self) -> bool {
-        (self.hash == other.hash) && (self.str == other.str)
+        (self.hash == other.hash) && (self.payload == other.payload)
     }
 }
 
-impl<'a> AsU64 for StrHash<'a> {
+impl<'a> AsU64 for BytesHash<'a> {
     fn as_u64(self) -> u64 {
         self.hash
     }

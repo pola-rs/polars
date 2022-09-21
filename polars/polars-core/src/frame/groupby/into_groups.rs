@@ -255,9 +255,9 @@ impl IntoGroupsProxy for Utf8Chunked {
                                 // Safety:
                                 // the underlying data is tied to self
                                 unsafe {
-                                    std::mem::transmute::<StrHash<'_>, StrHash<'a>>(StrHash::new(
-                                        opt_s, hash,
-                                    ))
+                                    std::mem::transmute::<BytesHash<'_>, BytesHash<'a>>(
+                                        BytesHash::new_from_str(opt_s, hash),
+                                    )
                                 }
                             })
                             .collect::<Vec<_>>()
@@ -273,7 +273,7 @@ impl IntoGroupsProxy for Utf8Chunked {
                         Some(s) => str::get_hash(s, &hb),
                         None => null_h,
                     };
-                    StrHash::new(opt_s, hash)
+                    BytesHash::new_from_str(opt_s, hash)
                 })
                 .collect::<Vec<_>>();
             groupby(str_hashes.iter(), sorted)
@@ -456,7 +456,7 @@ pub(super) fn pack_utf8_columns(
                             ))
                         };
                         let hash = str::get_hash(str_val, &hb);
-                        str_hashes.push(StrHash::new(Some(str_val), hash))
+                        str_hashes.push(BytesHash::new(Some(str_val.as_bytes()), hash))
                     }
                     (None, Some(rhs)) => {
                         let start = values.len();
@@ -471,7 +471,7 @@ pub(super) fn pack_utf8_columns(
                             ))
                         };
                         let hash = str::get_hash(str_val, &hb);
-                        str_hashes.push(StrHash::new(Some(str_val), hash))
+                        str_hashes.push(BytesHash::new(Some(str_val.as_bytes()), hash))
                     }
                     (Some(lhs), None) => {
                         let start = values.len();
@@ -486,9 +486,9 @@ pub(super) fn pack_utf8_columns(
                             ))
                         };
                         let hash = str::get_hash(str_val, &hb);
-                        str_hashes.push(StrHash::new(Some(str_val), hash))
+                        str_hashes.push(BytesHash::new(Some(str_val.as_bytes()), hash))
                     }
-                    (None, None) => str_hashes.push(StrHash::new(None, null_h)),
+                    (None, None) => str_hashes.push(BytesHash::new(None, null_h)),
                 }
             });
             (str_hashes, values)
