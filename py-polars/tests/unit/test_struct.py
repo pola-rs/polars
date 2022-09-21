@@ -652,3 +652,9 @@ def test_struct_broadcasting() -> None:
             ).alias("my_struct")
         )
     ).to_dict(False) == {"my_struct": [{"a": "a", "col1": 1}, {"a": "a", "col1": 2}]}
+
+
+def test_struct_supertype() -> None:
+    assert pl.from_dicts(
+        [{"vehicle": {"auto": "car"}}, {"vehicle": {"auto": None}}]
+    ).to_dict(False) == {"vehicle": [{"auto": "car"}, {"auto": None}]}
