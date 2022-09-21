@@ -6,6 +6,7 @@ pub mod concatenate;
 pub mod ewm;
 pub mod float;
 pub mod list;
+pub mod list_bytes_iter;
 pub mod rolling;
 pub mod set;
 pub mod sort_partition;

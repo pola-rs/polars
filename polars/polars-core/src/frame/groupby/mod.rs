@@ -8,8 +8,6 @@ use rayon::prelude::*;
 
 use self::hashing::*;
 use crate::prelude::*;
-#[cfg(feature = "groupby_list")]
-use crate::utils::Wrap;
 use crate::utils::{_split_offsets, accumulate_dataframes_vertical, set_partition_size};
 use crate::vector_hasher::{get_null_hash_value, AsU64, BytesHash};
 use crate::POOL;
@@ -151,20 +149,20 @@ impl DataFrame {
                     // arbitrarily chosen bound, if avg no of bytes to encode is larger than this
                     // value we fall back to default groupby
                     if (lhs.get_values_size() + rhs.get_values_size()) / (lhs.len() + 1) < 128 {
-                        pack_utf8_columns(lhs, rhs, n_partitions, sorted)
+                        Ok(pack_utf8_columns(lhs, rhs, n_partitions, sorted))
                     } else {
-                        groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)?
+                        groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
                     }
                 } else {
-                    groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)?
+                    groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
                 }
             }
             _ => {
                 let keys_df = prepare_dataframe_unsorted(&by);
-                groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)?
+                groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
             }
         };
-        Ok(GroupBy::new(self, by, groups, None))
+        Ok(GroupBy::new(self, by, groups?, None))
     }
 
     /// Group DataFrame using a Series column.
