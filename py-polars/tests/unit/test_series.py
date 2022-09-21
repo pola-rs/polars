@@ -387,15 +387,31 @@ def test_arrow() -> None:
     out = a.to_arrow()
     assert out == pa.array([1, 2, 3, None])
 
-    a = pa.array(["foo", "bar"], pa.dictionary(pa.int32(), pa.utf8()))
-    s = pl.Series("a", a)
-    assert s.dtype == pl.Categorical
-
     s = cast(
         pl.Series,
         pl.from_arrow(pa.array([["foo"], ["foo", "bar"]], pa.list_(pa.utf8()))),
     )
     assert s.dtype == pl.List
+
+    # categorical dtype tests (including various forms of empty pyarrow array)
+    with pl.StringCache():
+        arr0 = pa.array(["foo", "bar"], pa.dictionary(pa.int32(), pa.utf8()))
+        assert_series_equal(
+            pl.Series("arr", ["foo", "bar"], pl.Categorical), pl.Series("arr", arr0)
+        )
+        arr1 = pa.array(["xxx", "xxx", None, "yyy"]).dictionary_encode()
+        arr2 = pa.array([]).dictionary_encode()
+        arr3 = pa.chunked_array([], arr1.type)
+        arr4 = pa.array([], arr1.type)
+
+        assert_series_equal(
+            pl.Series("arr", ["xxx", "xxx", None, "yyy"], dtype=pl.Categorical),
+            pl.Series("arr", arr1),
+        )
+        for arr in (arr2, arr3, arr4):
+            assert_series_equal(
+                pl.Series("arr", [], dtype=pl.Categorical), pl.Series("arr", arr)
+            )
 
 
 def test_view() -> None:
