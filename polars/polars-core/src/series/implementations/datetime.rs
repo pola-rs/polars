@@ -194,7 +194,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             "cannot do remainder operation on logical".into(),
         ))
     }
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         self.0.group_tuples(multithreaded, sorted)
     }
     #[cfg(feature = "sort_multiple")]

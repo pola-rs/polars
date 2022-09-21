@@ -93,7 +93,7 @@ fn run_partitions(
     }).collect()
 }
 
-fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> usize {
+fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> PolarsResult<usize> {
     // https://stats.stackexchange.com/a/19090/147321
     // estimated unique size
     // u + ui / m (s - m)
@@ -123,8 +123,8 @@ fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> usize {
         // not that sampling without replacement is very very expensive. don't do that.
         let s = keys[0].sample_n(sample_size, true, false, None).unwrap();
         // fast multi-threaded way to get unique.
-        let groups = s.group_tuples(true, false);
-        finish(&groups)
+        let groups = s.group_tuples(true, false)?;
+        Ok(finish(&groups))
     } else {
         let keys = keys
             .iter()
@@ -133,28 +133,32 @@ fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> usize {
         let df = DataFrame::new_no_checks(keys);
         let names = df.get_column_names();
         let gb = df.groupby(names).unwrap();
-        finish(gb.get_groups())
+        Ok(finish(gb.get_groups()))
     }
 }
 
 // Checks if we should run normal or default aggregation
 // by sampling data.
-fn can_run_partitioned(keys: &[Series], original_df: &DataFrame, state: &ExecutionState) -> bool {
+fn can_run_partitioned(
+    keys: &[Series],
+    original_df: &DataFrame,
+    state: &ExecutionState,
+) -> PolarsResult<bool> {
     if std::env::var("POLARS_NO_PARTITION").is_ok() {
         if state.verbose() {
             eprintln!("POLARS_NO_PARTITION set: running default HASH AGGREGATION")
         }
-        false
+        Ok(false)
     } else if std::env::var("POLARS_FORCE_PARTITION").is_ok() {
         if state.verbose() {
             eprintln!("POLARS_FORCE_PARTITION set: running partitioned HASH AGGREGATION")
         }
-        true
+        Ok(true)
     } else if original_df.height() < 1000 && !cfg!(test) {
         if state.verbose() {
             eprintln!("DATAFRAME < 1000 rows: running default HASH AGGREGATION")
         }
-        false
+        Ok(false)
     } else {
         // below this boundary we assume the partitioned groupby will be faster
         let unique_count_boundary = std::env::var("POLARS_PARTITION_UNIQUE_COUNT")
@@ -174,7 +178,7 @@ fn can_run_partitioned(keys: &[Series], original_df: &DataFrame, state: &Executi
                 let sample_size = std::cmp::min(sample_size, 1_000);
                 // we never sample less than 100 data points.
                 let sample_size = std::cmp::max(100, sample_size);
-                (estimate_unique_count(keys, sample_size), "estimated")
+                (estimate_unique_count(keys, sample_size)?, "estimated")
             }
         };
         if state.verbose() {
@@ -185,9 +189,9 @@ fn can_run_partitioned(keys: &[Series], original_df: &DataFrame, state: &Executi
             if state.verbose() {
                 eprintln!("estimated unique count: {} exceeded the boundary: {}, running default HASH AGGREGATION",unique_estimate, unique_count_boundary)
             }
-            false
+            Ok(false)
         } else {
-            true
+            Ok(true)
         }
     }
 }
@@ -205,7 +209,7 @@ impl PartitionGroupByExec {
             // of groups.
             let keys = self.keys(&original_df, state)?;
 
-            if !can_run_partitioned(&keys, &original_df, state) {
+            if !can_run_partitioned(&keys, &original_df, state)? {
                 return groupby_helper(
                     original_df,
                     keys,

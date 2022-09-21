@@ -141,6 +141,7 @@ where
     }
     let mut groups = ca
         .group_tuples(true, false)
+        .unwrap()
         .into_idx()
         .into_iter()
         .collect_trusted::<Vec<_>>();

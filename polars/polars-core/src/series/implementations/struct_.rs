@@ -56,12 +56,12 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
         self.0.agg_list(groups)
     }
 
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         let df = DataFrame::new_no_checks(vec![]);
         let gb = df
             .groupby_with_series(self.0.fields().to_vec(), multithreaded, sorted)
             .unwrap();
-        gb.take_groups()
+        Ok(gb.take_groups())
     }
 }
 
@@ -293,18 +293,18 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         let groups = self.group_tuples(true, false);
         // safety:
         // groups are in bounds
-        Ok(unsafe { self.0.clone().into_series().agg_first(&groups) })
+        Ok(unsafe { self.0.clone().into_series().agg_first(&groups?) })
     }
 
     /// Get unique values in the Series.
     fn n_unique(&self) -> PolarsResult<usize> {
-        let groups = self.group_tuples(true, false);
+        let groups = self.group_tuples(true, false)?;
         Ok(groups.len())
     }
 
     /// Get first indexes of unique values.
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        let groups = self.group_tuples(true, false);
+        let groups = self.group_tuples(true, false)?;
         let first = groups.take_group_firsts();
         Ok(IdxCa::from_vec(self.name(), first))
     }

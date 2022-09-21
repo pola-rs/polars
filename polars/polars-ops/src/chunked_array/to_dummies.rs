@@ -43,7 +43,7 @@ fn sort_columns(mut columns: Vec<Series>) -> Vec<Series> {
 impl ToDummies<Utf8Type> for Wrap<Utf8Chunked> {
     fn to_dummies(&self) -> PolarsResult<DataFrame> {
         let ca = &self.0;
-        let groups = ca.group_tuples(true, false).into_idx();
+        let groups = ca.group_tuples(true, false)?.into_idx();
         let col_name = ca.name();
         let taker = ca.take_rand();
 
@@ -68,7 +68,7 @@ impl ToDummies<Utf8Type> for Wrap<CategoricalChunked> {
     fn to_dummies(&self) -> PolarsResult<DataFrame> {
         let rev_map = self.get_rev_map();
 
-        let groups = self.logical().group_tuples(true, false).into_idx();
+        let groups = self.logical().group_tuples(true, false)?.into_idx();
         let col_name = self.name();
         let taker = self.logical().take_rand();
 
@@ -97,7 +97,7 @@ where
     T::Native: NumericNative,
 {
     fn to_dummies(&self) -> PolarsResult<DataFrame> {
-        let groups = self.group_tuples(true, false).into_idx();
+        let groups = self.group_tuples(true, false)?.into_idx();
         let col_name = self.name();
         let taker = self.take_rand();
 

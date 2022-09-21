@@ -10,7 +10,7 @@ pub trait SeriesMethods: SeriesSealed {
     fn value_counts(&self, multithreaded: bool, sorted: bool) -> PolarsResult<DataFrame> {
         let s = self.as_series();
         // we need to sort here as well in case of `maintain_order` because duplicates behavior is undefined
-        let groups = s.group_tuples(multithreaded, sorted);
+        let groups = s.group_tuples(multithreaded, sorted)?;
         let values = unsafe { s.agg_first(&groups) };
         let counts = groups.group_lengths("counts");
         let cols = vec![values.into_series(), counts.into_series()];

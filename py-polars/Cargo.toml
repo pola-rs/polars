@@ -87,6 +87,7 @@ all = [
   "polars/algo",
   "polars/cse",
   "propagate_nans",
+  "polars/groupby_list",
 ]
 
 # we cannot conditionaly activate simd

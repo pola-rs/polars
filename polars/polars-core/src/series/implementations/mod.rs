@@ -204,7 +204,7 @@ macro_rules! impl_dyn_series {
             fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
                 NumOpsDispatch::remainder(&self.0, rhs)
             }
-            fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+            fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
                 IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
             }
 

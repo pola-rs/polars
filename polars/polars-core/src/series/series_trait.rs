@@ -181,8 +181,8 @@ pub(crate) mod private {
         fn remainder(&self, _rhs: &Series) -> PolarsResult<Series> {
             invalid_operation_panic!(self)
         }
-        fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> GroupsProxy {
-            invalid_operation_panic!(self)
+        fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
+            invalid_operation!(self)
         }
         fn zip_with_same_type(
             &self,
