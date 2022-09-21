@@ -1500,3 +1500,9 @@ def test_short_formats() -> None:
 def test_iso_year() -> None:
     dt = datetime(2022, 1, 1, 7, 8, 40)
     assert pl.Series([dt]).dt.iso_year()[0] == 2021
+
+
+def test_invalid_date_parsing_4898() -> None:
+    assert pl.Series(["2022-09-18", "2022-09-50"]).str.strptime(
+        pl.Date, "%Y-%m-%d", strict=False
+    ).to_list() == [date(2022, 9, 18), None]
