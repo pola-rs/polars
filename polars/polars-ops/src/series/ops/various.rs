@@ -30,7 +30,7 @@ pub trait SeriesMethods: SeriesSealed {
                 let mut ca = s.list().unwrap().clone();
                 crate::chunked_array::hash::hash(&mut ca, build_hasher)
             }
-            _ => UInt64Chunked::from_vec(s.name(), s.0.vec_hash(build_hasher)),
+            _ => UInt64Chunked::from_vec(s.name(), s.0.vec_hash(build_hasher).unwrap()),
         }
     }
 }

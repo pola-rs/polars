@@ -186,8 +186,8 @@ pub(crate) fn inner_join_multiple_keys(
     let dfs_a = split_df(a, n_threads).unwrap();
     let dfs_b = split_df(b, n_threads).unwrap();
 
-    let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None);
-    let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state));
+    let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None).unwrap();
+    let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state)).unwrap();
 
     let hash_tbls = create_probe_table(&build_hashes, b);
     // early drop to reduce memory pressure
@@ -269,8 +269,8 @@ pub(crate) fn left_join_multiple_keys(
     let dfs_a = split_df(a, n_threads).unwrap();
     let dfs_b = split_df(b, n_threads).unwrap();
 
-    let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None);
-    let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state));
+    let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None).unwrap();
+    let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state)).unwrap();
 
     let hash_tbls = create_probe_table(&build_hashes, b);
     // early drop to reduce memory pressure
@@ -399,8 +399,8 @@ pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
     let dfs_a = split_df(a, n_threads).unwrap();
     let dfs_b = split_df(b, n_threads).unwrap();
 
-    let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None);
-    let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state));
+    let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None).unwrap();
+    let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state)).unwrap();
 
     let hash_tbls = create_build_table_semi_anti(&build_hashes, b);
     // early drop to reduce memory pressure
@@ -554,8 +554,8 @@ pub(crate) fn outer_join_multiple_keys(
     let dfs_a = split_df(a, n_threads).unwrap();
     let dfs_b = split_df(b, n_threads).unwrap();
 
-    let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None);
-    let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state));
+    let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None).unwrap();
+    let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state)).unwrap();
 
     let mut hash_tbls = create_build_table_outer(&build_hashes, b);
     // early drop to reduce memory pressure

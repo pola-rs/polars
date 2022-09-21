@@ -73,12 +73,13 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         })
     }
 
-    fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
-        self.0.vec_hash(random_state)
+    fn vec_hash(&self, random_state: RandomState) -> PolarsResult<Vec<u64>> {
+        Ok(self.0.vec_hash(random_state))
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) {
-        self.0.vec_hash_combine(build_hasher, hashes)
+    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+        self.0.vec_hash_combine(build_hasher, hashes);
+        Ok(())
     }
 
     unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {

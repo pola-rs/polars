@@ -39,8 +39,8 @@ use pyo3::wrap_pyfunction;
 use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};
 use crate::dataframe::PyDataFrame;
 use crate::error::{
-    ArrowErrorException, ComputeError, DuplicateError, NoDataError, NotFoundError, PyPolarsErr,
-    SchemaError,
+    ArrowErrorException, ComputeError, DuplicateError, InvalidOperationError, NoDataError,
+    NotFoundError, PyPolarsErr, SchemaError,
 };
 use crate::file::{get_either_file, EitherRustPythonFile};
 use crate::lazy::dataframe::{PyLazyFrame, PyLazyGroupBy};
@@ -497,6 +497,11 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add("PanicException", py.get_type::<PanicException>())
         .unwrap();
+    m.add(
+        "InvalidOperationError",
+        py.get_type::<InvalidOperationError>(),
+    )
+    .unwrap();
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
     m.add_class::<PyLazyFrame>().unwrap();

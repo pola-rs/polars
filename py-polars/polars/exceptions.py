@@ -3,6 +3,7 @@ try:
         ArrowError,
         ComputeError,
         DuplicateError,
+        InvalidOperationError,
         NoDataError,
         NotFoundError,
         PanicException,
@@ -34,6 +35,9 @@ except ImportError:
     class DuplicateError(Exception):  # type: ignore[no-redef]
         """Exception raised when a column name is duplicated."""
 
+    class InvalidOperationError(Exception):  # type: ignore[no-redef]
+        """Exception raised when an operation is not allowed on a certain data type."""
+
     class PanicException(Exception):  # type: ignore[no-redef]
         """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: E501
 
@@ -58,6 +62,7 @@ __all__ = [
     "SchemaError",
     "ShapeError",
     "DuplicateError",
+    "InvalidOperationError",
     "PanicException",
     "RowsException",
     "NoRowsReturned",

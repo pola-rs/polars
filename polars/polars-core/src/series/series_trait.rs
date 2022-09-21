@@ -117,11 +117,15 @@ pub(crate) mod private {
         fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
             invalid_operation_panic!(self)
         }
-        fn vec_hash(&self, _build_hasher: RandomState) -> Vec<u64> {
-            invalid_operation_panic!(self)
+        fn vec_hash(&self, _build_hasher: RandomState) -> PolarsResult<Vec<u64>> {
+            invalid_operation!(self)
         }
-        fn vec_hash_combine(&self, _build_hasher: RandomState, _hashes: &mut [u64]) {
-            invalid_operation_panic!(self)
+        fn vec_hash_combine(
+            &self,
+            _build_hasher: RandomState,
+            _hashes: &mut [u64],
+        ) -> PolarsResult<()> {
+            invalid_operation!(self)
         }
         unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())

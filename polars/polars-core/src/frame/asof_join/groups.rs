@@ -385,8 +385,8 @@ where
     let dfs_a = split_df(a, n_threads).unwrap();
     let dfs_b = split_df(b, n_threads).unwrap();
 
-    let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None);
-    let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state));
+    let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None).unwrap();
+    let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state)).unwrap();
 
     let hash_tbls = mk::create_probe_table(&build_hashes, b);
     // early drop to reduce memory pressure

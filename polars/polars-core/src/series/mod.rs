@@ -145,7 +145,7 @@ impl Eq for Wrap<Series> {}
 impl Hash for Wrap<Series> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         let rs = RandomState::with_seeds(0, 0, 0, 0);
-        let h = UInt64Chunked::from_vec("", self.0.vec_hash(rs)).sum();
+        let h = UInt64Chunked::from_vec("", self.0.vec_hash(rs).unwrap()).sum();
         h.hash(state)
     }
 }
