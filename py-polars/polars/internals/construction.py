@@ -216,7 +216,14 @@ def sequence_to_pyseries(
 
     else:
         if python_dtype is None:
-            python_dtype = float if (value is None) else type(value)
+            if value is None:
+                # generic default dtype
+                python_dtype = float
+            else:
+                python_dtype = type(value)
+                if datetime == python_dtype:
+                    # note: python-native datetimes have microsecond precision
+                    temporal_unit = "us"
 
         # temporal branch
         if python_dtype in py_temporal_types:
