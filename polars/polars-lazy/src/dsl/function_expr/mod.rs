@@ -109,61 +109,64 @@ pub enum FunctionExpr {
     Not,
     IsUnique,
     IsDuplicated,
+    Coalesce,
 }
 
 impl Display for FunctionExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use FunctionExpr::*;
 
-        match self {
-            NullCount => write!(f, "null_count"),
-            Pow => write!(f, "pow"),
+        let s = match self {
+            NullCount => "null_count",
+            Pow => "pow",
             #[cfg(feature = "row_hash")]
-            Hash(_, _, _, _) => write!(f, "hash"),
+            Hash(_, _, _, _) => "hash",
             #[cfg(feature = "is_in")]
-            IsIn => write!(f, "is_in"),
+            IsIn => "is_in",
             #[cfg(feature = "arg_where")]
-            ArgWhere => write!(f, "arg_where"),
+            ArgWhere => "arg_where",
             #[cfg(feature = "search_sorted")]
-            SearchSorted => write!(f, "search_sorted"),
+            SearchSorted => "search_sorted",
             #[cfg(feature = "strings")]
-            StringExpr(s) => write!(f, "{}", s),
+            StringExpr(s) => return write!(f, "{}", s),
             #[cfg(feature = "temporal")]
-            TemporalExpr(fun) => write!(f, "{}", fun),
+            TemporalExpr(fun) => return write!(f, "{}", fun),
             #[cfg(feature = "date_offset")]
-            DateOffset(_) => write!(f, "dt.offset_by"),
+            DateOffset(_) => "dt.offset_by",
             #[cfg(feature = "trigonometry")]
-            Trigonometry(func) => write!(f, "{}", func),
+            Trigonometry(func) => return write!(f, "{}", func),
             #[cfg(feature = "sign")]
-            Sign => write!(f, "sign"),
-            FillNull { .. } => write!(f, "fill_null"),
+            Sign => "sign",
+            FillNull { .. } => "fill_null",
             #[cfg(feature = "is_in")]
-            ListContains => write!(f, "arr.contains"),
+            ListContains => "arr.contains",
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
-            RollingSkew { .. } => write!(f, "rolling_skew"),
-            ShiftAndFill { .. } => write!(f, "shift_and_fill"),
-            Nan(_) => write!(f, "nan"),
+            RollingSkew { .. } => "rolling_skew",
+            ShiftAndFill { .. } => "shift_and_fill",
+            Nan(_) => "nan",
             #[cfg(feature = "round_series")]
             Clip { min, max } => match (min, max) {
-                (Some(_), Some(_)) => write!(f, "clip"),
-                (None, Some(_)) => write!(f, "clip_max"),
-                (Some(_), None) => write!(f, "clip_min"),
+                (Some(_), Some(_)) => "clip",
+                (None, Some(_)) => "clip_max",
+                (Some(_), None) => "clip_min",
                 _ => unreachable!(),
             },
             #[cfg(feature = "list")]
-            ListExpr(func) => write!(f, "{}", func),
+            ListExpr(func) => return write!(f, "{}", func),
             #[cfg(feature = "dtype-struct")]
-            StructExpr(func) => write!(f, "{}", func),
+            StructExpr(func) => return write!(f, "{}", func),
             #[cfg(feature = "top_k")]
-            TopK { .. } => write!(f, "top_k"),
-            Shift(_) => write!(f, "shift"),
-            Reverse => write!(f, "reverse"),
-            Not => write!(f, "is_not"),
-            IsNull => write!(f, "is_null"),
-            IsNotNull => write!(f, "is_not_null"),
-            IsUnique => write!(f, "is_unique"),
-            IsDuplicated => write!(f, "is_duplicated"),
-        }
+            TopK { .. } => "top_k",
+            Shift(_) => "shift",
+            Reverse => "reverse",
+            Not => "is_not",
+            IsNull => "is_null",
+            IsNotNull => "is_not_null",
+            IsUnique => "is_unique",
+            IsDuplicated => "is_duplicated",
+            Coalesce => "coalesce",
+        };
+        write!(f, "{}", s)
     }
 }
 
@@ -177,6 +180,14 @@ macro_rules! wrap {
 // all expression arguments are in the slice.
 // the first element is the root expression.
 macro_rules! map_as_slice {
+    ($func:path) => {{
+        let f = move |s: &mut [Series]| {
+            $func(s)
+        };
+
+        SpecialEq::new(Arc::new(f))
+    }};
+
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
             $func(s, $($args),*)
@@ -324,6 +335,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Not => map!(dispatch::is_not),
             IsUnique => map!(dispatch::is_unique),
             IsDuplicated => map!(dispatch::is_duplicated),
+            Coalesce => map_as_slice!(fill_null::coalesce),
         }
     }
 }

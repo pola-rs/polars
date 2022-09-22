@@ -82,6 +82,7 @@ from polars.internals.lazy_functions import (
     arg_where,
     argsort_by,
     avg,
+    coalesce,
     col,
     collect_all,
     concat_list,
@@ -258,6 +259,7 @@ __all__ = [
     "var",
     "struct",
     "duration",
+    "coalesce",
     # polars.convert
     "from_dict",
     "from_dicts",
