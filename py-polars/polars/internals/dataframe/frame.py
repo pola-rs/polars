@@ -13,6 +13,7 @@ from typing import (
     Callable,
     Iterator,
     Mapping,
+    NoReturn,
     Sequence,
     TextIO,
     TypeVar,
@@ -1051,6 +1052,12 @@ class DataFrame:
             return self.select(pli.all() <= other)
         else:
             raise ValueError(f"got unexpected comparison operator: {op}")
+
+    def __bool__(self) -> NoReturn:
+        raise ValueError(
+            "The truth value of a DataFrame is ambiguous. "
+            "Hint: to check if a DataFrame contains any values, use 'is_empty()'"
+        )
 
     def __eq__(self, other: Any) -> DataFrame:  # type: ignore[override]
         return self._comp(other, "eq")

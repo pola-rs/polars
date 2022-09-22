@@ -40,6 +40,10 @@ def test_lazyframe_membership_operator() -> None:
     assert "name" in ldf
     assert "phone" not in ldf
 
+    # note: cannot use lazyframe in boolean context
+    with pytest.raises(ValueError, match="ambiguous"):
+        not ldf
+
 
 def test_apply() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
@@ -121,7 +125,7 @@ def test_fold() -> None:
     out = df.select(
         pl.fold(acc=lit(0), f=lambda acc, x: acc + x, exprs=pl.col("*")).alias("foo")
     )
-    assert out["foo"] == [2, 4, 6]
+    assert out["foo"].to_list() == [2, 4, 6]
 
 
 def test_or() -> None:
@@ -286,7 +290,7 @@ def test_is_duplicated() -> None:
 
 def test_arg_sort() -> None:
     df = pl.DataFrame({"a": [4, 1, 3]})
-    assert df.select(col("a").arg_sort())["a"] == [1, 2, 0]
+    assert df.select(col("a").arg_sort())["a"].to_list() == [1, 2, 0]
 
 
 def test_window_function() -> None:
@@ -307,10 +311,10 @@ def test_window_function() -> None:
         ]
     )
     out = q.collect()
-    assert out["cars_max_B"] == [5, 4, 5, 5, 5]
+    assert out["cars_max_B"].to_list() == [5, 4, 5, 5, 5]
 
     out = df.select([pl.first("B").over(["fruits", "cars"]).alias("B_first")])
-    assert out["B_first"] == [5, 4, 3, 3, 5]
+    assert out["B_first"].to_list() == [5, 4, 3, 3, 5]
 
 
 def test_when_then_flatten() -> None:
@@ -322,7 +326,7 @@ def test_when_then_flatten() -> None:
         .when(col("bar") < 3)
         .then(10)
         .otherwise(30)
-    )["bar"] == [30, 4, 5]
+    )["bar"].to_list() == [30, 4, 5]
 
 
 def test_describe_plan() -> None:
@@ -371,10 +375,9 @@ def test_concat_str() -> None:
     df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
 
     out = df.select([pl.concat_str(["a", "b"], sep="-")])
-    assert out["a"] == ["a-1", "a-2", "a-3"]
+    assert out["a"].to_list() == ["a-1", "b-2", "c-3"]
 
     out = df.select([pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")])
-
     assert out["fmt"].to_list() == ["foo_a_bar_1", "foo_b_bar_2", "foo_c_bar_3"]
 
 
@@ -588,10 +591,10 @@ def test_col_series_selection() -> None:
 
 def test_interpolate() -> None:
     df = pl.DataFrame({"a": [1, None, 3]})
-    assert df.select(col("a").interpolate())["a"] == [1, 2, 3]
-    assert df["a"].interpolate() == [1, 2, 3]
-    assert df.interpolate()["a"] == [1, 2, 3]
-    assert df.lazy().interpolate().collect()["a"] == [1, 2, 3]
+    assert df.select(col("a").interpolate())["a"].to_list() == [1, 2, 3]
+    assert df["a"].interpolate().to_list() == [1, 2, 3]
+    assert df.interpolate()["a"].to_list() == [1, 2, 3]
+    assert df.lazy().interpolate().collect()["a"].to_list() == [1, 2, 3]
 
 
 def test_fill_nan() -> None:
@@ -618,7 +621,7 @@ def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
 
     assert df.select([pl.col("a").fill_null(strategy="min")])["a"][1] == 1.0
-    assert df.lazy().fill_null(2).collect()["a"] == [1.0, 2.0, 3.0]
+    assert df.lazy().fill_null(2).collect()["a"].to_list() == [1.0, 2.0, 3.0]
 
     with pytest.raises(ValueError, match="must specify either"):
         df.fill_null()
@@ -657,8 +660,8 @@ def test_take(fruits_cars: pl.DataFrame) -> None:
             ]
         )
 
-        assert out[0, "B"] == [2, 3]
-        assert out[4, "B"] == [1, 4]
+        assert out[0, "B"].to_list() == [2, 3]
+        assert out[4, "B"].to_list() == [1, 4]
 
     out = df.sort("fruits").select(
         [col("B").reverse().take(pl.lit(1)).list().over("fruits"), "fruits"]

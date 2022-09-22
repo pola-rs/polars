@@ -412,3 +412,13 @@ def test_abs_expr() -> None:
     out = df.select(abs(pl.col("x")))
 
     assert out["x"].to_list() == [1, 0, 1]
+
+
+def test_logical_boolean() -> None:
+    # note, cannot use expressions in logical
+    # boolean context (eg: and/or/not operators)
+    with pytest.raises(ValueError, match="ambiguous"):
+        pl.col("colx") and pl.col("coly")
+
+    with pytest.raises(ValueError, match="ambiguous"):
+        pl.col("colx") or pl.col("coly")
