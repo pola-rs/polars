@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use super::*;
 
 fn cached_before_root(q: LazyFrame) {
@@ -87,6 +89,54 @@ fn test_cse_cache_union_projection_pd() -> PolarsResult<()> {
             _ => true,
         }
     }));
+
+    Ok(())
+}
+
+#[test]
+fn test_cse_union2_4925() -> PolarsResult<()> {
+    let lf1 = df![
+        "ts" => [1],
+        "sym" => ["a"],
+        "c" => [true],
+    ]?
+    .lazy();
+
+    let lf2 = df![
+        "ts" => [1],
+        "d" => [3],
+    ]?
+    .lazy();
+
+    let lf1 = concat(&[lf1.clone(), lf1], false, false)?;
+    let lf2 = concat(&[lf2.clone(), lf2], false, false)?;
+
+    let q = lf1.inner_join(lf2, col("ts"), col("ts")).select([
+        col("ts"),
+        col("sym"),
+        col("d") / col("c"),
+    ]);
+
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+
+    // ensure we get two different caches
+    // and ensure that every cache only has 1 hit.
+    let cache_ids = (&lp_arena)
+        .iter(lp)
+        .flat_map(|(_, lp)| {
+            use ALogicalPlan::*;
+            match lp {
+                Cache { id, count, .. } => {
+                    assert_eq!(*count, 1);
+                    Some(*id)
+                }
+                _ => None,
+            }
+        })
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(cache_ids.len(), 2);
 
     Ok(())
 }

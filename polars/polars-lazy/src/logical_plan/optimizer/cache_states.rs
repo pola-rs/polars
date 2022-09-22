@@ -27,6 +27,8 @@ fn get_upper_projections(
     }
 }
 
+/// This will ensure that all equal caches communicate the amount of columns
+/// they need to project.
 pub(crate) fn set_cache_states(
     root: Node,
     lp_arena: &mut Arena<ALogicalPlan>,

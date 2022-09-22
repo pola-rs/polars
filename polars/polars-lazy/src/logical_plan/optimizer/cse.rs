@@ -51,17 +51,24 @@ pub(crate) fn collect_trails(
         Union { inputs, .. } => {
             let new_trail = trails.get(id).unwrap().clone();
 
-            for input in inputs.iter() {
+            let last_i = inputs.len() - 1;
+
+            for (i, input) in inputs.iter().enumerate() {
                 collect_trails(*input, lp_arena, trails, id, true)?;
-                *id += 1;
-                trails.insert(*id, new_trail.clone());
+
+                // don't add a trail on the last iteration as that would only add a Union
+                // without any inputs
+                if i != last_i {
+                    *id += 1;
+                    trails.insert(*id, new_trail.clone());
+                }
             }
         }
         ExtContext { .. } => {
             // block for now.
         }
         lp => {
-            // other nodes have only a single
+            // other nodes have only a single input
             let nodes = &mut [None];
             lp.copy_inputs(nodes);
             if let Some(input) = nodes[0] {
@@ -258,6 +265,7 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
     }
 }
 
+/// Iterate from two leaf location upwards and find the latest matching node.
 fn longest_subgraph(
     trail_a: &Trail,
     trail_b: &Trail,
@@ -274,6 +282,12 @@ fn longest_subgraph(
 
     // iterates from the leafs upwards
     for (node_a, node_b) in trail_a.iter().rev().zip(trail_b.iter().rev()) {
+        // we never include the root that splits a trail
+        // e.g. don't want to cache the join/union, but
+        // we want to cache the similar inputs
+        if *node_a == *node_b {
+            break;
+        }
         let a = lp_arena.get(*node_a);
         let b = lp_arena.get(*node_b);
 
@@ -313,7 +327,6 @@ pub(crate) fn elim_cmn_subplans(
     // search from the leafs upwards and find the longest shared subplans
     let mut trail_ends = vec![];
 
-    // let mut equal_trails = vec![];
     for i in 0..trails.len() {
         let trail_i = &trails[i];
 
