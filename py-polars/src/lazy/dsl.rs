@@ -809,6 +809,12 @@ impl PyExpr {
     pub fn second(&self) -> PyExpr {
         self.clone().inner.dt().second().into()
     }
+    pub fn millisecond(&self) -> PyExpr {
+        self.clone().inner.dt().millisecond().into()
+    }
+    pub fn microsecond(&self) -> PyExpr {
+        self.clone().inner.dt().microsecond().into()
+    }
     pub fn nanosecond(&self) -> PyExpr {
         self.clone().inner.dt().nanosecond().into()
     }

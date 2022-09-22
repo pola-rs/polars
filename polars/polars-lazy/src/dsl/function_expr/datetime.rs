@@ -17,7 +17,9 @@ pub enum TemporalFunction {
     Hour,
     Minute,
     Second,
-    NanoSecond,
+    Millisecond,
+    Microsecond,
+    Nanosecond,
     TimeStamp(TimeUnit),
 }
 
@@ -36,7 +38,9 @@ impl Display for TemporalFunction {
             Hour => "hour",
             Minute => "minute",
             Second => "second",
-            NanoSecond => "nanosecond",
+            Millisecond => "millisecond",
+            Microsecond => "microsecond",
+            Nanosecond => "nanosecond",
             TimeStamp(tu) => return write!(f, "dt.timestamp({})", tu),
         };
         write!(f, "dt.{}", s)
@@ -76,10 +80,15 @@ pub(super) fn minute(s: &Series) -> PolarsResult<Series> {
 pub(super) fn second(s: &Series) -> PolarsResult<Series> {
     s.second().map(|ca| ca.into_series())
 }
+pub(super) fn millisecond(s: &Series) -> PolarsResult<Series> {
+    s.nanosecond().map(|ca| (ca / 1_000_000).into_series())
+}
+pub(super) fn microsecond(s: &Series) -> PolarsResult<Series> {
+    s.nanosecond().map(|ca| (ca / 1_000).into_series())
+}
 pub(super) fn nanosecond(s: &Series) -> PolarsResult<Series> {
     s.nanosecond().map(|ca| ca.into_series())
 }
-
 pub(super) fn timestamp(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
     s.timestamp(tu).map(|ca| ca.into_series())
 }

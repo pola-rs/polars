@@ -283,6 +283,9 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.epoch
     ExprDateTimeNameSpace.hour
     ExprDateTimeNameSpace.hours
+    ExprDateTimeNameSpace.microsecond
+    ExprDateTimeNameSpace.microseconds
+    ExprDateTimeNameSpace.millisecond
     ExprDateTimeNameSpace.milliseconds
     ExprDateTimeNameSpace.minute
     ExprDateTimeNameSpace.minutes

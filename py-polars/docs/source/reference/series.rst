@@ -235,6 +235,9 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.max
     DateTimeNameSpace.mean
     DateTimeNameSpace.median
+    DateTimeNameSpace.microsecond
+    DateTimeNameSpace.microseconds
+    DateTimeNameSpace.millisecond
     DateTimeNameSpace.milliseconds
     DateTimeNameSpace.min
     DateTimeNameSpace.minute
