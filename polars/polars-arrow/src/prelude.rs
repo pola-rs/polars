@@ -1,4 +1,4 @@
-use arrow::array::{ListArray, Utf8Array, BinaryArray};
+use arrow::array::{BinaryArray, ListArray, Utf8Array};
 
 pub use crate::array::default_arrays::*;
 pub use crate::array::*;

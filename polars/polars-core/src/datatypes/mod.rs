@@ -335,7 +335,9 @@ impl Serialize for AnyValue<'_> {
                 serializer.serialize_newtype_variant(name, 13, "Utf8Owned", v)
             }
             AnyValue::Binary(v) => serializer.serialize_newtype_variant(name, 14, "BinaryOwned", v),
-            AnyValue::BinaryOwned(v) => serializer.serialize_newtype_variant(name, 14, "BinaryOwned", v),
+            AnyValue::BinaryOwned(v) => {
+                serializer.serialize_newtype_variant(name, 14, "BinaryOwned", v)
+            }
             _ => todo!(),
         }
     }
