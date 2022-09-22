@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import random
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence
 from warnings import warn
 
 from polars import internals as pli
@@ -140,7 +140,7 @@ class Expr:
     def __str__(self) -> str:
         return self._pyexpr.to_str()
 
-    def __bool__(self) -> Expr:
+    def __bool__(self) -> NoReturn:
         raise ValueError(
             "Since Expr are lazy, the truthiness of an Expr is ambiguous. "
             "Hint: use '&' or '|' to chain Expr together, not and/or."

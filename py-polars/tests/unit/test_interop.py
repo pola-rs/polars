@@ -229,13 +229,12 @@ def test_from_dicts() -> None:
     assert df.shape == (3, 2)
 
 
-@pytest.mark.skip("not implemented yet")
 def test_from_dicts_struct() -> None:
     data = [{"a": {"b": 1, "c": 2}, "d": 5}, {"a": {"b": 3, "c": 4}, "d": 6}]
     df = pl.from_dicts(data)
     assert df.shape == (2, 2)
-    assert df["a"][0] == (1, 2)
-    assert df["a"][1] == (3, 4)
+    assert df["a"][0] == {"b": 1, "c": 2}
+    assert df["a"][1] == {"b": 3, "c": 4}
 
 
 def test_from_records() -> None:

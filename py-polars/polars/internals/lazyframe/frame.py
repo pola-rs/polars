@@ -7,7 +7,7 @@ import tempfile
 import typing
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Sequence, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, TypeVar, overload
 from warnings import warn
 
 from polars import internals as pli
@@ -389,6 +389,12 @@ class LazyFrame:
 
         """  # noqa: E501
         return self._ldf.schema()
+
+    def __bool__(self) -> NoReturn:
+        raise ValueError(
+            "The truth value of a LazyFrame is ambiguous; consequently it "
+            "cannot be used in boolean context with and/or/not operators. "
+        )
 
     def __contains__(self: LDF, key: str) -> bool:
         return key in self.columns

@@ -17,7 +17,7 @@ else:
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, TemporalDataType
-from polars.testing import verify_series_and_expr_api
+from polars.testing import assert_series_equal, verify_series_and_expr_api
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit
@@ -83,7 +83,7 @@ def test_series_add_datetime() -> None:
     out = pl.Series(
         [datetime(2027, 5, 19), datetime(2054, 10, 4), datetime(2082, 2, 19)]
     )
-    assert (deltas + pl.Series([datetime(2000, 1, 1)])) == out
+    assert_series_equal(deltas + pl.Series([datetime(2000, 1, 1)]), out)
 
 
 def test_diff_datetime() -> None:
@@ -102,7 +102,7 @@ def test_diff_datetime() -> None:
             ]
         ).with_columns([pl.col("timestamp").diff().list().over("char")])
     )["timestamp"]
-    assert out[0] == out[1]
+    assert (out[0] == out[1]).all()
 
 
 def test_from_pydatetime() -> None:
@@ -379,7 +379,7 @@ def test_date_range() -> None:
     assert result.name == "drange"
 
     result = pl.date_range(date(2022, 1, 1), date(2022, 1, 2), "1h30m")
-    assert result == [
+    assert list(result) == [
         datetime(2022, 1, 1, 0, 0),
         datetime(2022, 1, 1, 1, 30),
         datetime(2022, 1, 1, 3, 0),

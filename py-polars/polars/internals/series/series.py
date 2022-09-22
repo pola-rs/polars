@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Sequence, Union
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, Union
 from warnings import warn
 
 from polars import internals as pli
@@ -321,6 +321,13 @@ class Series:
     def time_unit(self) -> TimeUnit | None:
         """Get the time unit of underlying Datetime Series as {"ns", "us", "ms"}."""
         return self._s.time_unit()
+
+    def __bool__(self) -> NoReturn:
+        raise ValueError(
+            "The truth value of a Series is ambiguous. Hint: use '&' or '|' to chain "
+            "Series boolean results together, not and/or; to check if a Series "
+            "contains any values, use 'is_empty()'"
+        )
 
     def __getstate__(self) -> Any:
         return self._s.__getstate__()
