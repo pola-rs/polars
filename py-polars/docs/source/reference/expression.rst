@@ -21,6 +21,7 @@ These functions can be used as expression and sometimes also in eager contexts.
    concat_list
    concat_str
    count
+   coalesce
    cov
    date
    datetime

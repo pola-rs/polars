@@ -912,6 +912,7 @@ pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
 }
 
 #[cfg(feature = "arg_where")]
+#[cfg_attr(docsrs, doc(cfg(feature = "arg_where")))]
 /// Get the indices where `condition` evaluates `true`.
 pub fn arg_where<E: Into<Expr>>(condition: E) -> Expr {
     let condition = condition.into();
@@ -921,6 +922,20 @@ pub fn arg_where<E: Into<Expr>>(condition: E) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             fmt_str: "arg_where",
+            ..Default::default()
+        },
+    }
+}
+
+/// Folds the expressions from left to right keeping the first no null values.
+pub fn coalesce(exprs: &[Expr]) -> Expr {
+    let input = exprs.to_vec();
+    Expr::Function {
+        input,
+        function: FunctionExpr::Coalesce,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            cast_to_supertypes: true,
             ..Default::default()
         },
     }

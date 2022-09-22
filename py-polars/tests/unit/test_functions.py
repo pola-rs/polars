@@ -203,3 +203,16 @@ def test_nan_aggregations() -> None:
         str(df.groupby("b").agg(aggs).to_dict(False))
         == "{'b': [1], 'max': [3.0], 'min': [2.0], 'nan_max': [nan], 'nan_min': [nan]}"
     )
+
+
+def test_coalesce() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [None, None, None, None],
+            "b": [1, 2, None, None],
+            "c": [1, None, 3, None],
+        }
+    )
+    assert df.select(pl.coalesce(["a", "b", "c", 10])).to_dict(False) == {
+        "a": [1.0, 2.0, 3.0, 10.0]
+    }

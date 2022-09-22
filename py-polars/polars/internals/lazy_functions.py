@@ -28,6 +28,7 @@ try:
     from polars.polars import arg_where as py_arg_where
     from polars.polars import argsort_by as pyargsort_by
     from polars.polars import as_struct as _as_struct
+    from polars.polars import coalesce_exprs as _coalesce_exprs
     from polars.polars import col as pycol
     from polars.polars import collect_all as _collect_all
     from polars.polars import cols as pycols
@@ -1847,3 +1848,21 @@ def arg_where(
     else:
         condition = pli.expr_to_lit_or_expr(condition, str_to_lit=True)
         return pli.wrap_expr(py_arg_where(condition._pyexpr))
+
+
+def coalesce(
+    exprs: Sequence[
+        pli.Expr | str | date | datetime | timedelta | int | float | bool | pli.Series
+    ],
+) -> pli.Expr:
+    """
+    Folds the expressions from left to right keeping the first no null values.
+
+    Parameters
+    ----------
+    exprs
+        Expression to coalesce.
+
+    """
+    exprs = pli.selection_to_pyexpr_list(exprs)
+    return pli.wrap_expr(_coalesce_exprs(exprs))

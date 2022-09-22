@@ -455,6 +455,12 @@ fn max_exprs(exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
+fn coalesce_exprs(exprs: Vec<PyExpr>) -> PyExpr {
+    let exprs = exprs.to_exprs();
+    polars::lazy::dsl::coalesce(&exprs).into()
+}
+
+#[pyfunction]
 fn sum_exprs(exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
     polars::lazy::dsl::sum_exprs(exprs).into()
@@ -551,5 +557,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(pool_size)).unwrap();
     m.add_wrapped(wrap_pyfunction!(arg_where)).unwrap();
     m.add_wrapped(wrap_pyfunction!(get_idx_type)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(coalesce_exprs)).unwrap();
     Ok(())
 }

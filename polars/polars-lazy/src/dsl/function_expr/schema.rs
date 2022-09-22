@@ -79,6 +79,7 @@ impl FunctionExpr {
         match self {
             NullCount => with_dtype(IDX_DTYPE),
             Pow => super_type(),
+            Coalesce => super_type(),
             #[cfg(feature = "row_hash")]
             Hash(..) => with_dtype(DataType::UInt64),
             #[cfg(feature = "is_in")]
