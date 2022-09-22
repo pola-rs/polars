@@ -109,8 +109,18 @@ def test_concat() -> None:
 
 
 def test_to_frame() -> None:
-    s = pl.Series([1, 2])
-    assert s.to_frame().shape == (2, 1)
+    s1 = pl.Series([1, 2])
+    s2 = pl.Series("s", [1, 2])
+
+    df1 = s1.to_frame()
+    df2 = s2.to_frame()
+    df3 = s1.to_frame("xyz")
+    df4 = s2.to_frame("xyz")
+
+    for df, name in ((df1, ""), (df2, "s"), (df3, "xyz"), (df4, "xyz")):
+        assert isinstance(df, pl.DataFrame)
+        assert df.rows() == [(1,), (2,)]
+        assert df.columns == [name]
 
 
 def test_bitwise_ops() -> None:
