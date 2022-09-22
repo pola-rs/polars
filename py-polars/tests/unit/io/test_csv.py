@@ -820,3 +820,33 @@ def test_duplicated_columns() -> None:
     assert pl.read_csv(csv.encode()).columns == ["a", "a_duplicated_0"]
     new = ["c", "d"]
     assert pl.read_csv(csv.encode(), new_columns=new).columns == new
+
+
+def test_csv_categorical_lifetime() -> None:
+    # escaped strings do some heap allocates in the builder
+    # this tests of the lifetimes remains valid
+    csv = textwrap.dedent(
+        r"""
+    a,b
+    "needs_escape",b
+    "" ""needs" escape" foo"",b
+    "" ""needs" escape" foo"",
+    """
+    )
+
+    for string_cache in [True, False]:
+        pl.toggle_string_cache(string_cache)
+        df = pl.read_csv(
+            csv.encode(), dtypes={"a": pl.Categorical, "b": pl.Categorical}
+        )
+        assert df.dtypes == [pl.Categorical, pl.Categorical]
+        assert df.to_dict(False) == {
+            "a": ["needs_escape", ' "needs escape foo', ' "needs escape foo'],
+            "b": ["b", "b", None],
+        }
+
+        if string_cache:
+            assert (df["a"] == df["b"]).to_list() == [False, False, False]
+        else:
+            with pytest.raises(pl.ComputeError):
+                df["a"] == df["b"]  # noqa: B015
