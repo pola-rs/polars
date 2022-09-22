@@ -130,6 +130,31 @@ impl Utf8Chunked {
 }
 
 #[doc(hidden)]
+impl BinaryChunked {
+    pub fn downcast_iter(&self) -> impl Iterator<Item = &BinaryArray<i64>> + DoubleEndedIterator {
+        // Safety:
+        // This is the array type that must be in a BinaryChunked
+        self.chunks.iter().map(|arr| {
+            // Safety:
+            // This should be the array type in BinaryChunked
+            let arr = &**arr;
+            unsafe { &*(arr as *const dyn Array as *const BinaryArray<i64>) }
+        })
+    }
+    pub fn downcast_chunks(&self) -> Chunks<'_, BinaryArray<i64>> {
+        Chunks::new(&self.chunks)
+    }
+
+    #[inline]
+    pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
+        if self.chunks.len() == 1 {
+            return (0, index);
+        }
+        index_to_chunked_index(self.downcast_iter().map(|arr| arr.len()), index)
+    }
+}
+
+#[doc(hidden)]
 impl ListChunked {
     pub fn downcast_iter(&self) -> impl Iterator<Item = &ListArray<i64>> + DoubleEndedIterator {
         // Safety:
