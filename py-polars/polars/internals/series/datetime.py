@@ -500,6 +500,7 @@ class DateTimeNameSpace:
             2001-01-01 23:00:00
             2001-01-02 00:00:00
         ]
-        >>> assert s.dt.truncate("1h") == s.dt.truncate(timedelta(hours=1))
+        >>> s.dt.truncate("1h").series_equal(s.dt.truncate(timedelta(hours=1)))
+        True
 
         """
