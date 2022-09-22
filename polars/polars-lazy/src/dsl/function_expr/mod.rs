@@ -407,7 +407,9 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Hour => map!(datetime::hour),
             Minute => map!(datetime::minute),
             Second => map!(datetime::second),
-            NanoSecond => map!(datetime::nanosecond),
+            Millisecond => map!(datetime::millisecond),
+            Microsecond => map!(datetime::microsecond),
+            Nanosecond => map!(datetime::nanosecond),
             TimeStamp(tu) => map!(datetime::timestamp, tu),
         }
     }

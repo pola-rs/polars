@@ -296,8 +296,8 @@ out = (
     .select([pl.sum("id6"), pl.sum("v3")])
     .collect()
 )
-assert out["id6"] == 430957682
-assert np.isclose(out["v3"], 4.724150165888001e6)
+assert out["id6"].to_list() == [430957682]
+assert np.isclose(out["v3"].to_list(), 4.724150165888001e6).all()
 print(out)
 
 out = (
@@ -307,8 +307,8 @@ out = (
 )
 print(out)
 
-assert out["id6"] == 2137755425
-assert np.isclose(out["v3"], 4.7040828499563754e8)
+assert out["id6"].to_list() == [2137755425]
+assert np.isclose(out["v3"].to_list(), 4.7040828499563754e8).all()
 
 if not ON_STRINGS:
     if total_time > 12:

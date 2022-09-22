@@ -1567,10 +1567,16 @@ def test_dt_datetimes() -> None:
     s = pl.Series(["2020-01-01 00:00:00.000000000", "2020-02-02 03:20:10.987654321"])
     s = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
 
-    # hours, minutes, seconds and nanoseconds
+    # hours, minutes, seconds, milliseconds, microseconds, and nanoseconds
     verify_series_and_expr_api(s, pl.Series("", [0, 3], dtype=UInt32), "dt.hour")
     verify_series_and_expr_api(s, pl.Series("", [0, 20], dtype=UInt32), "dt.minute")
     verify_series_and_expr_api(s, pl.Series("", [0, 10], dtype=UInt32), "dt.second")
+    verify_series_and_expr_api(
+        s, pl.Series("", [0, 987], dtype=UInt32), "dt.millisecond"
+    )
+    verify_series_and_expr_api(
+        s, pl.Series("", [0, 987654], dtype=UInt32), "dt.microsecond"
+    )
     verify_series_and_expr_api(
         s, pl.Series("", [0, 987654321], dtype=UInt32), "dt.nanosecond"
     )

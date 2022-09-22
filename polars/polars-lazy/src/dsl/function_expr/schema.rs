@@ -113,7 +113,7 @@ impl FunctionExpr {
                 let dtype = match fun {
                     Year | IsoYear => DataType::Int32,
                     Month | Quarter | Week | WeekDay | Day | OrdinalDay | Hour | Minute
-                    | NanoSecond | Second => DataType::UInt32,
+                    | Millisecond | Microsecond | Nanosecond | Second => DataType::UInt32,
                     TimeStamp(_) => DataType::Int64,
                 };
                 with_dtype(dtype)
