@@ -414,6 +414,11 @@ class Series:
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Series:
         if isinstance(other, Series):
             return wrap_s(getattr(self._s, op_s)(other._s))
+        # we recurse and the if statement above will
+        # ensure we return early
+        if isinstance(other, (date, datetime, timedelta, str)):
+            other = Series("", [other])
+            return self._arithmetic(other, op_s, op_ffi)
         if isinstance(other, float) and not self.is_float():
             _s = sequence_to_pyseries("", [other])
             if "rhs" in op_ffi:
