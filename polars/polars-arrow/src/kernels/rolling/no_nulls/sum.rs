@@ -23,7 +23,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign>
         }
     }
 
-    fn new_with_base(slice: &'a [T], base: i8, start: usize, end: usize) -> Self {
+    fn new_with_base(slice: &'a [T], _base: i8, start: usize, end: usize) -> Self {
         // does nothing
         Self::new(slice, start, end)
     }
