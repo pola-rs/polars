@@ -142,6 +142,32 @@ impl ChunkZip<Utf8Type> for Utf8Chunked {
         }
     }
 }
+
+impl ChunkZip<BinaryType> for BinaryChunked {
+    fn zip_with(
+        &self,
+        mask: &BooleanChunked,
+        other: &BinaryChunked,
+    ) -> PolarsResult<BinaryChunked> {
+        if self.len() != mask.len() || other.len() != mask.len() {
+            impl_ternary_broadcast!(self, self.len(), other.len(), other, mask, BinaryType)
+        } else {
+            let (left, right, mask) = align_chunks_ternary(self, other, mask);
+            let chunks = left
+                .downcast_iter()
+                .zip(right.downcast_iter())
+                .zip(mask.downcast_iter())
+                .map(|((left_c, right_c), mask_c)| {
+                    let mask_c = prepare_mask(mask_c);
+                    let arr = if_then_else(&mask_c, left_c, right_c)?;
+                    Ok(arr)
+                })
+                .collect::<PolarsResult<Vec<_>>>()?;
+            Ok(ChunkedArray::from_chunks(self.name(), chunks))
+        }
+    }
+}
+
 impl ChunkZip<ListType> for ListChunked {
     fn zip_with(
         &self,

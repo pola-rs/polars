@@ -10,9 +10,9 @@ pub use polars_arrow::prelude::*;
 pub(crate) use polars_arrow::trusted_len::TrustedLen;
 
 pub use crate::chunked_array::builder::{
-    BooleanChunkedBuilder, ChunkedBuilder, ListBooleanChunkedBuilder, ListBuilderTrait,
-    ListPrimitiveChunkedBuilder, ListUtf8ChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder,
-    Utf8ChunkedBuilder,
+    BinaryChunkedBuilder, BooleanChunkedBuilder, ChunkedBuilder, ListBinaryChunkedBuilder,
+    ListBooleanChunkedBuilder, ListBuilderTrait, ListPrimitiveChunkedBuilder,
+    ListUtf8ChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
 };
 pub use crate::chunked_array::iterator::PolarsIterator;
 #[cfg(feature = "dtype-categorical")]

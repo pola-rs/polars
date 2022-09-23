@@ -74,6 +74,7 @@ impl PhysicalExpr for LiteralExpr {
                 }
             },
             Utf8(v) => Utf8Chunked::full("literal", v, 1).into_series(),
+            Binary(v) => BinaryChunked::full("literal", v, 1).into_series(),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
             DateTime(ndt, tu) => {
                 use polars_core::chunked_array::temporal::conversion::*;

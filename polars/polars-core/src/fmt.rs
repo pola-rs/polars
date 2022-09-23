@@ -140,6 +140,12 @@ impl Debug for Utf8Chunked {
     }
 }
 
+impl Debug for BinaryChunked {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        format_array!(f, self, "binary", self.name(), "ChunkedArray")
+    }
+}
+
 impl Debug for ListChunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         format_array!(f, self, "list", self.name(), "ChunkedArray")

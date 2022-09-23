@@ -233,6 +233,7 @@ macro_rules! impl_zip_outer_join {
 }
 impl_zip_outer_join!(BooleanChunked);
 impl_zip_outer_join!(Utf8Chunked);
+impl_zip_outer_join!(BinaryChunked);
 
 impl ZipOuterJoinColumn for Float32Chunked {
     fn zip_outer_join_column(

@@ -897,6 +897,15 @@ impl ChunkEqualElement for Utf8Chunked {
     }
 }
 
+impl ChunkEqualElement for BinaryChunked {
+    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
+        let ca_other = other.as_ref().as_ref();
+        debug_assert!(self.dtype() == other.dtype());
+        let ca_other = &*(ca_other as *const BinaryChunked);
+        self.get(idx_self) == ca_other.get(idx_other)
+    }
+}
+
 impl ChunkEqualElement for ListChunked {}
 
 #[cfg(feature = "dtype-struct")]

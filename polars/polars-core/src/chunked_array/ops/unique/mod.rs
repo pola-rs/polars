@@ -274,6 +274,59 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     }
 }
 
+impl ChunkUnique<BinaryType> for BinaryChunked {
+    fn unique(&self) -> PolarsResult<Self> {
+        match self.null_count() {
+            0 => {
+                let mut set =
+                    PlHashSet::with_capacity(std::cmp::min(HASHMAP_INIT_SIZE, self.len()));
+                for arr in self.downcast_iter() {
+                    set.extend(arr.values_iter())
+                }
+                Ok(BinaryChunked::from_iter_values(
+                    self.name(),
+                    set.iter().copied(),
+                ))
+            }
+            _ => {
+                let mut set =
+                    PlHashSet::with_capacity(std::cmp::min(HASHMAP_INIT_SIZE, self.len()));
+                for arr in self.downcast_iter() {
+                    set.extend(arr.iter())
+                }
+                Ok(BinaryChunked::from_iter_options(
+                    self.name(),
+                    set.iter().copied(),
+                ))
+            }
+        }
+    }
+
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
+        Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
+    }
+
+    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
+        is_unique_duplicated!(self, false)
+    }
+    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
+        is_unique_duplicated!(self, true)
+    }
+
+    fn n_unique(&self) -> PolarsResult<usize> {
+        if self.null_count() > 0 {
+            Ok(fill_set(self.into_iter().flatten()).len() + 1)
+        } else {
+            Ok(fill_set(self.into_no_null_iter()).len())
+        }
+    }
+
+    #[cfg(feature = "mode")]
+    fn mode(&self) -> PolarsResult<Self> {
+        Ok(mode(self))
+    }
+}
+
 impl ChunkUnique<BooleanType> for BooleanChunked {
     fn unique(&self) -> PolarsResult<Self> {
         // can be None, Some(true), Some(false)
@@ -392,6 +445,24 @@ mod is_first {
     }
 
     impl IsFirst<Utf8Type> for Utf8Chunked {
+        fn is_first(&self) -> PolarsResult<BooleanChunked> {
+            let mut unique = PlHashSet::new();
+            let chunks = self
+                .downcast_iter()
+                .map(|arr| {
+                    let mask: BooleanArray = arr
+                        .into_iter()
+                        .map(|opt_v| unique.insert(opt_v))
+                        .collect_trusted();
+                    Box::new(mask) as ArrayRef
+                })
+                .collect();
+
+            Ok(BooleanChunked::from_chunks(self.name(), chunks))
+        }
+    }
+
+    impl IsFirst<BinaryType> for BinaryChunked {
         fn is_first(&self) -> PolarsResult<BooleanChunked> {
             let mut unique = PlHashSet::new();
             let chunks = self

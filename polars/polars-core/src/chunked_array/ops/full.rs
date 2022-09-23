@@ -64,6 +64,26 @@ impl ChunkFullNull for Utf8Chunked {
     }
 }
 
+impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
+    fn full(name: &str, value: &'a [u8], length: usize) -> Self {
+        let mut builder = BinaryChunkedBuilder::new(name, length, length * value.len());
+
+        for _ in 0..length {
+            builder.append_value(value);
+        }
+        let mut out = builder.finish();
+        out.set_sorted2(IsSorted::Ascending);
+        out
+    }
+}
+
+impl ChunkFullNull for BinaryChunked {
+    fn full_null(name: &str, length: usize) -> Self {
+        let arr = new_null_array(DataType::Binary.to_arrow(), length);
+        BinaryChunked::from_chunks(name, vec![arr])
+    }
+}
+
 impl ChunkFull<&Series> for ListChunked {
     fn full(name: &str, value: &Series, length: usize) -> ListChunked {
         let mut builder =

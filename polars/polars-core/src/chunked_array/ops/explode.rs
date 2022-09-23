@@ -280,6 +280,47 @@ impl ExplodeByOffsets for Utf8Chunked {
     }
 }
 
+impl ExplodeByOffsets for BinaryChunked {
+    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+        debug_assert_eq!(self.chunks.len(), 1);
+        let arr = self.downcast_iter().next().unwrap();
+
+        let cap = ((arr.len() as f32) * 1.5) as usize;
+        let bytes_size = self.get_values_size();
+        let mut builder = BinaryChunkedBuilder::new(self.name(), cap, bytes_size);
+
+        let mut start = offsets[0] as usize;
+        let mut last = start;
+        for &o in &offsets[1..] {
+            let o = o as usize;
+            if o == last {
+                if start != last {
+                    let vals = arr.slice(start, last - start);
+                    if vals.null_count() == 0 {
+                        builder
+                            .builder
+                            .extend_trusted_len_values(vals.values_iter())
+                    } else {
+                        builder.builder.extend_trusted_len(vals.into_iter());
+                    }
+                }
+                builder.append_null();
+                start = o;
+            }
+            last = o;
+        }
+        let vals = arr.slice(start, last - start);
+        if vals.null_count() == 0 {
+            builder
+                .builder
+                .extend_trusted_len_values(vals.values_iter())
+        } else {
+            builder.builder.extend_trusted_len(vals.into_iter());
+        }
+        builder.finish().into()
+    }
+}
+
 /// Convert Arrow array offsets to indexes of the original list
 pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSize> {
     if offsets.is_empty() {

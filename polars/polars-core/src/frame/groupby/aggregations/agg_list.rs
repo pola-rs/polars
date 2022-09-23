@@ -202,6 +202,31 @@ impl AggList for Utf8Chunked {
     }
 }
 
+impl AggList for BinaryChunked {
+    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+        match groups {
+            GroupsProxy::Idx(groups) => {
+                let mut builder =
+                    ListBinaryChunkedBuilder::new(self.name(), groups.len(), self.len());
+                for idx in groups.all().iter() {
+                    let ca = { self.take_unchecked(idx.into()) };
+                    builder.append(&ca)
+                }
+                builder.finish().into_series()
+            }
+            GroupsProxy::Slice { groups, .. } => {
+                let mut builder =
+                    ListBinaryChunkedBuilder::new(self.name(), groups.len(), self.len());
+                for [first, len] in groups {
+                    let ca = self.slice(*first as i64, *len as usize);
+                    builder.append(&ca)
+                }
+                builder.finish().into_series()
+            }
+        }
+    }
+}
+
 fn agg_list_list<F: Fn(&ListChunked, bool, &mut Vec<i64>, &mut i64, &mut Vec<ArrayRef>) -> bool>(
     ca: &ListChunked,
     groups_len: usize,

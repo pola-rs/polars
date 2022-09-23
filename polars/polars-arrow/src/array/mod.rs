@@ -1,4 +1,4 @@
-use arrow::array::{Array, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
+use arrow::array::{Array, BinaryArray, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
@@ -25,6 +25,12 @@ impl ValueSize for ListArray<i64> {
 }
 
 impl ValueSize for Utf8Array<i64> {
+    fn get_values_size(&self) -> usize {
+        self.values().len()
+    }
+}
+
+impl ValueSize for BinaryArray<i64> {
     fn get_values_size(&self) -> usize {
         self.values().len()
     }
@@ -174,6 +180,52 @@ pub trait ListFromIter {
         // offsets are monotonically increasing
         ListArray::new_unchecked(
             ListArray::<i64>::default_datatype(DataType::LargeUtf8),
+            offsets.into(),
+            Box::new(values),
+            Some(validity.into()),
+        )
+    }
+
+    /// Create a list-array from an iterator.
+    /// Used in groupby agg-list
+    ///
+    /// # Safety
+    /// Will produce incorrect arrays if size hint is incorrect.
+    unsafe fn from_iter_binary_trusted_len<I, P, Ref>(iter: I, n_elements: usize) -> ListArray<i64>
+    where
+        I: IntoIterator<Item = Option<P>>,
+        P: IntoIterator<Item = Option<Ref>>,
+        Ref: AsRef<[u8]>,
+    {
+        let iterator = iter.into_iter();
+        let (lower, _) = iterator.size_hint();
+
+        let mut validity = MutableBitmap::with_capacity(lower);
+        let mut offsets = Vec::<i64>::with_capacity(lower + 1);
+        let mut length_so_far = 0i64;
+        offsets.push(length_so_far);
+        let values: BinaryArray<i64> = iterator
+            .filter_map(|opt_iter| match opt_iter {
+                Some(x) => {
+                    let it = x.into_iter();
+                    length_so_far += it.size_hint().0 as i64;
+                    validity.push(true);
+                    offsets.push(length_so_far);
+                    Some(it)
+                }
+                None => {
+                    validity.push(false);
+                    None
+                }
+            })
+            .flatten()
+            .trust_my_length(n_elements)
+            .collect();
+
+        // Safety:
+        // offsets are monotonically increasing
+        ListArray::new_unchecked(
+            ListArray::<i64>::default_datatype(DataType::LargeBinary),
             offsets.into(),
             Box::new(values),
             Some(validity.into()),

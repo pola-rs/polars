@@ -41,6 +41,18 @@ impl ChunkTakeEvery<Utf8Type> for Utf8Chunked {
     }
 }
 
+impl ChunkTakeEvery<BinaryType> for BinaryChunked {
+    fn take_every(&self, n: usize) -> BinaryChunked {
+        let mut ca: Self = if !self.has_validity() {
+            self.into_no_null_iter().step_by(n).collect()
+        } else {
+            self.into_iter().step_by(n).collect()
+        };
+        ca.rename(self.name());
+        ca
+    }
+}
+
 impl ChunkTakeEvery<ListType> for ListChunked {
     fn take_every(&self, n: usize) -> ListChunked {
         let mut ca: Self = if !self.has_validity() {

@@ -639,6 +639,12 @@ impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
     }
 }
 
+impl ChunkExpandAtIndex<BinaryType> for BinaryChunked {
+    fn expand_at_index(&self, index: usize, length: usize) -> BinaryChunked {
+        impl_chunk_expand!(self, length, index)
+    }
+}
+
 impl ChunkExpandAtIndex<ListType> for ListChunked {
     fn expand_at_index(&self, index: usize, length: usize) -> ListChunked {
         let opt_val = self.get(index);

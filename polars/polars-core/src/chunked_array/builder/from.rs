@@ -40,3 +40,12 @@ impl From<(&str, Utf8Array<i64>)> for Utf8Chunked {
         ChunkedArray::from_chunks(name, vec![Box::new(arr)])
     }
 }
+
+impl From<(&str, BinaryArray<i64>)> for BinaryChunked {
+    fn from(tpl: (&str, BinaryArray<i64>)) -> Self {
+        let name = tpl.0;
+        let arr = tpl.1;
+
+        ChunkedArray::from_chunks(name, vec![Box::new(arr)])
+    }
+}

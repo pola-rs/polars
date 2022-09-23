@@ -225,6 +225,70 @@ impl<'a, T: AsRef<[Option<Cow<'a, str>>]>> NamedFrom<T, [Option<Cow<'a, str>>]> 
     }
 }
 
+impl<'a, T: AsRef<[&'a [u8]]>> NamedFrom<T, [&'a [u8]]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        BinaryChunked::from_slice(name, v.as_ref()).into_series()
+    }
+}
+
+impl NamedFrom<&Series, [u8]> for Series {
+    fn new(name: &str, s: &Series) -> Self {
+        let mut s = s.clone();
+        s.rename(name);
+        s
+    }
+}
+
+impl<'a, T: AsRef<[&'a [u8]]>> NamedFrom<T, [&'a [u8]]> for BinaryChunked {
+    fn new(name: &str, v: T) -> Self {
+        BinaryChunked::from_slice(name, v.as_ref())
+    }
+}
+
+impl<'a, T: AsRef<[Option<&'a [u8]>]>> NamedFrom<T, [Option<&'a [u8]>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        BinaryChunked::from_slice_options(name, v.as_ref()).into_series()
+    }
+}
+
+impl<'a, T: AsRef<[Option<&'a [u8]>]>> NamedFrom<T, [Option<&'a [u8]>]> for BinaryChunked {
+    fn new(name: &str, v: T) -> Self {
+        BinaryChunked::from_slice_options(name, v.as_ref())
+    }
+}
+
+impl<'a, T: AsRef<[Cow<'a, [u8]>]>> NamedFrom<T, [Cow<'a, [u8]>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        BinaryChunked::from_iter_values(name, v.as_ref().iter().map(|value| value.as_ref()))
+            .into_series()
+    }
+}
+
+impl<'a, T: AsRef<[Cow<'a, [u8]>]>> NamedFrom<T, [Cow<'a, [u8]>]> for BinaryChunked {
+    fn new(name: &str, v: T) -> Self {
+        BinaryChunked::from_iter_values(name, v.as_ref().iter().map(|value| value.as_ref()))
+    }
+}
+
+impl<'a, T: AsRef<[Option<Cow<'a, [u8]>>]>> NamedFrom<T, [Option<Cow<'a, [u8]>>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        BinaryChunked::new(name, v).into_series()
+    }
+}
+
+impl<'a, T: AsRef<[Option<Cow<'a, [u8]>>]>> NamedFrom<T, [Option<Cow<'a, [u8]>>]>
+    for BinaryChunked
+{
+    fn new(name: &str, v: T) -> Self {
+        BinaryChunked::from_iter_options(
+            name,
+            v.as_ref()
+                .iter()
+                .map(|opt| opt.as_ref().map(|value| value.as_ref())),
+        )
+    }
+}
+
 #[cfg(feature = "dtype-date")]
 impl<T: AsRef<[NaiveDate]>> NamedFrom<T, [NaiveDate]> for DateChunked {
     fn new(name: &str, v: T) -> Self {

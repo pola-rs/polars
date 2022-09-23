@@ -113,6 +113,16 @@ impl ChunkCast for Utf8Chunked {
     }
 }
 
+impl ChunkCast for BinaryChunked {
+    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+        cast_impl(self.name(), &self.chunks, data_type)
+    }
+
+    fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
+        self.cast(data_type)
+    }
+}
+
 fn boolean_to_utf8(ca: &BooleanChunked) -> Utf8Chunked {
     ca.into_iter()
         .map(|opt_b| match opt_b {

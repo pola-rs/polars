@@ -508,6 +508,136 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     }
 }
 
+impl ChunkSort<BinaryType> for BinaryChunked {
+    fn sort_with(&self, options: SortOptions) -> ChunkedArray<BinaryType> {
+        sort_with_fast_path!(self, options);
+        let mut v: Vec<&[u8]> = if self.null_count() > 0 {
+            Vec::from_iter(self.into_iter().flatten())
+        } else {
+            Vec::from_iter(self.into_no_null_iter())
+        };
+
+        sort_branch(
+            v.as_mut_slice(),
+            options.descending,
+            order_default,
+            order_reverse,
+        );
+
+        let mut values = Vec::<u8>::with_capacity(self.get_values_size());
+        let mut offsets = Vec::<i64>::with_capacity(self.len() + 1);
+        let mut length_so_far = 0i64;
+        offsets.push(length_so_far);
+
+        let len = self.len();
+        let null_count = self.null_count();
+        let mut ca: Self = match (null_count, options.nulls_last) {
+            (0, _) => {
+                for val in v {
+                    values.extend_from_slice(val);
+                    length_so_far = values.len() as i64;
+                    offsets.push(length_so_far);
+                }
+                // Safety:
+                // we pass valid utf8
+                let ar = unsafe {
+                    BinaryArray::from_data_unchecked_default(offsets.into(), values.into(), None)
+                };
+                (self.name(), ar).into()
+            }
+            (_, true) => {
+                for val in v {
+                    values.extend_from_slice(val);
+                    length_so_far = values.len() as i64;
+                    offsets.push(length_so_far);
+                }
+                let mut validity = MutableBitmap::with_capacity(len);
+                validity.extend_constant(len - null_count, true);
+                validity.extend_constant(null_count, false);
+                offsets.extend(std::iter::repeat(length_so_far).take(null_count));
+
+                // Safety:
+                // we pass valid utf8
+                let ar = unsafe {
+                    BinaryArray::from_data_unchecked_default(
+                        offsets.into(),
+                        values.into(),
+                        Some(validity.into()),
+                    )
+                };
+                (self.name(), ar).into()
+            }
+            (_, false) => {
+                let mut validity = MutableBitmap::with_capacity(len);
+                validity.extend_constant(null_count, false);
+                validity.extend_constant(len - null_count, true);
+                offsets.extend(std::iter::repeat(length_so_far).take(null_count));
+
+                for val in v {
+                    values.extend_from_slice(val);
+                    length_so_far = values.len() as i64;
+                    offsets.push(length_so_far);
+                }
+
+                // Safety:
+                // we pass valid utf8
+                let ar = unsafe {
+                    BinaryArray::from_data_unchecked_default(
+                        offsets.into(),
+                        values.into(),
+                        Some(validity.into()),
+                    )
+                };
+                (self.name(), ar).into()
+            }
+        };
+
+        ca.set_sorted(options.descending);
+        ca
+    }
+
+    fn sort(&self, reverse: bool) -> BinaryChunked {
+        self.sort_with(SortOptions {
+            descending: reverse,
+            nulls_last: false,
+        })
+    }
+
+    fn argsort(&self, options: SortOptions) -> IdxCa {
+        argsort::argsort(
+            self.name(),
+            self.downcast_iter().map(|arr| arr.iter()),
+            options,
+            self.null_count(),
+            self.len(),
+        )
+    }
+
+    #[cfg(feature = "sort_multiple")]
+    /// # Panics
+    ///
+    /// This function is very opinionated. On the implementation of `ChunkedArray<T>` for numeric types,
+    /// we assume that all numeric `Series` are of the same type.
+    ///
+    /// In this case we assume that all numeric `Series` are `f64` types. The caller needs to
+    /// uphold this contract. If not, it will panic.
+    ///
+    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
+        args_validate(self, other, reverse)?;
+
+        let mut count: IdxSize = 0;
+        let vals: Vec<_> = self
+            .into_iter()
+            .map(|v| {
+                let i = count;
+                count += 1;
+                (i, v)
+            })
+            .collect_trusted();
+        argsort_multiple_impl(vals, other, reverse)
+    }
+}
+
 impl ChunkSort<BooleanType> for BooleanChunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<BooleanType> {
         sort_with_fast_path!(self, options);

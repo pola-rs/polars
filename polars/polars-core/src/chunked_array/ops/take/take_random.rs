@@ -232,6 +232,70 @@ impl<'a> IntoTakeRandom<'a> for &'a Utf8Chunked {
     }
 }
 
+pub struct BinaryTakeRandom<'a> {
+    pub(crate) chunks: Chunks<'a, BinaryArray<i64>>,
+    pub(crate) chunk_lens: Vec<IdxSize>,
+}
+
+impl<'a> TakeRandom for BinaryTakeRandom<'a> {
+    type Item = &'a [u8];
+
+    #[inline]
+    fn get(&self, index: usize) -> Option<Self::Item> {
+        take_random_get!(self, index)
+    }
+
+    #[inline]
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
+        take_random_get_unchecked!(self, index)
+    }
+}
+
+pub struct BinaryTakeRandomSingleChunk<'a> {
+    pub(crate) arr: &'a BinaryArray<i64>,
+}
+
+impl<'a> TakeRandom for BinaryTakeRandomSingleChunk<'a> {
+    type Item = &'a [u8];
+
+    #[inline]
+    fn get(&self, index: usize) -> Option<Self::Item> {
+        take_random_get_single!(self, index)
+    }
+
+    #[inline]
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
+        if self.arr.is_valid_unchecked(index) {
+            Some(self.arr.value_unchecked(index))
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a> IntoTakeRandom<'a> for &'a BinaryChunked {
+    type Item = &'a [u8];
+    type TakeRandom = TakeRandBranch2<BinaryTakeRandomSingleChunk<'a>, BinaryTakeRandom<'a>>;
+
+    fn take_rand(&self) -> Self::TakeRandom {
+        match self.chunks.len() {
+            1 => {
+                let arr = self.downcast_iter().next().unwrap();
+                let t = BinaryTakeRandomSingleChunk { arr };
+                TakeRandBranch2::Single(t)
+            }
+            _ => {
+                let chunks = self.downcast_chunks();
+                let t = BinaryTakeRandom {
+                    chunks,
+                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
+                };
+                TakeRandBranch2::Multi(t)
+            }
+        }
+    }
+}
+
 impl<'a> IntoTakeRandom<'a> for &'a BooleanChunked {
     type Item = bool;
     type TakeRandom = TakeRandBranch2<BoolTakeRandomSingleChunk<'a>, BoolTakeRandom<'a>>;

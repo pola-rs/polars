@@ -113,6 +113,17 @@ impl<'a> TakeRandom for &'a Utf8Chunked {
     }
 }
 
+impl<'a> TakeRandom for &'a BinaryChunked {
+    type Item = &'a [u8];
+
+    #[inline]
+    fn get(&self, index: usize) -> Option<Self::Item> {
+        // Safety:
+        // Out of bounds is checked and downcast is of correct type
+        unsafe { impl_take_random_get!(self, index, LargeBinaryArray) }
+    }
+}
+
 // extra trait such that it also works without extra reference.
 // Autoref will insert the reference and
 impl<'a> TakeRandomUtf8 for &'a Utf8Chunked {

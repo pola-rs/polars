@@ -14,6 +14,8 @@ pub enum LiteralValue {
     Boolean(bool),
     /// A UTF8 encoded string type.
     Utf8(String),
+    /// A raw binary array
+    Binary(Vec<u8>),
     /// An unsigned 8-bit integer number.
     #[cfg(feature = "dtype-u8")]
     UInt8(u8),
@@ -97,6 +99,7 @@ impl LiteralValue {
             LiteralValue::Float32(_) => DataType::Float32,
             LiteralValue::Float64(_) => DataType::Float64,
             LiteralValue::Utf8(_) => DataType::Utf8,
+            LiteralValue::Binary(_) => DataType::Binary,
             LiteralValue::Range { data_type, .. } => data_type.clone(),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
             LiteralValue::DateTime(_, tu) => DataType::Datetime(*tu, None),
@@ -125,6 +128,18 @@ impl<'a> Literal for &'a str {
     }
 }
 
+impl Literal for Vec<u8> {
+    fn lit(self) -> Expr {
+        Expr::Literal(LiteralValue::Binary(self))
+    }
+}
+
+impl<'a> Literal for &'a [u8] {
+    fn lit(self) -> Expr {
+        Expr::Literal(LiteralValue::Binary(self.to_vec()))
+    }
+}
+
 impl TryFrom<AnyValue<'_>> for LiteralValue {
     type Error = PolarsError;
     fn try_from(value: AnyValue) -> PolarsResult<Self> {
@@ -132,6 +147,7 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             AnyValue::Null => Ok(Self::Null),
             AnyValue::Boolean(b) => Ok(Self::Boolean(b)),
             AnyValue::Utf8(s) => Ok(Self::Utf8(s.to_string())),
+            AnyValue::Binary(b) => Ok(Self::Binary(b.to_vec())),
             #[cfg(feature = "dtype-u8")]
             AnyValue::UInt8(u) => Ok(Self::UInt8(u)),
             #[cfg(feature = "dtype-u16")]

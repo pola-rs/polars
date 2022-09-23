@@ -147,6 +147,34 @@ impl VecHash for Utf8Chunked {
     }
 }
 
+impl VecHash for BinaryChunked {
+    fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
+        let null_h = get_null_hash_value(random_state.clone());
+        let mut av = Vec::with_capacity(self.len());
+        self.downcast_iter().for_each(|arr| {
+            av.extend(arr.into_iter().map(|opt_v| match opt_v {
+                Some(v) => <[u8]>::get_hash(v, &random_state),
+                None => null_h,
+            }))
+        });
+        av
+    }
+
+    fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
+        let null_h = get_null_hash_value(random_state.clone());
+        self.apply_to_slice(
+            |opt_v, h| {
+                let l = match opt_v {
+                    Some(v) => <[u8]>::get_hash(v, &random_state),
+                    None => null_h,
+                };
+                _boost_hash_combine(l, *h)
+            },
+            hashes,
+        )
+    }
+}
+
 impl VecHash for BooleanChunked {
     fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
         let mut av = Vec::with_capacity(self.len());

@@ -133,6 +133,34 @@ where
     }
 }
 
+// FromIterator for BinaryChunked variants.
+
+impl<Ptr> FromIterator<Option<Ptr>> for BinaryChunked
+where
+    Ptr: AsRef<[u8]>,
+{
+    fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
+        let arr = BinaryArray::<i64>::from_iter(iter);
+        Self::from_chunks("", vec![Box::new(arr)])
+    }
+}
+
+impl PolarsAsRef<[u8]> for Vec<u8> {}
+impl PolarsAsRef<[u8]> for &[u8] {}
+// &["foo", "bar"]
+impl PolarsAsRef<[u8]> for &&[u8] {}
+impl<'a> PolarsAsRef<[u8]> for Cow<'a, [u8]> {}
+
+impl<Ptr> FromIterator<Ptr> for BinaryChunked
+where
+    Ptr: PolarsAsRef<[u8]>,
+{
+    fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
+        let arr = BinaryArray::<i64>::from_iter_values(iter.into_iter());
+        Self::from_chunks("", vec![Box::new(arr)])
+    }
+}
+
 impl<Ptr> FromIterator<Ptr> for ListChunked
 where
     Ptr: Borrow<Series>,

@@ -16,6 +16,16 @@ fn any_values_to_utf8(avs: &[AnyValue]) -> Utf8Chunked {
         .collect_trusted()
 }
 
+fn any_values_to_binary(avs: &[AnyValue]) -> BinaryChunked {
+    avs.iter()
+        .map(|av| match av {
+            AnyValue::Binary(s) => Some(*s),
+            AnyValue::BinaryOwned(s) => Some(&**s),
+            _ => None,
+        })
+        .collect_trusted()
+}
+
 fn any_values_to_bool(avs: &[AnyValue]) -> BooleanChunked {
     avs.iter()
         .map(|av| match av {
@@ -81,6 +91,7 @@ impl Series {
             DataType::Float32 => any_values_to_primitive::<Float32Type>(av).into_series(),
             DataType::Float64 => any_values_to_primitive::<Float64Type>(av).into_series(),
             DataType::Utf8 => any_values_to_utf8(av).into_series(),
+            DataType::Binary => any_values_to_binary(av).into_series(),
             DataType::Boolean => any_values_to_bool(av).into_series(),
             #[cfg(feature = "dtype-date")]
             DataType::Date => any_values_to_primitive::<Int32Type>(av)

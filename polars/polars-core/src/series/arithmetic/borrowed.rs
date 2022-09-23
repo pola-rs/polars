@@ -101,6 +101,14 @@ impl NumOpsDispatch for Utf8Chunked {
     }
 }
 
+impl NumOpsDispatch for BinaryChunked {
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+        let rhs = self.unpack_series_matching_type(rhs)?;
+        let out = self + rhs;
+        Ok(out.into_series())
+    }
+}
+
 #[cfg(feature = "checked_arithmetic")]
 pub mod checked {
     use num::{CheckedDiv, ToPrimitive, Zero};

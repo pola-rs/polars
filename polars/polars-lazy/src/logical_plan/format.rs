@@ -386,6 +386,7 @@ impl Debug for LiteralValue {
             Null => write!(f, "null"),
             Boolean(b) => write!(f, "{}", b),
             Utf8(s) => write!(f, "{}", s),
+            Binary(_) => write!(f, "[binary value]"),
             #[cfg(feature = "dtype-u8")]
             UInt8(v) => write!(f, "{}u8", v),
             #[cfg(feature = "dtype-u16")]

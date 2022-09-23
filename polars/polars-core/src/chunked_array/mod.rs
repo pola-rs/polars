@@ -521,6 +521,7 @@ where
 impl AsSinglePtr for BooleanChunked {}
 impl AsSinglePtr for ListChunked {}
 impl AsSinglePtr for Utf8Chunked {}
+impl AsSinglePtr for BinaryChunked {}
 #[cfg(feature = "object")]
 impl<T: PolarsObject> AsSinglePtr for ObjectChunked<T> {}
 
@@ -594,6 +595,14 @@ impl ValueSize for ListChunked {
 }
 
 impl ValueSize for Utf8Chunked {
+    fn get_values_size(&self) -> usize {
+        self.chunks
+            .iter()
+            .fold(0usize, |acc, arr| acc + arr.get_values_size())
+    }
+}
+
+impl ValueSize for BinaryChunked {
     fn get_values_size(&self) -> usize {
         self.chunks
             .iter()

@@ -430,6 +430,13 @@ fn concat_strings(l: &str, r: &str) -> String {
     s
 }
 
+fn concat_binary_arrs(l: &[u8], r: &[u8]) -> Vec<u8> {
+    let mut v = Vec::with_capacity(l.len() + r.len());
+    v.extend_from_slice(l);
+    v.extend_from_slice(r);
+    v
+}
+
 impl Add for &Utf8Chunked {
     type Output = Utf8Chunked;
 
@@ -485,6 +492,68 @@ impl Add<&str> for &Utf8Chunked {
             _ => self
                 .into_iter()
                 .map(|opt_l| opt_l.map(|l| concat_strings(l, rhs)))
+                .collect_trusted(),
+        };
+        ca.rename(self.name());
+        ca
+    }
+}
+
+impl Add for &BinaryChunked {
+    type Output = BinaryChunked;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        // broadcasting path rhs
+        if rhs.len() == 1 {
+            let rhs = rhs.get(0);
+            return match rhs {
+                Some(rhs) => self.add(rhs),
+                None => BinaryChunked::full_null(self.name(), self.len()),
+            };
+        }
+        // broadcasting path lhs
+        if self.len() == 1 {
+            let lhs = self.get(0);
+            return match lhs {
+                Some(lhs) => rhs.apply(|s| Cow::Owned(concat_binary_arrs(lhs, s))),
+                None => BinaryChunked::full_null(self.name(), rhs.len()),
+            };
+        }
+
+        // todo! add no_null variants. Need 4 paths.
+        let mut ca: Self::Output = self
+            .into_iter()
+            .zip(rhs.into_iter())
+            .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
+                (Some(l), Some(r)) => Some(concat_binary_arrs(l, r)),
+                _ => None,
+            })
+            .collect_trusted();
+        ca.rename(self.name());
+        ca
+    }
+}
+
+impl Add for BinaryChunked {
+    type Output = BinaryChunked;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        (&self).add(&rhs)
+    }
+}
+
+impl Add<&[u8]> for &BinaryChunked {
+    type Output = BinaryChunked;
+
+    fn add(self, rhs: &[u8]) -> Self::Output {
+        let mut ca: Self::Output = match self.has_validity() {
+            false => self
+                .into_no_null_iter()
+                .map(|l| concat_binary_arrs(l, rhs))
+                .collect_trusted(),
+            _ => self
+                .into_iter()
+                .map(|opt_l| opt_l.map(|l| concat_binary_arrs(l, rhs)))
                 .collect_trusted(),
         };
         ca.rename(self.name());
