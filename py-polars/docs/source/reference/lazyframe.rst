@@ -12,7 +12,7 @@ Attributes
 ----------
 
 .. autosummary::
-   :toctree: apimut /
+   :toctree: api/
 
     LazyFrame.columns
     LazyFrame.dtypes

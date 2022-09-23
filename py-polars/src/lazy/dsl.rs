@@ -138,6 +138,14 @@ impl PyExpr {
     pub fn max(&self) -> PyExpr {
         self.clone().inner.max().into()
     }
+    #[cfg(feature = "propagate_nans")]
+    pub fn nan_max(&self) -> PyExpr {
+        self.clone().inner.nan_max().into()
+    }
+    #[cfg(feature = "propagate_nans")]
+    pub fn nan_min(&self) -> PyExpr {
+        self.clone().inner.nan_min().into()
+    }
     pub fn mean(&self) -> PyExpr {
         self.clone().inner.mean().into()
     }
@@ -721,7 +729,7 @@ impl PyExpr {
         };
         self.clone()
             .inner
-            .map(function, GetOutput::from_type(DataType::Boolean))
+            .map(function, GetOutput::from_type(DataType::Utf8))
             .with_fmt("str.json_path_match")
             .into()
     }
@@ -800,6 +808,12 @@ impl PyExpr {
     }
     pub fn second(&self) -> PyExpr {
         self.clone().inner.dt().second().into()
+    }
+    pub fn millisecond(&self) -> PyExpr {
+        self.clone().inner.dt().millisecond().into()
+    }
+    pub fn microsecond(&self) -> PyExpr {
+        self.clone().inner.dt().microsecond().into()
     }
     pub fn nanosecond(&self) -> PyExpr {
         self.clone().inner.dt().nanosecond().into()

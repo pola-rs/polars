@@ -440,6 +440,15 @@ pub(crate) fn agg_source_paths(
             ParquetScan { path, .. } => {
                 paths.insert(path.clone());
             }
+            #[cfg(feature = "ipc")]
+            IpcScan { path, .. } => {
+                paths.insert(path.clone());
+            }
+            // always block parallel on anonymous sources
+            // as we cannot know if they will lock or not.
+            AnonymousScan { .. } => {
+                paths.insert("anonymous".into());
+            }
             _ => {}
         }
     })

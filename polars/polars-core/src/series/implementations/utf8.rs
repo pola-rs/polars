@@ -49,12 +49,13 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
         (&self.0).into_partial_ord_inner()
     }
 
-    fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
-        self.0.vec_hash(random_state)
+    fn vec_hash(&self, random_state: RandomState) -> PolarsResult<Vec<u64>> {
+        Ok(self.0.vec_hash(random_state))
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) {
-        self.0.vec_hash_combine(build_hasher, hashes)
+    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+        self.0.vec_hash_combine(build_hasher, hashes);
+        Ok(())
     }
 
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
@@ -83,7 +84,7 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
     fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         NumOpsDispatch::remainder(&self.0, rhs)
     }
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 

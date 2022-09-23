@@ -132,16 +132,39 @@ impl PhysicalPlanner {
             }
             Agg(agg) => {
                 match agg {
-                    AAggExpr::Min(expr) => {
-                        // todo! Output type is dependent on schema.
+                    AAggExpr::Min {
+                        input: expr,
+                        propagate_nans,
+                    } => {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
                             Context::Aggregation => {
-                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Min)))
+                                if propagate_nans {
+                                    Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::NanMin)))
+                                } else {
+                                    Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Min)))
+                                }
                             }
                             Context::Default => {
                                 let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
+
+                                    if propagate_nans && s.dtype().is_float() {
+                                        #[cfg(feature = "propagate_nans")]
+                                        {
+                                            return parallel_op_series(
+                                                |s| {
+                                                    Ok(polars_ops::prelude::nan_propagating_aggregate::nan_min_s(&s, s.name()))
+                                                },
+                                                s,
+                                                None,
+                                            );
+                                        }
+                                        #[cfg(not(feature = "propagate_nans"))]
+                                        {
+                                            panic!("activate 'propagate_nans' feature")
+                                        }
+                                    }
 
                                     match s.is_sorted() {
                                         IsSorted::Ascending | IsSorted::Descending => {
@@ -162,15 +185,39 @@ impl PhysicalPlanner {
                             }
                         }
                     }
-                    AAggExpr::Max(expr) => {
+                    AAggExpr::Max {
+                        input: expr,
+                        propagate_nans,
+                    } => {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
                             Context::Aggregation => {
-                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Max)))
+                                if propagate_nans {
+                                    Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::NanMax)))
+                                } else {
+                                    Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Max)))
+                                }
                             }
                             Context::Default => {
                                 let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
+
+                                    if propagate_nans && s.dtype().is_float() {
+                                        #[cfg(feature = "propagate_nans")]
+                                        {
+                                            return parallel_op_series(
+                                                |s| {
+                                                    Ok(polars_ops::prelude::nan_propagating_aggregate::nan_max_s(&s, s.name()))
+                                                },
+                                                s,
+                                                None,
+                                            );
+                                        }
+                                        #[cfg(not(feature = "propagate_nans"))]
+                                        {
+                                            panic!("activate 'propagate_nans' feature")
+                                        }
+                                    }
 
                                     match s.is_sorted() {
                                         IsSorted::Ascending | IsSorted::Descending => {

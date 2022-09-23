@@ -207,7 +207,7 @@ impl StringNameSpace {
                 function,
                 GetOutput::from_type(DataType::Struct(
                     (0..n + 1)
-                        .map(|i| Field::new(&format!("field_{i}"), DataType::Utf8))
+                        .map(|i| Field::from_owned(format!("field_{i}"), DataType::Utf8))
                         .collect(),
                 )),
             )
@@ -259,7 +259,7 @@ impl StringNameSpace {
                 function,
                 GetOutput::from_type(DataType::Struct(
                     (0..n + 1)
-                        .map(|i| Field::new(&format!("field_{i}"), DataType::Utf8))
+                        .map(|i| Field::from_owned(format!("field_{i}"), DataType::Utf8))
                         .collect(),
                 )),
             )
@@ -311,7 +311,7 @@ impl StringNameSpace {
                 function,
                 GetOutput::from_type(DataType::Struct(
                     (0..n)
-                        .map(|i| Field::new(&format!("field_{i}"), DataType::Utf8))
+                        .map(|i| Field::from_owned(format!("field_{i}"), DataType::Utf8))
                         .collect(),
                 )),
             )

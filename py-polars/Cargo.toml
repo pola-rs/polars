@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.14.11"
+version = "0.14.12"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
 edition = "2021"
@@ -58,6 +58,7 @@ object = ["polars/object"]
 extract_jsonpath = ["polars/extract_jsonpath"]
 pivot = ["polars/pivot"]
 top_k = ["polars/top_k"]
+propagate_nans = ["polars/propagate_nans"]
 
 all = [
   "json",
@@ -85,6 +86,8 @@ all = [
   # remove this once polars-algo is released
   "polars/algo",
   "polars/cse",
+  "propagate_nans",
+  "polars/groupby_list",
 ]
 
 # we cannot conditionaly activate simd

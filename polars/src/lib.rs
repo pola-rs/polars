@@ -248,6 +248,7 @@
 //!     - `date_offset` Add an offset to dates that take months and leap years into account.
 //!     - `trigonometry` Trigonometric functions.
 //!     - `sign` Compute the element-wise sign of a Series.
+//!     - `propagate_nans` NaN propagating min/max aggregations.
 //! * `DataFrame` pretty printing
 //!     - `fmt` - Activate DataFrame formatting
 //!
@@ -317,7 +318,30 @@
 //! ```
 //! ## Config with ENV vars
 //!
-//! * `POLARS_FMT_NO_UTF8` -> use ascii tables in favor of utf8.
+//! * `POLARS_FMT_TABLE_FORMATTING` -> define styling of tables using any of the following options (default = UTF8_FULL):
+//!     
+//!                                    ASCII_FULL
+//!                                    ASCII_NO_BORDERS
+//!                                    ASCII_BORDERS_ONLY
+//!                                    ASCII_BORDERS_ONLY_CONDENSED
+//!                                    ASCII_HORIZONTAL_ONLY
+//!                                    ASCII_MARKDOWN
+//!                                    UTF8_FULL
+//!                                    UTF8_NO_BORDERS
+//!                                    UTF8_BORDERS_ONLY
+//!                                    UTF8_HORIZONTAL_ONLY
+//!                                    NOTHING
+//!                                     
+//!                                    These options are defined by comfy-table which provides examples for each at:
+//!                                    https://github.com/Nukesor/comfy-table/blob/main/src/style/presets.rs
+//! * `POLARS_FMT_TABLE_CELL_ALIGNMENT` -> define cell alignment using any of the following options (default = LEFT):
+//!                                    LEFT
+//!                                    CENTER
+//!                                    RIGHT
+//! * `POLARS_FMT_TABLE_HIDE_COLUMN_NAMES` -> Hide column names
+//! * `POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES` -> Hide data types for columns
+//! * `POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR` -> Hide separator that separates column names from rows
+//! * `POLARS_FMT_TABLE_CHANGE_COLUMN_DATA_TYPE_POSITION_FORMAT"` -> changes the position and format of data, putting it directly below column name
 //! * `POLARS_FMT_MAX_COLS` -> maximum number of columns shown when formatting DataFrames.
 //! * `POLARS_FMT_MAX_ROWS` -> maximum number of rows shown when formatting DataFrames.
 //! * `POLARS_FMT_STR_LEN` -> maximum number of characters printed per string value.

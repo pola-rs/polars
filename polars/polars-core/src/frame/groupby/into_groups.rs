@@ -1,3 +1,5 @@
+#[cfg(feature = "groupby_list")]
+use polars_arrow::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use polars_arrow::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
 use polars_arrow::prelude::*;
 use polars_utils::flatten;
@@ -10,7 +12,7 @@ pub trait IntoGroupsProxy {
     /// Create the tuples need for a groupby operation.
     ///     * The first value in the tuple is the first index of the group.
     ///     * The second value in the tuple is are the indexes of the groups including the first value.
-    fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> GroupsProxy {
+    fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
         unimplemented!()
     }
 }
@@ -141,17 +143,17 @@ where
     T: PolarsNumericType,
     T::Native: NumCast,
 {
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         // sorted path
         if self.is_sorted() || self.is_sorted_reverse() && self.chunks().len() == 1 {
             // don't have to pass `sorted` arg, GroupSlice is always sorted.
-            return GroupsProxy::Slice {
+            return Ok(GroupsProxy::Slice {
                 groups: self.create_groups_from_sorted(multithreaded),
                 rolling: false,
-            };
+            });
         }
 
-        match self.dtype() {
+        let out = match self.dtype() {
             DataType::UInt64 => {
                 // convince the compiler that we are this type.
                 let ca: &UInt64Chunked = unsafe {
@@ -210,11 +212,12 @@ where
                 let ca = ca.u32().unwrap();
                 num_groups_proxy(ca, multithreaded, sorted)
             }
-        }
+        };
+        Ok(out)
     }
 }
 impl IntoGroupsProxy for BooleanChunked {
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         #[cfg(feature = "performant")]
         {
             let ca = self.cast(&DataType::UInt8).unwrap();
@@ -232,11 +235,11 @@ impl IntoGroupsProxy for BooleanChunked {
 
 impl IntoGroupsProxy for Utf8Chunked {
     #[allow(clippy::needless_lifetimes)]
-    fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+    fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         let hb = RandomState::default();
         let null_h = get_null_hash_value(hb.clone());
 
-        if multithreaded {
+        let out = if multithreaded {
             let n_partitions = set_partition_size();
 
             let split = _split_offsets(self.len(), n_partitions);
@@ -255,12 +258,12 @@ impl IntoGroupsProxy for Utf8Chunked {
                                 // Safety:
                                 // the underlying data is tied to self
                                 unsafe {
-                                    std::mem::transmute::<StrHash<'_>, StrHash<'a>>(StrHash::new(
-                                        opt_s, hash,
-                                    ))
+                                    std::mem::transmute::<BytesHash<'_>, BytesHash<'a>>(
+                                        BytesHash::new_from_str(opt_s, hash),
+                                    )
                                 }
                             })
-                            .collect::<Vec<_>>()
+                            .collect_trusted::<Vec<_>>()
                     })
                     .collect::<Vec<_>>()
             });
@@ -273,18 +276,81 @@ impl IntoGroupsProxy for Utf8Chunked {
                         Some(s) => str::get_hash(s, &hb),
                         None => null_h,
                     };
-                    StrHash::new(opt_s, hash)
+                    BytesHash::new_from_str(opt_s, hash)
                 })
-                .collect::<Vec<_>>();
+                .collect_trusted::<Vec<_>>();
             groupby(str_hashes.iter(), sorted)
-        }
+        };
+        Ok(out)
     }
 }
 
 impl IntoGroupsProxy for ListChunked {
-    #[cfg(feature = "groupby_list")]
-    fn group_tuples(&self, _multithreaded: bool, sorted: bool) -> GroupsProxy {
-        groupby(self.into_iter().map(|opt_s| opt_s.map(Wrap)), sorted)
+    #[allow(clippy::needless_lifetimes)]
+    #[allow(unused_variables)]
+    fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+        #[cfg(feature = "groupby_list")]
+        {
+            if !self.inner_dtype().to_physical().is_numeric() {
+                return Err(PolarsError::ComputeError(
+                    "Grouping on List type is only allowed if the inner type is numeric".into(),
+                ));
+            }
+
+            let hb = RandomState::default();
+            let null_h = get_null_hash_value(hb.clone());
+
+            let arr_to_hashes = |ca: &ListChunked| {
+                let mut out = Vec::with_capacity(ca.len());
+
+                for arr in ca.downcast_iter() {
+                    out.extend(numeric_list_bytes_iter(arr)?.map(|opt_bytes| {
+                        let hash = match opt_bytes {
+                            Some(s) => str::get_hash(s, &hb),
+                            None => null_h,
+                        };
+
+                        // Safety:
+                        // the underlying data is tied to self
+                        unsafe {
+                            std::mem::transmute::<BytesHash<'_>, BytesHash<'a>>(BytesHash::new(
+                                opt_bytes, hash,
+                            ))
+                        }
+                    }))
+                }
+                Ok(out)
+            };
+
+            if multithreaded {
+                let n_partitions = set_partition_size();
+                let split = _split_offsets(self.len(), n_partitions);
+
+                let groups: PolarsResult<_> = POOL.install(|| {
+                    let bytes_hashes = split
+                        .into_par_iter()
+                        .map(|(offset, len)| {
+                            let ca = self.slice(offset as i64, len);
+                            arr_to_hashes(&ca)
+                        })
+                        .collect::<PolarsResult<Vec<_>>>()?;
+                    Ok(groupby_threaded_num(
+                        bytes_hashes,
+                        0,
+                        n_partitions as u64,
+                        sorted,
+                    ))
+                });
+                groups
+            } else {
+                let hashes = arr_to_hashes(self)?;
+                Ok(groupby(hashes.iter(), sorted))
+            }
+        }
+        #[cfg(not(feature = "groupby_list"))]
+        {
+            panic!("activate 'groupby_list' feature")
+        }
     }
 }
 
@@ -293,8 +359,8 @@ impl<T> IntoGroupsProxy for ObjectChunked<T>
 where
     T: PolarsObject,
 {
-    fn group_tuples(&self, _multithreaded: bool, sorted: bool) -> GroupsProxy {
-        groupby(self.into_iter(), sorted)
+    fn group_tuples(&self, _multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+        Ok(groupby(self.into_iter(), sorted))
     }
 }
 
@@ -456,7 +522,7 @@ pub(super) fn pack_utf8_columns(
                             ))
                         };
                         let hash = str::get_hash(str_val, &hb);
-                        str_hashes.push(StrHash::new(Some(str_val), hash))
+                        str_hashes.push(BytesHash::new(Some(str_val.as_bytes()), hash))
                     }
                     (None, Some(rhs)) => {
                         let start = values.len();
@@ -471,7 +537,7 @@ pub(super) fn pack_utf8_columns(
                             ))
                         };
                         let hash = str::get_hash(str_val, &hb);
-                        str_hashes.push(StrHash::new(Some(str_val), hash))
+                        str_hashes.push(BytesHash::new(Some(str_val.as_bytes()), hash))
                     }
                     (Some(lhs), None) => {
                         let start = values.len();
@@ -486,9 +552,9 @@ pub(super) fn pack_utf8_columns(
                             ))
                         };
                         let hash = str::get_hash(str_val, &hb);
-                        str_hashes.push(StrHash::new(Some(str_val), hash))
+                        str_hashes.push(BytesHash::new(Some(str_val.as_bytes()), hash))
                     }
-                    (None, None) => str_hashes.push(StrHash::new(None, null_h)),
+                    (None, None) => str_hashes.push(BytesHash::new(None, null_h)),
                 }
             });
             (str_hashes, values)

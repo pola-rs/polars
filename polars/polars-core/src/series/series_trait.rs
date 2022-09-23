@@ -117,11 +117,15 @@ pub(crate) mod private {
         fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
             invalid_operation_panic!(self)
         }
-        fn vec_hash(&self, _build_hasher: RandomState) -> Vec<u64> {
-            invalid_operation_panic!(self)
+        fn vec_hash(&self, _build_hasher: RandomState) -> PolarsResult<Vec<u64>> {
+            invalid_operation!(self)
         }
-        fn vec_hash_combine(&self, _build_hasher: RandomState, _hashes: &mut [u64]) {
-            invalid_operation_panic!(self)
+        fn vec_hash_combine(
+            &self,
+            _build_hasher: RandomState,
+            _hashes: &mut [u64],
+        ) -> PolarsResult<()> {
+            invalid_operation!(self)
         }
         unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
@@ -177,8 +181,8 @@ pub(crate) mod private {
         fn remainder(&self, _rhs: &Series) -> PolarsResult<Series> {
             invalid_operation_panic!(self)
         }
-        fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> GroupsProxy {
-            invalid_operation_panic!(self)
+        fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
+            invalid_operation!(self)
         }
         fn zip_with_same_type(
             &self,
@@ -368,7 +372,7 @@ pub trait SeriesTrait:
 
     /// Drop all null values and return a new Series.
     fn drop_nulls(&self) -> Series {
-        if !self.has_validity() {
+        if self.null_count() == 0 {
             Series(self.clone_inner())
         } else {
             self.filter(&self.is_not_null()).unwrap()

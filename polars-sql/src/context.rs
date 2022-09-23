@@ -1,24 +1,23 @@
-use std::collections::HashMap;
-
-use crate::sql_expr::parse_sql_expr;
-use polars::error::PolarsError;
-use polars::prelude::{col, DataFrame, IntoLazy, LazyFrame};
+use polars::error::PolarsResult;
+use polars::prelude::*;
 use sqlparser::ast::{
     Expr as SqlExpr, Select, SelectItem, SetExpr, Statement, TableFactor, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
+use crate::sql_expr::parse_sql_expr;
+
 #[derive(Default)]
 pub struct SQLContext {
-    table_map: HashMap<String, LazyFrame>,
+    table_map: PlHashMap<String, LazyFrame>,
     dialect: GenericDialect,
 }
 
 impl SQLContext {
     pub fn new() -> Self {
         Self {
-            table_map: HashMap::new(),
+            table_map: PlHashMap::new(),
             dialect: GenericDialect::default(),
         }
     }
@@ -27,11 +26,11 @@ impl SQLContext {
         self.table_map.insert(name.to_owned(), df.clone().lazy());
     }
 
-    fn execute_select(&self, select_stmt: &Select) -> PolarsResult<LazyFrame, PolarsError> {
+    fn execute_select(&self, select_stmt: &Select) -> PolarsResult<LazyFrame> {
         // Determine involved dataframe
         // Implicit join require some more work in query parsers, Explicit join are preferred for now.
         let tbl = select_stmt.from.get(0).unwrap();
-        let mut alias_map = HashMap::new();
+        let mut alias_map = PlHashMap::new();
         let tbl_name = match &tbl.relation {
             TableFactor::Table { name, alias, .. } => {
                 let tbl_name = name.0.get(0).unwrap().value.as_str();
@@ -50,7 +49,7 @@ impl SQLContext {
             _ => return Err(PolarsError::ComputeError("Not implemented".into())),
         };
         let df = &self.table_map[tbl_name];
-        let mut raw_projection_before_alias: HashMap<String, usize> = HashMap::new();
+        let mut raw_projection_before_alias: PlHashMap<String, usize> = PlHashMap::new();
         let mut contain_wildcard = false;
         // Filter Expression
         let df = match select_stmt.selection.as_ref() {
@@ -146,14 +145,14 @@ impl SQLContext {
             final_proj_pos.sort_by(|(proj_pa, _), (proj_pb, _)| proj_pa.cmp(proj_pb));
             let final_proj = final_proj_pos
                 .into_iter()
-                .map(|(_, shm_p)| col(agg_df.schema().get_index(shm_p).unwrap().0))
+                .map(|(_, shm_p)| col(agg_df.schema().unwrap().get_index(shm_p).unwrap().0))
                 .collect::<Vec<_>>();
             agg_df.select(final_proj)
         };
         Ok(df)
     }
 
-    pub fn execute(&self, query: &str) -> PolarsResult<LazyFrame, PolarsError> {
+    pub fn execute(&self, query: &str) -> PolarsResult<LazyFrame> {
         let ast = Parser::parse_sql(&self.dialect, query)
             .map_err(|e| PolarsError::ComputeError(format!("{:?}", e).into()))?;
         if ast.len() != 1 {

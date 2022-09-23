@@ -1,6 +1,5 @@
 use polars::error::PolarsError;
-use polars::prelude::{col, lit, DataType, Expr, LiteralValue, Result, TimeUnit};
-
+use polars::prelude::*;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, DataType as SQLDataType, Expr as SqlExpr,
     Function as SQLFunction, Value as SqlValue, WindowSpec,
@@ -120,6 +119,8 @@ pub(crate) fn parse_sql_expr(expr: &SqlExpr) -> PolarsResult<Expr> {
         SqlExpr::Cast { expr, data_type } => cast_(parse_sql_expr(expr)?, data_type)?,
         SqlExpr::Nested(expr) => parse_sql_expr(expr)?,
         SqlExpr::Value(value) => literal_expr(value)?,
+        SqlExpr::IsNull(expr) => parse_sql_expr(expr)?.is_null(),
+        SqlExpr::IsNotNull(expr) => parse_sql_expr(expr)?.is_not_null(),
         _ => {
             return Err(PolarsError::ComputeError(
                 format!(
@@ -140,7 +141,7 @@ fn apply_window_spec(expr: Expr, window_spec: &Option<WindowSpec>) -> PolarsResu
                 .partition_by
                 .iter()
                 .map(parse_sql_expr)
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
             expr.over(partition_by)
             // Order by and Row range may not be supported at the moment
         }

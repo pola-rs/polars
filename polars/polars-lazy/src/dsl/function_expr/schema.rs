@@ -79,6 +79,7 @@ impl FunctionExpr {
         match self {
             NullCount => with_dtype(IDX_DTYPE),
             Pow => super_type(),
+            Coalesce => super_type(),
             #[cfg(feature = "row_hash")]
             Hash(..) => with_dtype(DataType::UInt64),
             #[cfg(feature = "is_in")]
@@ -112,7 +113,7 @@ impl FunctionExpr {
                 let dtype = match fun {
                     Year | IsoYear => DataType::Int32,
                     Month | Quarter | Week | WeekDay | Day | OrdinalDay | Hour | Minute
-                    | NanoSecond | Second => DataType::UInt32,
+                    | Millisecond | Microsecond | Nanosecond | Second => DataType::UInt32,
                     TimeStamp(_) => DataType::Int64,
                 };
                 with_dtype(dtype)

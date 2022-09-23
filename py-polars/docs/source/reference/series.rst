@@ -51,6 +51,8 @@ Aggregation
     Series.median
     Series.min
     Series.mode
+    Series.nan_max
+    Series.nan_min
     Series.product
     Series.quantile
     Series.std
@@ -233,6 +235,9 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.max
     DateTimeNameSpace.mean
     DateTimeNameSpace.median
+    DateTimeNameSpace.microsecond
+    DateTimeNameSpace.microseconds
+    DateTimeNameSpace.millisecond
     DateTimeNameSpace.milliseconds
     DateTimeNameSpace.min
     DateTimeNameSpace.minute

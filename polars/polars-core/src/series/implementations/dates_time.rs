@@ -74,12 +74,17 @@ macro_rules! impl_dyn_series {
                     .map(|ca| ca.$into_logical().into_series())
             }
 
-            fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
-                self.0.vec_hash(random_state)
+            fn vec_hash(&self, random_state: RandomState) -> PolarsResult<Vec<u64>> {
+                Ok(self.0.vec_hash(random_state))
             }
 
-            fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) {
-                self.0.vec_hash_combine(build_hasher, hashes)
+            fn vec_hash_combine(
+                &self,
+                build_hasher: RandomState,
+                hashes: &mut [u64],
+            ) -> PolarsResult<()> {
+                self.0.vec_hash_combine(build_hasher, hashes);
+                Ok(())
             }
 
             unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
@@ -177,7 +182,7 @@ macro_rules! impl_dyn_series {
                     "cannot do remainder operation on logical".into(),
                 ))
             }
-            fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+            fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
                 self.0.group_tuples(multithreaded, sorted)
             }
             #[cfg(feature = "sort_multiple")]

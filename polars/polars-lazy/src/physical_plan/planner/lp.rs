@@ -19,11 +19,17 @@ fn aggregate_expr_to_scan_agg(
             };
             if let AExpr::Agg(agg) = expr_arena.get(expr) {
                 match agg {
-                    AAggExpr::Min(e) => ScanAggregation::Min {
+                    AAggExpr::Min {
+                        input: e,
+                        propagate_nans: false,
+                    } => ScanAggregation::Min {
                         column: (*aexpr_to_leaf_names(*e, expr_arena).pop().unwrap()).to_string(),
                         alias,
                     },
-                    AAggExpr::Max(e) => ScanAggregation::Max {
+                    AAggExpr::Max {
+                        input: e,
+                        propagate_nans: false,
+                    } => ScanAggregation::Max {
                         column: (*aexpr_to_leaf_names(*e, expr_arena).pop().unwrap()).to_string(),
                         alias,
                     },
@@ -364,8 +370,8 @@ impl PhysicalPlanner {
                                     Agg(agg_e) => {
                                         matches!(
                                             agg_e,
-                                            AAggExpr::Min(_)
-                                                | AAggExpr::Max(_)
+                                            AAggExpr::Min{..}
+                                                | AAggExpr::Max{..}
                                                 | AAggExpr::Sum(_)
                                                 | AAggExpr::Last(_)
                                                 | AAggExpr::First(_)

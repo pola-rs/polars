@@ -84,7 +84,22 @@ def series_to_pyseries(name: str, values: pli.Series) -> PySeries:
 def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySeries:
     """Construct a PySeries from an Arrow array."""
     array = coerce_arrow(values)
-    if hasattr(array, "num_chunks"):
+
+    # special handling of empty categorical arrays
+    if (
+        len(array) == 0
+        and isinstance(array.type, pa.DictionaryType)
+        and array.type.value_type
+        in (
+            pa.utf8(),
+            pa.large_utf8(),
+        )
+    ):
+        pys = pli.Series(name, [], dtype=Categorical)._s
+
+    elif not hasattr(array, "num_chunks"):
+        pys = PySeries.from_arrow(name, array)
+    else:
         if array.num_chunks > 1:
             it = array.iterchunks()
             pys = PySeries.from_arrow(name, next(it))
@@ -98,8 +113,7 @@ def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySe
         if rechunk:
             pys.rechunk(in_place=True)
 
-        return pys
-    return PySeries.from_arrow(name, array)
+    return pys
 
 
 def numpy_to_pyseries(
@@ -216,7 +230,14 @@ def sequence_to_pyseries(
 
     else:
         if python_dtype is None:
-            python_dtype = float if (value is None) else type(value)
+            if value is None:
+                # generic default dtype
+                python_dtype = float
+            else:
+                python_dtype = type(value)
+                if datetime == python_dtype:
+                    # note: python-native datetimes have microsecond precision
+                    temporal_unit = "us"
 
         # temporal branch
         if python_dtype in py_temporal_types:

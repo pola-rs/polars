@@ -20,7 +20,7 @@ use std::borrow::Cow;
 ))]
 use arrow::temporal_conversions::*;
 #[cfg(feature = "fmt")]
-use comfy_table::presets::{ASCII_FULL, UTF8_FULL};
+use comfy_table::presets::*;
 #[cfg(feature = "fmt")]
 use comfy_table::*;
 
@@ -359,7 +359,28 @@ impl Display for DataFrame {
             let field_to_str = |f: &Field| {
                 let name = make_str_val(f.name(), str_truncate);
                 let lower_bounds = std::cmp::max(5, std::cmp::min(12, name.len()));
-                let s = format!("{}\n---\n{}", name, f.data_type());
+                let mut column_name = name;
+                if std::env::var("POLARS_FMT_TABLE_HIDE_COLUMN_NAMES").is_ok() {
+                    column_name = "".to_string();
+                }
+                let mut column_data_type = format!("\n{}", f.data_type());
+                if std::env::var("POLARS_FMT_TABLE_CHANGE_COLUMN_DATA_TYPE_POSITION_FORMAT").is_ok()
+                {
+                    column_data_type = format!("\n({})", f.data_type());
+                }
+                if std::env::var("POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES").is_ok() {
+                    column_data_type = "".to_string();
+                }
+                let mut column_separator = "\n---";
+                if std::env::var("POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR").is_ok() {
+                    column_separator = ""
+                }
+                // let s = format!("{}\n({})\n---", name, f.data_type());
+                let mut s = format!("{}{}{}", column_name, column_separator, column_data_type);
+                if std::env::var("POLARS_FMT_TABLE_CHANGE_COLUMN_DATA_TYPE_POSITION_FORMAT").is_ok()
+                {
+                    s = format!("{}{}{}", column_name, column_data_type, column_separator);
+                }
                 (s, lower_bounds)
             };
             let tbl_lower_bounds = |l: usize| {
@@ -382,10 +403,22 @@ impl Display for DataFrame {
                 constraints.push(tbl_lower_bounds(l));
             }
             let mut table = Table::new();
-            let preset = if std::env::var("POLARS_FMT_NO_UTF8").is_ok() {
-                ASCII_FULL
-            } else {
-                UTF8_FULL
+
+            let str_preset =
+                std::env::var("POLARS_FMT_TABLE_FORMATTING").unwrap_or_else(|_| "none".to_string());
+            let preset = match str_preset.as_str() {
+                "ASCII_FULL" => ASCII_FULL,
+                "ASCII_NO_BORDERS" => ASCII_NO_BORDERS,
+                "ASCII_BORDERS_ONLY" => ASCII_BORDERS_ONLY,
+                "ASCII_BORDERS_ONLY_CONDENSED" => ASCII_BORDERS_ONLY_CONDENSED,
+                "ASCII_HORIZONTAL_ONLY" => ASCII_HORIZONTAL_ONLY,
+                "ASCII_MARKDOWN" => ASCII_MARKDOWN,
+                "UTf8_FULL" => UTF8_FULL,
+                "UTF8_NO_BORDERS" => UTF8_NO_BORDERS,
+                "UTF8_BORDERS_ONLY" => UTF8_BORDERS_ONLY,
+                "UTF8_HORIZONTAL_ONLY" => UTF8_HORIZONTAL_ONLY,
+                "NOTHING" => NOTHING,
+                _ => UTF8_FULL,
             };
 
             table
@@ -418,7 +451,13 @@ impl Display for DataFrame {
                 }
             }
 
-            table.set_header(names).set_constraints(constraints);
+            // insert a header row, but not if
+            // both column names and column data types are hidden (no information to show)
+            if !(std::env::var("POLARS_FMT_TABLE_HIDE_COLUMN_NAMES").is_ok()
+                && std::env::var("POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES").is_ok())
+            {
+                table.set_header(names).set_constraints(constraints);
+            }
 
             let tbl_width = std::env::var("POLARS_TABLE_WIDTH")
                 .map(|s| {
@@ -439,7 +478,30 @@ impl Display for DataFrame {
                 table.set_table_width(100);
             }
 
-            write!(f, "shape: {:?}\n{}", self.shape(), table)?;
+            // set alignment of cells if defined
+
+            if std::env::var("POLARS_FMT_TABLE_CELL_ALIGNMENT").is_ok() {
+                // for (column_index, column) in table.column_iter_mut().enumerate() {
+                let str_preset = std::env::var("POLARS_FMT_TABLE_CELL_ALIGNMENT")
+                    .unwrap_or_else(|_| "none".to_string());
+                for column in table.column_iter_mut() {
+                    if str_preset == "RIGHT" {
+                        column.set_cell_alignment(CellAlignment::Right);
+                    } else if str_preset == "LEFT" {
+                        column.set_cell_alignment(CellAlignment::Left);
+                    } else if str_preset == "CENTER" {
+                        column.set_cell_alignment(CellAlignment::Center);
+                    } else {
+                        column.set_cell_alignment(CellAlignment::Left);
+                    }
+                }
+            }
+
+            if std::env::var("POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION").is_ok() {
+                write!(f, "{}", table)?;
+            } else {
+                write!(f, "shape: {:?}\n{}", self.shape(), table)?;
+            }
         }
 
         #[cfg(not(feature = "fmt"))]

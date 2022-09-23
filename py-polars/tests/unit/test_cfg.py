@@ -22,6 +22,7 @@ def test_tables(environ: None) -> None:
 
     pl.Config.set_ascii_tables()
     df_asci = str(df)
+
     assert (
         df_asci == "shape: (3, 3)\n"
         "+-----+-----+-----+\n"
@@ -39,6 +40,7 @@ def test_tables(environ: None) -> None:
 
     pl.Config.set_utf8_tables()
     df_utf8 = str(df)
+
     assert (
         df_utf8 == "shape: (3, 3)\n"
         "┌─────┬─────┬─────┐\n"
@@ -97,6 +99,7 @@ def test_set_tbl_cols(environ: None) -> None:
 
 
 def test_set_tbl_rows(environ: None) -> None:
+
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8], "c": [9, 10, 11, 12]})
 
     pl.Config.set_tbl_rows(1)
@@ -114,6 +117,7 @@ def test_set_tbl_rows(environ: None) -> None:
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
+
     pl.Config.set_tbl_rows(2)
     assert (
         str(df) == "shape: (4, 3)\n"
@@ -129,6 +133,7 @@ def test_set_tbl_rows(environ: None) -> None:
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
+
     pl.Config.set_tbl_rows(3)
     assert (
         str(df) == "shape: (4, 3)\n"
@@ -146,6 +151,7 @@ def test_set_tbl_rows(environ: None) -> None:
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
+
     pl.Config.set_tbl_rows(4)
     assert (
         str(df) == "shape: (4, 3)\n"

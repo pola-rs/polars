@@ -63,28 +63,28 @@ class DateTimeNameSpace:
         """
         Extract the year from the underlying date representation.
 
-        Can be performed on Date and Datetime columns.
+        Applies to Date and Datetime columns.
 
         Returns the year number in the calendar date.
 
         Returns
         -------
-        Year as Int32
+        Year part as Int32
 
         """
 
     def iso_year(self) -> pli.Series:
         """
-        Extract iso-year from underlying Date representation.
+        Extract ISO year from underlying Date representation.
 
-        Can be performed on Date and Datetime columns.
+        Applies to Date and Datetime columns.
 
-        Returns the year number in the iso standard.
+        Returns the year number according to the ISO standard.
         This may not correspond with the calendar year.
 
         Returns
         -------
-        Year as Int32
+        ISO year as Int32
 
         """
 
@@ -92,7 +92,7 @@ class DateTimeNameSpace:
         """
         Extract quarter from underlying Date representation.
 
-        Can be performed on Date and Datetime columns.
+        Applies to Date and Datetime columns.
 
         Returns the quarter ranging from 1 to 4.
 
@@ -106,14 +106,14 @@ class DateTimeNameSpace:
         """
         Extract the month from the underlying date representation.
 
-        Can be performed on Date and Datetime columns.
+        Applies to Date and Datetime columns.
 
         Returns the month number starting from 1.
         The return value ranges from 1 to 12.
 
         Returns
         -------
-        Month as UInt32
+        Month part as UInt32
 
         """
 
@@ -121,7 +121,7 @@ class DateTimeNameSpace:
         """
         Extract the week from the underlying date representation.
 
-        Can be performed on Date and Datetime columns.
+        Applies to Date and Datetime columns.
 
         Returns the ISO week number starting from 1.
         The return value ranges from 1 to 53. (The last week of year differs by years.)
@@ -136,13 +136,13 @@ class DateTimeNameSpace:
         """
         Extract the week day from the underlying date representation.
 
-        Can be performed on Date and Datetime columns.
+        Applies to Date and Datetime columns.
 
         Returns the weekday number where monday = 0 and sunday = 6
 
         Returns
         -------
-        Week day as UInt32
+        Weekday as UInt32
 
         """
 
@@ -150,14 +150,14 @@ class DateTimeNameSpace:
         """
         Extract the day from the underlying date representation.
 
-        Can be performed on Date and Datetime columns.
+        Applies to Date and Datetime columns.
 
         Returns the day of month starting from 1.
         The return value ranges from 1 to 31. (The last day of month differs by months.)
 
         Returns
         -------
-        Day as UInt32
+        Day part as UInt32
 
         """
 
@@ -165,14 +165,14 @@ class DateTimeNameSpace:
         """
         Extract ordinal day from underlying date representation.
 
-        Can be performed on Date and Datetime columns.
+        Applies to Date and Datetime columns.
 
         Returns the day of year starting from 1.
         The return value ranges from 1 to 366. (The last day of year differs by years.)
 
         Returns
         -------
-        Day as UInt32
+        Ordinal day as UInt32
 
         """
 
@@ -180,13 +180,13 @@ class DateTimeNameSpace:
         """
         Extract the hour from the underlying DateTime representation.
 
-        Can be performed on Datetime columns.
+        Applies to Datetime columns.
 
         Returns the hour number from 0 to 23.
 
         Returns
         -------
-        Hour as UInt32
+        Hour part as UInt32
 
         """
 
@@ -194,13 +194,13 @@ class DateTimeNameSpace:
         """
         Extract the minutes from the underlying DateTime representation.
 
-        Can be performed on Datetime columns.
+        Applies to Datetime columns.
 
         Returns the minute number from 0 to 59.
 
         Returns
         -------
-        Minute as UInt32
+        Minute part as UInt32
 
         """
 
@@ -208,7 +208,7 @@ class DateTimeNameSpace:
         """
         Extract seconds from underlying DateTime representation.
 
-        Can be performed on Datetime columns.
+        Applies to Datetime columns.
 
         Returns the integer second number from 0 to 59, or a floating
         point number from 0 < 60 if ``fractional=True`` that includes
@@ -216,7 +216,31 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Second as UInt32 (or Float64)
+        Second part as UInt32 (or Float64)
+
+        """
+
+    def millisecond(self) -> pli.Series:
+        """
+        Extract the milliseconds from the underlying DateTime representation.
+
+        Applies to Datetime columns.
+
+        Returns
+        -------
+        Millisecond part as UInt32
+
+        """
+
+    def microsecond(self) -> pli.Series:
+        """
+        Extract the microseconds from the underlying DateTime representation.
+
+        Applies to Datetime columns.
+
+        Returns
+        -------
+        Microsecond part as UInt32
 
         """
 
@@ -224,14 +248,11 @@ class DateTimeNameSpace:
         """
         Extract the nanoseconds from the underlying DateTime representation.
 
-        Can be performed on Datetime columns.
-
-        Returns the number of nanoseconds since the whole non-leap second.
-        The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
+        Applies to Datetime columns.
 
         Returns
         -------
-        Nanosecond as UInt32
+        Nanosecond part as UInt32
 
         """
 
@@ -500,6 +521,7 @@ class DateTimeNameSpace:
             2001-01-01 23:00:00
             2001-01-02 00:00:00
         ]
-        >>> assert s.dt.truncate("1h") == s.dt.truncate(timedelta(hours=1))
+        >>> s.dt.truncate("1h").series_equal(s.dt.truncate(timedelta(hours=1)))
+        True
 
         """

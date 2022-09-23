@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 import os
+import sys
 
 from polars.string_cache import toggle_string_cache
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 
 class Config:
@@ -13,18 +19,111 @@ class Config:
     with_columns_kwargs: bool = False
 
     @classmethod
+    def set_tbl_hide_column_names(cls) -> type[Config]:
+        """Hide column names of tables."""
+        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_NAMES"] = "1"
+        return cls
+
+    @classmethod
+    def set_tbl_hide_column_data_types(cls) -> type[Config]:
+        """Hide column data types (i64, f64, str etc.) of tables."""
+        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES"] = "1"
+        return cls
+
+    @classmethod
+    def set_tbl_hide_column_separator(cls) -> type[Config]:
+        """Hide the '---' separator that separates column names from the table rows."""
+        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR"] = "1"
+        return cls
+
+    @classmethod
+    def set_tbl_hide_dataframe_shape(cls) -> type[Config]:
+        """Hide the shape information of the dataframe when displaying tables."""
+        os.environ["POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION"] = "1"
+        return cls
+
+    @classmethod
+    def set_tbl_change_column_data_type_position_format(cls) -> type[Config]:
+        """Changes the data type position / format to directly below column name."""
+        os.environ["POLARS_FMT_TABLE_CHANGE_COLUMN_DATA_TYPE_POSITION_FORMAT"] = "1"
+        return cls
+
+    @classmethod
     def set_utf8_tables(cls) -> type[Config]:
         """Use utf8 characters to print tables."""
         # os.unsetenv is automatically called if we remove a key from os.environ,
         # see https://docs.python.org/3/library/os.html#os.environ. However, we cannot
         # call os.unsetenv directly, as that fails on Windows
-        os.environ.pop("POLARS_FMT_NO_UTF8", None)
+        os.environ["POLARS_FMT_TABLE_FORMATTING"] = "UTF8_FULL"
         return cls
 
     @classmethod
     def set_ascii_tables(cls) -> type[Config]:
         """Use ascii characters to print tables."""
-        os.environ["POLARS_FMT_NO_UTF8"] = "1"
+        os.environ["POLARS_FMT_TABLE_FORMATTING"] = "ASCII_FULL"
+        return cls
+
+    @classmethod
+    def set_tbl_formatting(
+        cls,
+        format: Literal[
+            "ASCII_FULL",
+            "ASCII_NO_BORDERS",
+            "ASCII_BORDERS_ONLY",
+            "ASCII_BORDERS_ONLY_CONDENSED",
+            "ASCII_HORIZONTAL_ONLY",
+            "ASCII_MARKDOWN",
+            "UTF8_FULL",
+            "UTF8_NO_BORDERS",
+            "UTF8_BORDERS_ONLY",
+            "UTF8_HORIZONTAL_ONLY",
+            "NOTHING",
+        ],
+    ) -> type[Config]:
+        """
+        Set table formatting style.
+
+        Args
+        ----
+            "ASCII_FULL": ASCII borders / lines
+            "ASCII_NO_BORDERS": ASCII no borders
+            "ASCII_BORDERS_ONLY": ASCII borders only
+            "ASCII_BORDERS_ONLY_CONDENSED": ASCII borders only condensed
+            "ASCII_HORIZONTAL_ONLY": Horizontal lines only
+            "ASCII_MARKDOWN": Markdown style
+            "UTF8_FULL": UTF8 borders lines
+            "UTF8_NO_BORDERS": UTF8 no borders
+            "UTF8_BORDERS_ONLY": UTF8 borders only
+            "UTF8_HORIZONTAL_ONLY": UTF8 horizontal only
+            "NOTHING": No borders /lines
+
+        Raises
+        ------
+            KeyError: Wrong key
+
+        """
+        os.environ["POLARS_FMT_TABLE_FORMATTING"] = format
+        return cls
+
+    @classmethod
+    def set_tbl_cell_alignment(
+        cls, format: Literal["LEFT", "CENTER", "RIGHT"]
+    ) -> type[Config]:
+        """
+        Set table cell alignment.
+
+        Args
+        ----
+            "LEFT": left aligned
+            "CENTER": center aligned
+            "RIGHT": right aligned
+
+        Raises
+        ------
+            KeyError: Wrong key
+
+        """
+        os.environ["POLARS_FMT_TABLE_CELL_ALIGNMENT"] = format
         return cls
 
     @classmethod

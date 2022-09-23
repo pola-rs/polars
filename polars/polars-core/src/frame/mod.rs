@@ -2964,7 +2964,7 @@ impl DataFrame {
         subset: Option<&[String]>,
         keep: UniqueKeepStrategy,
     ) -> PolarsResult<DataFrame> {
-        self.distinct_impl(true, subset, keep)
+        self.unique_impl(true, subset, keep)
     }
 
     /// Unstable distinct. See [`DataFrame::distinct_stable`].
@@ -2973,10 +2973,10 @@ impl DataFrame {
         subset: Option<&[String]>,
         keep: UniqueKeepStrategy,
     ) -> PolarsResult<DataFrame> {
-        self.distinct_impl(false, subset, keep)
+        self.unique_impl(false, subset, keep)
     }
 
-    fn distinct_impl(
+    fn unique_impl(
         &self,
         maintain_order: bool,
         subset: Option<&[String]>,
@@ -3090,7 +3090,7 @@ impl DataFrame {
         hasher_builder: Option<RandomState>,
     ) -> PolarsResult<UInt64Chunked> {
         let dfs = split_df(self, POOL.current_num_threads())?;
-        let (cas, _) = df_rows_to_hashes_threaded(&dfs, hasher_builder);
+        let (cas, _) = df_rows_to_hashes_threaded(&dfs, hasher_builder)?;
 
         let mut iter = cas.into_iter();
         let mut acc_ca = iter.next().unwrap();

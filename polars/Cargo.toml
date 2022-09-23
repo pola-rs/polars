@@ -126,6 +126,8 @@ pivot = ["polars-lazy/pivot"]
 top_k = ["polars-lazy/top_k"]
 algo = ["polars-algo"]
 cse = ["polars-lazy/cse"]
+propagate_nans = ["polars-lazy/propagate_nans"]
+coalesce = ["polars-lazy/coalesce"]
 
 test = [
   "lazy",
@@ -257,6 +259,8 @@ docs-selection = [
   "cumulative_eval",
   "timezones",
   "arg_where",
+  "propagate_nans",
+  "coalesce",
 ]
 
 bench = [

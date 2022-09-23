@@ -284,9 +284,9 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
     mut keys: DataFrame,
     n_partitions: usize,
     sorted: bool,
-) -> GroupsProxy {
+) -> PolarsResult<GroupsProxy> {
     let dfs = split_df(&mut keys, n_partitions).unwrap();
-    let (hashes, _random_state) = df_rows_to_hashes_threaded(&dfs, None);
+    let (hashes, _random_state) = df_rows_to_hashes_threaded(&dfs, None)?;
     let n_partitions = n_partitions as u64;
 
     // trait object to compare inner types.
@@ -337,5 +337,5 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
             })
         })
         .collect::<Vec<_>>();
-    finish_group_order(groups, sorted)
+    Ok(finish_group_order(groups, sorted))
 }

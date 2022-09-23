@@ -149,6 +149,11 @@ fn delay_utf8_validation(encoding: CsvEncoding, ignore_errors: bool) -> bool {
     !(matches!(encoding, CsvEncoding::LossyUtf8) || ignore_errors)
 }
 
+#[inline]
+fn validate_utf8(bytes: &[u8]) -> bool {
+    bytes.is_ascii() || simdutf8::basic::from_utf8(bytes).is_ok()
+}
+
 impl ParsedBuffer for Utf8Field {
     #[inline]
     fn parse_bytes(
@@ -168,7 +173,7 @@ impl ParsedBuffer for Utf8Field {
         let parse_result = if delay_utf8_validation(self.encoding, ignore_errors) {
             true
         } else {
-            bytes.is_ascii() || simdutf8::basic::from_utf8(bytes).is_ok()
+            validate_utf8(bytes)
         };
         let data_len = self.data.len();
 
@@ -227,6 +232,113 @@ impl ParsedBuffer for Utf8Field {
             }
         }
 
+        Ok(())
+    }
+}
+
+#[cfg(not(feature = "dtype-categorical"))]
+pub(crate) struct CategoricalField<'a> {
+    phantom: std::marker::PhantomData<&'a u8>,
+}
+
+#[cfg(feature = "dtype-categorical")]
+pub(crate) struct CategoricalField<'a> {
+    escape_scratch: Vec<u8>,
+    quote_char: u8,
+    builder: CategoricalChunkedBuilder<'a>,
+    owned_strings: Vec<String>,
+}
+
+#[cfg(feature = "dtype-categorical")]
+impl<'a> CategoricalField<'a> {
+    fn new(name: &str, capacity: usize, quote_char: Option<u8>) -> Self {
+        let builder = CategoricalChunkedBuilder::new(name, capacity);
+
+        Self {
+            escape_scratch: vec![],
+            quote_char: quote_char.unwrap_or(b'"'),
+            builder,
+            owned_strings: vec![],
+        }
+    }
+
+    #[inline]
+    fn parse_bytes(
+        &mut self,
+        bytes: &'a [u8],
+        ignore_errors: bool,
+        needs_escaping: bool,
+    ) -> PolarsResult<()> {
+        if bytes.is_empty() {
+            self.builder.append_null();
+            return Ok(());
+        }
+
+        if validate_utf8(bytes) {
+            if needs_escaping {
+                self.escape_scratch.clear();
+                self.escape_scratch.reserve(bytes.len());
+                // Safety:
+                // we just allocated enough capacity and data_len is correct.
+                unsafe {
+                    let n_written = escape_field(
+                        bytes,
+                        self.quote_char,
+                        self.escape_scratch.spare_capacity_mut(),
+                    );
+                    self.escape_scratch.set_len(n_written);
+                }
+
+                // safety:
+                // just did utf8 check
+                let key = unsafe { std::str::from_utf8_unchecked(&self.escape_scratch) };
+
+                // now it gets a bit complicated
+                // the categorical map has keys that have a lifetime in the `&bytes`
+                // but we just wrote to a `escape_scratch`. The string values
+                // there will be cleared next iteration/call, so we cannot use the
+                // `key` naively
+                //
+                // if the `key` not yet exits, we allocate a `String` and we store that in a
+                // `Vec` that may grow. If the `Vec` reallocates, the pointers to the `String` will
+                // still be valid.
+                //
+                // if the `key` does exist, we can simply insert the value, because the pointer of
+                // the key will not be stored by the builder and may be short-lived
+                if self.builder.exits(key) {
+                    // Safety:
+                    // extend lifetime, see rationale from above
+                    let key = unsafe { std::mem::transmute::<&str, &'a str>(key) };
+                    self.builder.append_value(key)
+                } else {
+                    let key_owned = key.to_string();
+
+                    // ptr to the string value on the heap
+                    let heap_ptr = key_owned.as_str().as_ptr();
+                    let len = key_owned.len();
+                    self.owned_strings.push(key_owned);
+                    unsafe {
+                        let str_slice = std::slice::from_raw_parts(heap_ptr, len);
+                        let key = std::str::from_utf8_unchecked(str_slice);
+                        // Safety:
+                        // extend lifetime, see rationale from above
+                        let key = std::mem::transmute::<&str, &'a str>(key);
+                        self.builder.append_value(key)
+                    }
+                }
+            } else {
+                // safety:
+                // just did utf8 check
+                unsafe {
+                    self.builder
+                        .append_value(std::str::from_utf8_unchecked(bytes))
+                }
+            }
+        } else if ignore_errors {
+            self.builder.append_null()
+        } else {
+            return Err(PolarsError::ComputeError("invalid utf8 data".into()));
+        }
         Ok(())
     }
 }
@@ -359,7 +471,7 @@ where
     }
 }
 
-pub(crate) fn init_buffers(
+pub(crate) fn init_buffers<'a>(
     projection: &[usize],
     capacity: usize,
     schema: &Schema,
@@ -368,7 +480,7 @@ pub(crate) fn init_buffers(
     quote_char: Option<u8>,
     encoding: CsvEncoding,
     ignore_errors: bool,
-) -> PolarsResult<Vec<Buffer>> {
+) -> PolarsResult<Vec<Buffer<'a>>> {
     // we keep track of the string columns we have seen so that we can increment the index
     let mut str_index = 0;
 
@@ -406,6 +518,10 @@ pub(crate) fn init_buffers(
                 },
                 #[cfg(feature = "dtype-date")]
                 &DataType::Date => Buffer::Date(DatetimeField::new(name, capacity)),
+                #[cfg(feature = "dtype-categorical")]
+                &DataType::Categorical(_) => {
+                    Buffer::Categorical(CategoricalField::new(name, capacity, quote_char))
+                }
                 other => {
                     return Err(PolarsError::ComputeError(
                         format!("Unsupported data type {:?} when reading a csv", other).into(),
@@ -418,7 +534,7 @@ pub(crate) fn init_buffers(
 }
 
 #[allow(clippy::large_enum_variant)]
-pub(crate) enum Buffer {
+pub(crate) enum Buffer<'a> {
     Boolean(BooleanChunkedBuilder),
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
@@ -435,9 +551,11 @@ pub(crate) enum Buffer {
     },
     #[cfg(feature = "dtype-date")]
     Date(DatetimeField<Int32Type>),
+    #[allow(dead_code)]
+    Categorical(CategoricalField<'a>),
 }
 
-impl Buffer {
+impl<'a> Buffer<'a> {
     pub(crate) fn into_series(self) -> PolarsResult<Series> {
         let s = match self {
             Buffer::Boolean(v) => v.finish().into_series(),
@@ -507,6 +625,17 @@ impl Buffer {
                 let ca = Utf8Chunked::from_chunks(&v.name, vec![Box::new(arr)]);
                 ca.into_series()
             },
+            #[allow(unused_variables)]
+            Buffer::Categorical(buf) => {
+                #[cfg(feature = "dtype-categorical")]
+                {
+                    buf.builder.finish().into_series()
+                }
+                #[cfg(not(feature = "dtype-categorical"))]
+                {
+                    panic!("activate 'dtype-categorical' feature")
+                }
+            }
         };
         Ok(s)
     }
@@ -528,6 +657,18 @@ impl Buffer {
             Buffer::Datetime { buf, .. } => buf.builder.append_null(),
             #[cfg(feature = "dtype-date")]
             Buffer::Date(v) => v.builder.append_null(),
+            #[allow(unused_variables)]
+            Buffer::Categorical(cat_builder) => {
+                #[cfg(feature = "dtype-categorical")]
+                {
+                    cat_builder.builder.append_null()
+                }
+
+                #[cfg(not(feature = "dtype-categorical"))]
+                {
+                    panic!("activate 'dtype-categorical' feature")
+                }
+            }
         };
     }
 
@@ -545,13 +686,24 @@ impl Buffer {
             Buffer::Datetime { tu, .. } => DataType::Datetime(*tu, None),
             #[cfg(feature = "dtype-date")]
             Buffer::Date(_) => DataType::Date,
+            Buffer::Categorical(_) => {
+                #[cfg(feature = "dtype-categorical")]
+                {
+                    DataType::Categorical(None)
+                }
+
+                #[cfg(not(feature = "dtype-categorical"))]
+                {
+                    panic!("activate 'dtype-categorical' feature")
+                }
+            }
         }
     }
 
     #[inline]
     pub(crate) fn add(
         &mut self,
-        bytes: &[u8],
+        bytes: &'a [u8],
         ignore_errors: bool,
         needs_escaping: bool,
     ) -> PolarsResult<()> {
@@ -616,6 +768,18 @@ impl Buffer {
                 ignore_errors,
                 needs_escaping,
             ),
+            #[allow(unused_variables)]
+            Categorical(buf) => {
+                #[cfg(feature = "dtype-categorical")]
+                {
+                    buf.parse_bytes(bytes, ignore_errors, needs_escaping)
+                }
+
+                #[cfg(not(feature = "dtype-categorical"))]
+                {
+                    panic!("activate 'dtype-categorical' feature")
+                }
+            }
         }
     }
 }

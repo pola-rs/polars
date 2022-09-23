@@ -264,8 +264,26 @@ impl fmt::Debug for Expr {
             Agg(agg) => {
                 use AggExpr::*;
                 match agg {
-                    Min(expr) => write!(f, "{:?}.min()", expr),
-                    Max(expr) => write!(f, "{:?}.max()", expr),
+                    Min {
+                        input,
+                        propagate_nans,
+                    } => {
+                        if *propagate_nans {
+                            write!(f, "{:?}.nan_min()", input)
+                        } else {
+                            write!(f, "{:?}.min()", input)
+                        }
+                    }
+                    Max {
+                        input,
+                        propagate_nans,
+                    } => {
+                        if *propagate_nans {
+                            write!(f, "{:?}.nan_max()", input)
+                        } else {
+                            write!(f, "{:?}.max()", input)
+                        }
+                    }
                     Median(expr) => write!(f, "{:?}.median()", expr),
                     Mean(expr) => write!(f, "{:?}.mean()", expr),
                     First(expr) => write!(f, "{:?}.first()", expr),
