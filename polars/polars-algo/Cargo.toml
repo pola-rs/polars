@@ -1,6 +1,6 @@
 [package]
 name = "polars-algo"
-version = "0.24.0"
+version = "0.24.1"
 authors = ["hpux735 <william@housedillon.com>"]
 edition = "2021"
 license = "MIT"
@@ -10,8 +10,8 @@ description = "Algorithms built upon Polars primitives"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-polars-core = { version = "0.24.0", path = "../polars-core", features = ["private", "dtype-categorical", "asof_join"], default-features = false }
-polars-lazy = { version = "0.24.0", path = "../polars-lazy", features = ["asof_join", "concat_str", "strings"] }
+polars-core = { version = "0.24.1", path = "../polars-core", features = ["private", "dtype-categorical", "asof_join"], default-features = false }
+polars-lazy = { version = "0.24.1", path = "../polars-lazy", features = ["asof_join", "concat_str", "strings"] }
 
 [package.metadata.docs.rs]
 all-features = true

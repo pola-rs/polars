@@ -1,6 +1,6 @@
 [package]
 name = "polars-time"
-version = "0.24.0"
+version = "0.24.1"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -11,9 +11,9 @@ description = "Time related code for the polars dataframe library"
 [dependencies]
 chrono = "0.4"
 lexical = { version = "6", default-features = false, features = ["std", "parse-floats", "parse-integers"] }
-polars-arrow = { version = "0.24.0", path = "../polars-arrow", features = ["compute", "temporal"] }
-polars-core = { version = "0.24.0", path = "../polars-core", default-features = false, features = ["private", "dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
-polars-utils = { version = "0.24.0", path = "../polars-utils" }
+polars-arrow = { version = "0.24.1", path = "../polars-arrow", features = ["compute", "temporal"] }
+polars-core = { version = "0.24.1", path = "../polars-core", default-features = false, features = ["private", "dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
+polars-utils = { version = "0.24.1", path = "../polars-utils" }
 serde = { version = "1", features = ["derive"], optional = true }
 
 [features]
