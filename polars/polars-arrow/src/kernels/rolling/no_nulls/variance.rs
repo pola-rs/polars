@@ -28,11 +28,10 @@ impl<
 {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self {
         // QUESTIOMN: HOW TO GET A VARIABLE BASE HERE?
-        let base = 2;
-        let sum = slice[start..end].iter().map(|v| v.pow(base)).sum::<T>();
+        let sum = slice[start..end].iter().map(|v| *v).sum::<T>();
         Self {
             slice,
-            base,
+            base: 1,
             sum_of_powers: sum,
             last_start: start,
             last_end: end,
@@ -103,7 +102,7 @@ impl<
 // E[x^2] - E[x]^2
 pub struct VarWindow<'a, T> {
     mean: MeanWindow<'a, T>,
-    sum_of_squares: SumWindow<'a, T>,
+    sum_of_squares: SumPowersWindow<'a, T>,
 }
 
 impl<
@@ -117,21 +116,19 @@ impl<
             + NumCast
             + One
             + Zero
-            + Sub<Output = T>,
+            + Sub<Output = T>
+            + Pow<i8, Output = T>,
     > RollingAggWindowNoNulls<'a, T> for VarWindow<'a, T>
 {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self {
         Self {
             mean: MeanWindow::new(slice, start, end),
-            sum_of_squares: SumWindow::new(slice, start, end),
+            sum_of_squares: SumPowersWindow::new_with_base(slice, 2, start, end),
         }
     }
-    fn new_with_base(slice: &'a [T], base: i8, start: usize, end: usize) -> Self {
+    fn new_with_base(slice: &'a [T], _base: i8, start: usize, end: usize) -> Self {
         // does nothing
-        Self {
-            mean: MeanWindow::new(slice, start, end),
-            sum_of_squares: SumWindow::new_with_base(slice, base, start, end),
-        }
+        Self::new(slice, start, end)
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
@@ -169,7 +166,7 @@ where
         + One
         + Zero
         + Sub<Output = T>
-        + Pow<T, Output = T>,
+        + Pow<i8, Output = T>,
 {
     match (center, weights) {
         (true, None) => rolling_apply_agg_window::<VarWindow<_>, _, _>(
@@ -228,7 +225,7 @@ impl<
             + One
             + Zero
             + Sub<Output = T>
-            + Pow<T, Output = T>,
+            + Pow<i8, Output = T>,
     > RollingAggWindowNoNulls<'a, T> for StdWindow<'a, T>
 {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self {
@@ -266,7 +263,7 @@ where
         + One
         + Zero
         + Sub<Output = T>
-        + Pow<T, Output = T>,
+        + Pow<i8, Output = T>,
 {
     match (center, weights) {
         (true, None) => rolling_apply_agg_window::<StdWindow<_>, _, _>(

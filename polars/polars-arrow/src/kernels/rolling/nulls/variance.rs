@@ -220,7 +220,7 @@ impl<
             + One
             + Add<Output = T>
             + Sub<Output = T>
-            + Pow<T, Output = T>,
+            + Pow<i8, Output = T>,
     > RollingAggWindowNulls<'a, T> for StdWindow<'a, T>
 {
     unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize) -> Self {
@@ -254,7 +254,7 @@ where
         + SubAssign
         + IsFloat
         + Float
-        + Pow<T, Output = T>,
+        + Pow<i8, Output = T>,
 {
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")

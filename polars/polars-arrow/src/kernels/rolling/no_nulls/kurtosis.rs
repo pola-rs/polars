@@ -88,7 +88,7 @@ impl<
                 ((((count * count) - one) * d) / (b * b)) - three * ((count - one) * (count - one));
 
             k / ((count - two) * (count - three))
-            // out
+
             // if fisher {
             //     out - three
             // } else {
