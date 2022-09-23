@@ -372,7 +372,7 @@ pub trait SeriesTrait:
 
     /// Drop all null values and return a new Series.
     fn drop_nulls(&self) -> Series {
-        if !self.has_validity() {
+        if self.null_count() == 0 {
             Series(self.clone_inner())
         } else {
             self.filter(&self.is_not_null()).unwrap()

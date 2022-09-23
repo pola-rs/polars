@@ -170,27 +170,49 @@ pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
 }
 
 /// Compute the spearman rank correlation between two columns.
-#[cfg(feature = "rank")]
-#[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
-pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
+/// Missing data will be excluded from the computation.
+/// # Arguments
+/// * ddof
+///     Delta degrees of freedom
+/// * propagate_nans
+///     If `true` any `NaN` encountered will lead to `NaN` in the output.
+///     If to `false` then `NaN` are regarded as larger than any finite number
+///     and thus lead to the highest rank.
+#[cfg(all(feature = "rank", feature = "propagate_nans"))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "rank", feature = "propagate_nans"))))]
+pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> Expr {
+    use polars_ops::prelude::nan_propagating_aggregate::nan_max_s;
+
     let function = move |a: Series, b: Series| {
         let (a, b) = coalesce_nulls_series(&a, &b);
 
-        let a = a.rank(RankOptions {
-            method: RankMethod::Min,
-            ..Default::default()
-        });
-        let b = b.rank(RankOptions {
-            method: RankMethod::Min,
-            ..Default::default()
-        });
-        let a = a.idx().unwrap();
-        let b = b.idx().unwrap();
-
         let name = "spearman_rank_correlation";
+        if propagate_nans && a.dtype().is_float() {
+            for s in [&a, &b] {
+                if nan_max_s(s, "").get(0).extract::<f64>().unwrap().is_nan() {
+                    return Ok(Series::new(name, &[f64::NAN]));
+                }
+            }
+        }
+
+        // drop nulls so that they are excluded
+        let a = a.drop_nulls();
+        let b = b.drop_nulls();
+
+        let a_idx = a.rank(RankOptions {
+            method: RankMethod::Min,
+            ..Default::default()
+        });
+        let b_idx = b.rank(RankOptions {
+            method: RankMethod::Min,
+            ..Default::default()
+        });
+        let a_idx = a_idx.idx().unwrap();
+        let b_idx = b_idx.idx().unwrap();
+
         Ok(Series::new(
             name,
-            &[polars_core::functions::pearson_corr_i(a, b, ddof)],
+            &[polars_core::functions::pearson_corr_i(a_idx, b_idx, ddof)],
         ))
     };
 
