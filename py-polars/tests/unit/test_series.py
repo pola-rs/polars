@@ -122,6 +122,10 @@ def test_to_frame() -> None:
         assert df.rows() == [(1,), (2,)]
         assert df.columns == [name]
 
+    # note: the empty string IS technically a valid column name
+    assert s2.to_frame("").columns == [""]
+    assert s2.name == "s"
+
 
 def test_bitwise_ops() -> None:
     a = pl.Series([True, False, True])

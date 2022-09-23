@@ -890,7 +890,7 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2])
+        >>> s = pl.Series("a", [123, 456])
         >>> df = s.to_frame()
         >>> df
         shape: (2, 1)
@@ -899,9 +899,9 @@ class Series:
         │ --- │
         │ i64 │
         ╞═════╡
-        │ 1   │
+        │ 123 │
         ├╌╌╌╌╌┤
-        │ 2   │
+        │ 456 │
         └─────┘
 
         >>> df = s.to_frame("xyz")
@@ -912,17 +912,14 @@ class Series:
         │ --- │
         │ i64 │
         ╞═════╡
-        │ 1   │
+        │ 123 │
         ├╌╌╌╌╌┤
-        │ 2   │
+        │ 456 │
         └─────┘
-
-        >>> isinstance(df, pl.DataFrame)
-        True
 
         """
         df = pli.wrap_df(PyDataFrame([self._s]))
-        if name:
+        if name is not None:
             return df.rename({self.name: name})
         return df
 
