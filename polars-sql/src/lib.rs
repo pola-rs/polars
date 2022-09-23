@@ -5,8 +5,9 @@ mod sql_expr;
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use polars::prelude::*;
+
+    use super::*;
 
     fn create_sample_df() -> PolarsResult<DataFrame> {
         let a = Series::new("a", (1..10000i64).map(|i| i / 100).collect::<Vec<_>>());
