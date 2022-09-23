@@ -87,8 +87,8 @@ impl<
             let k =
                 ((((count * count) - one) * d) / (b * b)) - three * ((count - one) * (count - one));
 
-            let out = k / ((count - two) * (count - three));
-            out
+            k / ((count - two) * (count - three))
+            // out
             // if fisher {
             //     out - three
             // } else {
