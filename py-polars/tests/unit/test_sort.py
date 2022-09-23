@@ -233,3 +233,24 @@ def test_top_k() -> None:
 
     assert s.top_k(3).to_list() == [8, 5, 3]
     assert s.top_k(4, reverse=True).to_list() == [1, 2, 3, 5]
+
+
+def test_sorted_flag_unset_by_arithmetic_4937() -> None:
+    df = pl.DataFrame(
+        {
+            "ts": [1, 1, 1, 0, 1],
+            "price": [3.3, 3.0, 3.5, 3.6, 3.7],
+            "mask": [1, 1, 1, 1, 0],
+        }
+    )
+
+    assert df.sort("price").groupby("ts").agg(
+        [
+            (pl.col("price") * pl.col("mask")).max().alias("pmax"),
+            (pl.col("price") * pl.col("mask")).min().alias("pmin"),
+        ]
+    ).sort("ts").to_dict(False) == {
+        "ts": [0, 1],
+        "pmax": [3.6, 3.5],
+        "pmin": [3.6, 0.0],
+    }
