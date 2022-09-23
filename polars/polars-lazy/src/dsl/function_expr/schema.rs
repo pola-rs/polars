@@ -130,6 +130,8 @@ impl FunctionExpr {
             ListContains => with_dtype(DataType::Boolean),
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { .. } => float_dtype(),
+            #[cfg(all(feature = "rolling_window", feature = "moment"))]
+            RollingKurtosis { .. } => float_dtype(),
             ShiftAndFill { .. } => same_type(),
             Nan(n) => n.get_field(fields),
             #[cfg(feature = "round_series")]

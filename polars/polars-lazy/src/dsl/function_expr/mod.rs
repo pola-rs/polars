@@ -84,6 +84,7 @@ pub enum FunctionExpr {
         window_size: usize,
         bias: bool,
     },
+    #[cfg(all(feature = "rolling_window", feature = "moment"))]
     RollingKurtosis {
         window_size: usize,
         fisher: bool,
@@ -147,6 +148,7 @@ impl Display for FunctionExpr {
             ListContains => "arr.contains",
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingKurtosis { .. } => "rolling_kurtosis",
+            #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { .. } => "rolling_skew",
             ShiftAndFill { .. } => "shift_and_fill",
             Nan(_) => "nan",

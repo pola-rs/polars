@@ -10,6 +10,7 @@ use std::fmt::Debug;
 use arrow::array::PrimitiveArray;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
+pub use kurtosis::*;
 pub use mean::*;
 pub use min_max::*;
 use num::{Float, NumCast};
