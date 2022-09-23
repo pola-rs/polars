@@ -95,6 +95,13 @@ impl Series {
                 let chunks = cast_chunks(&chunks, &DataType::Utf8, false).unwrap();
                 Ok(Utf8Chunked::from_chunks(name, chunks).into_series())
             }
+            ArrowDataType::LargeBinary => {
+                Ok(BinaryChunked::from_chunks(name, chunks).into_series())
+            }
+            ArrowDataType::Binary => {
+                let chunks = cast_chunks(&chunks, &DataType::Binary, false).unwrap();
+                Ok(BinaryChunked::from_chunks(name, chunks).into_series())
+            }
             ArrowDataType::List(_) | ArrowDataType::LargeList(_) => {
                 let chunks = chunks.iter().map(convert_inner_types).collect();
                 Ok(ListChunked::from_chunks(name, chunks).into_series())
@@ -253,38 +260,6 @@ impl Series {
                 // Safety
                 // the invariants of an Arrow Dictionary guarantee the keys are in bounds
                 Ok(CategoricalChunked::from_keys_and_values(name, keys, values).into_series())
-            }
-            #[cfg(not(feature = "dtype-u8"))]
-            ArrowDataType::LargeBinary | ArrowDataType::Binary => {
-                panic!("activate dtype-u8 to read binary data into polars List<u8>")
-            }
-            #[cfg(feature = "dtype-u8")]
-            ArrowDataType::LargeBinary | ArrowDataType::Binary => {
-                let chunks = chunks
-                    .iter()
-                    .map(|arr| {
-                        let arr = cast(&**arr, &ArrowDataType::LargeBinary).unwrap();
-
-                        let arr = arr.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
-                        let values = arr.values().clone();
-                        let offsets = arr.offsets().clone();
-                        let validity = arr.validity().cloned();
-
-                        let values = Box::new(PrimitiveArray::from_data(
-                            ArrowDataType::UInt8,
-                            values,
-                            None,
-                        ));
-
-                        let dtype = ListArray::<i64>::default_datatype(ArrowDataType::UInt8);
-                        // Safety:
-                        // offsets are monotonically increasing
-                        Box::new(ListArray::<i64>::new_unchecked(
-                            dtype, offsets, values, validity,
-                        )) as ArrayRef
-                    })
-                    .collect();
-                Ok(ListChunked::from_chunks(name, chunks).into())
             }
             #[cfg(feature = "object")]
             ArrowDataType::Extension(s, _, Some(_)) if s == "POLARS_EXTENSION_TYPE" => {
