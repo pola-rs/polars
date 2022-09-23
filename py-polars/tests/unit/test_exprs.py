@@ -422,3 +422,31 @@ def test_logical_boolean() -> None:
 
     with pytest.raises(ValueError, match="ambiguous"):
         pl.col("colx") or pl.col("coly")
+
+
+# https://github.com/pola-rs/polars/issues/4951
+def test_ewm_with_multiple_chunks() -> None:
+    df0 = pl.DataFrame(
+        data=[
+            ("w", 6.0, 1.0),
+            ("x", 5.0, 2.0),
+            ("y", 4.0, 3.0),
+            ("z", 3.0, 4.0),
+        ],
+        columns=["a", "b", "c"],
+    ).with_columns(
+        [
+            pl.col(pl.Float64).log().diff().prefix("ld_"),
+        ]
+    )
+    assert df0.n_chunks() == 1
+
+    df1 = df0.select(["ld_b", "ld_c"])
+    assert df1.n_chunks() == 2
+
+    ewm_std = df1.with_columns(
+        [
+            pl.all().ewm_std(com=20).prefix("ewm_"),
+        ]
+    )
+    assert ewm_std.null_count().sum(axis=1)[0] == 4
