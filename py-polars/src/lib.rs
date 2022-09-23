@@ -153,8 +153,13 @@ fn pearson_corr(a: dsl::PyExpr, b: dsl::PyExpr, ddof: u8) -> dsl::PyExpr {
 }
 
 #[pyfunction]
-fn spearman_rank_corr(a: dsl::PyExpr, b: dsl::PyExpr, ddof: u8) -> dsl::PyExpr {
-    polars::lazy::dsl::spearman_rank_corr(a.inner, b.inner, ddof).into()
+fn spearman_rank_corr(
+    a: dsl::PyExpr,
+    b: dsl::PyExpr,
+    ddof: u8,
+    propagate_nans: bool,
+) -> dsl::PyExpr {
+    polars::lazy::dsl::spearman_rank_corr(a.inner, b.inner, ddof, propagate_nans).into()
 }
 
 #[pyfunction]

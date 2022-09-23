@@ -780,9 +780,13 @@ def lit(
     return pli.wrap_expr(pylit(item, allow_object))
 
 
-def spearman_rank_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Expr:
+def spearman_rank_corr(
+    a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1, propagate_nans: bool = False
+) -> pli.Expr:
     """
     Compute the spearman rank correlation between two columns.
+
+    Missing data will be excluded from the computation.
 
     Parameters
     ----------
@@ -792,13 +796,19 @@ def spearman_rank_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> p
         Column name or Expression.
     ddof
         Delta degrees of freedom
+    propagate_nans
+        If `True` any `NaN` encountered will lead to `NaN` in the output.
+        Defaults to `False` where `NaN` are regarded as larger than any finite number
+        and thus lead to the highest rank.
 
     """
     if isinstance(a, str):
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return pli.wrap_expr(pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof))
+    return pli.wrap_expr(
+        pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans)
+    )
 
 
 def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Expr:
