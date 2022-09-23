@@ -94,12 +94,12 @@ pub trait RollingSeries: SeriesSealed {
     ) -> PolarsResult<Series> {
         let s = self.as_series();
 
-        if window_size < 4 {
-            Err(PolarsError::ComputeError(format!(
-                "cannot use rolling_kurtosis with window_size < 4, window_size is: {}",
-                window_size
-            )))
-        }
+        // if window_size < 4 {
+        //     Err(PolarsError::ComputeError(ErrString::from(format!(
+        //         "cannot use rolling_kurtosis with window_size < 4, window_size is: {}",
+        //         window_size
+        //     ))))
+        // }
 
         match s.dtype() {
             DataType::Float64 => {

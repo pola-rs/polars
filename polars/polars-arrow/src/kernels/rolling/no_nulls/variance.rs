@@ -169,7 +169,7 @@ where
         + One
         + Zero
         + Sub<Output = T>
-        + Pow<i8, Output = T>,
+        + Pow<T, Output = T>,
 {
     match (center, weights) {
         (true, None) => rolling_apply_agg_window::<VarWindow<_>, _, _>(
