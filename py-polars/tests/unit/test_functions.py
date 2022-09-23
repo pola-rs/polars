@@ -107,6 +107,11 @@ def test_cut() -> None:
         ],
     }
 
+    # test cut on integers #4939
+    df = pl.DataFrame({"a": list(range(5))})
+    ser = df.select("a").to_series()
+    assert pl.cut(ser, bins=[-1, 1]).shape == (5, 3)
+
 
 def test_null_handling_correlation() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, None, 4], "b": [1, 2, 3, 10, 4]})

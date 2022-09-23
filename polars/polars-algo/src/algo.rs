@@ -56,14 +56,17 @@ pub fn cut(
         .with_columns([col(category_str).cast(DataType::Categorical(None))])
         .collect()?;
 
-    s.sort(false).into_frame().join_asof(
-        &cuts,
-        var_name,
-        breakpoint_str,
-        AsofStrategy::Forward,
-        None,
-        None,
-    )
+    s.cast(&DataType::Float64)?
+        .sort(false)
+        .into_frame()
+        .join_asof(
+            &cuts,
+            var_name,
+            breakpoint_str,
+            AsofStrategy::Forward,
+            None,
+            None,
+        )
 }
 
 #[test]

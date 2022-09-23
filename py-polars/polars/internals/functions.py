@@ -369,7 +369,8 @@ def cut(
     cuts_df = cuts_df.with_column(pli.col(category_label).cast(Categorical))
 
     result = (
-        s.sort()
+        s.cast(Float64)
+        .sort()
         .to_frame()
         .join_asof(
             cuts_df,
