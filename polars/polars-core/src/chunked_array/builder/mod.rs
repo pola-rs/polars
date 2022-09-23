@@ -269,7 +269,7 @@ mod test {
     #[test]
     fn test_list_binary_builder() {
         let mut builder = ListBinaryChunkedBuilder::new("a", 10, 10);
-        builder.append_series(&Series::new("", &[b"foo", b"bar"]));
+        builder.append_series(&Series::new("", &["foo".as_bytes(), "bar".as_bytes()]));
         let ca = builder.finish();
         dbg!(ca);
     }
