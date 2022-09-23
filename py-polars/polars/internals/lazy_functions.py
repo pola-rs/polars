@@ -878,7 +878,7 @@ def apply(
     return_dtype: type[DataType] | None = None,
 ) -> pli.Expr:
     """
-    Apply a custom function in a GroupBy context.
+    Apply a custom/user-defined function (UDF) in a GroupBy context.
 
     Depending on the context it has the following behavior:
 
@@ -1862,6 +1862,33 @@ def coalesce(
     ----------
     exprs
         Expressions to coalesce.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     data=[
+    ...         (None, 1.0, 1.0),
+    ...         (None, 2.0, 2.0),
+    ...         (None, None, 3.0),
+    ...         (None, None, None),
+    ...     ],
+    ...     columns=[("a", pl.Float64), ("b", pl.Float64), ("c", pl.Float64)],
+    ... )
+    >>> df.with_column(pl.coalesce(["a", "b", "c", 99.9]).alias("d"))
+    shape: (4, 4)
+    ┌──────┬──────┬──────┬──────┐
+    │ a    ┆ b    ┆ c    ┆ d    │
+    │ ---  ┆ ---  ┆ ---  ┆ ---  │
+    │ f64  ┆ f64  ┆ f64  ┆ f64  │
+    ╞══════╪══════╪══════╪══════╡
+    │ null ┆ 1.0  ┆ 1.0  ┆ 1.0  │
+    ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ null ┆ 2.0  ┆ 2.0  ┆ 2.0  │
+    ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ null ┆ null ┆ 3.0  ┆ 3.0  │
+    ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ null ┆ null ┆ null ┆ 99.9 │
+    └──────┴──────┴──────┴──────┘
 
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
