@@ -3925,20 +3925,21 @@ class DataFrame:
         inference_size: int = 256,
     ) -> DF:
         """
-        Apply a custom function over the rows of the DataFrame.
+        Apply a custom/user-defined function (UDF) over the rows of the DataFrame.
 
-        The rows are passed as tuple.
+        The UDF will receive each row as a tuple of values: ``udf(row)``.
 
-        Implementing logic using this .apply method is generally slower and more memory
-        intensive than implementing the same logic using the expression API because:
+        Implementing logic using a Python function is almost always _significantly_
+        slower and more memory intensive than implementing the same logic using
+        the native expression API because:
 
-        - with .apply the logic is implemented in Python but with an expression the
-          logic is implemented in Rust
-        - with .apply the DataFrame is materialized in memory
-        - expressions can be parallelised
-        - expressions can be optimised
+        - The native expression engine runs in Rust; UDFs run in Python.
+        - Use of Python UDFs forces the DataFrame to be materialized in memory.
+        - Polars-native expressions can be parallelised (UDFs cannot).
+        - Polars-native expressions can be logically optimised (UDFs cannot).
 
-        If possible, use the expression API for best performance.
+        Wherever possible you should strongly prefer the native expression API
+        to achieve the best performance.
 
         Parameters
         ----------
@@ -3949,6 +3950,13 @@ class DataFrame:
         inference_size
             Only used in the case when the custom function returns rows.
             This uses the first `n` rows to determine the output schema
+
+        Notes
+        -----
+        The frame-level ``apply`` cannot track column names (as the UDF is a black-box
+        that may arbitrarily drop, rearrange, transform, or add new columns); if you
+        want to apply a UDF such that column names are preserved, you should use the
+        expression-level ``apply`` syntax instead.
 
         Examples
         --------

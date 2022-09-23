@@ -3008,7 +3008,7 @@ class Expr:
         return_dtype: type[DataType] | None = None,
     ) -> Expr:
         """
-        Apply a custom function in a GroupBy or Projection context.
+        Apply a custom/user-defined function (UDF) in a GroupBy or Projection context.
 
         Depending on the context it has the following behavior:
 
@@ -3019,17 +3019,17 @@ class Expr:
             Expects `f` to be of type Callable[[Series], Series].
             Applies a python function over each group.
 
-        Implementing logic using the ``.apply`` method is generally slower and more
-        memory intensive than implementing the same logic using the expression API
-        because:
+        Implementing logic using a Python function is almost always _significantly_
+        slower and more memory intensive than implementing the same logic using
+        the native expression API because:
 
-        - with .apply the logic is implemented in Python but with an expression the
-          logic is implemented in Rust
-        - with ``.apply`` the DataFrame is materialized in memory
-        - expressions can be parallelised
-        - expressions can be optimised
+        - The native expression engine runs in Rust; UDFs run in Python.
+        - Use of Python UDFs forces the DataFrame to be materialized in memory.
+        - Polars-native expressions can be parallelised (UDFs cannot).
+        - Polars-native expressions can be logically optimised (UDFs cannot).
 
-        If possible, use the expression API for best performance.
+        Wherever possible you should strongly prefer the native expression API
+        to achieve the best performance.
 
         Parameters
         ----------
