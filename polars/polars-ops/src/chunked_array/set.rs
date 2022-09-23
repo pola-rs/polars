@@ -1,6 +1,7 @@
 use polars_arrow::export::arrow::array::PrimitiveArray;
 use polars_core::export::arrow::array::Array;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::MutableBitmap;
 use polars_core::utils::arrow::types::NativeType;
 
@@ -127,6 +128,8 @@ where
 
         // safety:
         // we will not modify the length
+        // and we unset the sorted flag.
+        ca.set_sorted2(IsSorted::Not);
         let arr = unsafe { ca.downcast_iter_mut() }.next().unwrap();
         let len = arr.len();
 
