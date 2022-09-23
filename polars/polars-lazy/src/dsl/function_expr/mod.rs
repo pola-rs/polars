@@ -84,6 +84,11 @@ pub enum FunctionExpr {
         window_size: usize,
         bias: bool,
     },
+    RollingKurtosis {
+        window_size: usize,
+        fisher: bool,
+        bias: bool,
+    },
     ShiftAndFill {
         periods: i64,
     },
@@ -303,7 +308,11 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map!(rolling::rolling_skew, window_size, bias)
             }
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
-            RollingKurtosis { window_size, fisher, bias } => {
+            RollingKurtosis {
+                window_size,
+                fisher,
+                bias,
+            } => {
                 map!(rolling::rolling_kurtosis, window_size, fisher, bias)
             }
             ShiftAndFill { periods } => {

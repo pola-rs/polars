@@ -87,8 +87,13 @@ impl<
             let k =
                 ((((count * count) - one) * d) / (b * b)) - three * ((count - one) * (count - one));
 
-            // TODO if self.fisher , subtract 3
-            k / ((count - two) * (count - three))
+            let out = k / ((count - two) * (count - three));
+            out
+            // if fisher {
+            //     out - three
+            // } else {
+            //     out
+            // }
         }
     }
 }
