@@ -26,7 +26,6 @@ from polars._html import NotebookFormatter
 from polars.datatypes import (
     Boolean,
     ColumnsType,
-    DataType,
     Int8,
     Int16,
     Int32,
@@ -3922,7 +3921,7 @@ class DataFrame:
     def apply(
         self: DF,
         f: Callable[[tuple[Any, ...]], Any],
-        return_dtype: type[DataType] | None = None,
+        return_dtype: PolarsDataType | None = None,
         inference_size: int = 256,
     ) -> DF:
         """

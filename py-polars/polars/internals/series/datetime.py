@@ -75,11 +75,11 @@ class DateTimeNameSpace:
 
     def iso_year(self) -> pli.Series:
         """
-        Extract iso-year from underlying Date representation.
+        Extract ISO year from underlying Date representation.
 
         Applies to Date and Datetime columns.
 
-        Returns the year number in the iso standard.
+        Returns the year number according to the ISO standard.
         This may not correspond with the calendar year.
 
         Returns
@@ -172,7 +172,7 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Ordinaly day as UInt32
+        Ordinal day as UInt32
 
         """
 

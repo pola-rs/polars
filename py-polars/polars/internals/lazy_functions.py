@@ -1856,12 +1856,12 @@ def coalesce(
     ],
 ) -> pli.Expr:
     """
-    Folds the expressions from left to right keeping the first no null values.
+    Folds the expressions from left to right, keeping the first non-null value.
 
     Parameters
     ----------
     exprs
-        Expression to coalesce.
+        Expressions to coalesce.
 
     """
     exprs = pli.selection_to_pyexpr_list(exprs)

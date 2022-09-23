@@ -196,7 +196,7 @@ class ExprDateTimeNameSpace:
 
     def iso_year(self) -> pli.Expr:
         """
-        Extract iso-year from underlying Date representation.
+        Extract ISO year from underlying Date representation.
 
         Applies to Date and Datetime columns.
 
@@ -205,7 +205,7 @@ class ExprDateTimeNameSpace:
 
         Returns
         -------
-        Year as Int32
+        ISO Year as Int32
 
         """
         return pli.wrap_expr(self._pyexpr.iso_year())
