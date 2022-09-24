@@ -32,14 +32,14 @@ fn rewrite_special_aliases(expr: Expr) -> Expr {
     }) {
         match expr {
             Expr::KeepName(expr) => {
-                let roots = expr_to_root_column_names(&expr);
+                let roots = expr_to_leaf_column_names(&expr);
                 let name = roots
                     .get(0)
                     .expect("expected root column to keep expression name");
                 Expr::Alias(expr, name.clone())
             }
             Expr::RenameAlias { expr, function } => {
-                let name = get_single_root(&expr).unwrap();
+                let name = get_single_leaf(&expr).unwrap();
                 let name = function.call(&name);
                 Expr::Alias(expr, Arc::from(name))
             }
@@ -110,7 +110,7 @@ fn expand_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, pattern: &
 /// This function searches for a regex expression in `col("..")` and expands the columns
 /// that are selected by that regex in `result`. The regex should start with `^` and end with `$`.
 fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema) {
-    let roots = expr_to_root_column_names(expr);
+    let roots = expr_to_leaf_column_names(expr);
     let mut regex = None;
     for name in &roots {
         if name.starts_with('^') && name.ends_with('$') {

@@ -1,5 +1,6 @@
 use polars::error::PolarsResult;
 use polars::prelude::*;
+use polars_lazy::utils::expressions_to_schema;
 use sqlparser::ast::{
     Expr as SqlExpr, Select, SelectItem, SetExpr, Statement, TableFactor, Value as SQLValue,
 };
@@ -8,17 +9,15 @@ use sqlparser::parser::Parser;
 
 use crate::sql_expr::parse_sql_expr;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct SQLContext {
     table_map: PlHashMap<String, LazyFrame>,
-    dialect: GenericDialect,
 }
 
 impl SQLContext {
     pub fn new() -> Self {
         Self {
             table_map: PlHashMap::new(),
-            dialect: GenericDialect::default(),
         }
     }
 
@@ -51,48 +50,47 @@ impl SQLContext {
             // Support bare table, optional with alias for now
             _ => return Err(PolarsError::ComputeError("Not implemented".into())),
         };
-        let df = &self.table_map[tbl_name];
-        let mut raw_projection_before_alias: PlHashMap<String, usize> = PlHashMap::new();
-        let mut contain_wildcard = false;
+        let lf = self.table_map.get(tbl_name).ok_or_else(|| {
+            PolarsError::ComputeError(
+                format!("Table '{}' was not registered in the SQLContext", tbl_name).into(),
+            )
+        })?;
+
+        let mut contains_wildcard = false;
+
         // Filter Expression
-        let df = match select_stmt.selection.as_ref() {
+        let lf = match select_stmt.selection.as_ref() {
             Some(expr) => {
                 let filter_expression = parse_sql_expr(expr)?;
-                df.clone().filter(filter_expression)
+                lf.clone().filter(filter_expression)
             }
-            None => df.clone(),
+            None => lf.clone(),
         };
         // Column Projections
-        let projection = select_stmt
+        let projections: Vec<_> = select_stmt
             .projection
             .iter()
-            .enumerate()
-            .map(|(i, select_item)| {
+            .map(|select_item| {
                 Ok(match select_item {
-                    SelectItem::UnnamedExpr(expr) => {
-                        let expr = parse_sql_expr(expr)?;
-                        raw_projection_before_alias.insert(format!("{:?}", expr), i);
-                        expr
-                    }
+                    SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr)?,
                     SelectItem::ExprWithAlias { expr, alias } => {
                         let expr = parse_sql_expr(expr)?;
-                        raw_projection_before_alias.insert(format!("{:?}", expr), i);
                         expr.alias(&alias.value)
                     }
                     SelectItem::QualifiedWildcard(_) | SelectItem::Wildcard => {
-                        contain_wildcard = true;
+                        contains_wildcard = true;
                         col("*")
                     }
                 })
             })
-            .collect::<Result<Vec<_>, PolarsError>>()?;
+            .collect::<PolarsResult<_>>()?;
+
         // Check for group by
         // After projection since there might be number.
-        let group_by = select_stmt
+        let groupby_keys: Vec<Expr> = select_stmt
             .group_by
             .iter()
-            .map(
-                |e|match e {
+            .map(|e| match e {
                   SqlExpr::Value(SQLValue::Number(idx, _)) => {
                     let idx = match idx.parse::<usize>() {
                         Ok(0)| Err(_) => Err(
@@ -101,7 +99,7 @@ impl SQLContext {
                         )),
                         Ok(idx) => Ok(idx)
                     }?;
-                    Ok(projection[idx].clone())
+                    Ok(projections[idx].clone())
                   }
                   SqlExpr::Value(_) => Err(
                       PolarsError::ComputeError("Group By Error: Only positive number or expression are supported".into())
@@ -109,54 +107,17 @@ impl SQLContext {
                   _ => parse_sql_expr(e)
                 }
             )
-            .collect::<Result<Vec<_>, PolarsError>>()?;
+            .collect::<PolarsResult<_>>()?;
 
-        let df = if group_by.is_empty() {
-            df.select(projection)
+        if groupby_keys.is_empty() {
+            Ok(lf.select(projections))
         } else {
-            // check groupby and projection due to difference between SQL and polars
-            // Return error on wild card, shouldn't process this
-            if contain_wildcard {
-                return Err(PolarsError::ComputeError(
-                    "Group By Error: Can't processed wildcard in groupby".into(),
-                ));
-            }
-            // Default polars group by will have group by columns at the front
-            // need some container to contain position of group by columns and its position
-            // at the final agg projection, check the schema for the existence of group by column
-            // and its projections columns, keeping the original index
-            let (exclude_expr, groupby_pos): (Vec<_>, Vec<_>) = group_by
-                .iter()
-                .map(|expr| raw_projection_before_alias.get(&format!("{:?}", expr)))
-                .enumerate()
-                .filter(|(_, proj_p)| proj_p.is_some())
-                .map(|(gb_p, proj_p)| (*proj_p.unwrap(), (*proj_p.unwrap(), gb_p)))
-                .unzip();
-            let (agg_projection, agg_proj_pos): (Vec<_>, Vec<_>) = projection
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| !exclude_expr.contains(i))
-                .enumerate()
-                .map(|(agg_pj, (proj_p, expr))| (expr.clone(), (proj_p, agg_pj + group_by.len())))
-                .unzip();
-            let agg_df = df.groupby(group_by).agg(agg_projection);
-            let mut final_proj_pos = groupby_pos
-                .into_iter()
-                .chain(agg_proj_pos.into_iter())
-                .collect::<Vec<_>>();
-
-            final_proj_pos.sort_by(|(proj_pa, _), (proj_pb, _)| proj_pa.cmp(proj_pb));
-            let final_proj = final_proj_pos
-                .into_iter()
-                .map(|(_, shm_p)| col(agg_df.schema().unwrap().get_index(shm_p).unwrap().0))
-                .collect::<Vec<_>>();
-            agg_df.select(final_proj)
-        };
-        Ok(df)
+            self.process_groupby(lf, contains_wildcard, &groupby_keys, &projections)
+        }
     }
 
     pub fn execute(&self, query: &str) -> PolarsResult<LazyFrame> {
-        let ast = Parser::parse_sql(&self.dialect, query)
+        let ast = Parser::parse_sql(&GenericDialect::default(), query)
             .map_err(|e| PolarsError::ComputeError(format!("{:?}", e).into()))?;
         if ast.len() != 1 {
             Err(PolarsError::ComputeError(
@@ -166,8 +127,8 @@ impl SQLContext {
             let ast = ast.get(0).unwrap();
             Ok(match ast {
                 Statement::Query(query) => {
-                    let rs = match &query.body {
-                        SetExpr::Select(select_stmt) => self.execute_select(&*select_stmt)?,
+                    let rs = match &query.body.as_ref() {
+                        SetExpr::Select(select_stmt) => self.execute_select(select_stmt)?,
                         _ => {
                             return Err(PolarsError::ComputeError(
                                 "INSERT, UPDATE is not supported for polars".into(),
@@ -198,5 +159,53 @@ impl SQLContext {
                 }
             })
         }
+    }
+    fn process_groupby(
+        &self,
+        lf: LazyFrame,
+        contains_wildcard: bool,
+        groupby_keys: &[Expr],
+        projections: &[Expr],
+    ) -> PolarsResult<LazyFrame> {
+        // check groupby and projection due to difference between SQL and polars
+        // Return error on wild card, shouldn't process this
+        if contains_wildcard {
+            return Err(PolarsError::ComputeError(
+                "Group By Error: Can't processed wildcard in groupby".into(),
+            ));
+        }
+        let schema_before = lf.schema().unwrap();
+
+        let groupby_keys_schema =
+            expressions_to_schema(groupby_keys, &schema_before, Context::Default).unwrap();
+
+        // remove the groupby keys as polars adds those implicitly
+        let mut aggregation_projection = Vec::with_capacity(projections.len());
+        for e in projections {
+            let field = e.to_field(&schema_before, Context::Default)?;
+            if groupby_keys_schema.get(&field.name).is_none() {
+                aggregation_projection.push(e.clone())
+            }
+        }
+
+        let aggregated = lf.groupby(groupby_keys).agg(&aggregation_projection);
+
+        let projection_schema =
+            expressions_to_schema(projections, &schema_before, Context::Default).unwrap();
+
+        // a final projection to get the proper order
+        let final_projection = projection_schema
+            .iter_names()
+            .zip(projections)
+            .map(|(name, projection_expr)| {
+                if groupby_keys_schema.get(name).is_some() {
+                    projection_expr.clone()
+                } else {
+                    col(name)
+                }
+            })
+            .collect::<Vec<_>>();
+
+        Ok(aggregated.select(final_projection))
     }
 }

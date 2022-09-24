@@ -60,7 +60,7 @@ use crate::prelude::file_caching::find_column_union_and_fingerprints;
 use crate::prelude::simplify_expr::SimplifyBooleanRule;
 use crate::prelude::slice_pushdown_lp::SlicePushDown;
 use crate::prelude::*;
-use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
+use crate::utils::{combine_predicates_expr, expr_to_leaf_column_names};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -1431,7 +1431,7 @@ impl LazyGroupBy {
         let keys = self
             .keys
             .iter()
-            .flat_map(|k| expr_to_root_column_names(k).into_iter())
+            .flat_map(|k| expr_to_leaf_column_names(k).into_iter())
             .collect::<Vec<_>>();
 
         self.agg([col("*").exclude(&keys).head(n).list().keep_name()])
@@ -1443,7 +1443,7 @@ impl LazyGroupBy {
         let keys = self
             .keys
             .iter()
-            .flat_map(|k| expr_to_root_column_names(k).into_iter())
+            .flat_map(|k| expr_to_leaf_column_names(k).into_iter())
             .collect::<Vec<_>>();
 
         self.agg([col("*").exclude(&keys).tail(n).keep_name()])

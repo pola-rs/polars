@@ -1,32 +1,38 @@
-use std::process::exit;
-
-use clap::Parser;
 use polars::prelude::*;
-use polarssql::SQLContext;
 
-#[derive(Parser)]
-#[clap(author, version, about, long_about = None)]
-struct Cli {
-    #[clap(value_parser)]
-    sql: String,
-}
+#[cfg(feature = "binary")]
+mod binary {
+    use clap::Parser;
+    use polarssql::SQLContext;
 
-fn run() -> PolarsResult<DataFrame> {
-    let cli = Cli::parse();
+    use super::*;
 
-    let mut context = SQLContext::new();
+    #[derive(Parser)]
+    #[clap(author, version, about, long_about = None)]
+    struct Cli {
+        #[clap(value_parser)]
+        sql: String,
+    }
 
-    println!("{:?}", cli.sql);
+    fn run() -> PolarsResult<DataFrame> {
+        let cli = Cli::parse();
 
-    let q = context.execute(&cli.sql)?;
-    let out = q.limit(100).collect()?;
+        let mut context = SQLContext::new();
 
-    Ok(out)
+        println!("{:?}", cli.sql);
+
+        let q = context.execute(&cli.sql)?;
+        let out = q.limit(100).collect()?;
+
+        Ok(out)
+    }
 }
 
 fn main() -> PolarsResult<()> {
-    let out = run()?;
-    println!("{}", out);
-
+    #[cfg(feature = "binary")]
+    {
+        let out = run()?;
+        println!("{}", out);
+    }
     Ok(())
 }

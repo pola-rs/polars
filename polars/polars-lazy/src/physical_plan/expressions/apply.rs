@@ -319,7 +319,7 @@ impl StatsEvaluator for ApplyExpr {
                 ..
             }
         ) {
-            let root = expr_to_root_column_name(&self.expr)?;
+            let root = expr_to_leaf_column_name(&self.expr)?;
 
             let read = true;
             let skip = false;

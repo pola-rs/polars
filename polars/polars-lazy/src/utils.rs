@@ -180,13 +180,13 @@ pub(crate) fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
 
 /// This function should be used to find the name of the start of an expression
 /// Normal iteration would just return the first root column it found
-pub(crate) fn get_single_root(expr: &Expr) -> PolarsResult<Arc<str>> {
+pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
     for e in expr {
         match e {
-            Expr::Filter { input, .. } => return get_single_root(input),
-            Expr::Take { expr, .. } => return get_single_root(expr),
-            Expr::SortBy { expr, .. } => return get_single_root(expr),
-            Expr::Window { function, .. } => return get_single_root(function),
+            Expr::Filter { input, .. } => return get_single_leaf(input),
+            Expr::Take { expr, .. } => return get_single_leaf(expr),
+            Expr::SortBy { expr, .. } => return get_single_leaf(expr),
+            Expr::Window { function, .. } => return get_single_leaf(function),
             Expr::Column(name) => return Ok(name.clone()),
             _ => {}
         }
@@ -197,15 +197,15 @@ pub(crate) fn get_single_root(expr: &Expr) -> PolarsResult<Arc<str>> {
 }
 
 /// This should gradually replace expr_to_root_column as this will get all names in the tree.
-pub(crate) fn expr_to_root_column_names(expr: &Expr) -> Vec<Arc<str>> {
+pub fn expr_to_leaf_column_names(expr: &Expr) -> Vec<Arc<str>> {
     expr_to_root_column_exprs(expr)
         .into_iter()
-        .map(|e| expr_to_root_column_name(&e).unwrap())
+        .map(|e| expr_to_leaf_column_name(&e).unwrap())
         .collect()
 }
 
 /// unpack alias(col) to name of the root column name
-pub(crate) fn expr_to_root_column_name(expr: &Expr) -> PolarsResult<Arc<str>> {
+pub fn expr_to_leaf_column_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     let mut roots = expr_to_root_column_exprs(expr);
     match roots.len() {
         0 => Err(PolarsError::ComputeError(
@@ -305,12 +305,15 @@ pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
 }
 
 /// Take a list of expressions and a schema and determine the output schema.
-pub(crate) fn expressions_to_schema(
+pub fn expressions_to_schema(
     expr: &[Expr],
     schema: &Schema,
     ctxt: Context,
 ) -> PolarsResult<Schema> {
-    let fields = expr.iter().map(|expr| expr.to_field(schema, ctxt));
+    let mut expr_arena = Arena::with_capacity(4 * expr.len());
+    let fields = expr
+        .iter()
+        .map(|expr| expr.to_field_amortized(schema, ctxt, &mut expr_arena));
     Schema::try_from_fallible(fields)
 }
 
