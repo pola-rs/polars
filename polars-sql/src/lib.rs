@@ -1,7 +1,7 @@
-pub use context::SQLContext;
-
 mod context;
 mod sql_expr;
+
+pub use context::SQLContext;
 
 #[cfg(test)]
 mod test {
@@ -19,7 +19,7 @@ mod test {
     fn test_simple_select() -> PolarsResult<()> {
         let df = create_sample_df()?;
         let mut context = SQLContext::new();
-        context.register("df", &df);
+        context.register("df", df.clone().lazy());
         let df_sql = context
             .execute(
                 r#"
@@ -44,7 +44,7 @@ mod test {
     fn test_groupby_simple() -> PolarsResult<()> {
         let df = create_sample_df()?;
         let mut context = SQLContext::new();
-        context.register("df", &df);
+        context.register("df", df.clone().lazy());
         let df_sql = context
             .execute(
                 r#"
