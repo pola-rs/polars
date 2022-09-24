@@ -148,7 +148,7 @@ def test_value_counts_logical_type() -> None:
 
 def test_nested_struct() -> None:
     df = pl.DataFrame({"d": [1, 2, 3], "e": ["foo", "bar", "biz"]})
-    # Nest the datafame
+    # Nest the dataframe
     nest_l1 = df.to_struct("c").to_frame()
     # Add another column on the same level
     nest_l1 = nest_l1.with_column(pl.col("c").is_nan().alias("b"))

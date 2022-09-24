@@ -31,7 +31,7 @@ class PolarsSlice:
 
     @staticmethod
     def _lazify(obj: FrameOrSeries) -> "pli.LazyFrame":
-        """Make lazy to ensure efficent/consistent handling."""
+        """Make lazy to ensure efficient/consistent handling."""
         return obj.lazy() if isinstance(obj, pli.DataFrame) else obj.to_frame().lazy()
 
     def _slice_positive(self, obj: "pli.LazyFrame") -> "pli.LazyFrame":
