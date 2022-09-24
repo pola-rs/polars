@@ -288,7 +288,7 @@ impl Executor for PartitionGroupByExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run PartititonGroupbyExec")
+                println!("run PartitionGroupbyExec")
             }
         }
         let original_df = self.input.execute(state)?;
@@ -299,7 +299,7 @@ impl Executor for PartitionGroupByExec {
                 .iter()
                 .map(|s| Ok(s.to_field(&self.input_schema)?.name))
                 .collect::<PolarsResult<Vec<_>>>()?;
-            let name = column_delimited("groupby_paritioned".to_string(), &by);
+            let name = column_delimited("groupby_partitioned".to_string(), &by);
             Cow::Owned(name)
         } else {
             Cow::Borrowed("")
