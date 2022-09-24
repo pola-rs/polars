@@ -1,15 +1,18 @@
 [package]
-name = "polarssql"
+name = "polars-sql"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+binary = ["clap"]
 
 [dependencies]
-clap = { version = "3.2.22", features = ["derive"] }
+clap = { version = "3.2.22", features = ["derive"], optional = true }
+polars-lazy = { path = "../polars/polars-lazy", features = ["compile"] }
 serde = "1"
 serde_json = { version = "1" }
-sqlparser = { version = "0.15.0" }
+sqlparser = { version = "0.19", features = ["std"] }
 
 [dependencies.polars]
 path = "../polars"

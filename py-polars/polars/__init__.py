@@ -122,6 +122,7 @@ from polars.internals.lazyframe import LazyFrame
 # TODO: remove need for wrap_s
 from polars.internals.series import wrap_s  # noqa: F401
 from polars.internals.series import Series
+from polars.internals.sql import SQLContext
 from polars.internals.whenthen import when
 from polars.io import (
     read_avro,
@@ -272,6 +273,7 @@ __all__ = [
     "threadpool_size",
     # version
     "show_versions",
+    "SQLContext",
 ]
 
 __version__ = version()

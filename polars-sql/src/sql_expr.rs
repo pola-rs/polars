@@ -153,31 +153,34 @@ fn parse_sql_function(sql_function: &SQLFunction) -> PolarsResult<Expr> {
     use sqlparser::ast::{FunctionArg, FunctionArgExpr};
     // Function name mostly do not have name space, so it mostly take the first args
     let function_name = sql_function.name.0[0].value.to_lowercase();
-    let args = sql_function
+    let args: Vec<_> = sql_function
         .args
         .iter()
         .map(|arg| match arg {
             FunctionArg::Named { arg, .. } => arg,
             FunctionArg::Unnamed(arg) => arg,
         })
-        .collect::<Vec<_>>();
-    Ok(
-        match (
-            function_name.as_str(),
-            args.as_slice(),
-            sql_function.distinct,
-        ) {
-            ("sum", [FunctionArgExpr::Expr(expr)], false) => {
-                apply_window_spec(parse_sql_expr(expr)?, &sql_function.over)?.sum()
-            }
-            ("count", [FunctionArgExpr::Expr(expr)], false) => {
-                apply_window_spec(parse_sql_expr(expr)?, &sql_function.over)?.count()
-            }
-            ("count", [FunctionArgExpr::Expr(expr)], true) => {
-                apply_window_spec(parse_sql_expr(expr)?, &sql_function.over)?.n_unique()
-            }
+        .collect();
+
+    // single arg
+    if let [FunctionArgExpr::Expr(sql_expr)] = args.as_slice() {
+        let e = apply_window_spec(parse_sql_expr(sql_expr)?, &sql_function.over)?;
+        Ok(match (function_name.as_str(), sql_function.distinct) {
+            ("sum", false) => e.sum(),
+            ("first", false) => e.first(),
+            ("last", false) => e.last(),
+            ("avg", false) => e.mean(),
+            ("max", false) => e.max(),
+            ("min", false) => e.min(),
+            ("stddev" | "stddev_samp", false) => e.std(1),
+            ("variance" | "var_samp", false) => e.var(1),
+            ("array_agg", false) => e.list(),
             // Special case for wildcard args to count function.
-            ("count", [FunctionArgExpr::Wildcard], false) => lit(1i32).count(),
+            ("count", false) if matches!(args.as_slice(), [FunctionArgExpr::Wildcard]) => {
+                lit(1i32).count()
+            }
+            ("count", false) => e.count(),
+            ("count", true) => e.n_unique(),
             _ => {
                 return Err(PolarsError::ComputeError(
                     format!(
@@ -187,6 +190,14 @@ fn parse_sql_function(sql_function: &SQLFunction) -> PolarsResult<Expr> {
                     .into(),
                 ))
             }
-        },
-    )
+        })
+    } else {
+        Err(PolarsError::ComputeError(
+            format!(
+                "Function {:?} with args {:?} was not supported in polars-sql yet!",
+                function_name, args
+            )
+            .into(),
+        ))
+    }
 }

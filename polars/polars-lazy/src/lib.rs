@@ -205,4 +205,4 @@ pub mod prelude;
 #[cfg(test)]
 mod tests;
 #[cfg(feature = "compile")]
-pub(crate) mod utils;
+pub mod utils;
