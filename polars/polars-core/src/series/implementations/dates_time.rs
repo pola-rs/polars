@@ -103,18 +103,6 @@ macro_rules! impl_dyn_series {
                     .unwrap()
             }
 
-            unsafe fn agg_quantile(
-                &self,
-                groups: &GroupsProxy,
-                quantile: f64,
-                interpol: QuantileInterpolOptions,
-            ) -> Series {
-                self.0
-                    .agg_quantile(groups, quantile, interpol)
-                    .$into_logical()
-                    .into_series()
-            }
-
             fn zip_outer_join_column(
                 &self,
                 right_column: &Series,

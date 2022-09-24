@@ -309,10 +309,45 @@ impl Series {
             Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_median(groups),
             dt if dt.is_numeric() || dt.is_temporal() => {
                 let ca = self.to_physical_repr();
+                let physical_type = ca.dtype();
                 let s = apply_method_physical_integer!(ca, agg_median, groups);
                 if dt.is_logical() {
+                    // back to physical and then
                     // back to logical type
-                    s.cast(dt).unwrap()
+                    s.cast(physical_type).unwrap().cast(dt).unwrap()
+                } else {
+                    s
+                }
+            }
+            _ => Series::full_null("", groups.len(), self.dtype()),
+        }
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn agg_quantile(
+        &self,
+        groups: &GroupsProxy,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> Series {
+        use DataType::*;
+
+        match self.dtype() {
+            Float32 => {
+                SeriesWrap(self.f32().unwrap().clone()).agg_quantile(groups, quantile, interpol)
+            }
+            Float64 => {
+                SeriesWrap(self.f64().unwrap().clone()).agg_quantile(groups, quantile, interpol)
+            }
+            dt if dt.is_numeric() || dt.is_temporal() => {
+                let ca = self.to_physical_repr();
+                let physical_type = ca.dtype();
+                let s =
+                    apply_method_physical_integer!(ca, agg_quantile, groups, quantile, interpol);
+                if dt.is_logical() {
+                    // back to physical and then
+                    // back to logical type
+                    s.cast(physical_type).unwrap().cast(dt).unwrap()
                 } else {
                     s
                 }
