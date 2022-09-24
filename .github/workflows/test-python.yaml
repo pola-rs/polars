@@ -21,7 +21,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.7', '3.10']
+        # TODO: Change '3.10.6' to '3.10' after updating mypy version
+        # See issue: https://github.com/pola-rs/polars/issues/4957
+        python-version: ['3.7', '3.10.6']
 
     steps:
       - uses: actions/checkout@v3
