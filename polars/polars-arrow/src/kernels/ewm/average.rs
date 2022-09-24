@@ -48,10 +48,10 @@ mod test {
 
     #[test]
     fn test_ewm_mean_without_null() {
-        let xs = PrimitiveArray::from([Some(1.0f32), Some(2.0f32), Some(3.0f32)]);
+        let xs = vec![Some(1.0f32), Some(2.0f32), Some(3.0f32)];
 
         for adjust in [false, true] {
-            let result = ewm_mean(xs, 0.5, adjust, 0);
+            let result = ewm_mean(xs.clone().into_iter(), 0.5, adjust, 0);
 
             let expected = match adjust {
                 false => PrimitiveArray::from([Some(1.0f32), Some(1.5f32), Some(2.25f32)]),
@@ -67,17 +67,17 @@ mod test {
 
     #[test]
     fn test_ewm_mean_with_null() {
-        let xs = PrimitiveArray::from([Some(1.0f32), None, Some(1.0f32), Some(1.0f32)]);
+        let xs = vec![Some(1.0f32), None, Some(1.0f32), Some(1.0f32)].into_iter();
         let result = ewm_mean(xs, 0.5, false, 2);
         let expected = PrimitiveArray::from([None, None, Some(1.0f32), Some(1.0f32)]);
         assert_eq!(result, expected);
 
-        let xs = PrimitiveArray::from([None, None, Some(1.0f32), Some(1.0f32)]);
+        let xs = vec![None, None, Some(1.0f32), Some(1.0f32)].into_iter();
         let result = ewm_mean(xs, 0.5, false, 1);
         let expected = PrimitiveArray::from([None, None, Some(1.0f32), Some(1.0f32)]);
         assert_eq!(result, expected);
 
-        let xs = PrimitiveArray::from([
+        let xs = vec![
             Some(2.0f32),
             Some(3.0f32),
             Some(5.0f32),
@@ -86,7 +86,7 @@ mod test {
             None,
             None,
             Some(4.0f32),
-        ]);
+        ];
         let result = ewm_mean(xs, 0.5, false, 0);
         let expected = PrimitiveArray::from([
             Some(2.0f32),
@@ -100,7 +100,7 @@ mod test {
         ]);
         assert_eq!(result, expected);
 
-        let xs = PrimitiveArray::from([
+        let xs = vec![
             None,
             None,
             Some(5.0f32),
@@ -109,8 +109,8 @@ mod test {
             Some(2.0f32),
             Some(1.0f32),
             Some(4.0f32),
-        ]);
-        let unadjusted_result = ewm_mean(xs, 0.5, false, 1);
+        ];
+        let unadjusted_result = ewm_mean(xs.clone().into_iter(), 0.5, false, 1);
         let unadjusted_expected = PrimitiveArray::from([
             None,
             None,
@@ -122,7 +122,7 @@ mod test {
             Some(3.25f32),
         ]);
         assert_eq!(unadjusted_result, unadjusted_expected);
-        let adjusted_result = ewm_mean(xs, 0.5, true, 1);
+        let adjusted_result = ewm_mean(xs.clone().into_iter(), 0.5, true, 1);
         let adjusted_expected = PrimitiveArray::from([
             None,
             None,
@@ -135,7 +135,7 @@ mod test {
         ]);
         assert_eq!(adjusted_result, adjusted_expected);
 
-        let xs = PrimitiveArray::from([
+        let xs = vec![
             None,
             Some(1.0f32),
             Some(5.0f32),
@@ -144,7 +144,8 @@ mod test {
             Some(2.0f32),
             Some(1.0f32),
             Some(4.0f32),
-        ]);
+        ]
+        .into_iter();
         let result = ewm_mean(xs, 0.5, true, 1);
         let expected = PrimitiveArray::from([
             None,
