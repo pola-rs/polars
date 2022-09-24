@@ -1035,6 +1035,7 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
+    #[allow(deprecated)]
     pub fn groupby_quantile(
         &self,
         by: Vec<&str>,
@@ -1329,6 +1330,7 @@ impl PyDataFrame {
     }
 }
 
+#[allow(deprecated)]
 fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {
     Python::with_gil(|py| {
         let df = py.allow_threads(|| match agg {

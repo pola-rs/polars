@@ -22,14 +22,17 @@ impl SQLContext {
         }
     }
 
-    pub fn register(&mut self, name: &str, df: &DataFrame) {
-        self.table_map.insert(name.to_owned(), df.clone().lazy());
+    pub fn register(&mut self, name: &str, lf: LazyFrame) {
+        self.table_map.insert(name.to_owned(), lf);
     }
 
     fn execute_select(&self, select_stmt: &Select) -> PolarsResult<LazyFrame> {
         // Determine involved dataframe
         // Implicit join require some more work in query parsers, Explicit join are preferred for now.
-        let tbl = select_stmt.from.get(0).unwrap();
+        let tbl = select_stmt
+            .from
+            .get(0)
+            .ok_or_else(|| PolarsError::ComputeError("No table name provided in query".into()))?;
         let mut alias_map = PlHashMap::new();
         let tbl_name = match &tbl.relation {
             TableFactor::Table { name, alias, .. } => {
