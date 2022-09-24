@@ -18,6 +18,7 @@ pub struct PySQLContext {
 )]
 impl PySQLContext {
     #[staticmethod]
+    #[allow(clippy::new_without_default)]
     pub fn new() -> PySQLContext {
         PySQLContext {
             context: SQLContext::new(),

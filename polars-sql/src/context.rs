@@ -2,7 +2,8 @@ use polars::error::PolarsResult;
 use polars::prelude::*;
 use polars_lazy::utils::expressions_to_schema;
 use sqlparser::ast::{
-    Expr as SqlExpr, Select, SelectItem, SetExpr, Statement, TableFactor, Value as SQLValue,
+    Expr as SqlExpr, JoinConstraint, JoinOperator, OrderByExpr, Select, SelectItem, SetExpr,
+    Statement, TableFactor, TableWithJoins, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -25,21 +26,19 @@ impl SQLContext {
         self.table_map.insert(name.to_owned(), lf);
     }
 
-    fn execute_select(&self, select_stmt: &Select) -> PolarsResult<LazyFrame> {
-        // Determine involved dataframe
-        // Implicit join require some more work in query parsers, Explicit join are preferred for now.
-        let tbl = select_stmt
-            .from
-            .get(0)
-            .ok_or_else(|| PolarsError::ComputeError("No table name provided in query".into()))?;
-        let mut alias_map = PlHashMap::new();
-        let tbl_name = match &tbl.relation {
+    fn get_relation_name<'a>(
+        &self,
+        relation: &'a TableFactor,
+        alias_map: &mut PlHashMap<String, String>,
+    ) -> PolarsResult<&'a str> {
+        let tbl_name = match relation {
             TableFactor::Table { name, alias, .. } => {
                 let tbl_name = name.0.get(0).unwrap().value.as_str();
                 if self.table_map.contains_key(tbl_name) {
                     if let Some(alias) = alias {
                         alias_map.insert(alias.name.value.clone(), tbl_name.to_owned());
                     };
+
                     tbl_name
                 } else {
                     return Err(PolarsError::ComputeError(
@@ -50,11 +49,59 @@ impl SQLContext {
             // Support bare table, optional with alias for now
             _ => return Err(PolarsError::ComputeError("Not implemented".into())),
         };
-        let lf = self.table_map.get(tbl_name).ok_or_else(|| {
+        Ok(tbl_name)
+    }
+
+    fn get_table(&self, name: &str) -> PolarsResult<LazyFrame> {
+        self.table_map.get(name).cloned().ok_or_else(|| {
             PolarsError::ComputeError(
-                format!("Table '{}' was not registered in the SQLContext", tbl_name).into(),
+                format!("Table '{}' was not registered in the SQLContext", name).into(),
             )
-        })?;
+        })
+    }
+
+    fn execute_select(&self, select_stmt: &Select) -> PolarsResult<LazyFrame> {
+        // Determine involved dataframe
+        // Implicit join require some more work in query parsers, Explicit join are preferred for now.
+        let sql_tbl: &TableWithJoins = select_stmt
+            .from
+            .get(0)
+            .ok_or_else(|| PolarsError::ComputeError("No table name provided in query".into()))?;
+        let mut alias_map = PlHashMap::new();
+
+        let tbl_name = self.get_relation_name(&sql_tbl.relation, &mut alias_map)?;
+        let mut lf = self.get_table(tbl_name)?;
+
+        if !sql_tbl.joins.is_empty() {
+            for tbl in &sql_tbl.joins {
+                let join_tbl_name = self.get_relation_name(&tbl.relation, &mut alias_map)?;
+                let join_tbl = self.get_table(join_tbl_name)?;
+                match &tbl.join_operator {
+                    JoinOperator::Inner(constraint) => {
+                        let (left_on, right_on) = process_join_constraint(&constraint)?;
+                        lf = lf.inner_join(join_tbl, left_on, right_on)
+                    }
+                    JoinOperator::LeftOuter(constraint) => {
+                        let (left_on, right_on) = process_join_constraint(&constraint)?;
+                        lf = lf.left_join(join_tbl, left_on, right_on)
+                    }
+                    JoinOperator::FullOuter(constraint) => {
+                        let (left_on, right_on) = process_join_constraint(&constraint)?;
+                        lf = lf.outer_join(join_tbl, left_on, right_on)
+                    }
+                    JoinOperator::CrossJoin => lf = lf.cross_join(join_tbl),
+                    join_type => {
+                        return Err(PolarsError::ComputeError(
+                            format!(
+                                "Join type: '{:?}' not yet supported by polars-sql",
+                                join_type
+                            )
+                            .into(),
+                        ))
+                    }
+                }
+            }
+        }
 
         let mut contains_wildcard = false;
 
@@ -62,9 +109,9 @@ impl SQLContext {
         let lf = match select_stmt.selection.as_ref() {
             Some(expr) => {
                 let filter_expression = parse_sql_expr(expr)?;
-                lf.clone().filter(filter_expression)
+                lf.filter(filter_expression)
             }
-            None => lf.clone(),
+            None => lf,
         };
         // Column Projections
         let projections: Vec<_> = select_stmt
@@ -127,7 +174,7 @@ impl SQLContext {
             let ast = ast.get(0).unwrap();
             Ok(match ast {
                 Statement::Query(query) => {
-                    let rs = match &query.body.as_ref() {
+                    let mut lf = match &query.body.as_ref() {
                         SetExpr::Select(select_stmt) => self.execute_select(select_stmt)?,
                         _ => {
                             return Err(PolarsError::ComputeError(
@@ -135,6 +182,9 @@ impl SQLContext {
                             ))
                         }
                     };
+                    if !query.order_by.is_empty() {
+                        lf = self.process_order_by(lf, &query.order_by)?;
+                    }
                     match &query.limit {
                         Some(SqlExpr::Value(SQLValue::Number(nrow, _))) => {
                             let nrow = nrow.parse().map_err(|err| {
@@ -142,9 +192,9 @@ impl SQLContext {
                                     format!("Conversion Error: {:?}", err).into(),
                                 )
                             })?;
-                            rs.limit(nrow)
+                            lf.limit(nrow)
                         }
-                        None => rs,
+                        None => lf,
                         _ => {
                             return Err(PolarsError::ComputeError(
                                 "Only support number argument to LIMIT clause".into(),
@@ -160,6 +210,29 @@ impl SQLContext {
             })
         }
     }
+
+    fn process_order_by(&self, lf: LazyFrame, ob: &[OrderByExpr]) -> PolarsResult<LazyFrame> {
+        let mut by = Vec::with_capacity(ob.len());
+        let mut reverse = Vec::with_capacity(ob.len());
+
+        for ob in ob {
+            by.push(parse_sql_expr(&ob.expr)?);
+            if let Some(false) = ob.asc {
+                reverse.push(true)
+            } else {
+                reverse.push(false)
+            }
+
+            if ob.nulls_first.is_some() {
+                return Err(PolarsError::ComputeError(
+                    "nulls first/last is not yet supported".into(),
+                ));
+            }
+        }
+
+        Ok(lf.sort_by_exprs(&by, reverse, false))
+    }
+
     fn process_groupby(
         &self,
         lf: LazyFrame,
@@ -208,4 +281,22 @@ impl SQLContext {
 
         Ok(aggregated.select(final_projection))
     }
+}
+
+fn process_join_constraint(constraint: &JoinConstraint) -> PolarsResult<(Expr, Expr)> {
+    if let JoinConstraint::On(expr) = constraint {
+        let expr = parse_sql_expr(expr)?;
+        if let Expr::BinaryExpr { left, right, op } = expr {
+            if let Operator::Eq = op {
+                return Ok((*left.clone(), *right.clone()));
+            }
+        }
+    }
+    Err(PolarsError::ComputeError(
+        format!(
+            "Join constraint {:?} not yet supported in polars-sql",
+            constraint
+        )
+        .into(),
+    ))
 }
