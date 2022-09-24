@@ -145,6 +145,14 @@ def numpy_to_pyseries(
             return constructor(name, values.astype(np.int64), strict)
         else:
             return constructor(name, values, strict)
+    elif len(values.shape) == 2:
+        pyseries_container = []
+        for row in range(values.shape[0]):
+            pyseries_container.append(
+                numpy_to_pyseries("", values[row, :], strict, nan_to_null)
+            )
+        return PySeries.new_series_list(name, pyseries_container, False)
+
     else:
         return PySeries.new_object(name, values, strict)
 

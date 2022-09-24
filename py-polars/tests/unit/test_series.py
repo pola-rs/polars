@@ -57,16 +57,16 @@ def test_init_inputs(monkeypatch: Any) -> None:
         assert pl.Series("a", [10000, 20000, 30000], dtype=pl.Time).dtype == pl.Time
 
         # 2d numpy array
-        res = pl.Series(name="a", values=np.array([[1, 2], [3, 4]]))
-        assert all(res[0] == np.array([1, 2]))
-        assert all(res[1] == np.array([3, 4]))
-        assert (
-            pl.Series(values=np.array([["foo", "bar"], ["foo2", "bar2"]])).dtype
-            == pl.Object
-        )
+        res = pl.Series(name="a", values=np.array([[1, 2], [3, 4]], dtype=np.int64))
+        assert res.dtype == pl.List(pl.Int64)
+        assert res[0].to_list() == [1, 2]
+        assert res[1].to_list() == [3, 4]
+        assert pl.Series(
+            values=np.array([["foo", "bar"], ["foo2", "bar2"]])
+        ).dtype == pl.List(pl.Utf8)
 
         # lists
-        assert pl.Series("a", [[1, 2], [3, 4]]).dtype == pl.List
+        assert pl.Series("a", [[1, 2], [3, 4]]).dtype == pl.List(pl.Int64)
 
     # datetime64: check timeunit (auto-detect, implicit/explicit) and NaT
     d64 = pd.date_range(date(2021, 8, 1), date(2021, 8, 3)).values
