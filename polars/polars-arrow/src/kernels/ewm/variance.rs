@@ -4,16 +4,19 @@ use arrow::array::PrimitiveArray;
 use arrow::types::NativeType;
 use num::{Float, One};
 
+use crate::trusted_len::TrustedLen;
 use crate::utils::CustomIterTools;
 
-pub fn ewm_std<T>(
-    xs: &PrimitiveArray<T>,
+pub fn ewm_std<I, T>(
+    xs: I,
     alpha: T,
     adjust: bool,
     bias: bool,
     min_periods: usize,
 ) -> PrimitiveArray<T>
 where
+    I: IntoIterator<Item = Option<T>>,
+    I::IntoIter: TrustedLen,
     T: Float + NativeType + AddAssign,
 {
     let one_sub_alpha = T::one() - alpha;
@@ -33,9 +36,9 @@ where
         (T::one(), (T::one() + alpha) / one_sub_alpha)
     };
 
-    xs.iter()
+    xs.into_iter()
         .map(|opt_x| {
-            if let Some(&x) = opt_x {
+            if let Some(x) = opt_x {
                 non_null_cnt += 1;
 
                 let prev_mean = opt_mean.unwrap_or(x);
@@ -68,14 +71,16 @@ where
         .collect_trusted()
 }
 
-pub fn ewm_var<T>(
-    xs: &PrimitiveArray<T>,
+pub fn ewm_var<I, T>(
+    xs: I,
     alpha: T,
     adjust: bool,
     bias: bool,
     min_periods: usize,
 ) -> PrimitiveArray<T>
 where
+    I: IntoIterator<Item = Option<T>>,
+    I::IntoIter: TrustedLen,
     T: Float + NativeType + AddAssign,
 {
     let one_sub_alpha = T::one() - alpha;
@@ -95,9 +100,9 @@ where
         (T::one(), (T::one() + alpha) / one_sub_alpha)
     };
 
-    xs.iter()
+    xs.into_iter()
         .map(|opt_x| {
-            if let Some(&x) = opt_x {
+            if let Some(x) = opt_x {
                 non_null_cnt += 1;
 
                 let prev_mean = opt_mean.unwrap_or(x);
@@ -147,8 +152,8 @@ mod test {
 
     #[test]
     fn test_emw_var_adjusted_biased() {
-        let xs = PrimitiveArray::from(XS);
-        let polars_result = ewm_var(&xs, ALPHA, true, true, 0);
+        let xs = Vec::from(XS);
+        let polars_result = ewm_var(xs, ALPHA, true, true, 0);
         let pandas_result = PrimitiveArray::from([
             Some(0.0),
             Some(3.555555555555556),
@@ -163,8 +168,8 @@ mod test {
 
     #[test]
     fn test_emw_var_adjusted_unbiased() {
-        let xs = PrimitiveArray::from(XS);
-        let polars_result = ewm_var(&xs, ALPHA, true, false, 0);
+        let xs = Vec::from(XS);
+        let polars_result = ewm_var(xs, ALPHA, true, false, 0);
         // NOTE: pandas actually returns `nan` for the first entry here, but that
         // is inconsistent with the other var calculations.
         let pandas_result = PrimitiveArray::from([
@@ -181,8 +186,8 @@ mod test {
 
     #[test]
     fn test_emw_var_unadjusted_biased() {
-        let xs = PrimitiveArray::from(XS);
-        let polars_result = ewm_var(&xs, ALPHA, false, true, 0);
+        let xs = Vec::from(XS);
+        let polars_result = ewm_var(xs, ALPHA, false, true, 0);
         let pandas_result = PrimitiveArray::from([
             Some(0.0),
             Some(4.0),
@@ -197,8 +202,8 @@ mod test {
 
     #[test]
     fn test_emw_var_unadjusted_unbiased() {
-        let xs = PrimitiveArray::from(XS);
-        let polars_result = ewm_var(&xs, ALPHA, false, false, 0);
+        let xs = Vec::from(XS);
+        let polars_result = ewm_var(xs, ALPHA, false, false, 0);
         // NOTE: pandas actually returns `nan` for the first entry here, but that
         // is inconsistent with the other var calculations.
         let pandas_result = PrimitiveArray::from([
