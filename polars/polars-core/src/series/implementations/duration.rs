@@ -150,16 +150,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
-        self.0
-            .agg_median(groups)
-            // cast f64 back to physical type
-            .cast(&DataType::Int64)
-            .unwrap()
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
-
     fn zip_outer_join_column(
         &self,
         right_column: &Series,

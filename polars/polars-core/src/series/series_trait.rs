@@ -155,9 +155,7 @@ pub(crate) mod private {
         ) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
-            Series::full_null(self._field().name(), groups.len(), self._dtype())
-        }
+
         fn zip_outer_join_column(
             &self,
             _right_column: &Series,

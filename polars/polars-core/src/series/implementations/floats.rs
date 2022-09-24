@@ -120,9 +120,6 @@ macro_rules! impl_dyn_series {
                 self.agg_quantile(groups, quantile, interpol)
             }
 
-            unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
-                self.agg_median(groups)
-            }
             fn zip_outer_join_column(
                 &self,
                 right_column: &Series,

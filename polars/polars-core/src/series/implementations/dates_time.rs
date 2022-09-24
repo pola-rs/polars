@@ -115,10 +115,6 @@ macro_rules! impl_dyn_series {
                     .into_series()
             }
 
-            unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
-                self.0.agg_median(groups).$into_logical().into_series()
-            }
-
             fn zip_outer_join_column(
                 &self,
                 right_column: &Series,

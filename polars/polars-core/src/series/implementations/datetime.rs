@@ -115,12 +115,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
-        self.0
-            .agg_median(groups)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-            .into_series()
-    }
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
