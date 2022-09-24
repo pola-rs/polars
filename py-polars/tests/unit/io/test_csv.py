@@ -607,7 +607,7 @@ def test_glob_csv(io_test_dir: str) -> None:
     assert pl.read_csv(path).shape == (3, 11)
 
 
-def test_csv_whitepsace_delimiter_at_start_do_not_skip() -> None:
+def test_csv_whitespace_delimiter_at_start_do_not_skip() -> None:
     csv = "\t\t\t\t0\t1"
     assert pl.read_csv(csv.encode(), sep="\t", has_header=False).to_dict(False) == {
         "column_1": [None],
@@ -619,7 +619,7 @@ def test_csv_whitepsace_delimiter_at_start_do_not_skip() -> None:
     }
 
 
-def test_csv_whitepsace_delimiter_at_end_do_not_skip() -> None:
+def test_csv_whitespace_delimiter_at_end_do_not_skip() -> None:
     csv = "0\t1\t\t\t\t"
     assert pl.read_csv(csv.encode(), sep="\t", has_header=False).to_dict(False) == {
         "column_1": [0],

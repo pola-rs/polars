@@ -1418,7 +1418,7 @@ class DataFrame:
                     " names"
                 )
 
-            # todo! we can parallize this by calling from_numpy
+            # todo! we can parallelize this by calling from_numpy
             columns = []
             for (i, name) in enumerate(key):
                 columns.append(pli.Series(name, value[:, i]))
@@ -2083,7 +2083,7 @@ class DataFrame:
         compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
             Compression method. The default compression "lz4" (actually lz4raw) has very
             good performance, but may not yet been supported by older readers. If you
-            want more compatability guarantees, consider using "snappy".
+            want more compatibility guarantees, consider using "snappy".
             Method "uncompressed" is not supported by pyarrow.
         compression_level
             The level of compression to use. Higher compression means smaller files on

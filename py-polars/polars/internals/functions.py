@@ -110,7 +110,7 @@ def concat(
         - Horizontal: stacks Series horizontally and fills with nulls if the lengths
             don't match.
     parallel
-        Only relevant for LazyFrames. This determines if the concattenated
+        Only relevant for LazyFrames. This determines if the concatenated
         lazy computations may be executed in parallel.
 
     Examples
