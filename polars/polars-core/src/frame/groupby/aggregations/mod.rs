@@ -64,14 +64,16 @@ where
         ));
     }
 
-    let len = values.len();
+    // This iterators length can be trusted
+    // these represent the number of groups in the groupby operation
+    let output_len = offsets.size_hint().0;
     // start with a dummy index, will be overwritten on first iteration.
     // Safety:
     // we are in bounds
     let mut agg_window = unsafe { Agg::new(values, validity, 0, 0) };
 
-    let mut validity = MutableBitmap::with_capacity(len);
-    validity.extend_constant(len, true);
+    let mut validity = MutableBitmap::with_capacity(output_len);
+    validity.extend_constant(output_len, true);
 
     let out = offsets
         .enumerate()
