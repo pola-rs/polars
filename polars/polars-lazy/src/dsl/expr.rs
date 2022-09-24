@@ -258,8 +258,7 @@ impl AsRef<Expr> for AggExpr {
     }
 }
 
-/// Queries consists of multiple ex
-/// pressions.
+/// Queries consists of multiple expressions.
 #[derive(Clone, PartialEq)]
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

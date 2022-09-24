@@ -273,7 +273,7 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
 pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr> {
     let mut args: std::collections::VecDeque<Expr> = args.as_ref().to_vec().into();
 
-    // Parse the format string, and seperate substrings between placeholders
+    // Parse the format string, and separate substrings between placeholders
     let segments: Vec<&str> = format.split("{}").collect();
 
     if segments.len() - 1 != args.len() {

@@ -429,7 +429,7 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Exp
         }
 
         // has multiple column names
-        // the expanded columns are added to the reuslt
+        // the expanded columns are added to the result
         if multiple_columns {
             if let Some(e) = expr
                 .into_iter()
