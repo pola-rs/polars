@@ -135,21 +135,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .unwrap()
     }
 
-    unsafe fn agg_quantile(
-        &self,
-        groups: &GroupsProxy,
-        quantile: f64,
-        interpol: QuantileInterpolOptions,
-    ) -> Series {
-        self.0
-            .agg_quantile(groups, quantile, interpol)
-            // cast f64 back to physical type
-            .cast(&DataType::Int64)
-            .unwrap()
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
-
     fn zip_outer_join_column(
         &self,
         right_column: &Series,

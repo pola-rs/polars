@@ -147,14 +147,6 @@ pub(crate) mod private {
         unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        unsafe fn agg_quantile(
-            &self,
-            groups: &GroupsProxy,
-            _quantile: f64,
-            _interpol: QuantileInterpolOptions,
-        ) -> Series {
-            Series::full_null(self._field().name(), groups.len(), self._dtype())
-        }
 
         fn zip_outer_join_column(
             &self,
