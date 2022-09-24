@@ -226,42 +226,14 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
         }
         #[cfg(feature = "python")]
         (PythonScan { options: l }, PythonScan { options: r, .. }) => l == r,
-        (
-            Join {
-                left_on: left_on_l,
-                right_on: right_on_l,
-                options: options_l,
-                ..
-            },
-            Join {
-                left_on: left_on_r,
-                right_on: right_on_r,
-                options: options_r,
-                ..
-            },
-        ) => {
-            // the inputs should be checked by previous nodes
-            // as we iterate from leafs to roots
-            expr_nodes_equal(left_on_l, left_on_r, expr_arena)
-                && expr_nodes_equal(right_on_l, right_on_r, expr_arena)
-                && options_l == options_r
+        _ => {
+            // joins and unions are also false
+            // they do not originate from a single trail
+            // so we would need to follow every leaf that
+            // is below the joining/union root
+            // that gets complicated quick
+            false
         }
-        (
-            Union {
-                inputs: l,
-                options: options_l,
-            },
-            Union {
-                inputs: r,
-                options: options_r,
-            },
-        ) => {
-            // the inputs should be checked by previous nodes
-            // as we iterate from leafs to roots
-            options_l == options_r && l.len() == r.len()
-        }
-
-        _ => false,
     }
 }
 
