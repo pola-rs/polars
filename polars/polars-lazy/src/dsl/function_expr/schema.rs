@@ -104,7 +104,9 @@ impl FunctionExpr {
                     ConcatVertical(_) | ConcatHorizontal(_) => with_dtype(DataType::Utf8),
                     #[cfg(feature = "regex")]
                     Replace { .. } => with_dtype(DataType::Utf8),
-                    Uppercase | Lowercase => with_dtype(DataType::Utf8),
+                    Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) => {
+                        with_dtype(DataType::Utf8)
+                    }
                 }
             }
             #[cfg(feature = "temporal")]

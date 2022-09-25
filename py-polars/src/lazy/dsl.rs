@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
@@ -563,43 +561,16 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_strip(&self) -> PyExpr {
-        let function = |s: Series| {
-            let ca = s.utf8()?;
-
-            Ok(ca.apply(|s| Cow::Borrowed(s.trim())).into_series())
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::same_type())
-            .with_fmt("str.strip")
-            .into()
+    pub fn str_strip(&self, matches: Option<char>) -> PyExpr {
+        self.inner.clone().str().strip(matches).into()
     }
 
-    pub fn str_rstrip(&self) -> PyExpr {
-        let function = |s: Series| {
-            let ca = s.utf8()?;
-
-            Ok(ca.apply(|s| Cow::Borrowed(s.trim_end())).into_series())
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::same_type())
-            .with_fmt("str.rstrip")
-            .into()
+    pub fn str_rstrip(&self, matches: Option<char>) -> PyExpr {
+        self.inner.clone().str().rstrip(matches).into()
     }
 
-    pub fn str_lstrip(&self) -> PyExpr {
-        let function = |s: Series| {
-            let ca = s.utf8()?;
-
-            Ok(ca.apply(|s| Cow::Borrowed(s.trim_start())).into_series())
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::same_type())
-            .with_fmt("str.lstrip")
-            .into()
+    pub fn str_lstrip(&self, matches: Option<char>) -> PyExpr {
+        self.inner.clone().str().lstrip(matches).into()
     }
 
     pub fn str_slice(&self, start: i64, length: Option<u64>) -> PyExpr {
