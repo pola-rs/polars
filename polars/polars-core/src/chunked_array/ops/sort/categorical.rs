@@ -142,7 +142,7 @@ impl CategoricalChunked {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use crate::{toggle_string_cache, SINGLE_LOCK};
+    use crate::{reset_string_cache, toggle_string_cache, SINGLE_LOCK};
 
     fn assert_order(ca: &CategoricalChunked, cmp: &[&str]) {
         let s = ca.cast(&DataType::Utf8).unwrap();
@@ -150,14 +150,13 @@ mod test {
         assert_eq!(ca.into_no_null_iter().collect::<Vec<_>>(), cmp);
     }
 
-    // TODO: Fix this test (occasionally fails during CI test job) - See issue #4707
     #[test]
-    #[ignore]
     fn test_cat_lexical_sort() -> PolarsResult<()> {
         let init = &["c", "b", "a", "d"];
 
         let _lock = SINGLE_LOCK.lock();
         for toggle in [true, false] {
+            reset_string_cache();
             toggle_string_cache(toggle);
             let s = Series::new("", init).cast(&DataType::Categorical(None))?;
             let ca = s.categorical()?;
