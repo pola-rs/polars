@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use polars::error::PolarsResult;
 use polars::prelude::*;
 use polars_lazy::utils::expressions_to_schema;
@@ -10,19 +12,32 @@ use sqlparser::parser::Parser;
 
 use crate::sql_expr::{parse_sql_expr, process_join_constraint};
 
+thread_local! {pub(crate) static TABLES: RefCell<Vec<String>> = RefCell::new(vec![])}
+
 #[derive(Default, Clone)]
 pub struct SQLContext {
-    table_map: PlHashMap<String, LazyFrame>,
+    pub(crate) table_map: PlHashMap<String, LazyFrame>,
 }
 
 impl SQLContext {
-    pub fn new() -> Self {
-        Self {
+    pub fn try_new() -> PolarsResult<Self> {
+        TABLES.with(|cell| {
+            if !cell.borrow().is_empty() {
+                Err(PolarsError::ComputeError(
+                    "only one sql-context per thread allowed".into(),
+                ))
+            } else {
+                Ok(())
+            }
+        })?;
+
+        Ok(Self {
             table_map: PlHashMap::new(),
-        }
+        })
     }
 
     pub fn register(&mut self, name: &str, lf: LazyFrame) {
+        TABLES.with(|cell| cell.borrow_mut().push(name.to_owned()));
         self.table_map.insert(name.to_owned(), lf);
     }
 
@@ -283,5 +298,14 @@ impl SQLContext {
             .collect::<Vec<_>>();
 
         Ok(aggregated.select(final_projection))
+    }
+}
+
+impl Drop for SQLContext {
+    fn drop(&mut self) {
+        // drop old tables
+        TABLES.with(|cell| {
+            cell.borrow_mut().clear();
+        });
     }
 }

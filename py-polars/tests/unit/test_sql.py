@@ -63,7 +63,7 @@ def test_sql_is_between(foods_ipc: str) -> None:
     out = c.query(
         """
     SELECT * FROM foods1
-    WHERE calories BETWEEN 20 AND 31
+    WHERE foods1.calories BETWEEN 20 AND 31
     LIMIT 4
     """
     )
