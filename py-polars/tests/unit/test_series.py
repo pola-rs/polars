@@ -1528,11 +1528,26 @@ def test_str_rstrip() -> None:
     expected = pl.Series([" hello", "world"])
     assert_series_equal(s.str.rstrip(), expected)
 
+    s = pl.Series([" hello ", "world\t "])
+    expected = pl.Series([" hell", "world"])
+    assert_series_equal(s.str.rstrip().str.rstrip("o"), expected)
+
+
+def test_str_strip() -> None:
+    s = pl.Series([" hello ", "world\t "])
+    expected = pl.Series(["hello", "world"])
+    assert_series_equal(s.str.strip(), expected)
+
+    expected = pl.Series(["hello", "worl"])
+    assert_series_equal(s.str.strip().str.strip("d"), expected)
+
 
 def test_str_lstrip() -> None:
     s = pl.Series([" hello ", "\t world"])
     expected = pl.Series(["hello ", "world"])
     assert_series_equal(s.str.lstrip(), expected)
+    expected = pl.Series(["ello ", "world"])
+    assert_series_equal(s.str.lstrip().str.lstrip("h"), expected)
 
 
 def test_str_strptime() -> None:

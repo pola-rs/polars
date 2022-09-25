@@ -107,6 +107,8 @@ dependencies = [
  "multiversion",
  "num-traits",
  "parquet2",
+ "regex",
+ "regex-syntax",
  "simdutf8",
  "streaming-iterator",
  "strength_reduce",
@@ -1395,6 +1397,7 @@ name = "polars-sql"
 version = "0.1.0"
 dependencies = [
  "polars",
+ "polars-arrow",
  "polars-lazy",
  "serde",
  "serde_json",

@@ -626,14 +626,38 @@ class StringNameSpace:
 
         """
 
-    def strip(self) -> pli.Series:
-        """Remove leading and trailing whitespace."""
+    def strip(self, matches: None | str = None) -> pli.Series:
+        """
+        Remove leading and trailing whitespace.
 
-    def lstrip(self) -> pli.Series:
-        """Remove leading whitespace."""
+        Parameters
+        ----------
+        matches
+            An optional single character that should be trimmed
 
-    def rstrip(self) -> pli.Series:
-        """Remove trailing whitespace."""
+        """
+
+    def lstrip(self, matches: None | str = None) -> pli.Series:
+        """
+        Remove leading whitespace.
+
+        Parameters
+        ----------
+        matches
+            An optional single character that should be trimmed
+
+        """
+
+    def rstrip(self, matches: None | str = None) -> pli.Series:
+        """
+        Remove trailing whitespace.
+
+        Parameters
+        ----------
+        matches
+            An optional single character that should be trimmed
+
+        """
 
     def zfill(self, alignment: int) -> pli.Series:
         """

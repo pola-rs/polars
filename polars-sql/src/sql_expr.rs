@@ -2,7 +2,7 @@ use polars::error::PolarsError;
 use polars::prelude::*;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType, Expr as SqlExpr,
-    Function as SQLFunction, JoinConstraint, Value as SqlValue, WindowSpec,
+    Function as SQLFunction, JoinConstraint, TrimWhereField, Value as SqlValue, WindowSpec,
 };
 
 fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<DataType> {
@@ -108,6 +108,16 @@ fn literal_expr(value: &SqlValue) -> PolarsResult<Expr> {
 }
 
 pub(crate) fn parse_sql_expr(expr: &SqlExpr) -> PolarsResult<Expr> {
+    let err = || {
+        Err(PolarsError::ComputeError(
+            format!(
+                "Expression: {:?} was not supported in polars-sql yet!",
+                expr
+            )
+            .into(),
+        ))
+    };
+
     Ok(match expr {
         SqlExpr::Identifier(e) => col(&e.value),
         SqlExpr::BinaryOp { left, op, right } => {
@@ -137,15 +147,41 @@ pub(crate) fn parse_sql_expr(expr: &SqlExpr) -> PolarsResult<Expr> {
                 expr.clone().gt(low).and(expr.lt(high))
             }
         }
-        _ => {
-            return Err(PolarsError::ComputeError(
-                format!(
-                    "Expression: {:?} was not supported in polars-sql yet!",
-                    expr
-                )
-                .into(),
-            ))
+        SqlExpr::Trim {
+            expr: sql_expr,
+            trim_where,
+        } => {
+            let expr = parse_sql_expr(sql_expr)?;
+            match trim_where {
+                None => return Ok(expr.str().strip(None)),
+                Some((TrimWhereField::Both, sql_expr)) => {
+                    let lit = parse_sql_expr(sql_expr)?;
+                    if let Expr::Literal(LiteralValue::Utf8(val)) = lit {
+                        if val.len() == 1 {
+                            return Ok(expr.str().strip(Some(val.chars().next().unwrap())));
+                        }
+                    }
+                }
+                Some((TrimWhereField::Leading, sql_expr)) => {
+                    let lit = parse_sql_expr(sql_expr)?;
+                    if let Expr::Literal(LiteralValue::Utf8(val)) = lit {
+                        if val.len() == 1 {
+                            return Ok(expr.str().lstrip(Some(val.chars().next().unwrap())));
+                        }
+                    }
+                }
+                Some((TrimWhereField::Trailing, sql_expr)) => {
+                    let lit = parse_sql_expr(sql_expr)?;
+                    if let Expr::Literal(LiteralValue::Utf8(val)) = lit {
+                        if val.len() == 1 {
+                            return Ok(expr.str().rstrip(Some(val.chars().next().unwrap())));
+                        }
+                    }
+                }
+            }
+            return err();
         }
+        _ => return err(),
     })
 }
 
@@ -248,30 +284,6 @@ pub(super) fn process_join_constraint(
                 }
                 _ => {}
             }
-            //     if let (SqlExpr::CompoundIdentifier(left), SqlExpr::CompoundIdentifier(right)) = (left.as_ref(), right.as_ref()) {
-            //         if left.len() == 2 && right.len() == 2 {
-            //             let tbl_a = &left[0].value;
-            //             let col_a = &left[1].value;
-            //
-            //             let tbl_b = &right[0].value;
-            //             let col_b = &right[1].value;
-            //
-            //             if let BinaryOperator::Eq = op {
-            //                 if left_name == tbl_a && right_name == tbl_b  {
-            //                     return Ok((col(col_a), col(col_b)))
-            //                 } else if left_name == tbl_b && right_name == tbl_a  {
-            //                     return Ok((col(col_b), col(col_a)))
-            //                 }
-            //             }
-            //         }
-            //     }
-            // };
-            //
-            // let expr = parse_sql_expr(expr)?;
-            // if let Expr::BinaryExpr { left, right, op } = expr {
-            //     if let Operator::Eq = op {
-            //         return Ok((*left.clone(), *right.clone()));
-            //     }
         }
     }
     Err(PolarsError::ComputeError(

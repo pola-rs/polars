@@ -89,3 +89,18 @@ def test_sql_is_between(foods_ipc: str) -> None:
         "fats_g": [0.5, 5.0, 5.0, 0.0],
         "sugars_g": [2, 0, 0, 11],
     }
+
+
+def test_sql_trim(foods_ipc: str) -> None:
+    c = pl.SQLContext()
+
+    lf = pl.scan_ipc(foods_ipc)
+    c.register("foods1", lf)
+
+    out = c.query(
+        """
+    SELECT TRIM(LEADING 'v' FROM category) FROM foods1
+    LIMIT 2
+    """
+    )
+    assert out.to_dict(False) == {"category": ["egetables", "seafood"]}
