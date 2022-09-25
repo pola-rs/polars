@@ -1,7 +1,7 @@
 
-============
-Utils
-============
+===
+SQL
+===
 .. currentmodule:: polars
 
 .. autosummary::
@@ -13,8 +13,8 @@ Utils
 
     Run SQL query against a LazyFrame.
 
-Attributes
-----------
+Methods
+-------
 
 .. autosummary::
    :toctree: api/

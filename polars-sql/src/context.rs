@@ -2,13 +2,13 @@ use polars::error::PolarsResult;
 use polars::prelude::*;
 use polars_lazy::utils::expressions_to_schema;
 use sqlparser::ast::{
-    Expr as SqlExpr, JoinConstraint, JoinOperator, OrderByExpr, Select, SelectItem, SetExpr,
-    Statement, TableFactor, TableWithJoins, Value as SQLValue,
+    Expr as SqlExpr, JoinOperator, OrderByExpr, Select, SelectItem, SetExpr, Statement,
+    TableFactor, TableWithJoins, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
-use crate::sql_expr::parse_sql_expr;
+use crate::sql_expr::{parse_sql_expr, process_join_constraint};
 
 #[derive(Default, Clone)]
 pub struct SQLContext {
@@ -78,15 +78,18 @@ impl SQLContext {
                 let join_tbl = self.get_table(join_tbl_name)?;
                 match &tbl.join_operator {
                     JoinOperator::Inner(constraint) => {
-                        let (left_on, right_on) = process_join_constraint(&constraint)?;
+                        let (left_on, right_on) =
+                            process_join_constraint(&constraint, tbl_name, join_tbl_name)?;
                         lf = lf.inner_join(join_tbl, left_on, right_on)
                     }
                     JoinOperator::LeftOuter(constraint) => {
-                        let (left_on, right_on) = process_join_constraint(&constraint)?;
+                        let (left_on, right_on) =
+                            process_join_constraint(&constraint, tbl_name, join_tbl_name)?;
                         lf = lf.left_join(join_tbl, left_on, right_on)
                     }
                     JoinOperator::FullOuter(constraint) => {
-                        let (left_on, right_on) = process_join_constraint(&constraint)?;
+                        let (left_on, right_on) =
+                            process_join_constraint(&constraint, tbl_name, join_tbl_name)?;
                         lf = lf.outer_join(join_tbl, left_on, right_on)
                     }
                     JoinOperator::CrossJoin => lf = lf.cross_join(join_tbl),
@@ -281,22 +284,4 @@ impl SQLContext {
 
         Ok(aggregated.select(final_projection))
     }
-}
-
-fn process_join_constraint(constraint: &JoinConstraint) -> PolarsResult<(Expr, Expr)> {
-    if let JoinConstraint::On(expr) = constraint {
-        let expr = parse_sql_expr(expr)?;
-        if let Expr::BinaryExpr { left, right, op } = expr {
-            if let Operator::Eq = op {
-                return Ok((*left.clone(), *right.clone()));
-            }
-        }
-    }
-    Err(PolarsError::ComputeError(
-        format!(
-            "Join constraint {:?} not yet supported in polars-sql",
-            constraint
-        )
-        .into(),
-    ))
 }
