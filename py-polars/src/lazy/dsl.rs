@@ -886,6 +886,10 @@ impl PyExpr {
         self.inner.clone().dt().cast_time_unit(tu.0).into()
     }
 
+    pub fn dt_cast_time_zone(&self, tz: String) -> PyExpr {
+        self.inner.clone().dt().cast_time_zone(tz).into()
+    }
+
     pub fn rolling_apply(
         &self,
         py: Python,

@@ -414,6 +414,8 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Microsecond => map!(datetime::microsecond),
             Nanosecond => map!(datetime::nanosecond),
             TimeStamp(tu) => map!(datetime::timestamp, tu),
+            #[cfg(feature = "timezones")]
+            CastTimezone(tz) => map!(datetime::cast_timezone, &tz),
         }
     }
 }

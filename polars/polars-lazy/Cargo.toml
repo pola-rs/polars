@@ -36,6 +36,7 @@ object = ["polars-core/object"]
 date_offset = []
 trigonometry = []
 sign = []
+timezones = ["polars-time/timezones", "polars-core/timezones"]
 
 true_div = []
 
