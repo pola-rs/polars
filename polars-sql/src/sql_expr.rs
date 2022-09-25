@@ -1,8 +1,8 @@
 use polars::error::PolarsError;
 use polars::prelude::*;
 use sqlparser::ast::{
-    BinaryOperator as SQLBinaryOperator, DataType as SQLDataType, Expr as SqlExpr,
-    Function as SQLFunction, Value as SqlValue, WindowSpec,
+    BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType, Expr as SqlExpr,
+    Function as SQLFunction, JoinConstraint, Value as SqlValue, WindowSpec,
 };
 
 fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<DataType> {
@@ -121,6 +121,22 @@ pub(crate) fn parse_sql_expr(expr: &SqlExpr) -> PolarsResult<Expr> {
         SqlExpr::Value(value) => literal_expr(value)?,
         SqlExpr::IsNull(expr) => parse_sql_expr(expr)?.is_null(),
         SqlExpr::IsNotNull(expr) => parse_sql_expr(expr)?.is_not_null(),
+        SqlExpr::Between {
+            expr,
+            negated,
+            low,
+            high,
+        } => {
+            let expr = parse_sql_expr(expr)?;
+            let low = parse_sql_expr(low)?;
+            let high = parse_sql_expr(high)?;
+
+            if *negated {
+                expr.clone().lt(low).or(expr.gt(high))
+            } else {
+                expr.clone().gt(low).and(expr.lt(high))
+            }
+        }
         _ => {
             return Err(PolarsError::ComputeError(
                 format!(
@@ -200,4 +216,69 @@ fn parse_sql_function(sql_function: &SQLFunction) -> PolarsResult<Expr> {
             .into(),
         ))
     }
+}
+
+pub(super) fn process_join_constraint(
+    constraint: &JoinConstraint,
+    left_name: &str,
+    right_name: &str,
+) -> PolarsResult<(Expr, Expr)> {
+    if let JoinConstraint::On(expr) = constraint {
+        if let SqlExpr::BinaryOp { left, op, right } = expr {
+            match (left.as_ref(), right.as_ref()) {
+                (SqlExpr::CompoundIdentifier(left), SqlExpr::CompoundIdentifier(right)) => {
+                    if left.len() == 2 && right.len() == 2 {
+                        let tbl_a = &left[0].value;
+                        let col_a = &left[1].value;
+
+                        let tbl_b = &right[0].value;
+                        let col_b = &right[1].value;
+
+                        if let BinaryOperator::Eq = op {
+                            if left_name == tbl_a && right_name == tbl_b {
+                                return Ok((col(col_a), col(col_b)));
+                            } else if left_name == tbl_b && right_name == tbl_a {
+                                return Ok((col(col_b), col(col_a)));
+                            }
+                        }
+                    }
+                }
+                (SqlExpr::Identifier(left), SqlExpr::Identifier(right)) => {
+                    return Ok((col(&left.value), col(&right.value)))
+                }
+                _ => {}
+            }
+            //     if let (SqlExpr::CompoundIdentifier(left), SqlExpr::CompoundIdentifier(right)) = (left.as_ref(), right.as_ref()) {
+            //         if left.len() == 2 && right.len() == 2 {
+            //             let tbl_a = &left[0].value;
+            //             let col_a = &left[1].value;
+            //
+            //             let tbl_b = &right[0].value;
+            //             let col_b = &right[1].value;
+            //
+            //             if let BinaryOperator::Eq = op {
+            //                 if left_name == tbl_a && right_name == tbl_b  {
+            //                     return Ok((col(col_a), col(col_b)))
+            //                 } else if left_name == tbl_b && right_name == tbl_a  {
+            //                     return Ok((col(col_b), col(col_a)))
+            //                 }
+            //             }
+            //         }
+            //     }
+            // };
+            //
+            // let expr = parse_sql_expr(expr)?;
+            // if let Expr::BinaryExpr { left, right, op } = expr {
+            //     if let Operator::Eq = op {
+            //         return Ok((*left.clone(), *right.clone()));
+            //     }
+        }
+    }
+    Err(PolarsError::ComputeError(
+        format!(
+            "Join constraint {:?} not yet supported in polars-sql",
+            constraint
+        )
+        .into(),
+    ))
 }
