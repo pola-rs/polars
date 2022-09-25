@@ -16,6 +16,14 @@ impl FunctionExpr {
             Ok(Field::new(fields[0].name(), dtype))
         };
 
+        // map a single dtype
+        #[cfg(feature = "timezones")]
+        let try_map_dtype = |func: &dyn Fn(&DataType) -> PolarsResult<DataType>| {
+            let dtype = func(fields[0].data_type())?;
+            let out: PolarsResult<_> = Ok(Field::new(fields[0].name(), dtype));
+            out
+        };
+
         // map all dtypes
         #[cfg(feature = "list")]
         let map_dtypes = |func: &dyn Fn(&[&DataType]) -> DataType| {
@@ -117,6 +125,18 @@ impl FunctionExpr {
                     Month | Quarter | Week | WeekDay | Day | OrdinalDay | Hour | Minute
                     | Millisecond | Microsecond | Nanosecond | Second => DataType::UInt32,
                     TimeStamp(_) => DataType::Int64,
+                    #[cfg(feature = "timezones")]
+                    CastTimezone(tz) => {
+                        return try_map_dtype(&|dt| {
+                            if let DataType::Datetime(tu, _) = dt {
+                                Ok(DataType::Datetime(*tu, Some(tz.clone())))
+                            } else {
+                                Err(PolarsError::SchemaMisMatch(
+                                    format!("expected Datetime got {:?}", dt).into(),
+                                ))
+                            }
+                        })
+                    }
                 };
                 with_dtype(dtype)
             }

@@ -314,6 +314,20 @@ class DateTimeNameSpace:
 
         """
 
+    def cast_time_zone(self, tz: str) -> pli.Series:
+        """
+        Cast time zone for a Series of type Datetime.
+
+        Different from ``with_time_zone``, this will also modify
+        the underlying timestamp,
+
+        Parameters
+        ----------
+        tz
+            Time zone for the `Datetime` Series.
+
+        """
+
     def days(self) -> pli.Series:
         """
         Extract the days from a Duration type.

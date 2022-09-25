@@ -21,6 +21,8 @@ pub enum TemporalFunction {
     Microsecond,
     Nanosecond,
     TimeStamp(TimeUnit),
+    #[cfg(feature = "timezones")]
+    CastTimezone(TimeZone),
 }
 
 impl Display for TemporalFunction {
@@ -42,6 +44,8 @@ impl Display for TemporalFunction {
             Microsecond => "microsecond",
             Nanosecond => "nanosecond",
             TimeStamp(tu) => return write!(f, "dt.timestamp({})", tu),
+            #[cfg(feature = "timezones")]
+            CastTimezone(_) => "cast_timezone",
         };
         write!(f, "dt.{}", s)
     }
@@ -91,4 +95,9 @@ pub(super) fn nanosecond(s: &Series) -> PolarsResult<Series> {
 }
 pub(super) fn timestamp(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
     s.timestamp(tu).map(|ca| ca.into_series())
+}
+#[cfg(feature = "timezones")]
+pub(super) fn cast_timezone(s: &Series, tz: &str) -> PolarsResult<Series> {
+    let ca = s.datetime()?;
+    ca.cast_timezone(tz).map(|ca| ca.into_series())
 }

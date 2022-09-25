@@ -1522,3 +1522,15 @@ def test_invalid_date_parsing_4898() -> None:
     assert pl.Series(["2022-09-18", "2022-09-50"]).str.strptime(
         pl.Date, "%Y-%m-%d", strict=False
     ).to_list() == [date(2022, 9, 18), None]
+
+
+def test_cast_timezone() -> None:
+    assert pl.DataFrame({"a": [datetime(2022, 9, 25, 14)]}).with_column(
+        pl.col("a")
+        .dt.with_time_zone("America/New_York")
+        .dt.cast_time_zone("UTC")
+        .alias("b")
+    ).to_dict(False) == {
+        "a": [datetime(2022, 9, 25, 14, 0)],
+        "b": [datetime(2022, 9, 25, 18, 0)],
+    }

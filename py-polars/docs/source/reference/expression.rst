@@ -278,6 +278,7 @@ The following methods are available under the `expr.dt` attribute.
    :toctree: api/
 
     ExprDateTimeNameSpace.cast_time_unit
+    ExprDateTimeNameSpace.cast_time_zone
     ExprDateTimeNameSpace.day
     ExprDateTimeNameSpace.days
     ExprDateTimeNameSpace.epoch

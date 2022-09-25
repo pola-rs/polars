@@ -946,6 +946,21 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.dt_with_time_zone(tz))
 
+    def cast_time_zone(self, tz: str) -> pli.Expr:
+        """
+        Cast time zone for a Series of type Datetime.
+
+        Different from ``with_time_zone``, this will also modify
+        the underlying timestamp,
+
+        Parameters
+        ----------
+        tz
+            Time zone for the `Datetime` Series.
+
+        """
+        return pli.wrap_expr(self._pyexpr.dt_cast_time_zone(tz))
+
     def days(self) -> pli.Expr:
         """
         Extract the days from a Duration type.
