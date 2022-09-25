@@ -5,6 +5,8 @@ use sqlparser::ast::{
     Function as SQLFunction, JoinConstraint, TrimWhereField, Value as SqlValue, WindowSpec,
 };
 
+use crate::context::TABLES;
+
 fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<DataType> {
     Ok(match data_type {
         SQLDataType::Char(_)
@@ -111,7 +113,7 @@ pub(crate) fn parse_sql_expr(expr: &SqlExpr) -> PolarsResult<Expr> {
     let err = || {
         Err(PolarsError::ComputeError(
             format!(
-                "Expression: {:?} was not supported in polars-sql yet!",
+                "Expression: {:?} was not supported in polars-sql yet. Please open a feature request.",
                 expr
             )
             .into(),
@@ -119,6 +121,28 @@ pub(crate) fn parse_sql_expr(expr: &SqlExpr) -> PolarsResult<Expr> {
     };
 
     Ok(match expr {
+        SqlExpr::CompoundIdentifier(idents) => {
+            if idents.len() != 2 {
+                return err();
+            }
+            let tbl_name = &idents[0].value;
+            let refers_main_table = TABLES.with(|cell| {
+                let tables = cell.borrow();
+                tables.len() == 1 && tables.contains(tbl_name)
+            });
+
+            if refers_main_table {
+                col(&idents[1].value)
+            } else {
+                return Err(PolarsError::ComputeError(
+                    format!(
+                        "Compounded identifier: {:?} is not yet supported  if multiple tables are registered",
+                        expr
+                    )
+                        .into(),
+                ));
+            }
+        }
         SqlExpr::Identifier(e) => col(&e.value),
         SqlExpr::BinaryOp { left, op, right } => {
             let left = parse_sql_expr(left)?;
