@@ -1369,10 +1369,14 @@ class Series:
         --------
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s2 = pl.Series("a", [4, 5, 6])
+
         Concatenate Series with rechunk = True
+
         >>> pl.concat([s, s2]).chunk_lengths()
         [6]
+
         Concatenate Series with rechunk = False
+
         >>> pl.concat([s, s2], rechunk=False).chunk_lengths()
         [3, 3]
 
@@ -1389,10 +1393,14 @@ class Series:
         >>> s.n_chunks()
         1
         >>> s2 = pl.Series("a", [4, 5, 6])
+
         Concatenate Series with rechunk = True
+
         >>> pl.concat([s, s2]).n_chunks()
         1
+
         Concatenate Series with rechunk = False
+
         >>> pl.concat([s, s2], rechunk=False).n_chunks()
         2
 
@@ -2655,7 +2663,9 @@ class Series:
                 10
                 3
         ]
+
         It is better to implement this as follows:
+
         >>> s.to_frame().select(
         ...     pl.when(pl.col("a") == 2).then(10).otherwise(pl.col("a"))
         ... )
@@ -2727,7 +2737,9 @@ class Series:
                 10
                 3
         ]
+
         It is better to implement this as follows:
+
         >>> s.to_frame().with_row_count("row_nr").select(
         ...     pl.when(pl.col("row_nr") == 1).then(10).otherwise(pl.col("a"))
         ... )
