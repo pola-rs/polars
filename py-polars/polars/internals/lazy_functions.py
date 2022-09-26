@@ -1223,13 +1223,14 @@ def argsort_by(
 
 def duration(
     *,
-    days: pli.Expr | str | None = None,
-    seconds: pli.Expr | str | None = None,
-    nanoseconds: pli.Expr | str | None = None,
-    milliseconds: pli.Expr | str | None = None,
-    minutes: pli.Expr | str | None = None,
-    hours: pli.Expr | str | None = None,
-    weeks: pli.Expr | str | None = None,
+    days: pli.Expr | str | int | None = None,
+    seconds: pli.Expr | str | int | None = None,
+    nanoseconds: pli.Expr | str | int | None = None,
+    microseconds: pli.Expr | str | int | None = None,
+    milliseconds: pli.Expr | str | int | None = None,
+    minutes: pli.Expr | str | int | None = None,
+    hours: pli.Expr | str | int | None = None,
+    weeks: pli.Expr | str | int | None = None,
 ) -> pli.Expr:
     """
     Create polars `Duration` from distinct time components.
@@ -1281,25 +1282,37 @@ def duration(
         seconds = pli.expr_to_lit_or_expr(seconds, str_to_lit=False)._pyexpr
     if milliseconds is not None:
         milliseconds = pli.expr_to_lit_or_expr(milliseconds, str_to_lit=False)._pyexpr
+    if microseconds is not None:
+        microseconds = pli.expr_to_lit_or_expr(microseconds, str_to_lit=False)._pyexpr
     if nanoseconds is not None:
         nanoseconds = pli.expr_to_lit_or_expr(nanoseconds, str_to_lit=False)._pyexpr
     if days is not None:
         days = pli.expr_to_lit_or_expr(days, str_to_lit=False)._pyexpr
     if weeks is not None:
         weeks = pli.expr_to_lit_or_expr(weeks, str_to_lit=False)._pyexpr
+
     return pli.wrap_expr(
-        py_duration(days, seconds, nanoseconds, milliseconds, minutes, hours, weeks)
+        py_duration(
+            days,
+            seconds,
+            nanoseconds,
+            microseconds,
+            milliseconds,
+            minutes,
+            hours,
+            weeks,
+        )
     )
 
 
 def _datetime(
-    year: pli.Expr | str,
-    month: pli.Expr | str,
-    day: pli.Expr | str,
-    hour: pli.Expr | str | None = None,
-    minute: pli.Expr | str | None = None,
-    second: pli.Expr | str | None = None,
-    millisecond: pli.Expr | str | None = None,
+    year: pli.Expr | str | int,
+    month: pli.Expr | str | int,
+    day: pli.Expr | str | int,
+    hour: pli.Expr | str | int | None = None,
+    minute: pli.Expr | str | int | None = None,
+    second: pli.Expr | str | int | None = None,
+    microsecond: pli.Expr | str | int | None = None,
 ) -> pli.Expr:
     """
     Create polars `Datetime` from distinct time components.
@@ -1313,13 +1326,13 @@ def _datetime(
     day
         column or literal, ranging from 1-31.
     hour
-        column or literal, ranging from 1-24.
+        column or literal, ranging from 1-23.
     minute
-        column or literal, ranging from 1-60.
+        column or literal, ranging from 1-59.
     second
-        column or literal, ranging from 1-60.
-    millisecond
-        column or literal, ranging from 1-1000.
+        column or literal, ranging from 1-59.
+    microsecond
+        column or literal, ranging from 1-999999.
 
     Returns
     -------
@@ -1336,8 +1349,9 @@ def _datetime(
         minute = pli.expr_to_lit_or_expr(minute, str_to_lit=False)._pyexpr
     if second is not None:
         second = pli.expr_to_lit_or_expr(second, str_to_lit=False)._pyexpr
-    if millisecond is not None:
-        millisecond = pli.expr_to_lit_or_expr(millisecond, str_to_lit=False)._pyexpr
+    if microsecond is not None:
+        microsecond = pli.expr_to_lit_or_expr(microsecond, str_to_lit=False)._pyexpr
+
     return pli.wrap_expr(
         py_datetime(
             year_expr._pyexpr,
@@ -1346,15 +1360,15 @@ def _datetime(
             hour,
             minute,
             second,
-            millisecond,
+            microsecond,
         )
     )
 
 
 def _date(
-    year: pli.Expr | str,
-    month: pli.Expr | str,
-    day: pli.Expr | str,
+    year: pli.Expr | str | int,
+    month: pli.Expr | str | int,
+    day: pli.Expr | str | int,
 ) -> pli.Expr:
     """
     Create polars Date from distinct time components.

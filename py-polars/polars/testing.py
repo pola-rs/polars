@@ -354,7 +354,10 @@ if HYPOTHESIS_INSTALLED:
         #  validate compatibility.
         Time: times(),
         Date: dates(),
-        Duration: timedeltas(),
+        Duration: timedeltas(
+            min_value=timedelta(microseconds=-(2**63)),
+            max_value=timedelta(microseconds=(2**63) - 1),
+        ),
         # TODO: confirm datetime min/max limits with different timeunit granularity.
         # TODO: specific strategies for temporal dtypes with timeunits.
         Datetime: datetimes(min_value=datetime(1970, 1, 1)),

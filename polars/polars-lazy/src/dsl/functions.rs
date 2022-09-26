@@ -400,7 +400,7 @@ pub struct DatetimeArgs {
     pub hour: Option<Expr>,
     pub minute: Option<Expr>,
     pub second: Option<Expr>,
-    pub millisecond: Option<Expr>,
+    pub microsecond: Option<Expr>,
 }
 
 #[cfg(feature = "temporal")]
@@ -414,7 +414,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
     let hour = args.hour;
     let minute = args.minute;
     let second = args.second;
-    let millisecond = args.millisecond;
+    let microsecond = args.microsecond;
 
     let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
         assert_eq!(s.len(), 7);
@@ -452,11 +452,11 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
         }
         let second = second.u32()?;
 
-        let mut millisecond = s[6].cast(&DataType::UInt32)?;
-        if millisecond.len() < max_len {
-            millisecond = millisecond.expand_at_index(0, max_len);
+        let mut microsecond = s[6].cast(&DataType::UInt32)?;
+        if microsecond.len() < max_len {
+            microsecond = microsecond.expand_at_index(0, max_len);
         }
-        let millisecond = millisecond.u32()?;
+        let microsecond = microsecond.u32()?;
 
         let ca: Int64Chunked = year
             .into_iter()
@@ -465,15 +465,15 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
             .zip(hour.into_iter())
             .zip(minute.into_iter())
             .zip(second.into_iter())
-            .zip(millisecond.into_iter())
-            .map(|((((((y, m), d), h), mnt), s), ms)| {
-                if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(ms)) =
-                    (y, m, d, h, mnt, s, ms)
+            .zip(microsecond.into_iter())
+            .map(|((((((y, m), d), h), mnt), s), us)| {
+                if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(us)) =
+                    (y, m, d, h, mnt, s, us)
                 {
                     Some(
                         NaiveDate::from_ymd(y, m, d)
-                            .and_hms_milli(h, mnt, s, ms)
-                            .timestamp_millis(),
+                            .and_hms_micro(h, mnt, s, us)
+                            .timestamp_micros(),
                     )
                 } else {
                     None
@@ -481,8 +481,9 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
             })
             .collect_trusted();
 
-        Ok(ca.into_datetime(TimeUnit::Milliseconds, None).into_series())
+        Ok(ca.into_datetime(TimeUnit::Microseconds, None).into_series())
     }) as Arc<dyn SeriesUdf>);
+
     Expr::AnonymousFunction {
         input: vec![
             year,
@@ -491,10 +492,10 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
             hour.unwrap_or_else(|| lit(0)),
             minute.unwrap_or_else(|| lit(0)),
             second.unwrap_or_else(|| lit(0)),
-            millisecond.unwrap_or_else(|| lit(0)),
+            microsecond.unwrap_or_else(|| lit(0)),
         ],
         function,
-        output_type: GetOutput::from_type(DataType::Datetime(TimeUnit::Milliseconds, None)),
+        output_type: GetOutput::from_type(DataType::Datetime(TimeUnit::Microseconds, None)),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
@@ -510,6 +511,7 @@ pub struct DurationArgs {
     pub days: Option<Expr>,
     pub seconds: Option<Expr>,
     pub nanoseconds: Option<Expr>,
+    pub microseconds: Option<Expr>,
     pub milliseconds: Option<Expr>,
     pub minutes: Option<Expr>,
     pub hours: Option<Expr>,
@@ -519,14 +521,15 @@ pub struct DurationArgs {
 #[cfg(feature = "temporal")]
 pub fn duration(args: DurationArgs) -> Expr {
     let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-        assert_eq!(s.len(), 7);
+        assert_eq!(s.len(), 8);
         let days = s[0].cast(&DataType::Int64).unwrap();
         let seconds = s[1].cast(&DataType::Int64).unwrap();
         let mut nanoseconds = s[2].cast(&DataType::Int64).unwrap();
-        let milliseconds = s[3].cast(&DataType::Int64).unwrap();
-        let minutes = s[4].cast(&DataType::Int64).unwrap();
-        let hours = s[5].cast(&DataType::Int64).unwrap();
-        let weeks = s[6].cast(&DataType::Int64).unwrap();
+        let microseconds = s[3].cast(&DataType::Int64).unwrap();
+        let milliseconds = s[4].cast(&DataType::Int64).unwrap();
+        let minutes = s[5].cast(&DataType::Int64).unwrap();
+        let hours = s[6].cast(&DataType::Int64).unwrap();
+        let weeks = s[7].cast(&DataType::Int64).unwrap();
 
         let max_len = s.iter().map(|s| s.len()).max().unwrap();
 
@@ -538,14 +541,17 @@ pub fn duration(args: DurationArgs) -> Expr {
         if nanoseconds.len() != max_len {
             nanoseconds = nanoseconds.expand_at_index(0, max_len);
         }
-        if condition(&days) {
-            nanoseconds = nanoseconds + days * NANOSECONDS * SECONDS_IN_DAY;
-        }
-        if condition(&seconds) {
-            nanoseconds = nanoseconds + &seconds * NANOSECONDS;
+        if condition(&microseconds) {
+            nanoseconds = nanoseconds + (microseconds * 1_000);
         }
         if condition(&milliseconds) {
-            nanoseconds = nanoseconds + milliseconds * 1_000_000;
+            nanoseconds = nanoseconds + (milliseconds * 1_000_000);
+        }
+        if condition(&seconds) {
+            nanoseconds = nanoseconds + (seconds * NANOSECONDS);
+        }
+        if condition(&days) {
+            nanoseconds = nanoseconds + (days * NANOSECONDS * SECONDS_IN_DAY);
         }
         if condition(&minutes) {
             nanoseconds = nanoseconds + minutes * NANOSECONDS * 60;
@@ -565,13 +571,14 @@ pub fn duration(args: DurationArgs) -> Expr {
             args.days.unwrap_or_else(|| lit(0i64)),
             args.seconds.unwrap_or_else(|| lit(0i64)),
             args.nanoseconds.unwrap_or_else(|| lit(0i64)),
+            args.microseconds.unwrap_or_else(|| lit(0i64)),
             args.milliseconds.unwrap_or_else(|| lit(0i64)),
             args.minutes.unwrap_or_else(|| lit(0i64)),
             args.hours.unwrap_or_else(|| lit(0i64)),
             args.weeks.unwrap_or_else(|| lit(0i64)),
         ],
         function,
-        output_type: GetOutput::from_type(DataType::Datetime(TimeUnit::Milliseconds, None)),
+        output_type: GetOutput::from_type(DataType::Datetime(TimeUnit::Microseconds, None)),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,

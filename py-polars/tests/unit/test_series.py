@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -1247,12 +1247,16 @@ def test_from_sequences(monkeypatch: Any) -> None:
 
 def test_comparisons_int_series_to_float() -> None:
     srs_int = pl.Series([1, 2, 3, 4])
+
     assert_series_equal(srs_int - 1.0, pl.Series([0.0, 1.0, 2.0, 3.0]))
     assert_series_equal(srs_int + 1.0, pl.Series([2.0, 3.0, 4.0, 5.0]))
     assert_series_equal(srs_int * 2.0, pl.Series([2.0, 4.0, 6.0, 8.0]))
     assert_series_equal(srs_int / 2.0, pl.Series([0.5, 1.0, 1.5, 2.0]))
     assert_series_equal(srs_int % 2.0, pl.Series([1.0, 0.0, 1.0, 0.0]))
     assert_series_equal(4.0 % srs_int, pl.Series([0.0, 0.0, 1.0, 0.0]))
+
+    assert_series_equal(srs_int - pl.lit(1.0), pl.Series([0.0, 1.0, 2.0, 3.0]))
+    assert_series_equal(srs_int + pl.lit(1.0), pl.Series([2.0, 3.0, 4.0, 5.0]))
 
     assert_series_equal(srs_int // 2.0, pl.Series([0.0, 1.0, 1.0, 2.0]))
     assert_series_equal(srs_int < 3.0, pl.Series([True, True, False, False]))
@@ -1265,12 +1269,16 @@ def test_comparisons_int_series_to_float() -> None:
 
 def test_comparisons_float_series_to_int() -> None:
     srs_float = pl.Series([1.0, 2.0, 3.0, 4.0])
+
     assert_series_equal(srs_float - 1, pl.Series([0.0, 1.0, 2.0, 3.0]))
     assert_series_equal(srs_float + 1, pl.Series([2.0, 3.0, 4.0, 5.0]))
     assert_series_equal(srs_float * 2, pl.Series([2.0, 4.0, 6.0, 8.0]))
     assert_series_equal(srs_float / 2, pl.Series([0.5, 1.0, 1.5, 2.0]))
     assert_series_equal(srs_float % 2, pl.Series([1.0, 0.0, 1.0, 0.0]))
     assert_series_equal(4 % srs_float, pl.Series([0.0, 0.0, 1.0, 0.0]))
+
+    assert_series_equal(srs_float - pl.lit(1), pl.Series([0.0, 1.0, 2.0, 3.0]))
+    assert_series_equal(srs_float + pl.lit(1), pl.Series([2.0, 3.0, 4.0, 5.0]))
 
     assert_series_equal(srs_float // 2, pl.Series([0.0, 1.0, 1.0, 2.0]))
     assert_series_equal(srs_float < 3, pl.Series([True, True, False, False]))
@@ -1922,6 +1930,23 @@ def test_ceil() -> None:
     verify_series_and_expr_api(a, expected, "ceil")
 
 
+def test_duration_arithmetic() -> None:
+    # apply some basic duration math to series
+    s = pl.Series([datetime(2022, 1, 1, 10, 20, 30), datetime(2022, 1, 2, 20, 40, 50)])
+    d1 = pl.duration(days=5, microseconds=123456)
+    d2 = timedelta(days=5, microseconds=123456)
+
+    expected_values = [
+        datetime(2022, 1, 6, 10, 20, 30, 123456),
+        datetime(2022, 1, 7, 20, 40, 50, 123456),
+    ]
+    for d in (d1, d2):
+        df1 = pl.select((s + d).alias("d_offset"))
+        df2 = pl.select((d + s).alias("d_offset"))
+        assert df1["d_offset"].to_list() == expected_values
+        assert df1["d_offset"].series_equal(df2["d_offset"])
+
+
 def test_duration_extract_times() -> None:
     a = pl.Series("a", [datetime(2021, 1, 1)])
     b = pl.Series("b", [datetime(2021, 1, 2)])
@@ -2106,6 +2131,4 @@ def test_repr() -> None:
 
 def test_builtin_abs() -> None:
     s = pl.Series("s", [-1, 0, 1, None])
-    a = abs(s)
-
-    assert a.to_list() == [1, 0, 1, None]
+    assert abs(s).to_list() == [1, 0, 1, None]

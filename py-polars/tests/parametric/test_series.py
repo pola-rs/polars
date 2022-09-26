@@ -3,7 +3,9 @@
 # -------------------------------------------------
 from __future__ import annotations
 
-from hypothesis import given, settings
+from decimal import Decimal
+
+from hypothesis import given, settings, seed, reproduce_failure
 from hypothesis.strategies import sampled_from
 
 import polars as pl
@@ -39,3 +41,33 @@ def test_series_slice(
 
     assert sliced_py_data == sliced_pl_data, f"slice [{start}:{stop}:{step}] failed"
     assert_series_equal(srs, srs, check_exact=True)
+
+
+@given(
+    s1=series(min_size=1, max_size=10, dtype=pl.Datetime),
+    s2=series(min_size=1, max_size=10, dtype=pl.Duration),
+)
+def test_series_timeunits(
+    s1: pl.Series,
+    s2: pl.Series,
+) -> None:
+    # datetime
+    assert s1.to_list() == list(s1)
+    assert list(s1.dt.millisecond()) == [v.microsecond // 1000 for v in s1]
+    assert list(s1.dt.nanosecond()) == [v.microsecond * 1000 for v in s1]
+    assert list(s1.dt.microsecond()) == [v.microsecond for v in s1]
+
+    # duration
+    millis: list[int] = s2.dt.milliseconds().to_list()
+    micros: list[int] = s2.dt.microseconds().to_list()
+
+    assert s1.to_list() == list(s1)
+    assert millis == [int(Decimal(v) / 1000) for v in s2.cast(int)]
+    assert micros == list(s2.cast(int))
+
+    # special handling for nanosecs (as we may generate a microsecs-based
+    # timedelta that results in 64bit overflow on conversion to nanosecs)
+    lbound, hbound = -(2**63), (2**63) - 1
+    if all((lbound <= (us * 1000) <= hbound) for us in micros):
+        for ns, us in zip(s2.dt.nanoseconds(), micros):
+            assert ns == (us * 1000)
