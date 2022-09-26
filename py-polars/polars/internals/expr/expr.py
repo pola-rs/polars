@@ -383,7 +383,7 @@ class Expr:
         └──────────┘
 
         """
-        return self**0.5
+        return self ** 0.5
 
     def log10(self) -> Expr:
         """
@@ -4187,35 +4187,6 @@ class Expr:
         │ 2.0      │
         └──────────┘
 
-        Examples
-        --------
-        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("A").rolling_std(window_size=3),
-        ...         ]
-        ...     )
-        ... )
-        shape: (6, 1)
-        ┌──────────┐
-        │ A        │
-        │ ---      │
-        │ f64      │
-        ╞══════════╡
-        │ null     │
-        ├╌╌╌╌╌╌╌╌╌╌┤
-        │ null     │
-        ├╌╌╌╌╌╌╌╌╌╌┤
-        │ 1.0      │
-        ├╌╌╌╌╌╌╌╌╌╌┤
-        │ 1.0      │
-        ├╌╌╌╌╌╌╌╌╌╌┤
-        │ 1.527525 │
-        ├╌╌╌╌╌╌╌╌╌╌┤
-        │ 2.0      │
-        └──────────┘
-
         """
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
@@ -4287,35 +4258,6 @@ class Expr:
         If you want to compute multiple aggregation statistics over the same dynamic
         window, consider using `groupby_rolling` this method can cache the window size
         computation.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("A").rolling_var(window_size=3),
-        ...         ]
-        ...     )
-        ... )
-        shape: (6, 1)
-        ┌──────────┐
-        │ A        │
-        │ ---      │
-        │ f64      │
-        ╞══════════╡
-        │ null     │
-        ├╌╌╌╌╌╌╌╌╌╌┤
-        │ null     │
-        ├╌╌╌╌╌╌╌╌╌╌┤
-        │ 1.0      │
-        ├╌╌╌╌╌╌╌╌╌╌┤
-        │ 1.0      │
-        ├╌╌╌╌╌╌╌╌╌╌┤
-        │ 2.333333 │
-        ├╌╌╌╌╌╌╌╌╌╌┤
-        │ 4.0      │
-        └──────────┘
 
         Examples
         --------
