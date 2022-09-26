@@ -3,13 +3,12 @@ use std::borrow::Cow;
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
 
+use super::*;
 use crate::dsl::function_expr::FunctionExpr;
-use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::Context;
-use crate::prelude::*;
 use crate::utils::is_scan;
 
-pub struct TypeCoercionRule {}
+pub(crate) struct TypeCoercionRule {}
 
 /// determine if we use the supertype or not. For instance when we have a column Int64 and we compare with literal UInt32
 /// it would be wasteful to cast the column instead of the literal.
@@ -516,9 +515,8 @@ fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
 mod test {
     use polars_core::prelude::*;
 
-    use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
+    use super::*;
     use crate::prelude::*;
-    use crate::utils::test::optimize_expr;
 
     #[test]
     fn test_categorical_utf8() {

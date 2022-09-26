@@ -3,7 +3,7 @@ use polars_core::prelude::*;
 use crate::prelude::*;
 use crate::utils::aexpr_is_simple_projection;
 
-pub(crate) struct SlicePushDown {}
+pub(super) struct SlicePushDown {}
 
 #[derive(Copy, Clone)]
 struct State {

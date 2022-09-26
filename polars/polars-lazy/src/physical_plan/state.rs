@@ -8,9 +8,9 @@ use polars_core::prelude::*;
 
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use super::file_cache::FileCache;
-use crate::physical_plan::node_timer::NodeTimer;
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
-use crate::prelude::file_caching::FileFingerPrint;
+use crate::logical_plan::optimizer::file_caching::FileFingerPrint;
+use crate::physical_plan::node_timer::NodeTimer;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, JoinOptIds>>>;
 pub type GroupsProxyCache = Arc<Mutex<PlHashMap<String, GroupsProxy>>>;
