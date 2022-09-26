@@ -1,6 +1,6 @@
 [package]
 name = "polars-algo"
-version = "0.24.2"
+version.workspace = true
 authors = ["hpux735 <william@housedillon.com>"]
 edition = "2021"
 license = "MIT"

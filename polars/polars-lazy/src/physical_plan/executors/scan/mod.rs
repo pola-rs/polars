@@ -42,7 +42,7 @@ fn prepare_scan_args<'a>(
     n_rows: Option<usize>,
     aggregate: &'a [ScanAggregation],
 ) -> (File, Projection, StopNRows, Aggregation<'a>, Predicate) {
-    let file = std::fs::File::open(&path).unwrap();
+    let file = std::fs::File::open(path).unwrap();
 
     let with_columns = mem::take(with_columns);
     let schema = mem::take(schema);
