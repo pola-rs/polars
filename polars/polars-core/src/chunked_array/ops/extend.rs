@@ -2,6 +2,7 @@ use arrow::compute::concatenate::concatenate;
 use arrow::Either;
 
 use crate::prelude::*;
+use crate::series::IsSorted;
 
 fn extend_immutable(immutable: &dyn Array, chunks: &mut Vec<ArrayRef>, other_chunks: &[ArrayRef]) {
     let out = if chunks.len() == 1 {
@@ -77,6 +78,7 @@ where
             }
         }
         self.compute_len();
+        self.set_sorted2(IsSorted::Not);
     }
 }
 
@@ -114,6 +116,7 @@ impl Utf8Chunked {
             }
         }
         self.compute_len();
+        self.set_sorted2(IsSorted::Not);
     }
 }
 
@@ -152,6 +155,7 @@ impl BooleanChunked {
             }
         }
         self.compute_len();
+        self.set_sorted2(IsSorted::Not);
     }
 }
 
@@ -160,6 +164,7 @@ impl ListChunked {
     pub fn extend(&mut self, other: &Self) -> PolarsResult<()> {
         // TODO! properly implement mutation
         // this is harder because we don't know the inner type of the list
+        self.set_sorted2(IsSorted::Not);
         self.append(other)
     }
 }

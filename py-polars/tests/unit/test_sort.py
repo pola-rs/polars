@@ -254,3 +254,14 @@ def test_sorted_flag_unset_by_arithmetic_4937() -> None:
         "pmax": [3.6, 3.5],
         "pmin": [3.6, 0.0],
     }
+
+
+def test_unset_sorted_flag_after_extend() -> None:
+    df1 = pl.DataFrame({"Add": [37, 41], "Batch": [48, 49]}).sort("Add")
+    df2 = pl.DataFrame({"Add": [37], "Batch": [67]}).sort("Add")
+
+    df1.extend(df2)
+    assert not df1["Add"].flags["SORTED_ASC"]
+    df = df1.groupby("Add").agg([pl.col("Batch").min()]).sort("Add")
+    assert df["Add"].flags["SORTED_ASC"]
+    assert df.to_dict(False) == {"Add": [37, 41], "Batch": [48, 49]}
