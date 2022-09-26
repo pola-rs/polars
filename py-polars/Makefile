@@ -23,7 +23,7 @@ clean:  ## Clean up caches and build artifacts
 	@rm -f .coverage
 	@rm -f coverage.xml
 	@rm -f polars/polars.abi3.so
-	@find . -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -delete
+	@find -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -delete
 	@cargo clean
 
 .PHONY: pre-commit
