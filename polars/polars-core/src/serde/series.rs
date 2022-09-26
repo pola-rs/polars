@@ -55,6 +55,11 @@ impl Serialize for Series {
                     let ca = self.duration().unwrap();
                     ca.serialize(serializer)
                 }
+                #[cfg(feature = "dtype-time")]
+                DataType::Time => {
+                    let ca = self.time().unwrap();
+                    ca.serialize(serializer)
+                }
                 _ => {
                     // cast small integers to i32
                     self.cast(&DataType::Int32).unwrap().serialize(serializer)
@@ -166,6 +171,11 @@ impl<'de> Deserialize<'de> for Series {
                             .cast(&DataType::Duration(tu))
                             .unwrap())
                     }
+                    #[cfg(feature = "dtype-time")]
+                    DeDataType::Time => {
+                        let values: Vec<Option<i64>> = map.next_value()?;
+                        Ok(Series::new(&name, values).cast(&DataType::Time).unwrap())
+                    }
                     DeDataType::Boolean => {
                         let values: Vec<Option<bool>> = map.next_value()?;
                         Ok(Series::new(&name, values))
@@ -185,6 +195,13 @@ impl<'de> Deserialize<'de> for Series {
                     DeDataType::List => {
                         let values: Vec<Option<Series>> = map.next_value()?;
                         Ok(Series::new(&name, values))
+                    }
+                    #[cfg(feature = "dtype-categorical")]
+                    DeDataType::Categorical => {
+                        let values: Vec<Option<Cow<str>>> = map.next_value()?;
+                        Ok(Series::new(&name, values)
+                            .cast(&DataType::Categorical(None))
+                            .unwrap())
                     }
                     dt => {
                         panic!("{:?} dtype deserialization not yet implemented", dt)

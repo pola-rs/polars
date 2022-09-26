@@ -5,22 +5,6 @@ use crate::prelude::*;
 pub mod chunked_array;
 pub mod series;
 
-// Serde calls this the definition of the remote type. It is just a copy of the
-// remote data structure. The `remote` attribute gives the path to the actual
-// type we intend to derive code for.
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(remote = "ArrowTimeUnit")]
-enum TimeUnitDef {
-    /// Time in seconds.
-    Second,
-    /// Time in milliseconds.
-    Millisecond,
-    /// Time in microseconds.
-    Microsecond,
-    /// Time in nanoseconds.
-    Nanosecond,
-}
-
 /// Intermediate enum. Needed because [crate::datatypes::DataType] has
 /// a &static str and thus requires Deserialize<&static>
 #[derive(Serialize, Deserialize, Debug)]
@@ -40,8 +24,7 @@ enum DeDataType<'a> {
     Date,
     Datetime(TimeUnit, Option<TimeZone>),
     Duration(TimeUnit),
-    #[serde(with = "TimeUnitDef")]
-    Time64(ArrowTimeUnit),
+    Time,
     List,
     Object(&'a str),
     Null,
@@ -58,6 +41,7 @@ impl From<&DataType> for DeDataType<'_> {
             DataType::Date => DeDataType::Date,
             DataType::Datetime(tu, tz) => DeDataType::Datetime(*tu, tz.clone()),
             DataType::Duration(tu) => DeDataType::Duration(*tu),
+            DataType::Time => DeDataType::Time,
             DataType::Float32 => DeDataType::Float32,
             DataType::Float64 => DeDataType::Float64,
             DataType::Utf8 => DeDataType::Utf8,
@@ -66,6 +50,8 @@ impl From<&DataType> for DeDataType<'_> {
             DataType::List(_) => DeDataType::List,
             #[cfg(feature = "object")]
             DataType::Object(s) => DeDataType::Object(s),
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_) => DeDataType::Categorical,
             _ => unimplemented!(),
         }
     }
@@ -80,7 +66,6 @@ mod test {
         let ca = UInt32Chunked::new("foo", &[Some(1), None, Some(2)]);
 
         let json = serde_json::to_string(&ca).unwrap();
-        dbg!(&json);
 
         let out = serde_json::from_str::<Series>(&json).unwrap();
         assert!(ca.into_series().series_equal_missing(&out));
@@ -88,7 +73,6 @@ mod test {
         let ca = Utf8Chunked::new("foo", &[Some("foo"), None, Some("bar")]);
 
         let json = serde_json::to_string(&ca).unwrap();
-        dbg!(&json);
 
         let out = serde_json::from_str::<Series>(&json).unwrap(); // uses `Deserialize<'de>`
         assert!(ca.into_series().series_equal_missing(&out));
@@ -102,7 +86,6 @@ mod test {
         let ca = UInt32Chunked::new("foo", &[Some(1), None, Some(2)]);
 
         let json = serde_json::to_string(&ca).unwrap();
-        dbg!(&json);
 
         let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap(); // uses `DeserializeOwned`
         assert!(ca.into_series().series_equal_missing(&out));
@@ -121,7 +104,6 @@ mod test {
     fn test_serde_df_json() {
         let df = sample_dataframe();
         let json = serde_json::to_string(&df).unwrap();
-        dbg!(&json);
         let out = serde_json::from_str::<DataFrame>(&json).unwrap(); // uses `Deserialize<'de>`
         assert!(df.frame_equal_missing(&out));
     }
@@ -139,7 +121,6 @@ mod test {
     fn test_serde_df_owned_json() {
         let df = sample_dataframe();
         let json = serde_json::to_string(&df).unwrap();
-        dbg!(&json);
 
         let out = serde_json::from_reader::<_, DataFrame>(json.as_bytes()).unwrap(); // uses `DeserializeOwned`
         assert!(df.frame_equal_missing(&out));
