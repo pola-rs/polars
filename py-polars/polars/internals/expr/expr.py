@@ -383,7 +383,7 @@ class Expr:
         └──────────┘
 
         """
-        return self**0.5
+        return self ** 0.5
 
     def log10(self) -> Expr:
         """
@@ -5457,23 +5457,6 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
         >>> df.select(pl.col("a").sample(frac=1.0, with_replacement=True, seed=1))
-        shape: (3, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ 3   │
-        ├╌╌╌╌╌┤
-        │ 1   │
-        ├╌╌╌╌╌┤
-        │ 1   │
-        └─────┘
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").sample(seed=1))
         shape: (3, 1)
         ┌─────┐
         │ a   │
