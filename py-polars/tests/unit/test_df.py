@@ -1037,6 +1037,39 @@ def test_describe() -> None:
     pl.testing.assert_frame_equal(df.describe(), expected)
 
 
+def test_duration_arithmetic() -> None:
+    pl.Config.with_columns_kwargs = True
+
+    df = pl.DataFrame(
+        {"a": [datetime(2022, 1, 1, 0, 0, 0), datetime(2022, 1, 2, 0, 0, 0)]}
+    )
+    d1 = pl.duration(days=3, microseconds=987000)
+    d2 = pl.duration(days=6, milliseconds=987)
+
+    assert_frame_equal(
+        df.with_columns(
+            b=(df["a"] + d1),
+            c=(pl.col("a") + d2),
+        ),
+        pl.DataFrame(
+            {
+                "a": [
+                    datetime(2022, 1, 1, 0, 0, 0),
+                    datetime(2022, 1, 2, 0, 0, 0),
+                ],
+                "b": [
+                    datetime(2022, 1, 4, 0, 0, 0, 987000),
+                    datetime(2022, 1, 5, 0, 0, 0, 987000),
+                ],
+                "c": [
+                    datetime(2022, 1, 7, 0, 0, 0, 987000),
+                    datetime(2022, 1, 8, 0, 0, 0, 987000),
+                ],
+            }
+        ),
+    )
+
+
 def test_string_cache_eager_lazy() -> None:
     # tests if the global string cache is really global and not interfered by the lazy
     # execution. first the global settings was thread-local and this breaks with the
