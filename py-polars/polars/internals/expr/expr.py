@@ -390,17 +390,17 @@ class Expr:
         >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
         >>> df.select(pl.col("values").log10())
         shape: (3, 1)
-        ┌────────┐
-        │ values │
-        │ ---    │
-        │ f64    │
-        ╞════════╡
-        │ 0.0    │
-        ├╌╌╌╌╌╌╌╌┤
-        │ 0.301  │
-        ├╌╌╌╌╌╌╌╌┤
-        │ 0.602  │
-        └────────┘
+        ┌─────────┐
+        │ values  │
+        │ ---     │
+        │ f64     │
+        ╞═════════╡
+        │ 0.0     │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 0.30103 │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 0.60206 │
+        └─────────┘
 
         """
         return self.log(10.0)
@@ -423,7 +423,7 @@ class Expr:
         ├╌╌╌╌╌╌╌╌╌╌┤
         │ 7.389056 │
         ├╌╌╌╌╌╌╌╌╌╌┤
-        │ 54.5981  │
+        │ 54.59815 │
         └──────────┘
 
         """
@@ -2069,9 +2069,8 @@ class Expr:
     ) -> Expr:
         """
         Fill null values using the specified value or strategy.
-        To interpolate over null values see interpolate
 
-        To interpolate over null values see interpolate
+        To interpolate over null values see interpolate.
 
         Parameters
         ----------
@@ -3626,7 +3625,8 @@ class Expr:
     def interpolate(self) -> Expr:
         """
         Fill nulls with linear interpolation over missing values.
-        Can also be used to regrid data to a new grid - see examples below
+
+        Can also be used to regrid data to a new grid - see examples below.
 
         Examples
         --------
