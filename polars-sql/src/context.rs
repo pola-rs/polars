@@ -1,44 +1,59 @@
-use std::collections::HashMap;
+use std::cell::RefCell;
 
-use crate::sql_expr::parse_sql_expr;
-use polars::error::PolarsError;
-use polars::prelude::{col, DataFrame, IntoLazy, LazyFrame};
+use polars::error::PolarsResult;
+use polars::prelude::*;
+use polars_lazy::utils::expressions_to_schema;
 use sqlparser::ast::{
-    Expr as SqlExpr, Select, SelectItem, SetExpr, Statement, TableFactor, Value as SQLValue,
+    Expr as SqlExpr, JoinOperator, OrderByExpr, Select, SelectItem, SetExpr, Statement,
+    TableFactor, TableWithJoins, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
-#[derive(Default)]
+use crate::sql_expr::{parse_sql_expr, process_join_constraint};
+
+thread_local! {pub(crate) static TABLES: RefCell<Vec<String>> = RefCell::new(vec![])}
+
+#[derive(Default, Clone)]
 pub struct SQLContext {
-    table_map: HashMap<String, LazyFrame>,
-    dialect: GenericDialect,
+    pub(crate) table_map: PlHashMap<String, LazyFrame>,
 }
 
 impl SQLContext {
-    pub fn new() -> Self {
-        Self {
-            table_map: HashMap::new(),
-            dialect: GenericDialect::default(),
-        }
+    pub fn try_new() -> PolarsResult<Self> {
+        TABLES.with(|cell| {
+            if !cell.borrow().is_empty() {
+                Err(PolarsError::ComputeError(
+                    "only one sql-context per thread allowed".into(),
+                ))
+            } else {
+                Ok(())
+            }
+        })?;
+
+        Ok(Self {
+            table_map: PlHashMap::new(),
+        })
     }
 
-    pub fn register(&mut self, name: &str, df: &DataFrame) {
-        self.table_map.insert(name.to_owned(), df.clone().lazy());
+    pub fn register(&mut self, name: &str, lf: LazyFrame) {
+        TABLES.with(|cell| cell.borrow_mut().push(name.to_owned()));
+        self.table_map.insert(name.to_owned(), lf);
     }
 
-    fn execute_select(&self, select_stmt: &Select) -> PolarsResult<LazyFrame, PolarsError> {
-        // Determine involved dataframe
-        // Implicit join require some more work in query parsers, Explicit join are preferred for now.
-        let tbl = select_stmt.from.get(0).unwrap();
-        let mut alias_map = HashMap::new();
-        let tbl_name = match &tbl.relation {
+    fn get_relation_name<'a>(
+        &self,
+        relation: &'a TableFactor,
+        alias_map: &mut PlHashMap<String, String>,
+    ) -> PolarsResult<&'a str> {
+        let tbl_name = match relation {
             TableFactor::Table { name, alias, .. } => {
                 let tbl_name = name.0.get(0).unwrap().value.as_str();
                 if self.table_map.contains_key(tbl_name) {
                     if let Some(alias) = alias {
                         alias_map.insert(alias.name.value.clone(), tbl_name.to_owned());
                     };
+
                     tbl_name
                 } else {
                     return Err(PolarsError::ComputeError(
@@ -49,48 +64,98 @@ impl SQLContext {
             // Support bare table, optional with alias for now
             _ => return Err(PolarsError::ComputeError("Not implemented".into())),
         };
-        let df = &self.table_map[tbl_name];
-        let mut raw_projection_before_alias: HashMap<String, usize> = HashMap::new();
-        let mut contain_wildcard = false;
+        Ok(tbl_name)
+    }
+
+    fn get_table(&self, name: &str) -> PolarsResult<LazyFrame> {
+        self.table_map.get(name).cloned().ok_or_else(|| {
+            PolarsError::ComputeError(
+                format!("Table '{}' was not registered in the SQLContext", name).into(),
+            )
+        })
+    }
+
+    fn execute_select(&self, select_stmt: &Select) -> PolarsResult<LazyFrame> {
+        // Determine involved dataframe
+        // Implicit join require some more work in query parsers, Explicit join are preferred for now.
+        let sql_tbl: &TableWithJoins = select_stmt
+            .from
+            .get(0)
+            .ok_or_else(|| PolarsError::ComputeError("No table name provided in query".into()))?;
+        let mut alias_map = PlHashMap::new();
+
+        let tbl_name = self.get_relation_name(&sql_tbl.relation, &mut alias_map)?;
+        let mut lf = self.get_table(tbl_name)?;
+
+        if !sql_tbl.joins.is_empty() {
+            for tbl in &sql_tbl.joins {
+                let join_tbl_name = self.get_relation_name(&tbl.relation, &mut alias_map)?;
+                let join_tbl = self.get_table(join_tbl_name)?;
+                match &tbl.join_operator {
+                    JoinOperator::Inner(constraint) => {
+                        let (left_on, right_on) =
+                            process_join_constraint(&constraint, tbl_name, join_tbl_name)?;
+                        lf = lf.inner_join(join_tbl, left_on, right_on)
+                    }
+                    JoinOperator::LeftOuter(constraint) => {
+                        let (left_on, right_on) =
+                            process_join_constraint(&constraint, tbl_name, join_tbl_name)?;
+                        lf = lf.left_join(join_tbl, left_on, right_on)
+                    }
+                    JoinOperator::FullOuter(constraint) => {
+                        let (left_on, right_on) =
+                            process_join_constraint(&constraint, tbl_name, join_tbl_name)?;
+                        lf = lf.outer_join(join_tbl, left_on, right_on)
+                    }
+                    JoinOperator::CrossJoin => lf = lf.cross_join(join_tbl),
+                    join_type => {
+                        return Err(PolarsError::ComputeError(
+                            format!(
+                                "Join type: '{:?}' not yet supported by polars-sql",
+                                join_type
+                            )
+                            .into(),
+                        ))
+                    }
+                }
+            }
+        }
+
+        let mut contains_wildcard = false;
+
         // Filter Expression
-        let df = match select_stmt.selection.as_ref() {
+        let lf = match select_stmt.selection.as_ref() {
             Some(expr) => {
                 let filter_expression = parse_sql_expr(expr)?;
-                df.clone().filter(filter_expression)
+                lf.filter(filter_expression)
             }
-            None => df.clone(),
+            None => lf,
         };
         // Column Projections
-        let projection = select_stmt
+        let projections: Vec<_> = select_stmt
             .projection
             .iter()
-            .enumerate()
-            .map(|(i, select_item)| {
+            .map(|select_item| {
                 Ok(match select_item {
-                    SelectItem::UnnamedExpr(expr) => {
-                        let expr = parse_sql_expr(expr)?;
-                        raw_projection_before_alias.insert(format!("{:?}", expr), i);
-                        expr
-                    }
+                    SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr)?,
                     SelectItem::ExprWithAlias { expr, alias } => {
                         let expr = parse_sql_expr(expr)?;
-                        raw_projection_before_alias.insert(format!("{:?}", expr), i);
                         expr.alias(&alias.value)
                     }
                     SelectItem::QualifiedWildcard(_) | SelectItem::Wildcard => {
-                        contain_wildcard = true;
+                        contains_wildcard = true;
                         col("*")
                     }
                 })
             })
-            .collect::<Result<Vec<_>, PolarsError>>()?;
+            .collect::<PolarsResult<_>>()?;
+
         // Check for group by
         // After projection since there might be number.
-        let group_by = select_stmt
+        let groupby_keys: Vec<Expr> = select_stmt
             .group_by
             .iter()
-            .map(
-                |e|match e {
+            .map(|e| match e {
                   SqlExpr::Value(SQLValue::Number(idx, _)) => {
                     let idx = match idx.parse::<usize>() {
                         Ok(0)| Err(_) => Err(
@@ -99,7 +164,7 @@ impl SQLContext {
                         )),
                         Ok(idx) => Ok(idx)
                     }?;
-                    Ok(projection[idx].clone())
+                    Ok(projections[idx].clone())
                   }
                   SqlExpr::Value(_) => Err(
                       PolarsError::ComputeError("Group By Error: Only positive number or expression are supported".into())
@@ -107,54 +172,17 @@ impl SQLContext {
                   _ => parse_sql_expr(e)
                 }
             )
-            .collect::<Result<Vec<_>, PolarsError>>()?;
+            .collect::<PolarsResult<_>>()?;
 
-        let df = if group_by.is_empty() {
-            df.select(projection)
+        if groupby_keys.is_empty() {
+            Ok(lf.select(projections))
         } else {
-            // check groupby and projection due to difference between SQL and polars
-            // Return error on wild card, shouldn't process this
-            if contain_wildcard {
-                return Err(PolarsError::ComputeError(
-                    "Group By Error: Can't processed wildcard in groupby".into(),
-                ));
-            }
-            // Default polars group by will have group by columns at the front
-            // need some container to contain position of group by columns and its position
-            // at the final agg projection, check the schema for the existence of group by column
-            // and its projections columns, keeping the original index
-            let (exclude_expr, groupby_pos): (Vec<_>, Vec<_>) = group_by
-                .iter()
-                .map(|expr| raw_projection_before_alias.get(&format!("{:?}", expr)))
-                .enumerate()
-                .filter(|(_, proj_p)| proj_p.is_some())
-                .map(|(gb_p, proj_p)| (*proj_p.unwrap(), (*proj_p.unwrap(), gb_p)))
-                .unzip();
-            let (agg_projection, agg_proj_pos): (Vec<_>, Vec<_>) = projection
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| !exclude_expr.contains(i))
-                .enumerate()
-                .map(|(agg_pj, (proj_p, expr))| (expr.clone(), (proj_p, agg_pj + group_by.len())))
-                .unzip();
-            let agg_df = df.groupby(group_by).agg(agg_projection);
-            let mut final_proj_pos = groupby_pos
-                .into_iter()
-                .chain(agg_proj_pos.into_iter())
-                .collect::<Vec<_>>();
-
-            final_proj_pos.sort_by(|(proj_pa, _), (proj_pb, _)| proj_pa.cmp(proj_pb));
-            let final_proj = final_proj_pos
-                .into_iter()
-                .map(|(_, shm_p)| col(agg_df.schema().get_index(shm_p).unwrap().0))
-                .collect::<Vec<_>>();
-            agg_df.select(final_proj)
-        };
-        Ok(df)
+            self.process_groupby(lf, contains_wildcard, &groupby_keys, &projections)
+        }
     }
 
-    pub fn execute(&self, query: &str) -> PolarsResult<LazyFrame, PolarsError> {
-        let ast = Parser::parse_sql(&self.dialect, query)
+    pub fn execute(&self, query: &str) -> PolarsResult<LazyFrame> {
+        let ast = Parser::parse_sql(&GenericDialect::default(), query)
             .map_err(|e| PolarsError::ComputeError(format!("{:?}", e).into()))?;
         if ast.len() != 1 {
             Err(PolarsError::ComputeError(
@@ -164,14 +192,17 @@ impl SQLContext {
             let ast = ast.get(0).unwrap();
             Ok(match ast {
                 Statement::Query(query) => {
-                    let rs = match &query.body {
-                        SetExpr::Select(select_stmt) => self.execute_select(&*select_stmt)?,
+                    let mut lf = match &query.body.as_ref() {
+                        SetExpr::Select(select_stmt) => self.execute_select(select_stmt)?,
                         _ => {
                             return Err(PolarsError::ComputeError(
                                 "INSERT, UPDATE is not supported for polars".into(),
                             ))
                         }
                     };
+                    if !query.order_by.is_empty() {
+                        lf = self.process_order_by(lf, &query.order_by)?;
+                    }
                     match &query.limit {
                         Some(SqlExpr::Value(SQLValue::Number(nrow, _))) => {
                             let nrow = nrow.parse().map_err(|err| {
@@ -179,9 +210,9 @@ impl SQLContext {
                                     format!("Conversion Error: {:?}", err).into(),
                                 )
                             })?;
-                            rs.limit(nrow)
+                            lf.limit(nrow)
                         }
-                        None => rs,
+                        None => lf,
                         _ => {
                             return Err(PolarsError::ComputeError(
                                 "Only support number argument to LIMIT clause".into(),
@@ -196,5 +227,85 @@ impl SQLContext {
                 }
             })
         }
+    }
+
+    fn process_order_by(&self, lf: LazyFrame, ob: &[OrderByExpr]) -> PolarsResult<LazyFrame> {
+        let mut by = Vec::with_capacity(ob.len());
+        let mut reverse = Vec::with_capacity(ob.len());
+
+        for ob in ob {
+            by.push(parse_sql_expr(&ob.expr)?);
+            if let Some(false) = ob.asc {
+                reverse.push(true)
+            } else {
+                reverse.push(false)
+            }
+
+            if ob.nulls_first.is_some() {
+                return Err(PolarsError::ComputeError(
+                    "nulls first/last is not yet supported".into(),
+                ));
+            }
+        }
+
+        Ok(lf.sort_by_exprs(&by, reverse, false))
+    }
+
+    fn process_groupby(
+        &self,
+        lf: LazyFrame,
+        contains_wildcard: bool,
+        groupby_keys: &[Expr],
+        projections: &[Expr],
+    ) -> PolarsResult<LazyFrame> {
+        // check groupby and projection due to difference between SQL and polars
+        // Return error on wild card, shouldn't process this
+        if contains_wildcard {
+            return Err(PolarsError::ComputeError(
+                "Group By Error: Can't processed wildcard in groupby".into(),
+            ));
+        }
+        let schema_before = lf.schema().unwrap();
+
+        let groupby_keys_schema =
+            expressions_to_schema(groupby_keys, &schema_before, Context::Default).unwrap();
+
+        // remove the groupby keys as polars adds those implicitly
+        let mut aggregation_projection = Vec::with_capacity(projections.len());
+        for e in projections {
+            let field = e.to_field(&schema_before, Context::Default)?;
+            if groupby_keys_schema.get(&field.name).is_none() {
+                aggregation_projection.push(e.clone())
+            }
+        }
+
+        let aggregated = lf.groupby(groupby_keys).agg(&aggregation_projection);
+
+        let projection_schema =
+            expressions_to_schema(projections, &schema_before, Context::Default).unwrap();
+
+        // a final projection to get the proper order
+        let final_projection = projection_schema
+            .iter_names()
+            .zip(projections)
+            .map(|(name, projection_expr)| {
+                if groupby_keys_schema.get(name).is_some() {
+                    projection_expr.clone()
+                } else {
+                    col(name)
+                }
+            })
+            .collect::<Vec<_>>();
+
+        Ok(aggregated.select(final_projection))
+    }
+}
+
+impl Drop for SQLContext {
+    fn drop(&mut self) {
+        // drop old tables
+        TABLES.with(|cell| {
+            cell.borrow_mut().clear();
+        });
     }
 }

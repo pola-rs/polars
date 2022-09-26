@@ -22,6 +22,8 @@ use polars_io::csv::CsvEncoding;
 use polars_io::prelude::*;
 
 use super::*;
+#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+use crate::logical_plan::optimizer::file_caching::FileFingerPrint;
 use crate::prelude::*;
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
@@ -42,7 +44,7 @@ fn prepare_scan_args<'a>(
     n_rows: Option<usize>,
     aggregate: &'a [ScanAggregation],
 ) -> (File, Projection, StopNRows, Aggregation<'a>, Predicate) {
-    let file = std::fs::File::open(&path).unwrap();
+    let file = std::fs::File::open(path).unwrap();
 
     let with_columns = mem::take(with_columns);
     let schema = mem::take(schema);

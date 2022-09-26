@@ -12,23 +12,14 @@ def test_to_from_buffer(df: pl.DataFrame) -> None:
         df.write_json(buf)
         buf.seek(0)
         read_df = pl.read_json(buf)
-        read_df = read_df.with_columns(
-            [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
-        )
         assert_frame_equal_local_categoricals(df, read_df)
 
 
 def test_to_from_file(io_test_dir: str, df: pl.DataFrame) -> None:
     f = os.path.join(io_test_dir, "small.json")
     df.write_json(f)
-
     out = pl.read_json(f)
-    assert out.frame_equal(df)
-
-    # read_df = read_df.with_columns(
-    #     [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
-    # )
-    # assert df.frame_equal(read_df)
+    assert_frame_equal_local_categoricals(df, out)
 
 
 def test_write_json() -> None:

@@ -175,6 +175,14 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     with pytest.raises(ValueError):
         pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
 
+    # 2D numpy arrays
+    df = pl.DataFrame({"a": np.arange(5, dtype=np.int64).reshape(1, -1)})
+    assert df.dtypes == [pl.List(pl.Int64)]
+    assert df.shape == (1, 1)
+    df = pl.DataFrame({"a": np.arange(10, dtype=np.int64).reshape(2, -1)})
+    assert df.dtypes == [pl.List(pl.Int64)]
+    assert df.shape == (2, 1)
+
 
 def test_init_arrow() -> None:
     # Handle unnamed column

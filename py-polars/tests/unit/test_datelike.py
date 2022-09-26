@@ -17,7 +17,7 @@ else:
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, TemporalDataType
-from polars.testing import verify_series_and_expr_api
+from polars.testing import assert_series_equal, verify_series_and_expr_api
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit
@@ -83,7 +83,7 @@ def test_series_add_datetime() -> None:
     out = pl.Series(
         [datetime(2027, 5, 19), datetime(2054, 10, 4), datetime(2082, 2, 19)]
     )
-    assert (deltas + pl.Series([datetime(2000, 1, 1)])) == out
+    assert_series_equal(deltas + pl.Series([datetime(2000, 1, 1)]), out)
 
 
 def test_diff_datetime() -> None:
@@ -102,7 +102,7 @@ def test_diff_datetime() -> None:
             ]
         ).with_columns([pl.col("timestamp").diff().list().over("char")])
     )["timestamp"]
-    assert out[0] == out[1]
+    assert (out[0] == out[1]).all()
 
 
 def test_from_pydatetime() -> None:
@@ -244,6 +244,22 @@ def test_datetime_consistency() -> None:
         )
     ]
 
+    test_data = [
+        datetime(2000, 1, 1, 1, 1, 1, 555555),
+        datetime(2514, 5, 30, 1, 53, 4, 986754),
+        datetime(3099, 12, 31, 23, 59, 59, 123456),
+        datetime(9999, 12, 31, 23, 59, 59, 999999),
+    ]
+    ddf = pl.DataFrame({"dtm": test_data}).with_column(
+        pl.col("dtm").dt.nanosecond().alias("ns")
+    )
+    assert ddf.rows() == [
+        (test_data[0], 555555000),
+        (test_data[1], 986754000),
+        (test_data[2], 123456000),
+        (test_data[3], 999999000),
+    ]
+
 
 def test_timezone() -> None:
     ts = pa.timestamp("s")
@@ -363,7 +379,7 @@ def test_date_range() -> None:
     assert result.name == "drange"
 
     result = pl.date_range(date(2022, 1, 1), date(2022, 1, 2), "1h30m")
-    assert result == [
+    assert list(result) == [
         datetime(2022, 1, 1, 0, 0),
         datetime(2022, 1, 1, 1, 30),
         datetime(2022, 1, 1, 3, 0),
@@ -1500,3 +1516,21 @@ def test_short_formats() -> None:
 def test_iso_year() -> None:
     dt = datetime(2022, 1, 1, 7, 8, 40)
     assert pl.Series([dt]).dt.iso_year()[0] == 2021
+
+
+def test_invalid_date_parsing_4898() -> None:
+    assert pl.Series(["2022-09-18", "2022-09-50"]).str.strptime(
+        pl.Date, "%Y-%m-%d", strict=False
+    ).to_list() == [date(2022, 9, 18), None]
+
+
+def test_cast_timezone() -> None:
+    assert pl.DataFrame({"a": [datetime(2022, 9, 25, 14)]}).with_column(
+        pl.col("a")
+        .dt.with_time_zone("America/New_York")
+        .dt.cast_time_zone("UTC")
+        .alias("b")
+    ).to_dict(False) == {
+        "a": [datetime(2022, 9, 25, 14, 0)],
+        "b": [datetime(2022, 9, 25, 18, 0)],
+    }

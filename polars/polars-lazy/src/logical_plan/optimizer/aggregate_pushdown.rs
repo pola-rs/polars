@@ -5,7 +5,7 @@ use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::{aexpr_to_leaf_nodes, has_aexpr};
 
-pub(crate) struct AggregatePushdown {
+pub(super) struct AggregatePushdown {
     accumulated_projections: Vec<Node>,
     processed_state: bool,
 }

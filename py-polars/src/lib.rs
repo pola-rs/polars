@@ -18,6 +18,8 @@ pub mod prelude;
 pub(crate) mod py_modules;
 pub mod series;
 mod set;
+#[cfg(feature = "polars-sql")]
+mod sql;
 pub mod utils;
 
 #[cfg(target_os = "linux")]
@@ -39,8 +41,8 @@ use pyo3::wrap_pyfunction;
 use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};
 use crate::dataframe::PyDataFrame;
 use crate::error::{
-    ArrowErrorException, ComputeError, DuplicateError, NoDataError, NotFoundError, PyPolarsErr,
-    SchemaError,
+    ArrowErrorException, ComputeError, DuplicateError, InvalidOperationError, NoDataError,
+    NotFoundError, PyPolarsErr, SchemaError,
 };
 use crate::file::{get_either_file, EitherRustPythonFile};
 use crate::lazy::dataframe::{PyLazyFrame, PyLazyGroupBy};
@@ -153,8 +155,13 @@ fn pearson_corr(a: dsl::PyExpr, b: dsl::PyExpr, ddof: u8) -> dsl::PyExpr {
 }
 
 #[pyfunction]
-fn spearman_rank_corr(a: dsl::PyExpr, b: dsl::PyExpr, ddof: u8) -> dsl::PyExpr {
-    polars::lazy::dsl::spearman_rank_corr(a.inner, b.inner, ddof).into()
+fn spearman_rank_corr(
+    a: dsl::PyExpr,
+    b: dsl::PyExpr,
+    ddof: u8,
+    propagate_nans: bool,
+) -> dsl::PyExpr {
+    polars::lazy::dsl::spearman_rank_corr(a.inner, b.inner, ddof, propagate_nans).into()
 }
 
 #[pyfunction]
@@ -455,6 +462,12 @@ fn max_exprs(exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
+fn coalesce_exprs(exprs: Vec<PyExpr>) -> PyExpr {
+    let exprs = exprs.to_exprs();
+    polars::lazy::dsl::coalesce(&exprs).into()
+}
+
+#[pyfunction]
 fn sum_exprs(exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
     polars::lazy::dsl::sum_exprs(exprs).into()
@@ -497,11 +510,18 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add("PanicException", py.get_type::<PanicException>())
         .unwrap();
+    m.add(
+        "InvalidOperationError",
+        py.get_type::<InvalidOperationError>(),
+    )
+    .unwrap();
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
     m.add_class::<PyLazyFrame>().unwrap();
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<dsl::PyExpr>().unwrap();
+    #[cfg(feature = "polars-sql")]
+    m.add_class::<sql::PySQLContext>().unwrap();
     m.add_wrapped(wrap_pyfunction!(col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(count)).unwrap();
     m.add_wrapped(wrap_pyfunction!(first)).unwrap();
@@ -546,5 +566,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(pool_size)).unwrap();
     m.add_wrapped(wrap_pyfunction!(arg_where)).unwrap();
     m.add_wrapped(wrap_pyfunction!(get_idx_type)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(coalesce_exprs)).unwrap();
     Ok(())
 }

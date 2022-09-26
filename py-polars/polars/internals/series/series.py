@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Sequence, Union
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, Union
 from warnings import warn
 
 from polars import internals as pli
@@ -322,6 +322,13 @@ class Series:
         """Get the time unit of underlying Datetime Series as {"ns", "us", "ms"}."""
         return self._s.time_unit()
 
+    def __bool__(self) -> NoReturn:
+        raise ValueError(
+            "The truth value of a Series is ambiguous. Hint: use '&' or '|' to chain "
+            "Series boolean results together, not and/or; to check if a Series "
+            "contains any values, use 'is_empty()'"
+        )
+
     def __getstate__(self) -> Any:
         return self._s.__getstate__()
 
@@ -414,6 +421,11 @@ class Series:
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Series:
         if isinstance(other, Series):
             return wrap_s(getattr(self._s, op_s)(other._s))
+        # we recurse and the if statement above will
+        # ensure we return early
+        if isinstance(other, (date, datetime, timedelta, str)):
+            other = Series("", [other])
+            return self._arithmetic(other, op_s, op_ffi)
         if isinstance(other, float) and not self.is_float():
             _s = sequence_to_pyseries("", [other])
             if "rhs" in op_ffi:
@@ -867,33 +879,49 @@ class Series:
     def drop_nans(self) -> Series:
         """Drop NaN values."""
 
-    def to_frame(self) -> pli.DataFrame:
+    def to_frame(self, name: str | None = None) -> pli.DataFrame:
         """
         Cast this Series to a DataFrame.
 
+        Parameters
+        ----------
+        name
+            optionally name/rename the Series column in the new DataFrame.
+
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s = pl.Series("a", [123, 456])
         >>> df = s.to_frame()
         >>> df
-        shape: (3, 1)
+        shape: (2, 1)
         ┌─────┐
         │ a   │
         │ --- │
         │ i64 │
         ╞═════╡
-        │ 1   │
+        │ 123 │
         ├╌╌╌╌╌┤
-        │ 2   │
-        ├╌╌╌╌╌┤
-        │ 3   │
+        │ 456 │
         └─────┘
 
-        >>> type(df)
-        <class 'polars.internals.dataframe.frame.DataFrame'>
+        >>> df = s.to_frame("xyz")
+        >>> df
+        shape: (2, 1)
+        ┌─────┐
+        │ xyz │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 123 │
+        ├╌╌╌╌╌┤
+        │ 456 │
+        └─────┘
 
         """
-        return pli.wrap_df(PyDataFrame([self._s]))
+        df = pli.wrap_df(PyDataFrame([self._s]))
+        if name is not None:
+            return df.rename({self.name: name})
+        return df
 
     def describe(self) -> pli.DataFrame:
         """
@@ -1177,7 +1205,7 @@ class Series:
 
         Parameters
         ----------
-        sort:
+        sort
             Ensure the output is sorted from most values to least.
 
         Examples
@@ -2608,12 +2636,13 @@ class Series:
         filter
             Boolean mask.
         value
-            Value to replace the the masked values with.
+            Value with which to replace the masked values.
 
         Notes
         -----
-        Using this is an anti-pattern.
-        Always prefer: `pl.when(predicate).then(value).otherwise(self)`
+        Use of this function is frequently an anti-pattern, as it can
+        block optimisation (predicate pushdown, etc). Consider using
+        `pl.when(predicate).then(value).otherwise(self)` instead.
 
         Examples
         --------
@@ -2683,8 +2712,9 @@ class Series:
 
         Notes
         -----
-        Using this is considered an anti-pattern.
-        Always prefer: `pl.when(predicate).then(value).otherwise(self)`
+        Use of this function is frequently an anti-pattern, as it can
+        block optimisation (predicate pushdown, etc). Consider using
+        `pl.when(predicate).then(value).otherwise(self)` instead.
 
         Examples
         --------
@@ -3207,7 +3237,8 @@ class Series:
         skip_nulls: bool = True,
     ) -> Series:
         """
-        Apply a function over elements in this Series and return a new Series.
+        Apply a custom/user-defined function (UDF) over elements in this Series and
+        return a new Series.
 
         If the function returns another datatype, the return_dtype arg should be set,
         otherwise the method will fail.
@@ -3240,7 +3271,7 @@ class Series:
         -------
         Series
 
-        """
+        """  # noqa: D400,D205
         if return_dtype is None:
             pl_return_dtype = None
         else:

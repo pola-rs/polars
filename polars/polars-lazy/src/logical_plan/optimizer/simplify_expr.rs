@@ -303,7 +303,7 @@ fn string_addition_to_linear_concat(
 ) -> Option<AExpr> {
     {
         let lp = lp_arena.get(lp_node);
-        let input = lp.get_input().unwrap();
+        let input = lp.get_input()?;
         let schema = lp_arena.get(input).schema(lp_arena);
 
         let get_type = |ae: &AExpr| ae.get_type(&schema, Context::Default, expr_arena).ok();
@@ -425,7 +425,7 @@ fn get_string_concat_input(node: Node, expr_arena: &Arena<AExpr>) -> Option<&[No
     }
 }
 
-pub struct SimplifyExprRule {}
+pub(crate) struct SimplifyExprRule {}
 
 impl OptimizationRule for SimplifyExprRule {
     #[allow(clippy::float_cmp)]

@@ -13,7 +13,7 @@ import pytest
 import polars as pl
 from polars import DataType
 from polars.internals.type_aliases import TimeUnit
-from polars.testing import assert_frame_equal_local_categoricals
+from polars.testing import assert_frame_equal_local_categoricals, assert_series_equal
 
 
 def test_quoted_date() -> None:
@@ -230,12 +230,13 @@ def test_read_csv_encoding() -> None:
     for use_pyarrow in (False, True):
         for file in (file_path, file_str, bts, bytesio):
             print(type(file))
-            assert pl.read_csv(
-                file,  # type: ignore[arg-type]
-                encoding="big5",
-                use_pyarrow=use_pyarrow,
-            ).get_column("Region") == pl.Series(
-                "Region", ["台北", "台中", "新竹", "高雄", "美國"]
+            assert_series_equal(
+                pl.read_csv(
+                    file,  # type: ignore[arg-type]
+                    encoding="big5",
+                    use_pyarrow=use_pyarrow,
+                ).get_column("Region"),
+                pl.Series("Region", ["台北", "台中", "新竹", "高雄", "美國"]),
             )
 
 
@@ -606,7 +607,7 @@ def test_glob_csv(io_test_dir: str) -> None:
     assert pl.read_csv(path).shape == (3, 11)
 
 
-def test_csv_whitepsace_delimiter_at_start_do_not_skip() -> None:
+def test_csv_whitespace_delimiter_at_start_do_not_skip() -> None:
     csv = "\t\t\t\t0\t1"
     assert pl.read_csv(csv.encode(), sep="\t", has_header=False).to_dict(False) == {
         "column_1": [None],
@@ -618,7 +619,7 @@ def test_csv_whitepsace_delimiter_at_start_do_not_skip() -> None:
     }
 
 
-def test_csv_whitepsace_delimiter_at_end_do_not_skip() -> None:
+def test_csv_whitespace_delimiter_at_end_do_not_skip() -> None:
     csv = "0\t1\t\t\t\t"
     assert pl.read_csv(csv.encode(), sep="\t", has_header=False).to_dict(False) == {
         "column_1": [0],
@@ -819,3 +820,33 @@ def test_duplicated_columns() -> None:
     assert pl.read_csv(csv.encode()).columns == ["a", "a_duplicated_0"]
     new = ["c", "d"]
     assert pl.read_csv(csv.encode(), new_columns=new).columns == new
+
+
+def test_csv_categorical_lifetime() -> None:
+    # escaped strings do some heap allocates in the builder
+    # this tests of the lifetimes remains valid
+    csv = textwrap.dedent(
+        r"""
+    a,b
+    "needs_escape",b
+    "" ""needs" escape" foo"",b
+    "" ""needs" escape" foo"",
+    """
+    )
+
+    for string_cache in [True, False]:
+        pl.toggle_string_cache(string_cache)
+        df = pl.read_csv(
+            csv.encode(), dtypes={"a": pl.Categorical, "b": pl.Categorical}
+        )
+        assert df.dtypes == [pl.Categorical, pl.Categorical]
+        assert df.to_dict(False) == {
+            "a": ["needs_escape", ' "needs escape foo', ' "needs escape foo'],
+            "b": ["b", "b", None],
+        }
+
+        if string_cache:
+            assert (df["a"] == df["b"]).to_list() == [False, False, False]
+        else:
+            with pytest.raises(pl.ComputeError):
+                df["a"] == df["b"]  # noqa: B015

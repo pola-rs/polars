@@ -49,35 +49,43 @@ pub enum StringFunction {
     },
     Uppercase,
     Lowercase,
+    Strip(Option<char>),
+    RStrip(Option<char>),
+    LStrip(Option<char>),
 }
 
 impl Display for StringFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use self::*;
-        match self {
-            StringFunction::Contains { .. } => write!(f, "str.contains"),
-            StringFunction::StartsWith(_) => write!(f, "str.starts_with"),
-            StringFunction::EndsWith(_) => write!(f, "str.ends_with"),
-            StringFunction::Extract { .. } => write!(f, "str.extract"),
+        let s = match self {
+            StringFunction::Contains { .. } => "contains",
+            StringFunction::StartsWith(_) => "starts_with",
+            StringFunction::EndsWith(_) => "ends_with",
+            StringFunction::Extract { .. } => "extract",
             #[cfg(feature = "string_justify")]
-            StringFunction::Zfill(_) => write!(f, "str.zfill"),
+            StringFunction::Zfill(_) => "zfill",
             #[cfg(feature = "string_justify")]
-            StringFunction::LJust { .. } => write!(f, "str.ljust"),
+            StringFunction::LJust { .. } => "str.ljust",
             #[cfg(feature = "string_justify")]
-            StringFunction::RJust { .. } => write!(f, "str.rjust"),
-            StringFunction::ExtractAll(_) => write!(f, "str.extract_all"),
-            StringFunction::CountMatch(_) => write!(f, "str.count_match"),
+            StringFunction::RJust { .. } => "rjust",
+            StringFunction::ExtractAll(_) => "extract_all",
+            StringFunction::CountMatch(_) => "count_match",
             #[cfg(feature = "temporal")]
-            StringFunction::Strptime(_) => write!(f, "str.strptime"),
+            StringFunction::Strptime(_) => "strptime",
             #[cfg(feature = "concat_str")]
-            StringFunction::ConcatVertical(_) => write!(f, "str.concat_vertical"),
+            StringFunction::ConcatVertical(_) => "concat_vertical",
             #[cfg(feature = "concat_str")]
-            StringFunction::ConcatHorizontal(_) => write!(f, "str.concat_horizontal"),
+            StringFunction::ConcatHorizontal(_) => "concat_horizontal",
             #[cfg(feature = "regex")]
-            StringFunction::Replace { .. } => write!(f, "str.replace"),
-            StringFunction::Uppercase => write!(f, "str.uppercase"),
-            StringFunction::Lowercase => write!(f, "str.lowercase"),
-        }
+            StringFunction::Replace { .. } => "replace",
+            StringFunction::Uppercase => "uppercase",
+            StringFunction::Lowercase => "lowercase",
+            StringFunction::Strip(_) => "strip",
+            StringFunction::LStrip(_) => "lstrip",
+            StringFunction::RStrip(_) => "rstrip",
+        };
+
+        write!(f, "str.{}", s)
     }
 }
 
@@ -132,6 +140,40 @@ pub(super) fn ljust(s: &Series, width: usize, fillchar: char) -> PolarsResult<Se
 pub(super) fn rjust(s: &Series, width: usize, fillchar: char) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.rjust(width, fillchar).into_series())
+}
+
+pub(super) fn strip(s: &Series, matches: Option<char>) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    if let Some(matches) = matches {
+        Ok(ca
+            .apply(|s| Cow::Borrowed(s.trim_matches(matches)))
+            .into_series())
+    } else {
+        Ok(ca.apply(|s| Cow::Borrowed(s.trim())).into_series())
+    }
+}
+
+pub(super) fn lstrip(s: &Series, matches: Option<char>) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+
+    if let Some(matches) = matches {
+        Ok(ca
+            .apply(|s| Cow::Borrowed(s.trim_start_matches(matches)))
+            .into_series())
+    } else {
+        Ok(ca.apply(|s| Cow::Borrowed(s.trim_start())).into_series())
+    }
+}
+
+pub(super) fn rstrip(s: &Series, matches: Option<char>) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    if let Some(matches) = matches {
+        Ok(ca
+            .apply(|s| Cow::Borrowed(s.trim_end_matches(matches)))
+            .into_series())
+    } else {
+        Ok(ca.apply(|s| Cow::Borrowed(s.trim_end())).into_series())
+    }
 }
 
 pub(super) fn extract_all(s: &Series, pat: &str) -> PolarsResult<Series> {

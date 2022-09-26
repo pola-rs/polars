@@ -276,7 +276,7 @@ impl<'a> CoreReader<'a> {
             reader_bytes: Some(reader_bytes),
             schema,
             projection,
-            line_number: if has_header { 1 } else { 0 },
+            line_number: usize::from(has_header),
             ignore_parser_errors,
             skip_rows_before_header: skip_rows,
             skip_rows_after_header,

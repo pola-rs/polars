@@ -8,10 +8,8 @@ use rayon::prelude::*;
 
 use self::hashing::*;
 use crate::prelude::*;
-#[cfg(feature = "groupby_list")]
-use crate::utils::Wrap;
 use crate::utils::{_split_offsets, accumulate_dataframes_vertical, set_partition_size};
-use crate::vector_hasher::{get_null_hash_value, AsU64, StrHash};
+use crate::vector_hasher::{get_null_hash_value, AsU64, BytesHash};
 use crate::POOL;
 
 pub mod aggregations;
@@ -151,7 +149,7 @@ impl DataFrame {
                     // arbitrarily chosen bound, if avg no of bytes to encode is larger than this
                     // value we fall back to default groupby
                     if (lhs.get_values_size() + rhs.get_values_size()) / (lhs.len() + 1) < 128 {
-                        pack_utf8_columns(lhs, rhs, n_partitions, sorted)
+                        Ok(pack_utf8_columns(lhs, rhs, n_partitions, sorted))
                     } else {
                         groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
                     }
@@ -164,7 +162,7 @@ impl DataFrame {
                 groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
             }
         };
-        Ok(GroupBy::new(self, by, groups, None))
+        Ok(GroupBy::new(self, by, groups?, None))
     }
 
     /// Group DataFrame using a Series column.
@@ -414,6 +412,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21 | 15        | 0.15      |
     /// +------------+-----------+-----------+
     /// ```
+    #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn mean(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
 
@@ -451,6 +450,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21 | 30       |
     /// +------------+----------+
     /// ```
+    #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn sum(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
 
@@ -488,6 +488,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21 | 10       |
     /// +------------+----------+
     /// ```
+    #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn min(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
@@ -524,6 +525,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21 | 20       |
     /// +------------+----------+
     /// ```
+    #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn max(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
@@ -560,6 +562,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21 | 20         |
     /// +------------+------------+
     /// ```
+    #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn first(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
@@ -596,6 +599,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21 | 10         |
     /// +------------+------------+
     /// ```
+    #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn last(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
@@ -632,6 +636,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21 | 2             |
     /// +------------+---------------+
     /// ```
+    #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn n_unique(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
@@ -655,6 +660,7 @@ impl<'df> GroupBy<'df> {
     ///     df.groupby(["date"])?.select(["temp"]).quantile(0.2, QuantileInterpolOptions::default())
     /// }
     /// ```
+    #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn quantile(
         &self,
         quantile: f64,
@@ -686,6 +692,7 @@ impl<'df> GroupBy<'df> {
     ///     df.groupby(["date"])?.select(["temp"]).median()
     /// }
     /// ```
+    #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn median(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
@@ -698,6 +705,7 @@ impl<'df> GroupBy<'df> {
     }
 
     /// Aggregate grouped `Series` and determine the variance per group.
+    #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn var(&self, ddof: u8) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
@@ -710,6 +718,7 @@ impl<'df> GroupBy<'df> {
     }
 
     /// Aggregate grouped `Series` and determine the standard deviation per group.
+    #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn std(&self, ddof: u8) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
@@ -818,6 +827,7 @@ impl<'df> GroupBy<'df> {
     /// | 2020-08-21 | "[Some(20), Some(10)]" |
     /// +------------+------------------------+
     /// ```
+    #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn agg_list(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
@@ -846,6 +856,7 @@ impl<'df> GroupBy<'df> {
     }
 
     /// Apply a closure over the groups as a new DataFrame in parallel.
+    #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn par_apply<F>(&self, f: F) -> PolarsResult<DataFrame>
     where
         F: Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,

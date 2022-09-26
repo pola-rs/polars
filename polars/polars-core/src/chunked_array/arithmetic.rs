@@ -8,6 +8,7 @@ use arrow::compute::arity_assign;
 use num::{Num, NumCast, ToPrimitive};
 
 use crate::prelude::*;
+use crate::series::IsSorted;
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned};
 
 macro_rules! apply_operand_on_chunkedarray_by_iter {
@@ -117,6 +118,7 @@ where
                     .zip(rhs.downcast_iter_mut())
                     .for_each(|(lhs, rhs)| kernel(lhs, rhs));
             }
+            lhs.set_sorted2(IsSorted::Not);
             lhs
         }
         // broadcast right path

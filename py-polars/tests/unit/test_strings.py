@@ -166,7 +166,6 @@ def test_zfill() -> None:
             "num": [-10, -1, 0, 1, 10, 100, 1000, 10000, 100000, 1000000, None],
         }
     )
-
     out = [
         "-0010",
         "-0001",
@@ -184,7 +183,7 @@ def test_zfill() -> None:
         df.with_column(pl.col("num").cast(str).str.zfill(5)).to_series().to_list()
         == out
     )
-    assert df["num"].cast(str).str.zfill(5) == out
+    assert df["num"].cast(str).str.zfill(5).to_list() == out
 
 
 def test_ljust_and_rjust() -> None:

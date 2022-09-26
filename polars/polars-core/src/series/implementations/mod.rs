@@ -129,12 +129,17 @@ macro_rules! impl_dyn_series {
                 (&self.0).into_partial_ord_inner()
             }
 
-            fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
-                self.0.vec_hash(random_state)
+            fn vec_hash(&self, random_state: RandomState) -> PolarsResult<Vec<u64>> {
+                Ok(self.0.vec_hash(random_state))
             }
 
-            fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) {
-                self.0.vec_hash_combine(build_hasher, hashes)
+            fn vec_hash_combine(
+                &self,
+                build_hasher: RandomState,
+                hashes: &mut [u64],
+            ) -> PolarsResult<()> {
+                self.0.vec_hash_combine(build_hasher, hashes);
+                Ok(())
             }
 
             unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
@@ -165,18 +170,6 @@ macro_rules! impl_dyn_series {
                 self.0.agg_list(groups)
             }
 
-            unsafe fn agg_quantile(
-                &self,
-                groups: &GroupsProxy,
-                quantile: f64,
-                interpol: QuantileInterpolOptions,
-            ) -> Series {
-                self.0.agg_quantile(groups, quantile, interpol)
-            }
-
-            unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
-                self.0.agg_median(groups)
-            }
             fn zip_outer_join_column(
                 &self,
                 right_column: &Series,
@@ -199,7 +192,7 @@ macro_rules! impl_dyn_series {
             fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
                 NumOpsDispatch::remainder(&self.0, rhs)
             }
-            fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+            fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
                 IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
             }
 

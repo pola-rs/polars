@@ -26,7 +26,11 @@ impl Executor for FilterExec {
         }
         let df = self.input.execute(state)?;
         let s = self.predicate.evaluate(&df, state)?;
-        let mask = s.bool().expect("filter predicate wasn't of type boolean");
+        let mask = s.bool().map_err(|e| {
+            PolarsError::ComputeError(
+                format!("Filter predicate must be of type Boolean, got: {:?}", e).into(),
+            )
+        })?;
 
         let profile_name = if state.has_node_timer() {
             Cow::Owned(format!(".filter({})", &self.predicate.as_ref()))

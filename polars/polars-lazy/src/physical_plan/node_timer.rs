@@ -1,7 +1,6 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use parking_lot::Mutex;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 
@@ -26,7 +25,7 @@ impl NodeTimer {
     }
 
     pub(super) fn store(&self, start: StartInstant, end: EndInstant, name: String) {
-        let mut data = self.data.lock();
+        let mut data = self.data.lock().unwrap();
         let nodes = &mut data.0;
         nodes.push(name);
         let ticks = &mut data.1;
@@ -34,7 +33,7 @@ impl NodeTimer {
     }
 
     pub(super) fn finish(self) -> PolarsResult<DataFrame> {
-        let mut data = self.data.lock();
+        let mut data = self.data.lock().unwrap();
         let mut nodes = std::mem::take(&mut data.0);
         nodes.push("optimization".to_string());
 

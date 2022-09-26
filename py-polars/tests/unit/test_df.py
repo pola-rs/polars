@@ -33,6 +33,12 @@ def test_init_empty() -> None:
     for empty in (None, (), [], {}, pa.Table.from_arrays([])):
         df = pl.DataFrame(empty)
         assert df.shape == (0, 0)
+        assert df.is_empty()
+
+    # note: cannot use df (empty or otherwise) in boolean context
+    empty_df = pl.DataFrame()
+    with pytest.raises(ValueError, match="ambiguous"):
+        not empty_df
 
 
 def test_special_char_colname_init() -> None:
@@ -104,9 +110,9 @@ def test_selection() -> None:
     assert df[-1].frame_equal(pl.DataFrame({"a": [3], "b": [3.0], "c": ["c"]}))
 
     # row, column selection when using two dimensions
-    assert df[:, 0] == [1, 2, 3]
-    assert df[:, 1] == [1.0, 2.0, 3.0]
-    assert df[:2, 2] == ["a", "b"]
+    assert df[:, 0].to_list() == [1, 2, 3]
+    assert df[:, 1].to_list() == [1.0, 2.0, 3.0]
+    assert df[:2, 2].to_list() == ["a", "b"]
 
     assert df[[1, 2]].frame_equal(
         pl.DataFrame({"a": [2, 3], "b": [2.0, 3.0], "c": ["b", "c"]})
@@ -938,7 +944,7 @@ def test_column_names() -> None:
 def test_lazy_functions() -> None:
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
     out = df.select([pl.count("a")])
-    assert out["a"] == 3
+    assert list(out["a"]) == [3]
     assert pl.count(df["a"]) == 3
     out = df.select(
         [
@@ -989,19 +995,17 @@ def test_lazy_functions() -> None:
 def test_multiple_column_sort() -> None:
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [2, 2, 3], "c": [1.0, 2.0, 3.0]})
     out = df.sort([pl.col("b"), pl.col("c").reverse()])
-    assert out["c"] == [2, 3, 1]
-    assert out["b"] == [2, 2, 3]
+    assert list(out["c"]) == [2.0, 1.0, 3.0]
+    assert list(out["b"]) == [2, 2, 3]
 
     df = pl.DataFrame({"a": np.arange(1, 4), "b": ["a", "a", "b"]})
 
     df.sort("a", reverse=True).frame_equal(
         pl.DataFrame({"a": [3, 2, 1], "b": ["b", "a", "a"]})
     )
-
     df.sort("b", reverse=True).frame_equal(
         pl.DataFrame({"a": [3, 1, 2], "b": ["b", "a", "a"]})
     )
-
     df.sort(["b", "a"], reverse=[False, True]).frame_equal(
         pl.DataFrame({"a": [2, 1, 3], "b": ["a", "a", "b"]})
     )
@@ -1062,7 +1066,7 @@ def test_assign() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     # test if we can assign in case of single column
     df = df.with_column(pl.col("a") * 2)
-    assert df["a"] == [2, 4, 6]
+    assert list(df["a"]) == [2, 4, 6]
 
 
 def test_to_numpy() -> None:
@@ -1071,11 +1075,24 @@ def test_to_numpy() -> None:
 
 
 def test_argsort_by(df: pl.DataFrame) -> None:
-    idx_df = df.select(pl.argsort_by(["int_nulls", "floats"], reverse=[False, True]))
-    assert idx_df["int_nulls"] == [1, 0, 3]
+    idx_df = df.select(
+        pl.argsort_by(["int_nulls", "floats"], reverse=[False, True]).alias("idx")
+    )
+    assert (idx_df["idx"] == [1, 0, 2]).all()
 
-    idx_df = df.select(pl.argsort_by(["int_nulls", "floats"], reverse=False))
-    assert idx_df["int_nulls"] == [1, 0, 2]
+    idx_df = df.select(
+        pl.argsort_by(["int_nulls", "floats"], reverse=False).alias("idx")
+    )
+    assert (idx_df["idx"] == [1, 0, 2]).all()
+
+    df = pl.DataFrame({"x": [0, 0, 0, 1, 1, 2], "y": [9, 9, 8, 7, 6, 6]})
+    for expr, expected in (
+        (pl.argsort_by(["x", "y"]), [2, 0, 1, 4, 3, 5]),
+        (pl.argsort_by(["x", "y"], reverse=[True, True]), [5, 3, 4, 0, 1, 2]),
+        (pl.argsort_by(["x", "y"], reverse=[True, False]), [5, 4, 3, 2, 0, 1]),
+        (pl.argsort_by(["x", "y"], reverse=[False, True]), [0, 1, 2, 3, 4, 5]),
+    ):
+        assert (df.select(expr.alias("idx"))["idx"] == expected).all()
 
 
 def test_literal_series() -> None:
@@ -1176,8 +1193,8 @@ def test_repeat_by() -> None:
 
     out = df.select(pl.col("n").repeat_by("n"))
     s = out["n"]
-    assert s[0] == [2, 2]
-    assert s[1] == [3, 3, 3]
+    assert s[0].to_list() == [2, 2]
+    assert s[1].to_list() == [3, 3, 3]
 
 
 def test_join_dates() -> None:
@@ -1561,7 +1578,7 @@ def test_partitioned_groupby_order() -> None:
     # we only have 30 groups, so this triggers a partitioned group by
     df = pl.DataFrame({"x": [chr(v) for v in range(33, 63)], "y": range(30)})
     out = df.groupby("x", maintain_order=True).agg(pl.all().list())
-    assert out["x"] == df["x"]
+    assert_series_equal(out["x"], df["x"])
 
 
 def test_schema() -> None:

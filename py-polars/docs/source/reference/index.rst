@@ -20,3 +20,4 @@ methods. All classes and functions exposed in ``polars.*`` namespace are public.
    exceptions
    testing
    utils
+   sql

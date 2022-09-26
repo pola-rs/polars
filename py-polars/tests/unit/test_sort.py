@@ -233,3 +233,35 @@ def test_top_k() -> None:
 
     assert s.top_k(3).to_list() == [8, 5, 3]
     assert s.top_k(4, reverse=True).to_list() == [1, 2, 3, 5]
+
+
+def test_sorted_flag_unset_by_arithmetic_4937() -> None:
+    df = pl.DataFrame(
+        {
+            "ts": [1, 1, 1, 0, 1],
+            "price": [3.3, 3.0, 3.5, 3.6, 3.7],
+            "mask": [1, 1, 1, 1, 0],
+        }
+    )
+
+    assert df.sort("price").groupby("ts").agg(
+        [
+            (pl.col("price") * pl.col("mask")).max().alias("pmax"),
+            (pl.col("price") * pl.col("mask")).min().alias("pmin"),
+        ]
+    ).sort("ts").to_dict(False) == {
+        "ts": [0, 1],
+        "pmax": [3.6, 3.5],
+        "pmin": [3.6, 0.0],
+    }
+
+
+def test_unset_sorted_flag_after_extend() -> None:
+    df1 = pl.DataFrame({"Add": [37, 41], "Batch": [48, 49]}).sort("Add")
+    df2 = pl.DataFrame({"Add": [37], "Batch": [67]}).sort("Add")
+
+    df1.extend(df2)
+    assert not df1["Add"].flags["SORTED_ASC"]
+    df = df1.groupby("Add").agg([pl.col("Batch").min()]).sort("Add")
+    assert df["Add"].flags["SORTED_ASC"]
+    assert df.to_dict(False) == {"Add": [37, 41], "Batch": [48, 49]}

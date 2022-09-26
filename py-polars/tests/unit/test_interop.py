@@ -105,8 +105,6 @@ def test_from_pandas() -> None:
 
 
 def test_from_pandas_nan_to_none() -> None:
-    from pyarrow import ArrowInvalid
-
     df = pd.DataFrame(
         {
             "bools_nulls": [None, True, False],
@@ -118,20 +116,14 @@ def test_from_pandas_nan_to_none() -> None:
     )
     out_true = pl.from_pandas(df)
     out_false = pl.from_pandas(df, nan_to_none=False)
-    df.loc[2, "nulls"] = pd.NA
     assert all(val is None for val in out_true["nulls"])
     assert all(np.isnan(val) for val in out_false["nulls"][1:])
-    with pytest.raises(ArrowInvalid, match="Could not convert"):
-        pl.from_pandas(df, nan_to_none=False)
 
     df = pd.Series([2, np.nan, None], name="pd")  # type: ignore[assignment]
     out_true = pl.from_pandas(df)
     out_false = pl.from_pandas(df, nan_to_none=False)
-    df.loc[2] = pd.NA
     assert [val is None for val in out_true]
     assert [np.isnan(val) for val in out_false[1:]]
-    with pytest.raises(ArrowInvalid, match="Could not convert"):
-        pl.from_pandas(df, nan_to_none=False)
 
 
 def test_from_pandas_datetime() -> None:
@@ -237,13 +229,12 @@ def test_from_dicts() -> None:
     assert df.shape == (3, 2)
 
 
-@pytest.mark.skip("not implemented yet")
 def test_from_dicts_struct() -> None:
     data = [{"a": {"b": 1, "c": 2}, "d": 5}, {"a": {"b": 3, "c": 4}, "d": 6}]
     df = pl.from_dicts(data)
     assert df.shape == (2, 2)
-    assert df["a"][0] == (1, 2)
-    assert df["a"][1] == (3, 4)
+    assert df["a"][0] == {"b": 1, "c": 2}
+    assert df["a"][1] == {"b": 3, "c": 4}
 
 
 def test_from_records() -> None:

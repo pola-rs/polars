@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import math
 import random
-from datetime import date, datetime, time
-from typing import TYPE_CHECKING, Any, Callable, Sequence
+from datetime import date, datetime, time, timedelta
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence
 from warnings import warn
 
 from polars import internals as pli
@@ -49,7 +49,10 @@ if TYPE_CHECKING:
 
 
 def selection_to_pyexpr_list(
-    exprs: str | Expr | pli.Series | Sequence[str | Expr | pli.Series],
+    exprs: str
+    | Expr
+    | pli.Series
+    | Sequence[str | Expr | pli.Series | timedelta | date | datetime | int | float],
 ) -> list[PyExpr]:
     if isinstance(exprs, (str, Expr, pli.Series)):
         exprs = [exprs]
@@ -69,6 +72,7 @@ def expr_to_lit_or_expr(
         | date
         | datetime
         | time
+        | timedelta
         | Sequence[(int | float | str | None)]
     ),
     str_to_lit: bool = True,
@@ -92,7 +96,7 @@ def expr_to_lit_or_expr(
     if isinstance(expr, str) and not str_to_lit:
         return pli.col(expr)
     elif (
-        isinstance(expr, (int, float, str, pli.Series, datetime, date, time))
+        isinstance(expr, (int, float, str, pli.Series, datetime, date, time, timedelta))
         or expr is None
     ):
         return pli.lit(expr)
@@ -136,7 +140,7 @@ class Expr:
     def __str__(self) -> str:
         return self._pyexpr.to_str()
 
-    def __bool__(self) -> Expr:
+    def __bool__(self) -> NoReturn:
         raise ValueError(
             "Since Expr are lazy, the truthiness of an Expr is ambiguous. "
             "Hint: use '&' or '|' to chain Expr together, not and/or."
@@ -3004,7 +3008,7 @@ class Expr:
         return_dtype: type[DataType] | None = None,
     ) -> Expr:
         """
-        Apply a custom function in a GroupBy or Projection context.
+        Apply a custom/user-defined function (UDF) in a GroupBy or Projection context.
 
         Depending on the context it has the following behavior:
 
@@ -3015,17 +3019,17 @@ class Expr:
             Expects `f` to be of type Callable[[Series], Series].
             Applies a python function over each group.
 
-        Implementing logic using the ``.apply`` method is generally slower and more
-        memory intensive than implementing the same logic using the expression API
-        because:
+        Implementing logic using a Python function is almost always _significantly_
+        slower and more memory intensive than implementing the same logic using
+        the native expression API because:
 
-        - with .apply the logic is implemented in Python but with an expression the
-          logic is implemented in Rust
-        - with ``.apply`` the DataFrame is materialized in memory
-        - expressions can be parallelised
-        - expressions can be optimised
+        - The native expression engine runs in Rust; UDFs run in Python.
+        - Use of Python UDFs forces the DataFrame to be materialized in memory.
+        - Polars-native expressions can be parallelised (UDFs cannot).
+        - Polars-native expressions can be logically optimised (UDFs cannot).
 
-        If possible, use the expression API for best performance.
+        Wherever possible you should strongly prefer the native expression API
+        to achieve the best performance.
 
         Parameters
         ----------

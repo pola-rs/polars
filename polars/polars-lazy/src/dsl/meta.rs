@@ -19,7 +19,7 @@ impl MetaNameSpace {
 
     /// Get the root column names.
     pub fn root_names(&self) -> Vec<Arc<str>> {
-        expr_to_root_column_names(&self.0)
+        expr_to_leaf_column_names(&self.0)
     }
 
     /// Get the output name of this expression.

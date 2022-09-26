@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use polars_core::prelude::PlIndexSet;
 
-use crate::prelude::*;
+use super::*;
 
 fn get_upper_projections(
     parent: Node,
@@ -27,7 +27,9 @@ fn get_upper_projections(
     }
 }
 
-pub(crate) fn set_cache_states(
+/// This will ensure that all equal caches communicate the amount of columns
+/// they need to project.
+pub(super) fn set_cache_states(
     root: Node,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,

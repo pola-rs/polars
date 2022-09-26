@@ -77,12 +77,13 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 
-    fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
-        self.0.vec_hash(random_state)
+    fn vec_hash(&self, random_state: RandomState) -> PolarsResult<Vec<u64>> {
+        Ok(self.0.vec_hash(random_state))
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) {
-        self.0.vec_hash_combine(build_hasher, hashes)
+    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+        self.0.vec_hash_combine(build_hasher, hashes);
+        Ok(())
     }
 
     unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
@@ -132,31 +133,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .agg_list(groups)
             .cast(&DataType::List(Box::new(self.dtype().clone())))
             .unwrap()
-    }
-
-    unsafe fn agg_quantile(
-        &self,
-        groups: &GroupsProxy,
-        quantile: f64,
-        interpol: QuantileInterpolOptions,
-    ) -> Series {
-        self.0
-            .agg_quantile(groups, quantile, interpol)
-            // cast f64 back to physical type
-            .cast(&DataType::Int64)
-            .unwrap()
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
-
-    unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
-        self.0
-            .agg_median(groups)
-            // cast f64 back to physical type
-            .cast(&DataType::Int64)
-            .unwrap()
-            .into_duration(self.0.time_unit())
-            .into_series()
     }
 
     fn zip_outer_join_column(
@@ -228,7 +204,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             "cannot do remainder operation on logical".into(),
         ))
     }
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         self.0.group_tuples(multithreaded, sorted)
     }
     #[cfg(feature = "sort_multiple")]

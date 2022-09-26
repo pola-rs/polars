@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -106,6 +107,11 @@ def test_cut() -> None:
         ],
     }
 
+    # test cut on integers #4939
+    df = pl.DataFrame({"a": list(range(5))})
+    ser = df.select("a").to_series()
+    assert pl.cut(ser, bins=[-1, 1]).shape == (5, 3)
+
 
 def test_null_handling_correlation() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, None, 4], "b": [1, 2, 3, 10, 4]})
@@ -118,6 +124,16 @@ def test_null_handling_correlation() -> None:
     )
     assert out["pearson"][0] == pytest.approx(1.0)
     assert out["spearman"][0] == pytest.approx(1.0)
+
+    # see #4930
+    df1 = pl.DataFrame({"a": [None, 1, 2], "b": [None, 2, 1]})
+    df2 = pl.DataFrame({"a": [np.nan, 1, 2], "b": [np.nan, 2, 1]})
+
+    assert np.isclose(df1.select(pl.spearman_rank_corr("a", "b"))[0, 0], -1.0)
+    assert (
+        str(df2.select(pl.spearman_rank_corr("a", "b", propagate_nans=True))[0, 0])
+        == "nan"
+    )
 
 
 def test_align_frames() -> None:
@@ -203,3 +219,16 @@ def test_nan_aggregations() -> None:
         str(df.groupby("b").agg(aggs).to_dict(False))
         == "{'b': [1], 'max': [3.0], 'min': [2.0], 'nan_max': [nan], 'nan_min': [nan]}"
     )
+
+
+def test_coalesce() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [None, None, None, None],
+            "b": [1, 2, None, None],
+            "c": [1, None, 3, None],
+        }
+    )
+    assert df.select(pl.coalesce(["a", "b", "c", 10])).to_dict(False) == {
+        "a": [1.0, 2.0, 3.0, 10.0]
+    }

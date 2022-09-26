@@ -408,30 +408,38 @@ impl IdxHash {
 /// During rehashes, we will rehash the hash instead of the string, that makes rehashing
 /// cheap and allows cache coherent small hash tables.
 #[derive(Eq, Copy, Clone, Debug)]
-pub(crate) struct StrHash<'a> {
-    str: Option<&'a str>,
+pub(crate) struct BytesHash<'a> {
+    payload: Option<&'a [u8]>,
     hash: u64,
 }
 
-impl<'a> Hash for StrHash<'a> {
+impl<'a> Hash for BytesHash<'a> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_u64(self.hash)
     }
 }
 
-impl<'a> StrHash<'a> {
-    pub(crate) fn new(s: Option<&'a str>, hash: u64) -> Self {
-        Self { str: s, hash }
+impl<'a> BytesHash<'a> {
+    #[inline]
+    pub(crate) fn new(s: Option<&'a [u8]>, hash: u64) -> Self {
+        Self { payload: s, hash }
+    }
+    #[inline]
+    pub(crate) fn new_from_str(s: Option<&'a str>, hash: u64) -> Self {
+        Self {
+            payload: s.map(|s| s.as_bytes()),
+            hash,
+        }
     }
 }
 
-impl<'a> PartialEq for StrHash<'a> {
+impl<'a> PartialEq for BytesHash<'a> {
     fn eq(&self, other: &Self) -> bool {
-        (self.hash == other.hash) && (self.str == other.str)
+        (self.hash == other.hash) && (self.payload == other.payload)
     }
 }
 
-impl<'a> AsU64 for StrHash<'a> {
+impl<'a> AsU64 for BytesHash<'a> {
     fn as_u64(self) -> u64 {
         self.hash
     }
@@ -543,34 +551,34 @@ pub fn _boost_hash_combine(l: u64, r: u64) -> u64 {
 pub(crate) fn df_rows_to_hashes_threaded(
     keys: &[DataFrame],
     hasher_builder: Option<RandomState>,
-) -> (Vec<UInt64Chunked>, RandomState) {
+) -> PolarsResult<(Vec<UInt64Chunked>, RandomState)> {
     let hasher_builder = hasher_builder.unwrap_or_default();
 
     let hashes = POOL.install(|| {
         keys.into_par_iter()
             .map(|df| {
                 let hb = hasher_builder.clone();
-                let (ca, _) = df_rows_to_hashes(df, Some(hb));
-                ca
+                let (ca, _) = df_rows_to_hashes(df, Some(hb))?;
+                Ok(ca)
             })
-            .collect()
-    });
-    (hashes, hasher_builder)
+            .collect::<PolarsResult<Vec<_>>>()
+    })?;
+    Ok((hashes, hasher_builder))
 }
 
 pub(crate) fn df_rows_to_hashes(
     keys: &DataFrame,
     build_hasher: Option<RandomState>,
-) -> (UInt64Chunked, RandomState) {
+) -> PolarsResult<(UInt64Chunked, RandomState)> {
     let build_hasher = build_hasher.unwrap_or_default();
 
     let mut iter = keys.iter();
     let first = iter.next().expect("at least one key");
-    let mut hashes = first.vec_hash(build_hasher.clone());
+    let mut hashes = first.vec_hash(build_hasher.clone())?;
     let hslice = hashes.as_mut_slice();
 
     for keys in iter {
-        keys.vec_hash_combine(build_hasher.clone(), hslice);
+        keys.vec_hash_combine(build_hasher.clone(), hslice)?;
     }
 
     let chunks = vec![Box::new(PrimitiveArray::from_data(
@@ -578,5 +586,5 @@ pub(crate) fn df_rows_to_hashes(
         hashes.into(),
         None,
     )) as ArrayRef];
-    (UInt64Chunked::from_chunks("", chunks), build_hasher)
+    Ok((UInt64Chunked::from_chunks("", chunks), build_hasher))
 }

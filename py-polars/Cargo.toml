@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.14.12"
+version = "0.14.14"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
 edition = "2021"
@@ -31,6 +31,7 @@ numpy = "0.16"
 once_cell = "1"
 polars-core = { path = "../polars/polars-core", default-features = false }
 polars-lazy = { path = "../polars/polars-lazy", features = ["python"], default-features = false }
+polars-sql = { path = "../polars-sql", optional = true }
 pyo3 = { version = "0.16", features = ["abi3-py37", "extension-module", "multiple-pymethods"] }
 serde_json = { version = "1", optional = true }
 thiserror = "^1.0"
@@ -87,6 +88,8 @@ all = [
   "polars/algo",
   "polars/cse",
   "propagate_nans",
+  "polars/groupby_list",
+  "polars-sql",
 ]
 
 # we cannot conditionaly activate simd

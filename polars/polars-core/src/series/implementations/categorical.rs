@@ -92,12 +92,13 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         (&self.0).into_partial_ord_inner()
     }
 
-    fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
-        self.0.logical().vec_hash(random_state)
+    fn vec_hash(&self, random_state: RandomState) -> PolarsResult<Vec<u64>> {
+        Ok(self.0.logical().vec_hash(random_state))
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) {
-        self.0.logical().vec_hash_combine(build_hasher, hashes)
+    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+        self.0.logical().vec_hash_combine(build_hasher, hashes);
+        Ok(())
     }
 
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
@@ -133,7 +134,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
             CategoricalChunked::from_cats_and_rev_map_unchecked(cats, new_rev_map).into_series()
         }
     }
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         self.0.logical().group_tuples(multithreaded, sorted)
     }
 

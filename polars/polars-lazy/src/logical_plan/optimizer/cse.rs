@@ -14,7 +14,7 @@ type Trail = Vec<Node>;
 // we traverse left first, so the `id` remains the same for an all left traversal.
 // every right node may increment `id` and because it's shared mutable there will
 // be no collisions as the increment is communicated upward with mutation.
-pub(crate) fn collect_trails(
+pub(super) fn collect_trails(
     root: Node,
     lp_arena: &Arena<ALogicalPlan>,
     // every branch gets its own trail
@@ -51,17 +51,24 @@ pub(crate) fn collect_trails(
         Union { inputs, .. } => {
             let new_trail = trails.get(id).unwrap().clone();
 
-            for input in inputs.iter() {
+            let last_i = inputs.len() - 1;
+
+            for (i, input) in inputs.iter().enumerate() {
                 collect_trails(*input, lp_arena, trails, id, true)?;
-                *id += 1;
-                trails.insert(*id, new_trail.clone());
+
+                // don't add a trail on the last iteration as that would only add a Union
+                // without any inputs
+                if i != last_i {
+                    *id += 1;
+                    trails.insert(*id, new_trail.clone());
+                }
             }
         }
         ExtContext { .. } => {
             // block for now.
         }
         lp => {
-            // other nodes have only a single
+            // other nodes have only a single input
             let nodes = &mut [None];
             lp.copy_inputs(nodes);
             if let Some(input) = nodes[0] {
@@ -219,45 +226,18 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
         }
         #[cfg(feature = "python")]
         (PythonScan { options: l }, PythonScan { options: r, .. }) => l == r,
-        (
-            Join {
-                left_on: left_on_l,
-                right_on: right_on_l,
-                options: options_l,
-                ..
-            },
-            Join {
-                left_on: left_on_r,
-                right_on: right_on_r,
-                options: options_r,
-                ..
-            },
-        ) => {
-            // the inputs should be checked by previous nodes
-            // as we iterate from leafs to roots
-            expr_nodes_equal(left_on_l, left_on_r, expr_arena)
-                && expr_nodes_equal(right_on_l, right_on_r, expr_arena)
-                && options_l == options_r
+        _ => {
+            // joins and unions are also false
+            // they do not originate from a single trail
+            // so we would need to follow every leaf that
+            // is below the joining/union root
+            // that gets complicated quick
+            false
         }
-        (
-            Union {
-                inputs: l,
-                options: options_l,
-            },
-            Union {
-                inputs: r,
-                options: options_r,
-            },
-        ) => {
-            // the inputs should be checked by previous nodes
-            // as we iterate from leafs to roots
-            options_l == options_r && l.len() == r.len()
-        }
-
-        _ => false,
     }
 }
 
+/// Iterate from two leaf location upwards and find the latest matching node.
 fn longest_subgraph(
     trail_a: &Trail,
     trail_b: &Trail,
@@ -274,6 +254,12 @@ fn longest_subgraph(
 
     // iterates from the leafs upwards
     for (node_a, node_b) in trail_a.iter().rev().zip(trail_b.iter().rev()) {
+        // we never include the root that splits a trail
+        // e.g. don't want to cache the join/union, but
+        // we want to cache the similar inputs
+        if *node_a == *node_b {
+            break;
+        }
         let a = lp_arena.get(*node_a);
         let b = lp_arena.get(*node_b);
 
@@ -313,7 +299,6 @@ pub(crate) fn elim_cmn_subplans(
     // search from the leafs upwards and find the longest shared subplans
     let mut trail_ends = vec![];
 
-    // let mut equal_trails = vec![];
     for i in 0..trails.len() {
         let trail_i = &trails[i];
 
@@ -390,7 +375,7 @@ pub(crate) fn elim_cmn_subplans(
 pub(crate) fn decrement_file_counters_by_cache_hits(
     root: Node,
     lp_arena: &mut Arena<ALogicalPlan>,
-    expr_arena: &Arena<AExpr>,
+    _expr_arena: &Arena<AExpr>,
     acc_count: FileCount,
     scratch: &mut Vec<Node>,
 ) {
@@ -427,13 +412,17 @@ pub(crate) fn decrement_file_counters_by_cache_hits(
             } else {
                 acc_count
             };
-            decrement_file_counters_by_cache_hits(*input, lp_arena, expr_arena, new_count, scratch)
+            decrement_file_counters_by_cache_hits(*input, lp_arena, _expr_arena, new_count, scratch)
         }
         lp => {
             lp.copy_inputs(scratch);
             while let Some(input) = scratch.pop() {
                 decrement_file_counters_by_cache_hits(
-                    input, lp_arena, expr_arena, acc_count, scratch,
+                    input,
+                    lp_arena,
+                    _expr_arena,
+                    acc_count,
+                    scratch,
                 )
             }
         }

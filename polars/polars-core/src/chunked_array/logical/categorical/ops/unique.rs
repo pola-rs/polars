@@ -43,7 +43,7 @@ impl CategoricalChunked {
     }
 
     pub fn value_counts(&self) -> PolarsResult<DataFrame> {
-        let groups = self.logical().group_tuples(true, false);
+        let groups = self.logical().group_tuples(true, false).unwrap();
         let logical_values = unsafe {
             self.logical()
                 .clone()
@@ -61,6 +61,6 @@ impl CategoricalChunked {
         counts.rename("counts");
         let cols = vec![values.into_series(), counts.into_series()];
         let df = DataFrame::new_no_checks(cols);
-        df.sort(&["counts"], true)
+        df.sort(["counts"], true)
     }
 }

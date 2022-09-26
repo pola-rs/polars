@@ -1,9 +1,8 @@
 use polars_utils::arena::{Arena, Node};
 
-use crate::prelude::stack_opt::OptimizationRule;
-use crate::prelude::*;
+use super::*;
 
-pub(crate) struct DelayRechunk {}
+pub(super) struct DelayRechunk {}
 
 impl OptimizationRule for DelayRechunk {
     fn optimize_plan(

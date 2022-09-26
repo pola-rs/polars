@@ -194,7 +194,7 @@ impl Series {
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(key_type, value_type, _) => {
                 use arrow::datatypes::IntegerType;
-                // don't spuriously call this. This triggers a read on mmaped data
+                // don't spuriously call this; triggers a read on mmapped data
                 let arr = if chunks.len() > 1 {
                     let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
                     arrow::compute::concatenate::concatenate(&chunks)?
@@ -204,10 +204,10 @@ impl Series {
 
                 if !matches!(
                     value_type.as_ref(),
-                    ArrowDataType::Utf8 | ArrowDataType::LargeUtf8
+                    ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 | ArrowDataType::Null
                 ) {
                     return Err(PolarsError::ComputeError(
-                        "polars only support dictionaries with string like values".into(),
+                        "polars only supports dictionaries with string-like values".into(),
                     ));
                 }
 

@@ -148,7 +148,7 @@ def test_value_counts_logical_type() -> None:
 
 def test_nested_struct() -> None:
     df = pl.DataFrame({"d": [1, 2, 3], "e": ["foo", "bar", "biz"]})
-    # Nest the datafame
+    # Nest the dataframe
     nest_l1 = df.to_struct("c").to_frame()
     # Add another column on the same level
     nest_l1 = nest_l1.with_column(pl.col("c").is_nan().alias("b"))
@@ -652,3 +652,9 @@ def test_struct_broadcasting() -> None:
             ).alias("my_struct")
         )
     ).to_dict(False) == {"my_struct": [{"a": "a", "col1": 1}, {"a": "a", "col1": 2}]}
+
+
+def test_struct_supertype() -> None:
+    assert pl.from_dicts(
+        [{"vehicle": {"auto": "car"}}, {"vehicle": {"auto": None}}]
+    ).to_dict(False) == {"vehicle": [{"auto": "car"}, {"auto": None}]}

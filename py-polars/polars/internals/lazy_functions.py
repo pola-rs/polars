@@ -28,6 +28,7 @@ try:
     from polars.polars import arg_where as py_arg_where
     from polars.polars import argsort_by as pyargsort_by
     from polars.polars import as_struct as _as_struct
+    from polars.polars import coalesce_exprs as _coalesce_exprs
     from polars.polars import col as pycol
     from polars.polars import collect_all as _collect_all
     from polars.polars import cols as pycols
@@ -346,7 +347,9 @@ def max(column: str | Sequence[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
 
 
 @overload
-def min(column: str | Sequence[pli.Expr | str]) -> pli.Expr:
+def min(
+    column: str | Sequence[pli.Expr | str | date | datetime | int | float],
+) -> pli.Expr:
     ...
 
 
@@ -355,7 +358,9 @@ def min(column: pli.Series) -> int | float:
     ...
 
 
-def min(column: str | Sequence[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
+def min(
+    column: str | Sequence[pli.Expr | str | date | datetime | int | float] | pli.Series,
+) -> pli.Expr | Any:
     """
     Get the minimum value.
 
@@ -775,9 +780,13 @@ def lit(
     return pli.wrap_expr(pylit(item, allow_object))
 
 
-def spearman_rank_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Expr:
+def spearman_rank_corr(
+    a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1, propagate_nans: bool = False
+) -> pli.Expr:
     """
     Compute the spearman rank correlation between two columns.
+
+    Missing data will be excluded from the computation.
 
     Parameters
     ----------
@@ -787,13 +796,19 @@ def spearman_rank_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> p
         Column name or Expression.
     ddof
         Delta degrees of freedom
+    propagate_nans
+        If `True` any `NaN` encountered will lead to `NaN` in the output.
+        Defaults to `False` where `NaN` are regarded as larger than any finite number
+        and thus lead to the highest rank.
 
     """
     if isinstance(a, str):
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return pli.wrap_expr(pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof))
+    return pli.wrap_expr(
+        pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans)
+    )
 
 
 def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Expr:
@@ -873,7 +888,7 @@ def apply(
     return_dtype: type[DataType] | None = None,
 ) -> pli.Expr:
     """
-    Apply a custom function in a GroupBy context.
+    Apply a custom/user-defined function (UDF) in a GroupBy context.
 
     Depending on the context it has the following behavior:
 
@@ -1843,3 +1858,48 @@ def arg_where(
     else:
         condition = pli.expr_to_lit_or_expr(condition, str_to_lit=True)
         return pli.wrap_expr(py_arg_where(condition._pyexpr))
+
+
+def coalesce(
+    exprs: Sequence[
+        pli.Expr | str | date | datetime | timedelta | int | float | bool | pli.Series
+    ],
+) -> pli.Expr:
+    """
+    Folds the expressions from left to right, keeping the first non-null value.
+
+    Parameters
+    ----------
+    exprs
+        Expressions to coalesce.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     data=[
+    ...         (None, 1.0, 1.0),
+    ...         (None, 2.0, 2.0),
+    ...         (None, None, 3.0),
+    ...         (None, None, None),
+    ...     ],
+    ...     columns=[("a", pl.Float64), ("b", pl.Float64), ("c", pl.Float64)],
+    ... )
+    >>> df.with_column(pl.coalesce(["a", "b", "c", 99.9]).alias("d"))
+    shape: (4, 4)
+    ┌──────┬──────┬──────┬──────┐
+    │ a    ┆ b    ┆ c    ┆ d    │
+    │ ---  ┆ ---  ┆ ---  ┆ ---  │
+    │ f64  ┆ f64  ┆ f64  ┆ f64  │
+    ╞══════╪══════╪══════╪══════╡
+    │ null ┆ 1.0  ┆ 1.0  ┆ 1.0  │
+    ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ null ┆ 2.0  ┆ 2.0  ┆ 2.0  │
+    ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ null ┆ null ┆ 3.0  ┆ 3.0  │
+    ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ null ┆ null ┆ null ┆ 99.9 │
+    └──────┴──────┴──────┴──────┘
+
+    """
+    exprs = pli.selection_to_pyexpr_list(exprs)
+    return pli.wrap_expr(_coalesce_exprs(exprs))

@@ -4,7 +4,7 @@ use polars_core::prelude::*;
 use polars_utils::arena::Arena;
 
 use crate::prelude::*;
-use crate::utils::expr_to_root_column_names;
+use crate::utils::expr_to_leaf_column_names;
 
 impl Expr {
     /// Get a dot language representation of the Expression.
@@ -386,7 +386,7 @@ impl LogicalPlan {
                     if let Expr::Alias(_, name) = e {
                         write!(fmt, "\"{}\",", name)?
                     } else {
-                        for name in expr_to_root_column_names(e).iter().take(1) {
+                        for name in expr_to_leaf_column_names(e).iter().take(1) {
                             write!(fmt, "\"{}\",", name)?
                         }
                     }

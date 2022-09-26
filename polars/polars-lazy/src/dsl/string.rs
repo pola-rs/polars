@@ -207,7 +207,7 @@ impl StringNameSpace {
                 function,
                 GetOutput::from_type(DataType::Struct(
                     (0..n + 1)
-                        .map(|i| Field::new(&format!("field_{i}"), DataType::Utf8))
+                        .map(|i| Field::from_owned(format!("field_{i}"), DataType::Utf8))
                         .collect(),
                 )),
             )
@@ -259,7 +259,7 @@ impl StringNameSpace {
                 function,
                 GetOutput::from_type(DataType::Struct(
                     (0..n + 1)
-                        .map(|i| Field::new(&format!("field_{i}"), DataType::Utf8))
+                        .map(|i| Field::from_owned(format!("field_{i}"), DataType::Utf8))
                         .collect(),
                 )),
             )
@@ -311,7 +311,7 @@ impl StringNameSpace {
                 function,
                 GetOutput::from_type(DataType::Struct(
                     (0..n)
-                        .map(|i| Field::new(&format!("field_{i}"), DataType::Utf8))
+                        .map(|i| Field::from_owned(format!("field_{i}"), DataType::Utf8))
                         .collect(),
                 )),
             )
@@ -339,6 +339,24 @@ impl StringNameSpace {
             &[pat, value],
             true,
         )
+    }
+
+    /// Remove whitespace on both sides.
+    pub fn strip(self, matches: Option<char>) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::Strip(matches)))
+    }
+
+    /// Remove leading whitespace.
+    pub fn lstrip(self, matches: Option<char>) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::LStrip(matches)))
+    }
+
+    /// Remove trailing whitespace.
+    pub fn rstrip(self, matches: Option<char>) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::RStrip(matches)))
     }
 
     /// Convert all characters to lowercase.

@@ -52,6 +52,7 @@ from polars.exceptions import (
     ArrowError,
     ComputeError,
     DuplicateError,
+    InvalidOperationError,
     NoDataError,
     NotFoundError,
     PanicException,
@@ -81,6 +82,7 @@ from polars.internals.lazy_functions import (
     arg_where,
     argsort_by,
     avg,
+    coalesce,
     col,
     collect_all,
     concat_list,
@@ -120,6 +122,7 @@ from polars.internals.lazyframe import LazyFrame
 # TODO: remove need for wrap_s
 from polars.internals.series import wrap_s  # noqa: F401
 from polars.internals.series import Series
+from polars.internals.sql import SQLContext
 from polars.internals.whenthen import when
 from polars.io import (
     read_avro,
@@ -147,6 +150,7 @@ __all__ = [
     "SchemaError",
     "ArrowError",
     "ComputeError",
+    "InvalidOperationError",
     "NoDataError",
     "DuplicateError",
     "PanicException",
@@ -256,6 +260,7 @@ __all__ = [
     "var",
     "struct",
     "duration",
+    "coalesce",
     # polars.convert
     "from_dict",
     "from_dicts",
@@ -268,6 +273,7 @@ __all__ = [
     "threadpool_size",
     # version
     "show_versions",
+    "SQLContext",
 ]
 
 __version__ = version()

@@ -326,7 +326,7 @@ def test_when_then_edge_cases_3994() -> None:
 
 def test_edge_cast_string_duplicates_4259() -> None:
     # carefully constructed data.
-    # note that row 2, 3 concattenated are the same string
+    # note that row 2, 3 concatenated are the same string
     df = pl.DataFrame(
         {
             "a": [99, 54612, 546121],

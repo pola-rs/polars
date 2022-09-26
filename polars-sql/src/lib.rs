@@ -1,12 +1,13 @@
-pub use context::SQLContext;
-
 mod context;
 mod sql_expr;
 
+pub use context::SQLContext;
+
 #[cfg(test)]
 mod test {
-    use super::*;
     use polars::prelude::*;
+
+    use super::*;
 
     fn create_sample_df() -> PolarsResult<DataFrame> {
         let a = Series::new("a", (1..10000i64).map(|i| i / 100).collect::<Vec<_>>());
@@ -17,8 +18,8 @@ mod test {
     #[test]
     fn test_simple_select() -> PolarsResult<()> {
         let df = create_sample_df()?;
-        let mut context = SQLContext::new();
-        context.register("df", &df);
+        let mut context = SQLContext::try_new();
+        context.register("df", df.clone().lazy());
         let df_sql = context
             .execute(
                 r#"
@@ -42,8 +43,8 @@ mod test {
     #[test]
     fn test_groupby_simple() -> PolarsResult<()> {
         let df = create_sample_df()?;
-        let mut context = SQLContext::new();
-        context.register("df", &df);
+        let mut context = SQLContext::try_new();
+        context.register("df", df.clone().lazy());
         let df_sql = context
             .execute(
                 r#"

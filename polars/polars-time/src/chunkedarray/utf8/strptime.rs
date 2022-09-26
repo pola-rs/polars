@@ -109,7 +109,8 @@ pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<Naive
     }
     // all values processed
     if offset == val.len() {
-        Some(NaiveDate::from_ymd(year, month, day).and_hms_nano(hour, min, sec, nano))
+        NaiveDate::from_ymd_opt(year, month, day)
+            .and_then(|nd| nd.and_hms_nano_opt(hour, min, sec, nano))
     }
     // remaining values did not match pattern
     else {

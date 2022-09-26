@@ -27,8 +27,6 @@ pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
-#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
-use polars_core::datatypes::PlHashMap;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
@@ -36,31 +34,13 @@ use polars_io::RowCount;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
-#[cfg(any(
-    feature = "parquet",
-    feature = "csv-file",
-    feature = "ipc",
-    feature = "cse"
-))]
-use crate::logical_plan::optimizer::file_caching::FileCacher;
-use crate::logical_plan::optimizer::predicate_pushdown::PredicatePushDown;
-use crate::logical_plan::optimizer::projection_pushdown::ProjectionPushDown;
-use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
-use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+use crate::logical_plan::optimizer::file_caching::collect_fingerprints;
+use crate::logical_plan::optimizer::optimize;
 use crate::logical_plan::FETCH_ROWS;
 use crate::physical_plan::state::ExecutionState;
-use crate::prelude::delay_rechunk::DelayRechunk;
-use crate::prelude::drop_nulls::ReplaceDropNulls;
-use crate::prelude::fast_projection::FastProjectionAndCollapse;
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-use crate::prelude::file_caching::collect_fingerprints;
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-use crate::prelude::file_caching::find_column_union_and_fingerprints;
-use crate::prelude::simplify_expr::SimplifyBooleanRule;
-use crate::prelude::slice_pushdown_lp::SlicePushDown;
 use crate::prelude::*;
-use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
+use crate::utils::{combine_predicates_expr, expr_to_leaf_column_names};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -563,155 +543,7 @@ impl LazyFrame {
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Node> {
-        // get toggle values
-        let predicate_pushdown = self.opt_state.predicate_pushdown;
-        let projection_pushdown = self.opt_state.projection_pushdown;
-        let type_coercion = self.opt_state.type_coercion;
-        let simplify_expr = self.opt_state.simplify_expr;
-        let slice_pushdown = self.opt_state.slice_pushdown;
-        #[cfg(feature = "cse")]
-        let cse = self.opt_state.common_subplan_elimination;
-
-        let agg_scan_projection = self.opt_state.file_caching;
-        let aggregate_pushdown = self.opt_state.aggregate_pushdown;
-
-        let logical_plan = self.get_plan_builder().build();
-        let mut scratch = vec![];
-
-        // gradually fill the rules passed to the optimizer
-        let opt = StackOptimizer {};
-        let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
-
-        // during debug we check if the optimizations have not modified the final schema
-        #[cfg(debug_assertions)]
-        let prev_schema = logical_plan.schema()?.into_owned();
-
-        let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena)?;
-
-        #[cfg(feature = "cse")]
-        let cse_changed = if cse {
-            let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
-            lp_top = lp;
-            changed
-        } else {
-            false
-        };
-        #[cfg(not(feature = "cse"))]
-        let cse_changed = false;
-
-        // we do simplification
-        if simplify_expr {
-            rules.push(Box::new(SimplifyExprRule {}));
-        }
-
-        // should be run before predicate pushdown
-        if projection_pushdown {
-            let projection_pushdown_opt = ProjectionPushDown {};
-            let alp = lp_arena.take(lp_top);
-            let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
-            lp_arena.replace(lp_top, alp);
-            cache_states::set_cache_states(lp_top, lp_arena, expr_arena, &mut scratch, cse_changed);
-        }
-
-        if predicate_pushdown {
-            let predicate_pushdown_opt = PredicatePushDown::default();
-            let alp = lp_arena.take(lp_top);
-            let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
-            lp_arena.replace(lp_top, alp);
-        }
-
-        // make sure its before slice pushdown.
-        if projection_pushdown {
-            rules.push(Box::new(FastProjectionAndCollapse {}));
-        }
-        rules.push(Box::new(DelayRechunk {}));
-
-        if slice_pushdown {
-            let slice_pushdown_opt = SlicePushDown {};
-            let alp = lp_arena.take(lp_top);
-            let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
-
-            lp_arena.replace(lp_top, alp);
-
-            // expressions use the stack optimizer
-            rules.push(Box::new(slice_pushdown_opt));
-        }
-        if type_coercion {
-            rules.push(Box::new(TypeCoercionRule {}))
-        }
-        // this optimization removes branches, so we must do it when type coercion
-        // is completed
-        if simplify_expr {
-            rules.push(Box::new(SimplifyBooleanRule {}));
-        }
-
-        if aggregate_pushdown {
-            rules.push(Box::new(AggregatePushdown::new()))
-        }
-
-        // make sure that we do that once slice pushdown
-        // and predicate pushdown are done. At that moment
-        // the file fingerprints are finished.
-        #[cfg(any(
-            feature = "cse",
-            feature = "parquet",
-            feature = "ipc",
-            feature = "csv-file"
-        ))]
-        if agg_scan_projection || cse_changed {
-            // we do this so that expressions are simplified created by the pushdown optimizations
-            // we must clean up the predicates, because the agg_scan_projection
-            // uses them in the hashtable to determine duplicates.
-            let simplify_bools =
-                &mut [Box::new(SimplifyBooleanRule {}) as Box<dyn OptimizationRule>];
-            lp_top = opt.optimize_loop(simplify_bools, expr_arena, lp_arena, lp_top);
-
-            // scan the LP to aggregate all the column used in scans
-            // these columns will be added to the state of the AggScanProjection rule
-            let mut file_predicate_to_columns_and_count = PlHashMap::with_capacity(32);
-            find_column_union_and_fingerprints(
-                lp_top,
-                &mut file_predicate_to_columns_and_count,
-                lp_arena,
-                expr_arena,
-            );
-
-            let mut file_cacher = FileCacher::new(file_predicate_to_columns_and_count);
-            file_cacher.assign_unions(lp_top, lp_arena, expr_arena, &mut scratch, false);
-            scratch.clear();
-
-            #[cfg(feature = "cse")]
-            if cse_changed {
-                // this must run after cse
-                cse::decrement_file_counters_by_cache_hits(
-                    lp_top,
-                    lp_arena,
-                    expr_arena,
-                    0,
-                    &mut scratch,
-                );
-            }
-        }
-
-        rules.push(Box::new(ReplaceDropNulls {}));
-
-        lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top);
-
-        // during debug we check if the optimizations have not modified the final schema
-        #[cfg(debug_assertions)]
-        {
-            // only check by names because we may supercast types.
-            assert_eq!(
-                prev_schema.iter_names().collect::<Vec<_>>(),
-                lp_arena
-                    .get(lp_top)
-                    .schema(lp_arena)
-                    .iter_names()
-                    .collect::<Vec<_>>()
-            );
-        };
-
-        Ok(lp_top)
+        optimize(self, lp_arena, expr_arena)
     }
 
     fn prepare_collect(self) -> PolarsResult<(ExecutionState, Box<dyn Executor>)> {
@@ -1431,7 +1263,7 @@ impl LazyGroupBy {
         let keys = self
             .keys
             .iter()
-            .flat_map(|k| expr_to_root_column_names(k).into_iter())
+            .flat_map(|k| expr_to_leaf_column_names(k).into_iter())
             .collect::<Vec<_>>();
 
         self.agg([col("*").exclude(&keys).head(n).list().keep_name()])
@@ -1443,7 +1275,7 @@ impl LazyGroupBy {
         let keys = self
             .keys
             .iter()
-            .flat_map(|k| expr_to_root_column_names(k).into_iter())
+            .flat_map(|k| expr_to_leaf_column_names(k).into_iter())
             .collect::<Vec<_>>();
 
         self.agg([col("*").exclude(&keys).tail(n).keep_name()])
