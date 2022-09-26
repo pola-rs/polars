@@ -875,7 +875,17 @@ if HYPOTHESIS_INSTALLED:
 def assert_frame_equal_local_categoricals(
     df_a: pli.DataFrame, df_b: pli.DataFrame
 ) -> None:
-    assert df_a.schema == df_b.schema
+
+    for ((a_name, a_value), (b_name, b_value)) in zip(
+        df_a.schema.items(), df_b.schema.items()
+    ):
+        if a_name != b_name:
+            print(f"{a_name} != {b_name}")
+            raise AssertionError
+        if a_value != b_value:
+            print(f"{a_value} != {b_value}")
+            raise AssertionError
+
     cat_to_str = pli.col(Categorical).cast(str)
     assert df_a.with_column(cat_to_str).frame_equal(df_b.with_column(cat_to_str))
     cat_to_phys = pli.col(Categorical).to_physical()

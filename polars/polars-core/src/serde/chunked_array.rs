@@ -129,7 +129,13 @@ impl Serialize for CategoricalChunked {
     where
         S: Serializer,
     {
-        let ca = self.cast(&DataType::Utf8).unwrap();
-        ca.serialize(serializer)
+        {
+            let mut state = serializer.serialize_map(Some(3))?;
+            state.serialize_entry("name", self.name())?;
+            let dtype: DeDataType = self.dtype().into();
+            state.serialize_entry("datatype", &dtype)?;
+            state.serialize_entry("values", &IterSer::new(self.iter_str()))?;
+            state.end()
+        }
     }
 }
