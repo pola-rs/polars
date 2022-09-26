@@ -164,7 +164,7 @@ polars-arrow = { version = "0.24.2", path = "../polars-arrow", features = ["comp
 polars-utils = { version = "0.24.2", path = "../polars-utils" }
 rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }
-rayon.worspace = true
+rayon.workspace = true
 regex = { version = "1.5", optional = true }
 # activate if you want serde support for Series and DataFrames
 serde = { version = "1", features = ["derive"], optional = true }

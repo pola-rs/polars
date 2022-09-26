@@ -1,9 +1,8 @@
 use polars_core::prelude::*;
 
+use super::*;
 use crate::logical_plan::alp::ALogicalPlan;
 use crate::logical_plan::functions::FunctionNode;
-use crate::prelude::stack_opt::OptimizationRule;
-use crate::prelude::*;
 
 /// Projection in the physical plan is done by selecting an expression per thread.
 /// In case of many projections and columns this can be expensive when the expressions are simple
@@ -14,7 +13,7 @@ use crate::prelude::*;
 /// It is important that this optimization is ran after projection pushdown.
 ///
 /// The schema reported after this optimization is also
-pub(crate) struct FastProjectionAndCollapse {}
+pub(super) struct FastProjectionAndCollapse {}
 
 fn impl_fast_projection(
     input: Node,

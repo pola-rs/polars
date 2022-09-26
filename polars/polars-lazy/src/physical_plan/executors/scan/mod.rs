@@ -22,6 +22,8 @@ use polars_io::csv::CsvEncoding;
 use polars_io::prelude::*;
 
 use super::*;
+#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+use crate::logical_plan::optimizer::file_caching::FileFingerPrint;
 use crate::prelude::*;
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]

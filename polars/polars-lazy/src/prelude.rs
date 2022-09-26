@@ -31,8 +31,6 @@ pub(crate) use crate::logical_plan::aexpr::*;
 pub(crate) use crate::logical_plan::alp::*;
 pub(crate) use crate::logical_plan::conversion::*;
 pub(crate) use crate::logical_plan::iterator::*;
-pub use crate::logical_plan::optimizer::type_coercion::TypeCoercionRule;
-pub use crate::logical_plan::optimizer::{Optimize, *};
 pub use crate::logical_plan::options::*;
 pub use crate::logical_plan::*;
 pub use crate::physical_plan::expressions::*;

@@ -14,7 +14,7 @@ type Trail = Vec<Node>;
 // we traverse left first, so the `id` remains the same for an all left traversal.
 // every right node may increment `id` and because it's shared mutable there will
 // be no collisions as the increment is communicated upward with mutation.
-pub(crate) fn collect_trails(
+pub(super) fn collect_trails(
     root: Node,
     lp_arena: &Arena<ALogicalPlan>,
     // every branch gets its own trail
