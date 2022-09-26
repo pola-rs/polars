@@ -470,10 +470,18 @@ pub fn get_list_builder(
                     Box::new(builder)
                 }};
             }
+            macro_rules! get_binary_builder {
+                () => {{
+                    let builder =
+                        ListBinaryChunkedBuilder::new(&name, list_capacity, 5 * value_capacity);
+                    Box::new(builder)
+                }};
+            }
             Ok(match_dtype_to_logical_apply_macro!(
                 physical_type,
                 get_primitive_builder,
                 get_utf8_builder,
+                get_binary_builder,
                 get_bool_builder
             ))
         }
