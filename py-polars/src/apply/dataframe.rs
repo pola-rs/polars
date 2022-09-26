@@ -157,7 +157,7 @@ where
     D: PyArrowPrimitiveType,
     D::Native: ToPyObject + FromPyObject<'a>,
 {
-    let skip = if first_value.is_some() { 1 } else { 0 };
+    let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
         ChunkedArray::full_null("apply", df.height())
     } else {
@@ -174,7 +174,7 @@ pub fn apply_lambda_with_bool_out_type<'a>(
     init_null_count: usize,
     first_value: Option<bool>,
 ) -> ChunkedArray<BooleanType> {
-    let skip = if first_value.is_some() { 1 } else { 0 };
+    let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
         ChunkedArray::full_null("apply", df.height())
     } else {
@@ -191,7 +191,7 @@ pub fn apply_lambda_with_utf8_out_type<'a>(
     init_null_count: usize,
     first_value: Option<&str>,
 ) -> Utf8Chunked {
-    let skip = if first_value.is_some() { 1 } else { 0 };
+    let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
         ChunkedArray::full_null("apply", df.height())
     } else {
@@ -211,7 +211,7 @@ pub fn apply_lambda_with_list_out_type<'a>(
 ) -> PyResult<ListChunked> {
     let columns = df.get_columns();
 
-    let skip = if first_value.is_some() { 1 } else { 0 };
+    let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
         Ok(ChunkedArray::full_null("apply", df.height()))
     } else {

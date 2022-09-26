@@ -375,7 +375,7 @@ pub(crate) fn elim_cmn_subplans(
 pub(crate) fn decrement_file_counters_by_cache_hits(
     root: Node,
     lp_arena: &mut Arena<ALogicalPlan>,
-    expr_arena: &Arena<AExpr>,
+    _expr_arena: &Arena<AExpr>,
     acc_count: FileCount,
     scratch: &mut Vec<Node>,
 ) {
@@ -412,13 +412,17 @@ pub(crate) fn decrement_file_counters_by_cache_hits(
             } else {
                 acc_count
             };
-            decrement_file_counters_by_cache_hits(*input, lp_arena, expr_arena, new_count, scratch)
+            decrement_file_counters_by_cache_hits(*input, lp_arena, _expr_arena, new_count, scratch)
         }
         lp => {
             lp.copy_inputs(scratch);
             while let Some(input) = scratch.pop() {
                 decrement_file_counters_by_cache_hits(
-                    input, lp_arena, expr_arena, acc_count, scratch,
+                    input,
+                    lp_arena,
+                    _expr_arena,
+                    acc_count,
+                    scratch,
                 )
             }
         }

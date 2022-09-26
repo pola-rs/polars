@@ -293,7 +293,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         D: PyArrowPrimitiveType,
         D::Native: ToPyObject + FromPyObject<'a>,
     {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
         } else if !self.has_validity() {
@@ -332,7 +332,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         init_null_count: usize,
         first_value: Option<bool>,
     ) -> PyResult<BooleanChunked> {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
         } else if !self.has_validity() {
@@ -371,7 +371,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         init_null_count: usize,
         first_value: Option<&str>,
     ) -> PyResult<Utf8Chunked> {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
         } else if !self.has_validity() {
@@ -490,7 +490,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         init_null_count: usize,
         first_value: Option<ObjectValue>,
     ) -> PyResult<ObjectChunked<ObjectValue>> {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
         } else if !self.has_validity() {
@@ -589,7 +589,7 @@ where
         D: PyArrowPrimitiveType,
         D::Native: ToPyObject + FromPyObject<'a>,
     {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
         } else if !self.has_validity() {
@@ -628,7 +628,7 @@ where
         init_null_count: usize,
         first_value: Option<bool>,
     ) -> PyResult<BooleanChunked> {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
         } else if !self.has_validity() {
@@ -667,7 +667,7 @@ where
         init_null_count: usize,
         first_value: Option<&str>,
     ) -> PyResult<Utf8Chunked> {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
         } else if !self.has_validity() {
@@ -786,7 +786,7 @@ where
         init_null_count: usize,
         first_value: Option<ObjectValue>,
     ) -> PyResult<ObjectChunked<ObjectValue>> {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
         } else if !self.has_validity() {
@@ -880,7 +880,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
         D: PyArrowPrimitiveType,
         D::Native: ToPyObject + FromPyObject<'a>,
     {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
         } else if !self.has_validity() {
@@ -919,7 +919,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
         init_null_count: usize,
         first_value: Option<bool>,
     ) -> PyResult<BooleanChunked> {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
         } else if !self.has_validity() {
@@ -958,7 +958,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
         init_null_count: usize,
         first_value: Option<&str>,
     ) -> PyResult<Utf8Chunked> {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
         } else if !self.has_validity() {
@@ -1076,7 +1076,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
         init_null_count: usize,
         first_value: Option<ObjectValue>,
     ) -> PyResult<ObjectChunked<ObjectValue>> {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
         } else if !self.has_validity() {
@@ -1319,7 +1319,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         D: PyArrowPrimitiveType,
         D::Native: ToPyObject + FromPyObject<'a>,
     {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         let pypolars = PyModule::import(py, "polars")?;
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
@@ -1379,7 +1379,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         init_null_count: usize,
         first_value: Option<bool>,
     ) -> PyResult<BooleanChunked> {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         let pypolars = PyModule::import(py, "polars")?;
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
@@ -1439,7 +1439,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         init_null_count: usize,
         first_value: Option<&str>,
     ) -> PyResult<Utf8Chunked> {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         // get the pypolars module
         let pypolars = PyModule::import(py, "polars")?;
 
@@ -1590,7 +1590,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         init_null_count: usize,
         first_value: Option<ObjectValue>,
     ) -> PyResult<ObjectChunked<ObjectValue>> {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         let pypolars = PyModule::import(py, "polars")?;
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
@@ -1700,7 +1700,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         D: PyArrowPrimitiveType,
         D::Native: ToPyObject + FromPyObject<'a>,
     {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
         } else if !self.has_validity() {
@@ -1739,7 +1739,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         init_null_count: usize,
         first_value: Option<bool>,
     ) -> PyResult<BooleanChunked> {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
         } else if !self.has_validity() {
@@ -1778,7 +1778,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         init_null_count: usize,
         first_value: Option<&str>,
     ) -> PyResult<Utf8Chunked> {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
         } else if !self.has_validity() {
@@ -1897,7 +1897,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         init_null_count: usize,
         first_value: Option<ObjectValue>,
     ) -> PyResult<ObjectChunked<ObjectValue>> {
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
         } else if !self.has_validity() {
@@ -1992,7 +1992,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
     {
         let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
 
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         let it = self.into_iter().skip(init_null_count + skip).map(|val| {
             let arg = make_dict_arg(py, &names, val);
             call_lambda_and_extract(py, lambda, arg).ok()
@@ -2016,7 +2016,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
     ) -> PyResult<BooleanChunked> {
         let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
 
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         let it = self.into_iter().skip(init_null_count + skip).map(|val| {
             let arg = make_dict_arg(py, &names, val);
             call_lambda_and_extract(py, lambda, arg).ok()
@@ -2040,7 +2040,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
     ) -> PyResult<Utf8Chunked> {
         let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
 
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         let it = self.into_iter().skip(init_null_count + skip).map(|val| {
             let arg = make_dict_arg(py, &names, val);
             call_lambda_and_extract(py, lambda, arg).ok()
@@ -2114,7 +2114,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
     ) -> PyResult<ObjectChunked<ObjectValue>> {
         let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
 
-        let skip = if first_value.is_some() { 1 } else { 0 };
+        let skip = usize::from(first_value.is_some());
         let it = self.into_iter().skip(init_null_count + skip).map(|val| {
             let arg = make_dict_arg(py, &names, val);
             call_lambda_and_extract(py, lambda, arg).ok()

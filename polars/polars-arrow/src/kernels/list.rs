@@ -60,7 +60,7 @@ fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> IdxArr {
 
         a
     } else {
-        IdxArr::from_slice(&[])
+        IdxArr::from_slice([])
     }
 }
 

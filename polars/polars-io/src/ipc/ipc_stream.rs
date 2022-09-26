@@ -195,7 +195,7 @@ where
 
 fn fix_column_order(df: DataFrame, projection: Option<Vec<usize>>, row_count: bool) -> DataFrame {
     if let Some(proj) = projection {
-        let offset = if row_count { 1 } else { 0 };
+        let offset = usize::from(row_count);
         let mut args = (0..proj.len()).zip(proj).collect::<Vec<_>>();
         // first el of tuple is argument index
         // second el is the projection index
