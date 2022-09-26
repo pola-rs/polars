@@ -383,7 +383,7 @@ class Expr:
         └──────────┘
 
         """
-        return self**0.5
+        return self ** 0.5
 
     def log10(self) -> Expr:
         """
@@ -4413,35 +4413,6 @@ class Expr:
         If you want to compute multiple aggregation statistics over the same dynamic
         window, consider using `groupby_rolling` this method can cache the window size
         computation.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"A": [1.0, 2.0, 3.0, 4.0, 6.0, 8.0]})
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.col("A").rolling_median(window_size=3),
-        ...         ]
-        ...     )
-        ... )
-        shape: (6, 1)
-        ┌──────┐
-        │ A    │
-        │ ---  │
-        │ f64  │
-        ╞══════╡
-        │ null │
-        ├╌╌╌╌╌╌┤
-        │ null │
-        ├╌╌╌╌╌╌┤
-        │ 2.0  │
-        ├╌╌╌╌╌╌┤
-        │ 3.0  │
-        ├╌╌╌╌╌╌┤
-        │ 4.0  │
-        ├╌╌╌╌╌╌┤
-        │ 6.0  │
-        └──────┘
 
         Examples
         --------
