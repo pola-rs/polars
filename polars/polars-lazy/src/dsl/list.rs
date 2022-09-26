@@ -1,4 +1,5 @@
-use parking_lot::Mutex;
+use std::sync::Mutex;
+
 use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::series::ops::NullBehavior;
@@ -242,14 +243,14 @@ impl ListNameSpace {
                             match out {
                                 Ok(s) => Some(s),
                                 Err(e) => {
-                                    *m_err.lock() = Some(e);
+                                    *m_err.lock().unwrap() = Some(e);
                                     None
                                 }
                             }
                         })
                     })
                     .collect();
-                err = m_err.lock().take();
+                err = m_err.lock().unwrap().take();
                 ca
             } else {
                 let mut df_container = DataFrame::new_no_checks(vec![]);

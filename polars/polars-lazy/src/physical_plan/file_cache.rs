@@ -1,4 +1,5 @@
-use parking_lot::Mutex;
+use std::sync::Mutex;
+
 use polars_core::prelude::*;
 
 use crate::prelude::file_caching::FileFingerPrint;
@@ -29,7 +30,7 @@ impl FileCache {
     #[cfg(debug_assertions)]
     pub(crate) fn assert_empty(&self) {
         for (_, guard) in self.inner.iter() {
-            let state = guard.lock();
+            let state = guard.lock().unwrap();
             assert!(state.1.is_empty());
         }
     }
@@ -51,7 +52,7 @@ impl FileCache {
         } else {
             // should exist
             let guard = self.inner.get(&finger_print).unwrap();
-            let mut state = guard.lock();
+            let mut state = guard.lock().unwrap();
 
             // initialize df
             if state.0 == 0 {

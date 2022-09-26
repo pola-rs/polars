@@ -3,9 +3,8 @@ use std::cell::Cell;
 use std::fmt::Debug;
 #[cfg(any(feature = "ipc", feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use parking_lot::Mutex;
 use polars_core::prelude::*;
 
 use crate::logical_plan::LogicalPlan::DataFrameScan;
@@ -267,7 +266,7 @@ impl LogicalPlan {
             }
             Error { err, .. } => {
                 // We just take the error. The LogicalPlan should not be used anymore once this
-                let mut err = err.lock();
+                let mut err = err.lock().unwrap();
                 match err.take() {
                     Some(err) => Err(err),
                     None => Err(PolarsError::ComputeError(

@@ -1,7 +1,7 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
+use std::sync::Mutex;
 
-use parking_lot::Mutex;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;

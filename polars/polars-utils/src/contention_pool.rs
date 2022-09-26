@@ -1,6 +1,5 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
-
-use parking_lot::Mutex;
+use std::sync::Mutex;
 
 pub struct LowContentionPool<T> {
     stack: Vec<Mutex<T>>,
@@ -22,15 +21,15 @@ impl<T: Default> LowContentionPool<T> {
         let size = self.size.fetch_sub(1, Ordering::AcqRel);
         // implementation error if this fails
         assert!(size <= self.stack.len());
-        let mut locked = self.stack[size - 1].lock();
-        std::mem::take(&mut *locked)
+        let mut locked = self.stack[size - 1].lock().unwrap();
+        std::mem::take(&mut locked)
     }
 
     pub fn set(&self, value: T) {
         let size = self.size.fetch_add(1, Ordering::AcqRel);
         // implementation error if this fails
         // assert!(size <= self.stack.len());
-        let mut locked = self.stack[size].lock();
+        let mut locked = self.stack[size].lock().unwrap();
         *locked = value;
     }
 }
