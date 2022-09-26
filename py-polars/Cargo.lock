@@ -1351,7 +1351,6 @@ dependencies = [
  "ahash",
  "bitflags",
  "glob",
- "parking_lot",
  "polars-arrow",
  "polars-core",
  "polars-io",
@@ -1401,7 +1400,6 @@ dependencies = [
 name = "polars-utils"
 version = "0.24.2"
 dependencies = [
- "parking_lot",
  "rayon",
 ]
 

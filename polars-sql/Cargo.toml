@@ -23,5 +23,3 @@ features = [
   "cross_join",
   "strings",
 ]
-
-[workspace]

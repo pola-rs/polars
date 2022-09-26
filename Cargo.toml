@@ -8,6 +8,7 @@ members = [
   "polars/polars-utils",
   "polars/polars-ops",
   "polars/polars-algo",
+  "polars-sql",
   "examples/read_csv",
   "examples/read_parquet",
   "examples/python_rust_compiled_function",
@@ -24,7 +25,6 @@ ahash = "0.7"
 # todo! remove
 anyhow = "1"
 hashbrown = { version = "0.12", features = ["rayon"] }
-parking_lot = "0.12"
 
 [workspace.dependencies.arrow]
 package = "arrow2"

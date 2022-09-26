@@ -1,7 +1,7 @@
 use std::borrow::Cow;
+use std::sync::Mutex;
 
 use bitflags::bitflags;
-use parking_lot::Mutex;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::frame::hash_join::JoinOptIds;
 use polars_core::prelude::*;
@@ -186,23 +186,23 @@ impl ExecutionState {
 
     /// Check if we have DataFrame in cache
     pub(crate) fn cache_hit(&self, key: &usize) -> Option<DataFrame> {
-        let guard = self.df_cache.lock();
+        let guard = self.df_cache.lock().unwrap();
         guard.get(key).cloned()
     }
 
     /// Store DataFrame in cache.
     pub(crate) fn store_cache(&self, key: usize, df: DataFrame) {
-        let mut guard = self.df_cache.lock();
+        let mut guard = self.df_cache.lock().unwrap();
         guard.insert(key, df);
     }
 
     /// Clear the cache used by the Window expressions
     pub(crate) fn clear_expr_cache(&self) {
         {
-            let mut lock = self.group_tuples.lock();
+            let mut lock = self.group_tuples.lock().unwrap();
             lock.clear();
         }
-        let mut lock = self.join_tuples.lock();
+        let mut lock = self.join_tuples.lock().unwrap();
         lock.clear();
     }
 
