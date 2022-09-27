@@ -685,8 +685,6 @@ class ExprDateTimeNameSpace:
         │ 5.765431 │
         └──────────┘
 
-        Examples
-        --------
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 0, 0, 4)

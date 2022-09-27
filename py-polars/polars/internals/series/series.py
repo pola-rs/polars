@@ -567,12 +567,12 @@ class Series:
             }:
                 if idx_type == UInt32:
                     if idxs.dtype in {Int64, UInt64}:
-                        if idxs.max() >= 2**32:  # type: ignore[operator]
+                        if idxs.max() >= 2 ** 32:  # type: ignore[operator]
                             raise ValueError(
                                 "Index positions should be smaller than 2^32."
                             )
                     if idxs.dtype == Int64:
-                        if idxs.min() < -(2**32):  # type: ignore[operator]
+                        if idxs.min() < -(2 ** 32):  # type: ignore[operator]
                             raise ValueError(
                                 "Index positions should be bigger than -2^32 + 1."
                             )
@@ -600,9 +600,9 @@ class Series:
                 # Numpy array with signed or unsigned integers.
 
                 if idx_type == UInt32:
-                    if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2**32:
+                    if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2 ** 32:
                         raise ValueError("Index positions should be smaller than 2^32.")
-                    if idxs.dtype == np.int64 and idxs.min() < -(2**32):
+                    if idxs.dtype == np.int64 and idxs.min() < -(2 ** 32):
                         raise ValueError(
                             "Index positions should be bigger than -2^32 + 1."
                         )
@@ -4614,15 +4614,9 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 3, 2])
-        >>> s.sort().set_sorted()
-        shape: (3,)
-        Series: 'a' [i64]
-        [
-                1
-                2
-                3
-        ]
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.set_sorted().max()
+        3
 
         """
         return wrap_s(self._s.set_sorted(reverse))

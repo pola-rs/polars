@@ -383,7 +383,7 @@ class Expr:
         └──────────┘
 
         """
-        return self**0.5
+        return self ** 0.5
 
     def log10(self) -> Expr:
         """
@@ -5405,23 +5405,6 @@ class Expr:
         │ 3   │
         └─────┘
 
-        Examples
-        --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").shuffle(seed=1))
-        shape: (3, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ 2   │
-        ├╌╌╌╌╌┤
-        │ 1   │
-        ├╌╌╌╌╌┤
-        │ 3   │
-        └─────┘
-
         """
         if seed is None:
             seed = random.randint(0, 10000)
@@ -5956,21 +5939,16 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"values": [1, 3, 2]})
-        >>> df.select(pl.col("values").sort().set_sorted())
-        shape: (3, 1)
+        >>> df = pl.DataFrame({"values": [1, 2, 3]})
+        >>> df.select(pl.col("values").set_sorted().max())
+        shape: (1, 1)
         ┌────────┐
         │ values │
         │ ---    │
         │ i64    │
         ╞════════╡
-        │ 1      │
-        ├╌╌╌╌╌╌╌╌┤
-        │ 2      │
-        ├╌╌╌╌╌╌╌╌┤
         │ 3      │
         └────────┘
-
         """
         return self.map(lambda s: s.set_sorted(reverse))
 
