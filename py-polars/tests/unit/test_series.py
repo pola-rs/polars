@@ -1871,6 +1871,32 @@ def test_ewm_std_var() -> None:
     assert np.allclose(var, std**2, rtol=1e-16)
 
 
+def test_ewm_param_validation() -> None:
+    s = pl.Series("values", range(10))
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        s.ewm_std(com=0.5, alpha=0.5)
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        s.ewm_mean(span=1.5, half_life=0.75)
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        s.ewm_var(alpha=0.5, span=1.5)
+
+    with pytest.raises(ValueError, match="Require 'com' >= 0"):
+        s.ewm_std(com=-0.5)
+
+    with pytest.raises(ValueError, match="Require 'span' >= 1"):
+        s.ewm_mean(span=0.5)
+
+    with pytest.raises(ValueError, match="Require 'half_life' > 0"):
+        s.ewm_var(half_life=0)
+
+    for alpha in (-0.5, -0.0000001, 0.0, 1.0000001, 1.5):
+        with pytest.raises(ValueError, match="Require 0 < 'alpha' <= 1"):
+            s.ewm_std(alpha=alpha)
+
+
 def test_extend_constant() -> None:
     a = pl.Series("a", [1, 2, 3])
     expected = pl.Series("a", [1, 2, 3, 1, 1, 1])
