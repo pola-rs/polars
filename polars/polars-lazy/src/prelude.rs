@@ -14,6 +14,13 @@ pub struct DynamicGroupOptions {
     pub index_column: String,
 }
 
+#[cfg(any(
+    feature = "temporal",
+    feature = "dtype-duration",
+    feature = "dtype-date",
+    feature = "dtype-date",
+    feature = "dtype-time"
+))]
 pub(crate) use polars_time::prelude::*;
 
 #[cfg(not(feature = "dynamic_groupby"))]

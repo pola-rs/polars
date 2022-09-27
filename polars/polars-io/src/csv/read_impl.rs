@@ -353,14 +353,13 @@ impl<'a> CoreReader<'a> {
         Ok((bytes, starting_point_offset))
     }
 
-    fn parse_csv(
+    #[allow(clippy::type_complexity)]
+    fn determine_file_chunks_and_statistics(
         &mut self,
-        mut n_threads: usize,
+        n_threads: &mut usize,
         bytes: &[u8],
-        predicate: Option<&Arc<dyn PhysicalIoExpr>>,
-    ) -> PolarsResult<DataFrame> {
-        let logging = std::env::var("POLARS_VERBOSE").is_ok();
-
+        logging: bool,
+    ) -> PolarsResult<(Vec<(usize, usize)>, usize, usize, Option<usize>)> {
         // Make the variable mutable so that we can reassign the sliced file to this variable.
         let (mut bytes, starting_point_offset) = self.find_starting_point(bytes, self.eol_char)?;
 
@@ -409,23 +408,12 @@ impl<'a> CoreReader<'a> {
             }
         }
         if total_rows == 128 {
-            n_threads = 1;
+            *n_threads = 1;
 
             if logging {
                 eprintln!("file < 128 rows, no statistics determined")
             }
         }
-
-        // we also need to sort the projection to have predictable output.
-        // the `parse_lines` function expects this.
-        let projection = self
-            .projection
-            .take()
-            .map(|mut v| {
-                v.sort_unstable();
-                v
-            })
-            .unwrap_or_else(|| (0..self.schema.len()).collect());
 
         let chunk_size = std::cmp::min(self.chunk_size, total_rows);
         let n_chunks = total_rows / chunk_size;
@@ -436,32 +424,65 @@ impl<'a> CoreReader<'a> {
             );
         }
 
+        // split the file by the nearest new line characters such that every thread processes
+        // approximately the same number of rows.
+        Ok((
+            get_file_chunks(
+                bytes,
+                *n_threads,
+                self.schema.len(),
+                self.delimiter,
+                self.quote_char,
+                self.eol_char,
+            ),
+            chunk_size,
+            total_rows,
+            starting_point_offset,
+        ))
+    }
+
+    fn get_projection(&mut self) -> Vec<usize> {
+        // we also need to sort the projection to have predictable output.
+        // the `parse_lines` function expects this.
+        self.projection
+            .take()
+            .map(|mut v| {
+                v.sort_unstable();
+                v
+            })
+            .unwrap_or_else(|| (0..self.schema.len()).collect())
+    }
+
+    fn get_string_columns(&self, projection: &[usize]) -> PolarsResult<Vec<&str>> {
         // keep track of the maximum capacity that needs to be allocated for the utf8-builder
         // Per string column we keep a statistic of the maximum length of string bytes per chunk
         // We must the names, not the indexes, (the indexes are incorrect due to projection
         // pushdown)
         let mut str_columns = Vec::with_capacity(projection.len());
-        for i in &projection {
+        for i in projection {
             let (name, dtype) = self.schema.get_index(*i).ok_or_else(||
                 PolarsError::ComputeError(
                     format!("the given projection index: {} is out of bounds for csv schema with {} columns", i, self.schema.len()).into())
-                )?;
+            )?;
 
             if dtype == &DataType::Utf8 {
-                str_columns.push(name)
+                str_columns.push(name.as_str())
             }
         }
+        Ok(str_columns)
+    }
 
-        // split the file by the nearest new line characters such that every thread processes
-        // approximately the same number of rows.
-        let file_chunks = get_file_chunks(
-            bytes,
-            n_threads,
-            self.schema.len(),
-            self.delimiter,
-            self.quote_char,
-            self.eol_char,
-        );
+    fn parse_csv(
+        &mut self,
+        mut n_threads: usize,
+        bytes: &[u8],
+        predicate: Option<&Arc<dyn PhysicalIoExpr>>,
+    ) -> PolarsResult<DataFrame> {
+        let logging = std::env::var("POLARS_VERBOSE").is_ok();
+        let (file_chunks, chunk_size, total_rows, starting_point_offset) =
+            self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging)?;
+        let projection = self.get_projection();
+        let str_columns = self.get_string_columns(&projection)?;
 
         // If the number of threads given by the user is lower than our global thread pool we create
         // new one.

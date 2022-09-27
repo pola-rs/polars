@@ -8,6 +8,7 @@ members = [
   "polars/polars-utils",
   "polars/polars-ops",
   "polars/polars-algo",
+  "polars/polars-pipe",
   "polars-sql",
   "examples/read_csv",
   "examples/read_parquet",
