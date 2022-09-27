@@ -567,12 +567,12 @@ class Series:
             }:
                 if idx_type == UInt32:
                     if idxs.dtype in {Int64, UInt64}:
-                        if idxs.max() >= 2 ** 32:  # type: ignore[operator]
+                        if idxs.max() >= 2**32:  # type: ignore[operator]
                             raise ValueError(
                                 "Index positions should be smaller than 2^32."
                             )
                     if idxs.dtype == Int64:
-                        if idxs.min() < -(2 ** 32):  # type: ignore[operator]
+                        if idxs.min() < -(2**32):  # type: ignore[operator]
                             raise ValueError(
                                 "Index positions should be bigger than -2^32 + 1."
                             )
@@ -600,9 +600,9 @@ class Series:
                 # Numpy array with signed or unsigned integers.
 
                 if idx_type == UInt32:
-                    if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2 ** 32:
+                    if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2**32:
                         raise ValueError("Index positions should be smaller than 2^32.")
-                    if idxs.dtype == np.int64 and idxs.min() < -(2 ** 32):
+                    if idxs.dtype == np.int64 and idxs.min() < -(2**32):
                         raise ValueError(
                             "Index positions should be bigger than -2^32 + 1."
                         )
@@ -4458,7 +4458,7 @@ class Series:
         ----------
         com
             Specify decay in terms of center of mass, :math:`\gamma`, with
-            
+
                 .. math::
                     \alpha = \frac{1}{1 + \gamma} \; \forall \; \gamma \geq 0
         span
@@ -4482,7 +4482,7 @@ class Series:
                   using weights :math:`w_i = (1 - \alpha)^i`
                 - When ``adjust=False`` the EW function is calculated
                   recursively by
-                  
+
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
