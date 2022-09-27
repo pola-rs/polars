@@ -195,3 +195,16 @@ def test_filter_not_of_type_bool() -> None:
         pl.ComputeError, match="Filter predicate must be of type Boolean, got"
     ):
         df.filter(pl.col("json_val").str.json_path_match("$.a"))
+
+
+def test_fill_null_unknown_supertype() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [1, None, 3]),
+            pl.Series("b", ["hello", "at the", "bar"], dtype=pl.Categorical),
+            pl.Series("c", [1, 1, None]),
+        ]
+    )
+
+    with pytest.raises(pl.SchemaError):
+        df.fill_null(0)
