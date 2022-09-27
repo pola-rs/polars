@@ -229,7 +229,7 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 4, 1)
-        >>> date = pl.date_range(start, stop, interval='1mo')
+        >>> date = pl.date_range(start, stop, interval="1mo")
         shape: (4,)
         Series: '' [datetime[μs]]
         [
@@ -268,7 +268,7 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 4, 1)
-        >>> date = pl.date_range(start, stop, interval='1mo')
+        >>> date = pl.date_range(start, stop, interval="1mo")
         shape: (4,)
         Series: '' [datetime[μs]]
         [
@@ -390,7 +390,7 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 9)
-        >>> date = pl.date_range(start, stop, interval = "2d")
+        >>> date = pl.date_range(start, stop, interval="2d")
         shape: (5,)
         Series: '' [datetime[μs]]
         [
@@ -505,7 +505,7 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 0, 4, 0)
-        >>> date = pl.date_range(start, stop, interval ="2m")
+        >>> date = pl.date_range(start, stop, interval="2m")
         shape: (3,)
         Series: '' [datetime[μs]]
         [
@@ -543,7 +543,7 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 0, 0, 4)
-        >>> date = pl.date_range(start, stop, interval ="500ms")
+        >>> date = pl.date_range(start, stop, interval="500ms")
         shape: (9,)
         Series: '' [datetime[μs]]
         [
@@ -571,7 +571,7 @@ class DateTimeNameSpace:
                 3
                 4
         ]
-        >>> date.dt.second(fractional = True)
+        >>> date.dt.second(fractional=True)
         shape: (9,)
         Series: '' [f64]
         [
@@ -603,7 +603,7 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 0, 0, 4)
-        >>> date = pl.date_range(start, stop, interval ="500ms")
+        >>> date = pl.date_range(start, stop, interval="500ms")
         shape: (9,)
         Series: '' [datetime[μs]]
         [
@@ -649,7 +649,7 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 0, 0, 4)
-        >>> date = pl.date_range(start, stop, interval ="500ms")
+        >>> date = pl.date_range(start, stop, interval="500ms")
         shape: (9,)
         Series: '' [datetime[μs]]
         [
@@ -695,7 +695,7 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 0, 0, 4)
-        >>> date = pl.date_range(start, stop, interval ="500ms")
+        >>> date = pl.date_range(start, stop, interval="500ms")
         shape: (9,)
         Series: '' [datetime[μs]]
         [
@@ -756,7 +756,7 @@ class DateTimeNameSpace:
                 978393600000000
                 978480000000000
         ]
-        >>> date.dt.timestamp(tu = "ns").alias("timestamp_ns")
+        >>> date.dt.timestamp(tu="ns").alias("timestamp_ns")
         shape: (3,)
         Series: 'timestamp_ns' [i64]
         [
@@ -781,7 +781,7 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 3)
-        >>> date = pl.date_range(start, stop, interval = "1d")
+        >>> date = pl.date_range(start, stop, interval="1d")
         shape: (3,)
         Series: '' [datetime[μs]]
         [
@@ -858,7 +858,7 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 3)
-        >>> date = pl.date_range(start,stop, "1d")
+        >>> date = pl.date_range(start, stop, "1d")
         >>> date.dt.cast_time_unit(tu="ms").alias("tu_ms")
         shape: (3,)
         Series: '' [datetime[μs]]
@@ -891,7 +891,7 @@ class DateTimeNameSpace:
         --------
         >>> from datetime import datetime
         >>> start = datetime(2020, 3, 1)
-        >>> stop =datetime(2020, 5, 1)
+        >>> stop = datetime(2020, 5, 1)
         >>> date = pl.date_range(start, stop, "1mo")
         shape: (3,)
         Series: '' [datetime[μs]]
@@ -992,9 +992,7 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> date = pl.date_range(
-        ...             datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo"
-        ...         )
+        >>> date = pl.date_range(datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo")
         shape: (3,)
         Series: '' [datetime[μs]]
         [
@@ -1024,9 +1022,7 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> date = pl.date_range(
-        ...             datetime(2020, 1, 1), datetime(2020, 1, 4), "1d"
-        ...         )
+        >>> date = pl.date_range(datetime(2020, 1, 1), datetime(2020, 1, 4), "1d")
         shape: (4,)
         Series: '' [datetime[μs]]
         [
@@ -1058,9 +1054,7 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> date = pl.date_range(
-        ...             datetime(2020, 1, 1), datetime(2020, 1, 4), "1d"
-        ...         )
+        >>> date = pl.date_range(datetime(2020, 1, 1), datetime(2020, 1, 4), "1d")
         shape: (4,)
         Series: '' [datetime[μs]]
         [
@@ -1093,8 +1087,8 @@ class DateTimeNameSpace:
         --------
         >>> from datetime import datetime
         >>> date = pl.date_range(
-        ...             datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 4, 0), "1m"
-        ...         )
+        ...     datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 4, 0), "1m"
+        ... )
         shape: (5,)
         Series: '' [datetime[μs]]
         [
@@ -1129,8 +1123,8 @@ class DateTimeNameSpace:
         --------
         >>> from datetime import datetime
         >>> date = pl.date_range(
-        ...             datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 0, 1, 0), "1ms"
-        ...         )[:3]
+        ...     datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 0, 1, 0), "1ms"
+        ... )[:3]
         shape: (3,)
         Series: '' [datetime[μs]]
         [
@@ -1161,8 +1155,8 @@ class DateTimeNameSpace:
         --------
         >>> from datetime import datetime
         >>> date = pl.date_range(
-        ...             datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 0, 1, 0), "1ms"
-        ...         )[:3]
+        ...     datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 0, 1, 0), "1ms"
+        ... )[:3]
         shape: (3,)
         Series: '' [datetime[μs]]
         [
@@ -1193,8 +1187,8 @@ class DateTimeNameSpace:
         --------
         >>> from datetime import datetime
         >>> date = pl.date_range(
-        ...             datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 0, 1, 0), "1ms"
-        ...         )[:3]
+        ...     datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 0, 1, 0), "1ms"
+        ... )[:3]
         shape: (3,)
         Series: '' [datetime[μs]]
         [
@@ -1245,9 +1239,7 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> dates = pl.date_range(
-        ...             datetime(2000, 1, 1), datetime(2005, 1, 1), "1y"
-        ...         )
+        >>> dates = pl.date_range(datetime(2000, 1, 1), datetime(2005, 1, 1), "1y")
         shape: (6,)
         Series: '' [datetime[μs]]
         [
