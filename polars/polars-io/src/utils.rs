@@ -88,9 +88,9 @@ pub(crate) fn columns_to_projection(
 
 /// Because of threading every row starts from `0` or from `offset`.
 /// We must correct that so that they are monotonically increasing.
-pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)]) {
+pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)], offset: IdxSize) {
     if !dfs.is_empty() {
-        let mut previous = dfs[0].1;
+        let mut previous = dfs[0].1 + offset;
         for (df, n_read) in &mut dfs[1..] {
             if let Some(s) = df.get_columns_mut().get_mut(0) {
                 *s = &*s + previous;
