@@ -3,6 +3,8 @@
 # ------------------------------------------------
 from __future__ import annotations
 
+from typing import Any
+
 from hypothesis import given, settings
 from hypothesis.strategies import sampled_from
 
@@ -173,7 +175,7 @@ def test_infinities(
 ) -> None:
     from math import isfinite
 
-    def finite_float(value):
+    def finite_float(value: Any) -> bool:
         if isinstance(value, float):
             return isfinite(value)
         return False
