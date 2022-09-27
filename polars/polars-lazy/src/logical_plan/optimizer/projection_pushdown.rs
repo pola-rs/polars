@@ -125,6 +125,40 @@ fn update_scan_schema(
 pub(crate) struct ProjectionPushDown {}
 
 impl ProjectionPushDown {
+    /// Projection will be done at this node, but we continue optimization
+    fn no_pushdown_restart_opt(
+        &self,
+        lp: ALogicalPlan,
+        acc_projections: Vec<Node>,
+        projections_seen: usize,
+        lp_arena: &mut Arena<ALogicalPlan>,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> PolarsResult<ALogicalPlan> {
+        let inputs = lp.get_inputs();
+        let exprs = lp.get_exprs();
+
+        let new_inputs = inputs
+            .iter()
+            .map(|&node| {
+                let alp = lp_arena.take(node);
+                let alp = self.push_down(
+                    alp,
+                    Default::default(),
+                    Default::default(),
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                )?;
+                lp_arena.replace(node, alp);
+                Ok(node)
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let lp = lp.with_exprs_and_input(exprs, new_inputs);
+
+        let builder = ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena);
+        Ok(self.finish_node(acc_projections, builder))
+    }
+
     fn finish_node(
         &self,
         local_projections: Vec<Node>,
@@ -629,46 +663,66 @@ impl ProjectionPushDown {
                 )?;
                 Ok(Selection { predicate, input })
             }
-            Melt { input, args, .. } => {
-                let (mut acc_projections, mut local_projections, names) = split_acc_projections(
-                    acc_projections,
-                    lp_arena.get(input).schema(lp_arena).as_ref(),
-                    expr_arena,
-                );
+            Melt {
+                input,
+                args,
+                schema,
+            } => {
+                // all columns are used in melt
+                if args.value_vars.is_empty() {
+                    // restart projection pushdown
+                    self.no_pushdown_restart_opt(
+                        Melt {
+                            input,
+                            args,
+                            schema,
+                        },
+                        acc_projections,
+                        projections_seen,
+                        lp_arena,
+                        expr_arena,
+                    )
+                } else {
+                    let (mut acc_projections, mut local_projections, names) = split_acc_projections(
+                        acc_projections,
+                        lp_arena.get(input).schema(lp_arena).as_ref(),
+                        expr_arena,
+                    );
 
-                if !local_projections.is_empty() {
-                    local_projections.extend_from_slice(&acc_projections);
+                    if !local_projections.is_empty() {
+                        local_projections.extend_from_slice(&acc_projections);
+                    }
+
+                    // make sure that the requested columns are projected
+                    args.id_vars.iter().for_each(|name| {
+                        add_str_to_accumulated(
+                            name,
+                            &mut acc_projections,
+                            &mut projected_names,
+                            expr_arena,
+                        )
+                    });
+                    args.value_vars.iter().for_each(|name| {
+                        add_str_to_accumulated(
+                            name,
+                            &mut acc_projections,
+                            &mut projected_names,
+                            expr_arena,
+                        )
+                    });
+
+                    self.pushdown_and_assign(
+                        input,
+                        acc_projections,
+                        names,
+                        projections_seen,
+                        lp_arena,
+                        expr_arena,
+                    )?;
+
+                    let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena).melt(args);
+                    Ok(self.finish_node(local_projections, builder))
                 }
-
-                // make sure that the requested columns are projected
-                args.id_vars.iter().for_each(|name| {
-                    add_str_to_accumulated(
-                        name,
-                        &mut acc_projections,
-                        &mut projected_names,
-                        expr_arena,
-                    )
-                });
-                args.value_vars.iter().for_each(|name| {
-                    add_str_to_accumulated(
-                        name,
-                        &mut acc_projections,
-                        &mut projected_names,
-                        expr_arena,
-                    )
-                });
-
-                self.pushdown_and_assign(
-                    input,
-                    acc_projections,
-                    names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )?;
-
-                let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena).melt(args);
-                Ok(self.finish_node(local_projections, builder))
             }
             Aggregate {
                 input,
@@ -1083,7 +1137,14 @@ impl ProjectionPushDown {
                         }
                     }
                 } else {
-                    Ok(lp)
+                    // restart projection pushdown
+                    self.no_pushdown_restart_opt(
+                        lp,
+                        acc_projections,
+                        projections_seen,
+                        lp_arena,
+                        expr_arena,
+                    )
                 }
             }
             // Slice and Unions have only inputs and exprs, so we can use same logic.
