@@ -834,19 +834,21 @@ def test_csv_categorical_lifetime() -> None:
     """
     )
 
-    for string_cache in [True, False]:
-        pl.toggle_string_cache(string_cache)
-        df = pl.read_csv(
-            csv.encode(), dtypes={"a": pl.Categorical, "b": pl.Categorical}
-        )
-        assert df.dtypes == [pl.Categorical, pl.Categorical]
-        assert df.to_dict(False) == {
-            "a": ["needs_escape", ' "needs escape foo', ' "needs escape foo'],
-            "b": ["b", "b", None],
-        }
+    df = pl.read_csv(csv.encode(), dtypes={"a": pl.Categorical, "b": pl.Categorical})
+    assert df.dtypes == [pl.Categorical, pl.Categorical]
+    assert df.to_dict(False) == {
+        "a": ["needs_escape", ' "needs escape foo', ' "needs escape foo'],
+        "b": ["b", "b", None],
+    }
 
-        if string_cache:
-            assert (df["a"] == df["b"]).to_list() == [False, False, False]
-        else:
-            with pytest.raises(pl.ComputeError):
-                df["a"] == df["b"]  # noqa: B015
+    assert (df["a"] == df["b"]).to_list() == [False, False, False]
+
+
+def test_csv_categorical_categorical_merge() -> None:
+    N = 50
+    f = io.BytesIO()
+    pl.DataFrame({"x": ["A"] * N + ["B"] * N}).write_csv(f)
+    f.seek(0)
+    assert pl.read_csv(f, dtypes={"x": pl.Categorical}, sample_size=10).unique()[
+        "x"
+    ].to_list() == ["A", "B"]
