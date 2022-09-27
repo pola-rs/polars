@@ -36,12 +36,6 @@ temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
 private = ["polars-time/private"]
 
 [dependencies]
-ahash = "0.7"
-anyhow = "1.0"
-# arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "6c102a0c3e2dbeb185360dd3d5c3637b5e2028fd", default-features = false }
-# arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "comparison_and_validity", default-features = false }
-arrow = { package = "arrow2", version = "0.14", default-features = false }
-# arrow = { package = "arrow2", path = "../../../arrow2", default-features = false }
 ahash.workspace = true
 anyhow.workspace = true
 arrow.workspace = true

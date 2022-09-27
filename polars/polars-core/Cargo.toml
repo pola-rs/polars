@@ -170,28 +170,6 @@ regex = { version = "1.5", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 smartstring = { version = "1", optional = true }
-thiserror = "^1.0"
-
-[dependencies.arrow]
-package = "arrow2"
-# git = "https://github.com/jorgecarleitao/arrow2"
-# git = "https://github.com/ritchie46/arrow2"
-# rev = "6c102a0c3e2dbeb185360dd3d5c3637b5e2028fd"
-# path = "../../../arrow2"
-# branch = "comparison_and_validity"
-version = "0.14"
-default-features = false
-features = [
-  "compute_aggregate",
-  "compute_arithmetics",
-  "compute_boolean",
-  "compute_boolean_kleene",
-  "compute_cast",
-  "compute_comparison",
-  "compute_concatenate",
-  "compute_filter",
-  "compute_if_then_else",
-]
 thiserror.workspace = true
 
 [dev-dependencies]
