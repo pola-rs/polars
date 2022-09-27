@@ -946,7 +946,7 @@ class DateTimeNameSpace:
         Cast time zone for a Series of type Datetime.
 
         Different from ``with_time_zone``, this will also modify
-        the underlying timestamp,
+        the underlying timestamp.
 
         Parameters
         ----------
