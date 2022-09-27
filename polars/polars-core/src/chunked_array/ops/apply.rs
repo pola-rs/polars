@@ -7,6 +7,7 @@ use polars_arrow::array::PolarsArray;
 use polars_arrow::trusted_len::PushUnchecked;
 
 use crate::prelude::*;
+use crate::series::IsSorted;
 use crate::utils::{CustomIterTools, NoNull};
 
 macro_rules! try_apply {
@@ -118,6 +119,8 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
             self.downcast_iter_mut()
                 .for_each(|arr| arrow::compute::arity_assign::unary(arr, f))
         };
+        // can be in any order now
+        self.set_sorted2(IsSorted::Not);
     }
 }
 

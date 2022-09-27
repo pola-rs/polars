@@ -128,6 +128,12 @@ impl DataType {
         self != &self.to_physical()
     }
 
+    /// Check if this [`DataType`] is a temporal type
+    pub fn is_temporal(&self) -> bool {
+        use DataType::*;
+        matches!(self, Date | Datetime(_, _) | Duration(_) | Time)
+    }
+
     /// Check if this [`DataType`] is a numeric type
     pub fn is_numeric(&self) -> bool {
         // allow because it cannot be replaced when object feature is activated

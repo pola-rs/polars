@@ -16,7 +16,7 @@ pub trait SeriesMethods: SeriesSealed {
         let cols = vec![values.into_series(), counts.into_series()];
         let df = DataFrame::new_no_checks(cols);
         if sorted {
-            df.sort(&["counts"], true)
+            df.sort(["counts"], true)
         } else {
             Ok(df)
         }

@@ -47,8 +47,9 @@ use polars_io::prelude::*;
 
 use crate::dsl::{argsort_by, pearson_corr};
 use crate::logical_plan::iterator::ArenaLpIter;
-use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
-use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
+use crate::logical_plan::optimizer::{
+    OptimizationRule, SimplifyExprRule, StackOptimizer, TypeCoercionRule,
+};
 use crate::prelude::*;
 
 static GLOB_PARQUET: &str = "../../examples/datasets/*.parquet";

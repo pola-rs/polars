@@ -14,7 +14,7 @@ impl Series {
         };
         match self.dtype() {
             DataType::Float32 => {
-                let xs = self.f32().unwrap().downcast_iter().next().unwrap();
+                let xs = self.f32().unwrap();
                 let result = ewm_mean(
                     xs,
                     options.alpha as f32,
@@ -24,7 +24,7 @@ impl Series {
                 Series::try_from((self.name(), Box::new(result) as ArrayRef))
             }
             DataType::Float64 => {
-                let xs = self.f64().unwrap().downcast_iter().next().unwrap();
+                let xs = self.f64().unwrap();
                 let result = ewm_mean(
                     xs,
                     options.alpha as f64,
@@ -45,7 +45,7 @@ impl Series {
         };
         match self.dtype() {
             DataType::Float32 => {
-                let xs = self.f32().unwrap().downcast_iter().next().unwrap();
+                let xs = self.f32().unwrap();
                 let result = ewm_std(
                     xs,
                     options.alpha as f32,
@@ -56,7 +56,7 @@ impl Series {
                 Series::try_from((self.name(), Box::new(result) as ArrayRef))
             }
             DataType::Float64 => {
-                let xs = self.f64().unwrap().downcast_iter().next().unwrap();
+                let xs = self.f64().unwrap();
                 let result = ewm_std(
                     xs,
                     options.alpha as f64,
@@ -78,7 +78,7 @@ impl Series {
         };
         match self.dtype() {
             DataType::Float32 => {
-                let xs = self.f32().unwrap().downcast_iter().next().unwrap();
+                let xs = self.f32().unwrap();
                 let result = ewm_var(
                     xs,
                     options.alpha as f32,
@@ -89,7 +89,7 @@ impl Series {
                 Series::try_from((self.name(), Box::new(result) as ArrayRef))
             }
             DataType::Float64 => {
-                let xs = self.f64().unwrap().downcast_iter().next().unwrap();
+                let xs = self.f64().unwrap();
                 let result = ewm_var(
                     xs,
                     options.alpha as f64,

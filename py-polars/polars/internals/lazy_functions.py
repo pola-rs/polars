@@ -780,9 +780,13 @@ def lit(
     return pli.wrap_expr(pylit(item, allow_object))
 
 
-def spearman_rank_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Expr:
+def spearman_rank_corr(
+    a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1, propagate_nans: bool = False
+) -> pli.Expr:
     """
     Compute the spearman rank correlation between two columns.
+
+    Missing data will be excluded from the computation.
 
     Parameters
     ----------
@@ -792,13 +796,19 @@ def spearman_rank_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> p
         Column name or Expression.
     ddof
         Delta degrees of freedom
+    propagate_nans
+        If `True` any `NaN` encountered will lead to `NaN` in the output.
+        Defaults to `False` where `NaN` are regarded as larger than any finite number
+        and thus lead to the highest rank.
 
     """
     if isinstance(a, str):
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return pli.wrap_expr(pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof))
+    return pli.wrap_expr(
+        pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans)
+    )
 
 
 def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Expr:
@@ -878,7 +888,7 @@ def apply(
     return_dtype: type[DataType] | None = None,
 ) -> pli.Expr:
     """
-    Apply a custom function in a GroupBy context.
+    Apply a custom/user-defined function (UDF) in a GroupBy context.
 
     Depending on the context it has the following behavior:
 
@@ -1213,13 +1223,14 @@ def argsort_by(
 
 def duration(
     *,
-    days: pli.Expr | str | None = None,
-    seconds: pli.Expr | str | None = None,
-    nanoseconds: pli.Expr | str | None = None,
-    milliseconds: pli.Expr | str | None = None,
-    minutes: pli.Expr | str | None = None,
-    hours: pli.Expr | str | None = None,
-    weeks: pli.Expr | str | None = None,
+    days: pli.Expr | str | int | None = None,
+    seconds: pli.Expr | str | int | None = None,
+    nanoseconds: pli.Expr | str | int | None = None,
+    microseconds: pli.Expr | str | int | None = None,
+    milliseconds: pli.Expr | str | int | None = None,
+    minutes: pli.Expr | str | int | None = None,
+    hours: pli.Expr | str | int | None = None,
+    weeks: pli.Expr | str | int | None = None,
 ) -> pli.Expr:
     """
     Create polars `Duration` from distinct time components.
@@ -1271,25 +1282,37 @@ def duration(
         seconds = pli.expr_to_lit_or_expr(seconds, str_to_lit=False)._pyexpr
     if milliseconds is not None:
         milliseconds = pli.expr_to_lit_or_expr(milliseconds, str_to_lit=False)._pyexpr
+    if microseconds is not None:
+        microseconds = pli.expr_to_lit_or_expr(microseconds, str_to_lit=False)._pyexpr
     if nanoseconds is not None:
         nanoseconds = pli.expr_to_lit_or_expr(nanoseconds, str_to_lit=False)._pyexpr
     if days is not None:
         days = pli.expr_to_lit_or_expr(days, str_to_lit=False)._pyexpr
     if weeks is not None:
         weeks = pli.expr_to_lit_or_expr(weeks, str_to_lit=False)._pyexpr
+
     return pli.wrap_expr(
-        py_duration(days, seconds, nanoseconds, milliseconds, minutes, hours, weeks)
+        py_duration(
+            days,
+            seconds,
+            nanoseconds,
+            microseconds,
+            milliseconds,
+            minutes,
+            hours,
+            weeks,
+        )
     )
 
 
 def _datetime(
-    year: pli.Expr | str,
-    month: pli.Expr | str,
-    day: pli.Expr | str,
-    hour: pli.Expr | str | None = None,
-    minute: pli.Expr | str | None = None,
-    second: pli.Expr | str | None = None,
-    millisecond: pli.Expr | str | None = None,
+    year: pli.Expr | str | int,
+    month: pli.Expr | str | int,
+    day: pli.Expr | str | int,
+    hour: pli.Expr | str | int | None = None,
+    minute: pli.Expr | str | int | None = None,
+    second: pli.Expr | str | int | None = None,
+    microsecond: pli.Expr | str | int | None = None,
 ) -> pli.Expr:
     """
     Create polars `Datetime` from distinct time components.
@@ -1303,13 +1326,13 @@ def _datetime(
     day
         column or literal, ranging from 1-31.
     hour
-        column or literal, ranging from 1-24.
+        column or literal, ranging from 1-23.
     minute
-        column or literal, ranging from 1-60.
+        column or literal, ranging from 1-59.
     second
-        column or literal, ranging from 1-60.
-    millisecond
-        column or literal, ranging from 1-1000.
+        column or literal, ranging from 1-59.
+    microsecond
+        column or literal, ranging from 1-999999.
 
     Returns
     -------
@@ -1326,8 +1349,9 @@ def _datetime(
         minute = pli.expr_to_lit_or_expr(minute, str_to_lit=False)._pyexpr
     if second is not None:
         second = pli.expr_to_lit_or_expr(second, str_to_lit=False)._pyexpr
-    if millisecond is not None:
-        millisecond = pli.expr_to_lit_or_expr(millisecond, str_to_lit=False)._pyexpr
+    if microsecond is not None:
+        microsecond = pli.expr_to_lit_or_expr(microsecond, str_to_lit=False)._pyexpr
+
     return pli.wrap_expr(
         py_datetime(
             year_expr._pyexpr,
@@ -1336,15 +1360,15 @@ def _datetime(
             hour,
             minute,
             second,
-            millisecond,
+            microsecond,
         )
     )
 
 
 def _date(
-    year: pli.Expr | str,
-    month: pli.Expr | str,
-    day: pli.Expr | str,
+    year: pli.Expr | str | int,
+    month: pli.Expr | str | int,
+    day: pli.Expr | str | int,
 ) -> pli.Expr:
     """
     Create polars Date from distinct time components.
@@ -1856,12 +1880,39 @@ def coalesce(
     ],
 ) -> pli.Expr:
     """
-    Folds the expressions from left to right keeping the first no null values.
+    Folds the expressions from left to right, keeping the first non-null value.
 
     Parameters
     ----------
     exprs
-        Expression to coalesce.
+        Expressions to coalesce.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     data=[
+    ...         (None, 1.0, 1.0),
+    ...         (None, 2.0, 2.0),
+    ...         (None, None, 3.0),
+    ...         (None, None, None),
+    ...     ],
+    ...     columns=[("a", pl.Float64), ("b", pl.Float64), ("c", pl.Float64)],
+    ... )
+    >>> df.with_column(pl.coalesce(["a", "b", "c", 99.9]).alias("d"))
+    shape: (4, 4)
+    ┌──────┬──────┬──────┬──────┐
+    │ a    ┆ b    ┆ c    ┆ d    │
+    │ ---  ┆ ---  ┆ ---  ┆ ---  │
+    │ f64  ┆ f64  ┆ f64  ┆ f64  │
+    ╞══════╪══════╪══════╪══════╡
+    │ null ┆ 1.0  ┆ 1.0  ┆ 1.0  │
+    ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ null ┆ 2.0  ┆ 2.0  ┆ 2.0  │
+    ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ null ┆ null ┆ 3.0  ┆ 3.0  │
+    ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ null ┆ null ┆ null ┆ 99.9 │
+    └──────┴──────┴──────┴──────┘
 
     """
     exprs = pli.selection_to_pyexpr_list(exprs)

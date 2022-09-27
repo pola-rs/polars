@@ -147,17 +147,7 @@ pub(crate) mod private {
         unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        unsafe fn agg_quantile(
-            &self,
-            groups: &GroupsProxy,
-            _quantile: f64,
-            _interpol: QuantileInterpolOptions,
-        ) -> Series {
-            Series::full_null(self._field().name(), groups.len(), self._dtype())
-        }
-        unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
-            Series::full_null(self._field().name(), groups.len(), self._dtype())
-        }
+
         fn zip_outer_join_column(
             &self,
             _right_column: &Series,
@@ -372,7 +362,7 @@ pub trait SeriesTrait:
 
     /// Drop all null values and return a new Series.
     fn drop_nulls(&self) -> Series {
-        if !self.has_validity() {
+        if self.null_count() == 0 {
             Series(self.clone_inner())
         } else {
             self.filter(&self.is_not_null()).unwrap()

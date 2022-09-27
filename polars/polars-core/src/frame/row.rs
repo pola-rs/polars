@@ -376,8 +376,6 @@ pub(crate) enum AnyValueBuffer<'a> {
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     Utf8(Utf8ChunkedBuilder),
-    #[cfg(feature = "dtype-categorical")]
-    Categorical(CategoricalChunkedBuilder),
     All(DataType, Vec<AnyValue<'a>>),
 }
 
@@ -423,8 +421,8 @@ impl<'a> AnyValueBuffer<'a> {
                 AnyValue::Utf8(v) => builder.append_value(v),
                 AnyValue::Int64(v) => builder.append_value(&format!("{}", v)),
                 AnyValue::Float64(v) => builder.append_value(&format!("{}", v)),
-                AnyValue::Boolean(true) => builder.append_value(&"true"),
-                AnyValue::Boolean(false) => builder.append_value(&"false"),
+                AnyValue::Boolean(true) => builder.append_value("true"),
+                AnyValue::Boolean(false) => builder.append_value("false"),
                 _ => return None,
             },
             _ => return None,
@@ -456,8 +454,6 @@ impl<'a> AnyValueBuffer<'a> {
             Float32(b) => b.finish().into_series(),
             Float64(b) => b.finish().into_series(),
             Utf8(b) => b.finish().into_series(),
-            #[cfg(feature = "dtype-categorical")]
-            Categorical(b) => b.finish().into_series(),
             All(dtype, vals) => Series::from_any_values_and_dtype("", &vals, &dtype).unwrap(),
         }
     }
@@ -485,8 +481,6 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
             Float32 => AnyValueBuffer::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => AnyValueBuffer::Float64(PrimitiveChunkedBuilder::new("", len)),
             Utf8 => AnyValueBuffer::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
-            #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => AnyValueBuffer::Categorical(CategoricalChunkedBuilder::new("", len)),
             // Struct and List can be recursive so use anyvalues for that
             dt => AnyValueBuffer::All(dt.clone(), Vec::with_capacity(len)),
         }

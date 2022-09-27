@@ -187,6 +187,8 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
             //     if method == 'min':
             //         return count[dense - 1] + 1
             // ```
+            // INVALID LINT REMOVE LATER
+            #[allow(clippy::bool_to_int_with_if)]
             let mut cumsum: IdxSize = if let RankMethod::Min = method { 0 } else { 1 };
 
             dense.push(cumsum);

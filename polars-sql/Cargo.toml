@@ -4,68 +4,22 @@ version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+binary = ["clap"]
 
 [dependencies]
+clap = { version = "3.2.22", features = ["derive"], optional = true }
+polars-arrow = { path = "../polars/polars-arrow", features = ["like"] }
+polars-lazy = { path = "../polars/polars-lazy", features = ["compile"] }
 serde = "1"
 serde_json = { version = "1" }
-sqlparser = { version = "0.15.0" }
+sqlparser = { version = "0.19" }
 
 [dependencies.polars]
 path = "../polars"
 default-features = false
 features = [
-  "dynamic_groupby",
-  "zip_with",
-  "simd",
   "lazy",
-  "strings",
-  "temporal",
-  "random",
-  "object",
-  "csv-file",
-  "fmt",
-  "performant",
-  "dtype-full",
-  "rows",
-  "private",
-  "round_series",
-  "is_first",
-  "asof_join",
   "cross_join",
-  "dot_product",
-  "concat_str",
-  "row_hash",
-  "reinterpret",
-  "decompress-fast",
-  "mode",
-  "extract_jsonpath",
-  "lazy_regex",
-  "cum_agg",
-  "rolling_window",
-  "interpolate",
-  "list",
-  "rank",
-  "diff",
-  "pct_change",
-  "moment",
-  "arange",
-  "true_div",
-  "dtype-categorical",
-  "diagonal_concat",
-  "horizontal_concat",
-  "abs",
-  "ewma",
-  "dot_diagram",
-  "dataframe_arithmetic",
-  "json",
-  "string_encoding",
-  "product",
-  "ndarray",
-  "avro",
-  "parquet",
-  "ipc",
-  "is_in",
-  "serde",
+  "strings",
 ]
-
-[workspace]

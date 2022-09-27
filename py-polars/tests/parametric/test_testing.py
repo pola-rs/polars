@@ -14,7 +14,7 @@ TEMPORAL_DTYPES = [pl.Datetime, pl.Date, pl.Time, pl.Duration]
 
 
 @given(df=dataframes(), lf=dataframes(lazy=True), srs=series())
-@settings(max_examples=10)
+@settings(max_examples=5)
 def test_strategy_classes(df: pl.DataFrame, lf: pl.LazyFrame, srs: pl.Series) -> None:
     assert isinstance(df, pl.DataFrame)
     assert isinstance(lf, pl.LazyFrame)
@@ -139,3 +139,25 @@ def test_strategy_null_probability(
     nulls_col0, nulls_colx = df3.null_count().rows()[0]
     assert nulls_col0 > nulls_colx
     assert nulls_col0 == 50
+
+
+@given(
+    df1=dataframes(chunked=False, min_size=1),
+    df2=dataframes(chunked=True, min_size=1),
+    s1=series(chunked=False, min_size=1),
+    s2=series(chunked=True, min_size=1),
+)
+@settings(max_examples=10)
+def test_chunking(
+    df1: pl.DataFrame,
+    df2: pl.DataFrame,
+    s1: pl.Series,
+    s2: pl.Series,
+) -> None:
+    assert df1.n_chunks() == 1
+    if len(df2) > 1:
+        assert df2.n_chunks("all") == [2] * len(df2.columns)
+
+    assert s1.n_chunks() == 1
+    if len(s2) > 1:
+        assert s2.n_chunks() > 1

@@ -258,8 +258,7 @@ impl AsRef<Expr> for AggExpr {
     }
 }
 
-/// Queries consists of multiple ex
-/// pressions.
+/// Queries consists of multiple expressions.
 #[derive(Clone, PartialEq)]
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -382,7 +381,7 @@ pub enum Excluded {
 
 impl Expr {
     /// Get Field result of the expression. The schema is the input data.
-    pub(crate) fn to_field(&self, schema: &Schema, ctxt: Context) -> PolarsResult<Field> {
+    pub fn to_field(&self, schema: &Schema, ctxt: Context) -> PolarsResult<Field> {
         // this is not called much and th expression depth is typically shallow
         let mut arena = Arena::with_capacity(5);
         self.to_field_amortized(schema, ctxt, &mut arena)

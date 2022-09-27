@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -11,7 +11,33 @@ use smartstring::{LazyCompact, SmartString};
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::PlHashMap;
 
-pub(crate) static USE_STRING_CACHE: AtomicBool = AtomicBool::new(false);
+/// We use atomic reference counting
+/// to determine how many threads use the string cache
+/// if the refcount is zero, we may clear the string cache.
+pub(crate) static USE_STRING_CACHE: AtomicU32 = AtomicU32::new(0);
+
+/// RAII for the string cache
+pub struct IUseStringCache {}
+
+impl Default for IUseStringCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl IUseStringCache {
+    /// Hold the StringCache
+    pub fn new() -> IUseStringCache {
+        toggle_string_cache(true);
+        IUseStringCache {}
+    }
+}
+
+impl Drop for IUseStringCache {
+    fn drop(&mut self) {
+        toggle_string_cache(false)
+    }
+}
 
 pub fn with_string_cache<F: FnOnce() -> T, T>(func: F) -> T {
     toggle_string_cache(true);
@@ -25,20 +51,26 @@ pub fn with_string_cache<F: FnOnce() -> T, T>(func: F) -> T {
 /// This is used to cache the string categories locally.
 /// This allows join operations on categorical types.
 pub fn toggle_string_cache(toggle: bool) {
-    USE_STRING_CACHE.store(toggle, Ordering::Release);
-    if !toggle {
-        STRING_CACHE.clear()
+    if toggle {
+        USE_STRING_CACHE.fetch_add(1, Ordering::Release);
+    } else {
+        let previous = USE_STRING_CACHE.fetch_sub(1, Ordering::Release);
+        if previous == 0 || previous == 1 {
+            USE_STRING_CACHE.store(0, Ordering::Release);
+            STRING_CACHE.clear()
+        }
     }
 }
 
 /// Reset the global string cache used for the Categorical Types.
 pub fn reset_string_cache() {
+    USE_STRING_CACHE.store(0, Ordering::Release);
     STRING_CACHE.clear()
 }
 
 /// Check if string cache is set.
 pub fn using_string_cache() -> bool {
-    USE_STRING_CACHE.load(Ordering::Acquire)
+    USE_STRING_CACHE.load(Ordering::Acquire) > 0
 }
 
 pub(crate) struct SCacheInner {

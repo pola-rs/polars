@@ -1,10 +1,11 @@
 use polars::error::PolarsError;
-use polars::prelude::{col, lit, DataType, Expr, LiteralValue, Result, TimeUnit};
-
+use polars::prelude::*;
 use sqlparser::ast::{
-    BinaryOperator as SQLBinaryOperator, DataType as SQLDataType, Expr as SqlExpr,
-    Function as SQLFunction, Value as SqlValue, WindowSpec,
+    BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType, Expr as SqlExpr,
+    Function as SQLFunction, JoinConstraint, TrimWhereField, Value as SqlValue, WindowSpec,
 };
+
+use crate::context::TABLES;
 
 fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<DataType> {
     Ok(match data_type {
@@ -109,7 +110,39 @@ fn literal_expr(value: &SqlValue) -> PolarsResult<Expr> {
 }
 
 pub(crate) fn parse_sql_expr(expr: &SqlExpr) -> PolarsResult<Expr> {
+    let err = || {
+        Err(PolarsError::ComputeError(
+            format!(
+                "Expression: {:?} was not supported in polars-sql yet. Please open a feature request.",
+                expr
+            )
+            .into(),
+        ))
+    };
+
     Ok(match expr {
+        SqlExpr::CompoundIdentifier(idents) => {
+            if idents.len() != 2 {
+                return err();
+            }
+            let tbl_name = &idents[0].value;
+            let refers_main_table = TABLES.with(|cell| {
+                let tables = cell.borrow();
+                tables.len() == 1 && tables.contains(tbl_name)
+            });
+
+            if refers_main_table {
+                col(&idents[1].value)
+            } else {
+                return Err(PolarsError::ComputeError(
+                    format!(
+                        "Compounded identifier: {:?} is not yet supported  if multiple tables are registered",
+                        expr
+                    )
+                        .into(),
+                ));
+            }
+        }
         SqlExpr::Identifier(e) => col(&e.value),
         SqlExpr::BinaryOp { left, op, right } => {
             let left = parse_sql_expr(left)?;
@@ -120,15 +153,59 @@ pub(crate) fn parse_sql_expr(expr: &SqlExpr) -> PolarsResult<Expr> {
         SqlExpr::Cast { expr, data_type } => cast_(parse_sql_expr(expr)?, data_type)?,
         SqlExpr::Nested(expr) => parse_sql_expr(expr)?,
         SqlExpr::Value(value) => literal_expr(value)?,
-        _ => {
-            return Err(PolarsError::ComputeError(
-                format!(
-                    "Expression: {:?} was not supported in polars-sql yet!",
-                    expr
-                )
-                .into(),
-            ))
+        SqlExpr::IsNull(expr) => parse_sql_expr(expr)?.is_null(),
+        SqlExpr::IsNotNull(expr) => parse_sql_expr(expr)?.is_not_null(),
+        SqlExpr::Between {
+            expr,
+            negated,
+            low,
+            high,
+        } => {
+            let expr = parse_sql_expr(expr)?;
+            let low = parse_sql_expr(low)?;
+            let high = parse_sql_expr(high)?;
+
+            if *negated {
+                expr.clone().lt(low).or(expr.gt(high))
+            } else {
+                expr.clone().gt(low).and(expr.lt(high))
+            }
         }
+        SqlExpr::Trim {
+            expr: sql_expr,
+            trim_where,
+        } => {
+            let expr = parse_sql_expr(sql_expr)?;
+            match trim_where {
+                None => return Ok(expr.str().strip(None)),
+                Some((TrimWhereField::Both, sql_expr)) => {
+                    let lit = parse_sql_expr(sql_expr)?;
+                    if let Expr::Literal(LiteralValue::Utf8(val)) = lit {
+                        if val.len() == 1 {
+                            return Ok(expr.str().strip(Some(val.chars().next().unwrap())));
+                        }
+                    }
+                }
+                Some((TrimWhereField::Leading, sql_expr)) => {
+                    let lit = parse_sql_expr(sql_expr)?;
+                    if let Expr::Literal(LiteralValue::Utf8(val)) = lit {
+                        if val.len() == 1 {
+                            return Ok(expr.str().lstrip(Some(val.chars().next().unwrap())));
+                        }
+                    }
+                }
+                Some((TrimWhereField::Trailing, sql_expr)) => {
+                    let lit = parse_sql_expr(sql_expr)?;
+                    if let Expr::Literal(LiteralValue::Utf8(val)) = lit {
+                        if val.len() == 1 {
+                            return Ok(expr.str().rstrip(Some(val.chars().next().unwrap())));
+                        }
+                    }
+                }
+            }
+            return err();
+        }
+        _ => return err(),
     })
 }
 
@@ -140,7 +217,7 @@ fn apply_window_spec(expr: Expr, window_spec: &Option<WindowSpec>) -> PolarsResu
                 .partition_by
                 .iter()
                 .map(parse_sql_expr)
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
             expr.over(partition_by)
             // Order by and Row range may not be supported at the moment
         }
@@ -152,31 +229,34 @@ fn parse_sql_function(sql_function: &SQLFunction) -> PolarsResult<Expr> {
     use sqlparser::ast::{FunctionArg, FunctionArgExpr};
     // Function name mostly do not have name space, so it mostly take the first args
     let function_name = sql_function.name.0[0].value.to_lowercase();
-    let args = sql_function
+    let args: Vec<_> = sql_function
         .args
         .iter()
         .map(|arg| match arg {
             FunctionArg::Named { arg, .. } => arg,
             FunctionArg::Unnamed(arg) => arg,
         })
-        .collect::<Vec<_>>();
-    Ok(
-        match (
-            function_name.as_str(),
-            args.as_slice(),
-            sql_function.distinct,
-        ) {
-            ("sum", [FunctionArgExpr::Expr(expr)], false) => {
-                apply_window_spec(parse_sql_expr(expr)?, &sql_function.over)?.sum()
-            }
-            ("count", [FunctionArgExpr::Expr(expr)], false) => {
-                apply_window_spec(parse_sql_expr(expr)?, &sql_function.over)?.count()
-            }
-            ("count", [FunctionArgExpr::Expr(expr)], true) => {
-                apply_window_spec(parse_sql_expr(expr)?, &sql_function.over)?.n_unique()
-            }
+        .collect();
+
+    // single arg
+    if let [FunctionArgExpr::Expr(sql_expr)] = args.as_slice() {
+        let e = apply_window_spec(parse_sql_expr(sql_expr)?, &sql_function.over)?;
+        Ok(match (function_name.as_str(), sql_function.distinct) {
+            ("sum", false) => e.sum(),
+            ("first", false) => e.first(),
+            ("last", false) => e.last(),
+            ("avg", false) => e.mean(),
+            ("max", false) => e.max(),
+            ("min", false) => e.min(),
+            ("stddev" | "stddev_samp", false) => e.std(1),
+            ("variance" | "var_samp", false) => e.var(1),
+            ("array_agg", false) => e.list(),
             // Special case for wildcard args to count function.
-            ("count", [FunctionArgExpr::Wildcard], false) => lit(1i32).count(),
+            ("count", false) if matches!(args.as_slice(), [FunctionArgExpr::Wildcard]) => {
+                lit(1i32).count()
+            }
+            ("count", false) => e.count(),
+            ("count", true) => e.n_unique(),
             _ => {
                 return Err(PolarsError::ComputeError(
                     format!(
@@ -186,6 +266,55 @@ fn parse_sql_function(sql_function: &SQLFunction) -> PolarsResult<Expr> {
                     .into(),
                 ))
             }
-        },
-    )
+        })
+    } else {
+        Err(PolarsError::ComputeError(
+            format!(
+                "Function {:?} with args {:?} was not supported in polars-sql yet!",
+                function_name, args
+            )
+            .into(),
+        ))
+    }
+}
+
+pub(super) fn process_join_constraint(
+    constraint: &JoinConstraint,
+    left_name: &str,
+    right_name: &str,
+) -> PolarsResult<(Expr, Expr)> {
+    if let JoinConstraint::On(expr) = constraint {
+        if let SqlExpr::BinaryOp { left, op, right } = expr {
+            match (left.as_ref(), right.as_ref()) {
+                (SqlExpr::CompoundIdentifier(left), SqlExpr::CompoundIdentifier(right)) => {
+                    if left.len() == 2 && right.len() == 2 {
+                        let tbl_a = &left[0].value;
+                        let col_a = &left[1].value;
+
+                        let tbl_b = &right[0].value;
+                        let col_b = &right[1].value;
+
+                        if let BinaryOperator::Eq = op {
+                            if left_name == tbl_a && right_name == tbl_b {
+                                return Ok((col(col_a), col(col_b)));
+                            } else if left_name == tbl_b && right_name == tbl_a {
+                                return Ok((col(col_b), col(col_a)));
+                            }
+                        }
+                    }
+                }
+                (SqlExpr::Identifier(left), SqlExpr::Identifier(right)) => {
+                    return Ok((col(&left.value), col(&right.value)))
+                }
+                _ => {}
+            }
+        }
+    }
+    Err(PolarsError::ComputeError(
+        format!(
+            "Join constraint {:?} not yet supported in polars-sql",
+            constraint
+        )
+        .into(),
+    ))
 }

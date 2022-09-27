@@ -1004,6 +1004,8 @@ impl DataFrame {
 mod test {
     use crate::df;
     use crate::prelude::*;
+    #[cfg(feature = "dtype-categorical")]
+    use crate::{reset_string_cache, IUseStringCache};
 
     fn create_frames() -> (DataFrame, DataFrame) {
         let s0 = Series::new("days", &[0, 1, 2]);
@@ -1199,14 +1201,12 @@ mod test {
             .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Left, None)
             .unwrap();
         let ca = joined.column("ham").unwrap().utf8().unwrap();
-        dbg!(&df_a, &df_b);
         assert_eq!(Vec::from(ca), correct_ham);
         let joined_inner_hack = df_a.inner_join(&df_b, ["dummy"], ["dummy"]).unwrap();
         let joined_inner = df_a
             .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Inner, None)
             .unwrap();
 
-        dbg!(&joined_inner_hack, &joined_inner);
         assert!(joined_inner_hack
             .column("ham")
             .unwrap()
@@ -1266,8 +1266,8 @@ mod test {
         df_a.try_apply("b", |s| s.cast(&DataType::Categorical(None)))
             .unwrap();
         // create a new cache
-        toggle_string_cache(false);
-        toggle_string_cache(true);
+        reset_string_cache();
+        let sc = IUseStringCache::new();
 
         df_b.try_apply("bar", |s| s.cast(&DataType::Categorical(None)))
             .unwrap();

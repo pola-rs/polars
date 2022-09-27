@@ -64,14 +64,16 @@ where
         ));
     }
 
-    let len = values.len();
+    // This iterators length can be trusted
+    // these represent the number of groups in the groupby operation
+    let output_len = offsets.size_hint().0;
     // start with a dummy index, will be overwritten on first iteration.
     // Safety:
     // we are in bounds
     let mut agg_window = unsafe { Agg::new(values, validity, 0, 0) };
 
-    let mut validity = MutableBitmap::with_capacity(len);
-    validity.extend_constant(len, true);
+    let mut validity = MutableBitmap::with_capacity(output_len);
+    validity.extend_constant(output_len, true);
 
     let out = offsets
         .enumerate()
@@ -295,6 +297,62 @@ impl Series {
                     }
                 })
             }
+        }
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
+        use DataType::*;
+
+        match self.dtype() {
+            Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_median(groups),
+            Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_median(groups),
+            dt if dt.is_numeric() || dt.is_temporal() => {
+                let ca = self.to_physical_repr();
+                let physical_type = ca.dtype();
+                let s = apply_method_physical_integer!(ca, agg_median, groups);
+                if dt.is_logical() {
+                    // back to physical and then
+                    // back to logical type
+                    s.cast(physical_type).unwrap().cast(dt).unwrap()
+                } else {
+                    s
+                }
+            }
+            _ => Series::full_null("", groups.len(), self.dtype()),
+        }
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn agg_quantile(
+        &self,
+        groups: &GroupsProxy,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> Series {
+        use DataType::*;
+
+        match self.dtype() {
+            Float32 => {
+                SeriesWrap(self.f32().unwrap().clone()).agg_quantile(groups, quantile, interpol)
+            }
+            Float64 => {
+                SeriesWrap(self.f64().unwrap().clone()).agg_quantile(groups, quantile, interpol)
+            }
+            dt if dt.is_numeric() || dt.is_temporal() => {
+                let ca = self.to_physical_repr();
+                let physical_type = ca.dtype();
+                let s =
+                    apply_method_physical_integer!(ca, agg_quantile, groups, quantile, interpol);
+                if dt.is_logical() {
+                    // back to physical and then
+                    // back to logical type
+                    s.cast(physical_type).unwrap().cast(dt).unwrap()
+                } else {
+                    s
+                }
+            }
+            _ => Series::full_null("", groups.len(), self.dtype()),
         }
     }
 

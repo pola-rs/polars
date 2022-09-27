@@ -242,7 +242,7 @@ impl Literal for NaiveDateTime {
         if in_nanoseconds_window(&self) {
             Expr::Literal(LiteralValue::DateTime(self, TimeUnit::Nanoseconds))
         } else {
-            Expr::Literal(LiteralValue::DateTime(self, TimeUnit::Milliseconds))
+            Expr::Literal(LiteralValue::DateTime(self, TimeUnit::Microseconds))
         }
     }
 }

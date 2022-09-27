@@ -132,16 +132,19 @@ impl DateLikeNameSpace {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Day))
     }
+
     /// Get the ordinal_day of a Date/Datetime
     pub fn ordinal_day(self) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::OrdinalDay))
     }
+
     /// Get the hour of a Datetime/Time64
     pub fn hour(self) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Hour))
     }
+
     /// Get the minute of a Datetime/Time64
     pub fn minute(self) -> Expr {
         self.0
@@ -153,10 +156,23 @@ impl DateLikeNameSpace {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Second))
     }
-    /// Get the nanosecond of a Time64
+
+    /// Get the millisecond of a Time64 (scaled from nanosecs)
+    pub fn millisecond(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Millisecond))
+    }
+
+    /// Get the microsecond of a Time64 (scaled from nanosecs)
+    pub fn microsecond(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Microsecond))
+    }
+
+    /// Get the nanosecond part of a Time64
     pub fn nanosecond(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::NanoSecond))
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Nanosecond))
     }
 
     pub fn timestamp(self, tu: TimeUnit) -> Expr {
@@ -167,7 +183,17 @@ impl DateLikeNameSpace {
     /// Offset this `Date/Datetime` by a given offset [`Duration`].
     /// This will take leap years/ months into account.
     #[cfg(feature = "date_offset")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "date_offset")))]
     pub fn offset_by(self, by: Duration) -> Expr {
         self.0.map_private(FunctionExpr::DateOffset(by))
+    }
+
+    #[cfg(feature = "timezones")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "timezones")))]
+    pub fn cast_time_zone(self, tz: TimeZone) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::CastTimezone(
+                tz,
+            )))
     }
 }

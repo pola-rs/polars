@@ -206,9 +206,14 @@ class ExprStringNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.str_to_lowercase())
 
-    def strip(self) -> pli.Expr:
+    def strip(self, matches: None | str = None) -> pli.Expr:
         """
         Remove leading and trailing whitespace.
+
+        Parameters
+        ----------
+        matches
+            An optional single character that should be trimmed
 
         Examples
         --------
@@ -228,9 +233,11 @@ class ExprStringNameSpace:
         └───────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_strip())
+        if matches is not None and len(matches) > 1:
+            raise ValueError("matches should contain a single character")
+        return pli.wrap_expr(self._pyexpr.str_strip(matches))
 
-    def lstrip(self) -> pli.Expr:
+    def lstrip(self, matches: None | str = None) -> pli.Expr:
         """
         Remove leading whitespace.
 
@@ -252,11 +259,18 @@ class ExprStringNameSpace:
         └────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_lstrip())
+        if matches is not None and len(matches) > 1:
+            raise ValueError("matches should contain a single character")
+        return pli.wrap_expr(self._pyexpr.str_lstrip(matches))
 
-    def rstrip(self) -> pli.Expr:
+    def rstrip(self, matches: None | str = None) -> pli.Expr:
         """
         Remove trailing whitespace.
+
+        Parameters
+        ----------
+        matches
+            An optional single character that should be trimmed
 
         Examples
         --------
@@ -276,7 +290,9 @@ class ExprStringNameSpace:
         └───────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_rstrip())
+        if matches is not None and len(matches) > 1:
+            raise ValueError("matches should contain a single character")
+        return pli.wrap_expr(self._pyexpr.str_rstrip(matches))
 
     def zfill(self, alignment: int) -> pli.Expr:
         """

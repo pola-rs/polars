@@ -4,9 +4,9 @@ use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 use utils::*;
 
+use super::*;
 use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::{optimizer, Context};
-use crate::prelude::*;
 use crate::utils::{aexpr_to_leaf_names, aexprs_to_schema, check_input_node, has_aexpr};
 
 #[derive(Default)]

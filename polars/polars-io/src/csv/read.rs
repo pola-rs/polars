@@ -1,3 +1,6 @@
+#[cfg(feature = "dtype-categorical")]
+use polars_core::toggle_string_cache;
+
 use super::*;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -368,6 +371,9 @@ where
         #[allow(unused_mut)]
         let mut to_cast_local = vec![];
 
+        #[cfg(feature = "dtype-categorical")]
+        let mut has_categorical = false;
+
         let mut df = if let Some(schema) = self.schema_overwrite {
             // This branch we check if there are dtypes we cannot parse.
             // We only support a few dtypes in the parser and later cast to the required dtype
@@ -379,13 +385,6 @@ where
                 .filter_map(|mut fld| {
                     use DataType::*;
                     match fld.data_type() {
-                        // For categorical we first read as utf8 and later cast to categorical
-                        #[cfg(feature = "dtype-categorical")]
-                        Categorical(_) => {
-                            to_cast_local.push(fld.clone());
-                            fld.coerce(DataType::Utf8);
-                            Some(fld)
-                        }
                         Time => {
                             to_cast.push(fld);
                             // let inference decide the column type
@@ -397,11 +396,21 @@ where
                             fld.coerce(DataType::Int32);
                             Some(fld)
                         }
+                        #[cfg(feature = "dtype-categorical")]
+                        DataType::Categorical(_) => {
+                            has_categorical = true;
+                            Some(fld)
+                        }
                         _ => Some(fld),
                     }
                 })
                 .collect();
             let schema = Schema::from(fields);
+
+            #[cfg(feature = "dtype-categorical")]
+            if has_categorical {
+                toggle_string_cache(true);
+            }
 
             // we cannot overwrite self, because the lifetime is already instantiated with `a, and
             // the lifetime that accompanies this scope is shorter.
@@ -502,6 +511,11 @@ where
         }
 
         cast_columns(&mut df, &to_cast_local, true)?;
+
+        #[cfg(feature = "dtype-categorical")]
+        if has_categorical {
+            toggle_string_cache(false);
+        }
         Ok(df)
     }
 }

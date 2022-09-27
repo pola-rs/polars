@@ -1,16 +1,15 @@
 use std::sync::Arc;
 
+use super::*;
 use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::iterator::*;
-use crate::prelude::stack_opt::OptimizationRule;
-use crate::prelude::*;
 use crate::utils::aexpr_to_leaf_names;
 
 /// If we realize that a predicate drops nulls on a subset
 /// we replace it with an explicit df.drop_nulls call, as this
 /// has a fast path for the no null case
-pub struct ReplaceDropNulls {}
+pub(super) struct ReplaceDropNulls {}
 
 impl OptimizationRule for ReplaceDropNulls {
     fn optimize_plan(
@@ -98,9 +97,7 @@ mod test {
     use polars_core::prelude::*;
 
     use super::*;
-    use crate::prelude::stack_opt::OptimizationRule;
     use crate::tests::fruits_cars;
-    use crate::utils::test::optimize_lp;
 
     #[test]
     fn test_drop_nulls_optimization() -> PolarsResult<()> {
@@ -114,6 +111,7 @@ mod test {
             None,
         ] {
             let lp = df.clone().lazy().drop_nulls(subset).logical_plan;
+
             let out = optimize_lp(lp, &mut rules);
             assert!(matches!(out, LogicalPlan::MapFunction { .. }));
         }

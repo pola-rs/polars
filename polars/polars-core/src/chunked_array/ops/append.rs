@@ -63,6 +63,7 @@ impl ListChunked {
         let len = self.len();
         self.length += other.length;
         new_chunks(&mut self.chunks, &other.chunks, len);
+        self.set_sorted2(IsSorted::Not);
         Ok(())
     }
 }
@@ -72,6 +73,7 @@ impl<T: PolarsObject> ObjectChunked<T> {
     pub fn append(&mut self, other: &Self) {
         let len = self.len();
         self.length += other.length;
+        self.set_sorted2(IsSorted::Not);
         new_chunks(&mut self.chunks, &other.chunks, len);
     }
 }

@@ -1,5 +1,4 @@
 use super::*;
-use crate::prelude::file_caching::FileFingerPrint;
 
 pub struct CsvExec {
     pub path: PathBuf,

@@ -425,7 +425,7 @@ fn get_string_concat_input(node: Node, expr_arena: &Arena<AExpr>) -> Option<&[No
     }
 }
 
-pub struct SimplifyExprRule {}
+pub(crate) struct SimplifyExprRule {}
 
 impl OptimizationRule for SimplifyExprRule {
     #[allow(clippy::float_cmp)]

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -57,16 +57,16 @@ def test_init_inputs(monkeypatch: Any) -> None:
         assert pl.Series("a", [10000, 20000, 30000], dtype=pl.Time).dtype == pl.Time
 
         # 2d numpy array
-        res = pl.Series(name="a", values=np.array([[1, 2], [3, 4]]))
-        assert all(res[0] == np.array([1, 2]))
-        assert all(res[1] == np.array([3, 4]))
-        assert (
-            pl.Series(values=np.array([["foo", "bar"], ["foo2", "bar2"]])).dtype
-            == pl.Object
-        )
+        res = pl.Series(name="a", values=np.array([[1, 2], [3, 4]], dtype=np.int64))
+        assert res.dtype == pl.List(pl.Int64)
+        assert res[0].to_list() == [1, 2]
+        assert res[1].to_list() == [3, 4]
+        assert pl.Series(
+            values=np.array([["foo", "bar"], ["foo2", "bar2"]])
+        ).dtype == pl.List(pl.Utf8)
 
         # lists
-        assert pl.Series("a", [[1, 2], [3, 4]]).dtype == pl.List
+        assert pl.Series("a", [[1, 2], [3, 4]]).dtype == pl.List(pl.Int64)
 
     # datetime64: check timeunit (auto-detect, implicit/explicit) and NaT
     d64 = pd.date_range(date(2021, 8, 1), date(2021, 8, 3)).values
@@ -109,8 +109,22 @@ def test_concat() -> None:
 
 
 def test_to_frame() -> None:
-    s = pl.Series([1, 2])
-    assert s.to_frame().shape == (2, 1)
+    s1 = pl.Series([1, 2])
+    s2 = pl.Series("s", [1, 2])
+
+    df1 = s1.to_frame()
+    df2 = s2.to_frame()
+    df3 = s1.to_frame("xyz")
+    df4 = s2.to_frame("xyz")
+
+    for df, name in ((df1, ""), (df2, "s"), (df3, "xyz"), (df4, "xyz")):
+        assert isinstance(df, pl.DataFrame)
+        assert df.rows() == [(1,), (2,)]
+        assert df.columns == [name]
+
+    # note: the empty string IS technically a valid column name
+    assert s2.to_frame("").columns == [""]
+    assert s2.name == "s"
 
 
 def test_bitwise_ops() -> None:
@@ -1233,12 +1247,16 @@ def test_from_sequences(monkeypatch: Any) -> None:
 
 def test_comparisons_int_series_to_float() -> None:
     srs_int = pl.Series([1, 2, 3, 4])
+
     assert_series_equal(srs_int - 1.0, pl.Series([0.0, 1.0, 2.0, 3.0]))
     assert_series_equal(srs_int + 1.0, pl.Series([2.0, 3.0, 4.0, 5.0]))
     assert_series_equal(srs_int * 2.0, pl.Series([2.0, 4.0, 6.0, 8.0]))
     assert_series_equal(srs_int / 2.0, pl.Series([0.5, 1.0, 1.5, 2.0]))
     assert_series_equal(srs_int % 2.0, pl.Series([1.0, 0.0, 1.0, 0.0]))
     assert_series_equal(4.0 % srs_int, pl.Series([0.0, 0.0, 1.0, 0.0]))
+
+    assert_series_equal(srs_int - pl.lit(1.0), pl.Series([0.0, 1.0, 2.0, 3.0]))
+    assert_series_equal(srs_int + pl.lit(1.0), pl.Series([2.0, 3.0, 4.0, 5.0]))
 
     assert_series_equal(srs_int // 2.0, pl.Series([0.0, 1.0, 1.0, 2.0]))
     assert_series_equal(srs_int < 3.0, pl.Series([True, True, False, False]))
@@ -1251,12 +1269,16 @@ def test_comparisons_int_series_to_float() -> None:
 
 def test_comparisons_float_series_to_int() -> None:
     srs_float = pl.Series([1.0, 2.0, 3.0, 4.0])
+
     assert_series_equal(srs_float - 1, pl.Series([0.0, 1.0, 2.0, 3.0]))
     assert_series_equal(srs_float + 1, pl.Series([2.0, 3.0, 4.0, 5.0]))
     assert_series_equal(srs_float * 2, pl.Series([2.0, 4.0, 6.0, 8.0]))
     assert_series_equal(srs_float / 2, pl.Series([0.5, 1.0, 1.5, 2.0]))
     assert_series_equal(srs_float % 2, pl.Series([1.0, 0.0, 1.0, 0.0]))
     assert_series_equal(4 % srs_float, pl.Series([0.0, 0.0, 1.0, 0.0]))
+
+    assert_series_equal(srs_float - pl.lit(1), pl.Series([0.0, 1.0, 2.0, 3.0]))
+    assert_series_equal(srs_float + pl.lit(1), pl.Series([2.0, 3.0, 4.0, 5.0]))
 
     assert_series_equal(srs_float // 2, pl.Series([0.0, 1.0, 1.0, 2.0]))
     assert_series_equal(srs_float < 3, pl.Series([True, True, False, False]))
@@ -1514,11 +1536,26 @@ def test_str_rstrip() -> None:
     expected = pl.Series([" hello", "world"])
     assert_series_equal(s.str.rstrip(), expected)
 
+    s = pl.Series([" hello ", "world\t "])
+    expected = pl.Series([" hell", "world"])
+    assert_series_equal(s.str.rstrip().str.rstrip("o"), expected)
+
+
+def test_str_strip() -> None:
+    s = pl.Series([" hello ", "world\t "])
+    expected = pl.Series(["hello", "world"])
+    assert_series_equal(s.str.strip(), expected)
+
+    expected = pl.Series(["hello", "worl"])
+    assert_series_equal(s.str.strip().str.strip("d"), expected)
+
 
 def test_str_lstrip() -> None:
     s = pl.Series([" hello ", "\t world"])
     expected = pl.Series(["hello ", "world"])
     assert_series_equal(s.str.lstrip(), expected)
+    expected = pl.Series(["ello ", "world"])
+    assert_series_equal(s.str.lstrip().str.lstrip("h"), expected)
 
 
 def test_str_strptime() -> None:
@@ -1567,10 +1604,16 @@ def test_dt_datetimes() -> None:
     s = pl.Series(["2020-01-01 00:00:00.000000000", "2020-02-02 03:20:10.987654321"])
     s = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
 
-    # hours, minutes, seconds and nanoseconds
+    # hours, minutes, seconds, milliseconds, microseconds, and nanoseconds
     verify_series_and_expr_api(s, pl.Series("", [0, 3], dtype=UInt32), "dt.hour")
     verify_series_and_expr_api(s, pl.Series("", [0, 20], dtype=UInt32), "dt.minute")
     verify_series_and_expr_api(s, pl.Series("", [0, 10], dtype=UInt32), "dt.second")
+    verify_series_and_expr_api(
+        s, pl.Series("", [0, 987], dtype=UInt32), "dt.millisecond"
+    )
+    verify_series_and_expr_api(
+        s, pl.Series("", [0, 987654], dtype=UInt32), "dt.microsecond"
+    )
     verify_series_and_expr_api(
         s, pl.Series("", [0, 987654321], dtype=UInt32), "dt.nanosecond"
     )
@@ -1836,6 +1879,32 @@ def test_ewm_std_var() -> None:
     assert np.allclose(var, std**2, rtol=1e-16)
 
 
+def test_ewm_param_validation() -> None:
+    s = pl.Series("values", range(10))
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        s.ewm_std(com=0.5, alpha=0.5)
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        s.ewm_mean(span=1.5, half_life=0.75)
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        s.ewm_var(alpha=0.5, span=1.5)
+
+    with pytest.raises(ValueError, match="Require 'com' >= 0"):
+        s.ewm_std(com=-0.5)
+
+    with pytest.raises(ValueError, match="Require 'span' >= 1"):
+        s.ewm_mean(span=0.5)
+
+    with pytest.raises(ValueError, match="Require 'half_life' > 0"):
+        s.ewm_var(half_life=0)
+
+    for alpha in (-0.5, -0.0000001, 0.0, 1.0000001, 1.5):
+        with pytest.raises(ValueError, match="Require 0 < 'alpha' <= 1"):
+            s.ewm_std(alpha=alpha)
+
+
 def test_extend_constant() -> None:
     a = pl.Series("a", [1, 2, 3])
     expected = pl.Series("a", [1, 2, 3, 1, 1, 1])
@@ -1885,6 +1954,23 @@ def test_ceil() -> None:
     a = pl.Series("a", [1.8, 1.2, 3.0])
     expected = pl.Series("a", [2.0, 2.0, 3.0])
     verify_series_and_expr_api(a, expected, "ceil")
+
+
+def test_duration_arithmetic() -> None:
+    # apply some basic duration math to series
+    s = pl.Series([datetime(2022, 1, 1, 10, 20, 30), datetime(2022, 1, 2, 20, 40, 50)])
+    d1 = pl.duration(days=5, microseconds=123456)
+    d2 = timedelta(days=5, microseconds=123456)
+
+    expected_values = [
+        datetime(2022, 1, 6, 10, 20, 30, 123456),
+        datetime(2022, 1, 7, 20, 40, 50, 123456),
+    ]
+    for d in (d1, d2):
+        df1 = pl.select((s + d).alias("d_offset"))
+        df2 = pl.select((d + s).alias("d_offset"))
+        assert df1["d_offset"].to_list() == expected_values
+        assert df1["d_offset"].series_equal(df2["d_offset"])
 
 
 def test_duration_extract_times() -> None:
@@ -2071,6 +2157,4 @@ def test_repr() -> None:
 
 def test_builtin_abs() -> None:
     s = pl.Series("s", [-1, 0, 1, None])
-    a = abs(s)
-
-    assert a.to_list() == [1, 0, 1, None]
+    assert abs(s).to_list() == [1, 0, 1, None]

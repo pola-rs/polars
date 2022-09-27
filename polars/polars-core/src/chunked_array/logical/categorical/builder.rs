@@ -150,6 +150,7 @@ impl<'a> Hash for StrHashLocal<'a> {
 }
 
 impl<'a> StrHashLocal<'a> {
+    #[inline]
     pub(crate) fn new(s: &'a str, hash: u64) -> Self {
         Self { str: s, hash }
     }
@@ -163,13 +164,17 @@ impl<'a> PartialEq for StrHashLocal<'a> {
     }
 }
 
-pub struct CategoricalChunkedBuilder {
+pub struct CategoricalChunkedBuilder<'a> {
     cat_builder: UInt32Vec,
     name: String,
     reverse_mapping: RevMappingBuilder,
+    // hashmap utilized by the local builder
+    local_mapping: PlHashMap<StrHashLocal<'a>, u32>,
+    // stored hashes from local builder
+    hashes: Vec<u64>,
 }
 
-impl CategoricalChunkedBuilder {
+impl CategoricalChunkedBuilder<'_> {
     pub fn new(name: &str, capacity: usize) -> Self {
         let builder = MutableUtf8Array::<i64>::with_capacity(capacity / 10);
         let reverse_mapping = RevMappingBuilder::Local(builder);
@@ -178,58 +183,78 @@ impl CategoricalChunkedBuilder {
             cat_builder: UInt32Vec::with_capacity(capacity),
             name: name.to_string(),
             reverse_mapping,
+            local_mapping: Default::default(),
+            hashes: vec![],
         }
     }
 }
-impl CategoricalChunkedBuilder {
-    ///
+impl<'a> CategoricalChunkedBuilder<'a> {
+    fn push_impl(&mut self, s: &'a str, store_hashes: bool) {
+        let h = str::get_hash(s, self.local_mapping.hasher());
+        let key = StrHashLocal::new(s, h);
+        let mut idx = self.local_mapping.len() as u32;
+
+        let entry = self
+            .local_mapping
+            .raw_entry_mut()
+            .from_key_hashed_nocheck(h, &key);
+
+        match entry {
+            RawEntryMut::Occupied(entry) => idx = *entry.get(),
+            RawEntryMut::Vacant(entry) => {
+                if store_hashes {
+                    self.hashes.push(h)
+                }
+                entry.insert_with_hasher(h, key, idx, |s| s.hash);
+                self.reverse_mapping.insert(s);
+            }
+        };
+        self.cat_builder.push(Some(idx));
+    }
+
+    /// Check if this categorical already exists
+    pub fn exits(&self, s: &str) -> bool {
+        let h = str::get_hash(s, self.local_mapping.hasher());
+        let key = StrHashLocal::new(s, h);
+        self.local_mapping.contains_key(&key)
+    }
+
+    #[inline]
+    pub fn append_value(&mut self, s: &'a str) {
+        self.push_impl(s, false)
+    }
+
+    #[inline]
+    pub fn append_null(&mut self) {
+        self.cat_builder.push(None)
+    }
+
     /// `store_hashes` is not needed by the local builder, only for the global builder under contention
     /// The hashes have the same order as the `Utf8Array` values.
-    fn build_local_map<'a, I>(&mut self, i: I, store_hashes: bool) -> Vec<u64>
+    fn build_local_map<I>(&mut self, i: I, store_hashes: bool) -> Vec<u64>
     where
         I: IntoIterator<Item = Option<&'a str>>,
     {
         let mut iter = i.into_iter();
-        let mut hashes = if store_hashes {
-            Vec::with_capacity(iter.size_hint().0 / 10)
-        } else {
-            vec![]
-        };
+        if store_hashes {
+            self.hashes = Vec::with_capacity(iter.size_hint().0 / 10)
+        }
         // It is important that we use the same hash builder as the global `StringCache` does.
-        let mut mapping =
+        self.local_mapping =
             PlHashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, StringCache::get_hash_builder());
-        let hb = mapping.hasher().clone();
         for opt_s in &mut iter {
             match opt_s {
-                Some(s) => {
-                    let h = str::get_hash(s, &hb);
-                    let key = StrHashLocal::new(s, h);
-                    let mut idx = mapping.len() as u32;
-
-                    let entry = mapping.raw_entry_mut().from_key_hashed_nocheck(h, &key);
-
-                    match entry {
-                        RawEntryMut::Occupied(entry) => idx = *entry.get(),
-                        RawEntryMut::Vacant(entry) => {
-                            if store_hashes {
-                                hashes.push(h)
-                            }
-                            entry.insert_with_hasher(h, key, idx, |s| s.hash);
-                            self.reverse_mapping.insert(s);
-                        }
-                    };
-                    self.cat_builder.push(Some(idx));
-                }
-                None => {
-                    self.cat_builder.push(None);
-                }
+                Some(s) => self.push_impl(s, store_hashes),
+                None => self.append_null(),
             }
         }
 
-        if mapping.len() > u32::MAX as usize {
+        if self.local_mapping.len() > u32::MAX as usize {
             panic!("not more than {} categories supported", u32::MAX)
         };
-        hashes
+        // drop the hashmap
+        std::mem::take(&mut self.local_mapping);
+        std::mem::take(&mut self.hashes)
     }
 
     /// Build a global string cached `CategoricalChunked` from a local `Dictionary`.
@@ -303,7 +328,7 @@ impl CategoricalChunkedBuilder {
         self.reverse_mapping = RevMappingBuilder::GlobalFinished(global_to_local, values, id)
     }
 
-    fn build_global_map_contention<'a, I>(&mut self, i: I)
+    fn build_global_map_contention<I>(&mut self, i: I)
     where
         I: IntoIterator<Item = Option<&'a str>>,
     {
@@ -385,7 +410,7 @@ impl CategoricalChunkedBuilder {
     }
 
     /// Appends all the values in a single lock of the global string cache.
-    pub fn drain_iter<'a, I>(&mut self, i: I)
+    pub fn drain_iter<I>(&mut self, i: I)
     where
         I: IntoIterator<Item = Option<&'a str>>,
     {
@@ -397,6 +422,15 @@ impl CategoricalChunkedBuilder {
     }
 
     pub fn finish(mut self) -> CategoricalChunked {
+        // convert to global just in time
+        if using_string_cache() {
+            if let RevMappingBuilder::Local(ref mut mut_arr) = self.reverse_mapping {
+                let arr: Utf8Array<_> = std::mem::take(mut_arr).into();
+                let keys = std::mem::take(&mut self.cat_builder).into();
+                self.global_map_from_local(&keys, arr);
+            }
+        }
+
         CategoricalChunked::from_chunks_original(
             &self.name,
             vec![self.cat_builder.as_box()],

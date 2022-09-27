@@ -227,6 +227,7 @@ The following methods are available under the `Series.dt` attribute.
    :toctree: api/
 
     DateTimeNameSpace.cast_time_unit
+    DateTimeNameSpace.cast_time_zone
     DateTimeNameSpace.day
     DateTimeNameSpace.days
     DateTimeNameSpace.epoch
@@ -235,6 +236,9 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.max
     DateTimeNameSpace.mean
     DateTimeNameSpace.median
+    DateTimeNameSpace.microsecond
+    DateTimeNameSpace.microseconds
+    DateTimeNameSpace.millisecond
     DateTimeNameSpace.milliseconds
     DateTimeNameSpace.min
     DateTimeNameSpace.minute

@@ -341,6 +341,24 @@ impl StringNameSpace {
         )
     }
 
+    /// Remove whitespace on both sides.
+    pub fn strip(self, matches: Option<char>) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::Strip(matches)))
+    }
+
+    /// Remove leading whitespace.
+    pub fn lstrip(self, matches: Option<char>) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::LStrip(matches)))
+    }
+
+    /// Remove trailing whitespace.
+    pub fn rstrip(self, matches: Option<char>) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::RStrip(matches)))
+    }
+
     /// Convert all characters to lowercase.
     pub fn to_lowercase(self) -> Expr {
         self.0

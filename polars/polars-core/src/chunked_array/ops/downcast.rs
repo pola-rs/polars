@@ -55,7 +55,9 @@ where
     }
 
     /// # Safety
-    /// The caller must ensure the length remains correct.
+    /// The caller must ensure:
+    ///     * the length remains correct.
+    ///     * the flags (sorted, etc) are correct.
     pub unsafe fn downcast_iter_mut(
         &mut self,
     ) -> impl Iterator<Item = &mut PrimitiveArray<T::Native>> + DoubleEndedIterator {

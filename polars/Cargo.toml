@@ -1,6 +1,6 @@
 [package]
 name = "polars"
-version = "0.24.0"
+version = "0.24.2"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 keywords = ["dataframe", "query-engine", "arrow"]
@@ -114,7 +114,7 @@ to_dummies = ["polars-ops/to_dummies"]
 bigidx = ["polars-core/bigidx", "polars-lazy/bigidx"]
 list_to_struct = ["polars-ops/list_to_struct", "polars-lazy/list_to_struct"]
 describe = ["polars-core/describe"]
-timezones = ["polars-core/timezones"]
+timezones = ["polars-core/timezones", "polars-lazy/timezones"]
 string_justify = ["polars-lazy/string_justify", "polars-ops/string_justify"]
 arg_where = ["polars-lazy/arg_where"]
 search_sorted = ["polars-lazy/search_sorted"]
@@ -268,12 +268,12 @@ bench = [
 ]
 
 [dependencies]
-polars-algo = { version = "0.24.0", path = "./polars-algo", optional = true }
-polars-core = { version = "0.24.0", path = "./polars-core", features = ["docs", "private"], default-features = false }
-polars-io = { version = "0.24.0", path = "./polars-io", features = ["private"], default-features = false, optional = true }
-polars-lazy = { version = "0.24.0", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
-polars-ops = { version = "0.24.0", path = "./polars-ops" }
-polars-time = { version = "0.24.0", path = "./polars-time", default-features = false, optional = true }
+polars-algo = { version = "0.24.2", path = "./polars-algo", optional = true }
+polars-core = { version = "0.24.2", path = "./polars-core", features = ["docs", "private"], default-features = false }
+polars-io = { version = "0.24.2", path = "./polars-io", features = ["private"], default-features = false, optional = true }
+polars-lazy = { version = "0.24.2", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
+polars-ops = { version = "0.24.2", path = "./polars-ops" }
+polars-time = { version = "0.24.2", path = "./polars-time", default-features = false, optional = true }
 
 [dev-dependencies]
 ahash = "0.7"

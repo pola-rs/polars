@@ -225,3 +225,46 @@ to_temporal_unit!(
     i64,
     ArrowDataType::Int32
 );
+
+#[cfg(all(feature = "dtype-datetime", feature = "timezones"))]
+pub(crate) fn cast_timezone(
+    arr: &PrimitiveArray<i64>,
+    tu: TimeUnit,
+    from: chrono_tz::Tz,
+    to: chrono_tz::Tz,
+) -> ArrayRef {
+    use chrono::TimeZone;
+
+    match tu {
+        TimeUnit::Milliseconds => Box::new(unary(
+            arr,
+            |value| {
+                let ndt = timestamp_ms_to_datetime(value);
+                let tz_aware = from.from_local_datetime(&ndt).unwrap();
+                let new_tz_aware = tz_aware.with_timezone(&to);
+                new_tz_aware.timestamp_millis()
+            },
+            ArrowDataType::Int64,
+        )),
+        TimeUnit::Microseconds => Box::new(unary(
+            arr,
+            |value| {
+                let ndt = timestamp_us_to_datetime(value);
+                let tz_aware = from.from_local_datetime(&ndt).unwrap();
+                let new_tz_aware = tz_aware.with_timezone(&to);
+                new_tz_aware.timestamp_micros()
+            },
+            ArrowDataType::Int64,
+        )),
+        TimeUnit::Nanoseconds => Box::new(unary(
+            arr,
+            |value| {
+                let ndt = timestamp_ns_to_datetime(value);
+                let tz_aware = from.from_local_datetime(&ndt).unwrap();
+                let new_tz_aware = tz_aware.with_timezone(&to);
+                new_tz_aware.timestamp_nanos()
+            },
+            ArrowDataType::Int64,
+        )),
+    }
+}

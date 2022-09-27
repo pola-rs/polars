@@ -387,6 +387,9 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Replace { all, literal } => map_as_slice!(strings::replace, literal, all),
             Uppercase => map!(strings::uppercase),
             Lowercase => map!(strings::lowercase),
+            Strip(matches) => map!(strings::strip, matches),
+            LStrip(matches) => map!(strings::lstrip, matches),
+            RStrip(matches) => map!(strings::rstrip, matches),
         }
     }
 }
@@ -407,8 +410,12 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Hour => map!(datetime::hour),
             Minute => map!(datetime::minute),
             Second => map!(datetime::second),
-            NanoSecond => map!(datetime::nanosecond),
+            Millisecond => map!(datetime::millisecond),
+            Microsecond => map!(datetime::microsecond),
+            Nanosecond => map!(datetime::nanosecond),
             TimeStamp(tu) => map!(datetime::timestamp, tu),
+            #[cfg(feature = "timezones")]
+            CastTimezone(tz) => map!(datetime::cast_timezone, &tz),
         }
     }
 }

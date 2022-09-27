@@ -3008,7 +3008,7 @@ class Expr:
         return_dtype: type[DataType] | None = None,
     ) -> Expr:
         """
-        Apply a custom function in a GroupBy or Projection context.
+        Apply a custom/user-defined function (UDF) in a GroupBy or Projection context.
 
         Depending on the context it has the following behavior:
 
@@ -3019,17 +3019,17 @@ class Expr:
             Expects `f` to be of type Callable[[Series], Series].
             Applies a python function over each group.
 
-        Implementing logic using the ``.apply`` method is generally slower and more
-        memory intensive than implementing the same logic using the expression API
-        because:
+        Implementing logic using a Python function is almost always _significantly_
+        slower and more memory intensive than implementing the same logic using
+        the native expression API because:
 
-        - with .apply the logic is implemented in Python but with an expression the
-          logic is implemented in Rust
-        - with ``.apply`` the DataFrame is materialized in memory
-        - expressions can be parallelised
-        - expressions can be optimised
+        - The native expression engine runs in Rust; UDFs run in Python.
+        - Use of Python UDFs forces the DataFrame to be materialized in memory.
+        - Polars-native expressions can be parallelised (UDFs cannot).
+        - Polars-native expressions can be logically optimised (UDFs cannot).
 
-        If possible, use the expression API for best performance.
+        Wherever possible you should strongly prefer the native expression API
+        to achieve the best performance.
 
         Parameters
         ----------
@@ -6100,22 +6100,37 @@ class Expr:
 
 
 def _prepare_alpha(
-    com: float | None = None,
-    span: float | None = None,
-    half_life: float | None = None,
-    alpha: float | None = None,
+    com: float | int | None = None,
+    span: float | int | None = None,
+    half_life: float | int | None = None,
+    alpha: float | int | None = None,
 ) -> float:
-    if com is not None and alpha is None:
-        assert com >= 0.0
+    """Normalise EWM decay specification in terms of smoothing factor 'alpha'."""
+    if sum((param is not None) for param in (com, span, half_life, alpha)) > 1:
+        raise ValueError(
+            "Parameters 'com', 'span', 'half_life', and 'alpha' are mutually exclusive"
+        )
+    if com is not None:
+        if com < 0.0:
+            raise ValueError(f"Require 'com' >= 0 (found {com})")
         alpha = 1.0 / (1.0 + com)
-    if span is not None and alpha is None:
-        assert span >= 1.0
+
+    elif span is not None:
+        if span < 1.0:
+            raise ValueError(f"Require 'span' >= 1 (found {span})")
         alpha = 2.0 / (span + 1.0)
-    if half_life is not None and alpha is None:
-        assert half_life > 0.0
+
+    elif half_life is not None:
+        if half_life <= 0.0:
+            raise ValueError(f"Require 'half_life' > 0 (found {half_life})")
         alpha = 1.0 - math.exp(-math.log(2.0) / half_life)
-    if alpha is None:
-        raise ValueError("at least one of {com, span, half_life, alpha} should be set")
+
+    elif alpha is None:
+        raise ValueError("One of 'com', 'span', 'half_life', or 'alpha' must be set")
+
+    elif not (0 < alpha <= 1):
+        raise ValueError(f"Require 0 < 'alpha' <= 1 (found {alpha})")
+
     return alpha
 
 
@@ -6129,4 +6144,4 @@ def _prepare_rolling_window_args(
         window_size = f"{window_size}i"
     if min_periods is None:
         min_periods = 1
-    return (window_size, min_periods)
+    return window_size, min_periods

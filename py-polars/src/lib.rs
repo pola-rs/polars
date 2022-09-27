@@ -18,6 +18,8 @@ pub mod prelude;
 pub(crate) mod py_modules;
 pub mod series;
 mod set;
+#[cfg(feature = "polars-sql")]
+mod sql;
 pub mod utils;
 
 #[cfg(target_os = "linux")]
@@ -153,8 +155,13 @@ fn pearson_corr(a: dsl::PyExpr, b: dsl::PyExpr, ddof: u8) -> dsl::PyExpr {
 }
 
 #[pyfunction]
-fn spearman_rank_corr(a: dsl::PyExpr, b: dsl::PyExpr, ddof: u8) -> dsl::PyExpr {
-    polars::lazy::dsl::spearman_rank_corr(a.inner, b.inner, ddof).into()
+fn spearman_rank_corr(
+    a: dsl::PyExpr,
+    b: dsl::PyExpr,
+    ddof: u8,
+    propagate_nans: bool,
+) -> dsl::PyExpr {
+    polars::lazy::dsl::spearman_rank_corr(a.inner, b.inner, ddof, propagate_nans).into()
 }
 
 #[pyfunction]
@@ -212,12 +219,12 @@ fn py_datetime(
     hour: Option<dsl::PyExpr>,
     minute: Option<dsl::PyExpr>,
     second: Option<dsl::PyExpr>,
-    millisecond: Option<dsl::PyExpr>,
+    microsecond: Option<dsl::PyExpr>,
 ) -> dsl::PyExpr {
     let hour = hour.map(|e| e.inner);
     let minute = minute.map(|e| e.inner);
     let second = second.map(|e| e.inner);
-    let millisecond = millisecond.map(|e| e.inner);
+    let microsecond = microsecond.map(|e| e.inner);
 
     let args = DatetimeArgs {
         year: year.inner,
@@ -226,17 +233,19 @@ fn py_datetime(
         hour,
         minute,
         second,
-        millisecond,
+        microsecond,
     };
 
     polars::lazy::dsl::datetime(args).into()
 }
 
+#[allow(clippy::too_many_arguments)]
 #[pyfunction]
 fn py_duration(
     days: Option<PyExpr>,
     seconds: Option<PyExpr>,
     nanoseconds: Option<PyExpr>,
+    microseconds: Option<PyExpr>,
     milliseconds: Option<PyExpr>,
     minutes: Option<PyExpr>,
     hours: Option<PyExpr>,
@@ -246,6 +255,7 @@ fn py_duration(
         days: days.map(|e| e.inner),
         seconds: seconds.map(|e| e.inner),
         nanoseconds: nanoseconds.map(|e| e.inner),
+        microseconds: microseconds.map(|e| e.inner),
         milliseconds: milliseconds.map(|e| e.inner),
         minutes: minutes.map(|e| e.inner),
         hours: hours.map(|e| e.inner),
@@ -513,6 +523,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyLazyFrame>().unwrap();
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<dsl::PyExpr>().unwrap();
+    #[cfg(feature = "polars-sql")]
+    m.add_class::<sql::PySQLContext>().unwrap();
     m.add_wrapped(wrap_pyfunction!(col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(count)).unwrap();
     m.add_wrapped(wrap_pyfunction!(first)).unwrap();
