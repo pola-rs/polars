@@ -567,12 +567,12 @@ class Series:
             }:
                 if idx_type == UInt32:
                     if idxs.dtype in {Int64, UInt64}:
-                        if idxs.max() >= 2**32:  # type: ignore[operator]
+                        if idxs.max() >= 2 ** 32:  # type: ignore[operator]
                             raise ValueError(
                                 "Index positions should be smaller than 2^32."
                             )
                     if idxs.dtype == Int64:
-                        if idxs.min() < -(2**32):  # type: ignore[operator]
+                        if idxs.min() < -(2 ** 32):  # type: ignore[operator]
                             raise ValueError(
                                 "Index positions should be bigger than -2^32 + 1."
                             )
@@ -600,9 +600,9 @@ class Series:
                 # Numpy array with signed or unsigned integers.
 
                 if idx_type == UInt32:
-                    if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2**32:
+                    if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2 ** 32:
                         raise ValueError("Index positions should be smaller than 2^32.")
-                    if idxs.dtype == np.int64 and idxs.min() < -(2**32):
+                    if idxs.dtype == np.int64 and idxs.min() < -(2 ** 32):
                         raise ValueError(
                             "Index positions should be bigger than -2^32 + 1."
                         )
@@ -4458,14 +4458,17 @@ class Series:
         ----------
         com
             Specify decay in terms of center of mass, :math:`\gamma`, with
+            
                 .. math::
                     \alpha = \frac{1}{1 + \gamma} \; \forall \; \gamma \geq 0
         span
             Specify decay in terms of span, :math:`\theta`, with
+
                 .. math::
                     \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
         half_life
             Specify decay in terms of half-life, :math:`\lambda`, with
+
                 .. math::
                     \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \lambda } \right\} \;
                     \forall \; \lambda > 0
@@ -4474,10 +4477,12 @@ class Series:
         adjust
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
+
                 - When ``adjust=True`` the EW function is calculated
                   using weights :math:`w_i = (1 - \alpha)^i`
                 - When ``adjust=False`` the EW function is calculated
                   recursively by
+                  
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
