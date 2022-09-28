@@ -772,22 +772,21 @@ class Series:
                     break
 
             # Override minimum dtype if requested.
-            dtype = (
+            dtype_char = (
                 np.dtype(kwargs.pop("dtype")).char
                 if "dtype" in kwargs
                 else dtype_char_minimum
             )
 
-            f = get_ffi_func(
-                "apply_ufunc_<>", numpy_char_code_to_dtype(dtype_char_minimum), s
-            )
+            f = get_ffi_func("apply_ufunc_<>", numpy_char_code_to_dtype(dtype_char), s)
 
             if f is None:
                 raise NotImplementedError(
-                    f"Could not find `apply_ufunc_{numpy_char_code_to_dtype(dtype)}`."
+                    "Could not find "
+                    f"`apply_ufunc_{numpy_char_code_to_dtype(dtype_char)}`."
                 )
 
-            series = f(lambda out: ufunc(*args, out=out, **kwargs))
+            series = f(lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs))
             return wrap_s(series)
         else:
             raise NotImplementedError(
