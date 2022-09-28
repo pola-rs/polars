@@ -49,7 +49,7 @@ use super::*;
 use crate::logical_plan::FETCH_ROWS;
 use crate::physical_plan::state::StateFlags;
 
-fn set_n_rows(n_rows: Option<usize>) -> Option<usize> {
+pub fn _set_n_rows_for_scan(n_rows: Option<usize>) -> Option<usize> {
     let fetch_rows = FETCH_ROWS.with(|fetch_rows| fetch_rows.get());
     match fetch_rows {
         None => n_rows,

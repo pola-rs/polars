@@ -56,7 +56,7 @@ fn prepare_scan_args<'a>(
             .collect()
     });
 
-    let n_rows = set_n_rows(n_rows);
+    let n_rows = _set_n_rows_for_scan(n_rows);
     let aggregate = if aggregate.is_empty() {
         None
     } else {
@@ -97,7 +97,7 @@ impl Executor for DataFrameExec {
         }
         state.clear_schema_cache();
 
-        if let Some(limit) = set_n_rows(None) {
+        if let Some(limit) = _set_n_rows_for_scan(None) {
             Ok(df.head(Some(limit)))
         } else {
             Ok(df)

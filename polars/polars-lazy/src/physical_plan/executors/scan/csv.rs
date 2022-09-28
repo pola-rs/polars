@@ -20,7 +20,7 @@ impl CsvExec {
         if projected_len == 0 {
             with_columns = None;
         }
-        let n_rows = set_n_rows(self.options.n_rows);
+        let n_rows = _set_n_rows_for_scan(self.options.n_rows);
         let predicate = self
             .predicate
             .clone()

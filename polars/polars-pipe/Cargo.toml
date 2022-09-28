@@ -7,5 +7,9 @@ edition = "2021"
 
 [dependencies]
 polars-core = { version = "0.24.2", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
+polars-io = { version = "0.24.2", path = "../polars-io",  default-features = false }
 polars-lazy = { version = "0.24.2", path = "../polars-lazy", default-features = false, features = ["compile"] }
 rayon.workspace = true
+
+[features]
+csv-file = ["polars-lazy/csv-file", "polars-io/csv-file"]

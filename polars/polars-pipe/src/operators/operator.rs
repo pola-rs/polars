@@ -1,6 +1,6 @@
 use super::*;
 
-enum OperatorResult {
+pub enum OperatorResult {
     NeedMoreInput(Option<DataChunk>),
     HaveMoreOutPut(Option<DataChunk>),
     Finished(Option<DataChunk>),

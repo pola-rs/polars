@@ -4,9 +4,9 @@ mod operator;
 mod sink;
 mod source;
 
-use chunks::*;
-use context::*;
-use operator::*;
-use polars_core::prelude::*;
-use sink::*;
-use source::*;
+pub(crate) use chunks::*;
+pub(crate) use context::*;
+pub(crate) use operator::*;
+pub(crate) use polars_core::prelude::*;
+pub(crate) use sink::*;
+pub(crate) use source::*;
