@@ -425,7 +425,7 @@ impl PredicatePushDown {
                 let mut pushdown_right = optimizer::init_hashmap(Some(acc_predicates.len()));
                 let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
-                for (_, predicate) in acc_predicates {
+                for (name, predicate) in acc_predicates {
                     // unique and duplicated can be caused by joins
                     let matches =
                         |e: &AExpr| matches!(e, AExpr::Function{function: FunctionExpr::IsDuplicated | FunctionExpr::IsUnique, ..});
@@ -453,7 +453,6 @@ impl PredicatePushDown {
                     if !predicate_is_pushdown_boundary(predicate, expr_arena) {
                         // no else if. predicate can be in both tables.
                         if check_input_node(predicate, &schema_left, expr_arena) {
-                            let name = get_insertion_name(expr_arena, predicate, &schema_left);
                             insert_and_combine_predicate(
                                 &mut pushdown_left,
                                 name,
@@ -467,7 +466,6 @@ impl PredicatePushDown {
                         // in that case we should not push down as the user wants to filter on `x`
                         // not on `x_rhs`.
                         else if check_input_node(predicate, &schema_right, expr_arena)  {
-                            let name = get_insertion_name(expr_arena, predicate, &schema_right);
                             insert_and_combine_predicate(
                                 &mut pushdown_right,
                                 name,
