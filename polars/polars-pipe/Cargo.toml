@@ -1,0 +1,11 @@
+[package]
+name = "polars-pipe"
+version.workspace = true
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+polars-core = { version = "0.24.2", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
+polars-lazy = { version = "0.24.2", path = "../polars-lazy", default-features = false, features = ["compile"] }
+rayon.workspace = true
