@@ -33,7 +33,7 @@ package = "arrow2"
 # rev = "6c102a0c3e2dbeb185360dd3d5c3637b5e2028fd"
 # path = "../../../arrow2"
 # branch = "comparison_and_validity"
-version = "0.14"
+version = "0.14.1"
 default-features = false
 features = [
   "compute_aggregate",
