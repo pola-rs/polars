@@ -234,7 +234,6 @@ pub(crate) fn cast_timezone(
     to: chrono_tz::Tz,
 ) -> ArrayRef {
     use chrono::TimeZone;
-    use chrono_tz::OffsetComponents;
 
     match tu {
         TimeUnit::Milliseconds => Box::new(unary(
