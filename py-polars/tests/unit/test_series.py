@@ -457,6 +457,10 @@ def test_ufunc() -> None:
         cast(pl.Series, np.power(s_uint8, 2.0)),
         pl.Series("a", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64),
     )
+    assert_series_equal(
+        cast(pl.Series, np.power(s_uint8, 2, dtype=np.uint16)),
+        pl.Series("a", [1, 4, 9, 16], dtype=pl.UInt16),
+    )
 
     s_int8 = pl.Series("a", [1, -2, 3, -4], dtype=pl.Int8)
     assert_series_equal(
@@ -466,6 +470,10 @@ def test_ufunc() -> None:
     assert_series_equal(
         cast(pl.Series, np.power(s_int8, 2.0)),
         pl.Series("a", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64),
+    )
+    assert_series_equal(
+        cast(pl.Series, np.power(s_int8, 2, dtype=np.int16)),
+        pl.Series("a", [1, 4, 9, 16], dtype=pl.Int16),
     )
 
     s_uint32 = pl.Series("a", [1, 2, 3, 4], dtype=pl.UInt32)
