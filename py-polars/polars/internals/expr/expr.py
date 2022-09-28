@@ -2074,7 +2074,7 @@ class Expr:
         """
         Fill null values using the specified value or strategy.
 
-        To interpolate over null values see interpolate
+        To interpolate over null values see interpolate.
 
         Parameters
         ----------
@@ -3630,7 +3630,7 @@ class Expr:
         """
         Fill nulls with linear interpolation over missing values.
 
-        Can also be used to regrid data to a new grid - see examples below
+        Can also be used to regrid data to a new grid - see examples below.
 
         Examples
         --------
@@ -5939,18 +5939,14 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"values": [1, 3, 2]})
-        >>> df.select(pl.col("values").sort().set_sorted())
-        shape: (3, 1)
+        >>> df = pl.DataFrame({"values": [1, 2, 3]})
+        >>> df.select(pl.col("values").set_sorted().max())
+        shape: (1, 1)
         ┌────────┐
         │ values │
         │ ---    │
         │ i64    │
         ╞════════╡
-        │ 1      │
-        ├╌╌╌╌╌╌╌╌┤
-        │ 2      │
-        ├╌╌╌╌╌╌╌╌┤
         │ 3      │
         └────────┘
 
