@@ -234,15 +234,26 @@ pub(crate) fn cast_timezone(
     to: chrono_tz::Tz,
 ) -> ArrayRef {
     use chrono::TimeZone;
+    use chrono_tz::OffsetComponents;
 
     match tu {
         TimeUnit::Milliseconds => Box::new(unary(
             arr,
             |value| {
                 let ndt = timestamp_ms_to_datetime(value);
+                // find the current offset from utc
                 let tz_aware = from.from_local_datetime(&ndt).unwrap();
+                let offset = tz_aware.offset();
+                let total_offset_from = offset.base_utc_offset() + offset.dst_offset();
+
+                // find the new offset from utc
                 let new_tz_aware = tz_aware.with_timezone(&to);
-                new_tz_aware.timestamp_millis()
+                let offset = new_tz_aware.offset();
+                let total_offset_to = offset.base_utc_offset() + offset.dst_offset();
+                let offset = total_offset_to - total_offset_from;
+
+                // correct for that offset
+                (ndt + offset).timestamp_millis()
             },
             ArrowDataType::Int64,
         )),
@@ -250,9 +261,19 @@ pub(crate) fn cast_timezone(
             arr,
             |value| {
                 let ndt = timestamp_us_to_datetime(value);
+                // find the current offset from utc
                 let tz_aware = from.from_local_datetime(&ndt).unwrap();
+                let offset = tz_aware.offset();
+                let total_offset_from = offset.base_utc_offset() + offset.dst_offset();
+
+                // find the new offset from utc
                 let new_tz_aware = tz_aware.with_timezone(&to);
-                new_tz_aware.timestamp_micros()
+                let offset = new_tz_aware.offset();
+                let total_offset_to = offset.base_utc_offset() + offset.dst_offset();
+                let offset = total_offset_to - total_offset_from;
+
+                // correct for that offset
+                (ndt + offset).timestamp_micros()
             },
             ArrowDataType::Int64,
         )),
@@ -260,9 +281,19 @@ pub(crate) fn cast_timezone(
             arr,
             |value| {
                 let ndt = timestamp_ns_to_datetime(value);
+                // find the current offset from utc
                 let tz_aware = from.from_local_datetime(&ndt).unwrap();
+                let offset = tz_aware.offset();
+                let total_offset_from = offset.base_utc_offset() + offset.dst_offset();
+
+                // find the new offset from utc
                 let new_tz_aware = tz_aware.with_timezone(&to);
-                new_tz_aware.timestamp_nanos()
+                let offset = new_tz_aware.offset();
+                let total_offset_to = offset.base_utc_offset() + offset.dst_offset();
+                let offset = total_offset_to - total_offset_from;
+
+                // correct for that offset
+                (ndt + offset).timestamp_nanos()
             },
             ArrowDataType::Int64,
         )),

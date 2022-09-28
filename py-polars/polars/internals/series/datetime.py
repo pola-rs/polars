@@ -998,18 +998,18 @@ class DateTimeNameSpace:
         shape: (3,)
         Series: 'NYC' [datetime[μs, America/New_York]]
         [
-                2020-03-01 00:00:00 EST
-                2020-03-31 23:00:00 EDT
-                2020-04-30 23:00:00 EDT
+            2020-02-29 19:00:00 EST
+            2020-03-31 19:00:00 EDT
+            2020-04-30 19:00:00 EDT
         ]
         >>> # Timestamps have changed after cast_time_zone
         >>> date.dt.epoch(tu="s")
         shape: (3,)
         Series: 'NYC' [i64]
         [
-                1583020800
-                1585695600
-                1588287600
+            1583002800
+            1585681200
+            1588273200
         ]
 
         """
