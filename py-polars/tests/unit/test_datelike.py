@@ -1524,7 +1524,7 @@ def test_invalid_date_parsing_4898() -> None:
     ).to_list() == [date(2022, 9, 18), None]
 
 
-def test_cast_timezone_ny_to_utc() -> None:
+def test_cast_timezone() -> None:
     assert pl.DataFrame({"a": [datetime(2022, 9, 25, 14)]}).with_column(
         pl.col("a")
         .dt.with_time_zone("America/New_York")
