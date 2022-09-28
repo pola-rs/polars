@@ -58,24 +58,24 @@ pub(crate) fn init_hashmap<K, V>(max_len: Option<usize>) -> PlHashMap<K, V> {
     PlHashMap::with_capacity(std::cmp::min(max_len.unwrap_or(HASHMAP_SIZE), HASHMAP_SIZE))
 }
 
-pub(crate) fn optimize(
-    lf: LazyFrame,
+pub fn optimize(
+    logical_plan: LogicalPlan,
+    opt_state: OptState,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Node> {
     // get toggle values
-    let predicate_pushdown = lf.opt_state.predicate_pushdown;
-    let projection_pushdown = lf.opt_state.projection_pushdown;
-    let type_coercion = lf.opt_state.type_coercion;
-    let simplify_expr = lf.opt_state.simplify_expr;
-    let slice_pushdown = lf.opt_state.slice_pushdown;
+    let predicate_pushdown = opt_state.predicate_pushdown;
+    let projection_pushdown = opt_state.projection_pushdown;
+    let type_coercion = opt_state.type_coercion;
+    let simplify_expr = opt_state.simplify_expr;
+    let slice_pushdown = opt_state.slice_pushdown;
     #[cfg(feature = "cse")]
-    let cse = lf.opt_state.common_subplan_elimination;
+    let cse = opt_state.common_subplan_elimination;
 
-    let agg_scan_projection = lf.opt_state.file_caching;
-    let aggregate_pushdown = lf.opt_state.aggregate_pushdown;
+    let agg_scan_projection = opt_state.file_caching;
+    let aggregate_pushdown = opt_state.aggregate_pushdown;
 
-    let logical_plan = lf.get_plan_builder().build();
     let mut scratch = vec![];
 
     // gradually fill the rules passed to the optimizer

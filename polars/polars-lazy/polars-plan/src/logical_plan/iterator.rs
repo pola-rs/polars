@@ -103,7 +103,7 @@ impl Expr {
     }
 }
 
-pub(crate) struct ExprMut<'a> {
+pub struct ExprMut<'a> {
     stack: Vec<&'a mut Expr>,
 }
 
@@ -276,7 +276,7 @@ impl<'a> Iterator for AExprIter<'a> {
     }
 }
 
-pub(crate) trait ArenaExprIter<'a> {
+pub trait ArenaExprIter<'a> {
     fn iter(&self, root: Node) -> AExprIter<'a>;
 }
 
@@ -296,7 +296,7 @@ pub struct AlpIter<'a> {
     arena: &'a Arena<ALogicalPlan>,
 }
 
-pub(crate) trait ArenaLpIter<'a> {
+pub trait ArenaLpIter<'a> {
     fn iter(&self, root: Node) -> AlpIter<'a>;
 }
 

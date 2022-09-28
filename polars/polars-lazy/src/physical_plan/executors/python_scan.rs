@@ -2,7 +2,6 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 use super::*;
-use crate::prelude::*;
 
 pub(crate) struct PythonScanExec {
     pub(crate) options: PythonOptions,

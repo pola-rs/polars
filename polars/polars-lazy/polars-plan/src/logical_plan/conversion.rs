@@ -440,7 +440,7 @@ pub(crate) fn to_alp(
 }
 
 /// converts a node from the AExpr arena to Expr
-pub(crate) fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
+pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
     let expr = expr_arena.get(node).clone();
 
     match expr {
@@ -660,7 +660,7 @@ fn nodes_to_exprs(nodes: &[Node], expr_arena: &Arena<AExpr>) -> Vec<Expr> {
 }
 
 /// converts a node from the ALogicalPlan arena to a LogicalPlan
-pub(crate) fn node_to_lp(
+pub fn node_to_lp(
     node: Node,
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<ALogicalPlan>,

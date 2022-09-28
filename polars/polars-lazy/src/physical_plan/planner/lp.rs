@@ -1,8 +1,11 @@
 use polars_core::prelude::*;
 use polars_io::aggregations::ScanAggregation;
 
-use super::super::executors;
-use crate::prelude::*;
+use super::*;
+use super::super::{
+    executors::{Executor, self},
+};
+use crate::utils::*;
 
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 fn aggregate_expr_to_scan_agg(

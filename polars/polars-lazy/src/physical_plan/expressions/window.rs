@@ -10,7 +10,7 @@ use polars_core::series::IsSorted;
 use polars_core::POOL;
 use polars_utils::sort::perfect_sort;
 
-use crate::logical_plan::Context;
+use super::*;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 

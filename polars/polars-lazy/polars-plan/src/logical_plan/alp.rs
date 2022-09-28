@@ -183,7 +183,7 @@ impl ALogicalPlan {
     }
 
     /// Get the schema of the logical plan node.
-    pub(crate) fn schema<'a>(&'a self, arena: &'a Arena<ALogicalPlan>) -> Cow<'a, SchemaRef> {
+    pub fn schema<'a>(&'a self, arena: &'a Arena<ALogicalPlan>) -> Cow<'a, SchemaRef> {
         use ALogicalPlan::*;
         let schema = match self {
             #[cfg(feature = "python")]

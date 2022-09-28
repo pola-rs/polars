@@ -50,6 +50,19 @@ impl Debug for dyn SeriesBinaryUdf {
     }
 }
 
+impl Default for SpecialEq<Arc<dyn SeriesBinaryUdf>> {
+    fn default() -> Self {
+        panic!("implementation error");
+    }
+}
+
+impl Default for SpecialEq<Arc<dyn BinaryUdfOutputField>> {
+    fn default() -> Self {
+        let output_field = move |_: &Schema, _: Context, _: &Field, _: &Field| None;
+        SpecialEq::new(Arc::new(output_field))
+    }
+}
+
 pub trait RenameAliasFn: Send + Sync {
     fn call(&self, name: &str) -> String;
 }

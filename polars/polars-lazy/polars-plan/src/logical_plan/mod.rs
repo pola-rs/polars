@@ -29,16 +29,25 @@ mod schema;
 
 pub use anonymous_scan::*;
 pub use apply::*;
-pub(crate) use builder::*;
 pub use lit::*;
 use polars_core::frame::explode::MeltArgs;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-pub(crate) use crate::logical_plan::functions::FunctionNode;
-
-// Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
-thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
+#[cfg(any(
+feature = "ipc",
+feature = "parquet",
+feature = "csv-file",
+feature = "cse"
+))]
+pub use crate::logical_plan::optimizer::file_caching::collect_fingerprints;
+pub use optimizer::optimize;
+pub use aexpr::*;
+pub use alp::*;
+pub use conversion::*;
+pub use builder::*;
+pub use iterator::*;
+pub use functions::*;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Context {
@@ -229,7 +238,7 @@ impl LogicalPlan {
 }
 
 impl LogicalPlan {
-    pub(crate) fn schema(&self) -> PolarsResult<Cow<'_, SchemaRef>> {
+    pub fn schema(&self) -> PolarsResult<Cow<'_, SchemaRef>> {
         use LogicalPlan::*;
         match self {
             #[cfg(feature = "python")]

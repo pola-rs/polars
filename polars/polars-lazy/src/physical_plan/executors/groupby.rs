@@ -1,7 +1,5 @@
-use polars_core::POOL;
-use rayon::prelude::*;
-
 use super::*;
+use rayon::prelude::*;
 
 /// Take an input Executor and a multiple expressions
 pub struct GroupByExec {

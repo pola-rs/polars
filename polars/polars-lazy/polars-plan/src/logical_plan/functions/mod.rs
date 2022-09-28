@@ -91,7 +91,7 @@ impl FunctionNode {
         }
     }
 
-    pub(crate) fn evaluate(&self, mut df: DataFrame) -> PolarsResult<DataFrame> {
+    pub fn evaluate(&self, mut df: DataFrame) -> PolarsResult<DataFrame> {
         use FunctionNode::*;
         match self {
             Opaque { function, .. } => function.call_udf(df),

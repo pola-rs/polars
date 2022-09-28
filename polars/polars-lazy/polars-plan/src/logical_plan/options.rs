@@ -33,14 +33,14 @@ pub struct CsvParserOptions {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetOptions {
-    pub(crate) n_rows: Option<usize>,
-    pub(crate) with_columns: Option<Arc<Vec<String>>>,
-    pub(crate) cache: bool,
-    pub(crate) parallel: polars_io::parquet::ParallelStrategy,
-    pub(crate) rechunk: bool,
-    pub(crate) row_count: Option<RowCount>,
-    pub(crate) file_counter: FileCount,
-    pub(crate) low_memory: bool,
+    pub n_rows: Option<usize>,
+    pub with_columns: Option<Arc<Vec<String>>>,
+    pub cache: bool,
+    pub parallel: polars_io::parquet::ParallelStrategy,
+    pub rechunk: bool,
+    pub row_count: Option<RowCount>,
+    pub file_counter: FileCount,
+    pub low_memory: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -57,13 +57,13 @@ pub struct IpcScanOptions {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptionsInner {
-    pub(crate) n_rows: Option<usize>,
-    pub(crate) with_columns: Option<Arc<Vec<String>>>,
-    pub(crate) cache: bool,
-    pub(crate) row_count: Option<RowCount>,
-    pub(crate) rechunk: bool,
-    pub(crate) file_counter: FileCount,
-    pub(crate) memmap: bool,
+    pub n_rows: Option<usize>,
+    pub with_columns: Option<Arc<Vec<String>>>,
+    pub cache: bool,
+    pub row_count: Option<RowCount>,
+    pub rechunk: bool,
+    pub file_counter: FileCount,
+    pub memmap: bool,
 }
 
 impl From<IpcScanOptions> for IpcScanOptionsInner {
@@ -83,26 +83,26 @@ impl From<IpcScanOptions> for IpcScanOptionsInner {
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
-    pub(crate) slice: bool,
-    pub(crate) slice_offset: i64,
-    pub(crate) slice_len: IdxSize,
-    pub(crate) parallel: bool,
+    pub slice: bool,
+    pub slice_offset: i64,
+    pub slice_len: IdxSize,
+    pub parallel: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GroupbyOptions {
-    pub(crate) dynamic: Option<DynamicGroupOptions>,
-    pub(crate) rolling: Option<RollingGroupOptions>,
-    pub(crate) slice: Option<(i64, usize)>,
+    pub dynamic: Option<DynamicGroupOptions>,
+    pub rolling: Option<RollingGroupOptions>,
+    pub slice: Option<(i64, usize)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DistinctOptions {
-    pub(crate) subset: Option<Arc<Vec<String>>>,
-    pub(crate) maintain_order: bool,
-    pub(crate) keep_strategy: UniqueKeepStrategy,
+    pub subset: Option<Arc<Vec<String>>>,
+    pub maintain_order: bool,
+    pub keep_strategy: UniqueKeepStrategy,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -125,7 +125,7 @@ pub enum ApplyOptions {
 pub struct WindowOptions {
     /// Explode the aggregated list and just do a hstack instead of a join
     /// this requires the groups to be sorted to make any sense
-    pub(crate) explode: bool,
+    pub explode: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -133,7 +133,7 @@ pub struct WindowOptions {
 pub struct FunctionOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
-    pub(crate) collect_groups: ApplyOptions,
+    pub collect_groups: ApplyOptions,
     /// There can be two ways of expanding wildcards:
     ///
     /// Say the schema is 'a', 'b' and there is a function f
@@ -148,7 +148,7 @@ pub struct FunctionOptions {
     /// setting this to true, will lead to behavior 1.
     ///
     /// this also accounts for regex expansion
-    pub(crate) input_wildcard_expansion: bool,
+    pub input_wildcard_expansion: bool,
 
     /// automatically explode on unit length it ran as final aggregation.
     ///
@@ -160,14 +160,14 @@ pub struct FunctionOptions {
     ///
     /// head_1(x) -> {1}
     /// sum(x) -> {4}
-    pub(crate) auto_explode: bool,
+    pub auto_explode: bool,
     // used for formatting, (only for anonymous functions)
     #[cfg_attr(feature = "serde", serde(skip_deserializing))]
-    pub(crate) fmt_str: &'static str,
+    pub fmt_str: &'static str,
 
     // if the expression and its inputs should be cast to supertypes
-    pub(crate) cast_to_supertypes: bool,
-    pub(crate) allow_rename: bool,
+    pub cast_to_supertypes: bool,
+    pub allow_rename: bool,
 }
 
 impl Default for FunctionOptions {
@@ -186,20 +186,20 @@ impl Default for FunctionOptions {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct LogicalPlanUdfOptions {
     ///  allow predicate pushdown optimizations
-    pub(crate) predicate_pd: bool,
+    pub predicate_pd: bool,
     ///  allow projection pushdown optimizations
-    pub(crate) projection_pd: bool,
+    pub projection_pd: bool,
     // used for formatting
-    pub(crate) fmt_str: &'static str,
+    pub fmt_str: &'static str,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SortArguments {
-    pub(crate) reverse: Vec<bool>,
+    pub reverse: Vec<bool>,
     // Can only be true in case of a single column.
-    pub(crate) nulls_last: bool,
-    pub(crate) slice: Option<(i64, usize)>,
+    pub nulls_last: bool,
+    pub slice: Option<(i64, usize)>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -207,10 +207,10 @@ pub struct SortArguments {
 #[cfg(feature = "python")]
 pub struct PythonOptions {
     // Serialized Fn() -> PolarsResult<DataFrame>
-    pub(crate) scan_fn: Vec<u8>,
-    pub(crate) schema: SchemaRef,
-    pub(crate) output_schema: Option<SchemaRef>,
-    pub(crate) with_columns: Option<Arc<Vec<String>>>,
+    pub scan_fn: Vec<u8>,
+    pub schema: SchemaRef,
+    pub output_schema: Option<SchemaRef>,
+    pub with_columns: Option<Arc<Vec<String>>>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -221,5 +221,5 @@ pub struct AnonymousScanOptions {
     pub skip_rows: Option<usize>,
     pub n_rows: Option<usize>,
     pub with_columns: Option<Arc<Vec<String>>>,
-    pub(crate) fmt_str: &'static str,
+    pub fmt_str: &'static str,
 }

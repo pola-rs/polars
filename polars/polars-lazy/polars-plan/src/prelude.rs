@@ -4,7 +4,6 @@ pub(crate) use polars_time::chunkedarray::{RollingOptions, RollingOptionsImpl};
 pub(crate) use polars_time::in_nanoseconds_window;
 #[cfg(feature = "dynamic_groupby")]
 pub(crate) use polars_time::{DynamicGroupOptions, PolarsTemporalGroupby, RollingGroupOptions};
-pub(crate) use polars_utils::arena::{Arena, Node};
 #[cfg(not(feature = "dynamic_groupby"))]
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -17,11 +16,11 @@ pub struct DynamicGroupOptions {
 }
 
 #[cfg(any(
-    feature = "temporal",
-    feature = "dtype-duration",
-    feature = "dtype-date",
-    feature = "dtype-date",
-    feature = "dtype-time"
+feature = "temporal",
+feature = "dtype-duration",
+feature = "dtype-date",
+feature = "dtype-date",
+feature = "dtype-time"
 ))]
 pub(crate) use polars_time::prelude::*;
 
@@ -35,8 +34,13 @@ pub struct RollingGroupOptions {
 pub(crate) use polars_ops::prelude::*;
 
 pub use crate::dsl::*;
+pub(crate) use crate::logical_plan::aexpr::*;
+pub(crate) use crate::logical_plan::alp::*;
+pub(crate) use crate::logical_plan::conversion::*;
+pub(crate) use crate::logical_plan::iterator::*;
+
 pub use crate::frame::*;
-pub(crate) use polars_plan::prelude::*;
-pub use crate::physical_plan::expressions::*;
-pub use crate::physical_plan::planner::PhysicalPlanner;
-pub(crate) use crate::utils::*;
+pub use polars_utils::arena::{Arena, Node};
+pub use crate::logical_plan::*;
+pub use crate::logical_plan::options::*;
+pub use crate::utils::*;

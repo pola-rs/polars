@@ -50,7 +50,7 @@ fn process_with_columns(
 }
 
 #[allow(clippy::type_complexity)]
-pub(crate) fn collect_fingerprints(
+pub fn collect_fingerprints(
     root: Node,
     fps: &mut Vec<FileFingerPrint>,
     lp_arena: &Arena<ALogicalPlan>,

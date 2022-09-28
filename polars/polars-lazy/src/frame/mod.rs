@@ -35,34 +35,13 @@ use polars_io::RowCount;
 use serde::{Deserialize, Serialize};
 
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-use crate::logical_plan::optimizer::file_caching::collect_fingerprints;
-use crate::logical_plan::optimizer::optimize;
-use crate::logical_plan::FETCH_ROWS;
+use polars_plan::logical_plan::collect_fingerprints;
+use polars_plan::logical_plan::optimize;
+use polars_plan::global::FETCH_ROWS;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use crate::utils::{combine_predicates_expr, expr_to_leaf_column_names};
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct JoinOptions {
-    pub allow_parallel: bool,
-    pub force_parallel: bool,
-    pub how: JoinType,
-    pub suffix: Cow<'static, str>,
-    pub slice: Option<(i64, usize)>,
-}
-
-impl Default for JoinOptions {
-    fn default() -> Self {
-        JoinOptions {
-            allow_parallel: true,
-            force_parallel: false,
-            how: JoinType::Left,
-            suffix: "_right".into(),
-            slice: None,
-        }
-    }
-}
+use polars_plan::utils::{combine_predicates_expr, expr_to_leaf_column_names};
+use crate::physical_plan::executors::Executor;
 
 pub trait IntoLazy {
     fn lazy(self) -> LazyFrame;
@@ -100,40 +79,6 @@ impl From<LogicalPlan> for LazyFrame {
         }
     }
 }
-
-#[derive(Copy, Clone)]
-/// State of the allowed optimizations
-pub struct OptState {
-    pub projection_pushdown: bool,
-    pub predicate_pushdown: bool,
-    pub type_coercion: bool,
-    pub simplify_expr: bool,
-    pub file_caching: bool,
-    pub aggregate_pushdown: bool,
-    pub slice_pushdown: bool,
-    #[cfg(feature = "cse")]
-    pub common_subplan_elimination: bool,
-}
-
-impl Default for OptState {
-    fn default() -> Self {
-        OptState {
-            projection_pushdown: true,
-            predicate_pushdown: true,
-            type_coercion: true,
-            simplify_expr: true,
-            slice_pushdown: true,
-            // will be toggled by a scan operation such as csv scan or parquet scan
-            file_caching: false,
-            aggregate_pushdown: false,
-            #[cfg(feature = "cse")]
-            common_subplan_elimination: true,
-        }
-    }
-}
-
-/// AllowedOptimizations
-pub type AllowedOptimizations = OptState;
 
 impl LazyFrame {
     /// Get a hold on the schema of the current LazyFrame computation.
@@ -543,7 +488,7 @@ impl LazyFrame {
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Node> {
-        optimize(self, lp_arena, expr_arena)
+        optimize(self.logical_plan, self.opt_state, lp_arena, expr_arena)
     }
 
     fn prepare_collect(self) -> PolarsResult<(ExecutionState, Box<dyn Executor>)> {

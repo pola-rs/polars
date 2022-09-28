@@ -10,7 +10,7 @@ use polars_io::parquet::predicates::BatchStats;
 use polars_io::predicates::StatsEvaluator;
 use rayon::prelude::*;
 
-use crate::dsl::function_expr::FunctionExpr;
+use polars_plan::dsl::FunctionExpr;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 

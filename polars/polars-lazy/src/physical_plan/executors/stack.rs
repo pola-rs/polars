@@ -1,12 +1,4 @@
-use std::borrow::Cow;
-
-use polars_core::prelude::*;
-use polars_core::POOL;
-use rayon::prelude::*;
-
-use crate::physical_plan::executors::execute_projection_cached_window_fns;
-use crate::physical_plan::state::ExecutionState;
-use crate::prelude::*;
+use super::*;
 
 pub struct StackExec {
     pub(crate) input: Box<dyn Executor>,

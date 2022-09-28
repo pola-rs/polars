@@ -1,23 +1,30 @@
 [package]
-name = "polars-lazy"
+name = "polars-plan"
 version.workspace = true
-authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
-license = "MIT"
-repository = "https://github.com/pola-rs/polars"
-description = "Lazy query engine for the Polars DataFrame library"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[dependencies]
+rayon.workspace = true
+polars-arrow = { version = "0.24.3", path = "../../polars-arrow" }
+polars-core = { version = "0.24.3", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
+polars-io = { version = "0.24.3", path = "../../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
+polars-ops = { version = "0.24.3", path = "../../polars-ops", default-features = false }
+polars-time = { version = "0.24.3", path = "../../polars-time", optional = true }
+polars-utils = { version = "0.24.3", path = "../../polars-utils" }
+pyo3 = { version = "0.16", optional = true }
+
 [features]
+python = ["pyo3"]
 # make sure we don't compile unneeded things even though
 # this dependency gets activated
 compile = []
 default = ["compile", "private"]
-parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet"]
-ipc = ["polars-io/ipc", "polars-plan/ipc"]
-json = ["polars-io/json", "polars-plan/json"]
-csv-file = ["polars-io/csv-file", "polars-plan/csv-file"]
+parquet = ["polars-core/parquet", "polars-io/parquet"]
+ipc = ["polars-io/ipc"]
+json = ["polars-io/json"]
+csv-file = ["polars-io/csv-file"]
 temporal = ["polars-core/temporal", "polars-time", "dtype-datetime"]
 # debugging purposes
 fmt = ["polars-core/fmt"]
@@ -54,10 +61,10 @@ mode = ["polars-core/mode"]
 cum_agg = ["polars-core/cum_agg"]
 interpolate = ["polars-core/interpolate"]
 rolling_window = [
-  "polars-core/rolling_window",
-  "polars-time/rolling_window",
-  "polars-ops/rolling_window",
-  "polars-time/rolling_window",
+    "polars-core/rolling_window",
+    "polars-time/rolling_window",
+    "polars-ops/rolling_window",
+    "polars-time/rolling_window",
 ]
 rank = ["polars-core/rank"]
 diff = ["polars-core/diff", "polars-ops/diff"]
@@ -75,7 +82,7 @@ list_eval = []
 cumulative_eval = []
 chunked_ids = []
 list_to_struct = ["polars-ops/list_to_struct"]
-python = ["pyo3"]
+#python = ["pyo3"]
 row_hash = ["polars-core/row_hash", "polars-ops/hash"]
 string_justify = ["polars-ops/string_justify"]
 arg_where = []
@@ -94,58 +101,3 @@ private = ["polars-time/private"]
 bigidx = ["polars-arrow/bigidx", "polars-core/bigidx", "polars-utils/bigidx"]
 
 panic_on_schema = []
-
-test = [
-  "panic_on_schema",
-  "private",
-  "rolling_window",
-  "rank",
-  "list",
-  "round_series",
-  "csv-file",
-  "dtype-categorical",
-  "cum_agg",
-  "regex",
-  "polars-core/fmt",
-  "diff",
-  "abs",
-  "parquet",
-  "ipc",
-  "dtype-date",
-]
-
-test_all = [
-  "test",
-  "strings",
-  "regex",
-  "ipc",
-  "row_hash",
-  "string_justify",
-  "search_sorted",
-  "top_k",
-  "pivot",
-  "semi_anti_join",
-  "cse",
-]
-
-[dependencies]
-ahash.workspace = true
-bitflags = "1.3"
-glob = "0.3"
-pyo3 = { version = "0.16", optional = true }
-rayon.workspace = true
-regex = { version = "1.5", optional = true }
-serde = { version = "1", features = ["derive", "rc"], optional = true }
-
-polars-arrow = { version = "0.24.3", path = "../polars-arrow" }
-polars-plan = { version = "0.24.3", path = "./polars-plan" }
-polars-core = { version = "0.24.3", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.24.3", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
-polars-ops = { version = "0.24.3", path = "../polars-ops", default-features = false }
-polars-time = { version = "0.24.3", path = "../polars-time", optional = true }
-polars-utils = { version = "0.24.3", path = "../polars-utils" }
-
-[package.metadata.docs.rs]
-all-features = true
-# defines the configuration attribute `docsrs`
-rustdoc-args = ["--cfg", "docsrs"]
