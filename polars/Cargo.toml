@@ -1,6 +1,6 @@
 [package]
 name = "polars"
-version = "0.24.2"
+version = "0.24.3"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 keywords = ["dataframe", "query-engine", "arrow"]
@@ -268,12 +268,12 @@ bench = [
 ]
 
 [dependencies]
-polars-algo = { version = "0.24.2", path = "./polars-algo", optional = true }
-polars-core = { version = "0.24.2", path = "./polars-core", features = ["docs", "private"], default-features = false }
-polars-io = { version = "0.24.2", path = "./polars-io", features = ["private"], default-features = false, optional = true }
-polars-lazy = { version = "0.24.2", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
-polars-ops = { version = "0.24.2", path = "./polars-ops" }
-polars-time = { version = "0.24.2", path = "./polars-time", default-features = false, optional = true }
+polars-algo = { version = "0.24.3", path = "./polars-algo", optional = true }
+polars-core = { version = "0.24.3", path = "./polars-core", features = ["docs", "private"], default-features = false }
+polars-io = { version = "0.24.3", path = "./polars-io", features = ["private"], default-features = false, optional = true }
+polars-lazy = { version = "0.24.3", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
+polars-ops = { version = "0.24.3", path = "./polars-ops" }
+polars-time = { version = "0.24.3", path = "./polars-time", default-features = false, optional = true }
 
 [dev-dependencies]
 ahash = "0.7"
