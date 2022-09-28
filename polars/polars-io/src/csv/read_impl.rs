@@ -706,7 +706,7 @@ impl<'a> CoreReader<'a> {
         Ok(df)
     }
 
-    pub fn batched(mut self) -> PolarsResult<BatchedCsvReader<'a>> {
+    pub fn batched(mut self, _has_cat: bool) -> PolarsResult<BatchedCsvReader<'a>> {
         let mut n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
         let reader_bytes = self.reader_bytes.take().unwrap();
         let logging = std::env::var("POLARS_VERBOSE").is_ok();
@@ -720,6 +720,17 @@ impl<'a> CoreReader<'a> {
         let str_columns = unsafe {
             std::mem::transmute::<Vec<&str>, Vec<&'a str>>(self.get_string_columns(&projection)?)
         };
+
+        // RAII structure that will ensure we maintain a global stringcache
+        #[cfg(feature = "dtype-categorical")]
+        let _cat_lock = if _has_cat {
+            Some(polars_core::IUseStringCache::new())
+        } else {
+            None
+        };
+
+        #[cfg(not(feature = "dtype-categorical"))]
+        let _cat_lock = None;
 
         Ok(BatchedCsvReader {
             reader_bytes,
@@ -742,6 +753,7 @@ impl<'a> CoreReader<'a> {
             delimiter: self.delimiter,
             schema: self.schema,
             rows_read: 0,
+            _cat_lock,
         })
     }
 }
@@ -767,6 +779,10 @@ pub struct BatchedCsvReader<'a> {
     delimiter: u8,
     schema: Cow<'a, Schema>,
     rows_read: IdxSize,
+    #[cfg(feature = "dtype-categorical")]
+    _cat_lock: Option<polars_core::IUseStringCache>,
+    #[cfg(not(feature = "dtype-categorical"))]
+    _cat_lock: Option<u8>,
 }
 
 impl<'a> BatchedCsvReader<'a> {

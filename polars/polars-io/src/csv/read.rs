@@ -1,6 +1,3 @@
-#[cfg(feature = "dtype-categorical")]
-use polars_core::toggle_string_cache;
-
 use super::*;
 use crate::csv::read_impl::BatchedCsvReader;
 
@@ -375,7 +372,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
         // We only support a few dtypes in the parser and later cast to the required dtype
         let mut to_cast = Vec::with_capacity(overwriting_schema.len());
 
-        let mut has_categorical = false;
+        let mut _has_categorical = false;
 
         #[allow(clippy::unnecessary_filter_map)]
         let fields: Vec<_> = overwriting_schema
@@ -396,7 +393,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
                     }
                     #[cfg(feature = "dtype-categorical")]
                     Categorical(_) => {
-                        has_categorical = true;
+                        _has_categorical = true;
                         Some(fld)
                     }
                     _ => Some(fld),
@@ -404,12 +401,12 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             })
             .collect();
         let schema = Schema::from(fields);
-        (schema, to_cast, has_categorical)
+        (schema, to_cast, _has_categorical)
     }
 
     pub fn batched(&'a mut self) -> PolarsResult<BatchedCsvReader<'a>> {
         if let Some(schema) = self.schema_overwrite {
-            let (schema, to_cast) = self.prepare_schema_overwrite(schema);
+            let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema);
             self.owned_schema = Some(Box::new(schema));
 
             // safety
@@ -423,10 +420,10 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             };
 
             let csv_reader = self.core_reader(schema, to_cast)?;
-            csv_reader.batched()
+            csv_reader.batched(has_cat)
         } else {
             let csv_reader = self.core_reader(self.schema, vec![])?;
-            csv_reader.batched()
+            csv_reader.batched(false)
         }
     }
 }
@@ -479,14 +476,14 @@ where
         let low_memory = self.low_memory;
 
         #[cfg(feature = "dtype-categorical")]
-        let mut cat_lock = None;
+        let mut _cat_lock = None;
 
         let mut df = if let Some(schema) = schema_overwrite {
-            let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema);
+            let (schema, to_cast, _has_cat) = self.prepare_schema_overwrite(schema);
 
             #[cfg(feature = "dtype-categorical")]
-            if has_cat {
-                cat_lock = Some(polars_core::IUseStringCache::new())
+            if _has_cat {
+                _cat_lock = Some(polars_core::IUseStringCache::new())
             }
 
             let mut csv_reader = self.core_reader(Some(&schema), to_cast)?;

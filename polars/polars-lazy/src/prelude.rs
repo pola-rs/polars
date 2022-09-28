@@ -1,3 +1,5 @@
+#[cfg(feature = "rolling_window")]
+pub(crate) use polars_time::chunkedarray::{RollingOptions, RollingOptionsImpl};
 #[cfg(feature = "temporal")]
 pub(crate) use polars_time::in_nanoseconds_window;
 #[cfg(feature = "dynamic_groupby")]
