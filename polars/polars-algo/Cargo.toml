@@ -10,8 +10,8 @@ description = "Algorithms built upon Polars primitives"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-polars-core = { version = "0.24.2", path = "../polars-core", features = ["private", "dtype-categorical", "asof_join"], default-features = false }
-polars-lazy = { version = "0.24.2", path = "../polars-lazy", features = ["asof_join", "concat_str", "strings"] }
+polars-core = { version = "0.24.3", path = "../polars-core", features = ["private", "dtype-categorical", "asof_join"], default-features = false }
+polars-lazy = { version = "0.24.3", path = "../polars-lazy", features = ["asof_join", "concat_str", "strings"] }
 
 [package.metadata.docs.rs]
 all-features = true
