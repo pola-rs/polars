@@ -82,9 +82,9 @@ dependencies = [
 
 [[package]]
 name = "arrow2"
-version = "0.14.0"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "467e88c67d518f9992bb1f6c8faa202eaf93b0ce244889d241c9c44d0df0ab46"
+checksum = "7bdea100ad0a48ef595adef8bcff646d22ae3c908713da39133e52893c69fe25"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -1257,7 +1257,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.24.2"
+version = "0.24.3"
 dependencies = [
  "polars-algo",
  "polars-core",
@@ -1269,7 +1269,7 @@ dependencies = [
 
 [[package]]
 name = "polars-algo"
-version = "0.24.2"
+version = "0.24.3"
 dependencies = [
  "polars-core",
  "polars-lazy",
@@ -1277,7 +1277,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.24.2"
+version = "0.24.3"
 dependencies = [
  "arrow2",
  "hashbrown",
@@ -1288,7 +1288,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.24.2"
+version = "0.24.3"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1319,7 +1319,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.24.2"
+version = "0.24.3"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1346,7 +1346,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.24.2"
+version = "0.24.3"
 dependencies = [
  "ahash",
  "bitflags",
@@ -1365,7 +1365,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.24.2"
+version = "0.24.3"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -1385,7 +1385,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.24.2"
+version = "0.24.3"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -1398,7 +1398,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.24.2"
+version = "0.24.3"
 dependencies = [
  "rayon",
 ]

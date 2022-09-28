@@ -772,22 +772,21 @@ class Series:
                     break
 
             # Override minimum dtype if requested.
-            dtype = (
+            dtype_char = (
                 np.dtype(kwargs.pop("dtype")).char
                 if "dtype" in kwargs
                 else dtype_char_minimum
             )
 
-            f = get_ffi_func(
-                "apply_ufunc_<>", numpy_char_code_to_dtype(dtype_char_minimum), s
-            )
+            f = get_ffi_func("apply_ufunc_<>", numpy_char_code_to_dtype(dtype_char), s)
 
             if f is None:
                 raise NotImplementedError(
-                    f"Could not find `apply_ufunc_{numpy_char_code_to_dtype(dtype)}`."
+                    "Could not find "
+                    f"`apply_ufunc_{numpy_char_code_to_dtype(dtype_char)}`."
                 )
 
-            series = f(lambda out: ufunc(*args, out=out, **kwargs))
+            series = f(lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs))
             return wrap_s(series)
         else:
             raise NotImplementedError(
@@ -1365,11 +1364,49 @@ class Series:
             return self.alias(name)
 
     def chunk_lengths(self) -> list[int]:
-        """Get the length of each individual chunk."""
+        """
+        Get the length of each individual chunk.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s2 = pl.Series("a", [4, 5, 6])
+
+        Concatenate Series with rechunk = True
+
+        >>> pl.concat([s, s2]).chunk_lengths()
+        [6]
+
+        Concatenate Series with rechunk = False
+
+        >>> pl.concat([s, s2], rechunk=False).chunk_lengths()
+        [3, 3]
+
+        """
         return self._s.chunk_lengths()
 
     def n_chunks(self) -> int:
-        """Get the number of chunks that this Series contains."""
+        """
+        Get the number of chunks that this Series contains.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.n_chunks()
+        1
+        >>> s2 = pl.Series("a", [4, 5, 6])
+
+        Concatenate Series with rechunk = True
+
+        >>> pl.concat([s, s2]).n_chunks()
+        1
+
+        Concatenate Series with rechunk = False
+
+        >>> pl.concat([s, s2], rechunk=False).n_chunks()
+        2
+
+        """
         return self._s.n_chunks()
 
     def cumsum(self, reverse: bool = False) -> Series:
@@ -1485,6 +1522,17 @@ class Series:
         ----------
         n
             Number of rows to return.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.head(2)
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+        ]
 
         """
         return self.to_frame().select(pli.col(self.name).limit(n)).to_series()
@@ -1769,14 +1817,59 @@ class Series:
         """
 
     def arg_unique(self) -> Series:
-        """Get unique index as Series."""
+        """
+        Get unique index as Series.
+
+        Returns
+        -------
+        Series
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 2, 3])
+        >>> s.arg_unique()
+        shape: (3,)
+        Series: 'a' [u32]
+        [
+                0
+                1
+                3
+        ]
+
+        """
 
     def arg_min(self) -> int | None:
-        """Get the index of the minimal value."""
+        """
+        Get the index of the minimal value.
+
+        Returns
+        -------
+        Integer
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [3, 2, 1])
+        >>> s.arg_min()
+        2
+
+        """
         return self._s.arg_min()
 
     def arg_max(self) -> int | None:
-        """Get the index of the maximal value."""
+        """
+        Get the index of the maximal value.
+
+        Returns
+        -------
+        Integer
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [3, 2, 1])
+        >>> s.arg_max()
+        0
+
+        """
         return self._s.arg_max()
 
     def search_sorted(self, element: int | float) -> int:
@@ -2065,6 +2158,16 @@ class Series:
         Returns
         -------
         UInt32 Series
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> (s == 2).arg_true()
+        shape: (1,)
+        Series: 'a' [u32]
+        [
+                1
+        ]
 
         """
         return pli.arg_where(self, eager=True)
@@ -2401,6 +2504,18 @@ class Series:
         This operation doesn't clone data, but does not include missing values.
         Don't use this unless you know what you are doing.
 
+        Parameters
+        ----------
+        ignore_nulls
+            If True then nulls are converted to 0.
+            If False then an Exception is raised if nulls are present.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, None])
+        >>> s.view(ignore_nulls=True)
+        SeriesView([1, 0])
+
         """
         if not ignore_nulls:
             assert not self.has_validity()
@@ -2502,7 +2617,19 @@ class Series:
         return self._s.to_arrow()
 
     def to_pandas(self) -> pd.Series:
-        """Convert this Series to a pandas Series."""
+        """
+        Convert this Series to a pandas Series.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.to_pandas()
+        0    1
+        1    2
+        2    3
+        dtype: int64
+
+        """
         if not _PYARROW_AVAILABLE:  # pragma: no cover
             raise ImportError(
                 "'pyarrow' is required for converting a 'polars' Series to a 'pandas'"
@@ -2526,6 +2653,36 @@ class Series:
         Use of this function is frequently an anti-pattern, as it can
         block optimisation (predicate pushdown, etc). Consider using
         `pl.when(predicate).then(value).otherwise(self)` instead.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.set(s == 2, 10)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                1
+                10
+                3
+        ]
+
+        It is better to implement this as follows:
+
+        >>> s.to_frame().select(
+        ...     pl.when(pl.col("a") == 2).then(10).otherwise(pl.col("a"))
+        ... )
+        shape: (3, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ i64     │
+        ╞═════════╡
+        │ 1       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 10      │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 3       │
+        └─────────┘
 
         """
         f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
@@ -2570,6 +2727,36 @@ class Series:
         Use of this function is frequently an anti-pattern, as it can
         block optimisation (predicate pushdown, etc). Consider using
         `pl.when(predicate).then(value).otherwise(self)` instead.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.set_at_idx(1, 10)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                1
+                10
+                3
+        ]
+
+        It is better to implement this as follows:
+
+        >>> s.to_frame().with_row_count("row_nr").select(
+        ...     pl.when(pl.col("row_nr") == 1).then(10).otherwise(pl.col("a"))
+        ... )
+        shape: (3, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ i64     │
+        ╞═════════╡
+        │ 1       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 10      │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 3       │
+        └─────────┘
 
         """
         if isinstance(idx, int):
@@ -2620,13 +2807,46 @@ class Series:
         cleared : Create an empty copy of the current Series, with identical
             schema but no data.
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.clone()
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+        ]
+
         """
         return wrap_s(self._s.clone())
 
     def fill_nan(
         self, fill_value: str | int | float | bool | pli.Expr | None
     ) -> Series:
-        """Fill floating point NaN value with a fill value."""
+        """
+        Fill floating point NaN value with a fill value.
+
+        Parameters
+        ----------
+        fill_value
+            Value used to fill nan values.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3, float("nan")])
+        >>> s.fill_nan(0)
+        shape: (4,)
+        Series: 'a' [f64]
+        [
+                1.0
+                2.0
+                3.0
+                0.0
+        ]
+
+        """
 
     def fill_null(
         self,
@@ -2686,6 +2906,18 @@ class Series:
 
         Only works on floating point Series.
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.12345, 2.56789, 3.901234])
+        >>> s.floor()
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+                1.0
+                2.0
+                3.0
+        ]
+
         """
 
     def ceil(self) -> Series:
@@ -2693,6 +2925,18 @@ class Series:
         Rounds up to the nearest integer value.
 
         Only works on floating point Series.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.12345, 2.56789, 3.901234])
+        >>> s.ceil()
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+                2.0
+                3.0
+                4.0
+        ]
 
         """
 
@@ -3374,6 +3618,21 @@ class Series:
         center
             Set the labels at the center of the window
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0, 4.0, 6.0, 8.0])
+        >>> s.rolling_std(window_size=3)
+        shape: (6,)
+        Series: 'a' [f64]
+        [
+                null
+                null
+                1.0
+                1.0
+                1.527525
+                2.0
+        ]
+
         """
         return (
             self.to_frame()
@@ -3411,6 +3670,21 @@ class Series:
             a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0, 4.0, 6.0, 8.0])
+        >>> s.rolling_var(window_size=3)
+        shape: (6,)
+        Series: 'a' [f64]
+        [
+                null
+                null
+                1.0
+                1.0
+                2.333333
+                4.0
+        ]
 
         """
         return (
@@ -3496,6 +3770,21 @@ class Series:
         center
             Set the labels at the center of the window
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0, 4.0, 6.0, 8.0])
+        >>> s.rolling_median(window_size=3)
+        shape: (6,)
+        Series: 'a' [f64]
+        [
+                null
+                null
+                2.0
+                3.0
+                4.0
+                6.0
+        ]
+
         """
         if min_periods is None:
             min_periods = window_size
@@ -3539,6 +3828,32 @@ class Series:
         center
             Set the labels at the center of the window
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0, 4.0, 6.0, 8.0])
+        >>> s.rolling_quantile(quantile=0.33, window_size=3)
+        shape: (6,)
+        Series: 'a' [f64]
+        [
+                null
+                null
+                1.0
+                2.0
+                3.0
+                4.0
+        ]
+        >>> s.rolling_quantile(quantile=0.33, interpolation="linear", window_size=3)
+        shape: (6,)
+        Series: 'a' [f64]
+        [
+                null
+                null
+                1.66
+                2.66
+                3.66
+                5.32
+        ]
+
         """
         if min_periods is None:
             min_periods = window_size
@@ -3563,6 +3878,21 @@ class Series:
             Size of the rolling window
         bias
             If False, then the calculations are corrected for statistical bias.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0, 4.0, 6.0, 8.0])
+        >>> s.rolling_skew(window_size=3)
+        shape: (6,)
+        Series: 'a' [f64]
+        [
+                null
+                null
+                0.0
+                0.0
+                0.381802
+                0.0
+        ]
 
         """
 
@@ -4040,6 +4370,18 @@ class Series:
         seed
             Seed for the random number generator.
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.shuffle(seed=1)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                2
+                1
+                3
+        ]
+
         """
         if seed is None:
             warn(
@@ -4153,6 +4495,18 @@ class Series:
             Minimum number of observations in window required to have a value
             (otherwise result is null).
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.ewm_std(com=1)
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+            0.0
+            0.707107
+            0.963624
+        ]
+
         """
 
     def ewm_var(
@@ -4207,6 +4561,18 @@ class Series:
             Minimum number of observations in window required to have a value
             (otherwise result is null).
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.ewm_var(com=1)
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+            0.0
+            0.5
+            0.928571
+        ]
+
         """
 
     def extend_constant(self, value: int | float | str | bool | None, n: int) -> Series:
@@ -4252,6 +4618,12 @@ class Series:
         --------
         This can lead to incorrect results if this `Series` is not sorted!!
         Use with care!
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.set_sorted().max()
+        3
 
         """
         return wrap_s(self._s.set_sorted(reverse))

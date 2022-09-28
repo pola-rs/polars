@@ -10,7 +10,6 @@ from polars import internals as pli
 from polars.datatypes import (
     DataType,
     Datetime,
-    Float64,
     PolarsDataType,
     UInt32,
     is_polars_dtype,
@@ -239,21 +238,13 @@ class Expr:
         """Numpy universal functions."""
         if not _NUMPY_AVAILABLE:
             raise ImportError("'numpy' is required for this functionality.")
-        out_type = ufunc(np.array([1])).dtype
-        dtype: type[DataType] | None
-        if "float" in str(out_type):
-            dtype = Float64
-        else:
-            dtype = None
 
         args = [inp for inp in inputs if not isinstance(inp, Expr)]
 
         def function(s: pli.Series) -> pli.Series:  # pragma: no cover
             return ufunc(s, *args, **kwargs)
 
-        dtype = kwargs.get("dtype", dtype)
-
-        return self.map(function, return_dtype=dtype)
+        return self.map(function)
 
     def __getstate__(self) -> Any:
         return self._pyexpr.__getstate__()
@@ -2074,7 +2065,7 @@ class Expr:
         """
         Fill null values using the specified value or strategy.
 
-        To interpolate over null values see interpolate
+        To interpolate over null values see interpolate.
 
         Parameters
         ----------
@@ -3630,7 +3621,7 @@ class Expr:
         """
         Fill nulls with linear interpolation over missing values.
 
-        Can also be used to regrid data to a new grid - see examples below
+        Can also be used to regrid data to a new grid - see examples below.
 
         Examples
         --------
@@ -5939,18 +5930,14 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"values": [1, 3, 2]})
-        >>> df.select(pl.col("values").sort().set_sorted())
-        shape: (3, 1)
+        >>> df = pl.DataFrame({"values": [1, 2, 3]})
+        >>> df.select(pl.col("values").set_sorted().max())
+        shape: (1, 1)
         ┌────────┐
         │ values │
         │ ---    │
         │ i64    │
         ╞════════╡
-        │ 1      │
-        ├╌╌╌╌╌╌╌╌┤
-        │ 2      │
-        ├╌╌╌╌╌╌╌╌┤
         │ 3      │
         └────────┘
 

@@ -3,6 +3,8 @@
 # ------------------------------------------------
 from __future__ import annotations
 
+from typing import Any
+
 from hypothesis import given, settings
 from hypothesis.strategies import sampled_from
 
@@ -161,3 +163,23 @@ def test_chunking(
     assert s1.n_chunks() == 1
     if len(s2) > 1:
         assert s2.n_chunks() > 1
+
+
+@given(
+    df=dataframes(allowed_dtypes=[pl.Float32, pl.Float64], allow_infinities=False),
+    s=series(dtype=pl.Float64, allow_infinities=False),
+)
+def test_infinities(
+    df: pl.DataFrame,
+    s: pl.Series,
+) -> None:
+    from math import isfinite
+
+    def finite_float(value: Any) -> bool:
+        if isinstance(value, float):
+            return isfinite(value)
+        return False
+
+    assert all(finite_float(val) for val in s.to_list())
+    for col in df.columns:
+        assert all(finite_float(val) for val in df[col].to_list())

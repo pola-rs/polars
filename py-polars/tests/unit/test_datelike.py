@@ -1534,3 +1534,12 @@ def test_cast_timezone() -> None:
         "a": [datetime(2022, 9, 25, 14, 0)],
         "b": [datetime(2022, 9, 25, 18, 0)],
     }
+    assert pl.DataFrame({"a": [datetime(2022, 9, 25, 18)]}).with_column(
+        pl.col("a")
+        .dt.with_time_zone("UTC")
+        .dt.cast_time_zone("America/New_York")
+        .alias("b")
+    ).to_dict(False) == {
+        "a": [datetime(2022, 9, 25, 18, 0)],
+        "b": [datetime(2022, 9, 25, 14, 0)],
+    }

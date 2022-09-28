@@ -685,6 +685,39 @@ class ExprDateTimeNameSpace:
         │ 5.765431 │
         └──────────┘
 
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 1, 0, 0, 4)
+        >>> df = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, timedelta(seconds=2))}
+        ... )
+        >>> df
+        shape: (3, 1)
+        ┌─────────────────────┐
+        │ date                │
+        │ ---                 │
+        │ datetime[μs]        │
+        ╞═════════════════════╡
+        │ 2001-01-01 00:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-01 00:00:02 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-01-01 00:00:04 │
+        └─────────────────────┘
+        >>> df.select(pl.col("date").dt.second())
+        shape: (3, 1)
+        ┌──────┐
+        │ date │
+        │ ---  │
+        │ u32  │
+        ╞══════╡
+        │ 0    │
+        ├╌╌╌╌╌╌┤
+        │ 2    │
+        ├╌╌╌╌╌╌┤
+        │ 4    │
+        └──────┘
+
         """
         sec = pli.wrap_expr(self._pyexpr.second())
         return (
