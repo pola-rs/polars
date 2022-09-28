@@ -13,6 +13,10 @@ where
     I::IntoIter: TrustedLen,
     T: Float + NativeType + AddAssign,
 {
+    if alpha.is_one() {
+        return ewm_mean_alpha_equals_one(xs, min_periods);
+    }
+
     let one_sub_alpha = T::one() - alpha;
 
     let mut opt_mean = None;
@@ -37,6 +41,28 @@ where
             match non_null_cnt < min_periods {
                 true => None,
                 false => opt_mean,
+            }
+        })
+        .collect_trusted()
+}
+
+/// To prevent numerical instability (and as a slight optimization), we
+/// special-case ``alpha=1``.
+fn ewm_mean_alpha_equals_one<I, T>(xs: I, min_periods: usize) -> PrimitiveArray<T>
+where
+    I: IntoIterator<Item = Option<T>>,
+    I::IntoIter: TrustedLen,
+    T: Float + NativeType + AddAssign,
+{
+    let mut non_null_count = 0usize;
+    xs.into_iter()
+        .map(|opt_x| {
+            if opt_x.is_some() {
+                non_null_count += 1;
+            }
+            match non_null_count < min_periods {
+                true => None,
+                false => opt_x,
             }
         })
         .collect_trusted()
