@@ -482,12 +482,6 @@ pub fn get_list_builder(
                     Box::new(builder)
                 }};
             }
-            #[cfg(not(feature = "dtype-binary"))]
-            macro_rules! get_binary_builder {
-                () => {{
-                    unreachable!();
-                }};
-            }
             Ok(match_dtype_to_logical_apply_macro!(
                 physical_type,
                 get_primitive_builder,

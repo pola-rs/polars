@@ -56,12 +56,6 @@ impl Series {
                         ChunkedArray::<BinaryType>::full_null(name, size).into_series()
                     }};
                 }
-                #[cfg(not(feature = "dtype-binary"))]
-                macro_rules! binary {
-                    () => {{
-                        unreachable!();
-                    }};
-                }
                 match_dtype_to_logical_apply_macro!(dtype, primitive, utf8, binary, bool)
             }
         }
