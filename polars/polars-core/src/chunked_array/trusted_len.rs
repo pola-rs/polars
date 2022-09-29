@@ -214,6 +214,7 @@ where
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl<Ptr> FromTrustedLenIterator<Option<Ptr>> for BinaryChunked
 where
     Ptr: AsRef<[u8]>,

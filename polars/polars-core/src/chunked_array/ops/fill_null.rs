@@ -402,6 +402,7 @@ impl ChunkFillNull for BinaryChunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl ChunkFillNullValue<&[u8]> for BinaryChunked {
     fn fill_null_with_values(&self, value: &[u8]) -> PolarsResult<Self> {
         self.set(&self.is_null(), Some(value))
