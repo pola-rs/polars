@@ -7,7 +7,7 @@ use utils::*;
 use super::*;
 use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::{optimizer, Context};
-use crate::utils::{aexpr_to_leaf_names, aexprs_to_schema, check_input_node, has_aexpr};
+use crate::utils::{aexprs_to_schema, check_input_node, has_aexpr};
 
 #[derive(Default)]
 pub struct PredicatePushDown {}
@@ -91,12 +91,11 @@ impl PredicatePushDown {
                     let input_schema = lp_arena.get(node).schema(lp_arena);
                     let mut pushdown_predicates =
                         optimizer::init_hashmap(Some(acc_predicates.len()));
-                    for (name, &predicate) in acc_predicates.iter() {
+                    for (_, &predicate) in acc_predicates.iter() {
                         // we can pushdown the predicate
                         if check_input_node(predicate, &input_schema, expr_arena) {
                             insert_and_combine_predicate(
                                 &mut pushdown_predicates,
-                                name.clone(),
                                 predicate,
                                 expr_arena,
                             )
@@ -157,7 +156,7 @@ impl PredicatePushDown {
     ///
     /// * `AlogicalPlan` - Arena based logical plan tree representing the query.
     /// * `acc_predicates` - The predicates we accumulate during tree traversal.
-    ///                      The hashmap maps from root-column name to predicates on that column.
+    ///                      The hashmap maps from leaf-column name to predicates on that column.
     ///                      If the key is already taken we combine the predicate with a bitand operation.
     ///                      The `Node`s are indexes in the `expr_arena`
     /// * `lp_arena` - The local memory arena for the logical plan.
@@ -178,8 +177,7 @@ impl PredicatePushDown {
                 // we remove it and apply it locally
                 let local_predicates = transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena));
 
-                let name = roots_to_key(&aexpr_to_leaf_names(predicate, expr_arena));
-                insert_and_combine_predicate(&mut acc_predicates, name, predicate, expr_arena);
+                insert_and_combine_predicate(&mut acc_predicates, predicate, expr_arena);
                 let alp = lp_arena.take(input);
                 let new_input = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
 
@@ -451,12 +449,9 @@ impl PredicatePushDown {
                     // be influenced by join
                     #[allow(clippy::suspicious_else_formatting)]
                     if !predicate_is_pushdown_boundary(predicate, expr_arena) {
-                        // no else if. predicate can be in both tables.
                         if check_input_node(predicate, &schema_left, expr_arena) {
-                            let name = get_insertion_name(expr_arena, predicate, &schema_left);
                             insert_and_combine_predicate(
                                 &mut pushdown_left,
-                                name,
                                 predicate,
                                 expr_arena,
                             );
@@ -467,10 +462,8 @@ impl PredicatePushDown {
                         // in that case we should not push down as the user wants to filter on `x`
                         // not on `x_rhs`.
                         else if check_input_node(predicate, &schema_right, expr_arena)  {
-                            let name = get_insertion_name(expr_arena, predicate, &schema_right);
                             insert_and_combine_predicate(
                                 &mut pushdown_right,
-                                name,
                                 predicate,
                                 expr_arena,
                             );
@@ -577,12 +570,7 @@ mod test {
 
         let predicate_expr = col("foo").gt(col("bar"));
         let predicate = to_aexpr(predicate_expr.clone(), &mut expr_arena);
-        insert_and_combine_predicate(
-            &mut acc_predicates,
-            Arc::from("foo"),
-            predicate,
-            &mut expr_arena,
-        );
+        insert_and_combine_predicate(&mut acc_predicates, predicate, &mut expr_arena);
         let root = *acc_predicates.get("foo").unwrap();
         let expr = node_to_expr(root, &expr_arena);
         assert_eq!(format!("{:?}", &expr), format!("{:?}", predicate_expr));
