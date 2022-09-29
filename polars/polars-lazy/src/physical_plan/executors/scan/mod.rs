@@ -20,10 +20,10 @@ pub(crate) use parquet::ParquetExec;
 use polars_io::aggregations::ScanAggregation;
 use polars_io::csv::CsvEncoding;
 use polars_io::prelude::*;
+#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+use polars_plan::logical_plan::FileFingerPrint;
 
 use super::*;
-#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
-use crate::logical_plan::optimizer::file_caching::FileFingerPrint;
 use crate::prelude::*;
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]

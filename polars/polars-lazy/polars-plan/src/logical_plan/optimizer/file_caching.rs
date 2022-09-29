@@ -8,7 +8,7 @@ use crate::logical_plan::ALogicalPlanBuilder;
 use crate::prelude::*;
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
-pub(crate) struct FileFingerPrint {
+pub struct FileFingerPrint {
     pub path: PathBuf,
     pub predicate: Option<Expr>,
     pub slice: (usize, Option<usize>),

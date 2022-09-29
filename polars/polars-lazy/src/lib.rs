@@ -189,7 +189,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 extern crate core;
 
-#[cfg(all(feature = "dot_diagram", feature = "compile"))]
+#[cfg(feature = "dot_diagram")]
 mod dot;
 #[cfg(feature = "compile")]
 pub mod dsl;

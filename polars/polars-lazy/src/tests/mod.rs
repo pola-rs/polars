@@ -44,12 +44,11 @@ use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use polars_core::prelude::*;
 pub(crate) use polars_core::SINGLE_LOCK;
 use polars_io::prelude::*;
+use polars_plan::logical_plan::{
+    ArenaLpIter, OptimizationRule, SimplifyExprRule, StackOptimizer, TypeCoercionRule,
+};
 
 use crate::dsl::{argsort_by, pearson_corr};
-use crate::logical_plan::iterator::ArenaLpIter;
-use crate::logical_plan::optimizer::{
-    OptimizationRule, SimplifyExprRule, StackOptimizer, TypeCoercionRule,
-};
 use crate::prelude::*;
 
 static GLOB_PARQUET: &str = "../../examples/datasets/*.parquet";

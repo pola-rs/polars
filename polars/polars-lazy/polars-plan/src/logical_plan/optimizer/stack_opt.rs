@@ -3,7 +3,7 @@ use crate::logical_plan::alp::ALogicalPlan;
 use crate::prelude::{Arena, Node};
 
 /// Optimizer that uses a stack and memory arenas in favor of recursion
-pub(crate) struct StackOptimizer {}
+pub struct StackOptimizer {}
 
 impl StackOptimizer {
     pub fn optimize_loop(

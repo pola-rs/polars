@@ -1,5 +1,6 @@
-use super::*;
 use rayon::prelude::*;
+
+use super::*;
 
 /// Take an input Executor and a multiple expressions
 pub struct GroupByExec {

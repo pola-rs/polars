@@ -9,11 +9,10 @@ use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "rank")]
 use polars_core::utils::coalesce_nulls_series;
-use rayon::prelude::*;
-use crate::prelude::*;
-
 use polars_plan::prelude::FunctionExpr;
+use rayon::prelude::*;
 
+use crate::prelude::*;
 
 /// Concat multiple
 pub fn concat<L: AsRef<[LazyFrame]>>(

@@ -26,7 +26,10 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::sync::Arc;
 
 pub use expr::*;
+pub use function_expr::*;
 pub use functions::*;
+#[cfg(feature = "list")]
+pub use list::*;
 pub use options::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::prelude::*;
@@ -43,7 +46,6 @@ use crate::prelude::*;
 use crate::utils::has_expr;
 #[cfg(feature = "is_in")]
 use crate::utils::has_root_literal_expr;
-pub use function_expr::*;
 
 pub fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
     Expr::BinaryExpr {

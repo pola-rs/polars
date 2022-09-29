@@ -27,27 +27,27 @@ pub(crate) mod options;
 mod projection;
 mod schema;
 
+pub use aexpr::*;
+pub use alp::*;
 pub use anonymous_scan::*;
 pub use apply::*;
+pub use builder::*;
+pub use conversion::*;
+pub use functions::*;
+pub use iterator::*;
 pub use lit::*;
+pub use optimizer::*;
 use polars_core::frame::explode::MeltArgs;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[cfg(any(
-feature = "ipc",
-feature = "parquet",
-feature = "csv-file",
-feature = "cse"
+    feature = "ipc",
+    feature = "parquet",
+    feature = "csv-file",
+    feature = "cse"
 ))]
-pub use crate::logical_plan::optimizer::file_caching::collect_fingerprints;
-pub use optimizer::optimize;
-pub use aexpr::*;
-pub use alp::*;
-pub use conversion::*;
-pub use builder::*;
-pub use iterator::*;
-pub use functions::*;
+pub use crate::logical_plan::optimizer::file_caching::{collect_fingerprints, FileFingerPrint};
 
 #[derive(Clone, Copy, Debug)]
 pub enum Context {

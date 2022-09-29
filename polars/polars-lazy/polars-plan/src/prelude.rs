@@ -16,11 +16,11 @@ pub struct DynamicGroupOptions {
 }
 
 #[cfg(any(
-feature = "temporal",
-feature = "dtype-duration",
-feature = "dtype-date",
-feature = "dtype-date",
-feature = "dtype-time"
+    feature = "temporal",
+    feature = "dtype-duration",
+    feature = "dtype-date",
+    feature = "dtype-date",
+    feature = "dtype-time"
 ))]
 pub(crate) use polars_time::prelude::*;
 
@@ -32,15 +32,14 @@ pub struct RollingGroupOptions {
 }
 
 pub(crate) use polars_ops::prelude::*;
+pub use polars_utils::arena::{Arena, Node};
 
 pub use crate::dsl::*;
+pub use crate::frame::*;
 pub(crate) use crate::logical_plan::aexpr::*;
 pub(crate) use crate::logical_plan::alp::*;
 pub(crate) use crate::logical_plan::conversion::*;
 pub(crate) use crate::logical_plan::iterator::*;
-
-pub use crate::frame::*;
-pub use polars_utils::arena::{Arena, Node};
-pub use crate::logical_plan::*;
 pub use crate::logical_plan::options::*;
+pub use crate::logical_plan::*;
 pub use crate::utils::*;

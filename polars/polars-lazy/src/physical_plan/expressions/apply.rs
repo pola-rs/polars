@@ -8,9 +8,9 @@ use polars_core::POOL;
 use polars_io::parquet::predicates::BatchStats;
 #[cfg(feature = "parquet")]
 use polars_io::predicates::StatsEvaluator;
+use polars_plan::dsl::FunctionExpr;
 use rayon::prelude::*;
 
-use polars_plan::dsl::FunctionExpr;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 

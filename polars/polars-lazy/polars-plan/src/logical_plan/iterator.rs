@@ -96,7 +96,7 @@ macro_rules! push_expr {
 
 impl Expr {
     /// Expr::mutate().apply(fn())
-    pub(crate) fn mutate(&mut self) -> ExprMut {
+    pub fn mutate(&mut self) -> ExprMut {
         let mut stack = Vec::with_capacity(8);
         stack.push(self);
         ExprMut { stack }
@@ -112,7 +112,7 @@ impl<'a> ExprMut<'a> {
     /// # Arguments
     /// * `f` - A function that may mutate an expression. If the function returns `true` iteration
     /// continues.
-    pub(crate) fn apply<F>(&mut self, mut f: F)
+    pub fn apply<F>(&mut self, mut f: F)
     where
         F: FnMut(&mut Expr) -> bool,
     {

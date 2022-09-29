@@ -7,7 +7,7 @@ fn to_aexprs(input: Vec<Expr>, arena: &mut Arena<AExpr>) -> Vec<Node> {
 }
 
 /// converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation
-pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
+pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
     let v = match expr {
         Expr::Explode(expr) => AExpr::Explode(to_aexpr(*expr, arena)),
         Expr::Alias(e, name) => AExpr::Alias(to_aexpr(*e, arena), name),
@@ -156,7 +156,7 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
 /// converts LogicalPlan to ALogicalPlan
 /// it adds expressions & lps to the respective arenas as it traverses the plan
 /// finally it returns the top node of the logical plan
-pub(crate) fn to_alp(
+pub fn to_alp(
     lp: LogicalPlan,
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<ALogicalPlan>,

@@ -8,7 +8,7 @@ use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::Context;
 use crate::utils::is_scan;
 
-pub(crate) struct TypeCoercionRule {}
+pub struct TypeCoercionRule {}
 
 /// determine if we use the supertype or not. For instance when we have a column Int64 and we compare with literal UInt32
 /// it would be wasteful to cast the column instead of the literal.

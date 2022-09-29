@@ -10,7 +10,7 @@ use crate::logical_plan::{optimizer, Context};
 use crate::utils::{aexpr_to_leaf_names, aexprs_to_schema, check_input_node, has_aexpr};
 
 #[derive(Default)]
-pub(crate) struct PredicatePushDown {}
+pub struct PredicatePushDown {}
 
 impl PredicatePushDown {
     fn optional_apply_predicate(

@@ -589,7 +589,6 @@ pub fn duration(args: DurationArgs) -> Expr {
     .alias("duration")
 }
 
-
 /// Create a Column Expression based on a column name.
 ///
 /// # Arguments

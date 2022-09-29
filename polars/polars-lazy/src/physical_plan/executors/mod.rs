@@ -1,5 +1,6 @@
 mod cache;
 mod drop_duplicates;
+mod executor;
 mod explode;
 mod ext_context;
 mod filter;
@@ -18,12 +19,14 @@ mod sort;
 mod stack;
 mod udf;
 mod union;
-mod executor;
 
 use std::borrow::Cow;
 use std::path::PathBuf;
 
+pub use executor::*;
 use polars_core::POOL;
+use polars_plan::global::FETCH_ROWS;
+use polars_plan::utils::*;
 use rayon::prelude::*;
 
 pub(super) use self::cache::*;
@@ -47,10 +50,7 @@ pub(super) use self::stack::*;
 pub(super) use self::udf::*;
 pub(super) use self::union::*;
 use super::*;
-use polars_plan::global::FETCH_ROWS;
 use crate::physical_plan::state::StateFlags;
-use polars_plan::utils::*;
-pub use executor::*;
 
 pub fn _set_n_rows_for_scan(n_rows: Option<usize>) -> Option<usize> {
     let fetch_rows = FETCH_ROWS.with(|fetch_rows| fetch_rows.get());

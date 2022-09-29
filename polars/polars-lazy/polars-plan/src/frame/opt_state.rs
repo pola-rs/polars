@@ -1,4 +1,3 @@
-
 #[derive(Copy, Clone)]
 /// State of the allowed optimizations
 pub struct OptState {

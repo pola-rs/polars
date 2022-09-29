@@ -53,7 +53,7 @@ polars-core = { version = "0.24.3", path = "../polars-core", features = ["privat
 polars-time = { version = "0.24.3", path = "../polars-time", features = ["private"], default-features = false, optional = true }
 polars-utils = { version = "0.24.3", path = "../polars-utils" }
 rayon.workspace = true
-regex = "1.5"
+regex = "1.6"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true, default-features = false, features = ["alloc"] }
 simd-json = { version = "0.6.0", optional = true, features = ["allow-non-simd", "known-key"] }

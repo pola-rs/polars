@@ -102,7 +102,7 @@ macro_rules! eval_binary_bool_type {
     }}
 }
 
-pub(crate) struct SimplifyBooleanRule {}
+pub struct SimplifyBooleanRule {}
 
 impl OptimizationRule for SimplifyBooleanRule {
     fn optimize_expr(
@@ -425,7 +425,7 @@ fn get_string_concat_input(node: Node, expr_arena: &Arena<AExpr>) -> Option<&[No
     }
 }
 
-pub(crate) struct SimplifyExprRule {}
+pub struct SimplifyExprRule {}
 
 impl OptimizationRule for SimplifyExprRule {
     #[allow(clippy::float_cmp)]

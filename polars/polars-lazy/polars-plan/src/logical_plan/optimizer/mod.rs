@@ -31,21 +31,12 @@ use drop_nulls::ReplaceDropNulls;
 use fast_projection::FastProjectionAndCollapse;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use file_caching::{find_column_union_and_fingerprints, FileCacher};
-use predicate_pushdown::PredicatePushDown;
-use projection_pushdown::ProjectionPushDown;
-#[cfg(not(test))]
-use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
-#[cfg(test)]
-pub(crate) use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
+pub use predicate_pushdown::PredicatePushDown;
+pub use projection_pushdown::ProjectionPushDown;
+pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
-#[cfg(not(test))]
-use stack_opt::{OptimizationRule, StackOptimizer};
-#[cfg(test)]
-pub(crate) use stack_opt::{OptimizationRule, StackOptimizer};
-#[cfg(not(test))]
-use type_coercion::TypeCoercionRule;
-#[cfg(test)]
-pub(crate) use type_coercion::TypeCoercionRule;
+pub use stack_opt::{OptimizationRule, StackOptimizer};
+pub use type_coercion::TypeCoercionRule;
 
 pub trait Optimize {
     fn optimize(&self, logical_plan: LogicalPlan) -> PolarsResult<LogicalPlan>;

@@ -149,7 +149,7 @@ impl AExpr {
     }
 
     /// This should be a 1 on 1 copy of the get_type method of Expr until Expr is completely phased out.
-    pub(crate) fn get_type(
+    pub fn get_type(
         &self,
         schema: &Schema,
         ctxt: Context,

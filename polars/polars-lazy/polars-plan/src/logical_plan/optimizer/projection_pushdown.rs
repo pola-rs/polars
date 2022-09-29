@@ -122,7 +122,7 @@ fn update_scan_schema(
     Ok(new_schema)
 }
 
-pub(crate) struct ProjectionPushDown {}
+pub struct ProjectionPushDown {}
 
 impl ProjectionPushDown {
     /// Projection will be done at this node, but we continue optimization

@@ -1,5 +1,6 @@
-use super::*;
 use polars_core::utils::concat_df;
+
+use super::*;
 
 pub(crate) struct UnionExec {
     pub(crate) inputs: Vec<Box<dyn Executor>>,

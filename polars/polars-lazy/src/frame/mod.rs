@@ -31,17 +31,17 @@ use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
 use polars_io::RowCount;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
+use polars_plan::global::FETCH_ROWS;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use polars_plan::logical_plan::collect_fingerprints;
 use polars_plan::logical_plan::optimize;
-use polars_plan::global::FETCH_ROWS;
+use polars_plan::utils::{combine_predicates_expr, expr_to_leaf_column_names};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+use crate::physical_plan::executors::Executor;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_plan::utils::{combine_predicates_expr, expr_to_leaf_column_names};
-use crate::physical_plan::executors::Executor;
 
 pub trait IntoLazy {
     fn lazy(self) -> LazyFrame;

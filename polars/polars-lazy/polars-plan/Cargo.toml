@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rayon.workspace = true
+ahash.workspace = true
 polars-arrow = { version = "0.24.3", path = "../../polars-arrow" }
 polars-core = { version = "0.24.3", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
 polars-io = { version = "0.24.3", path = "../../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
@@ -14,6 +14,8 @@ polars-ops = { version = "0.24.3", path = "../../polars-ops", default-features =
 polars-time = { version = "0.24.3", path = "../../polars-time", optional = true }
 polars-utils = { version = "0.24.3", path = "../../polars-utils" }
 pyo3 = { version = "0.16", optional = true }
+rayon.workspace = true
+regex = { version = "1.6", optional = true }
 
 [features]
 python = ["pyo3"]
@@ -61,10 +63,10 @@ mode = ["polars-core/mode"]
 cum_agg = ["polars-core/cum_agg"]
 interpolate = ["polars-core/interpolate"]
 rolling_window = [
-    "polars-core/rolling_window",
-    "polars-time/rolling_window",
-    "polars-ops/rolling_window",
-    "polars-time/rolling_window",
+  "polars-core/rolling_window",
+  "polars-time/rolling_window",
+  "polars-ops/rolling_window",
+  "polars-time/rolling_window",
 ]
 rank = ["polars-core/rank"]
 diff = ["polars-core/diff", "polars-ops/diff"]
@@ -78,11 +80,9 @@ ewma = ["polars-core/ewma"]
 dot_diagram = []
 unique_counts = ["polars-core/unique_counts"]
 log = ["polars-ops/log"]
-list_eval = []
-cumulative_eval = []
 chunked_ids = []
 list_to_struct = ["polars-ops/list_to_struct"]
-#python = ["pyo3"]
+# python = ["pyo3"]
 row_hash = ["polars-core/row_hash", "polars-ops/hash"]
 string_justify = ["polars-ops/string_justify"]
 arg_where = []
