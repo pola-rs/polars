@@ -272,8 +272,11 @@ def test_timezone() -> None:
     # with pytest.warns(Warning):
     tz_s: pl.Series = pl.from_arrow(tz_data)  # type: ignore[assignment]
 
-    # timezones have no effect, i.e. `s` equals `tz_s`
-    assert not s.series_equal(tz_s)
+    # different timezones are not considered equal
+    # we check both `null_equal=True` and `null_equal=False`
+    # https://github.com/pola-rs/polars/issues/5023
+    assert not s.series_equal(tz_s, null_equal=False)
+    assert not s.series_equal(tz_s, null_equal=True)
     assert s.cast(int).series_equal(tz_s.cast(int))
 
 
