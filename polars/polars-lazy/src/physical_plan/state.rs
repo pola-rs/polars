@@ -5,11 +5,11 @@ use bitflags::bitflags;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::frame::hash_join::JoinOptIds;
 use polars_core::prelude::*;
+#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+use polars_plan::logical_plan::FileFingerPrint;
 
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use super::file_cache::FileCache;
-#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
-use crate::logical_plan::optimizer::file_caching::FileFingerPrint;
 use crate::physical_plan::node_timer::NodeTimer;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, JoinOptIds>>>;

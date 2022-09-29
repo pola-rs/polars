@@ -1,5 +1,6 @@
 //! Lazy API of Polars
 //!
+//!
 //! *Credits to the work of Andy Grove and Ballista/ DataFusion / Apache Arrow, which served as
 //! inspiration for the lazy API.*
 //!
@@ -188,21 +189,12 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 extern crate core;
 
-#[cfg(all(feature = "dot_diagram", feature = "compile"))]
+#[cfg(feature = "dot_diagram")]
 mod dot;
-#[cfg(feature = "compile")]
 pub mod dsl;
-#[cfg(feature = "compile")]
-mod dummies;
-#[cfg(feature = "compile")]
 pub mod frame;
-#[cfg(feature = "compile")]
-pub mod logical_plan;
-#[cfg(feature = "compile")]
 pub mod physical_plan;
-#[cfg(feature = "compile")]
 pub mod prelude;
 #[cfg(test)]
 mod tests;
-#[cfg(feature = "compile")]
 pub mod utils;

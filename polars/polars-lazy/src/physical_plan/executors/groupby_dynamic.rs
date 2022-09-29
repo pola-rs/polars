@@ -1,3 +1,6 @@
+#[cfg(feature = "dynamic_groupby")]
+use polars_time::DynamicGroupOptions;
+
 use super::*;
 
 #[cfg_attr(not(feature = "dynamic_groupby"), allow(dead_code))]
@@ -7,6 +10,7 @@ pub(crate) struct GroupByDynamicExec {
     #[allow(dead_code)]
     pub(crate) keys: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) aggs: Vec<Arc<dyn PhysicalExpr>>,
+    #[cfg(feature = "dynamic_groupby")]
     pub(crate) options: DynamicGroupOptions,
     pub(crate) input_schema: SchemaRef,
     pub(crate) slice: Option<(i64, usize)>,

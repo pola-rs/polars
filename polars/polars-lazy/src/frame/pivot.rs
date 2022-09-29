@@ -14,11 +14,13 @@ use crate::physical_plan::exotic::{prepare_eval_expr, prepare_expression_for_con
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
-impl PhysicalAggExpr for Expr {
+struct PivotExpr(Expr);
+
+impl PhysicalAggExpr for PivotExpr {
     fn evaluate<'a>(&self, df: &DataFrame, groups: &'a GroupsProxy) -> PolarsResult<Series> {
         let state = ExecutionState::new();
         let dtype = df.get_columns()[0].dtype();
-        let phys_expr = prepare_expression_for_context("", self, dtype, Context::Aggregation)?;
+        let phys_expr = prepare_expression_for_context("", &self.0, dtype, Context::Aggregation)?;
         phys_expr
             .evaluate_on_groups(df, groups, &state)
             .map(|mut ac| ac.aggregated())
@@ -52,7 +54,7 @@ where
         values,
         index,
         columns,
-        PivotAgg::Expr(Arc::new(expr)),
+        PivotAgg::Expr(Arc::new(PivotExpr(expr))),
         sort_columns,
     )
 }
@@ -80,7 +82,7 @@ where
         values,
         index,
         columns,
-        PivotAgg::Expr(Arc::new(expr)),
+        PivotAgg::Expr(Arc::new(PivotExpr(expr))),
         sort_columns,
     )
 }

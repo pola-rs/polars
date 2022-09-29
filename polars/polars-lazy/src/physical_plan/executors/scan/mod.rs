@@ -7,9 +7,7 @@ mod ndjson;
 #[cfg(feature = "parquet")]
 mod parquet;
 
-use std::fs::File;
 use std::mem;
-use std::path::Path;
 
 #[cfg(feature = "csv-file")]
 pub(crate) use csv::CsvExec;
@@ -20,10 +18,16 @@ pub(crate) use parquet::ParquetExec;
 use polars_io::aggregations::ScanAggregation;
 use polars_io::csv::CsvEncoding;
 use polars_io::prelude::*;
+use polars_plan::global::_set_n_rows_for_scan;
+#[cfg(any(
+    feature = "parquet",
+    feature = "csv-file",
+    feature = "ipc",
+    feature = "cse"
+))]
+use polars_plan::logical_plan::FileFingerPrint;
 
 use super::*;
-#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
-use crate::logical_plan::optimizer::file_caching::FileFingerPrint;
 use crate::prelude::*;
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
@@ -37,13 +41,19 @@ type Predicate = Option<Arc<dyn PhysicalIoExpr>>;
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 fn prepare_scan_args<'a>(
-    path: &Path,
+    path: &std::path::Path,
     predicate: &Option<Arc<dyn PhysicalExpr>>,
     with_columns: &mut Option<Arc<Vec<String>>>,
     schema: &mut SchemaRef,
     n_rows: Option<usize>,
     aggregate: &'a [ScanAggregation],
-) -> (File, Projection, StopNRows, Aggregation<'a>, Predicate) {
+) -> (
+    std::fs::File,
+    Projection,
+    StopNRows,
+    Aggregation<'a>,
+    Predicate,
+) {
     let file = std::fs::File::open(path).unwrap();
 
     let with_columns = mem::take(with_columns);
@@ -56,7 +66,7 @@ fn prepare_scan_args<'a>(
             .collect()
     });
 
-    let n_rows = set_n_rows(n_rows);
+    let n_rows = _set_n_rows_for_scan(n_rows);
     let aggregate = if aggregate.is_empty() {
         None
     } else {
@@ -97,7 +107,7 @@ impl Executor for DataFrameExec {
         }
         state.clear_schema_cache();
 
-        if let Some(limit) = set_n_rows(None) {
+        if let Some(limit) = _set_n_rows_for_scan(None) {
             Ok(df.head(Some(limit)))
         } else {
             Ok(df)

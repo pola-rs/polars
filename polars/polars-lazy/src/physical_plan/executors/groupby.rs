@@ -1,4 +1,3 @@
-use polars_core::POOL;
 use rayon::prelude::*;
 
 use super::*;

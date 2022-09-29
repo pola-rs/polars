@@ -1,8 +1,9 @@
 use polars_core::prelude::*;
 use polars_io::aggregations::ScanAggregation;
 
-use super::super::executors;
-use crate::prelude::*;
+use super::super::executors::{self, Executor};
+use super::*;
+use crate::utils::*;
 
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 fn aggregate_expr_to_scan_agg(
@@ -278,7 +279,8 @@ impl PhysicalPlanner {
                 let phys_aggs =
                     self.create_physical_expressions(&aggs, Context::Aggregation, expr_arena)?;
 
-                let slice = options.slice;
+                let _slice = options.slice;
+                #[cfg(feature = "dynamic_groupby")]
                 if let Some(options) = options.dynamic {
                     return Ok(Box::new(executors::GroupByDynamicExec {
                         input,
@@ -286,10 +288,11 @@ impl PhysicalPlanner {
                         aggs: phys_aggs,
                         options,
                         input_schema,
-                        slice,
+                        slice: _slice,
                     }));
                 }
 
+                #[cfg(feature = "dynamic_groupby")]
                 if let Some(options) = options.rolling {
                     return Ok(Box::new(executors::GroupByRollingExec {
                         input,
@@ -297,7 +300,7 @@ impl PhysicalPlanner {
                         aggs: phys_aggs,
                         options,
                         input_schema,
-                        slice,
+                        slice: _slice,
                     }));
                 }
 
