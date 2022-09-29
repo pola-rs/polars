@@ -1,3 +1,4 @@
+#[cfg(feature = "dynamic_groupby")]
 use polars_time::RollingGroupOptions;
 
 use super::*;
@@ -7,6 +8,7 @@ pub(crate) struct GroupByRollingExec {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) keys: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) aggs: Vec<Arc<dyn PhysicalExpr>>,
+    #[cfg(feature = "dynamic_groupby")]
     pub(crate) options: RollingGroupOptions,
     pub(crate) input_schema: SchemaRef,
     pub(crate) slice: Option<(i64, usize)>,
