@@ -18,10 +18,12 @@ use polars_arrow::kernels::rolling;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::prelude::*;
 
+#[cfg(feature = "rolling_window")]
 use crate::prelude::*;
 use crate::series::WrapFloat;
 
 #[derive(Clone)]
+#[cfg(feature = "rolling_window")]
 pub struct RollingOptions {
     /// The length of the window.
     pub window_size: Duration,
@@ -38,6 +40,7 @@ pub struct RollingOptions {
     pub closed_window: Option<ClosedWindow>,
 }
 
+#[cfg(feature = "rolling_window")]
 impl Default for RollingOptions {
     fn default() -> Self {
         RollingOptions {
@@ -52,6 +55,7 @@ impl Default for RollingOptions {
 }
 
 #[derive(Clone)]
+#[cfg(feature = "rolling_window")]
 pub struct RollingOptionsImpl<'a> {
     /// The length of the window.
     pub window_size: Duration,
@@ -67,6 +71,7 @@ pub struct RollingOptionsImpl<'a> {
     pub closed_window: Option<ClosedWindow>,
 }
 
+#[cfg(feature = "rolling_window")]
 impl From<RollingOptions> for RollingOptionsImpl<'static> {
     fn from(options: RollingOptions) -> Self {
         let window_size = options.window_size;
@@ -105,6 +110,7 @@ impl From<RollingOptions> for RollingOptionsFixedWindow {
     }
 }
 
+#[cfg(feature = "rolling_window")]
 impl Default for RollingOptionsImpl<'static> {
     fn default() -> Self {
         RollingOptionsImpl {
@@ -185,6 +191,7 @@ pub trait RollingAgg {
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their var.
+    #[cfg(feature = "rolling_window")]
     fn rolling_var(&self, options: RollingOptionsImpl) -> PolarsResult<Series>;
 
     /// Apply a rolling std (moving std) over the values in this array.

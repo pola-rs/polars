@@ -242,7 +242,7 @@ pub(crate) fn cast_timezone(
                 let ndt = timestamp_ms_to_datetime(value);
                 let tz_aware = from.from_local_datetime(&ndt).unwrap();
                 let new_tz_aware = tz_aware.with_timezone(&to);
-                new_tz_aware.timestamp_millis()
+                new_tz_aware.naive_local().timestamp_millis()
             },
             ArrowDataType::Int64,
         )),
@@ -252,7 +252,7 @@ pub(crate) fn cast_timezone(
                 let ndt = timestamp_us_to_datetime(value);
                 let tz_aware = from.from_local_datetime(&ndt).unwrap();
                 let new_tz_aware = tz_aware.with_timezone(&to);
-                new_tz_aware.timestamp_micros()
+                new_tz_aware.naive_local().timestamp_micros()
             },
             ArrowDataType::Int64,
         )),
@@ -262,7 +262,7 @@ pub(crate) fn cast_timezone(
                 let ndt = timestamp_ns_to_datetime(value);
                 let tz_aware = from.from_local_datetime(&ndt).unwrap();
                 let new_tz_aware = tz_aware.with_timezone(&to);
-                new_tz_aware.timestamp_nanos()
+                new_tz_aware.naive_local().timestamp_nanos()
             },
             ArrowDataType::Int64,
         )),
