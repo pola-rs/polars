@@ -453,3 +453,35 @@ fn test_string_addition_to_concat_str() -> PolarsResult<()> {
 
     Ok(())
 }
+#[test]
+fn test_with_column_prune() -> PolarsResult<()> {
+    // don't
+    let df = df![
+        "c0" => [0],
+        "c1" => [0],
+        "c2" => [0],
+    ]?;
+
+    let q = df.lazy().with_column(col("c0")).select([col("c1")]);
+
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
+
+    // check if with_column is pruned
+    assert!((&lp_arena).iter(lp).all(|(_, lp)| {
+        use ALogicalPlan::*;
+        match lp {
+            ALogicalPlan::MapFunction {
+                function: FunctionNode::FastProjection { .. },
+                ..
+            }
+            | DataFrameScan { .. } => true,
+            _ => false,
+        }
+    }));
+    assert_eq!(
+        q.schema().unwrap().as_ref(),
+        &Schema::from([Field::new("c1", DataType::Int32)])
+    );
+    Ok(())
+}
