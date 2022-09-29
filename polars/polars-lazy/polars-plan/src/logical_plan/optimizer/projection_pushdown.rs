@@ -1077,7 +1077,7 @@ impl ProjectionPushDown {
 
                     // Make sure that columns selected with_columns are available
                     // only if not empty. If empty we already select everything.
-                    for expression in &exprs {
+                    for expression in &pruned_with_cols {
                         add_expr_to_accumulated(
                             *expression,
                             &mut acc_projections,
