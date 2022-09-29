@@ -93,6 +93,21 @@ pub(super) fn roots_to_key(roots: &[Arc<str>]) -> Arc<str> {
     }
 }
 
+pub(super) fn get_insertion_name(
+    expr_arena: &Arena<AExpr>,
+    predicate: Node,
+    schema: &Schema,
+) -> Arc<str> {
+    Arc::from(
+        expr_arena
+            .get(predicate)
+            .to_field(schema, Context::Default, expr_arena)
+            .unwrap()
+            .name()
+            .as_ref(),
+    )
+}
+
 // this checks if a predicate from a node upstream can pass
 // the predicate in this filter
 // Cases where this cannot be the case:
