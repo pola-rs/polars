@@ -280,6 +280,7 @@ impl PhysicalPlanner {
                     self.create_physical_expressions(&aggs, Context::Aggregation, expr_arena)?;
 
                 let slice = options.slice;
+                #[cfg(feature = "dynamic_groupby")]
                 if let Some(options) = options.dynamic {
                     return Ok(Box::new(executors::GroupByDynamicExec {
                         input,
@@ -291,6 +292,7 @@ impl PhysicalPlanner {
                     }));
                 }
 
+                #[cfg(feature = "dynamic_groupby")]
                 if let Some(options) = options.rolling {
                     return Ok(Box::new(executors::GroupByRollingExec {
                         input,

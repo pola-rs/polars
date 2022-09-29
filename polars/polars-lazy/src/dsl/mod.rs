@@ -7,13 +7,11 @@ mod into;
 #[cfg(feature = "list")]
 mod list;
 
-use into::IntoExpr;
-pub use polars_plan::dsl::*;
-pub use functions::*;
-pub use polars_plan::logical_plan::{
-    UdfSchema,
-};
 #[cfg(feature = "cumulative_eval")]
 pub use eval::*;
+pub use functions::*;
+use into::IntoExpr;
 #[cfg(feature = "list")]
 pub use list::*;
+pub use polars_plan::dsl::*;
+pub use polars_plan::logical_plan::UdfSchema;

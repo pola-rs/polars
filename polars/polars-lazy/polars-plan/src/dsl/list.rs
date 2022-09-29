@@ -1,10 +1,6 @@
-use std::sync::Mutex;
-
-use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::series::ops::NullBehavior;
 use polars_ops::prelude::*;
-use rayon::prelude::*;
 
 use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::*;

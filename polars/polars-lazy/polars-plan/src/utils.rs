@@ -1,6 +1,5 @@
 use std::fmt::Formatter;
 use std::iter::FlatMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::prelude::*;
@@ -11,7 +10,7 @@ use crate::logical_plan::Context;
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
 
-// write some thing
+/// Utility to write comma delimited
 pub fn column_delimited(mut s: String, items: &[String]) -> String {
     s.push('(');
     for c in items {
@@ -24,7 +23,7 @@ pub fn column_delimited(mut s: String, items: &[String]) -> String {
     s
 }
 
-// write some thing
+/// Utility to write comma delimited
 pub(crate) fn fmt_column_delimited<S: AsRef<str>>(
     f: &mut Formatter<'_>,
     items: &[S],
@@ -369,35 +368,4 @@ where
         };
     }
     single_pred.expect("an empty iterator was passed")
-}
-
-/// Get a set of the data source paths in this LogicalPlan
-pub(crate) fn agg_source_paths(
-    root_lp: Node,
-    paths: &mut PlHashSet<PathBuf>,
-    lp_arena: &Arena<ALogicalPlan>,
-) {
-    lp_arena.iter(root_lp).for_each(|(_, lp)| {
-        use ALogicalPlan::*;
-        match lp {
-            #[cfg(feature = "csv-file")]
-            CsvScan { path, .. } => {
-                paths.insert(path.clone());
-            }
-            #[cfg(feature = "parquet")]
-            ParquetScan { path, .. } => {
-                paths.insert(path.clone());
-            }
-            #[cfg(feature = "ipc")]
-            IpcScan { path, .. } => {
-                paths.insert(path.clone());
-            }
-            // always block parallel on anonymous sources
-            // as we cannot know if they will lock or not.
-            AnonymousScan { .. } => {
-                paths.insert("anonymous".into());
-            }
-            _ => {}
-        }
-    })
 }

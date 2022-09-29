@@ -27,6 +27,7 @@ use std::sync::Arc;
 
 pub use expr::*;
 pub use function_expr::*;
+pub use functions::*;
 #[cfg(feature = "list")]
 pub use list::*;
 pub use options::*;
@@ -40,13 +41,11 @@ use polars_ops::prelude::SeriesOps;
 #[cfg(feature = "rolling_window")]
 use polars_time::series::SeriesOpsTime;
 
+pub use crate::logical_plan::lit;
 use crate::prelude::*;
 use crate::utils::has_expr;
 #[cfg(feature = "is_in")]
 use crate::utils::has_root_literal_expr;
-
-pub use functions::*;
-pub use crate::logical_plan::lit;
 
 pub fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
     Expr::BinaryExpr {

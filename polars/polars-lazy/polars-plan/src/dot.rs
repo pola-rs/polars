@@ -1,7 +1,6 @@
 use std::fmt::Write;
 
 use polars_core::prelude::*;
-use polars_utils::arena::Arena;
 
 use crate::prelude::*;
 use crate::utils::expr_to_leaf_column_names;

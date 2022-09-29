@@ -373,8 +373,8 @@ impl LogicalPlanBuilder {
         aggs: E,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
-        dynamic_options: Option<DynamicGroupOptions>,
-        rolling_options: Option<RollingGroupOptions>,
+        #[cfg(feature = "dynamic_groupby")] dynamic_options: Option<DynamicGroupOptions>,
+        #[cfg(feature = "dynamic_groupby")] rolling_options: Option<RollingGroupOptions>,
     ) -> Self {
         let current_schema = try_delayed!(self.0.schema(), &self.0, into);
         let current_schema = current_schema.as_ref();
@@ -392,24 +392,37 @@ impl LogicalPlanBuilder {
         );
         schema.merge(other);
 
-        let index_columns = &[
-            rolling_options
-                .as_ref()
-                .map(|options| &options.index_column),
-            dynamic_options
-                .as_ref()
-                .map(|options| &options.index_column),
-        ];
-        for &name in index_columns.iter().flatten() {
-            let dtype = try_delayed!(
-                current_schema
-                    .get(name)
-                    .ok_or_else(|| PolarsError::NotFound(name.to_string().into())),
-                self.0,
-                into
-            );
-            schema.with_column(name.clone(), dtype.clone());
+        #[cfg(feature = "dynamic_groupby")]
+        {
+            let index_columns = &[
+                rolling_options
+                    .as_ref()
+                    .map(|options| &options.index_column),
+                dynamic_options
+                    .as_ref()
+                    .map(|options| &options.index_column),
+            ];
+            for &name in index_columns.iter().flatten() {
+                let dtype = try_delayed!(
+                    current_schema
+                        .get(name)
+                        .ok_or_else(|| PolarsError::NotFound(name.to_string().into())),
+                    self.0,
+                    into
+                );
+                schema.with_column(name.clone(), dtype.clone());
+            }
         }
+
+        #[cfg(feature = "dynamic_groupby")]
+        let options = GroupbyOptions {
+            dynamic: dynamic_options,
+            rolling: rolling_options,
+            slice: None,
+        };
+
+        #[cfg(not(feature = "dynamic_groupby"))]
+        let options = GroupbyOptions { slice: None };
 
         LogicalPlan::Aggregate {
             input: Box::new(self.0),
@@ -418,11 +431,7 @@ impl LogicalPlanBuilder {
             schema: Arc::new(schema),
             apply,
             maintain_order,
-            options: GroupbyOptions {
-                dynamic: dynamic_options,
-                rolling: rolling_options,
-                slice: None,
-            },
+            options,
         }
         .into()
     }

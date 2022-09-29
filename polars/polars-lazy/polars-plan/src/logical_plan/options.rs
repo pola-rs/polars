@@ -1,10 +1,10 @@
 use polars_core::prelude::*;
 use polars_io::csv::{CsvEncoding, NullValues};
 use polars_io::RowCount;
+#[cfg(feature = "dynamic_groupby")]
+use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-
-use crate::prelude::*;
 
 pub type FileCount = u32;
 
@@ -92,7 +92,9 @@ pub struct UnionOptions {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GroupbyOptions {
+    #[cfg(feature = "dynamic_groupby")]
     pub dynamic: Option<DynamicGroupOptions>,
+    #[cfg(feature = "dynamic_groupby")]
     pub rolling: Option<RollingGroupOptions>,
     pub slice: Option<(i64, usize)>,
 }

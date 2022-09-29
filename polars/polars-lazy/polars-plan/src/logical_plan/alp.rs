@@ -617,6 +617,7 @@ impl ALogicalPlan {
         inputs
     }
     /// panics if more than one input
+    #[cfg(all(feature = "strings", feature = "concat_str"))]
     pub(crate) fn get_input(&self) -> Option<Node> {
         let mut inputs = [None];
         self.copy_inputs(&mut inputs);
@@ -755,19 +756,22 @@ impl<'a> ALogicalPlanBuilder<'a> {
         );
         schema.merge(other);
 
-        let index_columns = &[
-            options
-                .rolling
-                .as_ref()
-                .map(|options| &options.index_column),
-            options
-                .dynamic
-                .as_ref()
-                .map(|options| &options.index_column),
-        ];
-        for &name in index_columns.iter().flatten() {
-            let dtype = current_schema.get(name).unwrap();
-            schema.with_column(name.clone(), dtype.clone());
+        #[cfg(feature = "dynamic_groupby")]
+        {
+            let index_columns = &[
+                options
+                    .rolling
+                    .as_ref()
+                    .map(|options| &options.index_column),
+                options
+                    .dynamic
+                    .as_ref()
+                    .map(|options| &options.index_column),
+            ];
+            for &name in index_columns.iter().flatten() {
+                let dtype = current_schema.get(name).unwrap();
+                schema.with_column(name.clone(), dtype.clone());
+            }
         }
 
         let lp = ALogicalPlan::Aggregate {

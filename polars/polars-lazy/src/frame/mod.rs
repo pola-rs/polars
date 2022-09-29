@@ -31,19 +31,16 @@ use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
 use polars_io::RowCount;
+pub use polars_plan::frame::{AllowedOptimizations, OptState};
 use polars_plan::global::FETCH_ROWS;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use polars_plan::logical_plan::collect_fingerprints;
 use polars_plan::logical_plan::optimize;
 use polars_plan::utils::{combine_predicates_expr, expr_to_leaf_column_names};
-#[cfg(feature = "serde")]
-use polars_core::export::serde::{Deserialize, Serialize};
 
 use crate::physical_plan::executors::Executor;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-
-pub use polars_plan::frame::{OptState, AllowedOptimizations};
 
 pub trait IntoLazy {
     fn lazy(self) -> LazyFrame;
@@ -651,13 +648,27 @@ impl LazyFrame {
             .map(|e| e.clone().into())
             .collect::<Vec<_>>();
         let opt_state = self.get_opt_state();
-        LazyGroupBy {
-            logical_plan: self.logical_plan,
-            opt_state,
-            keys,
-            maintain_order: false,
-            dynamic_options: None,
-            rolling_options: None,
+
+        #[cfg(feature = "dynamic_groupby")]
+        {
+            LazyGroupBy {
+                logical_plan: self.logical_plan,
+                opt_state,
+                keys,
+                maintain_order: false,
+                dynamic_options: None,
+                rolling_options: None,
+            }
+        }
+
+        #[cfg(not(feature = "dynamic_groupby"))]
+        {
+            LazyGroupBy {
+                logical_plan: self.logical_plan,
+                opt_state,
+                keys,
+                maintain_order: false,
+            }
         }
     }
 
@@ -668,6 +679,8 @@ impl LazyFrame {
     /// Different from a [`dynamic_groupby`] the windows are now determined by the
     /// individual values and are not of constant intervals. For constant intervals use
     /// *groupby_dynamic*
+    #[cfg(feature = "dynamic_groupby")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "dynamic_groupby")))]
     pub fn groupby_rolling<E: AsRef<[Expr]>>(
         self,
         by: E,
@@ -699,6 +712,8 @@ impl LazyFrame {
     ///
     /// The `by` argument should be empty `[]` if you don't want to combine this
     /// with a ordinary groupby on these keys.
+    #[cfg(feature = "dynamic_groupby")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "dynamic_groupby")))]
     pub fn groupby_dynamic<E: AsRef<[Expr]>>(
         self,
         by: E,
@@ -723,13 +738,27 @@ impl LazyFrame {
             .map(|e| e.clone().into())
             .collect::<Vec<_>>();
         let opt_state = self.get_opt_state();
-        LazyGroupBy {
-            logical_plan: self.logical_plan,
-            opt_state,
-            keys,
-            maintain_order: true,
-            dynamic_options: None,
-            rolling_options: None,
+
+        #[cfg(feature = "dynamic_groupby")]
+        {
+            LazyGroupBy {
+                logical_plan: self.logical_plan,
+                opt_state,
+                keys,
+                maintain_order: true,
+                dynamic_options: None,
+                rolling_options: None,
+            }
+        }
+
+        #[cfg(not(feature = "dynamic_groupby"))]
+        {
+            LazyGroupBy {
+                logical_plan: self.logical_plan,
+                opt_state,
+                keys,
+                maintain_order: true,
+            }
         }
     }
 
@@ -1164,7 +1193,9 @@ pub struct LazyGroupBy {
     opt_state: OptState,
     keys: Vec<Expr>,
     maintain_order: bool,
+    #[cfg(feature = "dynamic_groupby")]
     dynamic_options: Option<DynamicGroupOptions>,
+    #[cfg(feature = "dynamic_groupby")]
     rolling_options: Option<RollingGroupOptions>,
 }
 
@@ -1192,6 +1223,7 @@ impl LazyGroupBy {
     /// }
     /// ```
     pub fn agg<E: AsRef<[Expr]>>(self, aggs: E) -> LazyFrame {
+        #[cfg(feature = "dynamic_groupby")]
         let lp = LogicalPlanBuilder::from(self.logical_plan)
             .groupby(
                 Arc::new(self.keys),
@@ -1201,6 +1233,11 @@ impl LazyGroupBy {
                 self.dynamic_options,
                 self.rolling_options,
             )
+            .build();
+
+        #[cfg(not(feature = "dynamic_groupby"))]
+        let lp = LogicalPlanBuilder::from(self.logical_plan)
+            .groupby(Arc::new(self.keys), aggs, None, self.maintain_order)
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
@@ -1235,6 +1272,16 @@ impl LazyGroupBy {
     where
         F: 'static + Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
+        #[cfg(feature = "dynamic_groupby")]
+        let options = GroupbyOptions {
+            dynamic: None,
+            rolling: None,
+            slice: None,
+        };
+
+        #[cfg(not(feature = "dynamic_groupby"))]
+        let options = GroupbyOptions { slice: None };
+
         let lp = LogicalPlan::Aggregate {
             input: Box::new(self.logical_plan),
             keys: Arc::new(self.keys),
@@ -1242,11 +1289,7 @@ impl LazyGroupBy {
             schema,
             apply: Some(Arc::new(f)),
             maintain_order: self.maintain_order,
-            options: GroupbyOptions {
-                dynamic: None,
-                rolling: None,
-                slice: None,
-            },
+            options,
         };
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }

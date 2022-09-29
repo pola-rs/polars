@@ -130,9 +130,7 @@ test_all = [
 [dependencies]
 ahash.workspace = true
 bitflags.workspace = true
-rayon.workspace = true
 glob = "0.3"
-pyo3 = { version = "0.16", optional = true }
 polars-arrow = { version = "0.24.3", path = "../polars-arrow" }
 polars-core = { version = "0.24.3", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
 polars-io = { version = "0.24.3", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
@@ -140,6 +138,8 @@ polars-ops = { version = "0.24.3", path = "../polars-ops", default-features = fa
 polars-plan = { version = "0.24.3", path = "./polars-plan" }
 polars-time = { version = "0.24.3", path = "../polars-time", optional = true }
 polars-utils = { version = "0.24.3", path = "../polars-utils" }
+pyo3 = { version = "0.16", optional = true }
+rayon.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true

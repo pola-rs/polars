@@ -2,12 +2,9 @@
 //!
 //! Function on multiple expressions.
 //!
-use std::ops::{BitAnd, BitOr};
-
-use polars_plan::prelude::FunctionExpr;
-use polars_plan::dsl::functions::*;
 use polars_core::prelude::*;
 use rayon::prelude::*;
+
 use crate::prelude::*;
 
 /// Concat multiple

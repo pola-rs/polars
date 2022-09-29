@@ -433,8 +433,8 @@ impl OptimizationRule for SimplifyExprRule {
         &self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        lp_arena: &Arena<ALogicalPlan>,
-        lp_node: Node,
+        _lp_arena: &Arena<ALogicalPlan>,
+        _lp_node: Node,
     ) -> Option<AExpr> {
         let expr = expr_arena.get(expr_node);
 
@@ -446,6 +446,7 @@ impl OptimizationRule for SimplifyExprRule {
                 let right_aexpr = expr_arena.get(*right);
 
                 // lit(left) + lit(right) => lit(left + right)
+                #[allow(clippy::manual_map)]
                 let out = match op {
                     Operator::Plus => match eval_binary_same_type!(left_aexpr, +, right_aexpr) {
                         Some(new) => Some(new),
@@ -454,8 +455,8 @@ impl OptimizationRule for SimplifyExprRule {
                             #[cfg(all(feature = "strings", feature = "concat_str"))]
                             {
                                 string_addition_to_linear_concat(
-                                    lp_arena,
-                                    lp_node,
+                                    _lp_arena,
+                                    _lp_node,
                                     expr_arena,
                                     *left,
                                     *right,

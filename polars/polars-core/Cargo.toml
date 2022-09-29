@@ -148,29 +148,29 @@ docs-selection = [
 ahash.workspace = true
 anyhow.workspace = true
 arrow.workspace = true
-rayon.workspace = true
-thiserror.workspace = true
-num.workspace = true
-hashbrown.workspace = true
-bitflags.workspace = true
-once_cell = "1"
 base64 = { version = "0.13", optional = true }
+bitflags.workspace = true
 chrono = { version = "0.4", optional = true }
 chrono-tz = { version = "0.6", optional = true }
 comfy-table = { version = "5.0", optional = true }
+hashbrown.workspace = true
 hex = { version = "0.4", optional = true }
 indexmap = { version = "1", features = ["std"] }
 jsonpath_lib = { version = "0.3.0", optional = true, git = "https://github.com/ritchie46/jsonpath", branch = "improve_compiled" }
 ndarray = { version = "0.15", optional = true, default_features = false }
+num.workspace = true
+once_cell = "1"
+polars-arrow = { version = "0.24.3", path = "../polars-arrow", features = ["compute"] }
+polars-utils = { version = "0.24.3", path = "../polars-utils" }
 rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }
+rayon.workspace = true
 regex = { version = "1.6", optional = true }
 # activate if you want serde support for Series and DataFrames
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 smartstring = { version = "1", optional = true }
-polars-arrow = { version = "0.24.3", path = "../polars-arrow", features = ["compute"] }
-polars-utils = { version = "0.24.3", path = "../polars-utils" }
+thiserror.workspace = true
 
 [dev-dependencies]
 bincode = "1"

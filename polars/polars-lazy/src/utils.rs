@@ -1,7 +1,4 @@
-use std::fmt::Formatter;
-use std::iter::FlatMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use polars_core::prelude::*;
 use polars_plan::prelude::*;
