@@ -1,0 +1,83 @@
+categories:
+  - title: 🏆 Highlights
+    labels: highlight
+  - title: ⚠️ Breaking changes
+    labels: breaking
+  - title: 🚀 Performance improvements
+    labels: performance
+  - title: ✨ Enhancements
+    labels: enhancement
+  - title: 🐞 Bug fixes
+    labels: fix
+  - title: 🛠️ Other improvements
+    labels:
+      - build
+      - chore
+      - ci
+      - docs
+      - refactor
+      - revert
+      - style
+      - test
+
+change-template: '- $TITLE (#$NUMBER)'
+change-title-escapes: '\<*_&'
+replacers:
+  # Remove conventional commits from titles
+  - search: '/- (build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\(.*\))?(\!)?\: /g'
+    replace: '- '
+
+version-resolver:
+  minor:
+    labels: breaking
+  default: patch
+
+autolabeler:
+  - label: rust
+    title:
+      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)\(.*rust.*\)/'
+  - label: python
+    title:
+      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)\(.*python.*\)/'
+  - label: breaking
+    title:
+      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\(.*\))?\!\: /'
+  - label: build
+    title:
+      - '/^build/'
+  - label: chore
+    title:
+      - '/^chore/'
+  - label: ci
+    title:
+      - '/^ci/'
+  - label: docs
+    title:
+      - '/^docs/'
+  - label: enhancement
+    title:
+      - '/^feat/'
+  - label: fix
+    title:
+      - '/^fix/'
+  - label: performance
+    title:
+      - '/^perf/'
+  - label: refactor
+    title:
+      - '/^refactor/'
+  - label: revert
+    title:
+      - '/^revert/'
+  - label: style
+    title:
+      - '/^style/'
+  - label: test
+    title:
+      - '/^test/'
+
+template: |
+  $CHANGES
+
+  Thank you to all our contributors for making this release possible!
+  $CONTRIBUTORS
