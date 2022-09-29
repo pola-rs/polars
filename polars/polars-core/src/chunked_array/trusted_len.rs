@@ -203,6 +203,7 @@ where
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl<Ptr> FromTrustedLenIterator<Ptr> for BinaryChunked
 where
     Ptr: PolarsAsRef<[u8]>,

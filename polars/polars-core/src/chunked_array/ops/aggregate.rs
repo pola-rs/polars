@@ -692,6 +692,7 @@ impl VarAggSeries for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl VarAggSeries for BinaryChunked {
     fn var_as_series(&self, _ddof: u8) -> Series {
         Self::full_null(self.name(), 1).into_series()
@@ -814,6 +815,7 @@ impl QuantileAggSeries for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl QuantileAggSeries for BinaryChunked {
     fn quantile_as_series(
         &self,
@@ -873,6 +875,7 @@ impl ChunkAggSeries for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl ChunkAggSeries for BinaryChunked {
     fn sum_as_series(&self) -> Series {
         BinaryChunked::full_null(self.name(), 1).into_series()
@@ -940,6 +943,7 @@ where
 
 impl ArgAgg for BooleanChunked {}
 impl ArgAgg for Utf8Chunked {}
+#[cfg(feature = "dtype-binary")]
 impl ArgAgg for BinaryChunked {}
 impl ArgAgg for ListChunked {}
 

@@ -8,6 +8,7 @@ use crate::series::iterator::SeriesIter;
 use crate::utils::CustomIterTools;
 
 type LargeStringArray = Utf8Array<i64>;
+#[cfg(feature = "dtype-binary")]
 type LargeBinaryArray = BinaryArray<i64>;
 type LargeListArray = ListArray<i64>;
 pub mod par;
@@ -210,6 +211,7 @@ impl Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl<'a> IntoIterator for &'a BinaryChunked {
     type Item = Option<&'a [u8]>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
@@ -219,12 +221,14 @@ impl<'a> IntoIterator for &'a BinaryChunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 pub struct BinaryIterNoNull<'a> {
     array: &'a LargeBinaryArray,
     current: usize,
     current_end: usize,
 }
 
+#[cfg(feature = "dtype-binary")]
 impl<'a> BinaryIterNoNull<'a> {
     /// create a new iterator
     pub fn new(array: &'a LargeBinaryArray) -> Self {
@@ -236,6 +240,7 @@ impl<'a> BinaryIterNoNull<'a> {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl<'a> Iterator for BinaryIterNoNull<'a> {
     type Item = &'a [u8];
 
@@ -257,6 +262,7 @@ impl<'a> Iterator for BinaryIterNoNull<'a> {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl<'a> DoubleEndedIterator for BinaryIterNoNull<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.current_end == self.current {
@@ -268,9 +274,11 @@ impl<'a> DoubleEndedIterator for BinaryIterNoNull<'a> {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 /// all arrays have known size.
 impl<'a> ExactSizeIterator for BinaryIterNoNull<'a> {}
 
+#[cfg(feature = "dtype-binary")]
 impl BinaryChunked {
     #[allow(clippy::wrong_self_convention)]
     #[doc(hidden)]

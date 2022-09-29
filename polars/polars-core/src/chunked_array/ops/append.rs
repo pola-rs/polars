@@ -44,6 +44,7 @@ impl Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 #[doc(hidden)]
 impl BinaryChunked {
     pub fn append(&mut self, other: &Self) {

@@ -230,6 +230,7 @@ impl IsIn for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl IsIn for BinaryChunked {
     fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
         match other.dtype() {

@@ -107,6 +107,7 @@ fn fill_backward_limit_utf8(ca: &Utf8Chunked, limit: IdxSize) -> Utf8Chunked {
     out.into_iter().rev().collect_trusted()
 }
 
+#[cfg(feature = "dtype-binary")]
 fn fill_backward_limit_binary(ca: &BinaryChunked, limit: IdxSize) -> BinaryChunked {
     let mut cnt = 0;
     let mut previous = None;
@@ -370,6 +371,7 @@ impl ChunkFillNullValue<&str> for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl ChunkFillNull for BinaryChunked {
     fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Self> {
         // nothing to fill

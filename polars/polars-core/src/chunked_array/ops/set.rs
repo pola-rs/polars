@@ -273,6 +273,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
     fn set_at_idx<I: IntoIterator<Item = IdxSize>>(
         &'a self,

@@ -63,6 +63,7 @@ impl RepeatBy for Utf8Chunked {
         )
     }
 }
+#[cfg(feature = "dtype-binary")]
 impl RepeatBy for BinaryChunked {
     fn repeat_by(&self, by: &IdxCa) -> ListChunked {
         let iter = self

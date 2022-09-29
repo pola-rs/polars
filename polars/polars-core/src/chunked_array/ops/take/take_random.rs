@@ -232,11 +232,13 @@ impl<'a> IntoTakeRandom<'a> for &'a Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 pub struct BinaryTakeRandom<'a> {
     pub(crate) chunks: Chunks<'a, BinaryArray<i64>>,
     pub(crate) chunk_lens: Vec<IdxSize>,
 }
 
+#[cfg(feature = "dtype-binary")]
 impl<'a> TakeRandom for BinaryTakeRandom<'a> {
     type Item = &'a [u8];
 
@@ -251,10 +253,12 @@ impl<'a> TakeRandom for BinaryTakeRandom<'a> {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 pub struct BinaryTakeRandomSingleChunk<'a> {
     pub(crate) arr: &'a BinaryArray<i64>,
 }
 
+#[cfg(feature = "dtype-binary")]
 impl<'a> TakeRandom for BinaryTakeRandomSingleChunk<'a> {
     type Item = &'a [u8];
 
@@ -273,6 +277,7 @@ impl<'a> TakeRandom for BinaryTakeRandomSingleChunk<'a> {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl<'a> IntoTakeRandom<'a> for &'a BinaryChunked {
     type Item = &'a [u8];
     type TakeRandom = TakeRandBranch2<BinaryTakeRandomSingleChunk<'a>, BinaryTakeRandom<'a>>;

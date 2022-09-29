@@ -113,6 +113,7 @@ impl ChunkCast for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl ChunkCast for BinaryChunked {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         cast_impl(self.name(), &self.chunks, data_type)

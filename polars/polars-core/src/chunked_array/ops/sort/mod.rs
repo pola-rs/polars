@@ -508,6 +508,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl ChunkSort<BinaryType> for BinaryChunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<BinaryType> {
         sort_with_fast_path!(self, options);

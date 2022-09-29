@@ -274,6 +274,7 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl ChunkUnique<BinaryType> for BinaryChunked {
     fn unique(&self) -> PolarsResult<Self> {
         match self.null_count() {
@@ -462,6 +463,7 @@ mod is_first {
         }
     }
 
+    #[cfg(feature = "dtype-binary")]
     impl IsFirst<BinaryType> for BinaryChunked {
         fn is_first(&self) -> PolarsResult<BooleanChunked> {
             let mut unique = PlHashSet::new();

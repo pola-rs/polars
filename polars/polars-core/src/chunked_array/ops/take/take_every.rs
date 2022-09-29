@@ -41,6 +41,7 @@ impl ChunkTakeEvery<Utf8Type> for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl ChunkTakeEvery<BinaryType> for BinaryChunked {
     fn take_every(&self, n: usize) -> BinaryChunked {
         let mut ca: Self = if !self.has_validity() {

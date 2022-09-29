@@ -90,6 +90,7 @@ impl TakeChunked for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl TakeChunked for BinaryChunked {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
         let arrs = self.downcast_iter().collect::<Vec<_>>();

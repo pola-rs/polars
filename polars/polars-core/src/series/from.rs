@@ -61,6 +61,7 @@ impl Series {
                 .into_series(),
             List(_) => ListChunked::from_chunks(name, chunks).cast(dtype).unwrap(),
             Utf8 => Utf8Chunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-binary")]
             Binary => BinaryChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-categorical")]
             Categorical(rev_map) => {
@@ -96,12 +97,42 @@ impl Series {
                 let chunks = cast_chunks(&chunks, &DataType::Utf8, false).unwrap();
                 Ok(Utf8Chunked::from_chunks(name, chunks).into_series())
             }
+            #[cfg(feature = "dtype-binary")]
             ArrowDataType::LargeBinary => {
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
             }
+            #[cfg(feature = "dtype-binary")]
             ArrowDataType::Binary => {
                 let chunks = cast_chunks(&chunks, &DataType::Binary, false).unwrap();
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
+            }
+            #[cfg(all(feature = "dtype-u8", not(feature = "dtype-binary")))]
+            ArrowDataType::LargeBinary | ArrowDataType::Binary => {
+                let chunks = chunks
+                    .iter()
+                    .map(|arr| {
+                        let arr = cast(&**arr, &ArrowDataType::LargeBinary).unwrap();
+
+                        let arr = arr.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
+                        let values = arr.values().clone();
+                        let offsets = arr.offsets().clone();
+                        let validity = arr.validity().cloned();
+
+                        let values = Box::new(PrimitiveArray::from_data(
+                            ArrowDataType::UInt8,
+                            values,
+                            None,
+                        ));
+
+                        let dtype = ListArray::<i64>::default_datatype(ArrowDataType::UInt8);
+                        // Safety:
+                        // offsets are monotonically increasing
+                        Box::new(ListArray::<i64>::new_unchecked(
+                            dtype, offsets, values, validity,
+                        )) as ArrayRef
+                    })
+                    .collect();
+                Ok(ListChunked::from_chunks(name, chunks).into())
             }
             ArrowDataType::List(_) | ArrowDataType::LargeList(_) => {
                 let chunks = chunks.iter().map(convert_inner_types).collect();

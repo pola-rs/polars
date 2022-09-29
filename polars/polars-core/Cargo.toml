@@ -93,6 +93,7 @@ dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = ["smartstring"]
 dtype-struct = []
+dtype-binary = []
 
 parquet = ["arrow/io_parquet"]
 

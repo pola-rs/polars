@@ -140,6 +140,7 @@ impl Debug for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl Debug for BinaryChunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         format_array!(f, self, "binary", self.name(), "ChunkedArray")
@@ -657,6 +658,7 @@ impl Display for AnyValue<'_> {
             AnyValue::Boolean(v) => write!(f, "{}", *v),
             AnyValue::Utf8(v) => write!(f, "{}", format_args!("\"{}\"", v)),
             AnyValue::Utf8Owned(v) => write!(f, "{}", format_args!("\"{}\"", v)),
+            #[cfg(feature = "dtype-binary")]
             AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => write!(f, "[binary data]"),
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
@@ -771,6 +773,7 @@ impl FmtList for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl FmtList for BinaryChunked {
     fn fmt_list(&self) -> String {
         impl_fmt_list!(self)

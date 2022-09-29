@@ -113,6 +113,7 @@ impl<'a> TakeRandom for &'a Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl<'a> TakeRandom for &'a BinaryChunked {
     type Item = &'a [u8];
 

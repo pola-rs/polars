@@ -93,6 +93,7 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl ChunkFilter<BinaryType> for BinaryChunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<BinaryType>> {
         // broadcast

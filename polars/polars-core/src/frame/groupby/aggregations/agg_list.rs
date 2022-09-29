@@ -202,6 +202,7 @@ impl AggList for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl AggList for BinaryChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         match groups {

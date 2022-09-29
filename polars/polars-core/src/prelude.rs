@@ -9,9 +9,12 @@ pub use polars_arrow::kernels::ewm::EWMOptions;
 pub use polars_arrow::prelude::*;
 pub(crate) use polars_arrow::trusted_len::TrustedLen;
 
+#[cfg(feature = "dtype-binary")]
 pub use crate::chunked_array::builder::{
-    BinaryChunkedBuilder, BooleanChunkedBuilder, ChunkedBuilder, ListBinaryChunkedBuilder,
-    ListBooleanChunkedBuilder, ListBuilderTrait, ListPrimitiveChunkedBuilder,
+    BinaryChunkedBuilder, BooleanChunkedBuilder, ListBinaryChunkedBuilder,
+};
+pub use crate::chunked_array::builder::{
+    ChunkedBuilder, ListBooleanChunkedBuilder, ListBuilderTrait, ListPrimitiveChunkedBuilder,
     ListUtf8ChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
 };
 pub use crate::chunked_array::iterator::PolarsIterator;

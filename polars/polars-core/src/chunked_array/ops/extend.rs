@@ -120,6 +120,7 @@ impl Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 #[doc(hidden)]
 impl BinaryChunked {
     pub fn extend(&mut self, other: &Self) {

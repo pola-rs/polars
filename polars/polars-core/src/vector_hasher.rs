@@ -147,6 +147,7 @@ impl VecHash for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl VecHash for BinaryChunked {
     fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
         let null_h = get_null_hash_value(random_state.clone());

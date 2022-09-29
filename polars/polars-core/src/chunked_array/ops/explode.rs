@@ -280,6 +280,7 @@ impl ExplodeByOffsets for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl ExplodeByOffsets for BinaryChunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         debug_assert_eq!(self.chunks.len(), 1);

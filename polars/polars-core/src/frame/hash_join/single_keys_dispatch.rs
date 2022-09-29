@@ -15,6 +15,7 @@ impl Series {
                 let rhs = rhs.utf8().unwrap();
                 lhs.hash_join_left(rhs)
             }
+            #[cfg(feature = "dtype-binary")]
             Binary => {
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
@@ -45,6 +46,7 @@ impl Series {
                 let rhs = rhs.utf8().unwrap();
                 lhs.hash_join_semi_anti(rhs, anti)
             }
+            #[cfg(feature = "dtype-binary")]
             Binary => {
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
@@ -75,6 +77,7 @@ impl Series {
                 let rhs = rhs.utf8().unwrap();
                 lhs.hash_join_inner(rhs)
             }
+            #[cfg(feature = "dtype-binary")]
             Binary => {
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
@@ -107,6 +110,7 @@ impl Series {
                 let rhs = rhs.utf8().unwrap();
                 lhs.hash_join_outer(rhs)
             }
+            #[cfg(feature = "dtype-binary")]
             Binary => {
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
@@ -429,6 +433,7 @@ impl Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 pub(crate) fn prepare_bytes<'a>(
     been_split: &'a [BinaryChunked],
     hb: &RandomState,
@@ -450,6 +455,7 @@ pub(crate) fn prepare_bytes<'a>(
     })
 }
 
+#[cfg(feature = "dtype-binary")]
 impl BinaryChunked {
     fn prepare(
         &self,

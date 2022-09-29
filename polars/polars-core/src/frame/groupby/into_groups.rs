@@ -285,6 +285,7 @@ impl IntoGroupsProxy for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
 impl IntoGroupsProxy for BinaryChunked {
     #[allow(clippy::needless_lifetimes)]
     fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
