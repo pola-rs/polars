@@ -281,7 +281,11 @@ impl ProjectionPushDown {
         use ALogicalPlan::*;
 
         match logical_plan {
-            Projection { expr, input, .. } => {
+            Projection {
+                expr,
+                input,
+                schema,
+            } => {
                 // A projection can consist of a chain of expressions followed by an alias.
                 // We want to do the chain locally because it can have complicated side effects.
                 // The only thing we push down is the root name of the projection.
@@ -305,6 +309,26 @@ impl ProjectionPushDown {
                                 }
                             }
                         }
+
+                        // don't do projection that is not used in upstream selection
+                        if projections_seen > 0 {
+                            // TODO! investigate why this can fail
+                            // TODO! make it return an option.
+                            let output_field = expr_arena.get(*e).to_field(
+                                schema.as_ref(),
+                                Context::Default,
+                                expr_arena,
+                            );
+
+                            if let Ok(output_field) = output_field {
+                                let output_name = output_field.name();
+                                let is_used_upstream =
+                                    projected_names.contains(output_name.as_str());
+                                if !is_used_upstream {
+                                    continue;
+                                }
+                            };
+                        }
                     }
 
                     add_expr_to_accumulated(
@@ -319,7 +343,7 @@ impl ProjectionPushDown {
                     input,
                     acc_projections,
                     projected_names,
-                    projections_seen,
+                    projections_seen + 1,
                     lp_arena,
                     expr_arena,
                 )?;
@@ -328,7 +352,9 @@ impl ProjectionPushDown {
                 let mut local_projection = Vec::with_capacity(expr.len());
 
                 // the projections should all be done at the latest projection node to keep the same schema order
-                if projections_seen == 0 {
+                if projections_seen == 0
+                    || expr.iter().any(|node| has_aexpr_alias(*node, expr_arena))
+                {
                     let schema = lp.schema(lp_arena);
                     for node in expr {
                         // Due to the pushdown, a lot of projections cannot be done anymore at the final
@@ -339,13 +365,6 @@ impl ProjectionPushDown {
                             .is_ok()
                         {
                             local_projection.push(node);
-                        }
-                    }
-                    // only aliases should be projected locally in the rest of the projections.
-                } else {
-                    for expr in expr {
-                        if has_aexpr_alias(expr, expr_arena) {
-                            local_projection.push(expr)
                         }
                     }
                 }
