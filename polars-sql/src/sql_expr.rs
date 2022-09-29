@@ -1,4 +1,5 @@
 use polars::error::PolarsError;
+use polars_plan::prelude::*;
 use polars::prelude::*;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType, Expr as SqlExpr,

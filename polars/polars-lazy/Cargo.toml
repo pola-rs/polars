@@ -49,7 +49,7 @@ cross_join = ["polars-plan/cross_join"]
 asof_join = ["polars-plan/asof_join"]
 dot_product = ["polars-plan/dot_product"]
 concat_str = ["polars-plan/concat_str"]
-arange = []
+arange = ["polars-plan/arange"]
 mode = ["polars-plan/mode"]
 cum_agg = ["polars-plan/cum_agg"]
 interpolate = ["polars-plan/interpolate"]
@@ -85,6 +85,7 @@ cse = ["polars-plan/cse"]
 propagate_nans = ["polars-plan/propagate_nans"]
 coalesce = ["polars-plan/coalesce"]
 regex = ["polars-plan/regex"]
+serde = ["polars-plan/serde"]
 
 # no guarantees whatsoever
 private = ["polars-plan/private"]
@@ -128,12 +129,10 @@ test_all = [
 
 [dependencies]
 ahash.workspace = true
-bitflags = "1.3"
+bitflags.workspace = true
+rayon.workspace = true
 glob = "0.3"
 pyo3 = { version = "0.16", optional = true }
-rayon.workspace = true
-serde = { version = "1", features = ["derive", "rc"], optional = true }
-
 polars-arrow = { version = "0.24.3", path = "../polars-arrow" }
 polars-core = { version = "0.24.3", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
 polars-io = { version = "0.24.3", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }

@@ -1355,12 +1355,11 @@ dependencies = [
  "polars-core",
  "polars-io",
  "polars-ops",
+ "polars-plan",
  "polars-time",
  "polars-utils",
  "pyo3",
  "rayon",
- "regex",
- "serde",
 ]
 
 [[package]]
@@ -1372,12 +1371,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-plan"
+version = "0.24.3"
+dependencies = [
+ "ahash",
+ "polars-arrow",
+ "polars-core",
+ "polars-io",
+ "polars-ops",
+ "polars-time",
+ "polars-utils",
+ "pyo3",
+ "rayon",
+ "regex",
+ "serde",
+]
+
+[[package]]
 name = "polars-sql"
 version = "0.1.0"
 dependencies = [
  "polars",
  "polars-arrow",
  "polars-lazy",
+ "polars-plan",
  "serde",
  "serde_json",
  "sqlparser",

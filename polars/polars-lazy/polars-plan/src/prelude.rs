@@ -35,7 +35,6 @@ pub(crate) use polars_ops::prelude::*;
 pub use polars_utils::arena::{Arena, Node};
 
 pub use crate::dsl::*;
-pub use crate::frame::*;
 pub(crate) use crate::logical_plan::aexpr::*;
 pub(crate) use crate::logical_plan::alp::*;
 pub(crate) use crate::logical_plan::conversion::*;

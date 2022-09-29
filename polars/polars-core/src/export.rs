@@ -13,4 +13,7 @@ pub use rayon;
 #[cfg(any(feature = "strings", feature = "temporal"))]
 pub use regex;
 
+#[cfg(feature = "serde")]
+pub use serde;
+
 pub use crate::vector_hasher::_boost_hash_combine;

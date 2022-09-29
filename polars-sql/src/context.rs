@@ -2,7 +2,8 @@ use std::cell::RefCell;
 
 use polars::error::PolarsResult;
 use polars::prelude::*;
-use polars_lazy::utils::expressions_to_schema;
+use polars_plan::prelude::*;
+use polars_plan::utils::expressions_to_schema;
 use sqlparser::ast::{
     Expr as SqlExpr, JoinOperator, OrderByExpr, Select, SelectItem, SetExpr, Statement,
     TableFactor, TableWithJoins, Value as SQLValue,

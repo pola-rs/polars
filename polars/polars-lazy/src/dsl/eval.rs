@@ -107,3 +107,5 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
         .with_fmt("expanding_eval")
     }
 }
+
+impl ExprEvalExtension for Expr {}

@@ -16,6 +16,7 @@ polars-utils = { version = "0.24.3", path = "../../polars-utils" }
 pyo3 = { version = "0.16", optional = true }
 rayon.workspace = true
 regex = { version = "1.6", optional = true }
+serde = { version = "1", features = ["derive", "rc"], optional = true }
 
 [features]
 python = ["pyo3"]

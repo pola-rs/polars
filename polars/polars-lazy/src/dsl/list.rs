@@ -122,3 +122,5 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
             .with_fmt("eval")
     }
 }
+
+impl ListNameSpaceExtension for ListNameSpace {}

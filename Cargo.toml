@@ -3,12 +3,13 @@ members = [
   "polars",
   "polars/polars-core",
   "polars/polars-io",
-  "polars/polars-lazy",
   "polars/polars-time",
   "polars/polars-utils",
   "polars/polars-ops",
   "polars/polars-algo",
   "polars/polars-pipe",
+  "polars/polars-lazy",
+  "polars/polars-lazy/polars-plan",
   "polars-sql",
   "examples/read_csv",
   "examples/read_parquet",
@@ -26,6 +27,7 @@ ahash = "0.7"
 # todo! remove
 anyhow = "1"
 hashbrown = { version = "0.12", features = ["rayon"] }
+bitflags = "1.3"
 
 [workspace.dependencies.arrow]
 package = "arrow2"

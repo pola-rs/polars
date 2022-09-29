@@ -37,6 +37,7 @@ pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
 pub use stack_opt::{OptimizationRule, StackOptimizer};
 pub use type_coercion::TypeCoercionRule;
+pub use crate::frame::{OptState, AllowedOptimizations};
 
 pub trait Optimize {
     fn optimize(&self, logical_plan: LogicalPlan) -> PolarsResult<LogicalPlan>;

@@ -37,11 +37,13 @@ use polars_plan::logical_plan::collect_fingerprints;
 use polars_plan::logical_plan::optimize;
 use polars_plan::utils::{combine_predicates_expr, expr_to_leaf_column_names};
 #[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
+use polars_core::export::serde::{Deserialize, Serialize};
 
 use crate::physical_plan::executors::Executor;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
+
+pub use polars_plan::frame::{OptState, AllowedOptimizations};
 
 pub trait IntoLazy {
     fn lazy(self) -> LazyFrame;
