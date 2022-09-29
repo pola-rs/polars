@@ -1,4 +1,7 @@
 #[cfg(feature = "date_offset")]
+use polars_time::prelude::*;
+
+#[cfg(feature = "date_offset")]
 use super::*;
 
 #[cfg(feature = "date_offset")]

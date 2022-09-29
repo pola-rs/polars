@@ -1,7 +1,6 @@
 //! Domain specific language for the Lazy api.
 #[cfg(feature = "cumulative_eval")]
 mod eval;
-#[cfg(feature = "compile")]
 pub mod functions;
 mod into;
 #[cfg(feature = "list")]
@@ -10,6 +9,7 @@ mod list;
 #[cfg(feature = "cumulative_eval")]
 pub use eval::*;
 pub use functions::*;
+#[cfg(feature = "cumulative_eval")]
 use into::IntoExpr;
 #[cfg(feature = "list")]
 pub use list::*;

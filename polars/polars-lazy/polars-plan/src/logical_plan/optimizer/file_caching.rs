@@ -117,7 +117,7 @@ pub fn collect_fingerprints(
 /// Find the union between the columns per unique IO operation.
 /// A unique IO operation is the file + the predicates pushed down to that file
 #[allow(clippy::type_complexity)]
-pub(crate) fn find_column_union_and_fingerprints(
+pub fn find_column_union_and_fingerprints(
     root: Node,
     // The hashmap maps files to a hashset over column names.
     // we also keep track of how often a needs file needs to be read so we can cache until last read

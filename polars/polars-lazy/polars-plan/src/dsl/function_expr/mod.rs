@@ -68,7 +68,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "temporal")]
     TemporalExpr(TemporalFunction),
     #[cfg(feature = "date_offset")]
-    DateOffset(Duration),
+    DateOffset(polars_time::Duration),
     #[cfg(feature = "trigonometry")]
     Trigonometry(TrigonometricFunction),
     #[cfg(feature = "sign")]

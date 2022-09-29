@@ -74,7 +74,7 @@ impl PhysicalExpr for LiteralExpr {
                 }
             },
             Utf8(v) => Utf8Chunked::full("literal", v, 1).into_series(),
-            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            #[cfg(feature = "temporal")]
             DateTime(ndt, tu) => {
                 use polars_core::chunked_array::temporal::conversion::*;
                 let timestamp = match tu {
@@ -86,7 +86,7 @@ impl PhysicalExpr for LiteralExpr {
                     .into_datetime(*tu, None)
                     .into_series()
             }
-            #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
+            #[cfg(feature = "temporal")]
             Duration(v, tu) => {
                 let duration = match tu {
                     TimeUnit::Milliseconds => v.num_milliseconds(),

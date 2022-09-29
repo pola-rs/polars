@@ -1,0 +1,15 @@
+[package]
+name = "polars-pipe"
+version.workspace = true
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+polars-core = { version = "0.24.2", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
+polars-io = { version = "0.24.2", path = "../../polars-io", default-features = false }
+polars-plan = { version = "0.24.2", path = "../polars-plan", default-features = false, features = ["compile"] }
+rayon.workspace = true
+
+[features]
+csv-file = ["polars-plan/csv-file", "polars-io/csv-file"]

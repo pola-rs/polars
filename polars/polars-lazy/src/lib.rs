@@ -191,15 +191,10 @@ extern crate core;
 
 #[cfg(feature = "dot_diagram")]
 mod dot;
-#[cfg(feature = "compile")]
 pub mod dsl;
-#[cfg(feature = "compile")]
 pub mod frame;
-#[cfg(feature = "compile")]
 pub mod physical_plan;
-#[cfg(feature = "compile")]
 pub mod prelude;
 #[cfg(test)]
 mod tests;
-#[cfg(feature = "compile")]
 pub mod utils;

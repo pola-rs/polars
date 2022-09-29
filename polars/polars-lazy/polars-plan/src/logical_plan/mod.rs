@@ -46,7 +46,9 @@ use serde::{Deserialize, Serialize};
     feature = "csv-file",
     feature = "cse"
 ))]
-pub use crate::logical_plan::optimizer::file_caching::{collect_fingerprints, FileFingerPrint};
+pub use crate::logical_plan::optimizer::file_caching::{
+    collect_fingerprints, find_column_union_and_fingerprints, FileCacher, FileFingerPrint,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub enum Context {

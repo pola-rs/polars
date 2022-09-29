@@ -3,14 +3,15 @@ use std::path::PathBuf;
 
 use polars_io::csv::read_impl::BatchedCsvReader;
 use polars_io::csv::{CsvEncoding, CsvReader};
-use polars_lazy::physical_plan::executors::_set_n_rows_for_scan;
-use polars_lazy::prelude::{CsvParserOptions, PhysicalExpr};
+use polars_plan::global::_set_n_rows_for_scan;
+use polars_plan::prelude::CsvParserOptions;
 
 use super::*;
+use crate::expressions::PhysicalPipedExpr;
 
 struct CsvSource {
     schema: SchemaRef,
-    predicate: Option<Arc<dyn PhysicalExpr>>,
+    predicate: Option<Arc<dyn PhysicalPipedExpr>>,
     reader: *mut CsvReader<'static, File>,
     batched_reader: *mut BatchedCsvReader<'static>,
 }
@@ -20,7 +21,7 @@ impl CsvSource {
         path: PathBuf,
         schema: SchemaRef,
         options: CsvParserOptions,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<Arc<dyn PhysicalPipedExpr>>,
     ) -> PolarsResult<Self> {
         let mut with_columns = options.with_columns;
         let mut projected_len = 0;

@@ -8,6 +8,7 @@ use polars_core::POOL;
 use polars_io::parquet::predicates::BatchStats;
 #[cfg(feature = "parquet")]
 use polars_io::predicates::StatsEvaluator;
+#[cfg(feature = "parquet")]
 use polars_plan::dsl::FunctionExpr;
 use rayon::prelude::*;
 

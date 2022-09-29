@@ -35,8 +35,10 @@ pub(super) use self::explode::*;
 pub(super) use self::ext_context::*;
 pub(super) use self::filter::*;
 pub(super) use self::groupby::*;
+#[cfg(feature = "dynamic_groupby")]
 pub(super) use self::groupby_dynamic::*;
 pub(super) use self::groupby_partitioned::*;
+#[cfg(feature = "dynamic_groupby")]
 pub(super) use self::groupby_rolling::*;
 pub(super) use self::join::*;
 pub(super) use self::melt::*;
@@ -51,14 +53,6 @@ pub(super) use self::udf::*;
 pub(super) use self::union::*;
 use super::*;
 use crate::physical_plan::state::StateFlags;
-
-pub fn _set_n_rows_for_scan(n_rows: Option<usize>) -> Option<usize> {
-    let fetch_rows = FETCH_ROWS.with(|fetch_rows| fetch_rows.get());
-    match fetch_rows {
-        None => n_rows,
-        Some(n) => Some(n),
-    }
-}
 
 fn execute_projection_cached_window_fns(
     df: &DataFrame,

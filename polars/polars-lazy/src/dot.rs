@@ -2,6 +2,7 @@ use std::fmt::Write;
 
 use polars_core::prelude::*;
 use polars_plan::dot::*;
+use polars_plan::prelude::*;
 
 use crate::prelude::*;
 
