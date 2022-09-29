@@ -352,15 +352,23 @@ impl LazyFrame {
         .map(
             move |mut df: DataFrame| {
                 let cols = df.get_columns_mut();
+                let mut removed_count = 0;
                 for (existing, new) in existing.iter().zip(new.iter()) {
-                    let idx_a = cols
-                        .iter()
-                        .position(|s| s.name() == existing.as_str())
-                        .unwrap();
-                    let idx_b = cols.iter().position(|s| s.name() == new.as_str()).unwrap();
-                    cols.swap(idx_a, idx_b);
+                    let idx_a = cols.iter().position(|s| s.name() == existing.as_str());
+                    let idx_b = cols.iter().position(|s| s.name() == new.as_str());
+
+                    match (idx_a, idx_b) {
+                        (Some(idx_a), Some(idx_b)) => {
+                            cols.swap(idx_a, idx_b);
+                        }
+                        // renamed columns are removed by predicate pushdown
+                        _ => {
+                            removed_count += 1;
+                            continue;
+                        }
+                    }
                 }
-                cols.truncate(cols.len() - existing.len());
+                cols.truncate(cols.len() - (existing.len() - removed_count));
                 Ok(df)
             },
             None,
