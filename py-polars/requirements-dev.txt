@@ -13,7 +13,7 @@ xlsx2csv
 # Tooling
 hypothesis==6.54.5
 maturin==0.13.2
-mypy==0.971
+mypy==0.981
 pytest==7.1.3
 pytest-cov==3.0.0
 
