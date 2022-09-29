@@ -27,3 +27,15 @@ def test_melt_projection_pd_block_4997() -> None:
         .agg(pl.col("variable").alias("result"))
         .collect()
     ).to_dict(False) == {"row_nr": [0], "result": [["col1", "col2"]]}
+
+
+def test_double_projection_pushdown() -> None:
+    assert (
+        "PROJECT 2/3 COLUMNS"
+        in (
+            pl.DataFrame({"c0": [], "c1": [], "c2": []})
+            .lazy()
+            .select(["c0", "c1", "c2"])
+            .select(["c0", "c1"])
+        ).describe_optimized_plan()
+    )
