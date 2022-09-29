@@ -27,6 +27,7 @@ pub(crate) enum PyDataType {
     Object,
     Categorical,
     Struct,
+    Binary,
 }
 
 impl From<&DataType> for PyDataType {
@@ -45,6 +46,7 @@ impl From<&DataType> for PyDataType {
             DataType::Float64 => Float64,
             DataType::Boolean => Bool,
             DataType::Utf8 => Utf8,
+            DataType::Binary => Binary,
             DataType::List(_) => List,
             DataType::Date => Date,
             DataType::Datetime(tu, tz) => Datetime(*tu, tz.clone()),
@@ -83,6 +85,7 @@ impl From<PyDataType> for DataType {
             PyDataType::Float64 => Float64,
             PyDataType::Bool => Boolean,
             PyDataType::Utf8 => Utf8,
+            PyDataType::Binary => Binary,
             PyDataType::List => List(DataType::Null.into()),
             PyDataType::Date => Date,
             PyDataType::Datetime(tu, tz) => Datetime(tu, tz),
