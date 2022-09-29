@@ -536,11 +536,11 @@ impl IntoSeries for Series {
 
 #[cfg(test)]
 mod test {
-    #[cfg(feature = "dtype-u8")]
+    #[cfg(all(feature = "dtype-u8", not(feature = "dtype-binary")))]
     use super::*;
 
     #[test]
-    #[cfg(feature = "dtype-u8")]
+    #[cfg(all(feature = "dtype-u8", not(feature = "dtype-binary")))]
     fn test_binary_to_list() {
         let iter = std::iter::repeat(b"hello").take(2).map(Some);
         let a = Box::new(iter.collect::<BinaryArray<i32>>()) as ArrayRef;

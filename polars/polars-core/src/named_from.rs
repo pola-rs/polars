@@ -237,15 +237,6 @@ impl<'a, T: AsRef<[&'a [u8]]>> NamedFrom<T, [&'a [u8]]> for Series {
 }
 
 #[cfg(feature = "dtype-binary")]
-impl NamedFrom<&Series, [u8]> for Series {
-    fn new(name: &str, s: &Series) -> Self {
-        let mut s = s.clone();
-        s.rename(name);
-        s
-    }
-}
-
-#[cfg(feature = "dtype-binary")]
 impl<'a, T: AsRef<[&'a [u8]]>> NamedFrom<T, [&'a [u8]]> for BinaryChunked {
     fn new(name: &str, v: T) -> Self {
         BinaryChunked::from_slice(name, v.as_ref())
