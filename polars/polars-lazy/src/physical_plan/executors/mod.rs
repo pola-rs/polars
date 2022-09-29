@@ -1,5 +1,6 @@
 mod cache;
 mod drop_duplicates;
+mod executor;
 mod explode;
 mod ext_context;
 mod filter;
@@ -22,7 +23,10 @@ mod union;
 use std::borrow::Cow;
 use std::path::PathBuf;
 
+pub use executor::*;
 use polars_core::POOL;
+use polars_plan::global::FETCH_ROWS;
+use polars_plan::utils::*;
 use rayon::prelude::*;
 
 pub(super) use self::cache::*;
@@ -31,8 +35,10 @@ pub(super) use self::explode::*;
 pub(super) use self::ext_context::*;
 pub(super) use self::filter::*;
 pub(super) use self::groupby::*;
+#[cfg(feature = "dynamic_groupby")]
 pub(super) use self::groupby_dynamic::*;
 pub(super) use self::groupby_partitioned::*;
+#[cfg(feature = "dynamic_groupby")]
 pub(super) use self::groupby_rolling::*;
 pub(super) use self::join::*;
 pub(super) use self::melt::*;
@@ -46,16 +52,7 @@ pub(super) use self::stack::*;
 pub(super) use self::udf::*;
 pub(super) use self::union::*;
 use super::*;
-use crate::logical_plan::FETCH_ROWS;
 use crate::physical_plan::state::StateFlags;
-
-fn set_n_rows(n_rows: Option<usize>) -> Option<usize> {
-    let fetch_rows = FETCH_ROWS.with(|fetch_rows| fetch_rows.get());
-    match fetch_rows {
-        None => n_rows,
-        Some(n) => Some(n),
-    }
-}
 
 fn execute_projection_cached_window_fns(
     df: &DataFrame,

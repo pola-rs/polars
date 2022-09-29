@@ -1,9 +1,9 @@
 use std::sync::Mutex;
 
 use polars_core::prelude::*;
-
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
-use crate::logical_plan::optimizer::file_caching::FileFingerPrint;
+use polars_plan::logical_plan::FileFingerPrint;
+
 use crate::prelude::*;
 
 #[derive(Clone)]

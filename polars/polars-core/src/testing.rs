@@ -14,7 +14,24 @@ impl Series {
     }
 
     /// Check if all values in series are equal where `None == None` evaluates to `true`.
+    /// Two `Datetime` series are *not* equal if their timezones are different, regardless
+    /// if they represent the same UTC time or not.
     pub fn series_equal_missing(&self, other: &Series) -> bool {
+        #[cfg(feature = "timezones")]
+        {
+            use crate::datatypes::DataType::Datetime;
+
+            if let Datetime(_, tz_lhs) = self.dtype() {
+                if let Datetime(_, tz_rhs) = other.dtype() {
+                    if tz_lhs != tz_rhs {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            }
+        }
+
         // differences from Partial::eq in that numerical dtype may be different
         self.len() == other.len()
             && self.name() == other.name()

@@ -453,3 +453,60 @@ fn test_string_addition_to_concat_str() -> PolarsResult<()> {
 
     Ok(())
 }
+#[test]
+fn test_with_column_prune() -> PolarsResult<()> {
+    // don't
+    let df = df![
+        "c0" => [0],
+        "c1" => [0],
+        "c2" => [0],
+    ]?;
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+
+    // only a single expression pruned and only one column selection
+    let q = df
+        .clone()
+        .lazy()
+        .with_columns([col("c0"), col("c1").alias("c4")])
+        .select([col("c1"), col("c4")]);
+    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    (&lp_arena).iter(lp).for_each(|(_, lp)| {
+        use ALogicalPlan::*;
+        match lp {
+            DataFrameScan { projection, .. } => {
+                let projection = projection.as_ref().unwrap();
+                let projection = projection.as_slice();
+                assert_eq!(projection.len(), 1);
+                let name = &projection[0];
+                assert_eq!(name, "c1");
+            }
+            HStack { exprs, .. } => {
+                assert_eq!(exprs.len(), 1);
+            }
+            _ => {}
+        };
+    });
+
+    // whole `with_columns` pruned
+    let q = df.lazy().with_column(col("c0")).select([col("c1")]);
+
+    let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
+
+    // check if with_column is pruned
+    assert!((&lp_arena).iter(lp).all(|(_, lp)| {
+        use ALogicalPlan::*;
+        match lp {
+            ALogicalPlan::MapFunction {
+                function: FunctionNode::FastProjection { .. },
+                ..
+            }
+            | DataFrameScan { .. } => true,
+            _ => false,
+        }
+    }));
+    assert_eq!(
+        q.schema().unwrap().as_ref(),
+        &Schema::from([Field::new("c1", DataType::Int32)])
+    );
+    Ok(())
+}

@@ -9,91 +9,104 @@ description = "Lazy query engine for the Polars DataFrame library"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[features]
-# make sure we don't compile unneeded things even though
-# this dependency gets activated
-compile = []
-default = ["compile", "private"]
-parquet = ["polars-core/parquet", "polars-io/parquet"]
-ipc = ["polars-io/ipc"]
-json = ["polars-io/json"]
-csv-file = ["polars-io/csv-file"]
-temporal = ["polars-core/temporal", "polars-time", "dtype-datetime"]
-# debugging purposes
-fmt = ["polars-core/fmt"]
-strings = ["polars-core/strings", "polars-ops/strings"]
-future = []
-dtype-u8 = ["polars-core/dtype-u8"]
-dtype-u16 = ["polars-core/dtype-u16"]
-dtype-i8 = ["polars-core/dtype-i8"]
-dtype-i16 = ["polars-core/dtype-i16"]
-dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
-dtype-datetime = ["polars-core/dtype-datetime", "polars-time/dtype-datetime"]
-dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration"]
-dtype-categorical = ["polars-core/dtype-categorical"]
-dtype-struct = ["polars-core/dtype-struct"]
-object = ["polars-core/object"]
-date_offset = []
-trigonometry = []
-sign = []
-timezones = ["polars-time/timezones", "polars-core/timezones"]
+[dependencies]
+ahash.workspace = true
+bitflags.workspace = true
+glob = "0.3"
+polars-arrow = { version = "0.24.3", path = "../polars-arrow" }
+polars-core = { version = "0.24.3", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
+polars-io = { version = "0.24.3", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
+polars-ops = { version = "0.24.3", path = "../polars-ops", default-features = false }
+polars-plan = { version = "0.24.3", path = "./polars-plan" }
+polars-time = { version = "0.24.3", path = "../polars-time", optional = true }
+polars-utils = { version = "0.24.3", path = "../polars-utils" }
+pyo3 = { version = "0.16", optional = true }
+rayon.workspace = true
 
-true_div = []
+[features]
+compile = ["polars-plan/compile"]
+default = ["compile", "private"]
+parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet"]
+ipc = ["polars-io/ipc", "polars-plan/ipc"]
+json = ["polars-io/json", "polars-plan/json"]
+csv-file = ["polars-io/csv-file", "polars-plan/csv-file"]
+temporal = ["dtype-datetime", "dtype-date", "dtype-time", "dtype-duration", "polars-plan/temporal"]
+# debugging purposes
+fmt = ["polars-core/fmt", "polars-plan/fmt"]
+strings = ["polars-plan/strings"]
+future = []
+dtype-u8 = ["polars-plan/dtype-u8"]
+dtype-u16 = ["polars-plan/dtype-u16"]
+dtype-i8 = ["polars-plan/dtype-i8"]
+dtype-i16 = ["polars-plan/dtype-i16"]
+dtype-date = ["polars-plan/dtype-date", "polars-time/dtype-date", "temporal"]
+dtype-datetime = ["polars-plan/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
+dtype-duration = ["polars-plan/dtype-duration", "polars-time/dtype-duration", "temporal"]
+dtype-time = ["polars-core/dtype-time", "temporal"]
+dtype-categorical = ["polars-plan/dtype-categorical"]
+dtype-struct = ["polars-plan/dtype-struct"]
+object = ["polars-plan/object"]
+date_offset = ["polars-plan/date_offset"]
+trigonometry = ["polars-plan/trigonometry"]
+sign = ["polars-plan/sign"]
+timezones = ["polars-plan/timezones"]
+
+true_div = ["polars-plan/true_div"]
 
 # operations
-is_in = ["polars-core/is_in"]
-repeat_by = ["polars-core/repeat_by"]
-round_series = ["polars-core/round_series"]
-is_first = ["polars-core/is_first"]
-cross_join = ["polars-core/cross_join"]
-asof_join = ["polars-core/asof_join", "polars-time"]
-dot_product = ["polars-core/dot_product"]
-concat_str = ["polars-core/concat_str"]
-arange = []
-mode = ["polars-core/mode"]
-cum_agg = ["polars-core/cum_agg"]
-interpolate = ["polars-core/interpolate"]
+is_in = ["polars-plan/is_in", "list"]
+repeat_by = ["polars-plan/repeat_by"]
+round_series = ["polars-plan/round_series"]
+is_first = ["polars-plan/is_first"]
+cross_join = ["polars-plan/cross_join"]
+asof_join = ["polars-plan/asof_join", "polars-time"]
+dot_product = ["polars-plan/dot_product"]
+concat_str = ["polars-plan/concat_str"]
+arange = ["polars-plan/arange"]
+mode = ["polars-plan/mode"]
+cum_agg = ["polars-plan/cum_agg"]
+interpolate = ["polars-plan/interpolate"]
 rolling_window = [
-  "polars-core/rolling_window",
-  "polars-time/rolling_window",
-  "polars-ops/rolling_window",
+  "polars-plan/rolling_window",
   "polars-time/rolling_window",
 ]
-rank = ["polars-core/rank"]
-diff = ["polars-core/diff", "polars-ops/diff"]
-pct_change = ["polars-core/pct_change"]
-moment = ["polars-core/moment"]
-list = ["polars-ops/list"]
-abs = ["polars-core/abs"]
-random = ["polars-core/random"]
-dynamic_groupby = ["polars-core/dynamic_groupby"]
-ewma = ["polars-core/ewma"]
-dot_diagram = []
-unique_counts = ["polars-core/unique_counts"]
-log = ["polars-ops/log"]
+rank = ["polars-plan/rank"]
+diff = ["polars-plan/diff", "polars-plan/diff"]
+pct_change = ["polars-plan/pct_change"]
+moment = ["polars-plan/moment"]
+list = ["polars-plan/list"]
+abs = ["polars-plan/abs"]
+random = ["polars-plan/random"]
+dynamic_groupby = ["polars-plan/dynamic_groupby", "polars-time", "temporal"]
+ewma = ["polars-plan/ewma"]
+dot_diagram = ["polars-plan/dot_diagram"]
+unique_counts = ["polars-plan/unique_counts"]
+log = ["polars-plan/log"]
 list_eval = []
 cumulative_eval = []
-chunked_ids = []
-list_to_struct = ["polars-ops/list_to_struct"]
-python = ["pyo3"]
-row_hash = ["polars-core/row_hash", "polars-ops/hash"]
-string_justify = ["polars-ops/string_justify"]
-arg_where = []
-search_sorted = ["polars-ops/search_sorted"]
-meta = []
+chunked_ids = ["polars-plan/chunked_ids"]
+list_to_struct = ["polars-plan/list_to_struct"]
+python = ["pyo3", "polars-plan/python"]
+row_hash = ["polars-plan/row_hash"]
+string_justify = ["polars-plan/string_justify"]
+arg_where = ["polars-plan/arg_where"]
+search_sorted = ["polars-plan/search_sorted"]
+meta = ["polars-plan/meta"]
 pivot = ["polars-core/rows", "polars-ops/pivot"]
-top_k = ["polars-ops/top_k"]
-semi_anti_join = ["polars-core/semi_anti_join"]
-cse = []
-propagate_nans = ["polars-ops/propagate_nans"]
-coalesce = []
+top_k = ["polars-plan/top_k"]
+semi_anti_join = ["polars-plan/semi_anti_join"]
+cse = ["polars-plan/cse"]
+propagate_nans = ["polars-plan/propagate_nans"]
+coalesce = ["polars-plan/coalesce"]
+regex = ["polars-plan/regex"]
+serde = ["polars-plan/serde"]
 
 # no guarantees whatsoever
-private = ["polars-time/private"]
+private = ["polars-plan/private"]
 
-bigidx = ["polars-arrow/bigidx", "polars-core/bigidx", "polars-utils/bigidx"]
+bigidx = ["polars-plan/bigidx"]
 
-panic_on_schema = []
+panic_on_schema = ["polars-plan/panic_on_schema"]
 
 test = [
   "panic_on_schema",
@@ -127,22 +140,6 @@ test_all = [
   "semi_anti_join",
   "cse",
 ]
-
-[dependencies]
-ahash.workspace = true
-bitflags = "1.3"
-glob = "0.3"
-pyo3 = { version = "0.16", optional = true }
-rayon.workspace = true
-regex = { version = "1.5", optional = true }
-serde = { version = "1", features = ["derive", "rc"], optional = true }
-
-polars-arrow = { version = "0.24.3", path = "../polars-arrow" }
-polars-core = { version = "0.24.3", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.24.3", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
-polars-ops = { version = "0.24.3", path = "../polars-ops", default-features = false }
-polars-time = { version = "0.24.3", path = "../polars-time", optional = true }
-polars-utils = { version = "0.24.3", path = "../polars-utils" }
 
 [package.metadata.docs.rs]
 all-features = true

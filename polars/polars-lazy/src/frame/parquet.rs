@@ -4,6 +4,7 @@ use polars_core::prelude::*;
 use polars_io::parquet::ParallelStrategy;
 use polars_io::RowCount;
 
+use crate::dsl::functions::concat;
 use crate::prelude::*;
 
 #[derive(Clone)]

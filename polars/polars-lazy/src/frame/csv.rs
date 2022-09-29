@@ -5,6 +5,7 @@ use polars_io::csv::utils::{get_reader_bytes, infer_file_schema};
 use polars_io::csv::{CsvEncoding, NullValues};
 use polars_io::RowCount;
 
+use crate::dsl::functions::concat;
 use crate::prelude::*;
 
 #[derive(Clone)]

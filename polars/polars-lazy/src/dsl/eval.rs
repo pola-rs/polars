@@ -1,15 +1,18 @@
+use polars_core::prelude::*;
 use rayon::prelude::*;
 
 use super::*;
 use crate::physical_plan::state::ExecutionState;
+use crate::prelude::*;
 
-impl Expr {
+pub trait ExprEvalExtension: IntoExpr + Sized {
     /// Run an expression over a sliding window that increases `1` slot every iteration.
     ///
     /// # Warning
     /// this can be really slow as it can have `O(n^2)` complexity. Don't use this for operations
     /// that visit all elements.
-    pub fn cumulative_eval(self, expr: Expr, min_periods: usize, parallel: bool) -> Self {
+    fn cumulative_eval(self, expr: Expr, min_periods: usize, parallel: bool) -> Expr {
+        let this = self.into_expr();
         let expr2 = expr.clone();
         let func = move |mut s: Series| {
             let name = s.name().to_string();
@@ -70,7 +73,7 @@ impl Expr {
             Ok(Series::new(&name, avs))
         };
 
-        self.apply(
+        this.apply(
             func,
             GetOutput::map_field(move |f| {
                 // dummy df to determine output dtype
@@ -104,3 +107,5 @@ impl Expr {
         .with_fmt("expanding_eval")
     }
 }
+
+impl ExprEvalExtension for Expr {}
