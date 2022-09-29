@@ -1,3 +1,5 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 pub mod dot;
 pub mod dsl;
 pub mod frame;

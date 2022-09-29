@@ -102,3 +102,8 @@ private = ["polars-time/private"]
 bigidx = ["polars-arrow/bigidx", "polars-core/bigidx", "polars-utils/bigidx"]
 
 panic_on_schema = []
+
+[package.metadata.docs.rs]
+all-features = true
+# defines the configuration attribute `docsrs`
+rustdoc-args = ["--cfg", "docsrs"]
