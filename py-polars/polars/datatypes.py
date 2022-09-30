@@ -9,6 +9,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Dict,
+    ForwardRef,
     Mapping,
     Optional,
     Sequence,
@@ -35,6 +36,8 @@ except ImportError:
     _DOCUMENTING = True
 
 UnionType: type
+OptionType = type(Optional[type])
+
 if sys.version_info >= (3, 10):
     from types import UnionType
 else:
@@ -409,6 +412,9 @@ _PY_TYPE_TO_DTYPE: dict[type, PolarsDataType] = {
     Decimal: Float64,
 }
 
+_PY_STR_TO_DTYPE: dict[str, PolarsDataType] = {
+    str(tp.__name__): dtype for tp, dtype in _PY_TYPE_TO_DTYPE.items()
+}
 
 _DTYPE_TO_PY_TYPE: dict[PolarsDataType, type] = {
     Float64: float,
@@ -539,13 +545,23 @@ def is_polars_dtype(data_type: Any) -> bool:
 
 
 def py_type_to_dtype(data_type: Any, raise_unmatched: bool = True) -> PolarsDataType:
-    """Convert a Python dtype to a Polars dtype."""
-    # when the passed in is already a Polars datatype, return that
+    """Convert a Python dtype (or type annotation) to a Polars dtype."""
+    if isinstance(data_type, ForwardRef):
+        dtype = data_type.__forward_arg__
+        data_type = (
+            _PY_STR_TO_DTYPE.get(
+                dtype.removeprefix("None | ").removesuffix(" | None").strip(), data_type
+            )
+            if isinstance(dtype, str)  # type: ignore[redundant-expr]
+            else data_type
+        )
+
     if is_polars_dtype(data_type):
         return data_type
-    elif isinstance(data_type, UnionType):
-        # not exhaustive; currently handles the common "type | None" case,
-        # but ideally would pick appropriate supertype when n_types > 1
+
+    elif isinstance(data_type, (OptionType, UnionType)):
+        # not exhaustive; handles the common "type | None" case, but
+        # should probably pick appropriate supertype when n_types > 1?
         possible_types = [tp for tp in get_args(data_type) if tp is not NoneType]
         if len(possible_types) == 1:
             data_type = possible_types[0]

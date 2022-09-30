@@ -10,8 +10,22 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import Date, Datetime, Float64, Int32, Int64, Time, UInt32, UInt64
-from polars.testing import assert_series_equal, verify_series_and_expr_api
+from polars.datatypes import (
+    Date,
+    Datetime,
+    Field,
+    Float64,
+    Int32,
+    Int64,
+    Time,
+    UInt32,
+    UInt64,
+)
+from polars.testing import (
+    assert_frame_equal,
+    assert_series_equal,
+    verify_series_and_expr_api,
+)
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit
@@ -98,6 +112,53 @@ def test_init_inputs(monkeypatch: Any) -> None:
     monkeypatch.setattr(pl.internals.series.series, "_NUMPY_AVAILABLE", False)
     with pytest.raises(ValueError):
         pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
+
+
+def test_init_dataclass_namedtuple() -> None:
+    from dataclasses import dataclass
+    from typing import NamedTuple
+
+    @dataclass
+    class TeaShipmentDC:
+        exporter: str
+        importer: str
+        product: str
+        weight: float | None
+
+    class TeaShipmentNT(NamedTuple):
+        exporter: str
+        importer: str
+        product: str
+        weight: None | float
+
+    for Tea in (TeaShipmentDC, TeaShipmentNT):
+        t0 = Tea(exporter="Sri Lanka", importer="USA", product="Ceylon", weight=100)
+        t1 = Tea(exporter="India", importer="UK", product="Darjeeling", weight=250)
+
+        s = pl.Series("t", [t0, t1])
+
+        assert isinstance(s, pl.Series)
+        assert s.dtype.fields == [  # type: ignore[attr-defined]
+            Field("exporter", pl.Utf8),
+            Field("importer", pl.Utf8),
+            Field("product", pl.Utf8),
+            Field("weight", pl.Float64),
+        ]
+        assert s.to_list() == [
+            {
+                "exporter": "Sri Lanka",
+                "importer": "USA",
+                "product": "Ceylon",
+                "weight": 100.0,
+            },
+            {
+                "exporter": "India",
+                "importer": "UK",
+                "product": "Darjeeling",
+                "weight": 250.0,
+            },
+        ]
+        assert_frame_equal(s.to_frame(), pl.DataFrame({"t": [t0, t1]}))
 
 
 def test_concat() -> None:
