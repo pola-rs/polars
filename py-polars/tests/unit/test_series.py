@@ -649,6 +649,39 @@ def test_fill_null() -> None:
     assert a.fill_null(strategy="backward").to_list() == [0.0, 1.0, 2.0, 2.0, 3.0, 3.0]
     assert a.fill_null(strategy="mean").to_list() == [0.0, 1.0, 1.5, 2.0, 1.5, 3.0]
 
+    df = pl.DataFrame(
+        [
+            pl.Series("i32", [1, 2, None], dtype=pl.Int32),
+            pl.Series("i64", [1, 2, None], dtype=pl.Int64),
+            pl.Series("f32", [1, 2, None], dtype=pl.Float32),
+            pl.Series("cat", ["a", "b", None], dtype=pl.Categorical),
+            pl.Series("str", ["a", "b", None], dtype=pl.Utf8),
+            pl.Series("bool", [True, True, None], dtype=pl.Boolean),
+        ]
+    )
+
+    assert df.fill_null(0, matches_supertype=False).fill_null("bar").fill_null(
+        False
+    ).to_dict(False) == {
+        "i32": [1, 2, None],
+        "i64": [1, 2, 0],
+        "f32": [1.0, 2.0, None],
+        "cat": ["a", "b", "bar"],
+        "str": ["a", "b", "bar"],
+        "bool": [True, True, False],
+    }
+
+    assert df.fill_null(0, matches_supertype=True).fill_null("bar").fill_null(
+        False
+    ).to_dict(False) == {
+        "i32": [1, 2, 0],
+        "i64": [1, 2, 0],
+        "f32": [1.0, 2.0, 0.0],
+        "cat": ["a", "b", "bar"],
+        "str": ["a", "b", "bar"],
+        "bool": [True, True, False],
+    }
+
 
 def test_fill_nan() -> None:
     nan = float("nan")

@@ -12,7 +12,21 @@ from warnings import warn
 
 from polars import internals as pli
 from polars.cfg import Config
-from polars.datatypes import DataType, PolarsDataType, Schema, py_type_to_dtype
+from polars.datatypes import (
+    Boolean,
+    Categorical,
+    DataType,
+    Float32,
+    Float64,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    PolarsDataType,
+    Schema,
+    Utf8,
+    py_type_to_dtype,
+)
 from polars.internals import selection_to_pyexpr_list
 from polars.internals.lazyframe.groupby import LazyGroupBy
 from polars.internals.slice import LazyPolarsSlice
@@ -2054,6 +2068,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         value: Any | None = None,
         strategy: FillNullStrategy | None = None,
         limit: int | None = None,
+        matches_supertype: bool = True,
     ) -> LDF:
         """
         Fill null values using the specified value or strategy.
@@ -2067,8 +2082,38 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         limit
             Number of consecutive null values to fill when using the 'forward' or
             'backward' strategy.
+        matches_supertype
+            Fill all matching supertype of the fill ``value``.
 
         """
+        if value is not None:
+            if isinstance(value, pli.Expr):
+                dtype = next(iter(self.select(value).schema.values()))
+                dtypes = [dtype]
+            elif isinstance(value, bool):
+                dtypes = [Boolean]
+            elif isinstance(value, int):
+                dtypes = [Int64]
+                if matches_supertype:
+                    dtypes.append(Int8)
+                    dtypes.append(Int16)
+                    dtypes.append(Int32)
+                    dtypes.append(Float32)
+                    dtypes.append(Float64)
+            elif isinstance(value, float):
+                dtypes = [Float64]
+                if matches_supertype:
+                    dtypes.append(Int8)
+                    dtypes.append(Int16)
+                    dtypes.append(Int32)
+                    dtypes.append(Int64)
+                    dtypes.append(Float32)
+                    dtypes.append(Float64)
+            elif isinstance(value, str):
+                dtypes = [Utf8, Categorical]
+
+            return self.with_column(pli.col(dtypes).fill_null(value, strategy, limit))
+
         return self.select(pli.all().fill_null(value, strategy, limit))
 
     def fill_nan(self: LDF, fill_value: int | str | float | pli.Expr | None) -> LDF:
