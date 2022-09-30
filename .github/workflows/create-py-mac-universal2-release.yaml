@@ -36,7 +36,7 @@ jobs:
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
         with:
-          maturin-version: '0.13.2'
+          maturin-version: '0.13.5'
           command: publish
           args: -m py-polars/Cargo.toml --target aarch64-apple-darwin --no-sdist -o wheels -i python -u ritchie46
            # uncomment to build a universal2 wheel
