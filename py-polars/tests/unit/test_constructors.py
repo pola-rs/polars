@@ -438,3 +438,8 @@ def test_upcast_primitive_and_strings() -> None:
         pl.Float64,
         pl.Float64,
     ]
+
+
+def test_u64_lit_5031() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3]}).with_column(pl.col("foo").cast(pl.UInt64))
+    assert df.filter(pl.col("foo") < (1 << 64) - 20).shape == (3, 1)
