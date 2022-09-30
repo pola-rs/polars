@@ -4437,6 +4437,7 @@ class DataFrame:
         value: Any | None = None,
         strategy: FillNullStrategy | None = None,
         limit: int | None = None,
+        matches_supertype: bool = True,
     ) -> DF:
         """
         Fill null values using the specified value or strategy.
@@ -4450,6 +4451,8 @@ class DataFrame:
         limit
             Number of consecutive null values to fill when using the 'forward' or
             'backward' strategy.
+        matches_supertype
+            Fill all matching supertype of the fill ``value``.
 
         Returns
         -------
@@ -4484,7 +4487,12 @@ class DataFrame:
         └─────┴──────┘
 
         """
-        return self.select(pli.all().fill_null(value, strategy, limit))
+        return self._from_pydf(
+            self.lazy()
+            .fill_null(value, strategy, limit, matches_supertype)
+            .collect(no_optimization=True)
+            ._df
+        )
 
     def fill_nan(self, fill_value: pli.Expr | int | float | None) -> DataFrame:
         """
