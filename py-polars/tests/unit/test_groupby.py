@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
+
+import pytest
 
 import polars as pl
 
@@ -170,3 +172,21 @@ def test_groupby_dynamic_flat_agg_4814() -> None:
         "last_ratio_1": [6.0, 6.0],
         "last_ratio_2": [6.0, 6.0],
     }
+
+
+def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "a": [
+                    datetime(2021, 1, 1) + timedelta(seconds=2**i) for i in range(10)
+                ],
+                "b": [float(i) for i in range(10)],
+            }
+        )
+        .lazy()
+        .groupby_dynamic("a", every="10s", period="100s")
+        .agg([pl.col("b").var().sqrt().alias("corr")])
+    ).collect().sum().to_dict(False) == pytest.approx(
+        {"a": [None], "corr": [6.988674024215477]}
+    )

@@ -222,62 +222,57 @@ impl PhysicalExpr for ApplyExpr {
 
                 // overlapping groups always take this branch as explode bloats data size
                 (_, ApplyOptions::ApplyGroups) | (true, _) => {
-                    let mut container = vec![Default::default(); acs.len()];
-                    let name = acs[0].series().name().to_string();
+                    // if
+                    // - there are overlapping groups
+                    // - can do elementwise operations
+                    // - we don't have to explode
+                    // then apply flat
+                    if let (
+                        true,
+                        ApplyOptions::ApplyFlat,
+                        AggState::AggregatedFlat(_) | AggState::NotAggregated(_),
+                    ) = (
+                        state.overlapping_groups(),
+                        self.collect_groups,
+                        acs[0].agg_state(),
+                    ) {
+                        apply_multiple_flat(acs, self.function.as_ref())
+                    } else {
+                        let mut container = vec![Default::default(); acs.len()];
+                        let name = acs[0].series().name().to_string();
 
-                    // aggregate representation of the aggregation contexts
-                    // then unpack the lists and finally create iterators from this list chunked arrays.
-                    let mut iters = acs
-                        .iter_mut()
-                        .map(|ac| ac.iter_groups())
-                        .collect::<Vec<_>>();
+                        // aggregate representation of the aggregation contexts
+                        // then unpack the lists and finally create iterators from this list chunked arrays.
+                        let mut iters = acs
+                            .iter_mut()
+                            .map(|ac| ac.iter_groups())
+                            .collect::<Vec<_>>();
 
-                    // length of the items to iterate over
-                    let len = iters[0].size_hint().0;
+                        // length of the items to iterate over
+                        let len = iters[0].size_hint().0;
 
-                    let mut ca: ListChunked = (0..len)
-                        .map(|_| {
-                            container.clear();
-                            for iter in &mut iters {
-                                match iter.next().unwrap() {
-                                    None => return None,
-                                    Some(s) => container.push(s.deep_clone()),
+                        let mut ca: ListChunked = (0..len)
+                            .map(|_| {
+                                container.clear();
+                                for iter in &mut iters {
+                                    match iter.next().unwrap() {
+                                        None => return None,
+                                        Some(s) => container.push(s.deep_clone()),
+                                    }
                                 }
-                            }
-                            self.function.call_udf(&mut container).ok()
-                        })
-                        .collect_trusted();
-                    ca.rename(&name);
-                    drop(iters);
+                                self.function.call_udf(&mut container).ok()
+                            })
+                            .collect_trusted();
+                        ca.rename(&name);
+                        drop(iters);
 
-                    // take the first aggregation context that as that is the input series
-                    let ac = acs.swap_remove(0);
-                    let ac = self.finish_apply_groups(ac, ca);
-                    Ok(ac)
+                        // take the first aggregation context that as that is the input series
+                        let ac = acs.swap_remove(0);
+                        let ac = self.finish_apply_groups(ac, ca);
+                        Ok(ac)
+                    }
                 }
-                (_, ApplyOptions::ApplyFlat) => {
-                    let mut s = acs
-                        .iter_mut()
-                        .map(|ac| {
-                            // make sure the groups are updated because we are about to throw away
-                            // the series length information
-                            if let UpdateGroups::WithSeriesLen = ac.update_groups {
-                                ac.groups();
-                            }
-
-                            ac.flat_naive().into_owned()
-                        })
-                        .collect::<Vec<_>>();
-
-                    let input_len = s[0].len();
-                    let s = self.function.call_udf(&mut s)?;
-                    check_map_output_len(input_len, s.len())?;
-
-                    // take the first aggregation context that as that is the input series
-                    let mut ac = acs.swap_remove(0);
-                    ac.with_series(s, false);
-                    Ok(ac)
-                }
+                (_, ApplyOptions::ApplyFlat) => apply_multiple_flat(acs, self.function.as_ref()),
             }
         }
     }
@@ -308,6 +303,33 @@ impl PhysicalExpr for ApplyExpr {
             None
         }
     }
+}
+
+fn apply_multiple_flat<'a>(
+    mut acs: Vec<AggregationContext<'a>>,
+    function: &dyn SeriesUdf,
+) -> PolarsResult<AggregationContext<'a>> {
+    let mut s = acs
+        .iter_mut()
+        .map(|ac| {
+            // make sure the groups are updated because we are about to throw away
+            // the series length information
+            if let UpdateGroups::WithSeriesLen = ac.update_groups {
+                ac.groups();
+            }
+
+            ac.flat_naive().into_owned()
+        })
+        .collect::<Vec<_>>();
+
+    let input_len = s[0].len();
+    let s = function.call_udf(&mut s)?;
+    check_map_output_len(input_len, s.len())?;
+
+    // take the first aggregation context that as that is the input series
+    let mut ac = acs.swap_remove(0);
+    ac.with_series(s, false);
+    Ok(ac)
 }
 
 #[cfg(feature = "parquet")]
