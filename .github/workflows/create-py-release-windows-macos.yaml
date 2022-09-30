@@ -2,43 +2,39 @@ name: Create Python release windows macos
 
 on:
   push:
-     # Sequence of patterns matched against refs/tags
     tags:
-      - 'py-polars-v*' # Push events to matching py-polars-v*, i.e. py-polars-v1.0, py-polars-v20.15.10
+      - 'py-polars-v*'
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  build:
-    name: Create Release
+  win-macos:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: ["macos-latest", "windows-latest"]
-        python-version: ["3.7"]
+        os: [macos-latest, windows-latest]
+
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@master
+      - uses: actions/setup-python@v4
         with:
-          toolchain: nightly-2022-09-26
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install maturin==0.13.2
-      - name: Publish wheel
-        shell: bash
-        env:
-          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
-          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
+          python-version: '3.7'
+
+      - name: Fix README symlink
         run: |
           rm py-polars/README.md
           cp README.md py-polars/README.md
-          cd py-polars
-          maturin publish \
-          --no-sdist \
-          --skip-existing \
-          -o wheels \
-          -i python \
-          --username ritchie46
+
+      - name: Publish wheel
+        uses: messense/maturin-action@v1
+        env:
+          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
+          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
+        with:
+          rust-toolchain: nightly-2022-09-26
+          maturin-version: '0.13.5'
+          command: publish
+          args: -m py-polars/Cargo.toml --no-sdist --skip-existing -o wheels -i python -u ritchie46

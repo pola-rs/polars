@@ -2,47 +2,44 @@ name: Create macOs universal2/aarch64-apple-darwin python release
 
 on:
   push:
-    # Sequence of patterns matched against refs/tags
     tags:
-      - 'py-polars-v*' # Push events to matching py-polars-v*, i.e. py-polars-v1.0, py-polars-v20.15.10
+      - 'py-polars-v*'
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
-  build:
-    name: Create Release
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: ["macos-latest"]
-        python-version: ["3.7"]
+  macos-aarch64:
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.7'
+
+      - name: Fix README symlink
+        run: |
+          rm py-polars/README.md
+          cp README.md py-polars/README.md
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2022-09-26
-      - name: Setup universal2 targets for Rust
-        run: |
-          rustup target add aarch64-apple-darwin
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Prepare maturin publish
-        shell: bash
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
-          cd py-polars
-      - name: maturin publish
+
+      - name: Set up Rust targets
+        run: rustup target add aarch64-apple-darwin
+
+      - name: Publish wheel
         uses: messense/maturin-action@v1
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
         with:
-          maturin-version: '0.13.2'
+          maturin-version: '0.13.5'
           command: publish
           args: -m py-polars/Cargo.toml --target aarch64-apple-darwin --no-sdist -o wheels -i python -u ritchie46
            # uncomment to build a universal2 wheel
            # we don't run it because it is twice as big and not needed because we build
            # for both architectures separately
 #          args: -m py-polars/Cargo.toml --no-sdist --universal2 -o wheels -i python -u ritchie46
-
