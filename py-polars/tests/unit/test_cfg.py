@@ -96,11 +96,14 @@ def test_set_tbl_cols(environ: None) -> None:
     assert str(df).split("\n")[2] == "│ a   ┆ ... ┆ d   │"
     pl.Config.set_tbl_cols(3)
     assert str(df).split("\n")[2] == "│ a   ┆ b   ┆ ... ┆ d   │"
+    pl.Config.set_tbl_cols(-1)
+    assert str(df).split("\n")[2] == "│ a   ┆ b   ┆ c   ┆ d   │"
 
 
 def test_set_tbl_rows(environ: None) -> None:
 
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8], "c": [9, 10, 11, 12]})
+    ser = pl.Series("ser", [1, 2, 3, 4, 5])
 
     pl.Config.set_tbl_rows(1)
     assert (
@@ -117,6 +120,15 @@ def test_set_tbl_rows(environ: None) -> None:
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
+    assert (
+        str(ser) == "shape: (5,)\n"
+        "Series: 'ser' [i64]\n"
+        "[\n"
+        "\t1\n"
+        "\t...\n"
+        "\t5\n"
+        "]"
+    )
 
     pl.Config.set_tbl_rows(2)
     assert (
@@ -132,6 +144,15 @@ def test_set_tbl_rows(environ: None) -> None:
         "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
+    )
+    assert (
+        str(ser) == "shape: (5,)\n"
+        "Series: 'ser' [i64]\n"
+        "[\n"
+        "\t1\n"
+        "\t...\n"
+        "\t5\n"
+        "]"
     )
 
     pl.Config.set_tbl_rows(3)
@@ -151,6 +172,15 @@ def test_set_tbl_rows(environ: None) -> None:
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
+    assert (
+        str(ser) == "shape: (5,)\n"
+        "Series: 'ser' [i64]\n"
+        "[\n"
+        "\t1\n"
+        "\t...\n"
+        "\t5\n"
+        "]"
+    )
 
     pl.Config.set_tbl_rows(4)
     assert (
@@ -168,6 +198,17 @@ def test_set_tbl_rows(environ: None) -> None:
         "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
+    )
+    assert (
+        str(ser) == "shape: (5,)\n"
+        "Series: 'ser' [i64]\n"
+        "[\n"
+        "\t1\n"
+        "\t2\n"
+        "\t...\n"
+        "\t4\n"
+        "\t5\n"
+        "]"
     )
 
     df = pl.DataFrame(
@@ -189,6 +230,37 @@ def test_set_tbl_rows(environ: None) -> None:
         "│ 1   ┆ 6   ┆ 11  │\n"
         "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ ... ┆ ... ┆ ... │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 4   ┆ 9   ┆ 14  │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 5   ┆ 10  ┆ 15  │\n"
+        "└─────┴─────┴─────┘"
+    )
+
+    pl.Config.set_tbl_rows(-1)
+    assert (
+        str(ser) == "shape: (5,)\n"
+        "Series: 'ser' [i64]\n"
+        "[\n"
+        "\t1\n"
+        "\t2\n"
+        "\t3\n"
+        "\t4\n"
+        "\t5\n"
+        "]"
+    )
+    assert (
+        str(df) == "shape: (5, 3)\n"
+        "┌─────┬─────┬─────┐\n"
+        "│ a   ┆ b   ┆ c   │\n"
+        "│ --- ┆ --- ┆ --- │\n"
+        "│ i64 ┆ i64 ┆ i64 │\n"
+        "╞═════╪═════╪═════╡\n"
+        "│ 1   ┆ 6   ┆ 11  │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 2   ┆ 7   ┆ 12  │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 3   ┆ 8   ┆ 13  │\n"
         "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│ 4   ┆ 9   ┆ 14  │\n"
         "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"

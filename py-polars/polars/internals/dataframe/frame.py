@@ -1482,7 +1482,12 @@ class DataFrame:
 
         """
         max_cols = int(os.environ.get("POLARS_FMT_MAX_COLS", default=75))
+        if max_cols < 0:
+            max_cols = self.shape[1]
         max_rows = int(os.environ.get("POLARS_FMT_MAX_ROWS", default=25))
+        if max_rows < 0:
+            max_rows = self.shape[0]
+
         return "\n".join(NotebookFormatter(self, max_cols, max_rows).render())
 
     def to_arrow(self) -> pa.Table:
