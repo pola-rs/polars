@@ -2,27 +2,28 @@ name: Create Python release manylinux
 
 on:
   push:
-    # Sequence of patterns matched against refs/tags
     tags:
-      - 'py-polars-v*' # Push events to matching py-polars-v*, i.e. py-polars-v1.0, py-polars-v20.15.10
+      - 'py-polars-v*'
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  build_manylinux:
-    name: Create Release manylinux
+  manylinux-x64_64:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Prepare maturin publish
-        shell: bash
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.7'
+
+      - name: Fix README symlink
         run: |
           rm py-polars/README.md
           cp README.md py-polars/README.md
 
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.7'
-          architecture: x64
-
-      - name: publish x64_64
+      - name: Publish wheel
         uses: messense/maturin-action@v1
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
@@ -32,8 +33,22 @@ jobs:
           maturin-version: '0.13.2'
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
-      # needed for docker on apple m1
-      - name: publish aarch64
+
+  # Needed for Docker on Apple M1
+  manylinux-aarch64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.7'
+
+      - name: Fix README symlink
+        run: |
+          rm py-polars/README.md
+          cp README.md py-polars/README.md
+
+      - name: Publish wheel
         uses: messense/maturin-action@v1
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
@@ -44,14 +59,26 @@ jobs:
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing --no-sdist -o wheels -i python -u ritchie46
 
-      - name: Prepare bigidx
-        shell: bash
+  manylinux-bigidx:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.7'
+
+      - name: Fix README symlink
         run: |
-          # now compile polars with bigidx feature
+          rm py-polars/README.md
+          cp README.md py-polars/README.md
+
+      - name: Prepare bigidx
+        run: |
           sed -i 's/name = "polars"/name = "polars-u64-idx"/' py-polars/pyproject.toml
-          # a brittle hack to insert the 'bigidx' feature
+          # A brittle hack to insert the 'bigidx' feature
           sed -i 's/"dynamic_groupby",/"dynamic_groupby",\n"bigidx",/' py-polars/Cargo.toml
-      - name: publish x64_64 bigidx
+
+      - name: Publish wheel
         uses: messense/maturin-action@v1
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
