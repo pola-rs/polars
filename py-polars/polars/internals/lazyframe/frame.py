@@ -755,6 +755,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         simplify_expression: bool = True,
         no_optimization: bool = False,
         slice_pushdown: bool = True,
+        common_subplan_elimination: bool = True,
     ) -> tuple[pli.DataFrame, pli.DataFrame]:
         """
         Profile a LazyFrame.
@@ -779,6 +780,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Turn off (certain) optimizations.
         slice_pushdown
             Slice pushdown optimization.
+        common_subplan_elimination
+            Will try to cache branching subplans that occur on self-joins or unions.
 
         Returns
         -------
@@ -795,6 +798,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             projection_pushdown,
             simplify_expression,
             slice_pushdown,
+            common_subplan_elimination,
         )
         df, timings = ldf.profile()
         return pli.wrap_df(df), pli.wrap_df(timings)
