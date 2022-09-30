@@ -3,7 +3,7 @@ name: Create Python release manylinux
 on:
   push:
     tags:
-      - 'py-polars-v*'
+      - py-*
 
 defaults:
   run:

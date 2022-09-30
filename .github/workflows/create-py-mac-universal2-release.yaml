@@ -3,7 +3,7 @@ name: Create macOs universal2/aarch64-apple-darwin python release
 on:
   push:
     tags:
-      - 'py-polars-v*'
+      - py-*
 
 defaults:
   run:
