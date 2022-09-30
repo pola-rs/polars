@@ -1187,11 +1187,7 @@ impl Expr {
             function: FunctionExpr::Pow,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
-                fmt_str: "pow",
-                cast_to_supertypes: false,
-                allow_rename: false,
+                ..Default::default()
             },
         }
     }
@@ -1204,7 +1200,6 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Sin),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "sin",
                 ..Default::default()
             },
         }
@@ -1218,7 +1213,6 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Cos),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "cos",
                 ..Default::default()
             },
         }
@@ -1232,7 +1226,6 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Tan),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "tan",
                 ..Default::default()
             },
         }
@@ -1246,7 +1239,6 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcSin),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "arcsin",
                 ..Default::default()
             },
         }
@@ -1260,7 +1252,6 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcCos),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "arccos",
                 ..Default::default()
             },
         }
@@ -1274,7 +1265,6 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcTan),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "arctan",
                 ..Default::default()
             },
         }
@@ -1288,7 +1278,6 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Sinh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "sinh",
                 ..Default::default()
             },
         }
@@ -1302,7 +1291,6 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Cosh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "cosh",
                 ..Default::default()
             },
         }
@@ -1316,7 +1304,6 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::Tanh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "tanh",
                 ..Default::default()
             },
         }
@@ -1330,7 +1317,6 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcSinh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "arcsinh",
                 ..Default::default()
             },
         }
@@ -1344,7 +1330,6 @@ impl Expr {
             function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcCosh),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "arccosh",
                 ..Default::default()
             },
         }
@@ -1372,7 +1357,6 @@ impl Expr {
             function: FunctionExpr::Sign,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "sign",
                 ..Default::default()
             },
         }

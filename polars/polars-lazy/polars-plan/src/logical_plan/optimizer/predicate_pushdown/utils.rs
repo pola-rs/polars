@@ -22,10 +22,11 @@ impl Dsl for Node {
 /// Don't overwrite predicates but combine them.
 pub(super) fn insert_and_combine_predicate(
     acc_predicates: &mut PlHashMap<Arc<str>, Node>,
-    name: Arc<str>,
     predicate: Node,
     arena: &mut Arena<AExpr>,
 ) {
+    let name = predicate_to_key(predicate, arena);
+
     acc_predicates
         .entry(name)
         .and_modify(|existing_predicate| {
@@ -77,35 +78,28 @@ pub(super) fn predicate_at_scan(
 // an invisible ascii token we use as delimiter
 const HIDDEN_DELIMITER: char = '\u{1D17A}';
 
-/// Determine the hashmap key by combining all the root column names of a predicate
-pub(super) fn roots_to_key(roots: &[Arc<str>]) -> Arc<str> {
-    if roots.len() == 1 {
-        roots[0].clone()
-    } else {
-        let mut new = String::with_capacity(32 * roots.len());
-        for (i, name) in roots.iter().enumerate() {
-            if i > 0 {
-                new.push(HIDDEN_DELIMITER)
-            }
-            new.push_str(name);
-        }
-        Arc::from(new)
-    }
-}
+/// Determine the hashmap key by combining all the leaf column names of a predicate
+pub(super) fn predicate_to_key(predicate: Node, expr_arena: &Arena<AExpr>) -> Arc<str> {
+    let mut iter = aexpr_to_leaf_names_iter(predicate, expr_arena);
+    if let Some(first) = iter.next() {
+        if let Some(second) = iter.next() {
+            let mut new = String::with_capacity(32 * iter.size_hint().0);
+            new.push_str(&first);
+            new.push(HIDDEN_DELIMITER);
+            new.push_str(&second);
 
-pub(super) fn get_insertion_name(
-    expr_arena: &Arena<AExpr>,
-    predicate: Node,
-    schema: &Schema,
-) -> Arc<str> {
-    Arc::from(
-        expr_arena
-            .get(predicate)
-            .to_field(schema, Context::Default, expr_arena)
-            .unwrap()
-            .name()
-            .as_ref(),
-    )
+            for name in iter {
+                new.push(HIDDEN_DELIMITER);
+                new.push_str(&name);
+            }
+            return Arc::from(new);
+        }
+        first
+    } else {
+        let mut s = String::new();
+        s.push(HIDDEN_DELIMITER);
+        Arc::from(s)
+    }
 }
 
 // this checks if a predicate from a node upstream can pass
@@ -255,12 +249,7 @@ where
                             projection_roots[0].clone(),
                         );
 
-                        insert_and_combine_predicate(
-                            acc_predicates,
-                            projection_roots[0].clone(),
-                            predicate,
-                            expr_arena,
-                        );
+                        insert_and_combine_predicate(acc_predicates, predicate, expr_arena);
                     } else {
                         // this may be a complex binary function. The predicate may only be valid
                         // on this projected column so we do filter locally.
