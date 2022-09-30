@@ -11,12 +11,17 @@ from polars.testing import assert_frame_equal, column, dataframes
 
 
 @given(df=dataframes())
+@settings(max_examples=50)
 def test_repr(df: pl.DataFrame) -> None:
     assert isinstance(repr(df), str)
-    assert_frame_equal(df, df, check_exact=True)
+    assert_frame_equal(df, df, check_exact=True, nans_compare_equal=True)
 
 
-@given(df=dataframes(min_size=1, min_cols=1, max_size=10, null_probability=0.25))
+@given(
+    df=dataframes(
+        min_size=1, min_cols=1, null_probability=0.25, excluded_dtypes=[pl.Utf8]
+    )
+)
 @example(df=pl.DataFrame(columns=["x", "y", "z"]))
 @example(df=pl.DataFrame())
 def test_null_count(df: pl.DataFrame) -> None:
@@ -68,7 +73,6 @@ def test_null_count(df: pl.DataFrame) -> None:
     # │ null  ┆ 1    ┆ 2    ┆ 5865  │
     # └───────┴──────┴──────┴───────┘
 )
-@settings(max_examples=500)
 def test_frame_slice(df: pl.DataFrame) -> None:
     # take strategy-generated integer values from the frame as slice bounds.
     # use these bounds to slice the same frame, and then validate the result

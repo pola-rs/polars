@@ -1,4 +1,7 @@
-from hypothesis import given, settings
+# ----------------------------------------------------
+# Validate LazyFrame behaviour with parametric tests
+# ----------------------------------------------------
+from hypothesis import given
 from hypothesis.strategies import integers
 
 import polars as pl
@@ -32,7 +35,6 @@ from polars.testing import column, dataframes
         ],
     )
 )
-@settings(max_examples=500)
 def test_lazyframe_slice(ldf: pl.LazyFrame) -> None:
     py_data = ldf.collect().rows()
 
