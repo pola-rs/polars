@@ -1,7 +1,7 @@
-hypothesis==6.54.5
+hypothesis==6.55.0
 
 ghp-import==2.1.0
-sphinx==5.1.1
+sphinx==5.2.2
 pydata-sphinx-theme==0.10.1
 sphinxcontrib-applehelp==1.0.2
 sphinxcontrib-devhelp==1.0.2
