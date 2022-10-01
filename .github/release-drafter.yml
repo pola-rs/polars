@@ -20,11 +20,15 @@ categories:
       - style
       - test
 
+exclude-labels:
+  - skip-changelog
+  - release
+
 change-template: '- $TITLE (#$NUMBER)'
 change-title-escapes: '\<*_&'
 replacers:
   # Remove conventional commits from titles
-  - search: '/- (build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\(.*\))?(\!)?\: /g'
+  - search: '/- (build|chore|ci|docs|feat|fix|perf|refactor|release|revert|style|test)(\(.*\))?(\!)?\: /g'
     replace: '- '
 
 version-resolver:
@@ -35,13 +39,13 @@ version-resolver:
 autolabeler:
   - label: rust
     title:
-      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)\(.*rust.*\)/'
+      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|release|revert|style|test)\(.*rust.*\)/'
   - label: python
     title:
-      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)\(.*python.*\)/'
+      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|release|revert|style|test)\(.*python.*\)/'
   - label: breaking
     title:
-      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\(.*\))?\!\: /'
+      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|release|revert|style|test)(\(.*\))?\!\: /'
   - label: build
     title:
       - '/^build/'
@@ -66,6 +70,9 @@ autolabeler:
   - label: refactor
     title:
       - '/^refactor/'
+  - label: release
+    title:
+      - '/^release/'
   - label: revert
     title:
       - '/^revert/'
