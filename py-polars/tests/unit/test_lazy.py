@@ -34,6 +34,18 @@ def test_lazy() -> None:
     # test if pl.list is available, this is `to_list` re-exported as list
     df.groupby("a").agg(pl.list("b"))
 
+    # profile lazyframe operation/plan
+    df.lazy().groupby("a").agg(pl.list("b")).profile()
+    # ┌──────────────┬───────┬─────┐
+    # │ node         ┆ start ┆ end │
+    # │ ---          ┆ ---   ┆ --- │
+    # │ str          ┆ u64   ┆ u64 │
+    # ╞══════════════╪═══════╪═════╡
+    # │ optimization ┆ 0     ┆ 6   │
+    # ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+    # │ groupby(a)   ┆ 6     ┆ 230 │
+    # └──────────────┴───────┴─────┘
+
 
 def test_lazyframe_membership_operator() -> None:
     ldf = pl.DataFrame({"name": ["Jane", "John"], "age": [20, 30]}).lazy()
