@@ -123,17 +123,17 @@ def test_init_dataclass_namedtuple() -> None:
         exporter: str
         importer: str
         product: str
-        weight: float | None
+        tonnes: int | None
 
     class TeaShipmentNT(NamedTuple):
         exporter: str
         importer: str
         product: str
-        weight: None | float
+        tonnes: None | int
 
     for Tea in (TeaShipmentDC, TeaShipmentNT):
-        t0 = Tea(exporter="Sri Lanka", importer="USA", product="Ceylon", weight=100)
-        t1 = Tea(exporter="India", importer="UK", product="Darjeeling", weight=250)
+        t0 = Tea(exporter="Sri Lanka", importer="USA", product="Ceylon", tonnes=10)
+        t1 = Tea(exporter="India", importer="UK", product="Darjeeling", tonnes=25)
 
         s = pl.Series("t", [t0, t1])
 
@@ -142,20 +142,20 @@ def test_init_dataclass_namedtuple() -> None:
             Field("exporter", pl.Utf8),
             Field("importer", pl.Utf8),
             Field("product", pl.Utf8),
-            Field("weight", pl.Float64),
+            Field("tonnes", pl.Int64),
         ]
         assert s.to_list() == [
             {
                 "exporter": "Sri Lanka",
                 "importer": "USA",
                 "product": "Ceylon",
-                "weight": 100.0,
+                "tonnes": 10,
             },
             {
                 "exporter": "India",
                 "importer": "UK",
                 "product": "Darjeeling",
-                "weight": 250.0,
+                "tonnes": 25,
             },
         ]
         assert_frame_equal(s.to_frame(), pl.DataFrame({"t": [t0, t1]}))

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import re
 import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -547,13 +548,13 @@ def is_polars_dtype(data_type: Any) -> bool:
 def py_type_to_dtype(data_type: Any, raise_unmatched: bool = True) -> PolarsDataType:
     """Convert a Python dtype (or type annotation) to a Polars dtype."""
     if isinstance(data_type, ForwardRef):
-        dtype = data_type.__forward_arg__
+        annotation = data_type.__forward_arg__
         data_type = (
             _PY_STR_TO_DTYPE.get(
-                dtype.removeprefix("None | ").removesuffix(" | None").strip(), data_type
+                re.sub(r"(^None \|)|(\| None$)", "", annotation).strip(), data_type
             )
-            if isinstance(dtype, str)  # type: ignore[redundant-expr]
-            else data_type
+            if isinstance(annotation, str)  # type: ignore[redundant-expr]
+            else annotation
         )
 
     if is_polars_dtype(data_type):
