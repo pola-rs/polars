@@ -1,20 +1,19 @@
 name: Feature request
-description: Suggest a new feature for polars
-labels: [feature]
-
+description: Suggest a new feature or enhancement for Polars
+labels: [enhancement]
 
 body:
   - type: textarea
     id: description
     attributes:
-      label: Problem Description
+      label: Problem description
       description: >
         Please describe the behavior you want and the motivation. Please also provide
-        examples of how polars would be used if your feature request were added.
+        examples of how Polars would be used if your feature were added.
 
-        If you're not sure what to write here, then try imagining what the ideal
+        If you're not sure what to write here, try imagining what the ideal
         documentation of your new feature would look like. Then try to write it.
       placeholder: >
-        I wish I could use polars to ...
+        I wish I could use Polars to ...
     validations:
       required: true
