@@ -1,4 +1,4 @@
-name: Bug report - Node.js
+name: '🐞 Bug report - Node.js'
 description: An issue with Node.js Polars
 labels: [bug, nodejs]
 

@@ -1,4 +1,4 @@
-name: Bug report - Rust
+name: '🐞 Bug report - Rust'
 description: An issue with Rust Polars
 labels: [bug, rust]
 

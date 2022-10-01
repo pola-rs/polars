@@ -1,4 +1,4 @@
-name: Bug report - Python
+name: '🐞 Bug report - Python'
 description: An issue with Python Polars
 labels: [bug, python]
 

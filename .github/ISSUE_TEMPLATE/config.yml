@@ -1,7 +1,7 @@
 # Ref: https://help.github.com/en/github/building-a-strong-community/configuring-issue-templates-for-your-repository#configuring-the-template-chooser
 blank_issues_enabled: true
 contact_links:
-- name: 'Discord server'
+- name: '💬 Discord server'
   url: https://discord.gg/4UfP5cfBE7
   about: |
     Chat with the community and Polars maintainers about both the usage of and development of the project.

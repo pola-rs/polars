@@ -1,4 +1,4 @@
-name: Question
+name: '❓ Question'
 description: Ask a question about the Polars library
 labels: [question]
 
