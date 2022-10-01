@@ -747,6 +747,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         no_optimization: bool = False,
         slice_pushdown: bool = True,
         common_subplan_elimination: bool = True,
+        show_plot: bool = False,
+        truncate_nodes: int = 40,
     ) -> tuple[pli.DataFrame, pli.DataFrame]:
         """
         Profile a LazyFrame.
@@ -773,6 +775,11 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Slice pushdown optimization.
         common_subplan_elimination
             Will try to cache branching subplans that occur on self-joins or unions.
+        show_plot
+            Show a gantt chart of the profiling result
+        truncate_nodes
+            Truncate the label lengths in the gantt chart to this number of
+            characters.
 
         Returns
         -------
@@ -792,7 +799,27 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             common_subplan_elimination,
         )
         df, timings = ldf.profile()
-        return pli.wrap_df(df), pli.wrap_df(timings)
+        (df, timings) = pli.wrap_df(df), pli.wrap_df(timings)
+
+        if show_plot:
+            try:
+                import matplotlib.pyplot as plt
+
+                fig, ax = plt.subplots(1, figsize=(18, 8))
+                df_ = timings.reverse()
+                if truncate_nodes > 0:
+                    df_ = df_.with_column(
+                        pli.col("node").str.slice(0, truncate_nodes) + "..."
+                    )
+                ax.barh(df_["node"], width=df_["end"] - df_["start"], left=df_["start"])
+                plt.show()
+
+            except ImportError:
+                raise ImportError(
+                    "matplotlib should be installed to show profiling plot."
+                ) from None
+
+        return df, timings
 
     def collect(
         self,
