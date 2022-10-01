@@ -1,4 +1,0 @@
-python:
-  - py-polars/**/*
-rust:
-  - polars/**/*
