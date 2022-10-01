@@ -355,12 +355,18 @@ impl DataFrame {
 
         #[cfg(feature = "chunked_ids")]
         {
-            if _check_rechunk {
+            // a left join create chunked-ids
+            // the others not yet.
+            // TODO! change this to other join types once they support chunked-id joins
+            if _check_rechunk
+                && !(matches!(how, JoinType::Left)
+                    || std::env::var("POLARS_NO_CHUNKED_JOIN").is_ok())
+            {
                 let mut left = Cow::Borrowed(self);
                 let mut right = Cow::Borrowed(other);
                 if self.should_rechunk() {
                     if _verbose {
-                        eprintln!("join triggered a rechunk of the left dataframe: {} columns are affected", self.width());
+                        eprintln!("{:?} join triggered a rechunk of the left dataframe: {} columns are affected", how, self.width());
                     }
 
                     let mut tmp_left = self.clone();
@@ -369,7 +375,7 @@ impl DataFrame {
                 }
                 if other.should_rechunk() {
                     if _verbose {
-                        eprintln!("join triggered a rechunk of the right dataframe: {} columns are affected", other.width());
+                        eprintln!("{:?} join triggered a rechunk of the right dataframe: {} columns are affected", how, other.width());
                     }
                     let mut tmp_right = other.clone();
                     tmp_right.as_single_chunk_par();
