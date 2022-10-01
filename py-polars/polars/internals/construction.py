@@ -70,6 +70,13 @@ if TYPE_CHECKING:
     from polars.internals.type_aliases import Orientation
 
 
+def is_namedtuple(value: Any, annotated: bool = False) -> bool:
+    """Infer whether value is a NamedTuple."""
+    if all(hasattr(value, attr) for attr in ("_fields", "_field_defaults", "_replace")):
+        return len(value.__annotations__) == len(value._fields) if annotated else True
+    return False
+
+
 ################################
 # Series constructor interface #
 ################################
@@ -214,17 +221,20 @@ def sequence_to_pyseries(
 
     value = _get_first_non_none(values)
     if value is not None:
-        # for temporal dtypes:
-        # * if the values are integer, we take the physical branch.
-        # * if the values are python types, take the temporal branch.
-        # * if the values are ISO-8601 strings, init then convert via strptime.
-        if dtype in py_temporal_types and isinstance(value, int):
-            dtype = py_type_to_dtype(dtype)  # construct from integer
-        elif (
-            dtype in pl_temporal_types or type(dtype) in pl_temporal_types
-        ) and not isinstance(value, int):
-            temporal_unit = getattr(dtype, "tu", None)
-            python_dtype = dtype_to_py_type(dtype)  # type: ignore[arg-type]
+        if is_dataclass(value) or is_namedtuple(value, annotated=True):
+            return pli.DataFrame(values).to_struct(name)._s
+        else:
+            # for temporal dtypes:
+            # * if the values are integer, we take the physical branch.
+            # * if the values are python types, take the temporal branch.
+            # * if the values are ISO-8601 strings, init then convert via strptime.
+            if dtype in py_temporal_types and isinstance(value, int):
+                dtype = py_type_to_dtype(dtype)  # construct from integer
+            elif (
+                dtype in pl_temporal_types or type(dtype) in pl_temporal_types
+            ) and not isinstance(value, int):
+                temporal_unit = getattr(dtype, "tu", None)
+                python_dtype = dtype_to_py_type(dtype)  # type: ignore[arg-type]
 
     # physical branch
     # flat data
@@ -235,7 +245,6 @@ def sequence_to_pyseries(
         if dtype in (Date, Datetime, Duration, Time, Categorical):
             pyseries = pyseries.cast(dtype, True)
         return pyseries
-
     else:
         if python_dtype is None:
             if value is None:
@@ -244,7 +253,6 @@ def sequence_to_pyseries(
             else:
                 python_dtype = type(value)
                 if datetime == python_dtype:
-                    # note: python-native datetimes have microsecond precision
                     temporal_unit = "us"
 
         # temporal branch
@@ -307,7 +315,7 @@ def sequence_to_pyseries(
                         dtype = py_type_to_dtype(nested_dtype)
                         with suppress(BaseException):
                             return PySeries.new_list(name, values, dtype)
-                # pass we create an object if we get here
+                # pass; we create an object if we get here
             else:
                 try:
                     to_arrow_type = (
@@ -369,7 +377,6 @@ def sequence_to_pyseries(
                     #   - bools: "'int' object cannot be converted to 'PyBool'"
                     elif str_val == "'int' object cannot be converted to 'PyBool'":
                         constructor = py_type_to_constructor(int)
-
                     else:
                         raise error
 
@@ -587,13 +594,14 @@ def sequence_to_pydf(
         return pydf
 
     elif isinstance(data[0], Sequence) and not isinstance(data[0], str):
-        # infer orientation
-        if all(
-            hasattr(data[0], attr)
-            for attr in ("_fields", "_field_defaults", "_replace")
-        ):  # namedtuple
+        if is_namedtuple(data[0]):
             if columns is None:
                 columns = data[0]._fields  # type: ignore[attr-defined]
+                if len(data[0].__annotations__) == len(columns):
+                    columns = [
+                        (name, py_type_to_dtype(tp, raise_unmatched=False))
+                        for name, tp in data[0].__annotations__.items()
+                    ]
             elif orient is None:
                 orient = "row"
 
