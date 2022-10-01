@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import sys
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, no_type_check
+from typing import TYPE_CHECKING, cast, no_type_check
 
 import numpy as np
 import pandas as pd
@@ -264,13 +264,13 @@ def test_datetime_consistency() -> None:
 def test_timezone() -> None:
     ts = pa.timestamp("s")
     data = pa.array([1000, 2000], type=ts)
-    s: pl.Series = pl.from_arrow(data)  # type: ignore[assignment]
+    s = cast(pl.Series, pl.from_arrow(data))
 
     # with timezone; we do expect a warning here
     tz_ts = pa.timestamp("s", tz="America/New_York")
     tz_data = pa.array([1000, 2000], type=tz_ts)
     # with pytest.warns(Warning):
-    tz_s: pl.Series = pl.from_arrow(tz_data)  # type: ignore[assignment]
+    tz_s = cast(pl.Series, pl.from_arrow(tz_data))
 
     # different timezones are not considered equal
     # we check both `null_equal=True` and `null_equal=False`
@@ -648,8 +648,8 @@ def test_microseconds_accuracy() -> None:
             ]
         ),
     )
-
-    assert pl.from_arrow(a)["timestamp"].to_list() == timestamps
+    df = cast(pl.DataFrame, pl.from_arrow(a))
+    assert df["timestamp"].to_list() == timestamps
 
 
 def test_cast_time_units() -> None:
