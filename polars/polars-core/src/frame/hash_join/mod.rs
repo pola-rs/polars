@@ -97,6 +97,7 @@ macro_rules! det_hash_prone_order {
 }
 
 pub(super) use det_hash_prone_order;
+use polars_arrow::conversion::primitive_to_vec;
 
 use crate::series::IsSorted;
 
@@ -420,7 +421,9 @@ impl DataFrame {
                 JoinType::Inner => {
                     self.inner_join_from_series(other, s_left, s_right, suffix, slice)
                 }
-                JoinType::Left => self.left_join_from_series(other, s_left, s_right, suffix, slice),
+                JoinType::Left => {
+                    self.left_join_from_series(other, s_left, s_right, suffix, slice, _verbose)
+                }
                 JoinType::Outer => {
                     self.outer_join_from_series(other, s_left, s_right, suffix, slice)
                 }
@@ -681,19 +684,7 @@ impl DataFrame {
     ) -> PolarsResult<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
-
-        let ((join_tuples_left, join_tuples_right), sorted) = if use_sort_merge(s_left, s_right) {
-            #[cfg(feature = "performant")]
-            {
-                (par_sorted_merge_inner(s_left, s_right), true)
-            }
-            #[cfg(not(feature = "performant"))]
-            {
-                s_left.hash_join_inner(s_right)
-            }
-        } else {
-            s_left.hash_join_inner(s_right)
-        };
+        let ((join_tuples_left, join_tuples_right), sorted) = sort_or_hash_inner(s_left, s_right);
 
         let mut join_tuples_left = &*join_tuples_left;
         let mut join_tuples_right = &*join_tuples_right;
@@ -854,32 +845,11 @@ impl DataFrame {
         s_right: &Series,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
+        verbose: bool,
     ) -> PolarsResult<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
-
-        let ids = if use_sort_merge(s_left, s_right) {
-            #[cfg(feature = "performant")]
-            {
-                let (left_idx, right_idx) = par_sorted_merge_left(s_left, s_right);
-                #[cfg(feature = "chunked_ids")]
-                {
-                    (Either::Left(left_idx), Either::Left(right_idx))
-                }
-
-                #[cfg(not(feature = "chunked_ids"))]
-                {
-                    (left_idx, right_idx)
-                }
-            }
-            #[cfg(not(feature = "performant"))]
-            {
-                s_left.hash_join_left(s_right)
-            }
-        } else {
-            s_left.hash_join_left(s_right)
-        };
-
+        let ids = sort_or_hash_left(s_left, s_right, verbose);
         self.finish_left_join(ids, &other.drop(s_right.name()).unwrap(), suffix, slice)
     }
 

@@ -158,3 +158,142 @@ pub(super) fn par_sorted_merge_inner(
         _ => unreachable!(),
     }
 }
+
+fn to_left_join_ids(left_idx: Vec<IdxSize>, right_idx: Vec<Option<IdxSize>>) -> LeftJoinIds {
+    #[cfg(feature = "chunked_ids")]
+    {
+        (Either::Left(left_idx), Either::Left(right_idx))
+    }
+
+    #[cfg(not(feature = "chunked_ids"))]
+    {
+        (left_idx, right_idx)
+    }
+}
+
+fn create_reverse_map_from_argsort(mut argsort: IdxCa) -> Vec<IdxSize> {
+    let arr = argsort.chunks.pop().unwrap();
+    let mut reverse_idx_map = primitive_to_vec::<IdxSize>(arr).unwrap();
+    POOL.install(|| {
+        reverse_idx_map.par_sort_unstable();
+    });
+    reverse_idx_map
+}
+
+#[cfg(not(feature = "performant"))]
+pub(super) fn sort_or_hash_inner(
+    s_left: &Series,
+    s_right: &Series,
+) -> ((Vec<IdxSize>, Vec<IdxSize>), bool) {
+    s_left.hash_join_inner(s_right)
+}
+
+#[cfg(feature = "performant")]
+pub(super) fn sort_or_hash_inner(
+    s_left: &Series,
+    s_right: &Series,
+) -> ((Vec<IdxSize>, Vec<IdxSize>), bool) {
+    let size_factor_rhs = s_right.len() as f32 / s_left.len() as f32;
+    let size_factor_acceptable = std::env::var("POLARS_JOIN_SORT_FACTOR")
+        .map(|s| s.parse::<f32>().unwrap())
+        .unwrap_or(0.4);
+    match (s_left.is_sorted(), s_right.is_sorted()) {
+        (IsSorted::Ascending, IsSorted::Ascending) => {
+            (par_sorted_merge_inner(s_left, s_right), true)
+        }
+        (IsSorted::Ascending, _) if size_factor_rhs < size_factor_acceptable => {
+            let sort_idx = s_right.argsort(SortOptions {
+                descending: false,
+                nulls_last: false,
+            });
+            let s_right = unsafe { s_right.take_unchecked(&sort_idx).unwrap() };
+            let ids = par_sorted_merge_inner(s_left, &s_right);
+            // sort again. as with the a double argsort we can reverse
+            let reverse_idx_map = create_reverse_map_from_argsort(sort_idx);
+
+            let (left, mut right) = ids;
+
+            for idx in right.iter_mut() {
+                *idx = unsafe { *reverse_idx_map.get_unchecked(*idx as usize) };
+            }
+
+            ((left, right), true)
+        }
+        _ => s_left.hash_join_inner(s_right),
+    }
+}
+
+#[cfg(not(feature = "performant"))]
+pub(super) fn try_sort_merge_left(
+    s_left: &Series,
+    s_right: &Series,
+    _verbose: bool,
+) -> LeftJoinIds {
+    s_left.hash_join_left(s_right)
+}
+
+#[cfg(feature = "performant")]
+pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, verbose: bool) -> LeftJoinIds {
+    let size_factor_rhs = s_right.len() as f32 / s_left.len() as f32;
+    let size_factor_lhs = s_left.len() as f32 / s_right.len() as f32;
+    let size_factor_acceptable = std::env::var("POLARS_JOIN_SORT_FACTOR")
+        .map(|s| s.parse::<f32>().unwrap())
+        .unwrap_or(0.4);
+
+    match (s_left.is_sorted(), s_right.is_sorted()) {
+        (IsSorted::Ascending, IsSorted::Ascending) => {
+            if verbose {
+                eprintln!("left join: keys are sorted: use sorted merge join");
+            }
+            let (left_idx, right_idx) = par_sorted_merge_left(s_left, s_right);
+            to_left_join_ids(left_idx, right_idx)
+        }
+        (IsSorted::Ascending, _) if size_factor_rhs < size_factor_acceptable => {
+            if verbose {
+                eprintln!("right key will be reverse sorted in left join operation.")
+            }
+
+            let sort_idx = s_right.argsort(SortOptions {
+                descending: false,
+                nulls_last: false,
+            });
+            let s_right = unsafe { s_right.take_unchecked(&sort_idx).unwrap() };
+
+            let ids = par_sorted_merge_left(s_left, &s_right);
+            // sort again. as with the a double argsort we can reverse
+            let reverse_idx_map = create_reverse_map_from_argsort(sort_idx);
+            let (left, mut right) = ids;
+
+            for opt_idx in right.iter_mut() {
+                *opt_idx =
+                    opt_idx.map(|idx| unsafe { *reverse_idx_map.get_unchecked(idx as usize) });
+            }
+
+            to_left_join_ids(left, right)
+        }
+        (_, IsSorted::Ascending) if size_factor_lhs < size_factor_acceptable => {
+            if verbose {
+                eprintln!("left key will be reverse sorted in left join operation.")
+            }
+
+            let sort_idx = s_left.argsort(SortOptions {
+                descending: false,
+                nulls_last: false,
+            });
+            let s_left = unsafe { s_left.take_unchecked(&sort_idx).unwrap() };
+
+            let ids = par_sorted_merge_left(&s_left, s_right);
+            // sort again. as with the a double argsort we can reverse
+            let reverse_idx_map = create_reverse_map_from_argsort(sort_idx);
+
+            let (mut left, right) = ids;
+
+            for idx in left.iter_mut() {
+                *idx = unsafe { *reverse_idx_map.get_unchecked(*idx as usize) };
+            }
+
+            to_left_join_ids(left, right)
+        }
+        _ => s_left.hash_join_left(s_right),
+    }
+}
