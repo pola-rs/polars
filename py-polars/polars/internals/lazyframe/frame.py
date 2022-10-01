@@ -748,7 +748,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         slice_pushdown: bool = True,
         common_subplan_elimination: bool = True,
         show_plot: bool = False,
-        truncate_nodes: int = 40,
+        truncate_nodes: int = 0,
+        figsize: tuple[int, int] = (18, 8),
     ) -> tuple[pli.DataFrame, pli.DataFrame]:
         """
         Profile a LazyFrame.
@@ -780,6 +781,8 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         truncate_nodes
             Truncate the label lengths in the gantt chart to this number of
             characters.
+        figsize
+            matplotlib figsize of the profiling plot
 
         Returns
         -------
@@ -805,13 +808,36 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             try:
                 import matplotlib.pyplot as plt
 
-                fig, ax = plt.subplots(1, figsize=(18, 8))
-                df_ = timings.reverse()
+                fig, ax = plt.subplots(1, figsize=figsize)
+
+                max_val = timings["end"][-1]
+                timings_ = timings.reverse()
+
+                if max_val > 1e9:
+                    unit = "s"
+                    timings_ = timings_.with_column(
+                        pli.col(["start", "end"]) / 1_000_000
+                    )
+                elif max_val > 1e6:
+                    unit = "ms"
+                    timings_ = timings_.with_column(pli.col(["start", "end"]) / 1000)
+                else:
+                    unit = "us"
                 if truncate_nodes > 0:
-                    df_ = df_.with_column(
+                    timings_ = timings_.with_column(
                         pli.col("node").str.slice(0, truncate_nodes) + "..."
                     )
-                ax.barh(df_["node"], width=df_["end"] - df_["start"], left=df_["start"])
+
+                max_in_unit = timings_["end"][0]
+                ax.barh(
+                    timings_["node"],
+                    width=timings_["end"] - timings_["start"],
+                    left=timings_["start"],
+                )
+
+                plt.title("Profiling result")
+                ax.set_xlabel(f"node duration in [{unit}], total {max_in_unit}{unit}")
+                ax.set_ylabel("nodes")
                 plt.show()
 
             except ImportError:
