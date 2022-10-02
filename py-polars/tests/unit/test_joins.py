@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import typing
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -480,3 +481,44 @@ def test_sorted_flag_after_joins() -> None:
     assert not joined["a"].flags["SORTED_ASC"]
     joined = dfb.join(dfa, on="b", how="anti")
     assert not joined["a"].flags["SORTED_ASC"]
+
+
+@typing.no_type_check
+def test_jit_sort_joins() -> None:
+    n = 200
+    dfa = pd.DataFrame(
+        {
+            "a": np.random.randint(0, 100, n),
+            "b": np.arange(0, n),
+        }
+    )
+
+    n = 40
+    dfb = pd.DataFrame(
+        {
+            "a": np.random.randint(0, 100, n),
+            "b": np.arange(0, n),
+        }
+    )
+    dfa_pl = pl.from_pandas(dfa).sort("a")
+    dfb_pl = pl.from_pandas(dfb)
+
+    for how in ["left", "inner"]:
+        pd_result = dfa.merge(dfb, on="a", how=how)
+        pd_result.columns = ["a", "b", "b_right"]
+
+        # left key sorted right is not
+        pl_result = dfa_pl.join(dfb_pl, on="a", how=how).sort(["a", "b"])
+
+        a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
+        assert a.frame_equal(pl_result, null_equal=True)
+        assert pl_result["a"].flags["SORTED_ASC"]
+
+        # left key sorted right is not
+        pd_result = dfb.merge(dfa, on="a", how=how)
+        pd_result.columns = ["a", "b", "b_right"]
+        pl_result = dfb_pl.join(dfa_pl, on="a", how=how).sort(["a", "b"])
+
+        a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
+        assert a.frame_equal(pl_result, null_equal=True)
+        assert pl_result["a"].flags["SORTED_ASC"]
