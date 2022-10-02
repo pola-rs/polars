@@ -92,3 +92,29 @@ fn test_err_no_found() {
         Err(PolarsError::NotFound(_))
     ));
 }
+
+#[test]
+fn test_many_aliasing_projections_5070() -> PolarsResult<()> {
+    let df = df! {
+        "date" => [1, 2, 3],
+        "val" => [1, 2, 3],
+    }?;
+
+    let out = df
+        .lazy()
+        .filter(col("date").gt(lit(1)))
+        .select([col("*")])
+        .with_columns([col("val").max().alias("max")])
+        .with_column(col("max").alias("diff"))
+        .with_column((col("val") / col("diff")).alias("output"))
+        .select([all().exclude(&["max", "diff"])])
+        .collect()?;
+    let expected = df![
+        "date" => [2, 3],
+        "val" => [2, 3],
+        "output" => [0, 1],
+    ]?;
+    assert!(out.frame_equal(&expected));
+
+    Ok(())
+}
