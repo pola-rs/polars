@@ -1516,8 +1516,8 @@ def test_short_formats() -> None:
 
 
 def test_iso_year() -> None:
-    dt = datetime(2022, 1, 1, 7, 8, 40)
-    assert pl.Series([dt]).dt.iso_year()[0] == 2021
+    assert pl.Series([datetime(2022, 1, 1, 7, 8, 40)]).dt.iso_year()[0] == 2021
+    assert pl.Series([date(2022, 1, 1)]).dt.iso_year()[0] == 2021
 
 
 def test_invalid_date_parsing_4898() -> None:

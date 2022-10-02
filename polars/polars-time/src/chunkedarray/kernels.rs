@@ -68,7 +68,7 @@ to_temporal_unit!(
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
     date_to_iso_year,
-    week,
+    iso_year,
     date32_to_datetime,
     i32,
     ArrowDataType::Int32
