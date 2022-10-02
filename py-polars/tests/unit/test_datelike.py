@@ -677,8 +677,7 @@ def test_read_utc_times_parquet() -> None:
     df.to_parquet(f)
     f.seek(0)
     df_in = pl.read_parquet(f)
-    tz = zoneinfo.ZoneInfo("UTC")
-    assert df_in["Timestamp"][0] == datetime(2022, 1, 1, 0, 0).astimezone(tz)
+    assert df_in["Timestamp"][0] == datetime(2022, 1, 1, 0, 0)
 
 
 def test_epoch() -> None:
@@ -1546,3 +1545,11 @@ def test_cast_timezone() -> None:
         "a": [datetime(2022, 9, 25, 18, 0)],
         "b": [datetime(2022, 9, 25, 14, 0)],
     }
+
+
+def test_tz_aware_get_idx_5010() -> None:
+    when = int(
+        datetime(2022, 1, 1, 12, tzinfo=zoneinfo.ZoneInfo("Asia/Shanghai")).timestamp()
+    )
+    a = pa.array([when]).cast(pa.timestamp("s", tz="Asia/Shanghai"))
+    assert int(pl.from_arrow(a)[0].timestamp()) == when  # type: ignore[union-attr]
