@@ -390,7 +390,7 @@ impl DataFrame {
                     suffix,
                     slice,
                     false,
-                    false,
+                    _verbose,
                 );
             }
         }
@@ -419,7 +419,7 @@ impl DataFrame {
             let s_right = other.column(selected_right[0].name())?;
             return match how {
                 JoinType::Inner => {
-                    self.inner_join_from_series(other, s_left, s_right, suffix, slice)
+                    self.inner_join_from_series(other, s_left, s_right, suffix, slice, _verbose)
                 }
                 JoinType::Left => {
                     self.left_join_from_series(other, s_left, s_right, suffix, slice, _verbose)
@@ -681,10 +681,12 @@ impl DataFrame {
         s_right: &Series,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
+        verbose: bool,
     ) -> PolarsResult<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
-        let ((join_tuples_left, join_tuples_right), sorted) = sort_or_hash_inner(s_left, s_right);
+        let ((join_tuples_left, join_tuples_right), sorted) =
+            sort_or_hash_inner(s_left, s_right, verbose);
 
         let mut join_tuples_left = &*join_tuples_left;
         let mut join_tuples_right = &*join_tuples_right;
