@@ -5,7 +5,7 @@ import typing
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any, Iterator, cast
 
 import numpy as np
 import pyarrow as pa
@@ -209,12 +209,12 @@ def test_from_arrow() -> None:
         ),
     ]
 
-    df = pl.from_arrow(tbl)
+    df = cast(pl.DataFrame, pl.from_arrow(tbl))
     assert df.schema == expected_schema
     assert df.rows() == expected_data
 
     empty_tbl = tbl[:0]  # no rows
-    df = pl.from_arrow(empty_tbl)
+    df = cast(pl.DataFrame, pl.from_arrow(empty_tbl))
     assert df.schema == expected_schema
     assert df.rows() == []
 
@@ -849,7 +849,7 @@ def test_from_arrow_table() -> None:
     data = {"a": [1, 2], "b": [1, 2]}
     tbl = pa.table(data)
 
-    df = pl.from_arrow(tbl)
+    df = cast(pl.DataFrame, pl.from_arrow(tbl))
     df.frame_equal(pl.DataFrame(data))
 
 
@@ -937,7 +937,7 @@ def test_column_names() -> None:
         }
     )
     for a in (tbl, tbl[:0]):
-        df = pl.from_arrow(a)
+        df = cast(pl.DataFrame, pl.from_arrow(a))
         assert df.columns == ["a", "b"]
 
 

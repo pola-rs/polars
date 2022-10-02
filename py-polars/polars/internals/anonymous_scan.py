@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pickle
 from functools import partial
+from typing import cast
 
 import polars as pl
 from polars import internals as pli
@@ -53,7 +54,7 @@ def _scan_ds_impl(
     """
     if not _PYARROW_AVAILABLE:  # pragma: no cover
         raise ImportError("'pyarrow' is required for scanning from pyarrow datasets.")
-    return pl.from_arrow(ds.to_table(columns=with_columns))
+    return cast(pli.DataFrame, pl.from_arrow(ds.to_table(columns=with_columns)))
 
 
 def _scan_ds(ds: pa.dataset.dataset) -> pli.LazyFrame:
