@@ -20,5 +20,5 @@ pub fn primitive_to_vec<T: NativeType>(arr: ArrayRef) -> Option<Vec<T>> {
     let arr_ref = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
     let mut buffer = arr_ref.values().clone();
     drop(arr);
-    buffer.get_mut().map(|v| std::mem::take(v))
+    buffer.get_mut().map(std::mem::take)
 }

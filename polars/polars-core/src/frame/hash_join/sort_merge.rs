@@ -142,6 +142,7 @@ pub(super) fn par_sorted_merge_inner(
     }
 }
 
+#[cfg(feature = "performant")]
 fn to_left_join_ids(left_idx: Vec<IdxSize>, right_idx: Vec<Option<IdxSize>>) -> LeftJoinIds {
     #[cfg(feature = "chunked_ids")]
     {
@@ -154,16 +155,17 @@ fn to_left_join_ids(left_idx: Vec<IdxSize>, right_idx: Vec<Option<IdxSize>>) -> 
     }
 }
 
+#[cfg(feature = "performant")]
 fn create_reverse_map_from_argsort(mut argsort: IdxCa) -> Vec<IdxSize> {
     let arr = argsort.chunks.pop().unwrap();
-    let reverse_idx_map = primitive_to_vec::<IdxSize>(arr).unwrap();
-    reverse_idx_map
+    primitive_to_vec::<IdxSize>(arr).unwrap()
 }
 
 #[cfg(not(feature = "performant"))]
 pub(super) fn sort_or_hash_inner(
     s_left: &Series,
     s_right: &Series,
+    _verbose: bool,
 ) -> ((Vec<IdxSize>, Vec<IdxSize>), bool) {
     s_left.hash_join_inner(s_right)
 }
@@ -178,7 +180,7 @@ pub(super) fn sort_or_hash_inner(
     let size_factor_lhs = s_left.len() as f32 / s_right.len() as f32;
     let size_factor_acceptable = std::env::var("POLARS_JOIN_SORT_FACTOR")
         .map(|s| s.parse::<f32>().unwrap())
-        .unwrap_or(0.4);
+        .unwrap_or(3.0);
     match (s_left.is_sorted(), s_right.is_sorted()) {
         (IsSorted::Ascending, IsSorted::Ascending) => {
             if verbose {
@@ -201,9 +203,11 @@ pub(super) fn sort_or_hash_inner(
 
             let (left, mut right) = ids;
 
-            for idx in right.iter_mut() {
-                *idx = unsafe { *reverse_idx_map.get_unchecked(*idx as usize) };
-            }
+            POOL.install(|| {
+                right.par_iter_mut().for_each(|idx| {
+                    *idx = unsafe { *reverse_idx_map.get_unchecked(*idx as usize) };
+                });
+            });
 
             ((left, right), true)
         }
@@ -222,9 +226,11 @@ pub(super) fn sort_or_hash_inner(
 
             let (mut left, right) = ids;
 
-            for idx in left.iter_mut() {
-                *idx = unsafe { *reverse_idx_map.get_unchecked(*idx as usize) };
-            }
+            POOL.install(|| {
+                left.par_iter_mut().for_each(|idx| {
+                    *idx = unsafe { *reverse_idx_map.get_unchecked(*idx as usize) };
+                });
+            });
 
             ((left, right), true)
         }
@@ -233,11 +239,7 @@ pub(super) fn sort_or_hash_inner(
 }
 
 #[cfg(not(feature = "performant"))]
-pub(super) fn try_sort_merge_left(
-    s_left: &Series,
-    s_right: &Series,
-    _verbose: bool,
-) -> LeftJoinIds {
+pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, _verbose: bool) -> LeftJoinIds {
     s_left.hash_join_left(s_right)
 }
 
@@ -246,7 +248,7 @@ pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, verbose: bool
     let size_factor_rhs = s_right.len() as f32 / s_left.len() as f32;
     let size_factor_acceptable = std::env::var("POLARS_JOIN_SORT_FACTOR")
         .map(|s| s.parse::<f32>().unwrap())
-        .unwrap_or(0.4);
+        .unwrap_or(3.0);
 
     match (s_left.is_sorted(), s_right.is_sorted()) {
         (IsSorted::Ascending, IsSorted::Ascending) => {
@@ -271,10 +273,12 @@ pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, verbose: bool
             let reverse_idx_map = create_reverse_map_from_argsort(sort_idx);
             let (left, mut right) = ids;
 
-            for opt_idx in right.iter_mut() {
-                *opt_idx =
-                    opt_idx.map(|idx| unsafe { *reverse_idx_map.get_unchecked(idx as usize) });
-            }
+            POOL.install(|| {
+                right.par_iter_mut().for_each(|opt_idx| {
+                    *opt_idx =
+                        opt_idx.map(|idx| unsafe { *reverse_idx_map.get_unchecked(idx as usize) });
+                });
+            });
 
             to_left_join_ids(left, right)
         }

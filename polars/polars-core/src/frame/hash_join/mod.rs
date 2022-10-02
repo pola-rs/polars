@@ -97,6 +97,7 @@ macro_rules! det_hash_prone_order {
 }
 
 pub(super) use det_hash_prone_order;
+#[cfg(feature = "performant")]
 use polars_arrow::conversion::primitive_to_vec;
 
 use crate::series::IsSorted;
