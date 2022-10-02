@@ -57,8 +57,7 @@ def _is_empty_method(func: SeriesMethod) -> bool:
         # account for potentially optimized-out docstrings
         or (
             sys.flags.optimize == 2
-            and len(fc.co_consts) == 1
-            and fc.co_consts[0] is None
+            and fc.co_consts == (None,)
         )
     )
 
