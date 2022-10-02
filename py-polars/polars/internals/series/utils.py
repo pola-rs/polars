@@ -55,10 +55,7 @@ def _is_empty_method(func: SeriesMethod) -> bool:
     return (fc.co_code in _EMPTY_BYTECODE) and (
         (len(fc.co_consts) == 2 and fc.co_consts[1] is None)
         # account for potentially optimized-out docstrings
-        or (
-            sys.flags.optimize == 2
-            and fc.co_consts == (None,)
-        )
+        or (sys.flags.optimize == 2 and fc.co_consts == (None,))
     )
 
 
