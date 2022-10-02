@@ -288,8 +288,11 @@ impl ProjectionPushDown {
                 // So we:
                 //      - add the root of the projections to accumulation,
                 //      - also do the complete projection locally to keep the schema (column order) and the alias.
+
+                // set this flag outside the loop as we modify within the loop
+                let has_pushed_down = !acc_projections.is_empty();
                 for e in &expr {
-                    if !acc_projections.is_empty() {
+                    if has_pushed_down {
                         // remove projections that are not used upstream
                         if projections_seen > 0 {
                             let input_schema = lp_arena.get(input).schema(lp_arena);
@@ -313,7 +316,7 @@ impl ProjectionPushDown {
                         // In this query, bar cannot pass this projection, as it would not exist in DF.
                         // THE ORDER IS IMPORTANT HERE!
                         // this removes projection names, so any checks ot upstream names should
-                        // be done befor this branch.
+                        // be done before this branch.
                         for (_, ae) in (&*expr_arena).iter(*e) {
                             if let AExpr::Alias(_, name) = ae {
                                 if projected_names.remove(name) {
