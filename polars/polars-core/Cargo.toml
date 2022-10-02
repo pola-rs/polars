@@ -152,7 +152,7 @@ base64 = { version = "0.13", optional = true }
 bitflags.workspace = true
 chrono = { version = "0.4", optional = true }
 chrono-tz = { version = "0.6", optional = true }
-comfy-table = { version = "5.0", optional = true }
+comfy-table = {git = "https://github.com/Nukesor/comfy-table", optional=true, branch="fix-dynamic-calculation"}
 hashbrown.workspace = true
 hex = { version = "0.4", optional = true }
 indexmap = { version = "1", features = ["std"] }

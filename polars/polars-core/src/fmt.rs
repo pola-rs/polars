@@ -480,13 +480,13 @@ impl Display for DataFrame {
                 .unwrap_or(None);
             // if tbl_width is explicitly set, use it
             if let Some(w) = tbl_width {
-                table.set_table_width(w);
+                table.set_width(w);
             }
 
             // if no tbl_width (its not-tty && it is not explicitly set), then set default
             // this is needed to support non-tty applications
-            if !table.is_tty() && table.get_table_width().is_none() {
-                table.set_table_width(100);
+            if !table.is_tty() && table.width().is_none() {
+                table.set_width(100);
             }
 
             // set alignment of cells if defined
