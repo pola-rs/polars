@@ -94,9 +94,20 @@ def _date_to_pl_date(d: date) -> int:
     return int(dt.timestamp()) // (3600 * 24)
 
 
-def _is_iterable_of(val: Iterable[object], eltype: type | tuple[type, ...]) -> bool:
-    """Check whether the given iterable is of the given type(s)."""
-    return all(isinstance(x, eltype) for x in val)
+def _is_iterable_of(val: Iterable[object], eltype: type) -> bool:
+    """
+    Check whether the given iterable is of the given type.
+
+    We use ``type(x) is eltype`` instead of ``isinstance(x, eltype)``
+    because ``isinstance(True, int) == True``.
+
+    Examples
+    --------
+    >>> _is_iterable_of([True], int)
+    False
+
+    """
+    return all(type(x) is eltype for x in val)
 
 
 def is_bool_sequence(val: object) -> TypeGuard[Sequence[bool]]:

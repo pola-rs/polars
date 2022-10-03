@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, Union, overload
 from warnings import warn
@@ -54,7 +53,6 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
     deprecated_alias,
-    is_bool_sequence,
     is_int_sequence,
     range_to_slice,
     scale_bytes,
@@ -632,30 +630,13 @@ class Series:
     @overload
     def __getitem__(
         self,
-        item: Series | range | slice | np.ndarray[Any, Any] | list[int] | list[bool],
+        item: Series | range | slice | np.ndarray[Any, Any] | list[int],
     ) -> Series:
         ...
 
     def __getitem__(
-        self,
-        item: int
-        | Series
-        | range
-        | slice
-        | np.ndarray[Any, Any]
-        | list[int]
-        | list[bool],
+        self, item: int | Series | range | slice | np.ndarray[Any, Any] | list[int]
     ) -> Any:
-        if (
-            is_bool_sequence(item)
-            or (isinstance(item, Series) and item.dtype == Boolean)
-            or (isinstance(item, np.ndarray) and item.dtype.kind == "b")
-        ):
-            warnings.warn(
-                "passing a boolean mask to Series.__getitem__ is being deprecated; "
-                "instead use Series.filter",
-                category=DeprecationWarning,
-            )
         if isinstance(item, int):
             if item < 0:
                 item = self.len() + item
@@ -678,15 +659,11 @@ class Series:
             if item.dtype.kind in ("i", "u"):
                 # Numpy array with signed or unsigned integers.
                 return wrap_s(self._s.take_with_series(self._pos_idxs(item)._s))
-            if item.dtype == bool:
-                return wrap_s(self._s.filter(pli.Series("", item)._s))
 
-        if is_bool_sequence(item) or is_int_sequence(item):
+        if is_int_sequence(item):
             item = Series("", item)  # fall through to next if isinstance
 
         if isinstance(item, Series):
-            if item.dtype == Boolean:
-                return wrap_s(self._s.filter(item._s))
             if item.dtype == UInt32:
                 return wrap_s(self._s.take_with_series(item._s))
             if item.dtype in {UInt8, UInt16, UInt64, Int8, Int16, Int32, Int64}:
@@ -699,10 +676,7 @@ class Series:
         if isinstance(item, slice):
             return PolarsSlice(self).apply(item)
 
-        raise ValueError(
-            f"Cannot __getitem__ on Series of dtype: '{self.dtype}' "
-            f"with argument: '{item}' of type: '{type(item)}'."
-        )
+        raise TypeError(f"unexpected type for Series.__getitem__, {type(item)}")
 
     def __setitem__(
         self,

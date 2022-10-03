@@ -388,12 +388,12 @@ def test_various() -> None:
 
 def test_filter_ops() -> None:
     a = pl.Series("a", range(20))
-    assert a[a > 1].len() == 18
-    assert a[a < 1].len() == 1
-    assert a[a <= 1].len() == 2
-    assert a[a >= 1].len() == 19
-    assert a[a == 1].len() == 1
-    assert a[a != 1].len() == 19
+    assert a.filter(a > 1).len() == 18
+    assert a.filter(a < 1).len() == 1
+    assert a.filter(a <= 1).len() == 2
+    assert a.filter(a >= 1).len() == 19
+    assert a.filter(a == 1).len() == 1
+    assert a.filter(a != 1).len() == 19
 
 
 def test_cast() -> None:
@@ -1198,7 +1198,7 @@ def test_range() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
     assert s[2:5].series_equal(s[range(2, 5)])
     df = pl.DataFrame([s])
-    assert df[2:5].frame_equal(df[range(2, 5)])
+    assert df[2:5, :].frame_equal(df[range(2, 5), :])
 
 
 def test_strict_cast() -> None:
