@@ -25,11 +25,11 @@ fmt: venv  ## Run autoformatting and linting
 	$(VENV_BIN)/isort .
 	$(VENV_BIN)/black .
 	$(VENV_BIN)/blackdoc .
-	$(VENV_BIN)/pyupgrade --py37-plus `find polars/ tests/ -name "*.py" -type f`
+	$(VENV_BIN)/pyupgrade --py37-plus `find polars docs tests -name "*.py" -type f`
 	cargo fmt --all
 	-dprint fmt
 	-$(VENV_BIN)/mypy
-	-$(VENV_BIN)/flake8 polars tests docs
+	-$(VENV_BIN)/flake8
 
 .PHONY: clippy
 clippy:  ## Run clippy
