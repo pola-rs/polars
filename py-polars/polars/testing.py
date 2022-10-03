@@ -882,7 +882,7 @@ if HYPOTHESIS_INSTALLED:
             # optionally generate frames with n_chunks > 1
             if series_size > 1 and chunked is True:
                 split_at = series_size // 2
-                df = df[:split_at].vstack(df[split_at:])
+                df = df[:split_at, :].vstack(df[split_at:, :])
 
             # optionally make lazy
             return df.lazy() if lazy else df

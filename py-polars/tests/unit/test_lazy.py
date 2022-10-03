@@ -359,7 +359,7 @@ def test_inspect(capsys: CaptureFixture[str]) -> None:
 
 def test_fetch(fruits_cars: pl.DataFrame) -> None:
     res = fruits_cars.lazy().select("*").fetch(2)
-    assert res.frame_equal(res[:2])
+    assert res.frame_equal(res[:2, :])
 
 
 def test_window_deadlock() -> None:

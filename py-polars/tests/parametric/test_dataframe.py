@@ -86,7 +86,7 @@ def test_frame_slice(df: pl.DataFrame) -> None:
     for start, stop, step, _ in py_data:
         s = slice(start, stop, step)
         sliced_py_data = py_data[s]
-        sliced_df_data = df[s].rows()
+        sliced_df_data = df[s, :].rows()
 
         assert (
             sliced_py_data == sliced_df_data
