@@ -111,7 +111,12 @@ def is_dtype_sequence(val: object) -> TypeGuard[Sequence[PolarsDataType]]:
 
 def is_int_sequence(val: object) -> TypeGuard[Sequence[int]]:
     """Check whether the given sequence is a sequence of integers."""
-    return isinstance(val, Sequence) and _is_iterable_of(val, int)
+    if isinstance(val, Sequence) and _is_iterable_of(val, int):
+        # NOTE: _is_iterable_of(val, int) returns True for a sequence
+        # of bools, so we additionally need to check for bools
+        return not is_bool_sequence(val)
+    else:
+        return False
 
 
 def is_expr_sequence(val: object) -> TypeGuard[Sequence[pli.Expr]]:
