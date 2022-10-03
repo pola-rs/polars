@@ -57,6 +57,7 @@ from polars.utils import (
     handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
+    is_str_or_int_or_bool_series,
     is_str_sequence,
     scale_bytes,
 )
@@ -1343,6 +1344,14 @@ class DataFrame:
 
         The canonical type is a list of ``pl.col`` expressions.
         """
+        # NOTE: The top two are the exiting conditions, every other
+        # 'if' statement recurses
+        if is_str_sequence(cols, allow_str=False):
+            return [pli.col(x) for x in cols]
+        if isinstance(cols, list) and cols.__len__() == 0:
+            # Guard against an empty list, i.e. no columns selected
+            return []
+
         if isinstance(cols, (int, str)):
             return self._standardize_col_accessor([cols])  # type: ignore[arg-type]
         if isinstance(cols, slice):
@@ -1360,9 +1369,6 @@ class DataFrame:
                     "numpy column indexer must only have a single dimension"
                 )
             return self._standardize_col_accessor(cols.tolist())
-        if isinstance(cols, list) and cols.__len__() == 0:
-            # Guard against an empty list, i.e. no columns selected
-            return []
         if is_bool_sequence(cols):
             if cols.__len__() != self.columns.__len__():
                 raise ValueError("boolean mask does not match DataFrame width")
@@ -1370,9 +1376,7 @@ class DataFrame:
             return self._standardize_col_accessor(masked)
         if is_int_sequence(cols):
             return self._standardize_col_accessor([self.columns[i] for i in cols])
-        if is_str_sequence(cols, allow_str=False):
-            return [pli.col(x) for x in cols]
-        if isinstance(cols, pli.Series):
+        if is_str_or_int_or_bool_series(cols):
             return self._standardize_col_accessor(
                 cols.to_list()  # type: ignore[arg-type]
             )

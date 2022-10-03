@@ -7,10 +7,26 @@ import sys
 import warnings
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Iterable, Sequence, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, TypeVar
 
 import polars.internals as pli
-from polars.datatypes import DataType, Date, Datetime, PolarsDataType, is_polars_dtype
+from polars.datatypes import (
+    Boolean,
+    DataType,
+    Date,
+    Datetime,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    PolarsDataType,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    Utf8,
+    is_polars_dtype,
+)
 
 try:
     from polars.polars import PyExpr
@@ -147,6 +163,11 @@ def is_str_sequence(
     if allow_str is False and isinstance(val, str):
         return False
     return isinstance(val, Sequence) and _is_iterable_of(val, str)
+
+
+def is_str_or_int_or_bool_series(x: Any) -> TypeGuard[pli.Series]:
+    dtypes = {Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Utf8, Boolean}
+    return isinstance(x, pli.Series) and x.dtype in dtypes
 
 
 def range_to_slice(rng: range) -> slice:
