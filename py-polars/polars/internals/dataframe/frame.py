@@ -49,7 +49,6 @@ from polars.internals.construction import (
     series_to_pydf,
 )
 from polars.internals.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
-from polars.internals.slice import PolarsSlice
 from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
@@ -59,7 +58,6 @@ from polars.utils import (
     is_bool_sequence,
     is_int_sequence,
     is_str_sequence,
-    range_to_slice,
     scale_bytes,
 )
 
@@ -101,9 +99,9 @@ else:
     from typing_extensions import Literal
 
 if sys.version_info >= (3, 10):
-    from typing import TypeAlias
+    from typing import TypeAlias, TypeGuard
 else:
-    from typing_extensions import TypeAlias
+    from typing_extensions import TypeAlias, TypeGuard
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import (
@@ -130,10 +128,12 @@ if TYPE_CHECKING:
     # MultiRowSelector indexes into the vertical axis and
     # MultiColSelector indexes into the horizontal axis
     # NOTE: wrapping these as strings is necessary for Python <3.10
-
-    MultiRowSelector: TypeAlias = "slice | range | list[int] | pli.Series"
+    MultiRowSelector: TypeAlias = (
+        "slice | range | list[int] | pli.Series | np.ndarray[Any, Any]"
+    )
     MultiColSelector: TypeAlias = (
-        "slice | range | list[int] | list[str] | list[bool] | pli.Series"
+        "slice | range | list[int] | list[str] | list[bool] "
+        "| pli.Series | np.ndarray[Any, Any]"
     )
 
 # A type variable used to refer to a polars.DataFrame or any subclass of it.
@@ -1129,115 +1129,33 @@ class DataFrame:
     def __iter__(self) -> Iterator[Any]:
         return self.get_columns().__iter__()
 
-    def _pos_idx(self, idx: int, dim: int) -> int:
-        if idx >= 0:
-            return idx
-        else:
-            return self.shape[dim] + idx
-
-    def _pos_idxs(
-        self, idxs: np.ndarray[Any, Any] | pli.Series, dim: int
-    ) -> pli.Series:
-        # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
-        idx_type = get_idx_type()
-
-        if isinstance(idxs, pli.Series):
-            if idxs.dtype == idx_type:
-                return idxs
-            if idxs.dtype in {
-                UInt8,
-                UInt16,
-                UInt64 if idx_type == UInt32 else UInt32,
-                Int8,
-                Int16,
-                Int32,
-                Int64,
-            }:
-                if idx_type == UInt32:
-                    if idxs.dtype in {Int64, UInt64}:
-                        if idxs.max() >= 2**32:  # type: ignore[operator]
-                            raise ValueError(
-                                "Index positions should be smaller than 2^32."
-                            )
-                    if idxs.dtype == Int64:
-                        if idxs.min() < -(2**32):  # type: ignore[operator]
-                            raise ValueError(
-                                "Index positions should be bigger than -2^32 + 1."
-                            )
-                if idxs.dtype in {Int8, Int16, Int32, Int64}:
-                    if idxs.min() < 0:  # type: ignore[operator]
-                        if idx_type == UInt32:
-                            if idxs.dtype in {Int8, Int16}:
-                                idxs = idxs.cast(Int32)
-                        else:
-                            if idxs.dtype in {Int8, Int16, Int32}:
-                                idxs = idxs.cast(Int64)
-
-                        idxs = pli.select(
-                            pli.when(pli.lit(idxs) < 0)
-                            .then(self.shape[dim] + pli.lit(idxs))
-                            .otherwise(pli.lit(idxs))
-                        ).to_series()
-
-                return idxs.cast(idx_type)
-
-        if _NUMPY_AVAILABLE and isinstance(idxs, np.ndarray):
-            if idxs.ndim != 1:
-                raise ValueError("Only 1D numpy array is supported as index.")
-            if idxs.dtype.kind in ("i", "u"):
-                # Numpy array with signed or unsigned integers.
-
-                if idx_type == UInt32:
-                    if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2**32:
-                        raise ValueError("Index positions should be smaller than 2^32.")
-                    if idxs.dtype == np.int64 and idxs.min() < -(2**32):
-                        raise ValueError(
-                            "Index positions should be bigger than -2^32 + 1."
-                        )
-                if idxs.dtype.kind == "i" and idxs.min() < 0:
-                    if idx_type == UInt32:
-                        if idxs.dtype in (np.int8, np.int16):
-                            idxs = idxs.astype(np.int32)
-                    else:
-                        if idxs.dtype in (np.int8, np.int16, np.int32):
-                            idxs = idxs.astype(np.int64)
-
-                    # Update negative indexes to absolute indexes.
-                    idxs = np.where(idxs < 0, self.shape[dim] + idxs, idxs)
-
-                return pli.Series("", idxs, dtype=idx_type)
-
-        raise NotImplementedError("Unsupported idxs datatype.")
-
     @overload
-    def __getitem__(self: DF, item: str) -> pli.Series:
+    def __getitem__(self: DF, item: str | int) -> pli.Series:
         ...
 
     @overload
     def __getitem__(
         self: DF,
-        item: int
-        | np.ndarray[Any, Any]
-        | MultiColSelector
+        item: MultiColSelector
         | tuple[int, MultiColSelector]
         | tuple[MultiRowSelector, MultiColSelector],
     ) -> DF:
         ...
 
     @overload
-    def __getitem__(self: DF, item: tuple[MultiRowSelector, int]) -> pli.Series:
+    def __getitem__(self, item: tuple[MultiRowSelector, int]) -> pli.Series:
         ...
 
     @overload
-    def __getitem__(self: DF, item: tuple[MultiRowSelector, str]) -> pli.Series:
+    def __getitem__(self, item: tuple[MultiRowSelector, str]) -> pli.Series:
         ...
 
     @overload
-    def __getitem__(self: DF, item: tuple[int, int]) -> Any:
+    def __getitem__(self, item: tuple[int, int]) -> Any:
         ...
 
     @overload
-    def __getitem__(self: DF, item: tuple[int, str]) -> Any:
+    def __getitem__(self, item: tuple[int, str]) -> Any:
         ...
 
     def __getitem__(
@@ -1245,7 +1163,6 @@ class DataFrame:
         item: (
             str
             | int
-            | np.ndarray[Any, Any]
             | MultiColSelector
             | tuple[int, MultiColSelector]
             | tuple[MultiRowSelector, MultiColSelector]
@@ -1255,144 +1172,232 @@ class DataFrame:
             | tuple[int, str]
         ),
     ) -> DataFrame | pli.Series:
-        """Get item. Does quite a lot. Read the comments."""
-        # select rows and columns at once
-        # every 2d selection, i.e. tuple is row column order, just like numpy
-        if isinstance(item, tuple) and len(item) == 2:
-            row_selection, col_selection = item
+        """
+        Select a subset of the ``DataFrame`` by specifying rows/columns.
 
-            # df[:, unknown]
-            if isinstance(row_selection, slice):
+        ``polars`` abides by the philosophy that columns represent the primary
+        logical unit of a ``DataFrame``. With this in mind, ``df[X]`` always
+        selects *columns*. For any ``X``, it is shorthand for ``df[:, X]``.
+        Rows should be accessed explicitly with``df[X, :]``.
 
-                # multiple slices
-                # df[:, :]
-                if isinstance(col_selection, slice):
-                    # slice can be
-                    # by index
-                    #   [1:8]
-                    # or by column name
-                    #   ["foo":"bar"]
-                    # first we make sure that the slice is by index
-                    start = col_selection.start
-                    stop = col_selection.stop
-                    if isinstance(col_selection.start, str):
-                        start = self.find_idx_by_name(col_selection.start)
-                    if isinstance(col_selection.stop, str):
-                        stop = self.find_idx_by_name(col_selection.stop) + 1
+        Note that when selecting by columns, the type of ``X`` fully determines the
+        return type of ``__getitem__``. If ``X`` is a scalar value (integer or
+        string) a ``Series`` is returned. Otherwise, a ``DataFrame`` is returned.
+        When selecting by rows, a ``DataFrame`` is always returned.
 
-                    col_selection = slice(start, stop, col_selection.step)
+        Additionally, ``df[X, int | str]`` is simply shorthand for ``df[int | str][X]``.
+        In other words, we first extract the column as a ``Series``, and then index
+        the row positions.
 
-                    df = self.__getitem__(self.columns[col_selection])
-                    return df[row_selection]
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": range(3), "b": range(3)})
+        >>> df
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 0   ┆ 0   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 1   ┆ 1   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 2   │
+        └─────┴─────┘
+        >>> df["a"]
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            0
+            1
+            2
+        ]
 
-                # df[:, [True, False]]
-                if is_bool_sequence(col_selection) or (
-                    isinstance(col_selection, pli.Series)
-                    and col_selection.dtype == Boolean
-                ):
-                    if len(col_selection) != self.width:
-                        raise ValueError(
-                            f"Expected {self.width} values when selecting columns by"
-                            f" boolean mask. Got {len(col_selection)}."
-                        )
-                    series_list = []
-                    for (i, val) in enumerate(col_selection):
-                        if val:
-                            series_list.append(self.to_series(i))
+        >>> df[0]
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            0
+            1
+            2
+        ]
 
-                    df = self.__class__(series_list)
-                    return df[row_selection]
+        >>> df[["a"]]
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 0   │
+        ├╌╌╌╌╌┤
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        └─────┘
 
-                # single slice
-                # df[:, unknown]
-                series = self.__getitem__(col_selection)
-                # s[:]
-                pli.wrap_s(series[row_selection])
+        >>> df[[0]]
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 0   │
+        ├╌╌╌╌╌┤
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        └─────┘
 
-            # df[2, :] (select row as df)
-            if isinstance(row_selection, int):
-                if isinstance(col_selection, (slice, list)) or (
-                    _NUMPY_AVAILABLE and isinstance(col_selection, np.ndarray)
-                ):
-                    df = self[:, col_selection]
-                    return df.slice(row_selection, 1)
-                # df[2, "a"]
-                if isinstance(col_selection, str):
-                    return self[col_selection][row_selection]
+        >>> df[0, :]
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 0   ┆ 0   │
+        └─────┴─────┘
 
-            # column selection can be "a" and ["a", "b"]
-            if isinstance(col_selection, str):
-                col_selection = [col_selection]
+        >>> df[1:, "a":"b"]
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 1   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 2   │
+        └─────┴─────┘
 
-            # df[:, 1]
-            if isinstance(col_selection, int):
-                series = self.to_series(col_selection)
-                return series[row_selection]
+        """
+        # df[X] == df[:, X]
+        if not isinstance(item, tuple):
+            return self[:, item]  # type: ignore[index]
 
-            if isinstance(col_selection, list):
-                # df[:, [1, 2]]
-                if is_int_sequence(col_selection):
-                    series_list = [self.to_series(i) for i in col_selection]
-                    df = self.__class__(series_list)
-                    return df[row_selection]
+        rows, cols = item
 
-            df = self.__getitem__(col_selection)
-            return df.__getitem__(row_selection)
+        # Select the requested columns, fast-path if we want all columns
+        if isinstance(cols, slice) and cols == slice(None, None, None):
+            df = self
+        else:
+            std_cols = self._standardize_col_accessor(cols)
+            df = self.select(std_cols)
 
-        # select single column
-        # df["foo"]
-        if isinstance(item, str):
-            return pli.wrap_s(self._df.column(item))
+        # NOTE: If we have selected just a single column, squeeze to
+        # a Series and delegate the row indexing to Series.__getitem__
+        if isinstance(cols, (int, str)):
+            return df.to_series()[rows]
+        else:
+            if isinstance(rows, slice) and rows == slice(None, None, None):
+                return df
+            else:
+                std_rows = self._standardize_row_accessor(rows)
+                return df._from_pydf(df._df.take_with_series(std_rows._s))
 
-        # df[idx]
-        if isinstance(item, int):
-            return self.slice(self._pos_idx(item, dim=0), 1)
+    def _standardize_row_accessor(self, rows: int | MultiRowSelector) -> pli.Series:
+        """
+        Transform any row accessors to a canonical type.
 
-        # df[range(n)]
-        if isinstance(item, range):
-            return self[range_to_slice(item)]
-
-        # df[:]
-        if isinstance(item, slice):
-            return PolarsSlice(self).apply(item)
-
-        # select rows by numpy mask or index
-        # df[np.array([1, 2, 3])]
-        # df[np.array([True, False, True])]
-        if _NUMPY_AVAILABLE and isinstance(item, np.ndarray):
-            if item.ndim != 1:
-                raise ValueError("Only a 1D-Numpy array is supported as index.")
-            if item.dtype.kind in ("i", "u"):
-                # Numpy array with signed or unsigned integers.
-                return self._from_pydf(
-                    self._df.take_with_series(self._pos_idxs(item, dim=0)._s)
+        The canonical type is Series with the dtype given by ``get_idx_type()``
+        """
+        if isinstance(rows, int):
+            return self._standardize_row_accessor(pli.Series([rows]))
+        if isinstance(rows, range):
+            return pli.Series(rows, dtype=get_idx_type())
+        if isinstance(rows, slice):
+            start, stop, step = rows.indices(self.__len__())
+            return pli.Series(range(start, stop, step), dtype=get_idx_type())
+        if isinstance(rows, list):
+            return self._standardize_row_accessor(pli.Series(rows))
+        if isinstance(rows, pli.Series):
+            if rows.dtype == get_idx_type():
+                return rows
+            if rows.dtype in [UInt8, UInt16, UInt32, UInt64]:
+                return rows.cast(get_idx_type(), strict=True)
+            if rows.dtype in [Int8, Int16, Int32, Int64]:
+                lit = pli.lit(rows)
+                n = self.__len__()
+                return (
+                    pli.select(pli.when(lit < 0).then(n + lit).otherwise(lit))
+                    .to_series()
+                    .cast(get_idx_type(), strict=True)
                 )
-            if isinstance(item[0], str):
-                return self._from_pydf(self._df.select(item))
+        if _NUMPY_AVAILABLE and isinstance(rows, np.ndarray):
+            if rows.ndim != 1:
+                raise TypeError("numpy row indexer must only have a single dimension")
+            if rows.dtype in [np.uint8, np.uint16, np.uint32]:
+                return pli.Series(rows, dtype=get_idx_type())
+            if rows.dtype in [np.int8, np.int16, np.int32, np.int64, np.uint64]:
+                return self._standardize_row_accessor(pli.Series(rows))
+        raise TypeError(f"unable to determine row indices from {rows}")
 
-        if is_str_sequence(item, allow_str=False):
-            # select multiple columns
-            # df[["foo", "bar"]]
-            return self._from_pydf(self._df.select(item))
-        elif is_int_sequence(item):
-            item = pli.Series("", item)  # fall through to next if isinstance
+    def _standardize_col_accessor(
+        self, cols: int | str | MultiColSelector
+    ) -> list[pli.Expr]:
+        """
+        Transform any column accessor to a canonical type.
 
-        if isinstance(item, pli.Series):
-            dtype = item.dtype
-            if dtype == Utf8:
-                return self._from_pydf(self._df.select(item))
-            if dtype == UInt32:
-                return self._from_pydf(self._df.take_with_series(item._s))
-            if dtype in {UInt8, UInt16, UInt64, Int8, Int16, Int32, Int64}:
-                return self._from_pydf(
-                    self._df.take_with_series(self._pos_idxs(item, dim=0)._s)
+        The canonical type is a list of ``pl.col`` expressions.
+        """
+        if isinstance(cols, (int, str)):
+            return self._standardize_col_accessor([cols])  # type: ignore[arg-type]
+        if isinstance(cols, slice):
+            # NOTE: the only valid combinations are
+            #   - slice(int | None, int | None, int | None)
+            #   - slice(str | None, str | None, int | None)
+            start, stop = self._standardize_slice_start_stop(cols.start, cols.stop)
+            rng_indices = slice(start, stop, cols.step).indices(self.width)
+            return self._standardize_col_accessor(range(*rng_indices))
+        if isinstance(cols, range):
+            return self._standardize_col_accessor([self.columns[i] for i in cols])
+        if _NUMPY_AVAILABLE and isinstance(cols, np.ndarray):
+            if cols.ndim != 1:
+                raise TypeError(
+                    "numpy column indexer must only have a single dimension"
                 )
+            return self._standardize_col_accessor(cols.tolist())
+        if isinstance(cols, list) and cols.__len__() == 0:
+            # Guard against an empty list, i.e. no columns selected
+            return []
+        if is_bool_sequence(cols):
+            if cols.__len__() != self.columns.__len__():
+                raise ValueError("boolean mask does not match DataFrame width")
+            masked = [x for x, flag in zip(self.columns, cols) if flag]
+            return self._standardize_col_accessor(masked)
+        if is_int_sequence(cols):
+            return self._standardize_col_accessor([self.columns[i] for i in cols])
+        if is_str_sequence(cols, allow_str=False):
+            return [pli.col(x) for x in cols]
+        if isinstance(cols, pli.Series):
+            return self._standardize_col_accessor(
+                cols.to_list()  # type: ignore[arg-type]
+            )
+        raise TypeError(f"unable to determine column indices from {cols}")
 
-        # if no data has been returned, the operation is not supported
-        raise ValueError(
-            f"Cannot __getitem__ on DataFrame with item: '{item}'"
-            f" of type: '{type(item)}'."
-        )
+    def _standardize_slice_start_stop(
+        self, start: int | str | None, stop: int | str | None
+    ) -> tuple[int | None, int | None]:
+        """Convert possible str indices to int indices."""
+
+        def _is_int_or_none(x: int | str | None) -> TypeGuard[int | None]:
+            return isinstance(x, int) or x is None
+
+        if _is_int_or_none(start) and _is_int_or_none(stop):
+            return start, stop
+
+        def _is_str_or_none(x: int | str | None) -> TypeGuard[str | None]:
+            return isinstance(x, str) or x is None
+
+        if _is_str_or_none(start) and _is_str_or_none(stop):
+            _start = start if start is None else self.columns.index(start)
+            _stop = stop if stop is None else self.columns.index(stop) + 1
+            return _start, _stop
+
+        raise TypeError(f"received invalid slice types {type(start), type(stop)}")
 
     def __setitem__(
         self, key: str | list[int] | list[str] | tuple[Any, str | int], value: Any

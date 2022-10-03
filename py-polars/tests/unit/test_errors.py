@@ -126,17 +126,14 @@ def test_getitem_errs() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
     with pytest.raises(
-        ValueError,
-        match=r"Cannot __getitem__ on DataFrame with item: "
-        r"'{'some'}' of type: '<class 'set'>'.",
+        TypeError,
+        match=r"unable to determine column indices from {'some'}",
     ):
         df[{"some"}]
 
     with pytest.raises(
-        ValueError,
-        match=r"Cannot __getitem__ on Series of dtype: "
-        r"'<class 'polars.datatypes.Int64'>' with argument: "
-        r"'{'strange'}' of type: '<class 'set'>'.",
+        TypeError,
+        match=r"unexpected type for Series.__getitem__, <class 'set'>",
     ):
         df["a"][{"strange"}]
 

@@ -90,7 +90,7 @@ class GroupBy(Generic[DF]):
         groups = groups_df["groups"]
         df = self._dataframe_class._from_pydf(self._df)
         for i in range(groups_df.height):
-            yield df[groups[i]]
+            yield df[groups[i], :]
 
     def _select(self, columns: str | list[str]) -> GBSelection[DF]:  # pragma: no cover
         """
