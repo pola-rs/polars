@@ -672,9 +672,12 @@ class Series:
         if isinstance(item, range):
             return self[range_to_slice(item)]
 
-        # slice
+        # slice, with fast-path
         if isinstance(item, slice):
-            return PolarsSlice(self).apply(item)
+            if item == slice(None, None, None):
+                return self
+            else:
+                return PolarsSlice(self).apply(item)
 
         raise TypeError(f"unexpected type for Series.__getitem__, {type(item)}")
 
