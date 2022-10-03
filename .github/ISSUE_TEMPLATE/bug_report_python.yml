@@ -64,13 +64,13 @@ body:
       label: Installed versions
       description: >
         Please paste the output of ``pl.show_versions()``
-      value: >
+      value: |
         <details>
 
         ```
         Replace this line with the output of pl.show_versions(), leave the backticks in place
         ```
-
+        
         </details>
     validations:
       required: true
