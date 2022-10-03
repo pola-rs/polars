@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import random
 import warnings
 from dataclasses import dataclass
@@ -60,26 +61,28 @@ from polars.datatypes import (
 )
 
 if HYPOTHESIS_INSTALLED:
-    # TODO: increase the number of iterations during CI checkins?
-    # https://hypothesis.readthedocs.io/en/latest/settings.html#settings-profiles
-    common_settings = {"print_blob": True, "deadline": timedelta(milliseconds=300)}
+    # Default profile (eg: running locally)
+    common_settings = {"print_blob": True, "deadline": None}
     settings.register_profile(
         name="polars.default",
         max_examples=100,
         **common_settings,  # type: ignore[arg-type]
     )
+    # CI 'max' profile (10x the number of iterations).
+    # this is expensive, and not actually enabled in
+    # our usual CI pipeline; requires explicit opt-in.
     settings.register_profile(
         name="polars.ci",
-        max_examples=500,
+        max_examples=1000,
         **common_settings,  # type: ignore[arg-type]
     )
-    # if os.getenv("CI")
-    #   settings.load_profile("polars.ci")
-    # else:
-    settings.load_profile("polars.default")
+    if os.getenv("CI_MAX"):
+        settings.load_profile("polars.ci")
+    else:
+        settings.load_profile("polars.default")
 
 
-MAX_DATA_SIZE = 20
+MAX_DATA_SIZE = 10
 MAX_COLS = 8
 
 
@@ -349,8 +352,8 @@ if HYPOTHESIS_INSTALLED:
         UInt64: integers(min_value=0, max_value=(2**64) - 1),
         # TODO: when generating text for categorical, ensure there are repeats -
         #  don't want all to be unique.
-        Categorical: text(),
-        Utf8: text(),
+        Categorical: text(max_size=10),
+        Utf8: text(max_size=10),
         # TODO: generate arrow temporal types with different resolution (32/64) to
         #  validate compatibility.
         Time: times(),
@@ -662,10 +665,12 @@ if HYPOTHESIS_INSTALLED:
             # create series using dtype-specific strategy to generate values
             if series_size == 0:
                 series_values = []
+            elif null_probability == 1:
+                series_values = [None] * series_size
             else:
                 series_values = draw(
                     lists(
-                        dtype_strategy,
+                        dtype_strategy,  # type: ignore[arg-type]
                         min_size=series_size,
                         max_size=series_size,
                         unique=unique,
@@ -673,9 +678,10 @@ if HYPOTHESIS_INSTALLED:
                 )
 
             # apply null values (custom frequency)
-            for idx in range(series_size):
-                if random.random() < null_probability:
-                    series_values[idx] = None
+            if null_probability and null_probability != 1:
+                for idx in range(series_size):
+                    if random.random() < null_probability:
+                        series_values[idx] = None
 
             # init series with strategy-generated data
             s = pli.Series(

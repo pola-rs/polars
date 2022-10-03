@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import sys
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, no_type_check
+from typing import TYPE_CHECKING, cast, no_type_check
 
 import numpy as np
 import pandas as pd
@@ -264,13 +264,13 @@ def test_datetime_consistency() -> None:
 def test_timezone() -> None:
     ts = pa.timestamp("s")
     data = pa.array([1000, 2000], type=ts)
-    s: pl.Series = pl.from_arrow(data)  # type: ignore[assignment]
+    s = cast(pl.Series, pl.from_arrow(data))
 
     # with timezone; we do expect a warning here
     tz_ts = pa.timestamp("s", tz="America/New_York")
     tz_data = pa.array([1000, 2000], type=tz_ts)
     # with pytest.warns(Warning):
-    tz_s: pl.Series = pl.from_arrow(tz_data)  # type: ignore[assignment]
+    tz_s = cast(pl.Series, pl.from_arrow(tz_data))
 
     # different timezones are not considered equal
     # we check both `null_equal=True` and `null_equal=False`
@@ -648,8 +648,8 @@ def test_microseconds_accuracy() -> None:
             ]
         ),
     )
-
-    assert pl.from_arrow(a)["timestamp"].to_list() == timestamps
+    df = cast(pl.DataFrame, pl.from_arrow(a))
+    assert df["timestamp"].to_list() == timestamps
 
 
 def test_cast_time_units() -> None:
@@ -677,8 +677,7 @@ def test_read_utc_times_parquet() -> None:
     df.to_parquet(f)
     f.seek(0)
     df_in = pl.read_parquet(f)
-    tz = zoneinfo.ZoneInfo("UTC")
-    assert df_in["Timestamp"][0] == datetime(2022, 1, 1, 0, 0).astimezone(tz)
+    assert df_in["Timestamp"][0] == datetime(2022, 1, 1, 0, 0)
 
 
 def test_epoch() -> None:
@@ -1517,8 +1516,8 @@ def test_short_formats() -> None:
 
 
 def test_iso_year() -> None:
-    dt = datetime(2022, 1, 1, 7, 8, 40)
-    assert pl.Series([dt]).dt.iso_year()[0] == 2021
+    assert pl.Series([datetime(2022, 1, 1, 7, 8, 40)]).dt.iso_year()[0] == 2021
+    assert pl.Series([date(2022, 1, 1)]).dt.iso_year()[0] == 2021
 
 
 def test_invalid_date_parsing_4898() -> None:
@@ -1546,3 +1545,11 @@ def test_cast_timezone() -> None:
         "a": [datetime(2022, 9, 25, 18, 0)],
         "b": [datetime(2022, 9, 25, 14, 0)],
     }
+
+
+def test_tz_aware_get_idx_5010() -> None:
+    when = int(
+        datetime(2022, 1, 1, 12, tzinfo=zoneinfo.ZoneInfo("Asia/Shanghai")).timestamp()
+    )
+    a = pa.array([when]).cast(pa.timestamp("s", tz="Asia/Shanghai"))
+    assert int(pl.from_arrow(a)[0].timestamp()) == when  # type: ignore[union-attr]

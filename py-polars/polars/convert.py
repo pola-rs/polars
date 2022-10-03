@@ -216,18 +216,6 @@ def from_numpy(
     return DataFrame._from_numpy(data, columns=columns, orient=orient)
 
 
-@overload
-def from_arrow(a: pa.Table, rechunk: bool = True) -> DataFrame:
-    ...
-
-
-@overload
-def from_arrow(  # type: ignore[misc]
-    a: pa.Array | pa.ChunkedArray, rechunk: bool = True
-) -> Series:
-    ...
-
-
 def from_arrow(
     a: pa.Table | pa.Array | pa.ChunkedArray, rechunk: bool = True
 ) -> DataFrame | Series:

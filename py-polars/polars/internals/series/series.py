@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import math
+import warnings
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, Union
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence, Union, overload
 from warnings import warn
 
 from polars import internals as pli
@@ -624,6 +625,17 @@ class Series:
 
         raise NotImplementedError("Unsupported idxs datatype.")
 
+    @overload
+    def __getitem__(self, item: int) -> Any:
+        ...
+
+    @overload
+    def __getitem__(
+        self,
+        item: Series | range | slice | np.ndarray[Any, Any] | list[int] | list[bool],
+    ) -> Series:
+        ...
+
     def __getitem__(
         self,
         item: int
@@ -634,6 +646,16 @@ class Series:
         | list[int]
         | list[bool],
     ) -> Any:
+        if (
+            is_bool_sequence(item)
+            or (isinstance(item, Series) and item.dtype == Boolean)
+            or (isinstance(item, np.ndarray) and item.dtype.kind == "b")
+        ):
+            warnings.warn(
+                "passing a boolean mask to Series.__getitem__ is being deprecated; "
+                "instead use Series.filter",
+                category=DeprecationWarning,
+            )
         if isinstance(item, int):
             if item < 0:
                 item = self.len() + item

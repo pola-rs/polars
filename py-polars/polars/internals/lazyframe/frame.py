@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import os
-import shutil
 import subprocess
-import tempfile
 import typing
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
@@ -609,7 +606,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         output_path
             Write the figure to disk.
         raw_output
-            Return dot syntax. This cannot be combined with `show`
+            Return dot syntax. This cannot be combined with `show` and/or `output_path`.
         figsize
             Passed to matplotlib if `show` == True.
         type_coercion
@@ -626,9 +623,6 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
 
         """
-        if raw_output:
-            show = False
-
         _ldf = self._ldf.optimization_toggle(
             type_coercion,
             predicate_pushdown,
@@ -638,48 +632,45 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             common_subplan_elimination,
         )
 
-        if show and _in_notebook():
-            try:
-                from IPython.display import SVG, display
-
-                dot = _ldf.to_dot(optimized)
-                svg = subprocess.check_output(
-                    ["dot", "-Nshape=box", "-Tsvg"], input=f"{dot}".encode()
-                )
-                return display(SVG(svg))
-            except Exception as exc:
-                raise ImportError(
-                    "Graphviz dot binary should be on your PATH and matplotlib should"
-                    " be installed to show graph."
-                ) from exc
-        try:
-            import matplotlib.image as mpimg
-            import matplotlib.pyplot as plt
-        except ImportError:
-            raise ImportError(
-                "Graphviz dot binary should be on your PATH and matplotlib should be"
-                " installed to show graph."
-            ) from None
         dot = _ldf.to_dot(optimized)
+
         if raw_output:
+            # we do not show a graph, nor save a graph to disk
             return dot
-        with tempfile.TemporaryDirectory() as tmpdir_name:
-            dot_path = os.path.join(tmpdir_name, "dot")
-            with open(dot_path, "w", encoding="utf8") as f:
-                f.write(dot)
 
-            subprocess.run(["dot", "-Nshape=box", "-Tpng", "-O", dot_path])
-            out_path = os.path.join(tmpdir_name, "dot.png")
+        output_type = "svg" if _in_notebook() else "png"
 
-            if output_path is not None:
-                shutil.copy(out_path, output_path)
+        try:
+            graph = subprocess.check_output(
+                ["dot", "-Nshape=box", "-T" + output_type], input=f"{dot}".encode()
+            )
+        except ImportError:
+            raise ImportError("Graphviz dot binary should be on your PATH") from None
 
-            if show:
-                plt.figure(figsize=figsize)
-                img = mpimg.imread(out_path)
-                plt.imshow(img)
-                plt.show()
-        return None
+        if output_path:
+            with Path(output_path).open(mode="wb") as file:
+                file.write(graph)
+
+        if not show:
+            return None
+
+        if _in_notebook():
+            from IPython.display import SVG, display
+
+            return display(SVG(graph))
+        else:
+            try:
+                import matplotlib.image as mpimg
+                import matplotlib.pyplot as plt
+            except ImportError:
+                raise ImportError(
+                    "matplotlib should be installed to show graph."
+                ) from None
+            plt.figure(figsize=figsize)
+            img = mpimg.imread(BytesIO(graph))
+            plt.imshow(img)
+            plt.show()
+            return None
 
     def inspect(self: LDF, fmt: str = "{}") -> LDF:
         """
@@ -755,6 +746,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
         simplify_expression: bool = True,
         no_optimization: bool = False,
         slice_pushdown: bool = True,
+        common_subplan_elimination: bool = True,
+        show_plot: bool = False,
+        truncate_nodes: int = 0,
+        figsize: tuple[int, int] = (18, 8),
     ) -> tuple[pli.DataFrame, pli.DataFrame]:
         """
         Profile a LazyFrame.
@@ -779,6 +774,15 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             Turn off (certain) optimizations.
         slice_pushdown
             Slice pushdown optimization.
+        common_subplan_elimination
+            Will try to cache branching subplans that occur on self-joins or unions.
+        show_plot
+            Show a gantt chart of the profiling result
+        truncate_nodes
+            Truncate the label lengths in the gantt chart to this number of
+            characters.
+        figsize
+            matplotlib figsize of the profiling plot
 
         Returns
         -------
@@ -795,9 +799,53 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
             projection_pushdown,
             simplify_expression,
             slice_pushdown,
+            common_subplan_elimination,
         )
         df, timings = ldf.profile()
-        return pli.wrap_df(df), pli.wrap_df(timings)
+        (df, timings) = pli.wrap_df(df), pli.wrap_df(timings)
+
+        if show_plot:
+            try:
+                import matplotlib.pyplot as plt
+
+                fig, ax = plt.subplots(1, figsize=figsize)
+
+                max_val = timings["end"][-1]
+                timings_ = timings.reverse()
+
+                if max_val > 1e9:
+                    unit = "s"
+                    timings_ = timings_.with_column(
+                        pli.col(["start", "end"]) / 1_000_000
+                    )
+                elif max_val > 1e6:
+                    unit = "ms"
+                    timings_ = timings_.with_column(pli.col(["start", "end"]) / 1000)
+                else:
+                    unit = "us"
+                if truncate_nodes > 0:
+                    timings_ = timings_.with_column(
+                        pli.col("node").str.slice(0, truncate_nodes) + "..."
+                    )
+
+                max_in_unit = timings_["end"][0]
+                ax.barh(
+                    timings_["node"],
+                    width=timings_["end"] - timings_["start"],
+                    left=timings_["start"],
+                )
+
+                plt.title("Profiling result")
+                ax.set_xlabel(f"node duration in [{unit}], total {max_in_unit}{unit}")
+                ax.set_ylabel("nodes")
+                plt.show()
+
+            except ImportError:
+                raise ImportError(
+                    "matplotlib should be installed to show profiling plot."
+                ) from None
+
+        return df, timings
 
     def collect(
         self,

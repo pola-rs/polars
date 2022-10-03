@@ -1,8 +1,31 @@
 use std::borrow::Cow;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
+use std::path::Path;
 
 use crate::prelude::*;
+
+fn write_scan(
+    f: &mut fmt::Formatter,
+    name: &str,
+    path: &Path,
+    indent: usize,
+    n_columns: i64,
+    total_columns: usize,
+    predicate: &Option<Expr>,
+) -> fmt::Result {
+    writeln!(f, "{:indent$}{} SCAN {}", "", name, path.to_string_lossy(),)?;
+    if n_columns > 0 {
+        writeln!(
+            f,
+            "{:indent$}PROJECT {}/{} COLUMNS",
+            "", n_columns, total_columns,
+        )?;
+    } else {
+        writeln!(f, "{:indent$}PROJECT */{} COLUMNS", "", total_columns,)?;
+    }
+    writeln!(f, "{:indent$}SELECTION: {:?}", "", predicate)
+}
 
 impl LogicalPlan {
     fn _format(&self, f: &mut fmt::Formatter, mut indent: usize) -> fmt::Result {
@@ -17,15 +40,19 @@ impl LogicalPlan {
                 options,
                 ..
             } => {
-                let total_columns = schema.len();
-                let mut n_columns = "*".to_string();
-                if let Some(columns) = &options.with_columns {
-                    n_columns = format!("{}", columns.len());
-                }
-                writeln!(
+                let n_columns = options
+                    .with_columns
+                    .as_ref()
+                    .map(|columns| columns.len() as i64)
+                    .unwrap_or(-1);
+                write_scan(
                     f,
-                    "{:indent$}{}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
-                    "", options.fmt_str, n_columns, total_columns, predicate
+                    options.fmt_str,
+                    Path::new(""),
+                    indent,
+                    n_columns,
+                    schema.len(),
+                    predicate,
                 )
             }
             Union { inputs, .. } => {
@@ -48,19 +75,19 @@ impl LogicalPlan {
                 options,
                 ..
             } => {
-                let total_columns = schema.len();
-                let mut n_columns = "*".to_string();
-                if let Some(columns) = &options.with_columns {
-                    n_columns = format!("{}", columns.len());
-                }
-                writeln!(
+                let n_columns = options
+                    .with_columns
+                    .as_ref()
+                    .map(|columns| columns.len() as i64)
+                    .unwrap_or(-1);
+                write_scan(
                     f,
-                    "{:indent$}PARQUET SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
-                    "",
-                    path.to_string_lossy(),
+                    "PARQUET",
+                    path,
+                    indent,
                     n_columns,
-                    total_columns,
-                    predicate
+                    schema.len(),
+                    predicate,
                 )
             }
             #[cfg(feature = "ipc")]
@@ -71,20 +98,12 @@ impl LogicalPlan {
                 predicate,
                 ..
             } => {
-                let total_columns = schema.len();
-                let mut n_columns = "*".to_string();
-                if let Some(columns) = &options.with_columns {
-                    n_columns = format!("{}", columns.len());
-                }
-                writeln!(
-                    f,
-                    "{:indent$}IPC SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
-                    "",
-                    path.to_string_lossy(),
-                    n_columns,
-                    total_columns,
-                    predicate
-                )
+                let n_columns = options
+                    .with_columns
+                    .as_ref()
+                    .map(|columns| columns.len() as i64)
+                    .unwrap_or(-1);
+                write_scan(f, "IPC", path, indent, n_columns, schema.len(), predicate)
             }
             Selection { predicate, input } => {
                 writeln!(f, "{:indent$}FILTER {:?} FROM", "", predicate)?;
@@ -102,20 +121,12 @@ impl LogicalPlan {
                 predicate,
                 ..
             } => {
-                let total_columns = schema.len();
-                let mut n_columns = "*".to_string();
-                if let Some(columns) = &options.with_columns {
-                    n_columns = format!("{}", columns.len());
-                }
-                writeln!(
-                    f,
-                    "{:indent$}CSV SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
-                    "",
-                    path.to_string_lossy(),
-                    n_columns,
-                    total_columns,
-                    predicate
-                )
+                let n_columns = options
+                    .with_columns
+                    .as_ref()
+                    .map(|columns| columns.len() as i64)
+                    .unwrap_or(-1);
+                write_scan(f, "CSV", path, indent, n_columns, schema.len(), predicate)
             }
             DataFrameScan {
                 schema,

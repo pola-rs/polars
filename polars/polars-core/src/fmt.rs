@@ -44,7 +44,22 @@ macro_rules! format_array {
         } else {
             15
         };
-        let limit = std::cmp::min(LIMIT, $a.len());
+        let limit: usize = {
+            let limit = std::env::var(FMT_MAX_ROWS)
+                .as_deref()
+                .unwrap_or("")
+                .parse()
+                .map_or(LIMIT, |n: i64| {
+                    if n < 0 {
+                        $a.len()
+                    } else if n < 2 {
+                        2
+                    } else {
+                        n as usize
+                    }
+                });
+            std::cmp::min(limit, $a.len())
+        };
 
         let write_fn = |v, f: &mut Formatter| {
             if truncate {
@@ -340,19 +355,15 @@ impl Display for DataFrame {
                 .as_deref()
                 .unwrap_or("")
                 .parse()
-                .unwrap_or(8);
+                .map_or(8, |n: i64| if n < 0 { self.width() } else { n as usize });
 
             let max_n_rows = {
                 let max_n_rows = std::env::var(FMT_MAX_ROWS)
                     .as_deref()
                     .unwrap_or("")
                     .parse()
-                    .unwrap_or(8);
-                if max_n_rows < 2 {
-                    2
-                } else {
-                    max_n_rows
-                }
+                    .map_or(8, |n: i64| if n < 0 { height } else { n as usize });
+                std::cmp::max(max_n_rows, 2)
             };
             let (n_first, n_last) = if self.width() > max_n_cols {
                 ((max_n_cols + 1) / 2, max_n_cols / 2)

@@ -1,5 +1,5 @@
-name: Bug Report - Rust
-description: An issue with Rust polars
+name: '🐞 Bug report - Rust'
+description: An issue with Rust Polars
 labels: [bug, rust]
 
 body:
@@ -13,22 +13,22 @@ body:
           required: true
         - label: >
             I have confirmed this bug exists on the
-            [latest version](https://crates.io/crates/polars) of polars.
+            [latest version](https://crates.io/crates/polars) of Polars.
           required: true
 
   - type: textarea
     id: problem
     attributes:
-      label: Issue Description
+      label: Issue description
       description: >
-        Please provide a high-level description of the issue
+        Please provide a high-level description of the issue.
     validations:
       required: true
 
   - type: textarea
     id: example
     attributes:
-      label: Reproducible Example
+      label: Reproducible example
       description: >
         Please follow [this guide](https://matthewrocklin.com/blog/work/2018/02/28/minimal-bug-reports) on how to
         provide a minimal, copy-pastable example. Include the (wrong) output if applicable.
@@ -38,7 +38,7 @@ body:
   - type: textarea
     id: expected-behavior
     attributes:
-      label: Expected Behavior
+      label: Expected behavior
       description: >
         Please describe or show a code example of the expected behavior.
     validations:
@@ -47,9 +47,9 @@ body:
   - type: textarea
     id: version
     attributes:
-      label: Installed Versions
+      label: Installed versions
       description: >
-        Please tell us which feature gates you used
+        Please tell us which feature gates you used.
       value: >
         <details>
 

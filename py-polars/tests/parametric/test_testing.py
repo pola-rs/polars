@@ -24,13 +24,16 @@ def test_strategy_classes(df: pl.DataFrame, lf: pl.LazyFrame, srs: pl.Series) ->
 
 
 @given(
-    df1=dataframes(cols=5, size=5),
-    df2=dataframes(min_cols=2, max_cols=5, min_size=3, max_size=8),
-    s1=series(size=5),
-    s2=series(min_size=3, max_size=8, name="col"),
+    s1=series(dtype=pl.Boolean, size=5),
+    s2=series(dtype=pl.Boolean, min_size=3, max_size=8, name="col"),
+    df1=dataframes(allowed_dtypes=[pl.Boolean], cols=5, size=5),
+    df2=dataframes(
+        allowed_dtypes=[pl.Boolean], min_cols=2, max_cols=5, min_size=3, max_size=8
+    ),
 )
+@settings(max_examples=50)
 def test_strategy_shape(
-    df1: pl.DataFrame, df2: pl.DataFrame, s1: pl.Series, s2: pl.Series
+    s1: pl.Series, s2: pl.Series, df1: pl.DataFrame, df2: pl.DataFrame
 ) -> None:
     assert df1.shape == (5, 5)
     assert df1.columns == ["col0", "col1", "col2", "col3", "col4"]
@@ -82,13 +85,14 @@ def test_strategy_frame_columns(lf: pl.LazyFrame) -> None:
 
 
 @given(
-    df=dataframes(allowed_dtypes=TEMPORAL_DTYPES, max_size=1),
-    lf=dataframes(excluded_dtypes=TEMPORAL_DTYPES, max_size=1, lazy=True),
+    df=dataframes(allowed_dtypes=TEMPORAL_DTYPES, max_size=1, max_cols=5),
+    lf=dataframes(excluded_dtypes=TEMPORAL_DTYPES, max_size=1, max_cols=5, lazy=True),
     s1=series(max_size=1),
     s2=series(dtype=pl.Boolean, max_size=1),
     s3=series(allowed_dtypes=TEMPORAL_DTYPES, max_size=1),
     s4=series(excluded_dtypes=TEMPORAL_DTYPES, max_size=1),
 )
+@settings(max_examples=50)
 def test_strategy_dtypes(
     df: pl.DataFrame,
     lf: pl.LazyFrame,
@@ -166,7 +170,9 @@ def test_chunking(
 
 
 @given(
-    df=dataframes(allowed_dtypes=[pl.Float32, pl.Float64], allow_infinities=False),
+    df=dataframes(
+        allowed_dtypes=[pl.Float32, pl.Float64], max_cols=4, allow_infinities=False
+    ),
     s=series(dtype=pl.Float64, allow_infinities=False),
 )
 def test_infinities(

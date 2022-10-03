@@ -1482,7 +1482,12 @@ class DataFrame:
 
         """
         max_cols = int(os.environ.get("POLARS_FMT_MAX_COLS", default=75))
+        if max_cols < 0:
+            max_cols = self.shape[1]
         max_rows = int(os.environ.get("POLARS_FMT_MAX_ROWS", default=25))
+        if max_rows < 0:
+            max_rows = self.shape[0]
+
         return "\n".join(NotebookFormatter(self, max_cols, max_rows).render())
 
     def to_arrow(self) -> pa.Table:
@@ -2066,7 +2071,7 @@ class DataFrame:
         self,
         file: str | Path | BytesIO,
         *,
-        compression: ParquetCompression = "lz4",
+        compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
         statistics: bool = False,
         row_group_size: int | None = None,
@@ -2081,9 +2086,10 @@ class DataFrame:
         file
             File path to which the file should be written.
         compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
-            Compression method. The default compression "lz4" (actually lz4raw) has very
-            good performance, but may not yet been supported by older readers. If you
-            want more compatibility guarantees, consider using "snappy".
+            Choose "zstd" for good compression performance.
+            Choose "lz4" for fast compression/decompression.
+            Choose "snappy" for more backwards compatibility guarantees
+            when you deal with older parquet readers.
             Method "uncompressed" is not supported by pyarrow.
         compression_level
             The level of compression to use. Higher compression means smaller files on

@@ -3,7 +3,7 @@ name: Create Python release windows macos
 on:
   push:
     tags:
-      - 'py-polars-v*'
+      - py-*
 
 defaults:
   run:

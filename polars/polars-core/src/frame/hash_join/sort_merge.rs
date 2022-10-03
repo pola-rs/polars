@@ -7,23 +7,6 @@ use super::*;
 #[cfg(feature = "performant")]
 use crate::utils::_split_offsets;
 
-pub(super) fn use_sort_merge(s_left: &Series, s_right: &Series) -> bool {
-    // only use for numeric data for now
-    use IsSorted::*;
-    let out = match (s_left.is_sorted(), s_right.is_sorted()) {
-        (Ascending, Ascending) => {
-            s_left.null_count() == 0
-                && s_right.null_count() == 0
-                && s_left.dtype().to_physical().is_numeric()
-        }
-        _ => false,
-    };
-    if out && std::env::var("POLARS_VERBOSE").is_ok() {
-        eprintln!("keys are sorted: use sorted merge join")
-    }
-    out
-}
-
 #[cfg(feature = "performant")]
 fn par_sorted_merge_left_impl<T>(
     s_left: &ChunkedArray<T>,
@@ -156,5 +139,152 @@ pub(super) fn par_sorted_merge_inner(
             par_sorted_merge_inner_impl(s_left.i64().unwrap(), s_right.i64().unwrap())
         }
         _ => unreachable!(),
+    }
+}
+
+#[cfg(feature = "performant")]
+fn to_left_join_ids(left_idx: Vec<IdxSize>, right_idx: Vec<Option<IdxSize>>) -> LeftJoinIds {
+    #[cfg(feature = "chunked_ids")]
+    {
+        (Either::Left(left_idx), Either::Left(right_idx))
+    }
+
+    #[cfg(not(feature = "chunked_ids"))]
+    {
+        (left_idx, right_idx)
+    }
+}
+
+#[cfg(feature = "performant")]
+fn create_reverse_map_from_argsort(mut argsort: IdxCa) -> Vec<IdxSize> {
+    let arr = argsort.chunks.pop().unwrap();
+    primitive_to_vec::<IdxSize>(arr).unwrap()
+}
+
+#[cfg(not(feature = "performant"))]
+pub(super) fn sort_or_hash_inner(
+    s_left: &Series,
+    s_right: &Series,
+    _verbose: bool,
+) -> ((Vec<IdxSize>, Vec<IdxSize>), bool) {
+    s_left.hash_join_inner(s_right)
+}
+
+#[cfg(feature = "performant")]
+pub(super) fn sort_or_hash_inner(
+    s_left: &Series,
+    s_right: &Series,
+    verbose: bool,
+) -> ((Vec<IdxSize>, Vec<IdxSize>), bool) {
+    let size_factor_rhs = s_right.len() as f32 / s_left.len() as f32;
+    let size_factor_lhs = s_left.len() as f32 / s_right.len() as f32;
+    let size_factor_acceptable = std::env::var("POLARS_JOIN_SORT_FACTOR")
+        .map(|s| s.parse::<f32>().unwrap())
+        .unwrap_or(1.0);
+    let is_numeric = s_left.is_numeric_physical();
+    match (s_left.is_sorted(), s_right.is_sorted()) {
+        (IsSorted::Ascending, IsSorted::Ascending) => {
+            if verbose {
+                eprintln!("inner join: keys are sorted: use sorted merge join");
+            }
+            (par_sorted_merge_inner(s_left, s_right), true)
+        }
+        (IsSorted::Ascending, _) if is_numeric && size_factor_rhs < size_factor_acceptable => {
+            if verbose {
+                eprintln!("right key will be reverse sorted in inner join operation.")
+            }
+
+            let sort_idx = s_right.argsort(SortOptions {
+                descending: false,
+                nulls_last: false,
+            });
+            let s_right = unsafe { s_right.take_unchecked(&sort_idx).unwrap() };
+            let ids = par_sorted_merge_inner(s_left, &s_right);
+            let reverse_idx_map = create_reverse_map_from_argsort(sort_idx);
+
+            let (left, mut right) = ids;
+
+            POOL.install(|| {
+                right.par_iter_mut().for_each(|idx| {
+                    *idx = unsafe { *reverse_idx_map.get_unchecked(*idx as usize) };
+                });
+            });
+
+            ((left, right), true)
+        }
+        (_, IsSorted::Ascending) if is_numeric && size_factor_lhs < size_factor_acceptable => {
+            if verbose {
+                eprintln!("left key will be reverse sorted in inner join operation.")
+            }
+
+            let sort_idx = s_left.argsort(SortOptions {
+                descending: false,
+                nulls_last: false,
+            });
+            let s_left = unsafe { s_left.take_unchecked(&sort_idx).unwrap() };
+            let ids = par_sorted_merge_inner(&s_left, s_right);
+            let reverse_idx_map = create_reverse_map_from_argsort(sort_idx);
+
+            let (mut left, right) = ids;
+
+            POOL.install(|| {
+                left.par_iter_mut().for_each(|idx| {
+                    *idx = unsafe { *reverse_idx_map.get_unchecked(*idx as usize) };
+                });
+            });
+
+            ((left, right), true)
+        }
+        _ => s_left.hash_join_inner(s_right),
+    }
+}
+
+#[cfg(not(feature = "performant"))]
+pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, _verbose: bool) -> LeftJoinIds {
+    s_left.hash_join_left(s_right)
+}
+
+#[cfg(feature = "performant")]
+pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, verbose: bool) -> LeftJoinIds {
+    let size_factor_rhs = s_right.len() as f32 / s_left.len() as f32;
+    let size_factor_acceptable = std::env::var("POLARS_JOIN_SORT_FACTOR")
+        .map(|s| s.parse::<f32>().unwrap())
+        .unwrap_or(1.0);
+    let is_numeric = s_left.is_numeric_physical();
+
+    match (s_left.is_sorted(), s_right.is_sorted()) {
+        (IsSorted::Ascending, IsSorted::Ascending) => {
+            if verbose {
+                eprintln!("left join: keys are sorted: use sorted merge join");
+            }
+            let (left_idx, right_idx) = par_sorted_merge_left(s_left, s_right);
+            to_left_join_ids(left_idx, right_idx)
+        }
+        (IsSorted::Ascending, _) if is_numeric && size_factor_rhs < size_factor_acceptable => {
+            if verbose {
+                eprintln!("right key will be reverse sorted in left join operation.")
+            }
+
+            let sort_idx = s_right.argsort(SortOptions {
+                descending: false,
+                nulls_last: false,
+            });
+            let s_right = unsafe { s_right.take_unchecked(&sort_idx).unwrap() };
+
+            let ids = par_sorted_merge_left(s_left, &s_right);
+            let reverse_idx_map = create_reverse_map_from_argsort(sort_idx);
+            let (left, mut right) = ids;
+
+            POOL.install(|| {
+                right.par_iter_mut().for_each(|opt_idx| {
+                    *opt_idx =
+                        opt_idx.map(|idx| unsafe { *reverse_idx_map.get_unchecked(idx as usize) });
+                });
+            });
+
+            to_left_join_ids(left, right)
+        }
+        // don't reverse sort a left join key yet. Have to figure out how to set sorted flag
+        _ => s_left.hash_join_left(s_right),
     }
 }

@@ -143,12 +143,13 @@ class Config:
     @classmethod
     def set_tbl_rows(cls, n: int) -> type[Config]:
         """
-        Set the number of rows used to print tables.
+        Set the number of rows used to print tables (Dataframe and Series).
 
         Parameters
         ----------
         n
-            number of rows to print
+            number of rows to print.
+            If n<0 print all rows (DataFrame) and all elements (Series).
 
         """
         os.environ["POLARS_FMT_MAX_ROWS"] = str(n)
@@ -162,7 +163,7 @@ class Config:
         Parameters
         ----------
         n
-            number of columns to print
+            number of columns to print. If n<0 print all the columns.
 
         Examples
         --------
