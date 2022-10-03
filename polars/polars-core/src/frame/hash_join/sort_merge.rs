@@ -180,7 +180,8 @@ pub(super) fn sort_or_hash_inner(
     let size_factor_lhs = s_left.len() as f32 / s_right.len() as f32;
     let size_factor_acceptable = std::env::var("POLARS_JOIN_SORT_FACTOR")
         .map(|s| s.parse::<f32>().unwrap())
-        .unwrap_or(3.0);
+        .unwrap_or(1.0);
+    let is_numeric = s_left.is_numeric_physical();
     match (s_left.is_sorted(), s_right.is_sorted()) {
         (IsSorted::Ascending, IsSorted::Ascending) => {
             if verbose {
@@ -188,7 +189,7 @@ pub(super) fn sort_or_hash_inner(
             }
             (par_sorted_merge_inner(s_left, s_right), true)
         }
-        (IsSorted::Ascending, _) if size_factor_rhs < size_factor_acceptable => {
+        (IsSorted::Ascending, _) if is_numeric && size_factor_rhs < size_factor_acceptable => {
             if verbose {
                 eprintln!("right key will be reverse sorted in inner join operation.")
             }
@@ -211,7 +212,7 @@ pub(super) fn sort_or_hash_inner(
 
             ((left, right), true)
         }
-        (_, IsSorted::Ascending) if size_factor_lhs < size_factor_acceptable => {
+        (_, IsSorted::Ascending) if is_numeric && size_factor_lhs < size_factor_acceptable => {
             if verbose {
                 eprintln!("left key will be reverse sorted in inner join operation.")
             }
@@ -248,7 +249,8 @@ pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, verbose: bool
     let size_factor_rhs = s_right.len() as f32 / s_left.len() as f32;
     let size_factor_acceptable = std::env::var("POLARS_JOIN_SORT_FACTOR")
         .map(|s| s.parse::<f32>().unwrap())
-        .unwrap_or(3.0);
+        .unwrap_or(1.0);
+    let is_numeric = s_left.is_numeric_physical();
 
     match (s_left.is_sorted(), s_right.is_sorted()) {
         (IsSorted::Ascending, IsSorted::Ascending) => {
@@ -258,7 +260,7 @@ pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, verbose: bool
             let (left_idx, right_idx) = par_sorted_merge_left(s_left, s_right);
             to_left_join_ids(left_idx, right_idx)
         }
-        (IsSorted::Ascending, _) if size_factor_rhs < size_factor_acceptable => {
+        (IsSorted::Ascending, _) if is_numeric && size_factor_rhs < size_factor_acceptable => {
             if verbose {
                 eprintln!("right key will be reverse sorted in left join operation.")
             }
