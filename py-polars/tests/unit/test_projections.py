@@ -39,3 +39,26 @@ def test_double_projection_pushdown() -> None:
             .select(["c0", "c1"])
         ).describe_optimized_plan()
     )
+
+
+def test_unnest_projection_pushdown() -> None:
+    lf = pl.DataFrame({"x|y|z": [1, 2], "a|b|c": [2, 3]}).lazy()
+
+    mlf = (
+        lf.melt()
+        .with_column(pl.col("variable").str.split_exact("|", 2))
+        .unnest("variable")
+    )
+    mlf = mlf.select(
+        [
+            pl.col("field_1").cast(pl.Categorical).alias("row"),
+            pl.col("field_2").cast(pl.Categorical).alias("col"),
+            pl.col("value"),
+        ]
+    )
+    out = mlf.collect().to_dict(False)
+    assert out == {
+        "row": ["y", "y", "b", "b"],
+        "col": ["z", "z", "c", "c"],
+        "value": [1, 2, 2, 3],
+    }
