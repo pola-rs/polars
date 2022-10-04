@@ -185,7 +185,7 @@ impl<'a> CoreJsonReader<'a> {
             self.sample_size,
             NEWLINE,
             self.schema.len(),
-            b',',
+            SEP,
             None,
         ) {
             let line_length_upper_bound = mean + 1.1 * std;
