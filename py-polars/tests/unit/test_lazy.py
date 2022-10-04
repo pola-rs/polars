@@ -1174,7 +1174,7 @@ def test_is_between(fruits_cars: pl.DataFrame) -> None:
         pl.Series("is_between", [False, False, True, False, False])
     )
 
-    result = fruits_cars.select(pl.col("A").is_between(2, 4, [False, False]))[
+    result = fruits_cars.select(pl.col("A").is_between(2, 4, (False, False)))[
         "is_between"
     ]
     assert result.series_equal(
@@ -1186,21 +1186,21 @@ def test_is_between(fruits_cars: pl.DataFrame) -> None:
         pl.Series("is_between", [False, True, True, True, False])
     )
 
-    result = fruits_cars.select(pl.col("A").is_between(2, 4, [True, True]))[
+    result = fruits_cars.select(pl.col("A").is_between(2, 4, (True, True)))[
         "is_between"
     ]
     assert result.series_equal(
         pl.Series("is_between", [False, True, True, True, False])
     )
 
-    result = fruits_cars.select(pl.col("A").is_between(2, 4, [False, True]))[
+    result = fruits_cars.select(pl.col("A").is_between(2, 4, (False, True)))[
         "is_between"
     ]
     assert result.series_equal(
         pl.Series("is_between", [False, False, True, True, False])
     )
 
-    result = fruits_cars.select(pl.col("A").is_between(2, 4, [True, False]))[
+    result = fruits_cars.select(pl.col("A").is_between(2, 4, (True, False)))[
         "is_between"
     ]
     assert result.series_equal(
