@@ -405,12 +405,51 @@ fn coerce_time_units<'a>(
     }
 }
 
+#[cfg(feature = "dtype-struct")]
+fn struct_arithmetic<F: FnMut(&Series, &Series) -> Series>(
+    s: &Series,
+    rhs: &Series,
+    mut func: F,
+) -> Series {
+    let s = s.struct_().unwrap();
+    let rhs = rhs.struct_().unwrap();
+    let s_fields = s.fields();
+    let rhs_fields = rhs.fields();
+    match (s_fields.len(), rhs_fields.len()) {
+        (_, 1) => {
+            let rhs = &rhs.fields()[0];
+            s.apply_fields(|s| func(s, rhs)).into_series()
+        }
+        (1, _) => {
+            let s = &s.fields()[0];
+            rhs.apply_fields(|rhs| func(s, rhs)).into_series()
+        }
+        _ => {
+            let mut rhs_iter = rhs.fields().iter();
+
+            s.apply_fields(|s| match rhs_iter.next() {
+                Some(rhs) => func(s, rhs),
+                None => s.clone(),
+            })
+            .into_series()
+        }
+    }
+}
+
 impl ops::Sub for &Series {
     type Output = Series;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-        lhs.subtract(rhs.as_ref()).expect("data types don't match")
+        match (self.dtype(), rhs.dtype()) {
+            #[cfg(feature = "dtype-struct")]
+            (DataType::Struct(_), DataType::Struct(_)) => {
+                struct_arithmetic(self, rhs, |a, b| a.sub(b))
+            }
+            _ => {
+                let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+                lhs.subtract(rhs.as_ref()).expect("data types don't match")
+            }
+        }
     }
 }
 
@@ -418,8 +457,16 @@ impl ops::Add for &Series {
     type Output = Series;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-        lhs.add_to(rhs.as_ref()).expect("data types don't match")
+        match (self.dtype(), rhs.dtype()) {
+            #[cfg(feature = "dtype-struct")]
+            (DataType::Struct(_), DataType::Struct(_)) => {
+                struct_arithmetic(self, rhs, |a, b| a.add(b))
+            }
+            _ => {
+                let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+                lhs.add_to(rhs.as_ref()).expect("data types don't match")
+            }
+        }
     }
 }
 
@@ -432,8 +479,16 @@ impl ops::Mul for &Series {
     /// let out = &s * &s;
     /// ```
     fn mul(self, rhs: Self) -> Self::Output {
-        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-        lhs.multiply(rhs.as_ref()).expect("data types don't match")
+        match (self.dtype(), rhs.dtype()) {
+            #[cfg(feature = "dtype-struct")]
+            (DataType::Struct(_), DataType::Struct(_)) => {
+                struct_arithmetic(self, rhs, |a, b| a.mul(b))
+            }
+            _ => {
+                let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+                lhs.multiply(rhs.as_ref()).expect("data types don't match")
+            }
+        }
     }
 }
 
@@ -446,8 +501,16 @@ impl ops::Div for &Series {
     /// let out = &s / &s;
     /// ```
     fn div(self, rhs: Self) -> Self::Output {
-        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-        lhs.divide(rhs.as_ref()).expect("data types don't match")
+        match (self.dtype(), rhs.dtype()) {
+            #[cfg(feature = "dtype-struct")]
+            (DataType::Struct(_), DataType::Struct(_)) => {
+                struct_arithmetic(self, rhs, |a, b| a.div(b))
+            }
+            _ => {
+                let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+                lhs.divide(rhs.as_ref()).expect("data types don't match")
+            }
+        }
     }
 }
 
@@ -460,8 +523,16 @@ impl ops::Rem for &Series {
     /// let out = &s / &s;
     /// ```
     fn rem(self, rhs: Self) -> Self::Output {
-        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-        lhs.remainder(rhs.as_ref()).expect("data types don't match")
+        match (self.dtype(), rhs.dtype()) {
+            #[cfg(feature = "dtype-struct")]
+            (DataType::Struct(_), DataType::Struct(_)) => {
+                struct_arithmetic(self, rhs, |a, b| a.rem(b))
+            }
+            _ => {
+                let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+                lhs.remainder(rhs.as_ref()).expect("data types don't match")
+            }
+        }
     }
 }
 

@@ -47,7 +47,7 @@ where
 }
 
 pub fn search_sorted(s: &Series, search_value: &AnyValue) -> PolarsResult<IdxSize> {
-    if s.is_logical() {
+    if s.dtype().is_logical() {
         let search_dtype: DataType = search_value.into();
         if &search_dtype != s.dtype() {
             return Err(PolarsError::ComputeError(

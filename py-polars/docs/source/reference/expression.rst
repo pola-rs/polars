@@ -23,6 +23,8 @@ These functions can be used as expression and sometimes also in eager contexts.
    count
    coalesce
    cov
+   cumfold
+   cumsum
    date
    datetime
    duration

@@ -202,7 +202,7 @@ impl Series {
     }
 
     fn restore_logical(&self, out: Series) -> Series {
-        if self.is_logical() {
+        if self.dtype().is_logical() {
             out.cast(self.dtype()).unwrap()
         } else {
             out

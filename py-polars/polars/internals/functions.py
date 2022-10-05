@@ -387,6 +387,7 @@ def align_frames(
     *frames: pli.DataFrame,
     on: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | Sequence[str | pli.Expr],
     select: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+    reverse: bool | Sequence[bool] = False,
 ) -> list[pli.DataFrame]:
     ...
 
@@ -396,6 +397,7 @@ def align_frames(
     *frames: pli.LazyFrame,
     on: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | Sequence[str | pli.Expr],
     select: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+    reverse: bool | Sequence[bool] = False,
 ) -> list[pli.LazyFrame]:
     ...
 
@@ -404,9 +406,10 @@ def align_frames(
     *frames: pli.DataFrame | pli.LazyFrame,
     on: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | Sequence[str | pli.Expr],
     select: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+    reverse: bool | Sequence[bool] = False,
 ) -> list[pli.DataFrame] | list[pli.LazyFrame]:
-    """
-    Align a sequence of frames using the values from one or more columns as a key.
+    r"""
+    Align a sequence of frames using the uique values from one or more columns as a key.
 
     Frames that do not contain the given key values have rows injected (with nulls
     filling the non-key columns), and each resulting frame is sorted by the key.
@@ -423,10 +426,13 @@ def align_frames(
     frames
         sequence of DataFrames or LazyFrames.
     on
-        one or more columns whose values will be used to align the frames.
+        one or more columns whose unique values will be used to align the frames.
     select
         optional post-alignment column select to constrain and/or order
         the columns returned from the newly aligned frames.
+    reverse
+        sort the alignment column values in descending order; can be a single
+        boolean or a list of booleans associated with each column in ``on``.
 
     Examples
     --------
@@ -459,14 +465,31 @@ def align_frames(
     # │ ---        ┆ --- ┆ ---  │      │ ---        ┆ --- ┆ ---  │      │ ---        ┆ --- ┆ --- │
     # │ date       ┆ f64 ┆ f64  │      │ date       ┆ f64 ┆ f64  │      │ date       ┆ f64 ┆ f64 │
     # ╞════════════╪═════╪══════╡      ╞════════════╪═════╪══════╡      ╞════════════╪═════╪═════╡
-    # │ 2022-09-01 ┆ 3.5 ┆ 10.0 │      │ 2022-09-02 ┆ 8.0 ┆ 1.5  │      │ 2022-09-03 ┆ 2.0 ┆ 2.5 │
-    # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-    # │ 2022-09-02 ┆ 4.0 ┆ 2.5  │      │ 2022-09-03 ┆ 1.0 ┆ 12.0 │      │ 2022-09-02 ┆ 5.0 ┆ 2.0 │
-    # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      └────────────┴─────┴─────┘
-    # │ 2022-09-03 ┆ 1.0 ┆ 1.5  │      │ 2022-09-01 ┆ 3.5 ┆ 5.0  │
+    # │ 2022-09-01 ┆ 3.5 ┆ 10.0 │\  ,->│ 2022-09-02 ┆ 8.0 ┆ 1.5  │\  ,->│ 2022-09-03 ┆ 2.0 ┆ 2.5 │
+    # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤ \/   ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤ \/   ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+    # │ 2022-09-02 ┆ 4.0 ┆ 2.5  │_/\,->│ 2022-09-03 ┆ 1.0 ┆ 12.0 │_/`-->│ 2022-09-02 ┆ 5.0 ┆ 2.0 │
+    # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤  /\  ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      └────────────┴─────┴─────┘
+    # │ 2022-09-03 ┆ 1.0 ┆ 1.5  │_/  `>│ 2022-09-01 ┆ 3.5 ┆ 5.0  │-//-
     # └────────────┴─────┴──────┘      └────────────┴─────┴──────┘
 
-    >>> # align frames on the values in "dt", but keep only cols "x" and "y":
+    >>> # align frames by the "dt" column:
+    >>> af1, af2, af3 = pl.align_frames(df1, df2, df3, on="dt")
+
+    # df1                              df2                              df3
+    # shape: (3, 3)                    shape: (3, 3)                    shape: (3, 3)
+    # ┌────────────┬─────┬──────┐      ┌────────────┬─────┬──────┐      ┌────────────┬──────┬──────┐
+    # │ dt         ┆ x   ┆ y    │      │ dt         ┆ x   ┆ y    │      │ dt         ┆ x    ┆ y    │
+    # │ ---        ┆ --- ┆ ---  │      │ ---        ┆ --- ┆ ---  │      │ ---        ┆ ---  ┆ ---  │
+    # │ date       ┆ f64 ┆ f64  │      │ date       ┆ f64 ┆ f64  │      │ date       ┆ f64  ┆ f64  │
+    # ╞════════════╪═════╪══════╡      ╞════════════╪═════╪══════╡      ╞════════════╪══════╪══════╡
+    # │ 2022-09-01 ┆ 3.5 ┆ 10.0 │----->│ 2022-09-01 ┆ 3.5 ┆ 5.0  │----->│ 2022-09-01 ┆ null ┆ null │
+    # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    # │ 2022-09-02 ┆ 4.0 ┆ 2.5  │----->│ 2022-09-02 ┆ 8.0 ┆ 1.5  │----->│ 2022-09-02 ┆ 5.0  ┆ 2.0  │
+    # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    # │ 2022-09-03 ┆ 1.0 ┆ 1.5  │----->│ 2022-09-03 ┆ 1.0 ┆ 12.0 │----->│ 2022-09-03 ┆ 2.0  ┆ 2.5  │
+    # └────────────┴─────┴──────┘      └────────────┴─────┴──────┘      └────────────┴──────┴──────┘
+
+    >>> # align frames by "dt", but keep only cols "x" and "y":
     >>> af1, af2, af3 = pl.align_frames(df1, df2, df3, on="dt", select=["x", "y"])
 
     # af1                 af2                 af3
@@ -483,7 +506,7 @@ def align_frames(
     # │ 1.0 ┆ 1.5  │      │ 1.0 ┆ 12.0 │      │ 2.0  ┆ 2.5  │
     # └─────┴──────┘      └─────┴──────┘      └──────┴──────┘
 
-    >>> # now frames are aligned, can easily calculate the row-wise dot product:
+    >>> # now data is aligned, can easily calculate the row-wise dot product:
     >>> (af1 * af2 * af3).fill_null(0).select(pl.sum(pl.col("*")).alias("dot"))
     shape: (3, 1)
     ┌───────┐
@@ -498,39 +521,6 @@ def align_frames(
     │ 47.0  │
     └───────┘
 
-    >>> # as above, but keeping the alignment column ("dt") in the final frame:
-    >>> af1, af2, af3 = pl.align_frames(df1, df2, df3, on="dt")
-
-    # af1                              af2                              af3
-    # shape: (3, 3)                    shape: (3, 3)                    shape: (3, 3)
-    # ┌────────────┬─────┬──────┐      ┌────────────┬─────┬──────┐      ┌────────────┬──────┬──────┐
-    # │ dt         ┆ x   ┆ y    │      │ dt         ┆ x   ┆ y    │      │ dt         ┆ x    ┆ y    │
-    # │ ---        ┆ --- ┆ ---  │      │ ---        ┆ --- ┆ ---  │      │ ---        ┆ ---  ┆ ---  │
-    # │ date       ┆ f64 ┆ f64  │      │ date       ┆ f64 ┆ f64  │      │ date       ┆ f64  ┆ f64  │
-    # ╞════════════╪═════╪══════╡      ╞════════════╪═════╪══════╡      ╞════════════╪══════╪══════╡
-    # │ 2022-09-01 ┆ 3.5 ┆ 10.0 │      │ 2022-09-01 ┆ 3.5 ┆ 5.0  │      │ 2022-09-01 ┆ null ┆ null │
-    # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-    # │ 2022-09-02 ┆ 4.0 ┆ 2.5  │      │ 2022-09-02 ┆ 8.0 ┆ 1.5  │      │ 2022-09-02 ┆ 5.0  ┆ 2.0  │
-    # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-    # │ 2022-09-03 ┆ 1.0 ┆ 1.5  │      │ 2022-09-03 ┆ 1.0 ┆ 12.0 │      │ 2022-09-03 ┆ 2.0  ┆ 2.5  │
-    # └────────────┴─────┴──────┘      └────────────┴─────┴──────┘      └────────────┴──────┴──────┘
-
-    >>> (af1[["x", "y"]] * af2[["x", "y"]] * af3[["x", "y"]]).fill_null(0).select(
-    ...     pl.sum(pl.col("*")).alias("dot")
-    ... ).insert_at_idx(0, af1["dt"])
-    shape: (3, 2)
-    ┌────────────┬───────┐
-    │ dt         ┆ dot   │
-    │ ---        ┆ ---   │
-    │ date       ┆ f64   │
-    ╞════════════╪═══════╡
-    │ 2022-09-01 ┆ 0.0   │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-    │ 2022-09-02 ┆ 167.5 │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-    │ 2022-09-03 ┆ 47.0  │
-    └────────────┴───────┘
-
     """  # noqa: E501
     if not frames:
         return []  # type: ignore[return-value]
@@ -539,21 +529,23 @@ def align_frames(
             "Input frames must be of a consistent type (all LazyFrame or all DataFrame)"
         )
 
+    # establish the superset of all "on" column values, sort, and cache
     eager = isinstance(frames[0], pli.DataFrame)
-    alignment_frame = concat([df.lazy().select(on) for df in frames]).unique(
-        maintain_order=False
+    alignment_frame = (
+        concat([df.lazy().select(on) for df in frames])
+        .unique(maintain_order=False)
+        .sort(by=on, reverse=reverse)
     )
-    if eager:  # collect once, outside the alignment joins
-        alignment_frame = alignment_frame.collect().lazy()
-
+    alignment_frame = (
+        alignment_frame.collect().lazy() if eager else alignment_frame.cache()
+    )
+    # finally, align all frames
     aligned_frames = [
         alignment_frame.join(
             other=df.lazy(),
             on=alignment_frame.columns,
             how="left",
-        )
-        .select(df.columns)
-        .sort(by=on)
+        ).select(df.columns)
         for df in frames
     ]
     if select is not None:

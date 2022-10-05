@@ -144,7 +144,7 @@ fn asof_join_by_numeric<T, S>(
     left_asof: &ChunkedArray<T>,
     right_asof: &ChunkedArray<T>,
     tolerance: Option<AnyValue<'static>>,
-) -> Vec<Option<IdxSize>>
+) -> PolarsResult<Vec<Option<IdxSize>>>
 where
     T: PolarsNumericType,
     S: PolarsNumericType,
@@ -162,10 +162,13 @@ where
         None => (join_asof_backward_with_indirection, T::Native::zero()),
     };
     let left_asof = left_asof.rechunk();
-    let left_asof = left_asof.cont_slice().unwrap();
+    let err = |_: PolarsError| {
+        PolarsError::ComputeError("Keys are not allowed to have null values in asof join.".into())
+    };
+    let left_asof = left_asof.cont_slice().map_err(err)?;
 
     let right_asof = right_asof.rechunk();
-    let right_asof = right_asof.cont_slice().unwrap();
+    let right_asof = right_asof.cont_slice().map_err(err)?;
 
     let n_threads = POOL.current_num_threads();
     let splitted_left = split_ca(by_left, n_threads).unwrap();
@@ -197,7 +200,7 @@ where
     debug_assert!(n_tables.is_power_of_two());
 
     // next we probe the right relation
-    POOL.install(|| {
+    Ok(POOL.install(|| {
         vals_left
             .into_par_iter()
             .zip(offsets)
@@ -245,7 +248,7 @@ where
             })
             .flatten()
             .collect()
-    })
+    }))
 }
 
 fn asof_join_by_utf8<T>(
@@ -515,13 +518,13 @@ impl DataFrame {
                             let right_by = right_by_s.bit_repr_large();
                             asof_join_by_numeric(
                                 &left_by, &right_by, left_asof, right_asof, tolerance,
-                            )
+                            )?
                         } else {
                             let left_by = left_by_s.bit_repr_small();
                             let right_by = right_by_s.bit_repr_small();
                             asof_join_by_numeric(
                                 &left_by, &right_by, left_asof, right_asof, tolerance,
-                            )
+                            )?
                         }
                     }
                 }
@@ -561,13 +564,13 @@ impl DataFrame {
                             let right_by = right_by_s.bit_repr_large();
                             asof_join_by_numeric(
                                 &left_by, &right_by, left_asof, right_asof, tolerance,
-                            )
+                            )?
                         } else {
                             let left_by = left_by_s.bit_repr_small();
                             let right_by = right_by_s.bit_repr_small();
                             asof_join_by_numeric(
                                 &left_by, &right_by, left_asof, right_asof, tolerance,
-                            )
+                            )?
                         }
                     }
                 }

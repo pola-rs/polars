@@ -282,6 +282,7 @@ impl ProjectionPushDown {
 
         match logical_plan {
             Projection { expr, input, .. } => {
+                let mut local_projection = Vec::with_capacity(expr.len());
                 // A projection can consist of a chain of expressions followed by an alias.
                 // We want to do the chain locally because it can have complicated side effects.
                 // The only thing we push down is the root name of the projection.
@@ -327,6 +328,10 @@ impl ProjectionPushDown {
                             }
                         }
                     }
+                    // do local as we still need the effect of the projection
+                    // e.g. a projection is more than selecting a column, it can
+                    // also be a function/ complicated expression
+                    local_projection.push(*e);
 
                     add_expr_to_accumulated(
                         *e,
@@ -344,27 +349,6 @@ impl ProjectionPushDown {
                     lp_arena,
                     expr_arena,
                 )?;
-                let lp = lp_arena.get(input);
-
-                let mut local_projection = Vec::with_capacity(expr.len());
-
-                // the projections should all be done at the latest projection node to keep the same schema order
-                if projections_seen == 0
-                    || expr.iter().any(|node| has_aexpr_alias(*node, expr_arena))
-                {
-                    let schema = lp.schema(lp_arena);
-                    for node in expr {
-                        // Due to the pushdown, a lot of projections cannot be done anymore at the final
-                        // node and should be skipped
-                        if expr_arena
-                            .get(node)
-                            .to_field(&schema, Context::Default, expr_arena)
-                            .is_ok()
-                        {
-                            local_projection.push(node);
-                        }
-                    }
-                }
 
                 let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena);
                 let lp = self.finish_node(local_projection, builder);

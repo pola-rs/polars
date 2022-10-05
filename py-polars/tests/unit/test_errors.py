@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import typing
-from datetime import date
+from datetime import date, datetime, timedelta
 
 import numpy as np
 import pytest
@@ -195,3 +195,37 @@ def test_filter_not_of_type_bool() -> None:
         pl.ComputeError, match="Filter predicate must be of type Boolean, got"
     ):
         df.filter(pl.col("json_val").str.json_path_match("$.a"))
+
+
+def test_err_asof_join_null_values() -> None:
+    n = 5
+    start_time = datetime(2021, 9, 30)
+
+    df_coor = pl.DataFrame(
+        {
+            "vessel_id": [1] * n + [2] * n,
+            "timestamp": [start_time + timedelta(hours=h) for h in range(n)]
+            + [start_time + timedelta(hours=h) for h in range(n)],
+        }
+    )
+
+    df_voyages = pl.DataFrame(
+        {
+            "vessel_id": [1, None],
+            "voyage_id": [1, None],
+            "voyage_start": [datetime(2022, 1, 1), None],
+            "voyage_end": [datetime(2022, 1, 20), None],
+        }
+    )
+    with pytest.raises(
+        pl.ComputeError, match="Keys are not allowed to have null values in asof join."
+    ):
+        (
+            df_coor.sort("timestamp").join_asof(
+                df_voyages.sort("voyage_start"),
+                right_on="voyage_start",
+                left_on="timestamp",
+                by="vessel_id",
+                strategy="backward",
+            )
+        )

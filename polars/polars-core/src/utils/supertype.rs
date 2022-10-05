@@ -274,6 +274,15 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                     Some(Struct(new_fields))
                 }
             }
+            #[cfg(feature = "dtype-struct")]
+            (Struct(fields_a), rhs) if rhs.is_numeric() => {
+                let mut new_fields = Vec::with_capacity(fields_a.len());
+                for a in fields_a {
+                    let st = get_supertype(&a.dtype, rhs)?;
+                    new_fields.push(Field::new(&a.name, st))
+                }
+                Some(Struct(new_fields))
+            }
             _ => None,
         }
     }

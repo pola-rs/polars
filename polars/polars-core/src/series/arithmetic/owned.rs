@@ -43,7 +43,10 @@ macro_rules! impl_operation {
                 #[cfg(feature = "performant")]
                 {
                     // only physical numeric values take the mutable path
-                    if !self.is_logical() && self.is_numeric_physical() {
+                    if !self.dtype().is_logical()
+                        && self.dtype().to_physical().is_numeric()
+                        && rhs.dtype().to_physical().is_numeric()
+                    {
                         let (lhs, rhs) = coerce_lhs_rhs_owned(self, rhs).unwrap();
                         let (lhs, rhs) = align_chunks_binary_owned_series(lhs, rhs);
                         use DataType::*;

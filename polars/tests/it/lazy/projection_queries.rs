@@ -118,3 +118,36 @@ fn test_many_aliasing_projections_5070() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_projection_5086() -> PolarsResult<()> {
+    let df = df![
+        "a" => ["a", "a", "a", "b"],
+        "b" => [1, 0, 1, 0],
+        "c" => [0, 1, 2, 0],
+    ]?;
+
+    let out = df
+        .lazy()
+        .select([
+            col("a"),
+            col("b").take("c").cumsum(false).over([col("a")]).gt(lit(0)),
+        ])
+        .select([
+            col("a"),
+            col("b")
+                .xor(col("b").shift(1).over([col("a")]))
+                .fill_null(lit(true))
+                .alias("keep"),
+        ])
+        .collect()?;
+
+    let expected = df![
+        "a" => ["a", "a", "a", "b"],
+        "keep" => [true, false, false, true]
+    ]?;
+
+    assert!(out.frame_equal(&expected));
+
+    Ok(())
+}

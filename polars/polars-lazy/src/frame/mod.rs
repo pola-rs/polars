@@ -1187,7 +1187,17 @@ impl LazyFrame {
         };
         self.map(
             move |df| df.unnest(&cols2),
-            Some(AllowedOptimizations::default()),
+            Some(AllowedOptimizations {
+                projection_pushdown: false,
+                predicate_pushdown: true,
+                type_coercion: true,
+                simplify_expr: true,
+                file_caching: true,
+                aggregate_pushdown: true,
+                slice_pushdown: true,
+                #[cfg(feature = "cse")]
+                common_subplan_elimination: true,
+            }),
             Some(Arc::new(udf_schema)),
             Some("unnest"),
         )
