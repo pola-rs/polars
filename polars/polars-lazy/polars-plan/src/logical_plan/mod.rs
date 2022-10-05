@@ -8,7 +8,7 @@ use polars_core::prelude::*;
 
 use crate::logical_plan::LogicalPlan::DataFrameScan;
 use crate::prelude::*;
-use crate::utils::{expr_to_leaf_column_names, get_single_leaf, has_expr, has_wildcard};
+use crate::utils::{expr_to_leaf_column_names, get_single_leaf};
 
 pub(crate) mod aexpr;
 pub(crate) mod alp;

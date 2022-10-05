@@ -916,7 +916,7 @@ pub fn as_struct(exprs: &[Expr]) -> Expr {
     map_multiple(
         |s| StructChunked::new("", s).map(|ca| ca.into_series()),
         exprs,
-        GetOutput::map_fields(|fld| Field::new("", DataType::Struct(fld.to_vec()))),
+        GetOutput::map_fields(|fld| Field::new(fld[0].name(), DataType::Struct(fld.to_vec()))),
     )
     .with_function_options(|mut options| {
         options.input_wildcard_expansion = true;

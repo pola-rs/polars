@@ -269,96 +269,15 @@ fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> Vec<Arc<str>
 }
 
 // functions can have col(["a", "b"]) or col(Utf8) as inputs
-fn expand_function_list_inputs(mut expr: Expr, schema: &Schema) -> Expr {
-    expr.mutate().apply(|e| {
-        match e {
-            Expr::AnonymousFunction { input, options, .. }
-            | Expr::Function { input, options, .. }
-                if options.input_wildcard_expansion =>
-            {
-                if input
-                    .iter()
-                    .any(|e| matches!(e, Expr::Columns(_) | Expr::DtypeColumn(_)))
-                {
-                    let mut new_inputs = Vec::with_capacity(input.len());
-
-                    input.iter_mut().for_each(|e| {
-                        match e {
-                            // col([foo, bar]) -> [col(foo), col(bar)]
-                            // just add them to the inputs, so that we don't expand the whole function
-                            Expr::Columns(names) => {
-                                for name in names {
-                                    new_inputs.push(col(name))
-                                }
-                            }
-                            Expr::DtypeColumn(dtypes) => {
-                                for dtype in dtypes {
-                                    for field in
-                                        schema.iter_fields().filter(|f| f.data_type() == dtype)
-                                    {
-                                        let name = field.name();
-                                        new_inputs.push(col(name))
-                                    }
-                                }
-                            }
-                            e => new_inputs.push(e.clone()),
-                        }
-                    });
-
-                    *input = new_inputs;
-                };
-
-                // continue there can be more functions that require expansion
-                true
-            }
-            _ => true,
+fn expand_function_inputs(mut expr: Expr, schema: &Schema) -> Expr {
+    expr.mutate().apply(|e| match e {
+        Expr::AnonymousFunction { input, options, .. } | Expr::Function { input, options, .. }
+            if options.input_wildcard_expansion =>
+        {
+            *input = rewrite_projections(input.clone(), schema, &[]);
+            false
         }
-    });
-    expr
-}
-
-// functions can have wildcards as inputs
-fn function_wildcard_expansion(mut expr: Expr, schema: &Schema, exclude: &[Arc<str>]) -> Expr {
-    expr.mutate().apply(|e| {
-        match e {
-            Expr::AnonymousFunction { input, options, .. }
-            | Expr::Function { input, options, .. }
-                if options.input_wildcard_expansion =>
-            {
-                let mut new_inputs = Vec::with_capacity(input.len());
-
-                input.iter_mut().for_each(|e| {
-                    match e {
-                        // col([foo, bar]) -> [col(foo), col(bar)]
-                        // just add them to the inputs, so that we don't expand the whole function
-                        Expr::Columns(names) => {
-                            for name in names {
-                                new_inputs.push(col(name))
-                            }
-                        }
-                        _ => {
-                            if has_wildcard(e) {
-                                replace_wildcard(e, &mut new_inputs, exclude, schema)
-                            } else {
-                                #[cfg(feature = "regex")]
-                                {
-                                    replace_regex(e, &mut new_inputs, schema)
-                                }
-                                #[cfg(not(feature = "regex"))]
-                                {
-                                    new_inputs.push(e.clone())
-                                }
-                            };
-                        }
-                    }
-                });
-
-                *input = new_inputs;
-                // continue there can be more functions that require expansion
-                true
-            }
-            _ => true,
-        }
+        _ => true,
     });
     expr
 }
@@ -394,11 +313,10 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Exp
         let result_offset = result.len();
 
         // functions can have col(["a", "b"]) or col(Utf8) as inputs
-        expr = expand_function_list_inputs(expr, schema);
+        expr = expand_function_inputs(expr, schema);
 
         let mut multiple_columns = false;
         let mut has_nth = false;
-        let mut function_input_expansion = false;
         let mut has_wildcard = false;
         let mut replace_fill_null_type = false;
 
@@ -414,13 +332,6 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Exp
                     ..
                 } => replace_fill_null_type = true,
                 _ => {}
-            }
-
-            if let Expr::AnonymousFunction { options, .. } | Expr::Function { options, .. } = &expr
-            {
-                if options.input_wildcard_expansion {
-                    function_input_expansion = true;
-                }
             }
         }
 
@@ -447,16 +358,11 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Exp
             }
         }
         // has multiple column names due to wildcards
-        else if has_wildcard || function_input_expansion {
+        else if has_wildcard {
             // keep track of column excluded from the wildcard
             let exclude = prepare_excluded(&expr, schema, keys);
             // this path prepares the wildcard as input for the Function Expr
-            if function_input_expansion {
-                expr = function_wildcard_expansion(expr, schema, &exclude);
-                result.push(expr);
-            } else {
-                replace_wildcard(&expr, &mut result, &exclude, schema);
-            }
+            replace_wildcard(&expr, &mut result, &exclude, schema);
         }
         // can have multiple column names due to a regex
         else {
