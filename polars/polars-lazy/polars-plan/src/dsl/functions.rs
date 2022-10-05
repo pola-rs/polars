@@ -735,6 +735,54 @@ where
     }
 }
 
+/// Accumulate over multiple columns horizontally / row wise.
+#[cfg(feature = "dtype-struct")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
+pub fn cumfold_exprs<F: 'static, E: AsRef<[Expr]>>(
+    acc: Expr,
+    f: F,
+    exprs: E,
+    include_init: bool,
+) -> Expr
+where
+    F: Fn(Series, Series) -> PolarsResult<Series> + Send + Sync + Clone,
+{
+    let mut exprs = exprs.as_ref().to_vec();
+    exprs.push(acc);
+
+    let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
+        let mut series = series.to_vec();
+        let mut acc = series.pop().unwrap();
+
+        let mut result = vec![];
+        if include_init {
+            result.push(acc.clone())
+        }
+
+        for s in series {
+            let name = s.name().to_string();
+            acc = f(acc, s)?;
+            acc.rename(&name);
+            result.push(acc.clone());
+        }
+
+        StructChunked::new(acc.name(), &result).map(|ca| ca.into_series())
+    }) as Arc<dyn SeriesUdf>);
+
+    Expr::AnonymousFunction {
+        input: exprs,
+        function,
+        output_type: GetOutput::super_type(),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            fmt_str: "cumfold",
+            ..Default::default()
+        },
+    }
+}
+
 /// Get the the sum of the values per row
 pub fn sum_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let mut exprs = exprs.as_ref().to_vec();
