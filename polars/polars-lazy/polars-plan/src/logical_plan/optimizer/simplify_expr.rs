@@ -524,7 +524,7 @@ impl OptimizationRule for SimplifyExprRule {
                     Operator::Eq => eval_binary_bool_type!(left_aexpr, ==, right_aexpr),
                     Operator::NotEq => eval_binary_bool_type!(left_aexpr, !=, right_aexpr),
                     Operator::GtEq => eval_binary_bool_type!(left_aexpr, >=, right_aexpr),
-                    Operator::LtEq => eval_binary_bool_type!(left_aexpr, >=, right_aexpr),
+                    Operator::LtEq => eval_binary_bool_type!(left_aexpr, <=, right_aexpr),
                     Operator::And => eval_bitwise(left_aexpr, right_aexpr, |l, r| l & r),
                     Operator::Or => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
                     Operator::Xor => eval_bitwise(left_aexpr, right_aexpr, |l, r| l ^ r),
