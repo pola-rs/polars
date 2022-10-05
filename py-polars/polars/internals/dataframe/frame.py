@@ -4218,13 +4218,14 @@ class DataFrame:
         self._df.extend(other._df)
         return self
 
-    def drop(self: DF, name: str | list[str]) -> DF:
+    @deprecated_alias(name="columns")
+    def drop(self: DF, columns: str | list[str]) -> DF:
         """
         Remove column from DataFrame and return as new.
 
         Parameters
         ----------
-        name
+        columns
             Column(s) to drop.
 
         Examples
@@ -4251,14 +4252,14 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        if isinstance(name, list):
+        if isinstance(columns, list):
             df = self.clone()
 
-            for n in name:
+            for n in columns:
                 df._df.drop_in_place(n)
             return df
 
-        return self._from_pydf(self._df.drop(name))
+        return self._from_pydf(self._df.drop(columns))
 
     def drop_in_place(self, name: str) -> pli.Series:
         """

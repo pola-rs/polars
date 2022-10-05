@@ -674,7 +674,10 @@ def test_extend() -> None:
 
 def test_drop() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
-    df = df.drop("a")
+    df = df.drop(name="a")  # type: ignore[call-arg]
+    assert df.shape == (3, 2)
+    df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
+    df = df.drop(columns="a")
     assert df.shape == (3, 2)
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
     s = df.drop_in_place("a")
