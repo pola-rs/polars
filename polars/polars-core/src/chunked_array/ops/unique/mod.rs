@@ -185,8 +185,38 @@ where
         }
         match self.is_sorted2() {
             IsSorted::Ascending | IsSorted::Descending => {
-                let mask = self.not_equal(&self.shift(1));
-                self.filter(&mask)
+                // TODO! optimize this branch
+                if self.null_count() > 0 {
+                    let mut arr = MutablePrimitiveArray::with_capacity(self.len());
+                    let mut iter = self.into_iter();
+                    let mut last = None;
+
+                    if let Some(val) = iter.next() {
+                        last = val;
+                        arr.push(val)
+                    };
+
+                    #[allow(clippy::unnecessary_filter_map)]
+                    let to_extend = iter.filter_map(|opt_val| {
+                        if opt_val != last {
+                            last = opt_val;
+                            Some(opt_val)
+                        } else {
+                            None
+                        }
+                    });
+
+                    arr.extend(to_extend);
+                    let arr: PrimitiveArray<T::Native> = arr.into();
+
+                    Ok(ChunkedArray::from_chunks(
+                        self.name(),
+                        vec![Box::new(arr) as ArrayRef],
+                    ))
+                } else {
+                    let mask = self.not_equal(&self.shift(1));
+                    self.filter(&mask)
+                }
             }
             IsSorted::Not => {
                 let sorted = self.sort(false);
