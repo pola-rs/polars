@@ -129,11 +129,6 @@ pub(crate) fn has_root_literal_expr(e: &Expr) -> bool {
     }
 }
 
-// this one is used so much that it has its own function, to reduce inlining
-pub(crate) fn has_wildcard(current_expr: &Expr) -> bool {
-    has_expr(current_expr, |e| matches!(e, Expr::Wildcard))
-}
-
 pub fn has_null(current_expr: &Expr) -> bool {
     has_expr(current_expr, |e| {
         matches!(e, Expr::Literal(LiteralValue::Null))
@@ -187,7 +182,7 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
         }
     }
     Err(PolarsError::ComputeError(
-        format!("no root column found in {:?}", expr).into(),
+        format!("no single leaf column found in {:?}", expr).into(),
     ))
 }
 

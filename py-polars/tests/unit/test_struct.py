@@ -658,3 +658,15 @@ def test_struct_supertype() -> None:
     assert pl.from_dicts(
         [{"vehicle": {"auto": "car"}}, {"vehicle": {"auto": None}}]
     ).to_dict(False) == {"vehicle": [{"auto": "car"}, {"auto": None}]}
+
+
+def test_suffix_in_struct_creation() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "a": [1, 2],
+                "b": [3, 4],
+                "c": [5, 6],
+            }
+        ).select(pl.struct(pl.col(["a", "c"]).suffix("_foo")).alias("bar"))
+    ).unnest("bar").to_dict(False) == {"a_foo": [1, 2], "c_foo": [5, 6]}

@@ -169,6 +169,7 @@ pub struct FunctionOptions {
 
     // if the expression and its inputs should be cast to supertypes
     pub cast_to_supertypes: bool,
+    // apply physical expression may rename the output of this function
     pub allow_rename: bool,
 }
 
