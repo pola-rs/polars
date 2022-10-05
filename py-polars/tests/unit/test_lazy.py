@@ -1221,6 +1221,9 @@ def test_unique() -> None:
         .collect()
         .frame_equal(expected)
     )
+    s0 = pl.Series("a", [1, 2, None, 2])
+    # test if the null is included
+    assert s0.unique().to_list() == [None, 1, 2]
 
 
 def test_lazy_concat(df: pl.DataFrame) -> None:
