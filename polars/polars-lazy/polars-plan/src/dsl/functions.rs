@@ -9,6 +9,8 @@ use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "rank")]
 use polars_core::utils::coalesce_nulls_series;
+#[cfg(feature = "dtype-struct")]
+use polars_core::utils::get_supertype;
 
 #[cfg(feature = "arg_where")]
 use crate::dsl::function_expr::FunctionExpr;
@@ -772,7 +774,21 @@ where
     Expr::AnonymousFunction {
         input: exprs,
         function,
-        output_type: GetOutput::super_type(),
+        output_type: GetOutput::map_fields(|fields| {
+            let mut st = fields[0].dtype.clone();
+            for fld in &fields[1..] {
+                st = get_supertype(&st, &fld.dtype).unwrap();
+            }
+            Field::new(
+                &fields[0].name,
+                DataType::Struct(
+                    fields
+                        .iter()
+                        .map(|fld| Field::new(fld.name(), st.clone()))
+                        .collect(),
+                ),
+            )
+        }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,

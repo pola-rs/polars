@@ -64,6 +64,13 @@ where
             DataType::Categorical(_) => {
                 Ok(CategoricalChunked::full_null(self.name(), self.len()).into_series())
             }
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(fields) => {
+                // cast to first field dtype
+                let dtype = &fields[0].dtype;
+                let s = cast_impl_inner(self.name(), &self.chunks, dtype, true)?;
+                Ok(StructChunked::new_unchecked(self.name(), &[s]).into_series())
+            }
             _ => cast_impl_inner(self.name(), &self.chunks, data_type, checked).map(|mut s| {
                 // maintain sorted if data types remain signed
                 // this may still fail with overflow?

@@ -148,6 +148,8 @@ impl DataType {
             DataType::Object(_) => false,
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => false,
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => false,
             _ => true,
         }
     }
