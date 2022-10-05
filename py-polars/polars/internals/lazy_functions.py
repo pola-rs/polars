@@ -839,7 +839,7 @@ def cumsum(
 
     Cumulatively sum a column by name:
 
-    >>> df.select(pl.sum("a"))
+    >>> df.select(pl.cumsum("a"))
     shape: (2, 1)
     ┌─────┐
     │ a   │
@@ -853,7 +853,7 @@ def cumsum(
 
     Cumulatively sum a list of columns/expressions horizontally:
 
-    >>> df.with_column(pl.sum(["a", "c"]))
+    >>> df.with_column(pl.cumsum(["a", "c"]))
     shape: (2, 4)
     ┌─────┬─────┬─────┬───────────┐
     │ a   ┆ b   ┆ c   ┆ cumsum    │

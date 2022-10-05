@@ -49,7 +49,7 @@ develop-release: $(VENV)  ## Build by running `maturin develop --release`
 	$(VENV_ACT_BIN)maturin develop --release
 
 .PHONY: clean cleaner cleanest
-clean:  ## Just run `cargo clean`
+clean:  ## Just run `carcumgo clean`
 	-cargo clean
 
 cleaner: clean  ## clean + remove VENV and other auto-generated dirs & files
@@ -93,7 +93,7 @@ test: develop # develop  ## Run fast unittests
 	$(VENV_ACT_BIN)pytest tests/unit/
 
 .PHONY: doctest
-doctest: $(VENV) build  ## Run doctests
+doctest: $(VENV) develop  ## Run doctests
 	$(VENV_ACT_BIN)python tests/docs/run_doc_examples.py
 
 .PHONY: test-all
