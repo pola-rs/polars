@@ -168,7 +168,6 @@ def test_align_frames() -> None:
         pl.from_pandas(df2.reset_index()),
         on="date",
     )
-    # (note: feels like we should be able to streamline dot-product further)
     pl_dot = (
         (pf1[["a", "b"]] * pf2[["a", "b"]])
         .fill_null(0)
@@ -199,6 +198,16 @@ def test_align_frames() -> None:
             pl.from_pandas(df2.reset_index()),
             on="date",
         )
+
+    # reverse
+    pf1, pf2 = pl.align_frames(
+        pl.DataFrame([[3, 5, 6], [5, 8, 9]], orient="row"),
+        pl.DataFrame([[2, 5, 6], [3, 8, 9], [4, 2, 0]], orient="row"),
+        on="column_0",
+        reverse=True,
+    )
+    assert pf1.rows() == [(5, 8, 9), (4, None, None), (3, 5, 6), (2, None, None)]
+    assert pf2.rows() == [(5, None, None), (4, 2, 0), (3, 8, 9), (2, 5, 6)]
 
 
 def test_nan_aggregations() -> None:
