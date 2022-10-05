@@ -175,7 +175,7 @@ impl StructChunked {
 
     pub(crate) fn apply_fields<F>(&self, func: F) -> Self
     where
-        F: Fn(&Series) -> Series,
+        F: FnMut(&Series) -> Series,
     {
         let fields = self.fields.iter().map(func).collect::<Vec<_>>();
         Self::new_unchecked(self.field.name(), &fields)

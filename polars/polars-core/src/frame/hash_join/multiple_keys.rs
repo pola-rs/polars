@@ -262,8 +262,8 @@ pub(crate) fn left_join_multiple_keys(
     chunk_mapping_right: Option<&[ChunkId]>,
 ) -> LeftJoinIds {
     // we should not join on logical types
-    debug_assert!(!a.iter().any(|s| s.is_logical()));
-    debug_assert!(!b.iter().any(|s| s.is_logical()));
+    debug_assert!(!a.iter().any(|s| s.dtype().is_logical()));
+    debug_assert!(!b.iter().any(|s| s.dtype().is_logical()));
 
     let n_threads = POOL.current_num_threads();
     let dfs_a = split_df(a, n_threads).unwrap();
@@ -392,8 +392,8 @@ pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
     b: &'a mut DataFrame,
 ) -> impl ParallelIterator<Item = (IdxSize, bool)> + 'a {
     // we should not join on logical types
-    debug_assert!(!a.iter().any(|s| s.is_logical()));
-    debug_assert!(!b.iter().any(|s| s.is_logical()));
+    debug_assert!(!a.iter().any(|s| s.dtype().is_logical()));
+    debug_assert!(!b.iter().any(|s| s.dtype().is_logical()));
 
     let n_threads = POOL.current_num_threads();
     let dfs_a = split_df(a, n_threads).unwrap();

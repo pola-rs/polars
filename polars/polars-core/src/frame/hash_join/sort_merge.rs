@@ -181,7 +181,7 @@ pub(super) fn sort_or_hash_inner(
     let size_factor_acceptable = std::env::var("POLARS_JOIN_SORT_FACTOR")
         .map(|s| s.parse::<f32>().unwrap())
         .unwrap_or(1.0);
-    let is_numeric = s_left.is_numeric_physical();
+    let is_numeric = s_left.dtype().to_physical().is_numeric();
     match (s_left.is_sorted(), s_right.is_sorted()) {
         (IsSorted::Ascending, IsSorted::Ascending) => {
             if verbose {
@@ -250,7 +250,7 @@ pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, verbose: bool
     let size_factor_acceptable = std::env::var("POLARS_JOIN_SORT_FACTOR")
         .map(|s| s.parse::<f32>().unwrap())
         .unwrap_or(1.0);
-    let is_numeric = s_left.is_numeric_physical();
+    let is_numeric = s_left.dtype().to_physical().is_numeric();
 
     match (s_left.is_sorted(), s_right.is_sorted()) {
         (IsSorted::Ascending, IsSorted::Ascending) => {
