@@ -36,6 +36,7 @@ try:
     from polars.polars import concat_str as _concat_str
     from polars.polars import count as _count
     from polars.polars import cov as pycov
+    from polars.polars import cumfold as pycumfold
     from polars.polars import dtype_cols as _dtype_cols
     from polars.polars import first as _first
     from polars.polars import fold as pyfold
@@ -368,7 +369,7 @@ def min(
         Column(s) to be used in aggregation. Will lead to different behavior based on
         the input:
         - Union[str, Series] -> aggregate the sum value of that column.
-        - List[Expr] -> aggregate the sum value horizontally.
+        - List[Expr] -> aggregate the min value horizontally.
 
     """
     if isinstance(column, pli.Series):
@@ -780,6 +781,99 @@ def lit(
     return pli.wrap_expr(pylit(item, allow_object))
 
 
+@overload
+def cumsum(column: str | Sequence[pli.Expr | str] | pli.Expr) -> pli.Expr:
+    ...
+
+
+@overload
+def cumsum(column: pli.Series) -> int | float:
+    ...
+
+
+def cumsum(
+    column: str | Sequence[pli.Expr | str] | pli.Series | pli.Expr,
+) -> pli.Expr | Any:
+    """
+    Cumulatively sum values in a column/Series, or horizontally across list of columns/expressions.  # noqa E501
+
+    ``pl.cumsum(str)`` is syntactic sugar for:
+
+    >>> pl.col(str).cumsum()  # doctest: +SKIP
+
+    ``pl.cumsum(list)`` is syntactic sugar for:
+
+    >>> pl.cumfold(pl.lit(0), lambda x, y: x + y, list).alias(
+    ...     "cumsum"
+    ... )  # doctest: +SKIP
+
+    Parameters
+    ----------
+    column
+        Column(s) to be used in aggregation.
+        This can be:
+
+        - a column name, or Series -> aggregate the sum value of that column/Series.
+        - a List[Expr] -> aggregate the sum value horizontally across the Expr result.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2],
+    ...         "b": [3, 4],
+    ...         "c": [5, 6],
+    ...     }
+    ... )
+    >>> df
+    shape: (2, 3)
+    ┌─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 3   ┆ 5   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 4   ┆ 6   │
+    └─────┴─────┴─────┘
+
+    Cumulatively sum a column by name:
+
+    >>> df.select(pl.sum("a"))
+    shape: (2, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    ├╌╌╌╌╌┤
+    │ 3   │
+    └─────┘
+
+    Cumulatively sum a list of columns/expressions horizontally:
+
+    >>> df.with_column(pl.sum(["a", "c"]))
+    shape: (2, 4)
+    ┌─────┬─────┬─────┬───────────┐
+    │ a   ┆ b   ┆ c   ┆ cumsum    │
+    │ --- ┆ --- ┆ --- ┆ ---       │
+    │ i64 ┆ i64 ┆ i64 ┆ struct[2] │
+    ╞═════╪═════╪═════╪═══════════╡
+    │ 1   ┆ 3   ┆ 5   ┆ {1,6}     │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2   ┆ 4   ┆ 6   ┆ {2,8}     │
+    └─────┴─────┴─────┴───────────┘
+
+    """
+    if isinstance(column, pli.Series):
+        return column.cumsum()
+    elif isinstance(column, str):
+        return col(column).cumsum()
+    # (Expr): use u32 as that will not cast to float as eagerly
+    return cumfold(lit(0).cast(UInt32), lambda a, b: a + b, column).alias("cumsum")
+
+
 def spearman_rank_corr(
     a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1, propagate_nans: bool = False
 ) -> pli.Expr:
@@ -943,6 +1037,40 @@ def fold(
 
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(pyfold(acc._pyexpr, f, exprs))
+
+
+def cumfold(
+    acc: IntoExpr,
+    f: Callable[[pli.Series, pli.Series], pli.Series],
+    exprs: Sequence[pli.Expr | str] | pli.Expr,
+    include_init: bool = False,
+) -> pli.Expr:
+    """
+    Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.  # noqa E501
+
+    Every cumulative result is added as a separate field in a Struct column.
+
+    Parameters
+    ----------
+    acc
+        Accumulator Expression. This is the value that will be initialized when the fold
+        starts. For a sum this could for instance be lit(0).
+    f
+        Function to apply over the accumulator and the value.
+        Fn(acc, value) -> new_value
+    exprs
+        Expressions to aggregate over. May also be a wildcard expression.
+    include_init
+        Include the initial accumulator state as struct field.
+
+    """
+    # in case of pl.col("*")
+    acc = pli.expr_to_lit_or_expr(acc, str_to_lit=True)
+    if isinstance(exprs, pli.Expr):
+        exprs = [exprs]
+
+    exprs = pli.selection_to_pyexpr_list(exprs)
+    return pli.wrap_expr(pycumfold(acc._pyexpr, f, exprs, include_init))
 
 
 def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:
