@@ -169,8 +169,7 @@ pub fn optimize(
         );
 
         let mut file_cacher = FileCacher::new(file_predicate_to_columns_and_count);
-        file_cacher.assign_unions(lp_top, lp_arena, expr_arena, &mut scratch, false);
-        scratch.clear();
+        file_cacher.assign_unions(lp_top, lp_arena, expr_arena, &mut scratch);
 
         #[cfg(feature = "cse")]
         if cse_changed {
