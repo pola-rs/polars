@@ -1,4 +1,4 @@
-.DEFAULT_GOAL := help
+.DEFAULT_GOAL := telp
 
 SHELL=/bin/bash
 VENV ?= venv
@@ -27,7 +27,7 @@ venv:
 	:
 else # use VENV
 	VENV_BIN    := $(abspath $(VENV_BIN))/# no space after trailing '/'
-	VENV_ACT_BIN = $(CONDA_DEACT) . $(VENV_BIN)activate; $(VENV_BIN)# no space after closing ')'
+	VENV_ACT_BIN = $(VENV_BIN)# no space after closing ')'
 	CLEAN_VENV   = -rm -rf $(VENV)
 ifeq ($(VENV),venv)
 venv:  ## Create virtual environment for building polars (optionally with VENV=<name>)
@@ -89,8 +89,8 @@ clippy:  ## Run clippy
 pre-commit: fmt clippy  ## Run all code quality checks
 
 .PHONY: test
-test: # develop  ## Run fast unittests
-	$(VENV_ACT_BIN)pytest -v tests/unit/
+test: develop # develop  ## Run fast unittests
+	$(VENV_ACT_BIN)pytest tests/unit/
 
 .PHONY: doctest
 doctest: $(VENV) build  ## Run doctests
@@ -98,12 +98,12 @@ doctest: $(VENV) build  ## Run doctests
 
 .PHONY: test-all
 test-all: # develop  ## Run all tests
-	$(VENV_ACT_BIN)pytest -v
+	$(VENV_ACT_BIN)pytest
 	$(VENV_ACT_BIN)python tests/docs/run_doc_examples.py
 
 .PHONY: coverage
 coverage:  ## Run tests and report coverage
-	$(VENV_ACT_BIN)pytest -v --cov
+	$(VENV_ACT_BIN)pytest --cov
 
 build-debug: $(VENV)  ## Build debug wheel
 	$(VENV_ACT_BIN)maturin build -o $(WHEELS_DEBUG)
