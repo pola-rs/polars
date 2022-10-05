@@ -30,3 +30,42 @@ fn test_scan_parquet_files() -> PolarsResult<()> {
     assert_eq!(df.shape(), (54, 4));
     Ok(())
 }
+
+#[test]
+fn test_write_parquet_without_metadata() -> PolarsResult<()> {
+    let mut dataframe = df! {
+        "a" => ["1", "2"],
+        "b" => [1, 2]
+    }?;
+
+    assert_eq!(dataframe.metadata().len(), 0);
+
+    let mut buf = Cursor::new(Vec::new());
+    ParquetWriter::new(&mut buf).finish(&mut dataframe)?;
+    let read_dataframe = ParquetReader::new(buf).finish()?;
+
+    assert_eq!(dataframe.metadata(), read_dataframe.metadata());
+    Ok(())
+}
+
+#[test]
+fn test_write_parquet_with_metadata() -> PolarsResult<()> {
+    let mut dataframe = df! {
+        "a" => ["1", "2"],
+        "b" => [1, 2]
+    }?
+    .with_metadata(Metadata::from([
+        ("key".to_string(), "value".to_string()),
+        ("key2".to_string(), "value2".to_string()),
+    ]));
+
+    assert_eq!(dataframe.metadata().len(), 2);
+
+    let mut buf = Cursor::new(Vec::new());
+    ParquetWriter::new(&mut buf).finish(&mut dataframe)?;
+    let read_dataframe = ParquetReader::new(buf).finish()?;
+
+    assert_eq!(dataframe.metadata(), read_dataframe.metadata());
+
+    Ok(())
+}

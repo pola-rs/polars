@@ -282,20 +282,23 @@ pub fn read_parquet<R: MmapBytesReader>(
         ParallelStrategy::Auto => unimplemented!(),
     };
 
-    if dfs.is_empty() {
+    let df = if dfs.is_empty() {
         let schema = if let Cow::Borrowed(_) = projection {
             Cow::Owned(apply_projection(schema, &projection))
         } else {
             Cow::Borrowed(schema)
         };
-        Ok(arrow_schema_to_empty_df(&schema))
+        arrow_schema_to_empty_df(&schema)
     } else {
         let mut df = accumulate_dataframes_vertical(dfs.into_iter())?;
         apply_aggregations(&mut df, aggregate)?;
-        Ok(if low_memory {
+
+        if low_memory {
             df._slice_and_realloc(0, limit)
         } else {
             df.slice_par(0, limit)
-        })
-    }
+        }
+    };
+
+    Ok(df.with_metadata(schema.metadata.clone()))
 }

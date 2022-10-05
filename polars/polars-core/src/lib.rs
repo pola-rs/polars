@@ -1,3 +1,5 @@
+#![feature(const_btree_new)]
+
 #![cfg_attr(docsrs, feature(doc_cfg))]
 extern crate core;
 

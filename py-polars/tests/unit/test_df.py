@@ -41,6 +41,16 @@ def test_init_empty() -> None:
         not empty_df
 
 
+def test_metadata_empty() -> None:
+    df = pl.DataFrame({})
+    assert df.metadata() == {}
+
+
+def test_metadata_populated() -> None:
+    df = pl.DataFrame({}, {"key", "value"})
+    assert df.metadata() == {"key", "value"}
+
+
 def test_special_char_colname_init() -> None:
     from string import punctuation
 

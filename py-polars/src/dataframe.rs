@@ -88,9 +88,10 @@ impl PyDataFrame {
     }
 
     #[new]
-    pub fn __init__(columns: Vec<PySeries>) -> PyResult<Self> {
+    pub fn __init__(columns: Vec<PySeries>, metadata: &PyAny) -> PyResult<Self> {
         let columns = to_series_collection(columns);
-        let df = DataFrame::new(columns).map_err(PyPolarsErr::from)?;
+        let metadata = Metadata::extract(metadata)?;
+        let df = DataFrame::new_with_metadata(columns, metadata).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
@@ -104,6 +105,20 @@ impl PyDataFrame {
             .iter()
             .map(|s| format!("{}", s.dtype()))
             .collect()
+    }
+
+    /// Get the DataFrame's metadata dict.
+    pub fn metadata(&self) -> PyResult<PyObject> {
+        Python::with_gil(|py| {
+            Ok(self.df.metadata().to_object(py))
+        })
+    }
+
+    /// Set the DataFrame's metadata dict.
+    pub fn set_metadata(&mut self, ob: &PyAny) -> PyResult<()> {
+        let mut metadata = self.df.metadata_mut();
+        *metadata = Metadata::extract(ob)?;
+        Ok(())
     }
 
     #[staticmethod]

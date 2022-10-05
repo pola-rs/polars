@@ -84,6 +84,37 @@ pub(crate) fn get_series(obj: &PyAny) -> PyResult<Series> {
     Ok(pydf.extract::<PySeries>()?.series)
 }
 
+impl ToPyObject for Wrap<Metadata> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let dict = PyDict::new(py);
+        for (key, value) in self.0.iter() {
+            dict.set_item(key, value).unwrap()
+        }
+        dict.into_py(py)
+    }
+}
+
+impl FromPyObject<'_> for Wrap<Metadata> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let mut metadata = Metadata::new();
+        if ob.is_none() {
+            Ok(Wrap(metadata))
+        } else if ob.is_instance_of::<PyDict>()? {
+            let dict = ob.downcast::<PyDict>().unwrap();
+            for (key, value) in dict.into_iter() {
+                let key = key.extract::<&str>()?;
+                let value = value.extract::<&str>()?;
+
+                metadata.insert(key.to_owned(), value.to_owned());
+            }
+
+            Ok(Wrap(metadata))
+        } else {
+            Err(PyPolarsErr::Other("could not extract metadata from argument".into()).into())
+        }
+    }
+}
+
 impl<'a, T> FromPyObject<'a> for Wrap<ChunkedArray<T>>
 where
     T: PyPolarsNumericType,

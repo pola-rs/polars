@@ -80,7 +80,7 @@ where
             compression: self.compression,
             version: write::Version::V2,
         };
-        let schema = ArrowSchema::from(fields);
+        let schema = ArrowSchema::from(fields).with_metadata(df.metadata().clone());
         let parquet_schema = write::to_parquet_schema(&schema)?;
         // declare encodings
         let encoding_map = |data_type: &ArrowDataType| {

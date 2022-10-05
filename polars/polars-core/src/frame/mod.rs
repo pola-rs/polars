@@ -1,5 +1,6 @@
 //! DataFrame module.
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::iter::{FromIterator, Iterator};
 use std::{mem, ops};
 
@@ -55,6 +56,9 @@ pub enum UniqueKeepStrategy {
     First,
     Last,
 }
+
+/// DataFrame Metadata map.
+pub type Metadata = BTreeMap<String, String>;
 
 /// A contiguous growable collection of `Series` that have the same length.
 ///
@@ -133,7 +137,13 @@ pub enum UniqueKeepStrategy {
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DataFrame {
+    /// The DataFrame columns represented as Series.
     pub(crate) columns: Vec<Series>,
+
+    /// The DataFrame metadata.
+    ///
+    /// Metadata is limited to string keys and values.
+    pub(crate) metadata: Metadata,
 }
 
 fn duplicate_err(name: &str) -> PolarsResult<()> {
@@ -223,6 +233,39 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn new<S: IntoSeries>(columns: Vec<S>) -> PolarsResult<Self> {
+        Ok(DataFrame {
+            columns: Self::columns_to_series(columns)?,
+            metadata: Default::default(),
+        })
+    }
+
+    /// Create a DataFrame from a Vector of Series with the given Metadata.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use polars_core::prelude::*;
+    /// let s0 = Series::new("days", [0, 1, 2].as_ref());
+    /// let s1 = Series::new("temp", [22.1, 19.9, 7.].as_ref());
+    ///
+    /// let df = DataFrame::new_with_metadata(vec![s0, s1], Metadata::from([
+    ///     ("month".to_string(), "February".to_string()),
+    ///     ("githash".to_string(), "deadbeef".to_string()),
+    /// ]))?;
+    /// # Ok::<(), PolarsError>(())
+    /// ```
+    pub fn new_with_metadata<S: IntoSeries>(
+        columns: Vec<S>,
+        metadata: Metadata,
+    ) -> PolarsResult<Self> {
+        Ok(DataFrame {
+            columns: Self::columns_to_series(columns)?,
+            metadata,
+        })
+    }
+
+    /// Convert the given columns into a Vector of Series.
+    fn columns_to_series<S: IntoSeries>(columns: Vec<S>) -> PolarsResult<Vec<Series>> {
         let mut first_len = None;
 
         let shape_err = |s: &[Series]| {
@@ -292,9 +335,7 @@ impl DataFrame {
             series_cols
         };
 
-        Ok(DataFrame {
-            columns: series_cols,
-        })
+        Ok(series_cols)
     }
 
     /// Creates an empty `DataFrame` usable in a compile time context (such as static initializers).
@@ -399,7 +440,10 @@ impl DataFrame {
     /// It is the callers responsibility to uphold the contract of all `Series`
     /// having an equal length, if not this may panic down the line.
     pub const fn new_no_checks(columns: Vec<Series>) -> DataFrame {
-        DataFrame { columns }
+        DataFrame {
+            columns,
+            metadata: Metadata::new(),
+        }
     }
 
     /// Aggregate all chunks to contiguous memory.
@@ -476,6 +520,111 @@ impl DataFrame {
         } else {
             self
         }
+    }
+
+    /// Update the dataframe with the given metadata.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use polars_core::prelude::*;
+    /// let s0 = Series::new("days", [0, 1, 2].as_ref());
+    /// let s1 = Series::new("temp", [22.1, 19.9, 7.].as_ref());
+    ///
+    /// let df = DataFrame::new(vec![s0, s1])?.with_metadata(Metadata::from([
+    ///     ("month".to_string(), "February".to_string()),
+    ///     ("githash".to_string(), "deadbeef".to_string()),
+    /// ]));
+    /// # Ok::<(), PolarsError>(())
+    /// ```
+    pub fn with_metadata(mut self, metadata: Metadata) -> Self {
+        self.metadata = metadata;
+        self
+    }
+
+    /// Get a reference to the dataframe metadata.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use polars_core::prelude::*;
+    ///
+    /// let s0 = Series::new("days", [0, 1, 2].as_ref());
+    ///
+    /// let df = DataFrame::new_with_metadata(vec![s0], Metadata::from([
+    ///     ("githash".to_string(), "deadbeef".to_string()),
+    /// ]))?;
+    ///
+    /// assert_eq!(df.metadata().get("githash"), Some(&String::from("deadbeef")));
+    ///
+    /// # Ok::<(), PolarsError>(())
+    /// ```
+    pub fn metadata(&self) -> &Metadata {
+        &self.metadata
+    }
+
+    /// Get a mutable reference to the dataframe metadata.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use polars_core::prelude::*;
+    ///
+    /// let s0 = Series::new("days", [0, 1, 2].as_ref());
+    ///
+    /// let mut df = DataFrame::new(vec![s0])?;
+    ///
+    /// let mut metadata = df.metadata_mut();
+    /// metadata.insert("key".to_string(), "value".to_string());
+    ///
+    /// assert_eq!(df.metadata().get("key"), Some(&String::from("value")));
+    ///
+    /// # Ok::<(), PolarsError>(())
+    /// ```
+    pub fn metadata_mut(&mut self) -> &mut Metadata {
+        &mut self.metadata
+    }
+
+    /// Set a metadata key value pair.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use polars_core::prelude::*;
+    ///
+    /// let s0 = Series::new("days", [0, 1, 2].as_ref());
+    ///
+    /// let mut df = DataFrame::new(vec![s0])?;
+    ///
+    /// df.set_metadata_value("key", "value");
+    ///
+    /// assert_eq!(df.get_metadata_value("key"), Some("value"));
+    ///
+    /// # Ok::<(), PolarsError>(())
+    /// ```
+    pub fn set_metadata_value<S: Into<String>>(&mut self, key: S, value: S) -> Option<String> {
+        self.metadata.insert(key.into(), value.into())
+    }
+
+    /// Get a specific metadata value.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use polars_core::prelude::*;
+    ///
+    /// let s0 = Series::new("days", [0, 1, 2].as_ref());
+    ///
+    /// let df = DataFrame::new_with_metadata(vec![s0], Metadata::from([
+    ///     ("key".to_string(), "value".to_string()),
+    /// ]))?;
+    ///
+    /// assert_eq!(df.get_metadata_value("key"), Some("value"));
+    ///
+    /// # Ok::<(), PolarsError>(())
+    /// ```
+    pub fn get_metadata_value<S: Into<String>>(&self, key: S) -> Option<&str> {
+        self.metadata.get(&key.into()).map(|v| v.as_str())
     }
 
     /// Get the `DataFrame` schema.
