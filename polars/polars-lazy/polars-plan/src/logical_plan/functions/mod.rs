@@ -23,6 +23,9 @@ pub enum FunctionNode {
         #[cfg_attr(feature = "serde", serde(skip))]
         fmt_str: &'static str,
     },
+    Unnest {
+        columns: Arc<Vec<Arc<str>>>,
+    },
     FastProjection {
         columns: Arc<Vec<Arc<str>>>,
     },
@@ -72,6 +75,34 @@ impl FunctionNode {
             }
             DropNulls { .. } => Ok(Cow::Borrowed(input_schema)),
             Rechunk => Ok(Cow::Borrowed(input_schema)),
+            Unnest { columns: _columns } => {
+                #[cfg(feature = "dtype-struct")]
+                {
+                    let mut new_schema = Schema::with_capacity(input_schema.len() * 2);
+                    for (name, dtype) in input_schema.iter() {
+                        if _columns.iter().any(|item| item.as_ref() == name.as_str()) {
+                            if let DataType::Struct(flds) = dtype {
+                                for fld in flds {
+                                    new_schema
+                                        .with_column(fld.name().clone(), fld.data_type().clone())
+                                }
+                            } else {
+                                return Err(PolarsError::ComputeError(
+                                    format!("expected struct dtype, got: '{:?}'", dtype).into(),
+                                ));
+                            }
+                        } else {
+                            new_schema.with_column(name.clone(), dtype.clone())
+                        }
+                    }
+
+                    Ok(Cow::Owned(Arc::new(new_schema)))
+                }
+                #[cfg(not(feature = "dtype-struct"))]
+                {
+                    panic!("activate feature 'dtype-struct'")
+                }
+            }
         }
     }
 
@@ -79,7 +110,7 @@ impl FunctionNode {
         use FunctionNode::*;
         match self {
             Opaque { predicate_pd, .. } => *predicate_pd,
-            FastProjection { .. } | DropNulls { .. } | Rechunk => true,
+            FastProjection { .. } | DropNulls { .. } | Rechunk | Unnest { .. } => true,
         }
     }
 
@@ -87,7 +118,15 @@ impl FunctionNode {
         use FunctionNode::*;
         match self {
             Opaque { projection_pd, .. } => *projection_pd,
-            FastProjection { .. } | DropNulls { .. } | Rechunk => true,
+            FastProjection { .. } | DropNulls { .. } | Rechunk | Unnest { .. } => true,
+        }
+    }
+
+    pub(crate) fn additional_projection_pd_columns(&self) -> &[Arc<str>] {
+        use FunctionNode::*;
+        match self {
+            Unnest { columns } => columns.as_slice(),
+            _ => &[],
         }
     }
 
@@ -100,6 +139,16 @@ impl FunctionNode {
             Rechunk => {
                 df.as_single_chunk_par();
                 Ok(df)
+            }
+            Unnest { columns: _columns } => {
+                #[cfg(feature = "dtype-struct")]
+                {
+                    df.unnest(_columns.as_slice())
+                }
+                #[cfg(not(feature = "dtype-struct"))]
+                {
+                    panic!("activate feature 'dtype-struct'")
+                }
             }
         }
     }
@@ -121,6 +170,11 @@ impl Display for FunctionNode {
                 fmt_column_delimited(f, subset, "[", "]")
             }
             Rechunk => write!(f, "RECHUNK"),
+            Unnest { columns } => {
+                write!(f, "UNNEST by:")?;
+                let columns = columns.as_slice();
+                fmt_column_delimited(f, columns, "[", "]")
+            }
         }
     }
 }

@@ -52,6 +52,7 @@ Other
     :nosignatures:
 
     Boolean
+    Binary
     Categorical
     Null
     Object
