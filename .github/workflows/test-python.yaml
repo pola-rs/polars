@@ -50,7 +50,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2022-09-26
+          toolchain: nightly-2022-10-06
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
@@ -104,7 +104,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2022-09-26
+          toolchain: nightly-2022-10-06
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2

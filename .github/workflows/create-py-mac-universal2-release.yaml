@@ -26,7 +26,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2022-09-26
+          toolchain: nightly-2022-10-06
 
       - name: Set up Rust targets
         run: rustup target add aarch64-apple-darwin
