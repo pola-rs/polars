@@ -62,7 +62,16 @@ impl Series {
             List(_) => ListChunked::from_chunks(name, chunks).cast(dtype).unwrap(),
             Utf8 => Utf8Chunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-binary")]
-            Binary => BinaryChunked::from_chunks(name, chunks).into_series(),
+            Binary => {
+                #[cfg(feature = "dtype-binary")]
+                {
+                    BinaryChunked::from_chunks(name, chunks).into_series()
+                }
+                #[cfg(not(feature = "dtype-binary"))]
+                {
+                    panic!("activate feature 'dtype-binary'")
+                }
+            },
             #[cfg(feature = "dtype-categorical")]
             Categorical(rev_map) => {
                 let cats = UInt32Chunked::from_chunks(name, chunks);

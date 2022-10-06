@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
 use ahash::RandomState;
-use polars_arrow::prelude::QuantileInterpolOptions;
 
 use super::{private, IntoSeries, SeriesTrait, *};
 use crate::chunked_array::comparison::*;
@@ -322,23 +321,6 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
     fn min_as_series(&self) -> Series {
         ChunkAggSeries::min_as_series(&self.0)
     }
-    fn median_as_series(&self) -> Series {
-        QuantileAggSeries::median_as_series(&self.0)
-    }
-    fn var_as_series(&self, ddof: u8) -> Series {
-        VarAggSeries::var_as_series(&self.0, ddof)
-    }
-    fn std_as_series(&self, ddof: u8) -> Series {
-        VarAggSeries::std_as_series(&self.0, ddof)
-    }
-    fn quantile_as_series(
-        &self,
-        quantile: f64,
-        interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Series> {
-        QuantileAggSeries::quantile_as_series(&self.0, quantile, interpol)
-    }
-
     fn fmt_list(&self) -> String {
         FmtList::fmt_list(&self.0)
     }
