@@ -15,6 +15,12 @@ impl Series {
                 let rhs = rhs.utf8().unwrap();
                 lhs.hash_join_left(rhs)
             }
+            #[cfg(feature = "dtype-binary")]
+            Binary => {
+                let lhs = lhs.binary().unwrap();
+                let rhs = rhs.binary().unwrap();
+                lhs.hash_join_left(rhs)
+            }
             _ => {
                 if self.bit_repr_is_large() {
                     let lhs = lhs.bit_repr_large();
@@ -38,6 +44,12 @@ impl Series {
             Utf8 => {
                 let lhs = lhs.utf8().unwrap();
                 let rhs = rhs.utf8().unwrap();
+                lhs.hash_join_semi_anti(rhs, anti)
+            }
+            #[cfg(feature = "dtype-binary")]
+            Binary => {
+                let lhs = lhs.binary().unwrap();
+                let rhs = rhs.binary().unwrap();
                 lhs.hash_join_semi_anti(rhs, anti)
             }
             _ => {
@@ -65,6 +77,12 @@ impl Series {
                 let rhs = rhs.utf8().unwrap();
                 lhs.hash_join_inner(rhs)
             }
+            #[cfg(feature = "dtype-binary")]
+            Binary => {
+                let lhs = lhs.binary().unwrap();
+                let rhs = rhs.binary().unwrap();
+                lhs.hash_join_inner(rhs)
+            }
             _ => {
                 if self.bit_repr_is_large() {
                     let lhs = self.bit_repr_large();
@@ -90,6 +108,12 @@ impl Series {
             Utf8 => {
                 let lhs = lhs.utf8().unwrap();
                 let rhs = rhs.utf8().unwrap();
+                lhs.hash_join_outer(rhs)
+            }
+            #[cfg(feature = "dtype-binary")]
+            Binary => {
+                let lhs = lhs.binary().unwrap();
+                let rhs = rhs.binary().unwrap();
                 lhs.hash_join_outer(rhs)
             }
             _ => {
@@ -376,6 +400,122 @@ impl Utf8Chunked {
     }
 
     fn hash_join_outer(&self, other: &Utf8Chunked) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
+        let (a, b, swap) = det_hash_prone_order!(self, other);
+
+        let n_partitions = set_partition_size();
+        let splitted_a = split_ca(a, n_partitions).unwrap();
+        let splitted_b = split_ca(b, n_partitions).unwrap();
+
+        match (a.has_validity(), b.has_validity()) {
+            (false, false) => {
+                let iters_a = splitted_a
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect::<Vec<_>>();
+                let iters_b = splitted_b
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect::<Vec<_>>();
+                hash_join_tuples_outer(iters_a, iters_b, swap)
+            }
+            _ => {
+                let iters_a = splitted_a
+                    .iter()
+                    .map(|ca| ca.into_iter())
+                    .collect::<Vec<_>>();
+                let iters_b = splitted_b
+                    .iter()
+                    .map(|ca| ca.into_iter())
+                    .collect::<Vec<_>>();
+                hash_join_tuples_outer(iters_a, iters_b, swap)
+            }
+        }
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+pub(crate) fn prepare_bytes<'a>(
+    been_split: &'a [BinaryChunked],
+    hb: &RandomState,
+) -> Vec<Vec<BytesHash<'a>>> {
+    POOL.install(|| {
+        been_split
+            .par_iter()
+            .map(|ca| {
+                ca.into_iter()
+                    .map(|opt_b| {
+                        let mut state = hb.build_hasher();
+                        opt_b.hash(&mut state);
+                        let hash = state.finish();
+                        BytesHash::new(opt_b, hash)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    })
+}
+
+#[cfg(feature = "dtype-binary")]
+impl BinaryChunked {
+    fn prepare(
+        &self,
+        other: &BinaryChunked,
+        swapped: bool,
+    ) -> (Vec<Self>, Vec<Self>, bool, RandomState) {
+        let n_threads = POOL.current_num_threads();
+
+        let (a, b, swap) = if swapped {
+            det_hash_prone_order!(self, other)
+        } else {
+            (self, other, false)
+        };
+
+        let hb = RandomState::default();
+        let splitted_a = split_ca(a, n_threads).unwrap();
+        let splitted_b = split_ca(b, n_threads).unwrap();
+
+        (splitted_a, splitted_b, swap, hb)
+    }
+
+    // returns the join tuples and whether or not the lhs tuples are sorted
+    fn hash_join_inner(&self, other: &BinaryChunked) -> ((Vec<IdxSize>, Vec<IdxSize>), bool) {
+        let (splitted_a, splitted_b, swap, hb) = self.prepare(other, true);
+        let str_hashes_a = prepare_bytes(&splitted_a, &hb);
+        let str_hashes_b = prepare_bytes(&splitted_b, &hb);
+        (
+            hash_join_tuples_inner(str_hashes_a, str_hashes_b, swap),
+            !swap,
+        )
+    }
+
+    fn hash_join_left(&self, other: &BinaryChunked) -> LeftJoinIds {
+        let (splitted_a, splitted_b, _, hb) = self.prepare(other, false);
+        let str_hashes_a = prepare_bytes(&splitted_a, &hb);
+        let str_hashes_b = prepare_bytes(&splitted_b, &hb);
+
+        let (mapping_left, mapping_right) =
+            create_mappings(self.chunks(), other.chunks(), self.len(), other.len());
+        hash_join_tuples_left(
+            str_hashes_a,
+            str_hashes_b,
+            mapping_left.as_deref(),
+            mapping_right.as_deref(),
+        )
+    }
+
+    #[cfg(feature = "semi_anti_join")]
+    fn hash_join_semi_anti(&self, other: &BinaryChunked, anti: bool) -> Vec<IdxSize> {
+        let (splitted_a, splitted_b, _, hb) = self.prepare(other, false);
+        let str_hashes_a = prepare_bytes(&splitted_a, &hb);
+        let str_hashes_b = prepare_bytes(&splitted_b, &hb);
+        if anti {
+            hash_join_tuples_left_anti(str_hashes_a, str_hashes_b)
+        } else {
+            hash_join_tuples_left_semi(str_hashes_a, str_hashes_b)
+        }
+    }
+
+    fn hash_join_outer(&self, other: &BinaryChunked) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
         let n_partitions = set_partition_size();

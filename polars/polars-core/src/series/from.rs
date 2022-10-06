@@ -61,6 +61,8 @@ impl Series {
                 .into_series(),
             List(_) => ListChunked::from_chunks(name, chunks).cast(dtype).unwrap(),
             Utf8 => Utf8Chunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-binary")]
+            Binary => BinaryChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-categorical")]
             Categorical(rev_map) => {
                 let cats = UInt32Chunked::from_chunks(name, chunks);
@@ -94,6 +96,43 @@ impl Series {
             ArrowDataType::Utf8 => {
                 let chunks = cast_chunks(&chunks, &DataType::Utf8, false).unwrap();
                 Ok(Utf8Chunked::from_chunks(name, chunks).into_series())
+            }
+            #[cfg(feature = "dtype-binary")]
+            ArrowDataType::LargeBinary => {
+                Ok(BinaryChunked::from_chunks(name, chunks).into_series())
+            }
+            #[cfg(feature = "dtype-binary")]
+            ArrowDataType::Binary => {
+                let chunks = cast_chunks(&chunks, &DataType::Binary, false).unwrap();
+                Ok(BinaryChunked::from_chunks(name, chunks).into_series())
+            }
+            #[cfg(all(feature = "dtype-u8", not(feature = "dtype-binary")))]
+            ArrowDataType::LargeBinary | ArrowDataType::Binary => {
+                let chunks = chunks
+                    .iter()
+                    .map(|arr| {
+                        let arr = cast(&**arr, &ArrowDataType::LargeBinary).unwrap();
+
+                        let arr = arr.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
+                        let values = arr.values().clone();
+                        let offsets = arr.offsets().clone();
+                        let validity = arr.validity().cloned();
+
+                        let values = Box::new(PrimitiveArray::from_data(
+                            ArrowDataType::UInt8,
+                            values,
+                            None,
+                        ));
+
+                        let dtype = ListArray::<i64>::default_datatype(ArrowDataType::UInt8);
+                        // Safety:
+                        // offsets are monotonically increasing
+                        Box::new(ListArray::<i64>::new_unchecked(
+                            dtype, offsets, values, validity,
+                        )) as ArrayRef
+                    })
+                    .collect();
+                Ok(ListChunked::from_chunks(name, chunks).into())
             }
             ArrowDataType::List(_) | ArrowDataType::LargeList(_) => {
                 let chunks = chunks.iter().map(convert_inner_types).collect();
@@ -253,38 +292,6 @@ impl Series {
                 // Safety
                 // the invariants of an Arrow Dictionary guarantee the keys are in bounds
                 Ok(CategoricalChunked::from_keys_and_values(name, keys, values).into_series())
-            }
-            #[cfg(not(feature = "dtype-u8"))]
-            ArrowDataType::LargeBinary | ArrowDataType::Binary => {
-                panic!("activate dtype-u8 to read binary data into polars List<u8>")
-            }
-            #[cfg(feature = "dtype-u8")]
-            ArrowDataType::LargeBinary | ArrowDataType::Binary => {
-                let chunks = chunks
-                    .iter()
-                    .map(|arr| {
-                        let arr = cast(&**arr, &ArrowDataType::LargeBinary).unwrap();
-
-                        let arr = arr.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
-                        let values = arr.values().clone();
-                        let offsets = arr.offsets().clone();
-                        let validity = arr.validity().cloned();
-
-                        let values = Box::new(PrimitiveArray::from_data(
-                            ArrowDataType::UInt8,
-                            values,
-                            None,
-                        ));
-
-                        let dtype = ListArray::<i64>::default_datatype(ArrowDataType::UInt8);
-                        // Safety:
-                        // offsets are monotonically increasing
-                        Box::new(ListArray::<i64>::new_unchecked(
-                            dtype, offsets, values, validity,
-                        )) as ArrayRef
-                    })
-                    .collect();
-                Ok(ListChunked::from_chunks(name, chunks).into())
             }
             #[cfg(feature = "object")]
             ArrowDataType::Extension(s, _, Some(_)) if s == "POLARS_EXTENSION_TYPE" => {
@@ -529,11 +536,11 @@ impl IntoSeries for Series {
 
 #[cfg(test)]
 mod test {
-    #[cfg(feature = "dtype-u8")]
+    #[cfg(all(feature = "dtype-u8", not(feature = "dtype-binary")))]
     use super::*;
 
     #[test]
-    #[cfg(feature = "dtype-u8")]
+    #[cfg(all(feature = "dtype-u8", not(feature = "dtype-binary")))]
     fn test_binary_to_list() {
         let iter = std::iter::repeat(b"hello").take(2).map(Some);
         let a = Box::new(iter.collect::<BinaryArray<i32>>()) as ArrayRef;

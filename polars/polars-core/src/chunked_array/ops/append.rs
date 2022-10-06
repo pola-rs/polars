@@ -44,6 +44,17 @@ impl Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
+#[doc(hidden)]
+impl BinaryChunked {
+    pub fn append(&mut self, other: &Self) {
+        let len = self.len();
+        self.length += other.length;
+        new_chunks(&mut self.chunks, &other.chunks, len);
+        self.set_sorted2(IsSorted::Not);
+    }
+}
+
 #[doc(hidden)]
 impl ListChunked {
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {

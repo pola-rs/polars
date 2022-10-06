@@ -107,6 +107,32 @@ fn fill_backward_limit_utf8(ca: &Utf8Chunked, limit: IdxSize) -> Utf8Chunked {
     out.into_iter().rev().collect_trusted()
 }
 
+#[cfg(feature = "dtype-binary")]
+fn fill_backward_limit_binary(ca: &BinaryChunked, limit: IdxSize) -> BinaryChunked {
+    let mut cnt = 0;
+    let mut previous = None;
+    let out: BinaryChunked = ca
+        .into_iter()
+        .rev()
+        .map(|opt_v| match opt_v {
+            Some(v) => {
+                cnt = 0;
+                previous = Some(v);
+                Some(v)
+            }
+            None => {
+                if cnt < limit {
+                    cnt += 1;
+                    previous
+                } else {
+                    None
+                }
+            }
+        })
+        .collect_trusted();
+    out.into_iter().rev().collect_trusted()
+}
+
 fn fill_forward<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -341,6 +367,44 @@ impl ChunkFillNull for Utf8Chunked {
 
 impl ChunkFillNullValue<&str> for Utf8Chunked {
     fn fill_null_with_values(&self, value: &str) -> PolarsResult<Self> {
+        self.set(&self.is_null(), Some(value))
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl ChunkFillNull for BinaryChunked {
+    fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Self> {
+        // nothing to fill
+        if !self.has_validity() {
+            return Ok(self.clone());
+        }
+        match strategy {
+            FillNullStrategy::Forward(limit) => {
+                let mut out: Self = match limit {
+                    Some(limit) => impl_fill_forward_limit!(self, limit),
+                    None => impl_fill_forward!(self),
+                };
+                out.rename(self.name());
+                Ok(out)
+            }
+            FillNullStrategy::Backward(limit) => {
+                let mut out = match limit {
+                    None => impl_fill_backward!(self, BinaryChunked),
+                    Some(limit) => fill_backward_limit_binary(self, limit),
+                };
+                out.rename(self.name());
+                Ok(out)
+            }
+            strat => Err(PolarsError::InvalidOperation(
+                format!("Strategy {:?} not supported", strat).into(),
+            )),
+        }
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl ChunkFillNullValue<&[u8]> for BinaryChunked {
+    fn fill_null_with_values(&self, value: &[u8]) -> PolarsResult<Self> {
         self.set(&self.is_null(), Some(value))
     }
 }

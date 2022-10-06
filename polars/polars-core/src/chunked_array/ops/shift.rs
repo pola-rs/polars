@@ -60,7 +60,21 @@ impl ChunkShiftFill<Utf8Type, Option<&str>> for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
+impl ChunkShiftFill<BinaryType, Option<&[u8]>> for BinaryChunked {
+    fn shift_and_fill(&self, periods: i64, fill_value: Option<&[u8]>) -> BinaryChunked {
+        impl_shift_fill!(self, periods, fill_value)
+    }
+}
+
 impl ChunkShift<Utf8Type> for Utf8Chunked {
+    fn shift(&self, periods: i64) -> Self {
+        self.shift_and_fill(periods, None)
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl ChunkShift<BinaryType> for BinaryChunked {
     fn shift(&self, periods: i64) -> Self {
         self.shift_and_fill(periods, None)
     }

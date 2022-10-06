@@ -230,6 +230,70 @@ impl IsIn for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
+impl IsIn for BinaryChunked {
+    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
+        match other.dtype() {
+            DataType::List(dt) if DataType::Binary == **dt => {
+                let mut ca: BooleanChunked = if self.len() == 1 && other.len() != 1 {
+                    let value = self.get(0);
+                    other
+                        .list()?
+                        .amortized_iter()
+                        .map(|opt_b| {
+                            opt_b.map(|s| {
+                                let ca = s.as_ref().unpack::<BinaryType>().unwrap();
+                                ca.into_iter().any(|a| a == value)
+                            }) == Some(true)
+                        })
+                        .collect_trusted()
+                } else {
+                    self.into_iter()
+                        .zip(other.list()?.amortized_iter())
+                        .map(|(value, series)| match (value, series) {
+                            (val, Some(series)) => {
+                                let ca = series.as_ref().unpack::<BinaryType>().unwrap();
+                                ca.into_iter().any(|a| a == val)
+                            }
+                            _ => false,
+                        })
+                        .collect_trusted()
+                };
+                ca.rename(self.name());
+                Ok(ca)
+            }
+            DataType::Binary => {
+                let mut set = HashSet::with_capacity(other.len());
+
+                let other = other.binary()?;
+                other.downcast_iter().for_each(|iter| {
+                    iter.into_iter().for_each(|opt_val| {
+                        set.insert(opt_val);
+                    })
+                });
+                let mut ca: BooleanChunked = self
+                    .into_iter()
+                    .map(|opt_val| set.contains(&opt_val))
+                    .collect_trusted();
+                ca.rename(self.name());
+                Ok(ca)
+            }
+            _ => Err(PolarsError::SchemaMisMatch(
+                format!(
+                    "cannot do is_in operation with left a dtype: {:?} and right a dtype {:?}",
+                    self.dtype(),
+                    other.dtype()
+                )
+                .into(),
+            )),
+        }
+        .map(|mut ca| {
+            ca.rename(self.name());
+            ca
+        })
+    }
+}
+
 impl IsIn for BooleanChunked {
     fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
         match other.dtype() {

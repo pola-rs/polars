@@ -120,6 +120,44 @@ impl Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
+#[doc(hidden)]
+impl BinaryChunked {
+    pub fn extend(&mut self, other: &Self) {
+        if self.chunks.len() > 1 {
+            self.append(other);
+            *self = self.rechunk();
+            return;
+        }
+        let arr = self.downcast_iter().next().unwrap();
+
+        // increments 1
+        let arr = arr.clone();
+
+        // now we drop our owned ArrayRefs so that
+        // decrements 1
+        {
+            self.chunks.clear();
+        }
+
+        use Either::*;
+
+        match arr.into_mut() {
+            Left(immutable) => {
+                extend_immutable(&immutable, &mut self.chunks, &other.chunks);
+            }
+            Right(mut mutable) => {
+                for arr in other.downcast_iter() {
+                    mutable.extend_trusted_len(arr.into_iter())
+                }
+                let arr: BinaryArray<i64> = mutable.into();
+                self.chunks.push(Box::new(arr) as ArrayRef)
+            }
+        }
+        self.compute_len();
+    }
+}
+
 #[doc(hidden)]
 impl BooleanChunked {
     pub fn extend(&mut self, other: &Self) {

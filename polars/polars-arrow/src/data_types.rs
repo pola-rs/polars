@@ -25,6 +25,7 @@ unsafe impl IsFloat for u16 {}
 unsafe impl IsFloat for u32 {}
 unsafe impl IsFloat for u64 {}
 unsafe impl IsFloat for &str {}
+unsafe impl IsFloat for &[u8] {}
 unsafe impl IsFloat for bool {}
 unsafe impl<T: IsFloat> IsFloat for Option<T> {}
 
@@ -41,6 +42,7 @@ mod private {
     impl Sealed for f32 {}
     impl Sealed for f64 {}
     impl Sealed for &str {}
+    impl Sealed for &[u8] {}
     impl Sealed for bool {}
     impl<T: Sealed> Sealed for Option<T> {}
 }

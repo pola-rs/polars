@@ -30,6 +30,8 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
     // TODO: insert types
     match dtype {
         DataType::Utf8 => downcast_and_pack!(LargeStringArray, Utf8),
+        #[cfg(feature = "dtype-binary")]
+        DataType::Binary => downcast_and_pack!(LargeBinaryArray, Binary),
         DataType::Boolean => downcast_and_pack!(BooleanArray, Boolean),
         DataType::UInt8 => downcast_and_pack!(UInt8Array, UInt8),
         DataType::UInt16 => downcast_and_pack!(UInt16Array, UInt16),
@@ -156,6 +158,18 @@ impl ChunkAnyValue for BooleanChunked {
 }
 
 impl ChunkAnyValue for Utf8Chunked {
+    #[inline]
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+        get_any_value_unchecked!(self, index)
+    }
+
+    fn get_any_value(&self, index: usize) -> AnyValue {
+        get_any_value!(self, index)
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl ChunkAnyValue for BinaryChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
         get_any_value_unchecked!(self, index)

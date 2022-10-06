@@ -4,6 +4,8 @@
 
 use std::cmp::{Ordering, PartialEq};
 
+#[cfg(feature = "dtype-binary")]
+use crate::chunked_array::ops::take::take_random::{BinaryTakeRandom, BinaryTakeRandomSingleChunk};
 use crate::chunked_array::ops::take::take_random::{
     BoolTakeRandom, BoolTakeRandomSingleChunk, NumTakeRandomChunked, NumTakeRandomCont,
     NumTakeRandomSingleChunk, Utf8TakeRandom, Utf8TakeRandomSingleChunk,
@@ -69,6 +71,10 @@ macro_rules! impl_traits {
 
 impl_traits!(Utf8TakeRandom<'_>);
 impl_traits!(Utf8TakeRandomSingleChunk<'_>);
+#[cfg(feature = "dtype-binary")]
+impl_traits!(BinaryTakeRandom<'_>);
+#[cfg(feature = "dtype-binary")]
+impl_traits!(BinaryTakeRandomSingleChunk<'_>);
 impl_traits!(BoolTakeRandom<'_>);
 impl_traits!(BoolTakeRandomSingleChunk<'_>);
 impl_traits!(NumTakeRandomSingleChunk<'_, T>, T);
@@ -131,6 +137,27 @@ impl<'a> IntoPartialEqInner<'a> for &'a Utf8Chunked {
             _ => {
                 let chunks = self.downcast_chunks();
                 let t = Utf8TakeRandom {
+                    chunks,
+                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
+                };
+                Box::new(t)
+            }
+        }
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl<'a> IntoPartialEqInner<'a> for &'a BinaryChunked {
+    fn into_partial_eq_inner(self) -> Box<dyn PartialEqInner + 'a> {
+        match self.chunks.len() {
+            1 => {
+                let arr = self.downcast_iter().next().unwrap();
+                let t = BinaryTakeRandomSingleChunk { arr };
+                Box::new(t)
+            }
+            _ => {
+                let chunks = self.downcast_chunks();
+                let t = BinaryTakeRandom {
                     chunks,
                     chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
                 };
@@ -231,6 +258,27 @@ impl<'a> IntoPartialOrdInner<'a> for &'a Utf8Chunked {
             _ => {
                 let chunks = self.downcast_chunks();
                 let t = Utf8TakeRandom {
+                    chunks,
+                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
+                };
+                Box::new(t)
+            }
+        }
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl<'a> IntoPartialOrdInner<'a> for &'a BinaryChunked {
+    fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner + 'a> {
+        match self.chunks.len() {
+            1 => {
+                let arr = self.downcast_iter().next().unwrap();
+                let t = BinaryTakeRandomSingleChunk { arr };
+                Box::new(t)
+            }
+            _ => {
+                let chunks = self.downcast_chunks();
+                let t = BinaryTakeRandom {
                     chunks,
                     chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
                 };

@@ -188,11 +188,13 @@ mod test {
             toggle_string_cache(toggle);
             let s = Series::new("", init).cast(&DataType::Categorical(None))?;
             let ca = s.categorical()?;
-            let mut ca_lexical = ca.clone();
+            let mut ca_lexical: CategoricalChunked = ca.clone();
             ca_lexical.set_lexical_sorted(true);
 
+            let series = ca_lexical.into_series();
+
             let df = df![
-                "cat" => &ca_lexical.into_series(),
+                "cat" => &series,
                 "vals" => [1, 1, 2, 2]
             ]?;
 

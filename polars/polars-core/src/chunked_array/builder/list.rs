@@ -179,6 +179,8 @@ where
 
 type LargePrimitiveBuilder<T> = MutableListArray<i64, MutablePrimitiveArray<T>>;
 type LargeListUtf8Builder = MutableListArray<i64, MutableUtf8Array<i64>>;
+#[cfg(feature = "dtype-binary")]
+type LargeListBinaryBuilder = MutableListArray<i64, MutableBinaryArray<i64>>;
 type LargeListBooleanBuilder = MutableListArray<i64, MutableBooleanArray>;
 
 pub struct ListUtf8ChunkedBuilder {
@@ -253,6 +255,89 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
             self.fast_explode = false;
         }
         let ca = s.utf8().unwrap();
+        self.append(ca)
+    }
+
+    fn finish(&mut self) -> ListChunked {
+        finish_list_builder!(self)
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+pub struct ListBinaryChunkedBuilder {
+    builder: LargeListBinaryBuilder,
+    field: Field,
+    fast_explode: bool,
+}
+
+#[cfg(feature = "dtype-binary")]
+impl ListBinaryChunkedBuilder {
+    pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
+        let values = MutableBinaryArray::<i64>::with_capacity(values_capacity);
+        let builder = LargeListBinaryBuilder::new_with_capacity(values, capacity);
+        let field = Field::new(name, DataType::List(Box::new(DataType::Binary)));
+
+        ListBinaryChunkedBuilder {
+            builder,
+            field,
+            fast_explode: true,
+        }
+    }
+
+    pub fn append_trusted_len_iter<'a, I: Iterator<Item = Option<&'a [u8]>> + TrustedLen>(
+        &mut self,
+        iter: I,
+    ) {
+        let values = self.builder.mut_values();
+
+        if iter.size_hint().0 == 0 {
+            self.fast_explode = false;
+        }
+        // Safety
+        // trusted len, trust the type system
+        unsafe { values.extend_trusted_len_unchecked(iter) };
+        self.builder.try_push_valid().unwrap();
+    }
+
+    pub fn append_values_iter<'a, I: Iterator<Item = &'a [u8]>>(&mut self, iter: I) {
+        let values = self.builder.mut_values();
+
+        if iter.size_hint().0 == 0 {
+            self.fast_explode = false;
+        }
+        values.extend_values(iter);
+        self.builder.try_push_valid().unwrap();
+    }
+
+    pub(crate) fn append(&mut self, ca: &BinaryChunked) {
+        let value_builder = self.builder.mut_values();
+        value_builder.try_extend(ca).unwrap();
+        self.builder.try_push_valid().unwrap();
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl ListBuilderTrait for ListBinaryChunkedBuilder {
+    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
+        match opt_s {
+            Some(s) => self.append_series(s),
+            None => {
+                self.append_null();
+            }
+        }
+    }
+
+    #[inline]
+    fn append_null(&mut self) {
+        self.fast_explode = false;
+        self.builder.push_null();
+    }
+
+    fn append_series(&mut self, s: &Series) {
+        if s.is_empty() {
+            self.fast_explode = false;
+        }
+        let ca = s.binary().unwrap();
         self.append(ca)
     }
 
@@ -389,10 +474,19 @@ pub fn get_list_builder(
                     Box::new(builder)
                 }};
             }
+            #[cfg(feature = "dtype-binary")]
+            macro_rules! get_binary_builder {
+                () => {{
+                    let builder =
+                        ListBinaryChunkedBuilder::new(&name, list_capacity, 5 * value_capacity);
+                    Box::new(builder)
+                }};
+            }
             Ok(match_dtype_to_logical_apply_macro!(
                 physical_type,
                 get_primitive_builder,
                 get_utf8_builder,
+                get_binary_builder,
                 get_bool_builder
             ))
         }

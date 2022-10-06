@@ -1,4 +1,4 @@
-use arrow::array::{Array, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
+use arrow::array::{Array, BinaryArray, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
 use arrow::types::NativeType;
 
 pub trait IsValid {
@@ -13,6 +13,7 @@ pub trait IsValid {
 
 pub trait ArrowArray: Array {}
 
+impl ArrowArray for BinaryArray<i64> {}
 impl ArrowArray for Utf8Array<i64> {}
 impl<T: NativeType> ArrowArray for PrimitiveArray<T> {}
 impl ArrowArray for BooleanArray {}
