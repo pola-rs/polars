@@ -646,6 +646,10 @@ class Series:
         | list[int]
         | list[bool],
     ) -> Any:
+        
+        if not _NUMPY_AVAILABLE:
+            raise ImportError("'numpy' is required for this functionality.")
+            
         if (
             is_bool_sequence(item)
             or (isinstance(item, Series) and item.dtype == Boolean)
