@@ -649,7 +649,11 @@ class Series:
         if (
             is_bool_sequence(item)
             or (isinstance(item, Series) and item.dtype == Boolean)
-            or (isinstance(item, np.ndarray) and item.dtype.kind == "b")
+            or (
+                _NUMPY_AVAILABLE
+                and isinstance(item, np.ndarray)
+                and item.dtype.kind == "b"
+            )
         ):
             warnings.warn(
                 "passing a boolean mask to Series.__getitem__ is being deprecated; "
