@@ -17,7 +17,7 @@ use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyList, PySequence};
+use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PySequence};
 use pyo3::{PyAny, PyResult};
 
 use crate::dataframe::PyDataFrame;
@@ -194,8 +194,6 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::Boolean(v) => v.into_py(py),
             AnyValue::Utf8(v) => v.into_py(py),
             AnyValue::Utf8Owned(v) => v.into_py(py),
-            AnyValue::Binary(v) => v.into_py(py),
-            AnyValue::BinaryOwned(v) => v.into_py(py),
             AnyValue::Categorical(idx, rev) => {
                 let s = rev.get(idx);
                 s.into_py(py)
@@ -241,6 +239,8 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 let s = format!("{}", v);
                 s.into_py(py)
             }
+            AnyValue::Binary(v) => v.into_py(py),
+            AnyValue::BinaryOwned(v) => v.into_py(py),
         }
     }
 }
@@ -413,7 +413,7 @@ impl ToPyObject for Wrap<&Utf8Chunked> {
 
 impl ToPyObject for Wrap<&BinaryChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let iter = self.0.into_iter();
+        let iter = self.0.into_iter().map(|opt_bytes| opt_bytes.map(|bytes| PyBytes::new(py, bytes)));
         PyList::new(py, iter).into_py(py)
     }
 }
@@ -507,9 +507,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Ok(AnyValue::Float64(v).into())
         } else if let Ok(v) = ob.extract::<&'s str>() {
             Ok(AnyValue::Utf8(v).into())
-        } else if let Ok(v) = ob.extract::<&'s [u8]>() {
-            Ok(AnyValue::Binary(v).into())
-        } else if ob.get_type().name()?.contains("datetime") {
+        }  else if ob.get_type().name()?.contains("datetime") {
             Python::with_gil(|py| {
                 // windows
                 #[cfg(target_arch = "windows")]
@@ -593,7 +591,10 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 let v = td.extract::<i64>(py).unwrap();
                 Ok(Wrap(AnyValue::Duration(v, TimeUnit::Microseconds)))
             })
-        } else {
+        } else if let Ok(v) = ob.extract::<&'s [u8]>() {
+            Ok(AnyValue::Binary(v).into())
+        }
+        else {
             Err(PyErr::from(PyPolarsErr::Other(format!(
                 "row type not supported {:?}",
                 ob

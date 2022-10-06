@@ -283,6 +283,10 @@ impl Debug for Series {
             DataType::Null => {
                 writeln!(f, "nullarray")
             }
+            #[cfg(feature = "dtype-binary")]
+            DataType::Binary => {
+                format_array!(f, self.binary().unwrap(), "binary", self.name(), "Series")
+            }
             dt => panic!("{:?} not impl", dt),
         }
     }

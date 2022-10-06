@@ -71,7 +71,7 @@ impl Series {
                 {
                     panic!("activate feature 'dtype-binary'")
                 }
-            },
+            }
             #[cfg(feature = "dtype-categorical")]
             Categorical(rev_map) => {
                 let cats = UInt32Chunked::from_chunks(name, chunks);

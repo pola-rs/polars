@@ -21,6 +21,7 @@ from polars.convert import (
     from_records,
 )
 from polars.datatypes import (
+    Binary,
     Boolean,
     Categorical,
     DataType,
@@ -172,6 +173,7 @@ __all__ = [
     "Float32",
     "Float64",
     "Boolean",
+    "Binary",
     "Utf8",
     "List",
     "Date",

@@ -260,8 +260,6 @@ pub enum AnyValue<'a> {
     Boolean(bool),
     /// A UTF8 encoded string type.
     Utf8(&'a str),
-    #[cfg(feature = "dtype-binary")]
-    Binary(&'a [u8]),
     /// An unsigned 8-bit integer number.
     UInt8(u8),
     /// An unsigned 16-bit integer number.
@@ -309,6 +307,8 @@ pub enum AnyValue<'a> {
     StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
     /// A UTF8 encoded string type.
     Utf8Owned(String),
+    #[cfg(feature = "dtype-binary")]
+    Binary(&'a [u8]),
     #[cfg(feature = "dtype-binary")]
     BinaryOwned(Vec<u8>),
 }
