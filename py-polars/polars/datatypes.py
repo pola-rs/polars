@@ -160,6 +160,10 @@ class Utf8(DataType):
     """UTF-8 encoded string type."""
 
 
+class Binary(DataType):
+    """Binary type."""
+
+
 class Null(DataType):
     """Type representing Null / None values."""
 
@@ -373,6 +377,7 @@ _DTYPE_TO_FFINAME: dict[PolarsDataType, str] = {
     Object: "object",
     Categorical: "categorical",
     Struct: "struct",
+    Binary: "binary",
 }
 for tu in DTYPE_TEMPORAL_UNITS:
     _DTYPE_TO_FFINAME[Datetime(tu)] = "datetime"
@@ -411,6 +416,7 @@ _PY_TYPE_TO_DTYPE: dict[type, PolarsDataType] = {
     list: List,
     tuple: List,
     Decimal: Float64,
+    bytes: Binary,
 }
 
 _PY_STR_TO_DTYPE: dict[str, PolarsDataType] = {
@@ -434,6 +440,7 @@ _DTYPE_TO_PY_TYPE: dict[PolarsDataType, type] = {
     Datetime: datetime,
     Date: date,
     Time: time,
+    Binary: bytes,
 }
 for tu in DTYPE_TEMPORAL_UNITS:
     _DTYPE_TO_PY_TYPE[Datetime(tu)] = datetime

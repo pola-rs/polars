@@ -1,4 +1,4 @@
-use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
+use arrow::array::{BinaryArray, BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::Bitmap;
 use arrow::buffer::Buffer;
 use arrow::datatypes::DataType;
@@ -38,5 +38,25 @@ impl FromDataUtf8 for Utf8Array<i64> {
         validity: Option<Bitmap>,
     ) -> Self {
         Utf8Array::from_data_unchecked(DataType::LargeUtf8, offsets, values, validity)
+    }
+}
+
+pub trait FromDataBinary {
+    /// # Safety
+    /// `values` buffer must contain valid utf8 between every `offset`
+    unsafe fn from_data_unchecked_default(
+        offsets: Buffer<i64>,
+        values: Buffer<u8>,
+        validity: Option<Bitmap>,
+    ) -> Self;
+}
+
+impl FromDataBinary for BinaryArray<i64> {
+    unsafe fn from_data_unchecked_default(
+        offsets: Buffer<i64>,
+        values: Buffer<u8>,
+        validity: Option<Bitmap>,
+    ) -> Self {
+        BinaryArray::from_data_unchecked(DataType::LargeBinary, offsets, values, validity)
     }
 }

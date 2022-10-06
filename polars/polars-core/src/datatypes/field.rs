@@ -131,8 +131,9 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), tz.clone()),
             ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
             ArrowDataType::Date64 => DataType::Datetime(TimeUnit::Milliseconds, None),
-            ArrowDataType::LargeUtf8 => DataType::Utf8,
-            ArrowDataType::Utf8 => DataType::Utf8,
+            ArrowDataType::LargeUtf8 | ArrowDataType::Utf8 => DataType::Utf8,
+            #[cfg(feature = "dtype-binary")]
+            ArrowDataType::LargeBinary | ArrowDataType::Binary => DataType::Binary,
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(_, _, _) => DataType::Categorical(None),

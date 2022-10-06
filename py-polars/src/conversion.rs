@@ -17,7 +17,7 @@ use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyList, PySequence};
+use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PySequence};
 use pyo3::{PyAny, PyResult};
 
 use crate::dataframe::PyDataFrame;
@@ -136,6 +136,22 @@ impl<'a> FromPyObject<'a> for Wrap<Utf8Chunked> {
     }
 }
 
+impl<'a> FromPyObject<'a> for Wrap<BinaryChunked> {
+    fn extract(obj: &'a PyAny) -> PyResult<Self> {
+        let (seq, len) = get_pyseq(obj)?;
+        let mut builder = BinaryChunkedBuilder::new("", len, len * 25);
+
+        for res in seq.iter()? {
+            let item = res?;
+            match item.extract::<&str>() {
+                Ok(val) => builder.append_value(val),
+                Err(_) => builder.append_null(),
+            }
+        }
+        Ok(Wrap(builder.finish()))
+    }
+}
+
 impl<'a> FromPyObject<'a> for Wrap<NullValues> {
     fn extract(ob: &'a PyAny) -> PyResult<Self> {
         if let Ok(s) = ob.extract::<String>() {
@@ -223,6 +239,8 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 let s = format!("{}", v);
                 s.into_py(py)
             }
+            AnyValue::Binary(v) => v.into_py(py),
+            AnyValue::BinaryOwned(v) => v.into_py(py),
         }
     }
 }
@@ -244,6 +262,7 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Float64 => pl.getattr("Float64").unwrap().into(),
             DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
             DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
+            DataType::Binary => pl.getattr("Binary").unwrap().into(),
             DataType::List(inner) => {
                 let inner = Wrap(*inner.clone()).to_object(py);
                 let list_class = pl.getattr("List").unwrap();
@@ -308,6 +327,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Int32" => DataType::Int32,
                     "Int64" => DataType::Int64,
                     "Utf8" => DataType::Utf8,
+                    "Binary" => DataType::Binary,
                     "Boolean" => DataType::Boolean,
                     "Categorical" => DataType::Categorical(None),
                     "Date" => DataType::Date,
@@ -387,6 +407,16 @@ impl ToPyObject for Wrap<TimeUnit> {
 impl ToPyObject for Wrap<&Utf8Chunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let iter = self.0.into_iter();
+        PyList::new(py, iter).into_py(py)
+    }
+}
+
+impl ToPyObject for Wrap<&BinaryChunked> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let iter = self
+            .0
+            .into_iter()
+            .map(|opt_bytes| opt_bytes.map(|bytes| PyBytes::new(py, bytes)));
         PyList::new(py, iter).into_py(py)
     }
 }
@@ -564,6 +594,8 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 let v = td.extract::<i64>(py).unwrap();
                 Ok(Wrap(AnyValue::Duration(v, TimeUnit::Microseconds)))
             })
+        } else if let Ok(v) = ob.extract::<&'s [u8]>() {
+            Ok(AnyValue::Binary(v).into())
         } else {
             Err(PyErr::from(PyPolarsErr::Other(format!(
                 "row type not supported {:?}",

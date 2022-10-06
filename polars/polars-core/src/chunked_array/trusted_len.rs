@@ -203,6 +203,28 @@ where
     }
 }
 
+#[cfg(feature = "dtype-binary")]
+impl<Ptr> FromTrustedLenIterator<Ptr> for BinaryChunked
+where
+    Ptr: PolarsAsRef<[u8]>,
+{
+    fn from_iter_trusted_length<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        iter.collect()
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl<Ptr> FromTrustedLenIterator<Option<Ptr>> for BinaryChunked
+where
+    Ptr: AsRef<[u8]>,
+{
+    fn from_iter_trusted_length<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        iter.collect()
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> FromTrustedLenIterator<Option<T>> for ObjectChunked<T> {
     fn from_iter_trusted_length<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {

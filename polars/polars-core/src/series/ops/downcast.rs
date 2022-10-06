@@ -158,6 +158,19 @@ impl Series {
         }
     }
 
+    /// Unpack to ChunkedArray of dtype binary
+    #[cfg(feature = "dtype-binary")]
+    pub fn binary(&self) -> PolarsResult<&BinaryChunked> {
+        match self.dtype() {
+            DataType::Binary => unsafe {
+                Ok(&*(self.as_ref() as *const dyn SeriesTrait as *const BinaryChunked))
+            },
+            dt => Err(PolarsError::SchemaMisMatch(
+                format!("Series of dtype: {:?} != binary", dt).into(),
+            )),
+        }
+    }
+
     /// Unpack to ChunkedArray of dtype Time
     #[cfg(feature = "dtype-time")]
     pub fn time(&self) -> PolarsResult<&TimeChunked> {

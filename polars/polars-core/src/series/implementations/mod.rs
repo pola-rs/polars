@@ -1,3 +1,5 @@
+#[cfg(feature = "dtype-binary")]
+mod binary;
 mod boolean;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
@@ -567,6 +569,8 @@ impl<T: PolarsNumericType> private::PrivateSeriesNumeric for SeriesWrap<ChunkedA
 }
 
 impl private::PrivateSeriesNumeric for SeriesWrap<Utf8Chunked> {}
+#[cfg(feature = "dtype-binary")]
+impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
     fn bit_repr_is_large(&self) -> bool {

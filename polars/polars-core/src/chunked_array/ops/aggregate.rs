@@ -654,44 +654,6 @@ impl VarAggSeries for Float64Chunked {
     }
 }
 
-impl VarAggSeries for BooleanChunked {
-    fn var_as_series(&self, _ddof: u8) -> Series {
-        Self::full_null(self.name(), 1).into_series()
-    }
-
-    fn std_as_series(&self, _ddof: u8) -> Series {
-        Self::full_null(self.name(), 1).into_series()
-    }
-}
-impl VarAggSeries for ListChunked {
-    fn var_as_series(&self, _ddof: u8) -> Series {
-        Self::full_null(self.name(), 1).into_series()
-    }
-
-    fn std_as_series(&self, _ddof: u8) -> Series {
-        Self::full_null(self.name(), 1).into_series()
-    }
-}
-#[cfg(feature = "object")]
-impl<T: PolarsObject> VarAggSeries for ObjectChunked<T> {
-    fn var_as_series(&self, _ddof: u8) -> Series {
-        unimplemented!()
-    }
-
-    fn std_as_series(&self, _ddof: u8) -> Series {
-        unimplemented!()
-    }
-}
-impl VarAggSeries for Utf8Chunked {
-    fn var_as_series(&self, _ddof: u8) -> Series {
-        Self::full_null(self.name(), 1).into_series()
-    }
-
-    fn std_as_series(&self, _ddof: u8) -> Series {
-        Self::full_null(self.name(), 1).into_series()
-    }
-}
-
 macro_rules! impl_quantile_as_series {
     ($self:expr, $agg:ident, $ty: ty, $qtl:expr, $opt:expr) => {{
         let v = $self.$agg($qtl, $opt)?;
@@ -750,60 +712,6 @@ impl QuantileAggSeries for Float64Chunked {
     }
 }
 
-impl QuantileAggSeries for BooleanChunked {
-    fn quantile_as_series(
-        &self,
-        _quantile: f64,
-        _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Series> {
-        Ok(Self::full_null(self.name(), 1).into_series())
-    }
-
-    fn median_as_series(&self) -> Series {
-        Self::full_null(self.name(), 1).into_series()
-    }
-}
-impl QuantileAggSeries for ListChunked {
-    fn quantile_as_series(
-        &self,
-        _quantile: f64,
-        _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Series> {
-        Ok(Self::full_null(self.name(), 1).into_series())
-    }
-
-    fn median_as_series(&self) -> Series {
-        Self::full_null(self.name(), 1).into_series()
-    }
-}
-#[cfg(feature = "object")]
-impl<T: PolarsObject> QuantileAggSeries for ObjectChunked<T> {
-    fn quantile_as_series(
-        &self,
-        _quantile: f64,
-        _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Series> {
-        unimplemented!()
-    }
-
-    fn median_as_series(&self) -> Series {
-        unimplemented!()
-    }
-}
-impl QuantileAggSeries for Utf8Chunked {
-    fn quantile_as_series(
-        &self,
-        _quantile: f64,
-        _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Series> {
-        Ok(Self::full_null(self.name(), 1).into_series())
-    }
-
-    fn median_as_series(&self) -> Series {
-        Self::full_null(self.name(), 1).into_series()
-    }
-}
-
 impl ChunkAggSeries for BooleanChunked {
     fn sum_as_series(&self) -> Series {
         let v = ChunkAgg::sum(self);
@@ -844,6 +752,31 @@ impl ChunkAggSeries for Utf8Chunked {
             &[self
                 .downcast_iter()
                 .filter_map(compute::aggregate::min_string)
+                .fold_first_(|acc, v| if acc < v { acc } else { v })],
+        )
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl ChunkAggSeries for BinaryChunked {
+    fn sum_as_series(&self) -> Series {
+        BinaryChunked::full_null(self.name(), 1).into_series()
+    }
+    fn max_as_series(&self) -> Series {
+        Series::new(
+            self.name(),
+            &[self
+                .downcast_iter()
+                .filter_map(compute::aggregate::max_binary)
+                .fold_first_(|acc, v| if acc > v { acc } else { v })],
+        )
+    }
+    fn min_as_series(&self) -> Series {
+        Series::new(
+            self.name(),
+            &[self
+                .downcast_iter()
+                .filter_map(compute::aggregate::min_binary)
                 .fold_first_(|acc, v| if acc < v { acc } else { v })],
         )
     }
@@ -892,6 +825,8 @@ where
 
 impl ArgAgg for BooleanChunked {}
 impl ArgAgg for Utf8Chunked {}
+#[cfg(feature = "dtype-binary")]
+impl ArgAgg for BinaryChunked {}
 impl ArgAgg for ListChunked {}
 
 #[cfg(feature = "object")]

@@ -713,7 +713,13 @@ impl PySeries {
                         let ca = series.duration().unwrap();
                         return Wrap(ca).to_object(py);
                     }
-                    dt => panic!("to_list() not implemented for {:?}", dt),
+                    DataType::Binary => {
+                        let ca = series.binary().unwrap();
+                        return Wrap(ca).to_object(py);
+                    }
+                    DataType::Null | DataType::Unknown => {
+                        panic!("to_list not implemented for null/unknown")
+                    }
                 };
                 pylist.to_object(py)
             }

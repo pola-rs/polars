@@ -1,3 +1,5 @@
+#[cfg(feature = "dtype-binary")]
+mod binary;
 mod boolean;
 mod from;
 pub mod list;
@@ -11,6 +13,8 @@ use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
+#[cfg(feature = "dtype-binary")]
+pub use binary::*;
 pub use boolean::*;
 pub use list::*;
 pub use primitive::*;
@@ -159,6 +163,49 @@ where
     }
 }
 
+#[cfg(feature = "dtype-binary")]
+impl<B> NewChunkedArray<BinaryType, B> for BinaryChunked
+where
+    B: AsRef<[u8]>,
+{
+    fn from_slice(name: &str, v: &[B]) -> Self {
+        let values_size = v.iter().fold(0, |acc, s| acc + s.as_ref().len());
+
+        let mut builder = MutableBinaryArray::<i64>::with_capacities(v.len(), values_size);
+        builder.extend_trusted_len_values(v.iter().map(|s| s.as_ref()));
+
+        let chunks = vec![builder.as_box()];
+        ChunkedArray::from_chunks(name, chunks)
+    }
+
+    fn from_slice_options(name: &str, opt_v: &[Option<B>]) -> Self {
+        let values_size = opt_v.iter().fold(0, |acc, s| match s {
+            Some(s) => acc + s.as_ref().len(),
+            None => acc,
+        });
+        let mut builder = MutableBinaryArray::<i64>::with_capacities(opt_v.len(), values_size);
+        builder.extend_trusted_len(opt_v.iter().map(|s| s.as_ref()));
+
+        let chunks = vec![builder.as_box()];
+        ChunkedArray::from_chunks(name, chunks)
+    }
+
+    fn from_iter_options(name: &str, it: impl Iterator<Item = Option<B>>) -> Self {
+        let cap = get_iter_capacity(&it);
+        let mut builder = BinaryChunkedBuilder::new(name, cap, cap * 5);
+        it.for_each(|opt| builder.append_option(opt));
+        builder.finish()
+    }
+
+    /// Create a new ChunkedArray from an iterator.
+    fn from_iter_values(name: &str, it: impl Iterator<Item = B>) -> Self {
+        let cap = get_iter_capacity(&it);
+        let mut builder = BinaryChunkedBuilder::new(name, cap, cap * 5);
+        it.for_each(|v| builder.append_value(v));
+        builder.finish()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -218,6 +265,15 @@ mod test {
     fn test_list_str_builder() {
         let mut builder = ListUtf8ChunkedBuilder::new("a", 10, 10);
         builder.append_series(&Series::new("", &["foo", "bar"]));
+        let ca = builder.finish();
+        dbg!(ca);
+    }
+
+    #[cfg(feature = "dtype-binary")]
+    #[test]
+    fn test_list_binary_builder() {
+        let mut builder = ListBinaryChunkedBuilder::new("a", 10, 10);
+        builder.append_series(&Series::new("", &["foo".as_bytes(), "bar".as_bytes()]));
         let ca = builder.finish();
         dbg!(ca);
     }

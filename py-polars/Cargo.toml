@@ -90,6 +90,7 @@ all = [
   "propagate_nans",
   "polars/groupby_list",
   "polars-sql",
+  "polars/dtype-binary",
 ]
 
 # we cannot conditionaly activate simd

@@ -273,6 +273,81 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
+impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
+    fn set_at_idx<I: IntoIterator<Item = IdxSize>>(
+        &'a self,
+        idx: I,
+        opt_value: Option<&'a [u8]>,
+    ) -> PolarsResult<Self>
+    where
+        Self: Sized,
+    {
+        let idx_iter = idx.into_iter();
+        let mut ca_iter = self.into_iter().enumerate();
+        let mut builder =
+            BinaryChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
+
+        for current_idx in idx_iter {
+            if current_idx as usize > self.len() {
+                return Err(PolarsError::ComputeError(
+                    format!(
+                        "index: {} outside of ChunkedArray with length: {}",
+                        current_idx,
+                        self.len()
+                    )
+                    .into(),
+                ));
+            }
+            for (cnt_idx, opt_val_self) in &mut ca_iter {
+                if cnt_idx == current_idx as usize {
+                    builder.append_option(opt_value);
+                    break;
+                } else {
+                    builder.append_option(opt_val_self);
+                }
+            }
+        }
+        // the last idx is probably not the last value so we finish the iterator
+        for (_, opt_val_self) in ca_iter {
+            builder.append_option(opt_val_self);
+        }
+
+        let ca = builder.finish();
+        Ok(ca)
+    }
+
+    fn set_at_idx_with<I: IntoIterator<Item = IdxSize>, F>(
+        &'a self,
+        idx: I,
+        f: F,
+    ) -> PolarsResult<Self>
+    where
+        Self: Sized,
+        F: Fn(Option<&'a [u8]>) -> Option<Vec<u8>>,
+    {
+        let mut builder =
+            BinaryChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
+        impl_set_at_idx_with!(self, builder, idx, f)
+    }
+
+    fn set(&'a self, mask: &BooleanChunked, value: Option<&'a [u8]>) -> PolarsResult<Self>
+    where
+        Self: Sized,
+    {
+        check_bounds!(self, mask);
+        let ca = mask
+            .into_iter()
+            .zip(self.into_iter())
+            .map(|(mask_val, opt_val)| match mask_val {
+                Some(true) => value,
+                _ => opt_val,
+            })
+            .collect_trusted();
+        Ok(ca)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;

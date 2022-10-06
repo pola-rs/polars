@@ -331,6 +331,21 @@ pub unsafe fn take_no_null_utf8_iter_unchecked<I: IntoIterator<Item = usize>>(
 /// - no bounds checks
 /// - iterator must be TrustedLen
 #[inline]
+pub unsafe fn take_no_null_binary_iter_unchecked<I: IntoIterator<Item = usize>>(
+    arr: &LargeBinaryArray,
+    indices: I,
+) -> Box<LargeBinaryArray> {
+    let iter = indices.into_iter().map(|idx| {
+        debug_assert!(idx < arr.len());
+        arr.value_unchecked(idx)
+    });
+    Box::new(MutableBinaryArray::<i64>::from_trusted_len_values_iter_unchecked(iter).into())
+}
+
+/// # Safety
+/// - no bounds checks
+/// - iterator must be TrustedLen
+#[inline]
 pub unsafe fn take_utf8_iter_unchecked<I: IntoIterator<Item = usize>>(
     arr: &LargeStringArray,
     indices: I,
@@ -352,6 +367,27 @@ pub unsafe fn take_utf8_iter_unchecked<I: IntoIterator<Item = usize>>(
 /// - no bounds checks
 /// - iterator must be TrustedLen
 #[inline]
+pub unsafe fn take_binary_iter_unchecked<I: IntoIterator<Item = usize>>(
+    arr: &LargeBinaryArray,
+    indices: I,
+) -> Box<LargeBinaryArray> {
+    let validity = arr.validity().expect("should have nulls");
+    let iter = indices.into_iter().map(|idx| {
+        debug_assert!(idx < arr.len());
+        if validity.get_bit_unchecked(idx) {
+            Some(arr.value_unchecked(idx))
+        } else {
+            None
+        }
+    });
+
+    Box::new(LargeBinaryArray::from_trusted_len_iter_unchecked(iter))
+}
+
+/// # Safety
+/// - no bounds checks
+/// - iterator must be TrustedLen
+#[inline]
 pub unsafe fn take_no_null_utf8_opt_iter_unchecked<I: IntoIterator<Item = Option<usize>>>(
     arr: &LargeStringArray,
     indices: I,
@@ -361,6 +397,21 @@ pub unsafe fn take_no_null_utf8_opt_iter_unchecked<I: IntoIterator<Item = Option
         .map(|opt_idx| opt_idx.map(|idx| arr.value_unchecked(idx)));
 
     Box::new(LargeStringArray::from_trusted_len_iter_unchecked(iter))
+}
+
+/// # Safety
+/// - no bounds checks
+/// - iterator must be TrustedLen
+#[inline]
+pub unsafe fn take_no_null_binary_opt_iter_unchecked<I: IntoIterator<Item = Option<usize>>>(
+    arr: &LargeBinaryArray,
+    indices: I,
+) -> Box<LargeBinaryArray> {
+    let iter = indices
+        .into_iter()
+        .map(|opt_idx| opt_idx.map(|idx| arr.value_unchecked(idx)));
+
+    Box::new(LargeBinaryArray::from_trusted_len_iter_unchecked(iter))
 }
 
 /// # Safety
@@ -382,6 +433,27 @@ pub unsafe fn take_utf8_opt_iter_unchecked<I: IntoIterator<Item = Option<usize>>
         })
     });
     Box::new(LargeStringArray::from_trusted_len_iter_unchecked(iter))
+}
+
+/// # Safety
+/// - no bounds checks
+/// - iterator must be TrustedLen
+#[inline]
+pub unsafe fn take_binary_opt_iter_unchecked<I: IntoIterator<Item = Option<usize>>>(
+    arr: &LargeBinaryArray,
+    indices: I,
+) -> Box<LargeBinaryArray> {
+    let validity = arr.validity().expect("should have nulls");
+    let iter = indices.into_iter().map(|opt_idx| {
+        opt_idx.and_then(|idx| {
+            if validity.get_bit_unchecked(idx) {
+                Some(arr.value_unchecked(idx))
+            } else {
+                None
+            }
+        })
+    });
+    Box::new(LargeBinaryArray::from_trusted_len_iter_unchecked(iter))
 }
 
 /// # Safety
@@ -491,6 +563,119 @@ pub unsafe fn take_utf8_unchecked(
 
     // Safety: all "values" are &str, and thus valid utf8
     Box::new(Utf8Array::<i64>::from_data_unchecked_default(
+        offset_buf.into(),
+        values_buf.into(),
+        validity,
+    ))
+}
+
+/// # Safety
+/// caller must ensure indices are in bounds
+pub unsafe fn take_binary_unchecked(
+    arr: &LargeBinaryArray,
+    indices: &IdxArr,
+) -> Box<LargeBinaryArray> {
+    let data_len = indices.len();
+
+    let mut offset_buf = vec![0; data_len + 1];
+    let offset_typed = offset_buf.as_mut_slice();
+
+    let mut length_so_far = 0;
+    offset_typed[0] = length_so_far;
+
+    let validity;
+
+    // The required size is yet unknown
+    // Allocate 2.0 times the expected size.
+    // where expected size is the length of bytes multiplied by the factor (take_len / current_len)
+    let mut values_capacity = if arr.len() > 0 {
+        ((arr.len() as f32 * 2.0) as usize) / arr.len() * indices.len() as usize
+    } else {
+        0
+    };
+
+    // 16 bytes per string as default alloc
+    let mut values_buf = Vec::<u8>::with_capacity(values_capacity);
+
+    // both 0 nulls
+    if !arr.has_validity() && !indices.has_validity() {
+        offset_typed
+            .iter_mut()
+            .skip(1)
+            .enumerate()
+            .for_each(|(idx, offset)| {
+                let index = indices.value_unchecked(idx) as usize;
+                let s = arr.value_unchecked(index);
+                length_so_far += s.len() as i64;
+                *offset = length_so_far;
+
+                if length_so_far as usize >= values_capacity {
+                    values_buf.reserve(values_capacity);
+                    values_capacity *= 2;
+                }
+
+                values_buf.extend_from_slice(s)
+            });
+        validity = None;
+    } else if !arr.has_validity() {
+        offset_typed
+            .iter_mut()
+            .skip(1)
+            .enumerate()
+            .for_each(|(idx, offset)| {
+                if indices.is_valid(idx) {
+                    let index = indices.value_unchecked(idx) as usize;
+                    let s = arr.value_unchecked(index);
+                    length_so_far += s.len() as i64;
+
+                    if length_so_far as usize >= values_capacity {
+                        values_buf.reserve(values_capacity);
+                        values_capacity *= 2;
+                    }
+
+                    values_buf.extend_from_slice(s)
+                }
+                *offset = length_so_far;
+            });
+        validity = indices.validity().cloned();
+    } else {
+        let mut builder = MutableBinaryArray::with_capacities(data_len, length_so_far as usize);
+        let validity_arr = arr.validity().expect("should have nulls");
+
+        if !indices.has_validity() {
+            (0..data_len).for_each(|idx| {
+                let index = indices.value_unchecked(idx) as usize;
+                builder.push(if validity_arr.get_bit_unchecked(index) {
+                    let s = arr.value_unchecked(index);
+                    Some(s)
+                } else {
+                    None
+                });
+            });
+        } else {
+            let validity_indices = indices.validity().expect("should have nulls");
+            (0..data_len).for_each(|idx| {
+                if validity_indices.get_bit_unchecked(idx) {
+                    let index = indices.value_unchecked(idx) as usize;
+
+                    if validity_arr.get_bit_unchecked(index) {
+                        let s = arr.value_unchecked(index);
+                        builder.push(Some(s));
+                    } else {
+                        builder.push_null();
+                    }
+                } else {
+                    builder.push_null();
+                }
+            });
+        }
+
+        let array: BinaryArray<i64> = builder.into();
+        return Box::new(array);
+    }
+
+    // Safety: all "values" are &str, and thus valid utf8
+    Box::new(BinaryArray::<i64>::from_data_unchecked_default(
         offset_buf.into(),
         values_buf.into(),
         validity,

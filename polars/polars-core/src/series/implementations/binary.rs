@@ -1,17 +1,21 @@
-use std::any::Any;
 use std::borrow::Cow;
 
-use super::{private, IntoSeries, SeriesTrait};
+use ahash::RandomState;
+
+use super::{private, IntoSeries, SeriesTrait, *};
 use crate::chunked_array::comparison::*;
+use crate::chunked_array::ops::compare_inner::{
+    IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner,
+};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
+use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
-use crate::series::IsSorted;
 
-impl private::PrivateSeries for SeriesWrap<ListChunked> {
+impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
     fn compute_len(&mut self) {
         self.0.compute_len()
     }
@@ -37,17 +41,69 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
     }
+    fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
+        (&self.0).into_partial_eq_inner()
+    }
+    fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
+        (&self.0).into_partial_ord_inner()
+    }
+
+    fn vec_hash(&self, random_state: RandomState) -> PolarsResult<Vec<u64>> {
+        Ok(self.0.vec_hash(random_state))
+    }
+
+    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+        self.0.vec_hash_combine(build_hasher, hashes);
+        Ok(())
+    }
 
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
 
+    fn zip_outer_join_column(
+        &self,
+        right_column: &Series,
+        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
+    ) -> Series {
+        ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
+    }
+    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
+        NumOpsDispatch::subtract(&self.0, rhs)
+    }
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+        NumOpsDispatch::add_to(&self.0, rhs)
+    }
+    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
+        NumOpsDispatch::multiply(&self.0, rhs)
+    }
+    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
+        NumOpsDispatch::divide(&self.0, rhs)
+    }
+    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
+        NumOpsDispatch::remainder(&self.0, rhs)
+    }
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
+
+    #[cfg(feature = "sort_multiple")]
+    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
+        self.0.argsort_multiple(by, reverse)
+    }
 }
 
-impl SeriesTrait for SeriesWrap<ListChunked> {
+impl SeriesTrait for SeriesWrap<BinaryChunked> {
+    fn is_sorted(&self) -> IsSorted {
+        if self.0.is_sorted() {
+            IsSorted::Ascending
+        } else if self.0.is_sorted_reverse() {
+            IsSorted::Descending
+        } else {
+            IsSorted::Not
+        }
+    }
+
     #[cfg(feature = "interpolate")]
     fn interpolate(&self) -> Series {
         self.0.clone().into_series()
@@ -81,16 +137,20 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         if self.0.dtype() == other.dtype() {
-            self.0.append(other.as_ref().as_ref())
+            // todo! add object
+            self.0.append(other.as_ref().as_ref());
+            Ok(())
         } else {
             Err(PolarsError::SchemaMisMatch(
                 "cannot append Series; data types don't match".into(),
             ))
         }
     }
+
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         if self.0.dtype() == other.dtype() {
-            self.0.extend(other.as_ref().as_ref())
+            self.0.extend(other.as_ref().as_ref());
+            Ok(())
         } else {
             Err(PolarsError::SchemaMisMatch(
                 "cannot extend Series; data types don't match".into(),
@@ -139,7 +199,14 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         } else {
             Cow::Borrowed(idx)
         };
-        Ok(ChunkTake::take_unchecked(&self.0, (&*idx).into()).into_series())
+
+        let mut out = ChunkTake::take_unchecked(&self.0, (&*idx).into());
+
+        if self.0.is_sorted() && (idx.is_sorted() || idx.is_sorted_reverse()) {
+            out.set_sorted2(idx.is_sorted2())
+        }
+
+        Ok(out.into_series())
     }
 
     unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
@@ -177,6 +244,14 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         self.0.get_any_value_unchecked(index)
     }
 
+    fn sort_with(&self, options: SortOptions) -> Series {
+        ChunkSort::sort_with(&self.0, options).into_series()
+    }
+
+    fn argsort(&self, options: SortOptions) -> IdxCa {
+        ChunkSort::argsort(&self.0, options)
+    }
+
     fn null_count(&self) -> usize {
         self.0.null_count()
     }
@@ -185,12 +260,40 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         self.0.has_validity()
     }
 
+    fn unique(&self) -> PolarsResult<Series> {
+        ChunkUnique::unique(&self.0).map(|ca| ca.into_series())
+    }
+
+    fn n_unique(&self) -> PolarsResult<usize> {
+        ChunkUnique::n_unique(&self.0)
+    }
+
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
+        ChunkUnique::arg_unique(&self.0)
+    }
+
+    fn arg_min(&self) -> Option<usize> {
+        ArgAgg::arg_min(&self.0)
+    }
+
+    fn arg_max(&self) -> Option<usize> {
+        ArgAgg::arg_max(&self.0)
+    }
+
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }
 
     fn is_not_null(&self) -> BooleanChunked {
         self.0.is_not_null()
+    }
+
+    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
+        ChunkUnique::is_unique(&self.0)
+    }
+
+    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
+        ChunkUnique::is_duplicated(&self.0)
     }
 
     fn reverse(&self) -> Series {
@@ -224,13 +327,23 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
-    fn as_any(&self) -> &dyn Any {
-        &self.0
+
+    #[cfg(feature = "is_in")]
+    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
+        IsIn::is_in(&self.0, other)
+    }
+    #[cfg(feature = "repeat_by")]
+    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
+        RepeatBy::repeat_by(&self.0, by)
     }
 
-    /// Get a hold to self as `Any` trait reference.
-    /// Only implemented for ObjectType
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        &mut self.0
+    #[cfg(feature = "is_first")]
+    fn is_first(&self) -> PolarsResult<BooleanChunked> {
+        self.0.is_first()
+    }
+
+    #[cfg(feature = "mode")]
+    fn mode(&self) -> PolarsResult<Series> {
+        Ok(self.0.mode()?.into_series())
     }
 }

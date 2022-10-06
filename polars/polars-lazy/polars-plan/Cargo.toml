@@ -43,6 +43,7 @@ dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration", "t
 dtype-time = ["polars-core/dtype-time", "polars-time/dtype-time"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-struct = ["polars-core/dtype-struct"]
+dtype-binary = ["polars-core/dtype-binary"]
 object = ["polars-core/object"]
 date_offset = ["polars-time"]
 trigonometry = []

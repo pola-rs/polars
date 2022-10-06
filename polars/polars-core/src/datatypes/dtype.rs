@@ -17,6 +17,8 @@ pub enum DataType {
     Float64,
     /// String data
     Utf8,
+    #[cfg(feature = "dtype-binary")]
+    Binary,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
     Date,
@@ -144,6 +146,8 @@ impl DataType {
             | DataType::Duration(_)
             | DataType::Boolean
             | DataType::Null => false,
+            #[cfg(feature = "dtype-binary")]
+            DataType::Binary => false,
             #[cfg(feature = "object")]
             DataType::Object(_) => false,
             #[cfg(feature = "dtype-categorical")]
@@ -190,6 +194,8 @@ impl DataType {
             Float32 => ArrowDataType::Float32,
             Float64 => ArrowDataType::Float64,
             Utf8 => ArrowDataType::LargeUtf8,
+            #[cfg(feature = "dtype-binary")]
+            Binary => ArrowDataType::LargeBinary,
             Date => ArrowDataType::Date32,
             Datetime(unit, tz) => ArrowDataType::Timestamp(unit.to_arrow(), tz.clone()),
             Duration(unit) => ArrowDataType::Duration(unit.to_arrow()),
@@ -241,6 +247,8 @@ impl Display for DataType {
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",
             DataType::Utf8 => "str",
+            #[cfg(feature = "dtype-binary")]
+            DataType::Binary => "binary",
             DataType::Date => "date",
             DataType::Datetime(tu, tz) => {
                 let s = match tz {

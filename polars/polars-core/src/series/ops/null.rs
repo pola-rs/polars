@@ -50,7 +50,13 @@ impl Series {
                         ChunkedArray::<Utf8Type>::full_null(name, size).into_series()
                     }};
                 }
-                match_dtype_to_logical_apply_macro!(dtype, primitive, utf8, bool)
+                #[cfg(feature = "dtype-binary")]
+                macro_rules! binary {
+                    () => {{
+                        ChunkedArray::<BinaryType>::full_null(name, size).into_series()
+                    }};
+                }
+                match_dtype_to_logical_apply_macro!(dtype, primitive, utf8, binary, bool)
             }
         }
     }

@@ -446,6 +446,100 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
+impl<'a> ChunkApply<'a, &'a [u8], Cow<'a, [u8]>> for BinaryChunked {
+    fn apply_cast_numeric<F, S>(&'a self, f: F) -> ChunkedArray<S>
+    where
+        F: Fn(&'a [u8]) -> S::Native + Copy,
+        S: PolarsNumericType,
+    {
+        let chunks = self
+            .downcast_iter()
+            .into_iter()
+            .map(|array| {
+                let values = array.values_iter().map(f);
+                let values = Vec::<_>::from_trusted_len_iter(values);
+                to_array::<S>(values, array.validity().cloned())
+            })
+            .collect();
+        ChunkedArray::from_chunks(self.name(), chunks)
+    }
+
+    fn branch_apply_cast_numeric_no_null<F, S>(&'a self, f: F) -> ChunkedArray<S>
+    where
+        F: Fn(Option<&'a [u8]>) -> S::Native + Copy,
+        S: PolarsNumericType,
+    {
+        let chunks = self
+            .downcast_iter()
+            .into_iter()
+            .map(|array| {
+                let values = array.into_iter().map(f);
+                let values = Vec::<_>::from_trusted_len_iter(values);
+                to_array::<S>(values, array.validity().cloned())
+            })
+            .collect();
+        ChunkedArray::from_chunks(self.name(), chunks)
+    }
+
+    fn apply<F>(&'a self, f: F) -> Self
+    where
+        F: Fn(&'a [u8]) -> Cow<'a, [u8]> + Copy,
+    {
+        apply!(self, f)
+    }
+
+    fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
+    where
+        F: Fn(&'a [u8]) -> PolarsResult<Cow<'a, [u8]>> + Copy,
+    {
+        try_apply!(self, f)
+    }
+
+    fn apply_on_opt<F>(&'a self, f: F) -> Self
+    where
+        F: Fn(Option<&'a [u8]>) -> Option<Cow<'a, [u8]>> + Copy,
+    {
+        let mut ca: Self = self.into_iter().map(f).collect_trusted();
+        ca.rename(self.name());
+        ca
+    }
+
+    fn apply_with_idx<F>(&'a self, f: F) -> Self
+    where
+        F: Fn((usize, &'a [u8])) -> Cow<'a, [u8]> + Copy,
+    {
+        apply_enumerate!(self, f)
+    }
+
+    fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
+    where
+        F: Fn((usize, Option<&'a [u8]>)) -> Option<Cow<'a, [u8]>> + Copy,
+    {
+        let mut ca: Self = self.into_iter().enumerate().map(f).collect_trusted();
+        ca.rename(self.name());
+        ca
+    }
+
+    fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
+    where
+        F: Fn(Option<&'a [u8]>, &T) -> T,
+    {
+        assert!(slice.len() >= self.len());
+
+        let mut idx = 0;
+        self.downcast_iter().for_each(|arr| {
+            arr.into_iter().for_each(|opt_val| {
+                // Safety:
+                // length asserted above
+                let item = unsafe { slice.get_unchecked_mut(idx) };
+                *item = f(opt_val, item);
+                idx += 1;
+            })
+        });
+    }
+}
+
 impl ChunkApplyKernel<BooleanArray> for BooleanChunked {
     fn apply_kernel(&self, f: &dyn Fn(&BooleanArray) -> ArrayRef) -> Self {
         let chunks = self.downcast_iter().into_iter().map(f).collect();
@@ -486,6 +580,21 @@ impl ChunkApplyKernel<LargeStringArray> for Utf8Chunked {
     }
 
     fn apply_kernel_cast<S>(&self, f: &dyn Fn(&LargeStringArray) -> ArrayRef) -> ChunkedArray<S>
+    where
+        S: PolarsDataType,
+    {
+        let chunks = self.downcast_iter().into_iter().map(f).collect();
+        ChunkedArray::from_chunks(self.name(), chunks)
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl ChunkApplyKernel<LargeBinaryArray> for BinaryChunked {
+    fn apply_kernel(&self, f: &dyn Fn(&LargeBinaryArray) -> ArrayRef) -> Self {
+        self.apply_kernel_cast(&f)
+    }
+
+    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&LargeBinaryArray) -> ArrayRef) -> ChunkedArray<S>
     where
         S: PolarsDataType,
     {

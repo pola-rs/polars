@@ -63,3 +63,21 @@ impl RepeatBy for Utf8Chunked {
         )
     }
 }
+#[cfg(feature = "dtype-binary")]
+impl RepeatBy for BinaryChunked {
+    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
+        let iter = self
+            .into_iter()
+            .zip(by.into_iter())
+            .map(|(opt_v, opt_by)| opt_by.map(|by| std::iter::repeat(opt_v).take(by as usize)));
+
+        // Safety:
+        // Length of iter is trusted
+        ListChunked::from_chunks(
+            self.name(),
+            vec![Box::new(unsafe {
+                LargeListArray::from_iter_binary_trusted_len(iter, self.len())
+            })],
+        )
+    }
+}

@@ -581,15 +581,15 @@ pub trait SeriesTrait:
     }
     /// Get the median of the Series as a new Series of length 1.
     fn median_as_series(&self) -> Series {
-        invalid_operation_panic!(self)
+        Series::full_null(self.name(), 1, self.dtype())
     }
     /// Get the variance of the Series as a new Series of length 1.
     fn var_as_series(&self, _ddof: u8) -> Series {
-        invalid_operation_panic!(self)
+        Series::full_null(self.name(), 1, self.dtype())
     }
     /// Get the standard deviation of the Series as a new Series of length 1.
     fn std_as_series(&self, _ddof: u8) -> Series {
-        invalid_operation_panic!(self)
+        Series::full_null(self.name(), 1, self.dtype())
     }
     /// Get the quantile of the ChunkedArray as a new Series of length 1.
     fn quantile_as_series(
@@ -597,7 +597,7 @@ pub trait SeriesTrait:
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Series> {
-        invalid_operation_panic!(self)
+        Ok(Series::full_null(self.name(), 1, self.dtype()))
     }
 
     fn fmt_list(&self) -> String {

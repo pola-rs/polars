@@ -285,6 +285,59 @@ impl IntoGroupsProxy for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
+impl IntoGroupsProxy for BinaryChunked {
+    #[allow(clippy::needless_lifetimes)]
+    fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+        let hb = RandomState::default();
+        let null_h = get_null_hash_value(hb.clone());
+
+        let out = if multithreaded {
+            let n_partitions = set_partition_size();
+
+            let split = _split_offsets(self.len(), n_partitions);
+
+            let byte_hashes = POOL.install(|| {
+                split
+                    .into_par_iter()
+                    .map(|(offset, len)| {
+                        let ca = self.slice(offset as i64, len);
+                        ca.into_iter()
+                            .map(|opt_b| {
+                                let hash = match opt_b {
+                                    Some(s) => <[u8]>::get_hash(s, &hb),
+                                    None => null_h,
+                                };
+                                // Safety:
+                                // the underlying data is tied to self
+                                unsafe {
+                                    std::mem::transmute::<BytesHash<'_>, BytesHash<'a>>(
+                                        BytesHash::new(opt_b, hash),
+                                    )
+                                }
+                            })
+                            .collect_trusted::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>()
+            });
+            groupby_threaded_num(byte_hashes, 0, n_partitions as u64, sorted)
+        } else {
+            let byte_hashes = self
+                .into_iter()
+                .map(|opt_b| {
+                    let hash = match opt_b {
+                        Some(s) => <[u8]>::get_hash(s, &hb),
+                        None => null_h,
+                    };
+                    BytesHash::new(opt_b, hash)
+                })
+                .collect_trusted::<Vec<_>>();
+            groupby(byte_hashes.iter(), sorted)
+        };
+        Ok(out)
+    }
+}
+
 impl IntoGroupsProxy for ListChunked {
     #[allow(clippy::needless_lifetimes)]
     #[allow(unused_variables)]

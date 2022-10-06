@@ -3,6 +3,8 @@ use std::ops::Not;
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::compute;
 use arrow::compute::comparison;
+#[cfg(feature = "dtype-binary")]
+use arrow::scalar::BinaryScalar;
 use arrow::scalar::{PrimitiveScalar, Scalar, Utf8Scalar};
 use num::{NumCast, ToPrimitive};
 use polars_arrow::prelude::FromData;
@@ -636,6 +638,166 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-binary")]
+impl BinaryChunked {
+    fn comparison(
+        &self,
+        rhs: &BinaryChunked,
+        f: impl Fn(&BinaryArray<i64>, &BinaryArray<i64>) -> BooleanArray,
+    ) -> BooleanChunked {
+        let chunks = self
+            .downcast_iter()
+            .zip(rhs.downcast_iter())
+            .map(|(left, right)| {
+                let arr = f(left, right);
+                Box::new(arr) as ArrayRef
+            })
+            .collect();
+        BooleanChunked::from_chunks("", chunks)
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl ChunkCompare<&BinaryChunked> for BinaryChunked {
+    type Item = BooleanChunked;
+
+    fn eq_missing(&self, rhs: &BinaryChunked) -> BooleanChunked {
+        impl_eq_missing!(self, rhs)
+    }
+
+    fn equal(&self, rhs: &BinaryChunked) -> BooleanChunked {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                self.equal(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        } else if self.len() == 1 {
+            if let Some(value) = self.get(0) {
+                rhs.equal(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        } else {
+            let (lhs, rhs) = align_chunks_binary(self, rhs);
+            lhs.comparison(&rhs, comparison::binary::eq_and_validity)
+        }
+    }
+
+    fn not_equal(&self, rhs: &BinaryChunked) -> BooleanChunked {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                self.not_equal(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        } else if self.len() == 1 {
+            if let Some(value) = self.get(0) {
+                rhs.not_equal(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        } else {
+            let (lhs, rhs) = align_chunks_binary(self, rhs);
+            lhs.comparison(&rhs, comparison::binary::neq_and_validity)
+        }
+    }
+
+    fn gt(&self, rhs: &BinaryChunked) -> BooleanChunked {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                self.gt(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        } else if self.len() == 1 {
+            if let Some(value) = self.get(0) {
+                rhs.lt(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+        // same length
+        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
+            self.comparison(rhs, |l, r| comparison::gt(l, r))
+        } else {
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
+        }
+    }
+
+    fn gt_eq(&self, rhs: &BinaryChunked) -> BooleanChunked {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                self.gt_eq(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        } else if self.len() == 1 {
+            if let Some(value) = self.get(0) {
+                rhs.lt_eq(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+        // same length
+        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
+            self.comparison(rhs, |l, r| comparison::gt_eq(l, r))
+        } else {
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, >=)
+        }
+    }
+
+    fn lt(&self, rhs: &BinaryChunked) -> BooleanChunked {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                self.lt(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        } else if self.len() == 1 {
+            if let Some(value) = self.get(0) {
+                rhs.gt(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+        // same length
+        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
+            self.comparison(rhs, |l, r| comparison::lt(l, r))
+        } else {
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
+        }
+    }
+
+    fn lt_eq(&self, rhs: &BinaryChunked) -> BooleanChunked {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                self.lt_eq(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        } else if self.len() == 1 {
+            if let Some(value) = self.get(0) {
+                rhs.gt_eq(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+        // same length
+        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
+            self.comparison(rhs, |l, r| comparison::lt_eq(l, r))
+        } else {
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)
+        }
+    }
+}
+
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -725,6 +887,49 @@ impl ChunkCompare<&str> for Utf8Chunked {
 
     fn lt_eq(&self, rhs: &str) -> BooleanChunked {
         self.utf8_compare_scalar(rhs, |l, rhs| comparison::lt_eq_scalar(l, rhs))
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl BinaryChunked {
+    fn binary_compare_scalar(
+        &self,
+        rhs: &[u8],
+        f: impl Fn(&BinaryArray<i64>, &dyn Scalar) -> BooleanArray,
+    ) -> BooleanChunked {
+        let scalar = BinaryScalar::<i64>::new(Some(rhs));
+        self.apply_kernel_cast(&|arr| Box::new(f(arr, &scalar)))
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl ChunkCompare<&[u8]> for BinaryChunked {
+    type Item = BooleanChunked;
+    fn eq_missing(&self, rhs: &[u8]) -> BooleanChunked {
+        self.equal(rhs)
+    }
+
+    fn equal(&self, rhs: &[u8]) -> BooleanChunked {
+        self.binary_compare_scalar(rhs, |l, rhs| comparison::eq_scalar_and_validity(l, rhs))
+    }
+    fn not_equal(&self, rhs: &[u8]) -> BooleanChunked {
+        self.binary_compare_scalar(rhs, |l, rhs| comparison::neq_scalar_and_validity(l, rhs))
+    }
+
+    fn gt(&self, rhs: &[u8]) -> BooleanChunked {
+        self.binary_compare_scalar(rhs, |l, rhs| comparison::gt_scalar(l, rhs))
+    }
+
+    fn gt_eq(&self, rhs: &[u8]) -> BooleanChunked {
+        self.binary_compare_scalar(rhs, |l, rhs| comparison::gt_eq_scalar(l, rhs))
+    }
+
+    fn lt(&self, rhs: &[u8]) -> BooleanChunked {
+        self.binary_compare_scalar(rhs, |l, rhs| comparison::lt_scalar(l, rhs))
+    }
+
+    fn lt_eq(&self, rhs: &[u8]) -> BooleanChunked {
+        self.binary_compare_scalar(rhs, |l, rhs| comparison::lt_eq_scalar(l, rhs))
     }
 }
 
@@ -893,6 +1098,16 @@ impl ChunkEqualElement for Utf8Chunked {
         let ca_other = other.as_ref().as_ref();
         debug_assert!(self.dtype() == other.dtype());
         let ca_other = &*(ca_other as *const Utf8Chunked);
+        self.get(idx_self) == ca_other.get(idx_other)
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl ChunkEqualElement for BinaryChunked {
+    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
+        let ca_other = other.as_ref().as_ref();
+        debug_assert!(self.dtype() == other.dtype());
+        let ca_other = &*(ca_other as *const BinaryChunked);
         self.get(idx_self) == ca_other.get(idx_other)
     }
 }

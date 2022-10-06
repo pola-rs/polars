@@ -8,6 +8,8 @@ use crate::series::iterator::SeriesIter;
 use crate::utils::CustomIterTools;
 
 type LargeStringArray = Utf8Array<i64>;
+#[cfg(feature = "dtype-binary")]
+type LargeBinaryArray = BinaryArray<i64>;
 type LargeListArray = ListArray<i64>;
 pub mod par;
 
@@ -204,6 +206,95 @@ impl Utf8Chunked {
         unsafe {
             self.downcast_iter()
                 .flat_map(Utf8IterNoNull::new)
+                .trust_my_length(self.len())
+        }
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl<'a> IntoIterator for &'a BinaryChunked {
+    type Item = Option<&'a [u8]>;
+    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        // we know that we only iterate over length == self.len()
+        unsafe { Box::new(self.downcast_iter().flatten().trust_my_length(self.len())) }
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+pub struct BinaryIterNoNull<'a> {
+    array: &'a LargeBinaryArray,
+    current: usize,
+    current_end: usize,
+}
+
+#[cfg(feature = "dtype-binary")]
+impl<'a> BinaryIterNoNull<'a> {
+    /// create a new iterator
+    pub fn new(array: &'a LargeBinaryArray) -> Self {
+        BinaryIterNoNull {
+            array,
+            current: 0,
+            current_end: array.len(),
+        }
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl<'a> Iterator for BinaryIterNoNull<'a> {
+    type Item = &'a [u8];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current == self.current_end {
+            None
+        } else {
+            let old = self.current;
+            self.current += 1;
+            unsafe { Some(self.array.value_unchecked(old)) }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (
+            self.array.len() - self.current,
+            Some(self.array.len() - self.current),
+        )
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+impl<'a> DoubleEndedIterator for BinaryIterNoNull<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.current_end == self.current {
+            None
+        } else {
+            self.current_end -= 1;
+            unsafe { Some(self.array.value_unchecked(self.current_end)) }
+        }
+    }
+}
+
+#[cfg(feature = "dtype-binary")]
+/// all arrays have known size.
+impl<'a> ExactSizeIterator for BinaryIterNoNull<'a> {}
+
+#[cfg(feature = "dtype-binary")]
+impl BinaryChunked {
+    #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
+    pub fn into_no_null_iter(
+        &self,
+    ) -> impl Iterator<Item = &[u8]>
+           + '_
+           + Send
+           + Sync
+           + ExactSizeIterator
+           + DoubleEndedIterator
+           + TrustedLen {
+        // we know that we only iterate over length == self.len()
+        unsafe {
+            self.downcast_iter()
+                .flat_map(BinaryIterNoNull::new)
                 .trust_my_length(self.len())
         }
     }
