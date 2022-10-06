@@ -1159,48 +1159,10 @@ impl LazyFrame {
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
     #[cfg_attr(docsrs, doc(cfg(feature = "dtype-struct")))]
-    pub fn unnest<I: IntoVec<String>>(self, cols: I) -> Self {
-        let cols = cols.into_vec();
-        self.unnest_impl(cols.into_iter().collect())
-    }
-
-    #[cfg(feature = "dtype-struct")]
-    fn unnest_impl(self, cols: PlHashSet<String>) -> Self {
-        let cols2 = cols.clone();
-        let udf_schema = move |schema: &Schema| {
-            let mut new_schema = Schema::with_capacity(schema.len() * 2);
-            for (name, dtype) in schema.iter() {
-                if cols.contains(name) {
-                    if let DataType::Struct(flds) = dtype {
-                        for fld in flds {
-                            new_schema.with_column(fld.name().clone(), fld.data_type().clone())
-                        }
-                    } else {
-                        // todo: return lazy error here.
-                        panic!("expected struct dtype")
-                    }
-                } else {
-                    new_schema.with_column(name.clone(), dtype.clone())
-                }
-            }
-            Ok(Arc::new(new_schema))
-        };
-        self.map(
-            move |df| df.unnest(&cols2),
-            Some(AllowedOptimizations {
-                projection_pushdown: false,
-                predicate_pushdown: true,
-                type_coercion: true,
-                simplify_expr: true,
-                file_caching: true,
-                aggregate_pushdown: true,
-                slice_pushdown: true,
-                #[cfg(feature = "cse")]
-                common_subplan_elimination: true,
-            }),
-            Some(Arc::new(udf_schema)),
-            Some("unnest"),
-        )
+    pub fn unnest<I: IntoIterator<Item = S>, S: AsRef<str>>(self, cols: I) -> Self {
+        self.map_private(FunctionNode::Unnest {
+            columns: Arc::new(cols.into_iter().map(|s| Arc::from(s.as_ref())).collect()),
+        })
     }
 }
 

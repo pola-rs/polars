@@ -1159,6 +1159,16 @@ impl ProjectionPushDown {
                     function: function.clone(),
                 };
                 if function.allow_projection_pd() {
+                    for name in function.additional_projection_pd_columns() {
+                        let node = expr_arena.add(AExpr::Column(name.clone()));
+                        add_expr_to_accumulated(
+                            node,
+                            &mut acc_projections,
+                            &mut projected_names,
+                            expr_arena,
+                        )
+                    }
+
                     let acc_projection_len = acc_projections.len();
                     let local_projections = self.pushdown_and_assign_check_schema(
                         input,
