@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import pickle
+from datetime import datetime, timedelta
 
 import polars as pl
 from polars import datatypes
@@ -29,6 +30,14 @@ def test_dtype_temporal_units() -> None:
 
     assert pl.Datetime("ms") != pl.Datetime("ns")
     assert pl.Duration("ns") != pl.Duration("us")
+
+    # check timeunit from pytype
+    for inferred_dtype, expected_dtype in (
+        (datatypes.py_type_to_dtype(datetime), pl.Datetime),
+        (datatypes.py_type_to_dtype(timedelta), pl.Duration),
+    ):
+        assert inferred_dtype == expected_dtype
+        assert inferred_dtype.tu == "us"  # type: ignore[union-attr]
 
 
 def test_get_idx_type() -> None:
