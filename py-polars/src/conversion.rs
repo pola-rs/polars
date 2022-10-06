@@ -413,7 +413,10 @@ impl ToPyObject for Wrap<&Utf8Chunked> {
 
 impl ToPyObject for Wrap<&BinaryChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let iter = self.0.into_iter().map(|opt_bytes| opt_bytes.map(|bytes| PyBytes::new(py, bytes)));
+        let iter = self
+            .0
+            .into_iter()
+            .map(|opt_bytes| opt_bytes.map(|bytes| PyBytes::new(py, bytes)));
         PyList::new(py, iter).into_py(py)
     }
 }
@@ -507,7 +510,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Ok(AnyValue::Float64(v).into())
         } else if let Ok(v) = ob.extract::<&'s str>() {
             Ok(AnyValue::Utf8(v).into())
-        }  else if ob.get_type().name()?.contains("datetime") {
+        } else if ob.get_type().name()?.contains("datetime") {
             Python::with_gil(|py| {
                 // windows
                 #[cfg(target_arch = "windows")]
@@ -593,8 +596,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             })
         } else if let Ok(v) = ob.extract::<&'s [u8]>() {
             Ok(AnyValue::Binary(v).into())
-        }
-        else {
+        } else {
             Err(PyErr::from(PyPolarsErr::Other(format!(
                 "row type not supported {:?}",
                 ob

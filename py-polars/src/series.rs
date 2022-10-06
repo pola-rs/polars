@@ -717,7 +717,9 @@ impl PySeries {
                         let ca = series.binary().unwrap();
                         return Wrap(ca).to_object(py);
                     }
-                    DataType::Null | DataType::Unknown => {panic!("to_list not implemented for null/unknown")}
+                    DataType::Null | DataType::Unknown => {
+                        panic!("to_list not implemented for null/unknown")
+                    }
                 };
                 pylist.to_object(py)
             }
