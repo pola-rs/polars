@@ -36,10 +36,7 @@ fn select_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a, str
             _ => serde_json::to_string(&result).ok(),
         };
 
-        match result_str {
-            Some(s) => Some(Cow::Owned(s.clone())),
-            None => None,
-        }
+        result_str.map(Cow::Owned)
     })
 }
 
@@ -77,10 +74,7 @@ impl Utf8Chunked {
             None => self.json_infer(None)?,
         };
 
-        let iter = self
-            .into_iter()
-            .map(|x| x.unwrap_or("null"))
-            .map(|x| x.as_ref());
+        let iter = self.into_iter().map(|x| x.unwrap_or("null"));
 
         let array = ndjson::read::deserialize_iter(iter, dtype.to_arrow()).map_err(|e| {
             PolarsError::ComputeError(format!("error deserializing JSON {:?}", e).into())
@@ -98,11 +92,7 @@ impl Utf8Chunked {
         }
     }
 
-    pub fn json_path_extract(
-        &self,
-        json_path: &str,
-        dtype: Option<DataType>,
-    ) -> PolarsResult<Series> {
+    pub fn json_path_extract(&self, json_path: &str, dtype: Option<DataType>) -> PolarsResult<Series> {
         let selected_json = self.json_path_select(json_path)?;
         selected_json.json_extract(dtype)
     }
@@ -121,19 +111,10 @@ mod tests {
 
         assert_eq!(select_json(&compile("$"), json_str), some_cow(json_str));
         assert_eq!(select_json(&compile("$.a"), json_str), some_cow("1"));
-        assert_eq!(
-            select_json(&compile("$.b.c"), json_str),
-            some_cow(r#""hello""#)
-        );
+        assert_eq!(select_json(&compile("$.b.c"), json_str), some_cow(r#""hello""#));
         assert_eq!(select_json(&compile("$.d[0].e"), json_str), some_cow("0"));
-        assert_eq!(
-            select_json(&compile("$.d[2].e"), json_str),
-            some_cow("null")
-        );
-        assert_eq!(
-            select_json(&compile("$.d[:].e"), json_str),
-            some_cow("[0,2,null]")
-        );
+        assert_eq!(select_json(&compile("$.d[2].e"), json_str), some_cow("null"));
+        assert_eq!(select_json(&compile("$.d[:].e"), json_str), some_cow("[0,2,null]"));
     }
 
     #[test]
@@ -149,11 +130,13 @@ mod tests {
         );
         let ca = s.utf8().unwrap();
 
-        let inner_dtype = DataType::Struct(vec![Field::new("c", DataType::Int64)]);
-        let expected_dtype = DataType::Struct(vec![
-            Field::new("a", DataType::Int64),
-            Field::new("b", DataType::List(Box::new(inner_dtype))),
-        ]);
+        let inner_dtype = DataType::Struct(vec![Field::new("c", DataType::Int64),]);
+        let expected_dtype = DataType::Struct(
+            vec![
+                 Field::new("a", DataType::Int64),
+                 Field::new("b", DataType::List(Box::new(inner_dtype)))
+            ]
+        );
 
         assert_eq!(ca.json_infer(None).unwrap(), expected_dtype);
         // Infereing with the first row will only see None
@@ -179,20 +162,12 @@ mod tests {
             &[
                 Series::new("a", &[None, Some(1), Some(2), None]),
                 Series::new("b", &[None, Some("hello"), Some("goodbye"), None]),
-            ],
-        )
-        .unwrap()
-        .into_series();
+            ]
+        ).unwrap().into_series();
         let expected_dtype = expected_series.dtype().clone();
 
-        assert!(ca
-            .json_extract(None)
-            .unwrap()
-            .series_equal_missing(&expected_series));
-        assert!(ca
-            .json_extract(Some(expected_dtype))
-            .unwrap()
-            .series_equal_missing(&expected_series));
+        assert!(ca.json_extract(None).unwrap().series_equal_missing(&expected_series));
+        assert!(ca.json_extract(Some(expected_dtype)).unwrap().series_equal_missing(&expected_series));
     }
 
     #[test]
@@ -208,11 +183,7 @@ mod tests {
         );
         let ca = s.utf8().unwrap();
 
-        assert!(ca
-            .json_path_select("$")
-            .unwrap()
-            .into_series()
-            .series_equal_missing(&s));
+        assert!(ca.json_path_select("$").unwrap().into_series().series_equal_missing(&s));
 
         let b_series = Series::new(
             "json",
@@ -223,18 +194,18 @@ mod tests {
                 None,
             ],
         );
-        assert!(ca
-            .json_path_select("$.b")
-            .unwrap()
-            .into_series()
-            .series_equal_missing(&b_series));
+        assert!(ca.json_path_select("$.b").unwrap().into_series().series_equal_missing(&b_series));
 
-        let c_series = Series::new("json", [None, Some(r#"[0,1]"#), Some(r#"[2,5]"#), None]);
-        assert!(ca
-            .json_path_select("$.b[:].c")
-            .unwrap()
-            .into_series()
-            .series_equal_missing(&c_series));
+        let c_series = Series::new(
+            "json",
+            [
+                None,
+                Some(r#"[0,1]"#),
+                Some(r#"[2,5]"#),
+                None,
+            ],
+        );
+        assert!(ca.json_path_select("$.b[:].c").unwrap().into_series().series_equal_missing(&c_series));
     }
 
     #[test]
@@ -257,13 +228,9 @@ mod tests {
                 Some(Series::new("", &[0, 1])),
                 Some(Series::new("", &[2, 5])),
                 None,
-            ],
+            ]
         );
 
-        assert!(ca
-            .json_path_extract("$.b[:].c", None)
-            .unwrap()
-            .into_series()
-            .series_equal_missing(&c_series));
+        assert!(ca.json_path_extract("$.b[:].c", None).unwrap().into_series().series_equal_missing(&c_series));
     }
 }
