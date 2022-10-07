@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::path::PathBuf;
 
+use polars_core::POOL;
 use polars_io::csv::read_impl::BatchedCsvReader;
 use polars_io::csv::{CsvEncoding, CsvReader};
 use polars_plan::global::_set_n_rows_for_scan;
@@ -9,15 +10,17 @@ use polars_plan::prelude::CsvParserOptions;
 use super::*;
 use crate::expressions::PhysicalPipedExpr;
 
-struct CsvSource {
+pub(crate) struct CsvSource {
     schema: SchemaRef,
     predicate: Option<Arc<dyn PhysicalPipedExpr>>,
     reader: *mut CsvReader<'static, File>,
     batched_reader: *mut BatchedCsvReader<'static>,
+    stack: Vec<(IdxSize, DataFrame)>,
+    n_threads: usize,
 }
 
 impl CsvSource {
-    fn new(
+    pub(crate) fn new(
         path: PathBuf,
         schema: SchemaRef,
         options: CsvParserOptions,
@@ -72,6 +75,8 @@ impl CsvSource {
             predicate,
             reader,
             batched_reader,
+            stack: vec![],
+            n_threads: POOL.current_num_threads(),
         })
     }
 }
@@ -85,8 +90,22 @@ impl Drop for CsvSource {
     }
 }
 
+unsafe impl Send for CsvSource {}
+unsafe impl Sync for CsvSource {}
+
 impl Source for CsvSource {
-    fn get_batches(context: &PExecutionContext) -> PolarsResult<SourceResult> {
-        todo!()
+    fn get_batches(&mut self, _context: &PExecutionContext) -> PolarsResult<SourceResult> {
+        let reader = unsafe { &mut *self.batched_reader };
+
+        let batches = reader.next_batches(self.n_threads)?;
+        Ok(match batches {
+            None => SourceResult::Finished,
+            Some(batches) => SourceResult::GotMoreData(
+                batches
+                    .into_iter()
+                    .map(|(chunk_index, data)| DataChunk { chunk_index, data })
+                    .collect(),
+            ),
+        })
     }
 }

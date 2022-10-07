@@ -3,14 +3,14 @@ use std::fmt::{Debug, Formatter};
 use polars_core::prelude::*;
 
 pub trait DataFrameUdf: Send + Sync {
-    fn call_udf(&self, df: DataFrame) -> PolarsResult<DataFrame>;
+    fn call_udf(&mut self, df: DataFrame) -> PolarsResult<DataFrame>;
 }
 
 impl<F> DataFrameUdf for F
 where
-    F: Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
+    F: FnMut(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
 {
-    fn call_udf(&self, df: DataFrame) -> PolarsResult<DataFrame> {
+    fn call_udf(&mut self, df: DataFrame) -> PolarsResult<DataFrame> {
         self(df)
     }
 }

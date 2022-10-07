@@ -56,6 +56,7 @@ pub fn optimize(
     opt_state: OptState,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
+    scratch: &mut Vec<Node>,
 ) -> PolarsResult<Node> {
     // get toggle values
     let predicate_pushdown = opt_state.predicate_pushdown;
@@ -68,8 +69,6 @@ pub fn optimize(
 
     let agg_scan_projection = opt_state.file_caching;
     let aggregate_pushdown = opt_state.aggregate_pushdown;
-
-    let mut scratch = vec![];
 
     // gradually fill the rules passed to the optimizer
     let opt = StackOptimizer {};
@@ -103,7 +102,7 @@ pub fn optimize(
         let alp = lp_arena.take(lp_top);
         let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
-        cache_states::set_cache_states(lp_top, lp_arena, expr_arena, &mut scratch, cse_changed);
+        cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_changed);
     }
 
     if predicate_pushdown {
@@ -169,18 +168,12 @@ pub fn optimize(
         );
 
         let mut file_cacher = FileCacher::new(file_predicate_to_columns_and_count);
-        file_cacher.assign_unions(lp_top, lp_arena, expr_arena, &mut scratch);
+        file_cacher.assign_unions(lp_top, lp_arena, expr_arena, scratch);
 
         #[cfg(feature = "cse")]
         if cse_changed {
             // this must run after cse
-            cse::decrement_file_counters_by_cache_hits(
-                lp_top,
-                lp_arena,
-                expr_arena,
-                0,
-                &mut scratch,
-            );
+            cse::decrement_file_counters_by_cache_hits(lp_top, lp_arena, expr_arena, 0, scratch);
         }
     }
 

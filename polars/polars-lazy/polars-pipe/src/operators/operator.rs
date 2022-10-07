@@ -1,15 +1,15 @@
 use super::*;
 
 pub enum OperatorResult {
-    NeedMoreInput(Option<DataChunk>),
-    HaveMoreOutPut(Option<DataChunk>),
-    Finished(Option<DataChunk>),
+    NeedMoreInput,
+    HaveMoreOutPut(DataChunk),
+    Finished(DataChunk),
 }
 
-pub trait Operator {
+pub trait Operator: Send + Sync {
     fn execute(
         &self,
         context: &PExecutionContext,
-        chunk: DataChunk,
+        chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult>;
 }

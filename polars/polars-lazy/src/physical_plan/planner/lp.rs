@@ -59,17 +59,6 @@ fn aggregate_expr_to_scan_agg(
 pub struct PhysicalPlanner {}
 
 impl PhysicalPlanner {
-    pub fn create_physical_expressions(
-        &self,
-        exprs: &[Node],
-        context: Context,
-        expr_arena: &mut Arena<AExpr>,
-    ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>> {
-        exprs
-            .iter()
-            .map(|e| self.create_physical_expr(*e, context, expr_arena))
-            .collect()
-    }
     pub fn create_physical_plan(
         &self,
         root: Node,
@@ -98,8 +87,7 @@ impl PhysicalPlanner {
             }
             Selection { input, predicate } => {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
-                let predicate =
-                    self.create_physical_expr(predicate, Context::Default, expr_arena)?;
+                let predicate = create_physical_expr(predicate, Context::Default, expr_arena)?;
                 Ok(Box::new(executors::FilterExec::new(predicate, input)))
             }
             #[cfg(feature = "csv-file")]
@@ -112,7 +100,7 @@ impl PhysicalPlanner {
                 aggregate,
             } => {
                 let predicate = predicate
-                    .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
+                    .map(|pred| create_physical_expr(pred, Context::Default, expr_arena))
                     .map_or(Ok(None), |v| v.map(Some))?;
                 let aggregate = aggregate_expr_to_scan_agg(aggregate, expr_arena);
                 Ok(Box::new(executors::CsvExec {
@@ -133,7 +121,7 @@ impl PhysicalPlanner {
                 options,
             } => {
                 let predicate = predicate
-                    .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
+                    .map(|pred| create_physical_expr(pred, Context::Default, expr_arena))
                     .map_or(Ok(None), |v| v.map(Some))?;
 
                 let aggregate = aggregate_expr_to_scan_agg(aggregate, expr_arena);
@@ -155,7 +143,7 @@ impl PhysicalPlanner {
                 options,
             } => {
                 let predicate = predicate
-                    .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
+                    .map(|pred| create_physical_expr(pred, Context::Default, expr_arena))
                     .map_or(Ok(None), |v| v.map(Some))?;
 
                 let aggregate = aggregate_expr_to_scan_agg(aggregate, expr_arena);
@@ -172,8 +160,7 @@ impl PhysicalPlanner {
                 let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
                 let has_windows = expr.iter().any(|node| has_aexpr_window(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
-                let phys_expr =
-                    self.create_physical_expressions(&expr, Context::Default, expr_arena)?;
+                let phys_expr = create_physical_expressions(&expr, Context::Default, expr_arena)?;
                 Ok(Box::new(executors::ProjectionExec {
                     input,
                     expr: phys_expr,
@@ -194,8 +181,7 @@ impl PhysicalPlanner {
 
                 let has_windows = expr.iter().any(|node| has_aexpr_window(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
-                let phys_expr =
-                    self.create_physical_expressions(&expr, Context::Default, expr_arena)?;
+                let phys_expr = create_physical_expressions(&expr, Context::Default, expr_arena)?;
                 Ok(Box::new(executors::ProjectionExec {
                     input,
                     expr: phys_expr,
@@ -212,7 +198,7 @@ impl PhysicalPlanner {
                 ..
             } => {
                 let selection = selection
-                    .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
+                    .map(|pred| create_physical_expr(pred, Context::Default, expr_arena))
                     .map_or(Ok(None), |v| v.map(Some))?;
                 Ok(Box::new(executors::DataFrameExec {
                     df,
@@ -227,7 +213,7 @@ impl PhysicalPlanner {
                 ..
             } => {
                 let predicate = predicate
-                    .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
+                    .map(|pred| create_physical_expr(pred, Context::Default, expr_arena))
                     .map_or(Ok(None), |v| v.map(Some))?;
                 Ok(Box::new(executors::AnonymousScanExec {
                     function,
@@ -242,7 +228,7 @@ impl PhysicalPlanner {
             } => {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let by_column =
-                    self.create_physical_expressions(&by_column, Context::Default, expr_arena)?;
+                    create_physical_expressions(&by_column, Context::Default, expr_arena)?;
                 Ok(Box::new(executors::SortExec {
                     input,
                     by_column,
@@ -273,11 +259,10 @@ impl PhysicalPlanner {
                 let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
 
-                let phys_keys =
-                    self.create_physical_expressions(&keys, Context::Default, expr_arena)?;
+                let phys_keys = create_physical_expressions(&keys, Context::Default, expr_arena)?;
 
                 let phys_aggs =
-                    self.create_physical_expressions(&aggs, Context::Aggregation, expr_arena)?;
+                    create_physical_expressions(&aggs, Context::Aggregation, expr_arena)?;
 
                 let _slice = options.slice;
                 #[cfg(feature = "dynamic_groupby")]
@@ -471,10 +456,9 @@ impl PhysicalPlanner {
 
                 let input_left = self.create_physical_plan(input_left, lp_arena, expr_arena)?;
                 let input_right = self.create_physical_plan(input_right, lp_arena, expr_arena)?;
-                let left_on =
-                    self.create_physical_expressions(&left_on, Context::Default, expr_arena)?;
+                let left_on = create_physical_expressions(&left_on, Context::Default, expr_arena)?;
                 let right_on =
-                    self.create_physical_expressions(&right_on, Context::Default, expr_arena)?;
+                    create_physical_expressions(&right_on, Context::Default, expr_arena)?;
                 Ok(Box::new(executors::JoinExec::new(
                     input_left,
                     input_right,
@@ -490,8 +474,7 @@ impl PhysicalPlanner {
                 let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
                 let has_windows = exprs.iter().any(|node| has_aexpr_window(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
-                let phys_expr =
-                    self.create_physical_expressions(&exprs, Context::Default, expr_arena)?;
+                let phys_expr = create_physical_expressions(&exprs, Context::Default, expr_arena)?;
                 Ok(Box::new(executors::StackExec {
                     input,
                     has_windows,

@@ -39,7 +39,7 @@ pub(super) fn groupby_helper(
     mut df: DataFrame,
     keys: Vec<Series>,
     aggs: &[Arc<dyn PhysicalExpr>],
-    apply: Option<&Arc<dyn DataFrameUdf>>,
+    apply: Option<Arc<dyn DataFrameUdf>>,
     state: &mut ExecutionState,
     maintain_order: bool,
     slice: Option<(i64, usize)>,
@@ -47,9 +47,9 @@ pub(super) fn groupby_helper(
     df.as_single_chunk_par();
     let gb = df.groupby_with_series(keys, true, maintain_order)?;
 
-    if let Some(f) = apply {
+    if let Some(mut f) = apply {
         state.clear_schema_cache();
-        return gb.apply(|df| f.call_udf(df));
+        return gb.apply(move |df| Arc::get_mut(&mut f).unwrap().call_udf(df));
     }
 
     let mut groups = gb.get_groups();
@@ -106,7 +106,7 @@ impl GroupByExec {
             df,
             keys,
             &self.aggs,
-            self.apply.as_ref(),
+            self.apply.take(),
             state,
             self.maintain_order,
             self.slice,

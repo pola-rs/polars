@@ -1,0 +1,152 @@
+use std::any::Any;
+use std::sync::Arc;
+
+use polars_core::error::PolarsResult;
+use polars_core::frame::DataFrame;
+use polars_core::prelude::Series;
+use polars_core::schema::Schema;
+use polars_pipe::expressions::PhysicalPipedExpr;
+use polars_pipe::operators::chunks::DataChunk;
+use polars_pipe::pipeline::{create_pipeline, Pipeline};
+use polars_plan::prelude::ApplyOptions::ApplyFlat;
+use polars_plan::prelude::*;
+
+use crate::physical_plan::planner::create_physical_expr;
+use crate::physical_plan::state::ExecutionState;
+use crate::physical_plan::PhysicalExpr;
+
+pub struct Wrap(Arc<dyn PhysicalExpr>);
+
+impl PhysicalPipedExpr for Wrap {
+    fn evaluate(&self, chunk: &DataChunk, state: &dyn Any) -> PolarsResult<Series> {
+        let state = state.downcast_ref::<ExecutionState>().unwrap();
+        self.0.evaluate(&chunk.data, state)
+    }
+}
+
+fn to_physical_piped_expr(
+    node: Node,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<Arc<dyn PhysicalPipedExpr>> {
+    // this is a double Arc<dyn> explore if we can create a single of it.
+    create_physical_expr(node, Context::Default, expr_arena)
+        .map(|e| Arc::new(Wrap(e)) as Arc<dyn PhysicalPipedExpr>)
+}
+
+fn is_streamable(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    expr_arena.iter(node).all(|(_, ae)| match ae {
+        AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
+            matches!(options.collect_groups, ApplyOptions::ApplyFlat)
+        }
+        AExpr::Cast { .. } | AExpr::Column(_) | AExpr::Literal(_) => true,
+        _ => false,
+    })
+}
+
+fn all_streamable(exprs: &[Node], expr_arena: &Arena<AExpr>) -> bool {
+    exprs.iter().all(|node| is_streamable(*node, expr_arena))
+}
+
+pub(crate) fn insert_streaming_nodes(
+    root: Node,
+    lp_arena: &mut Arena<ALogicalPlan>,
+    expr_arena: &mut Arena<AExpr>,
+    scratch: &mut Vec<Node>,
+) -> PolarsResult<()> {
+    scratch.clear();
+
+    let mut stack = Vec::with_capacity(lp_arena.len() / 3 + 1);
+    stack.push((root, State::default()));
+    let mut states = vec![];
+
+    use ALogicalPlan::*;
+    while let Some((root, mut state)) = stack.pop() {
+        match lp_arena.get(root) {
+            Selection { input, predicate } if is_streamable(*predicate, expr_arena) => {
+                state.streamable = true;
+                state.operators.push(root);
+                stack.push((*input, state))
+            }
+            MapFunction {
+                input,
+                function: FunctionNode::FastProjection { columns },
+            } => {
+                state.streamable = true;
+                state.operators.push(root);
+                stack.push((*input, state))
+            }
+            Projection { input, expr, .. } if all_streamable(expr, expr_arena) => {
+                state.streamable = true;
+                state.operators.push(root);
+                stack.push((*input, state))
+            }
+            CsvScan { .. } => {
+                if state.streamable {
+                    state.sources.push(root);
+                    states.push(state)
+                }
+            }
+            lp => {
+                state.streamable = false;
+                lp.copy_inputs(scratch);
+                while let Some(input) = scratch.pop() {
+                    stack.push((input, State::default()))
+                }
+            }
+        }
+    }
+
+    for state in states {
+        let mut latest = match state.sink {
+            Some(node) => node,
+            None => state.operators[state.operators.len() - 1],
+        };
+        let pipeline = create_pipeline(
+            &state.sources,
+            &state.operators,
+            state.sink,
+            lp_arena,
+            expr_arena,
+            to_physical_piped_expr,
+        )?;
+
+        // replace the part of the logical plan with a `MapFunction` that will exectue the pipeline.
+        let pipeline_node = get_pipeline_node(lp_arena, pipeline);
+        lp_arena.replace(latest, pipeline_node)
+    }
+    Ok(())
+}
+
+#[derive(Default)]
+struct State {
+    streamable: bool,
+    sources: Vec<Node>,
+    operators: Vec<Node>,
+    sink: Option<Node>,
+}
+
+fn get_pipeline_node(lp_arena: &mut Arena<ALogicalPlan>, mut pipeline: Pipeline) -> ALogicalPlan {
+    // create a dummy input as the map function will call the input
+    // so we just create a scan that returns an empty df
+    let dummy = lp_arena.add(ALogicalPlan::DataFrameScan {
+        df: Arc::new(DataFrame::empty()),
+        schema: Arc::new(Schema::new()),
+        output_schema: None,
+        projection: None,
+        selection: None,
+    });
+
+    ALogicalPlan::MapFunction {
+        function: FunctionNode::Opaque {
+            function: Arc::new(move |df: DataFrame| {
+                let state = Box::new(ExecutionState::new()) as Box<dyn Any>;
+                pipeline.execute(state)
+            }),
+            schema: None,
+            predicate_pd: false,
+            projection_pd: false,
+            fmt_str: "",
+        },
+        input: dummy,
+    }
+}

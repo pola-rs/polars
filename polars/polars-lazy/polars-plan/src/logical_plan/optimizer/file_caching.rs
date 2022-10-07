@@ -266,7 +266,7 @@ impl FileCacher {
         scratch: &mut Vec<Node>,
     ) {
         scratch.clear();
-        let mut stack = Vec::with_capacity(lp_arena.len());
+        let mut stack = Vec::with_capacity(lp_arena.len() / 3 + 1);
         stack.push((root, false));
 
         // if behind cache we should not add a projection

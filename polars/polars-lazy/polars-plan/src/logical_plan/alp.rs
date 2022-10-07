@@ -157,8 +157,8 @@ impl Default for ALogicalPlan {
         // the lp is should not be valid. By choosing a max value we'll likely panic indicating
         // a programming error early.
         ALogicalPlan::Selection {
-            input: Node(usize::max_value()),
-            predicate: Node(usize::max_value()),
+            input: Node(usize::MAX),
+            predicate: Node(usize::MAX),
         }
     }
 }
@@ -556,7 +556,7 @@ impl ALogicalPlan {
     /// Push inputs of the LP in of this node to an existing container.
     /// Most plans have typically one input. A join has two and a scan (CsvScan)
     /// or an in-memory DataFrame has none. A Union has multiple.
-    pub(crate) fn copy_inputs<T>(&self, container: &mut T)
+    pub fn copy_inputs<T>(&self, container: &mut T)
     where
         T: PushNode,
     {

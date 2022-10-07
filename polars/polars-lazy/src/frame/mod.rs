@@ -40,6 +40,7 @@ use polars_plan::utils::{combine_predicates_expr, expr_to_leaf_column_names};
 
 use crate::physical_plan::executors::Executor;
 use crate::physical_plan::state::ExecutionState;
+use crate::physical_plan::streaming::insert_streaming_nodes;
 use crate::prelude::*;
 
 pub trait IntoLazy {
@@ -495,14 +496,36 @@ impl LazyFrame {
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Node> {
-        optimize(self.logical_plan, self.opt_state, lp_arena, expr_arena)
+        optimize(
+            self.logical_plan,
+            self.opt_state,
+            lp_arena,
+            expr_arena,
+            &mut vec![],
+        )
     }
 
-    fn prepare_collect(self) -> PolarsResult<(ExecutionState, Box<dyn Executor>)> {
+    fn optimize_with_scratch(
+        self,
+        lp_arena: &mut Arena<ALogicalPlan>,
+        expr_arena: &mut Arena<AExpr>,
+        scratch: &mut Vec<Node>,
+    ) -> PolarsResult<Node> {
+        optimize(
+            self.logical_plan,
+            self.opt_state,
+            lp_arena,
+            expr_arena,
+            scratch,
+        )
+    }
+
+    fn prepare_collect(self, streaming: bool) -> PolarsResult<(ExecutionState, Box<dyn Executor>)> {
         let file_caching = self.opt_state.file_caching;
         let mut expr_arena = Arena::with_capacity(256);
         let mut lp_arena = Arena::with_capacity(128);
-        let lp_top = self.optimize(&mut lp_arena, &mut expr_arena)?;
+        let mut scratch = vec![];
+        let lp_top = self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch)?;
 
         let finger_prints = if file_caching {
             #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
@@ -518,6 +541,10 @@ impl LazyFrame {
         } else {
             None
         };
+
+        if streaming {
+            insert_streaming_nodes(lp_top, &mut lp_arena, &mut expr_arena, &mut scratch)?;
+        }
 
         let planner = PhysicalPlanner::default();
         let physical_plan = planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
@@ -543,7 +570,18 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
-        let (mut state, mut physical_plan) = self.prepare_collect()?;
+        let (mut state, mut physical_plan) = self.prepare_collect(false)?;
+        let out = physical_plan.execute(&mut state);
+        #[cfg(debug_assertions)]
+        {
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            state.file_cache.assert_empty();
+        }
+        out
+    }
+
+    pub fn collect_streaming(self) -> PolarsResult<DataFrame> {
+        let (mut state, mut physical_plan) = self.prepare_collect(true)?;
         let out = physical_plan.execute(&mut state);
         #[cfg(debug_assertions)]
         {
@@ -561,7 +599,7 @@ impl LazyFrame {
     ////
     //// The units of the timings are microseconds.
     pub fn profile(self) -> PolarsResult<(DataFrame, DataFrame)> {
-        let (mut state, mut physical_plan) = self.prepare_collect()?;
+        let (mut state, mut physical_plan) = self.prepare_collect(false)?;
         state.time_nodes();
         let out = physical_plan.execute(&mut state)?;
         let timer_df = state.finish_timer()?;

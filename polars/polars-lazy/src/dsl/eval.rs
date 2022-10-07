@@ -2,6 +2,7 @@ use polars_core::prelude::*;
 use rayon::prelude::*;
 
 use super::*;
+use crate::physical_plan::planner::create_physical_expr;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -20,8 +21,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
             let expr = expr.clone();
             let mut arena = Arena::with_capacity(10);
             let aexpr = to_aexpr(expr, &mut arena);
-            let planner = PhysicalPlanner::default();
-            let phys_expr = planner.create_physical_expr(aexpr, Context::Default, &mut arena)?;
+            let phys_expr = create_physical_expr(aexpr, Context::Default, &mut arena)?;
 
             let state = ExecutionState::new();
 

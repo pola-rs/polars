@@ -7,6 +7,7 @@ mod file_cache;
 mod node_timer;
 pub mod planner;
 pub(crate) mod state;
+pub(crate) mod streaming;
 
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;

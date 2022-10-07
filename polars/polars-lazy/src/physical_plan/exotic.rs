@@ -1,5 +1,6 @@
 use polars_core::prelude::*;
 
+use crate::physical_plan::planner::create_physical_expr;
 use crate::prelude::*;
 
 pub(crate) fn prepare_eval_expr(mut expr: Expr) -> Expr {
@@ -38,6 +39,5 @@ pub(crate) fn prepare_expression_for_context(
     let lp = lp_arena.get(optimized);
     let aexpr = lp.get_exprs().pop().unwrap();
 
-    let planner = PhysicalPlanner::default();
-    planner.create_physical_expr(aexpr, ctxt, &mut expr_arena)
+    create_physical_expr(aexpr, ctxt, &mut expr_arena)
 }

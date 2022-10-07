@@ -1,4 +1,4 @@
-mod chunks;
+pub mod chunks;
 mod context;
 mod operator;
 mod sink;

@@ -879,9 +879,9 @@ impl<'df> GroupBy<'df> {
     }
 
     /// Apply a closure over the groups as a new DataFrame.
-    pub fn apply<F>(&self, f: F) -> PolarsResult<DataFrame>
+    pub fn apply<F>(&self, mut f: F) -> PolarsResult<DataFrame>
     where
-        F: Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
+        F: FnMut(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
         let df = self.prepare_apply()?;
         let dfs = self

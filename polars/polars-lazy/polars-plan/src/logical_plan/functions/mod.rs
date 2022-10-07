@@ -130,10 +130,10 @@ impl FunctionNode {
         }
     }
 
-    pub fn evaluate(&self, mut df: DataFrame) -> PolarsResult<DataFrame> {
+    pub fn evaluate(&mut self, mut df: DataFrame) -> PolarsResult<DataFrame> {
         use FunctionNode::*;
         match self {
-            Opaque { function, .. } => function.call_udf(df),
+            Opaque { function, .. } => Arc::get_mut(function).unwrap().call_udf(df),
             FastProjection { columns } => df.select(columns.as_slice()),
             DropNulls { subset } => df.drop_nulls(Some(subset.as_slice())),
             Rechunk => {
