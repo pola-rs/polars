@@ -8,7 +8,7 @@ use rayon::prelude::*;
 
 use self::hashing::*;
 use crate::prelude::*;
-use crate::utils::{_split_offsets, accumulate_dataframes_vertical, set_partition_size};
+use crate::utils::{_split_offsets, accumulate_dataframes_vertical, _set_partition_size};
 use crate::vector_hasher::{get_null_hash_value, AsU64, BytesHash};
 use crate::POOL;
 
@@ -61,7 +61,7 @@ impl DataFrame {
 
         macro_rules! finish_packed_bit_path {
             ($ca0:expr, $ca1:expr, $pack_fn:expr) => {{
-                let n_partitions = set_partition_size();
+                let n_partitions = _set_partition_size();
 
                 // we split so that we can prepare the data over multiple threads.
                 // pack the bit values together and add a final byte that will be 0
@@ -100,7 +100,7 @@ impl DataFrame {
             ));
         };
 
-        let n_partitions = set_partition_size();
+        let n_partitions = _set_partition_size();
 
         let groups = match by.len() {
             1 => {

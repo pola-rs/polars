@@ -45,7 +45,7 @@ use crate::frame::hash_join::multiple_keys::{
 use crate::frame::hash_join::multiple_keys::{left_anti_multiple_keys, left_semi_multiple_keys};
 use crate::prelude::*;
 use crate::utils::series::to_physical_and_bit_repr;
-use crate::utils::{set_partition_size, slice_slice, split_ca};
+use crate::utils::{_set_partition_size, slice_slice, split_ca};
 use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded, this_partition,
     AsU64, BytesHash,

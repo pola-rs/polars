@@ -125,6 +125,8 @@ struct State {
     sink: Option<Node>,
 }
 
+type StateObject = dyn Any + Send + Sync;
+
 fn get_pipeline_node(lp_arena: &mut Arena<ALogicalPlan>, mut pipeline: Pipeline) -> ALogicalPlan {
     // create a dummy input as the map function will call the input
     // so we just create a scan that returns an empty df
@@ -139,7 +141,11 @@ fn get_pipeline_node(lp_arena: &mut Arena<ALogicalPlan>, mut pipeline: Pipeline)
     ALogicalPlan::MapFunction {
         function: FunctionNode::Opaque {
             function: Arc::new(move |df: DataFrame| {
-                let state = Box::new(ExecutionState::new()) as Box<dyn Any>;
+                let state = ExecutionState::new();
+                if state.verbose() {
+                    eprintln!("polars runs part of the query streaming.")
+                }
+                let state = Box::new(state) as Box<dyn Any + Send + Sync>;
                 pipeline.execute(state)
             }),
             schema: None,

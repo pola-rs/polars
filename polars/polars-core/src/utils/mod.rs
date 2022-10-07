@@ -26,7 +26,7 @@ impl<T> Deref for Wrap<T> {
     }
 }
 
-pub(crate) fn set_partition_size() -> usize {
+pub fn _set_partition_size() -> usize {
     let mut n_partitions = POOL.current_num_threads();
     // set n_partitions to closes 2^n above the no of threads.
     loop {

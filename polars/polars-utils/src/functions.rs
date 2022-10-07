@@ -8,3 +8,19 @@ pub fn flatten<T: Clone, R: AsRef<[T]>>(bufs: &[R], len: Option<usize>) -> Vec<T
     }
     out
 }
+
+
+#[inline]
+pub unsafe fn debug_unwrap<T>(item: Option<T>) -> T {
+    {
+        #[cfg(debug_assertions)]
+        {
+            // check if the type is correct
+            item.unwrap()
+        }
+        #[cfg(not(debug_assertions))]
+        unsafe {
+            item.unwrap_unchecked()
+        }
+    }
+}

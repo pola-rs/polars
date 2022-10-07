@@ -66,9 +66,18 @@ where
     let operators = operators
         .iter()
         .map(|node| match lp_arena.take(*node) {
-            ALogicalPlan::Projection { expr, .. } => {
+            Projection { expr, .. } => {
                 let op = operators::ProjectionOperator {
                     exprs: exprs_to_physical(&expr, expr_arena, &to_physical)?,
+                };
+                Ok(Arc::new(op) as Arc<dyn Operator>)
+            }
+            Selection {
+                predicate, ..
+            } => {
+                let predicate = to_physical(predicate, expr_arena)?;
+                let op = operators::FilterOperator{
+                    predicate
                 };
                 Ok(Arc::new(op) as Arc<dyn Operator>)
             }
@@ -79,6 +88,7 @@ where
                 let op = operators::FastProjectionOperator { columns };
                 Ok(Arc::new(op) as Arc<dyn Operator>)
             }
+
             lp => {
                 panic!("operator {:?} not (yet) supported", lp)
             }

@@ -39,7 +39,7 @@ where
     let group_size_hint = 0;
 
     if multithreaded && group_multithreaded(ca) {
-        let n_partitions = set_partition_size() as u64;
+        let n_partitions = _set_partition_size() as u64;
 
         // use the arrays as iterators
         if ca.chunks.len() == 1 {
@@ -240,7 +240,7 @@ impl IntoGroupsProxy for Utf8Chunked {
         let null_h = get_null_hash_value(hb.clone());
 
         let out = if multithreaded {
-            let n_partitions = set_partition_size();
+            let n_partitions = _set_partition_size();
 
             let split = _split_offsets(self.len(), n_partitions);
 
@@ -293,7 +293,7 @@ impl IntoGroupsProxy for BinaryChunked {
         let null_h = get_null_hash_value(hb.clone());
 
         let out = if multithreaded {
-            let n_partitions = set_partition_size();
+            let n_partitions = _set_partition_size();
 
             let split = _split_offsets(self.len(), n_partitions);
 
@@ -376,7 +376,7 @@ impl IntoGroupsProxy for ListChunked {
             };
 
             if multithreaded {
-                let n_partitions = set_partition_size();
+                let n_partitions = _set_partition_size();
                 let split = _split_offsets(self.len(), n_partitions);
 
                 let groups: PolarsResult<_> = POOL.install(|| {

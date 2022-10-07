@@ -9,7 +9,7 @@ use crate::frame::hash_join::{
 };
 use crate::prelude::*;
 use crate::utils::series::to_physical_and_bit_repr;
-use crate::utils::{set_partition_size, split_df};
+use crate::utils::{_set_partition_size, split_df};
 use crate::vector_hasher::{df_rows_to_hashes_threaded, this_partition, IdBuildHasher, IdxHash};
 use crate::POOL;
 
@@ -33,7 +33,7 @@ pub(crate) fn create_probe_table(
     hashes: &[UInt64Chunked],
     keys: &DataFrame,
 ) -> Vec<HashMap<IdxHash, Vec<IdxSize>, IdBuildHasher>> {
-    let n_partitions = set_partition_size();
+    let n_partitions = _set_partition_size();
 
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
@@ -82,7 +82,7 @@ fn create_build_table_outer(
 ) -> Vec<HashMap<IdxHash, (bool, Vec<IdxSize>), IdBuildHasher>> {
     // Outer join equivalent of create_build_table() adds a bool in the hashmap values for tracking
     // whether a value in the hash table has already been matched to a value in the probe hashes.
-    let n_partitions = set_partition_size();
+    let n_partitions = _set_partition_size();
 
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
@@ -343,7 +343,7 @@ pub(crate) fn create_build_table_semi_anti(
     hashes: &[UInt64Chunked],
     keys: &DataFrame,
 ) -> Vec<HashMap<IdxHash, (), IdBuildHasher>> {
-    let n_partitions = set_partition_size();
+    let n_partitions = _set_partition_size();
 
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
