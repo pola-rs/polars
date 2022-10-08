@@ -191,7 +191,7 @@ pub fn infer_file_schema(
     if bytes.is_empty() {
         return Err(PolarsError::NoData("empty csv".into()));
     }
-    let mut lines = SplitLines::new(bytes, eol_char).skip(*skip_rows);
+    let mut lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(*skip_rows);
     // it can be that we have a single line without eol char
     let has_eol = bytes.contains(&eol_char);
 
@@ -295,7 +295,7 @@ pub fn infer_file_schema(
     };
     if !has_header {
         // re-init lines so that the header is included in type inference.
-        lines = SplitLines::new(bytes, eol_char).skip(*skip_rows);
+        lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(*skip_rows);
     }
 
     let header_length = headers.len();

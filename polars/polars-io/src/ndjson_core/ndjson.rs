@@ -324,7 +324,7 @@ fn parse_lines<'a>(
 
     let total_bytes = bytes.len();
     let mut offset = 0;
-    for line in SplitLines::new(bytes, NEWLINE) {
+    for line in SplitLines::new(bytes, QUOTE_CHAR, NEWLINE) {
         offset += 1; // the newline
         offset += parse_impl(line, buffers, &mut buf)?;
     }
