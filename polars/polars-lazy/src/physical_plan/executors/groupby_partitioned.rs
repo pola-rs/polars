@@ -34,8 +34,16 @@ impl PartitionGroupByExec {
     }
 
     fn keys(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Vec<Series>> {
-        self.keys.iter().map(|s| s.evaluate(df, state)).collect()
+        compute_keys(&self.keys, df, state)
     }
+}
+
+fn compute_keys(
+    keys: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    state: &ExecutionState,
+) -> PolarsResult<Vec<Series>> {
+    keys.iter().map(|s| s.evaluate(df, state)).collect()
 }
 
 fn run_partitions(
@@ -50,11 +58,12 @@ fn run_partitions(
     // split on several threads. Than the final result we apply the same groupby again.
     let dfs = split_df(df, n_threads)?;
 
+    let phys_aggs = &exec.phys_aggs;
+    let keys = &exec.keys;
     POOL.install(|| {
         dfs.into_par_iter()
             .map(|df| {
-                let keys = exec.keys(&df, state)?;
-                let phys_aggs = &exec.phys_aggs;
+                let keys = compute_keys(keys, &df, state)?;
                 let gb = df.groupby_with_series(keys, false, maintain_order)?;
                 let groups = gb.get_groups();
 
