@@ -243,6 +243,7 @@ impl<'a> Iterator for SplitLines<'a> {
             match iter.next() {
                 Some(&c) => {
                     pos += 1;
+
                     if c == b'"' {
                         // toggle between string field enclosure
                         //      if we encounter a starting '"' -> in_field = true;
@@ -250,7 +251,7 @@ impl<'a> Iterator for SplitLines<'a> {
                         in_field = !in_field;
                     }
                     // if we are not in a string and we encounter '\n' we can stop at this position.
-                    if c == self.end_line_char && !in_field {
+                    else if c == self.end_line_char && !in_field {
                         break;
                     }
                 }
@@ -635,5 +636,14 @@ mod test {
         assert_eq!(fields2.next(), Some(("\"baz\"".as_bytes(), true)));
         assert_eq!(fields2.next(), Some(("12345".as_bytes(), false)));
         assert_eq!(fields2.next(), None);
+    }
+
+    #[test]
+    fn test_splitlines() {
+        let input = "1,\"foo\n\"\n2,\"foo\n\"\n";
+        let mut lines = SplitLines::new(input.as_bytes(), b'\n');
+        assert_eq!(lines.next(), Some("1,\"foo\n\"".as_bytes()));
+        assert_eq!(lines.next(), Some("2,\"foo\n\"".as_bytes()));
+        assert_eq!(lines.next(), None);
     }
 }
