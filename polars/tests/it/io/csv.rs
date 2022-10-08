@@ -228,10 +228,9 @@ fn test_escape_double_quotes() {
     )));
 }
 
-
 #[test]
 fn test_newline_in_custom_quote_char() {
-    // missing data should not lead to parser error.
+    // newline inside custom quote char (default is ") should parse correctly
     let csv = r#"column_1,column_2
         1,'foo
         bar'
@@ -239,8 +238,11 @@ fn test_newline_in_custom_quote_char() {
 "#;
 
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file).finish().unwrap();
-    assert_eq!(df.shape(), (2,2));
+    let df = CsvReader::new(file)
+        .with_quote_char(Some(b'\''))
+        .finish()
+        .unwrap();
+    assert_eq!(df.shape(), (2, 2));
 }
 
 #[test]
