@@ -636,4 +636,13 @@ mod test {
         assert_eq!(fields2.next(), Some(("12345".as_bytes(), false)));
         assert_eq!(fields2.next(), None);
     }
+
+    #[test]
+    fn test_splitlines() {
+        let input = "1,\"foo\n\"\n2,\"foo\n\"\n";
+        let mut lines = SplitLines::new(input.as_bytes(), b'\n');
+        assert_eq!(lines.next(), Some("1,\"foo\n\"".as_bytes()));
+        assert_eq!(lines.next(), Some("2,\"foo\n\"".as_bytes()));
+        assert_eq!(lines.next(), None);
+    }
 }
