@@ -55,7 +55,7 @@ row_hash = []
 reinterpret = []
 take_opt_iter = []
 mode = []
-extract_jsonpath = ["serde_json", "jsonpath_lib"]
+extract_jsonpath = ["arrow/io_json", "serde_json", "jsonpath_lib"]
 # allow groupby operation on list type
 groupby_list = []
 # cumsum, cummin, etc.
