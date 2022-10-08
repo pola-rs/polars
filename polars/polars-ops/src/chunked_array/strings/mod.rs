@@ -1,3 +1,5 @@
+#[cfg(feature = "extract_jsonpath")]
+mod json_path;
 #[cfg(feature = "strings")]
 #[cfg_attr(docsrs, doc(cfg(feature = "strings")))]
 mod namespace;
