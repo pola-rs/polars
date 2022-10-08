@@ -28,18 +28,18 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     //      * end = (offset + n_aggs)
     aggregators: Vec<Vec<Box<dyn AggregateFn>>>,
     key: Arc<str>,
-    aggs: Vec<usize>,
+    // index of the columns that will be aggregated
+    aggregation_columns: Vec<usize>,
     hb: RandomState,
-    // A function that generates the aggregation functions
-    agg_creator: Box<dyn Iterator<Item = Box<dyn AggregateFn>> + Send>,
+    // Aggregation functions
+    agg_fns: Vec<Box<dyn AggregateFn>>
 }
 
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K> {
     pub fn new(
-        thread_no: usize,
         key: Arc<str>,
-        aggs: Vec<usize>,
-        agg_creator: Box<dyn Iterator<Item = Box<dyn AggregateFn>> + Send>,
+        aggregation_columns: Vec<usize>,
+        agg_fns: Vec<Box<dyn AggregateFn>>,
     ) -> Self {
         let hb = RandomState::default();
         let partitions = _set_partition_size();
@@ -52,17 +52,17 @@ impl<K: PolarsNumericType> PrimitiveGroupbySink<K> {
                 HASHMAP_INIT_SIZE,
                 hb.clone(),
             ));
-            aggregators.push(Vec::with_capacity(HASHMAP_INIT_SIZE * aggs.len()));
+            aggregators.push(Vec::with_capacity(HASHMAP_INIT_SIZE * aggregation_columns.len()));
         }
 
         Self {
-            thread_no,
+            thread_no: 0,
             pre_agg,
             aggregators,
             key,
-            aggs,
+            aggregation_columns,
             hb,
-            agg_creator,
+            agg_fns
         }
     }
 }
@@ -78,7 +78,7 @@ where
 
         // todo! ammortize allocation
         let agg_s = self
-            .aggs
+            .aggregation_columns
             .iter()
             .map(|i| chunk.data.select_at_idx(*i).unwrap().rechunk())
             .collect::<Vec<_>>();
@@ -100,16 +100,14 @@ where
                     RawEntryMut::Vacant(entry) => {
                         entry.insert_with_hasher(h, opt_v, current_aggregators.len(), |_| h);
                         // initialize the aggregators
-                        for _ in 0..self.aggs.len() {
-                            unsafe {
-                                current_aggregators.push(debug_unwrap(self.agg_creator.next()))
-                            };
-                        }
+                        for agg_fn in &self.agg_fns {
+                            current_aggregators.push(agg_fn.split())
+                        };
                         0 as usize
                     }
                     RawEntryMut::Occupied(entry) => *entry.get(),
                 };
-                for (i, agg_iter) in (agg_idx..agg_idx + self.aggs.len()).zip(agg_iters.iter_mut())
+                for (i, agg_iter) in (agg_idx..agg_idx + self.aggregation_columns.len()).zip(agg_iters.iter_mut())
                 {
                     let agg_fn = unsafe { current_aggregators.get_unchecked_mut(i) };
 

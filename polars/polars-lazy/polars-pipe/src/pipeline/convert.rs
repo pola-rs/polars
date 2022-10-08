@@ -1,10 +1,12 @@
 use std::sync::Arc;
+use polars_core::error::PolarsError;
 
-use polars_core::prelude::PolarsResult;
+use polars_core::prelude::{DataType, Int64Type, PolarsResult};
 use polars_plan::prelude::*;
 
-use crate::executors::sinks::OrderedSink;
+use crate::executors::sinks::{groupby, OrderedSink};
 use crate::executors::{operators, sources};
+use crate::executors::sinks::groupby::aggregates::convert_to_hash_agg;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{Operator, Sink, Source};
 use crate::pipeline::Pipeline;
@@ -94,7 +96,40 @@ where
     let sink = match sink {
         None => Box::new(OrderedSink::new()) as Box<dyn Sink>,
         Some(node) => {
-            todo!()
+            match lp_arena.get(node) {
+                Aggregate {
+                    keys,
+                    aggs,
+                    schema,
+                    ..
+                } => {
+                    assert_eq!(keys.len(), 1);
+                    if let AExpr::Column(key) = expr_arena.get(keys[0]) {
+
+                        let mut aggregation_columns = Vec::with_capacity(aggs.len());
+                        let mut agg_fns = Vec::with_capacity(aggs.len());
+
+                        for node in aggs {
+                            let (index, agg_fn) = convert_to_hash_agg(*node, expr_arena, schema).unwrap();
+                            aggregation_columns.push(index);
+                            agg_fns.push(agg_fn)
+                        }
+                        match schema.get(key).ok_or_else(|| PolarsError::NotFound(format!("{}", key.as_ref()).into()))? {
+                            DataType::Int64 => {
+                                Box::new(groupby::PrimitiveGroupbySink::<Int64Type>::new(key.clone(), aggregation_columns, agg_fns)) as Box<dyn Sink>
+                            }
+                            _ => todo!()
+                        }
+
+
+                    } else {
+                        unreachable!()
+                    }
+                }
+                _ => {
+                    todo!()
+                }
+            }
         }
     };
 

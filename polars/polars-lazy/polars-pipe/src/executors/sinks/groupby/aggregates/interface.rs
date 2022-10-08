@@ -8,4 +8,6 @@ pub trait AggregateFn: Send {
     fn pre_agg(&mut self, chunk_idx: IdxSize, item: AnyValue);
 
     fn combine(&mut self, other: &dyn Any);
+
+    fn split(&self) -> Box<dyn AggregateFn>;
 }
