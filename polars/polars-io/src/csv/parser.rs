@@ -43,7 +43,7 @@ pub(crate) fn next_line_position(
         }
         debug_assert!(pos <= input.len());
         let new_input = unsafe { input.get_unchecked(pos..) };
-        let line = SplitLines::new(new_input, eol_char).next();
+        let line = SplitLines::new(new_input, quote_char.unwrap_or(b'"'), eol_char).next();
 
         match (line, expected_fields) {
             // count the fields, and determine if they are equal to what we expect from the schema
@@ -214,13 +214,15 @@ pub(crate) fn get_line_stats(
 /// For instance: "This is a valid field\nI have multiples lines" is a valid string field, that contains multiple lines.
 pub(crate) struct SplitLines<'a> {
     v: &'a [u8],
+    quote_char: u8,
     end_line_char: u8,
 }
 
 impl<'a> SplitLines<'a> {
-    pub(crate) fn new(slice: &'a [u8], end_line_char: u8) -> Self {
+    pub(crate) fn new(slice: &'a [u8], quote_char: u8, end_line_char: u8) -> Self {
         Self {
             v: slice,
+            quote_char,
             end_line_char,
         }
     }
@@ -244,7 +246,7 @@ impl<'a> Iterator for SplitLines<'a> {
                 Some(&c) => {
                     pos += 1;
 
-                    if c == b'"' {
+                    if c == self.quote_char {
                         // toggle between string field enclosure
                         //      if we encounter a starting '"' -> in_field = true;
                         //      if we encounter a closing '"' -> in_field = false;
@@ -641,9 +643,15 @@ mod test {
     #[test]
     fn test_splitlines() {
         let input = "1,\"foo\n\"\n2,\"foo\n\"\n";
-        let mut lines = SplitLines::new(input.as_bytes(), b'\n');
+        let mut lines = SplitLines::new(input.as_bytes(), b'"', b'\n');
         assert_eq!(lines.next(), Some("1,\"foo\n\"".as_bytes()));
         assert_eq!(lines.next(), Some("2,\"foo\n\"".as_bytes()));
         assert_eq!(lines.next(), None);
+
+        let input2 = "1,'foo\n'\n2,'foo\n'\n";
+        let mut lines2 = SplitLines::new(input2.as_bytes(), b'\'', b'\n');
+        assert_eq!(lines2.next(), Some("1,'foo\n'".as_bytes()));
+        assert_eq!(lines2.next(), Some("2,'foo\n'".as_bytes()));
+        assert_eq!(lines2.next(), None);
     }
 }
