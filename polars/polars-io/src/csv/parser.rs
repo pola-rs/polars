@@ -243,6 +243,7 @@ impl<'a> Iterator for SplitLines<'a> {
             match iter.next() {
                 Some(&c) => {
                     pos += 1;
+
                     if c == b'"' {
                         // toggle between string field enclosure
                         //      if we encounter a starting '"' -> in_field = true;
@@ -250,7 +251,7 @@ impl<'a> Iterator for SplitLines<'a> {
                         in_field = !in_field;
                     }
                     // if we are not in a string and we encounter '\n' we can stop at this position.
-                    if c == self.end_line_char && !in_field {
+                    else if c == self.end_line_char && !in_field {
                         break;
                     }
                 }
