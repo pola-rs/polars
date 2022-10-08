@@ -6,8 +6,7 @@ use serde_json::Value;
 
 use super::*;
 
-#[cfg(feature = "extract_jsonpath")]
-fn extract_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a, str>> {
+pub fn extract_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a, str>> {
     serde_json::from_str(json_str).ok().and_then(|value| {
         // TODO: a lot of heap allocations here. Improve json path by adding a take?
         let result = expr.select(&value).ok()?;
@@ -21,11 +20,10 @@ fn extract_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a, st
     })
 }
 
-#[cfg(feature = "extract_jsonpath")]
 /// Returns a string of the most specific value given the compiled JSON path expression.
 /// This avoids creating a list to represent individual elements so that they can be
 /// selected directly.
-fn select_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a, str>> {
+pub fn select_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a, str>> {
     serde_json::from_str(json_str).ok().and_then(|value| {
         // TODO: a lot of heap allocations here. Improve json path by adding a take?
         let result = expr.select(&value).ok()?;
@@ -40,7 +38,6 @@ fn select_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a, str
     })
 }
 
-#[cfg(feature = "extract_jsonpath")]
 pub trait Utf8JsonPathImpl: AsUtf8 {
     /// Extract json path, first match
     /// Refer to <https://goessner.net/articles/JsonPath/>
@@ -106,7 +103,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
 
 impl Utf8JsonPathImpl for Utf8Chunked {}
 
-#[cfg(all(test, feature = "extract_jsonpath"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
