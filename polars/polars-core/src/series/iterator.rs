@@ -87,6 +87,7 @@ pub struct SeriesIter<'a> {
 impl<'a> Iterator for SeriesIter<'a> {
     type Item = AnyValue<'a>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let idx = self.idx;
 

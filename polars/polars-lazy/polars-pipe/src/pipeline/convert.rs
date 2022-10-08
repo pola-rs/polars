@@ -72,13 +72,9 @@ where
                 };
                 Ok(Arc::new(op) as Arc<dyn Operator>)
             }
-            Selection {
-                predicate, ..
-            } => {
+            Selection { predicate, .. } => {
                 let predicate = to_physical(predicate, expr_arena)?;
-                let op = operators::FilterOperator{
-                    predicate
-                };
+                let op = operators::FilterOperator { predicate };
                 Ok(Arc::new(op) as Arc<dyn Operator>)
             }
             MapFunction {

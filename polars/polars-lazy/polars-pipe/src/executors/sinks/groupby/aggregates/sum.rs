@@ -1,12 +1,13 @@
 use std::any::Any;
 use std::ops::AddAssign;
+
 use polars_core::datatypes::AnyValue;
 use polars_core::export::num::NumCast;
 use polars_core::utils::arrow::types::NativeType;
 use polars_utils::debug_unwrap;
-use crate::operators::IdxSize;
-use super::*;
 
+use super::*;
+use crate::operators::IdxSize;
 
 pub struct SumAgg<K: NativeType> {
     sum: K,

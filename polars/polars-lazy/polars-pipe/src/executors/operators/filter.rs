@@ -1,10 +1,12 @@
 use std::sync::Arc;
+
 use polars_core::error::{PolarsError, PolarsResult};
+
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
 pub(crate) struct FilterOperator {
-    pub(crate) predicate: Arc<dyn PhysicalPipedExpr>
+    pub(crate) predicate: Arc<dyn PhysicalPipedExpr>,
 }
 
 impl Operator for FilterOperator {
@@ -13,7 +15,6 @@ impl Operator for FilterOperator {
         context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
-
         let s = self.predicate.evaluate(chunk, &context.execution_state)?;
         let mask = s.bool().map_err(|e| {
             PolarsError::ComputeError(

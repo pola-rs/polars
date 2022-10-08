@@ -8,7 +8,7 @@ use rayon::prelude::*;
 
 use self::hashing::*;
 use crate::prelude::*;
-use crate::utils::{_split_offsets, accumulate_dataframes_vertical, _set_partition_size};
+use crate::utils::{_set_partition_size, _split_offsets, accumulate_dataframes_vertical};
 use crate::vector_hasher::{get_null_hash_value, AsU64, BytesHash};
 use crate::POOL;
 

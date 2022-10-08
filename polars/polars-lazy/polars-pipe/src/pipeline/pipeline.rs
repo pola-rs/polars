@@ -18,7 +18,6 @@ pub struct Pipeline {
     n_threads: usize,
 }
 
-
 impl Pipeline {
     pub fn new(
         sources: Vec<Arc<dyn Source>>,
@@ -37,14 +36,17 @@ impl Pipeline {
         }
     }
 
-    fn par_process_chunks(&self, chunks: Vec<DataChunk>, sink: &mut [Box<dyn Sink>], ec: &PExecutionContext) -> PolarsResult<Vec<SinkResult>> {
-
+    fn par_process_chunks(
+        &self,
+        chunks: Vec<DataChunk>,
+        sink: &mut [Box<dyn Sink>],
+        ec: &PExecutionContext,
+    ) -> PolarsResult<Vec<SinkResult>> {
         POOL.install(|| {
             chunks
                 .into_par_iter()
-                .zip( sink.par_iter_mut())
+                .zip(sink.par_iter_mut())
                 .map(|(chunk, sink)| {
-
                     let chunk = match self.push_operators(chunk, &ec)? {
                         OperatorResult::Finished(chunk) => chunk,
                         _ => todo!(),
@@ -100,7 +102,6 @@ impl Pipeline {
         for src in &mut std::mem::take(&mut self.sources) {
             let src = Arc::get_mut(src).unwrap();
             while let SourceResult::GotMoreData(chunks) = src.get_batches(&ec)? {
-
                 let results = self.par_process_chunks(chunks, &mut sink, &ec)?;
 
                 if results
