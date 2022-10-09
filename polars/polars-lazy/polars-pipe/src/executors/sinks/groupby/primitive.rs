@@ -7,6 +7,7 @@ use num::NumCast;
 use polars_core::export::ahash::RandomState;
 use polars_core::export::arrow;
 use polars_core::frame::row::AnyValueBuffer;
+use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::types::NativeType;
 use polars_core::utils::{
@@ -148,42 +149,44 @@ where
         // TODO! parallel
         let other = other.as_any().downcast_ref::<Self>().unwrap();
 
-        self.pre_agg_partitions
-            .iter_mut()
-            .zip(other.pre_agg_partitions.iter())
-            .zip(self.aggregators.iter_mut())
-            .zip(other.aggregators.iter())
-            .for_each(
-                |(((map_self, map_other), aggregators_self), aggregators_other)| {
-                    for (k, &agg_idx_other) in map_other.iter() {
-                        let opt_v = *k;
-                        unsafe {
-                            let h = get_hash(opt_v, &self.hb);
-                            let entry = map_self.raw_entry_mut().from_key_hashed_nocheck(h, &opt_v);
 
-                            let agg_idx_self = match entry {
-                                RawEntryMut::Vacant(entry) => {
-                                    let offset = NumCast::from(aggregators_self.len()).unwrap();
-                                    entry.insert_with_hasher(h, opt_v, offset, |_| h);
-                                    // initialize the aggregators
-                                    for agg_fn in &self.agg_fns {
-                                        aggregators_self.push(agg_fn.split())
+            self.pre_agg_partitions
+                .iter_mut()
+                .zip(other.pre_agg_partitions.iter())
+                .zip(self.aggregators.iter_mut())
+                .zip(other.aggregators.iter())
+                .for_each(
+                    |(((map_self, map_other), aggregators_self), aggregators_other)| {
+                        for (k, &agg_idx_other) in map_other.iter() {
+                            let opt_v = *k;
+                            unsafe {
+                                let h = get_hash(opt_v, &self.hb);
+                                let entry = map_self.raw_entry_mut().from_key_hashed_nocheck(h, &opt_v);
+
+                                let agg_idx_self = match entry {
+                                    RawEntryMut::Vacant(entry) => {
+                                        let offset = NumCast::from(aggregators_self.len()).unwrap();
+                                        entry.insert_with_hasher(h, opt_v, offset, |_| h);
+                                        // initialize the aggregators
+                                        for agg_fn in &self.agg_fns {
+                                            aggregators_self.push(agg_fn.split())
+                                        }
+                                        offset
                                     }
-                                    offset
+                                    RawEntryMut::Occupied(entry) => *entry.get(),
+                                };
+                                for i in 0..self.aggregation_columns.len() {
+                                    let agg_fn_other = aggregators_other
+                                        .get_unchecked_release(agg_idx_other as usize + i);
+                                    let agg_fn_self = aggregators_self
+                                        .get_unchecked_release_mut(agg_idx_self as usize + i);
+                                    agg_fn_self.combine(agg_fn_other.as_any())
                                 }
-                                RawEntryMut::Occupied(entry) => *entry.get(),
-                            };
-                            for i in 0..self.aggregation_columns.len() {
-                                let agg_fn_other = aggregators_other
-                                    .get_unchecked_release(agg_idx_other as usize + i);
-                                let agg_fn_self = aggregators_self
-                                    .get_unchecked_release_mut(agg_idx_self as usize + i);
-                                agg_fn_self.combine(agg_fn_other)
                             }
                         }
-                    }
-                },
-            );
+                    },
+                );
+
     }
 
     fn split(&self, thread_no: usize) -> Box<dyn Sink> {

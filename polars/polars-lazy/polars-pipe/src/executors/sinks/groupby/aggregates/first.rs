@@ -7,6 +7,7 @@ use polars_utils::debug_unwrap;
 use crate::executors::sinks::groupby::aggregates::AggregateFn;
 use crate::operators::IdxSize;
 
+#[derive(Debug)]
 pub struct FirstAgg {
     chunk_idx: IdxSize,
     first: Option<AnyValue<'static>>,
@@ -48,5 +49,8 @@ impl AggregateFn for FirstAgg {
 
     fn finalize(&mut self) -> AnyValue<'static> {
         std::mem::take(&mut self.first).unwrap_or(AnyValue::Null)
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }

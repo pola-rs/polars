@@ -11,14 +11,13 @@ use crate::executors::sinks::groupby::aggregates::first::FirstAgg;
 use crate::executors::sinks::groupby::aggregates::{AggregateFn, SumAgg};
 use crate::expressions::PhysicalPipedExpr;
 
-pub fn can_convert_to_hash_agg(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    let mut agg_fn = None;
+pub fn can_convert_to_hash_agg(mut node: Node, expr_arena: &Arena<AExpr>) -> bool {
     let mut can_run_partitioned = true;
     if expr_arena
         .iter(node)
         .map(|(_, ae)| {
             match ae {
-                AExpr::Agg(ae) => agg_fn = Some(ae.clone()),
+                AExpr::Agg(_) |
                 AExpr::Cast { .. }
                 | AExpr::Literal(_)
                 | AExpr::Column(_)
@@ -36,10 +35,20 @@ pub fn can_convert_to_hash_agg(node: Node, expr_arena: &Arena<AExpr>) -> bool {
         == 1
         && can_run_partitioned
     {
-        match agg_fn.unwrap() {
-            AAggExpr::Sum(_) => true,
-            AAggExpr::First(_) => true,
-            _ => false,
+        // last expression must be agg or agg.alias
+        if let AExpr::Alias(input, _) = expr_arena.get(node) {
+            node = *input
+        }
+        match expr_arena.get(node) {
+            AExpr::Agg(agg_fn) => {
+                match agg_fn {
+                    AAggExpr::Sum(_) => true,
+                    AAggExpr::First(_) => true,
+                    _ => false,
+                }
+            },
+            _ => false
+
         }
     } else {
         false

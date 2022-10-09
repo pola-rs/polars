@@ -60,6 +60,7 @@ impl CsvSource {
             .with_end_of_line_char(options.eol_char)
             .with_encoding(options.encoding)
             .with_rechunk(options.rechunk)
+            .with_chunk_size(50_000)
             .with_row_count(options.row_count)
             .with_parse_dates(options.parse_dates);
 

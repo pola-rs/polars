@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::fmt::Debug;
 use std::ops::{Add, AddAssign};
 
 use polars_core::datatypes::{AnyValue, DataType};
@@ -11,6 +12,7 @@ use polars_utils::debug_unwrap;
 use super::*;
 use crate::operators::{ArrowDataType, IdxSize};
 
+#[derive(Debug)]
 pub struct SumAgg<K: NumericNative> {
     sum: Option<K>,
 }
@@ -68,5 +70,8 @@ impl<K: NumericNative + Add<Output = K> + NumCast> AggregateFn for SumAgg<K> {
         } else {
             AnyValue::Null
         }
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }

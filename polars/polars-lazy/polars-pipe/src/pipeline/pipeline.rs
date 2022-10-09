@@ -66,33 +66,34 @@ impl Pipeline {
         let mut op_iter = self.operators.iter();
 
         if let Some(op) = op_iter.next() {
-            in_process.push((op, chunk))
-        }
+            in_process.push((op, chunk));
 
-        while let Some((op, chunk)) = in_process.pop() {
-            match op.execute(&ec, &chunk)? {
-                OperatorResult::Finished(chunk) => {
-                    if let Some(op) = op_iter.next() {
+            while let Some((op, chunk)) = in_process.pop() {
+                match op.execute(&ec, &chunk)? {
+                    OperatorResult::Finished(chunk) => {
+                        if let Some(op) = op_iter.next() {
+                            in_process.push((op, chunk))
+                        } else {
+                            return Ok(OperatorResult::Finished(chunk));
+                        }
+                    }
+                    OperatorResult::HaveMoreOutPut(output_chunk) => {
+                        if let Some(op) = op_iter.next() {
+                            in_process.push((op, output_chunk))
+                        }
+                        // this operator first at the top of the stack
                         in_process.push((op, chunk))
-                    } else {
-                        return Ok(OperatorResult::Finished(chunk));
                     }
-                }
-                OperatorResult::HaveMoreOutPut(output_chunk) => {
-                    if let Some(op) = op_iter.next() {
-                        in_process.push((op, output_chunk))
+                    OperatorResult::NeedMoreInput => {
+                        // current chunk will be used again
+                        in_process.push((op, chunk))
                     }
-                    // this operator first at the top of the stack
-                    in_process.push((op, chunk))
-                }
-                OperatorResult::NeedMoreInput => {
-                    // current chunk will be used again
-                    in_process.push((op, chunk))
                 }
             }
+            unreachable!()
+        } else {
+            Ok(OperatorResult::Finished(chunk))
         }
-
-        todo!()
     }
 
     pub fn execute(&mut self, state: Box<dyn Any + Send + Sync>) -> PolarsResult<DataFrame> {
