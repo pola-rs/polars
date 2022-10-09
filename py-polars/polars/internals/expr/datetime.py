@@ -132,6 +132,19 @@ class ExprDateTimeNameSpace:
             offset = _timedelta_to_pl_duration(offset)
         return pli.wrap_expr(self._pyexpr.date_truncate(every, offset))
 
+    def round(
+        self,
+        every: str | timedelta,
+        offset: str | timedelta | None = None,
+    ) -> pli.Expr:
+        if offset is None:
+            offset = "0ns"
+        if isinstance(every, timedelta):
+            every = _timedelta_to_pl_duration(every)
+        if isinstance(offset, timedelta):
+            offset = _timedelta_to_pl_duration(offset)
+        return pli.wrap_expr(self._pyexpr.date_round(every, offset))
+
     def strftime(self, fmt: str) -> pli.Expr:
         """
         Format Date/datetime with a formatting rule.
