@@ -25,7 +25,7 @@ impl OrderedSink {
 impl Sink for OrderedSink {
     fn sink(&mut self, _context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         self.chunks.push(chunk);
-        Ok(SinkResult::NeedMoreInput)
+        Ok(SinkResult::CanHaveMoreInput)
     }
 
     fn combine(&mut self, other: Box<dyn Sink>) {

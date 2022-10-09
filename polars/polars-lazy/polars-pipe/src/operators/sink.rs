@@ -5,7 +5,7 @@ use super::*;
 #[derive(Debug)]
 pub enum SinkResult {
     Finished,
-    NeedMoreInput,
+    CanHaveMoreInput,
 }
 
 pub trait Sink: Send + Sync {

@@ -1,10 +1,9 @@
 use interface::*;
 
+mod convert;
 mod interface;
 mod sum;
-mod convert;
 
+pub use convert::*;
 pub(crate) use interface::AggregateFn;
 pub(crate) use sum::SumAgg;
-pub(crate) use convert::*;
-

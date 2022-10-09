@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::Series;
+use polars_core::prelude::{SchemaRef, Series};
 use polars_core::schema::Schema;
 use polars_pipe::expressions::PhysicalPipedExpr;
 use polars_pipe::operators::chunks::DataChunk;
@@ -86,6 +86,35 @@ pub(crate) fn insert_streaming_nodes(
                     states.push(state)
                 }
             }
+            Aggregate {
+                input,
+                keys,
+                aggs,
+                maintain_order: false,
+                apply: None,
+                ..
+            } => {
+                if keys.len() == 1
+                    && matches!(expr_arena.get(keys[0]), AExpr::Column(_))
+                    && aggs.iter().all(|node| {
+                        polars_pipe::pipeline::can_convert_to_hash_agg(*node, expr_arena)
+                    })
+                {
+                    let input_schema = lp_arena.get(*input).schema(lp_arena);
+                    if let AExpr::Column(key) = expr_arena.get(keys[0]) {
+                        let key_dtype = input_schema.try_get(key)?;
+                        if key_dtype.to_physical().is_numeric() {
+                            state.streamable = true;
+                            state.sink = Some(root);
+                            stack.push((*input, state))
+                        } else {
+                            stack.push((*input, State::default()))
+                        }
+                    }
+                } else {
+                    stack.push((*input, State::default()))
+                }
+            }
             lp => {
                 state.streamable = false;
                 lp.copy_inputs(scratch);
@@ -101,6 +130,7 @@ pub(crate) fn insert_streaming_nodes(
             Some(node) => node,
             None => state.operators[state.operators.len() - 1],
         };
+        let schema = lp_arena.get(latest).schema(lp_arena).into_owned();
         let pipeline = create_pipeline(
             &state.sources,
             &state.operators,
@@ -110,8 +140,8 @@ pub(crate) fn insert_streaming_nodes(
             to_physical_piped_expr,
         )?;
 
-        // replace the part of the logical plan with a `MapFunction` that will exectue the pipeline.
-        let pipeline_node = get_pipeline_node(lp_arena, pipeline);
+        // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
+        let pipeline_node = get_pipeline_node(lp_arena, pipeline, schema);
         lp_arena.replace(latest, pipeline_node)
     }
     Ok(())
@@ -127,7 +157,11 @@ struct State {
 
 type StateObject = dyn Any + Send + Sync;
 
-fn get_pipeline_node(lp_arena: &mut Arena<ALogicalPlan>, mut pipeline: Pipeline) -> ALogicalPlan {
+fn get_pipeline_node(
+    lp_arena: &mut Arena<ALogicalPlan>,
+    mut pipeline: Pipeline,
+    schema: SchemaRef,
+) -> ALogicalPlan {
     // create a dummy input as the map function will call the input
     // so we just create a scan that returns an empty df
     let dummy = lp_arena.add(ALogicalPlan::DataFrameScan {
@@ -148,7 +182,7 @@ fn get_pipeline_node(lp_arena: &mut Arena<ALogicalPlan>, mut pipeline: Pipeline)
                 let state = Box::new(state) as Box<dyn Any + Send + Sync>;
                 pipeline.execute(state)
             }),
-            schema: None,
+            schema: Some(Arc::new(move |_: &Schema| Ok(schema.clone()))),
             predicate_pd: false,
             projection_pd: false,
             fmt_str: "",

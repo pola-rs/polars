@@ -1376,6 +1376,7 @@ name = "polars-pipe"
 version = "0.24.3"
 dependencies = [
  "hashbrown",
+ "num",
  "polars-core",
  "polars-io",
  "polars-plan",
