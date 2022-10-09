@@ -9,7 +9,7 @@ use crate::prelude::*;
 pub(crate) fn create_physical_expressions(
     exprs: &[Node],
     context: Context,
-    expr_arena: &mut Arena<AExpr>,
+    expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>> {
     exprs
         .iter()
@@ -20,7 +20,7 @@ pub(crate) fn create_physical_expressions(
 pub(crate) fn create_physical_expr(
     expression: Node,
     ctxt: Context,
-    expr_arena: &mut Arena<AExpr>,
+    expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<Arc<dyn PhysicalExpr>> {
     use AExpr::*;
 

@@ -121,6 +121,7 @@ impl LazyFrame {
             aggregate_pushdown: false,
             #[cfg(feature = "cse")]
             common_subplan_elimination: false,
+            streaming: false,
         })
     }
 
@@ -165,6 +166,12 @@ impl LazyFrame {
     /// Toggle slice pushdown optimization
     pub fn with_slice_pushdown(mut self, toggle: bool) -> Self {
         self.opt_state.slice_pushdown = toggle;
+        self
+    }
+
+    /// Allow (partial) streaming engine
+    pub fn with_streaming(mut self, toggle: bool) -> Self {
+        self.opt_state.streaming = toggle;
         self
     }
 
@@ -520,8 +527,9 @@ impl LazyFrame {
         )
     }
 
-    fn prepare_collect(self, streaming: bool) -> PolarsResult<(ExecutionState, Box<dyn Executor>)> {
+    fn prepare_collect(self) -> PolarsResult<(ExecutionState, Box<dyn Executor>)> {
         let file_caching = self.opt_state.file_caching;
+        let streaming = self.opt_state.streaming;
         let mut expr_arena = Arena::with_capacity(256);
         let mut lp_arena = Arena::with_capacity(128);
         let mut scratch = vec![];
@@ -570,18 +578,7 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
-        let (mut state, mut physical_plan) = self.prepare_collect(false)?;
-        let out = physical_plan.execute(&mut state);
-        #[cfg(debug_assertions)]
-        {
-            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-            state.file_cache.assert_empty();
-        }
-        out
-    }
-
-    pub fn collect_streaming(self) -> PolarsResult<DataFrame> {
-        let (mut state, mut physical_plan) = self.prepare_collect(true)?;
+        let (mut state, mut physical_plan) = self.prepare_collect()?;
         let out = physical_plan.execute(&mut state);
         #[cfg(debug_assertions)]
         {
@@ -599,7 +596,7 @@ impl LazyFrame {
     ////
     //// The units of the timings are microseconds.
     pub fn profile(self) -> PolarsResult<(DataFrame, DataFrame)> {
-        let (mut state, mut physical_plan) = self.prepare_collect(false)?;
+        let (mut state, mut physical_plan) = self.prepare_collect()?;
         state.time_nodes();
         let out = physical_plan.execute(&mut state)?;
         let timer_df = state.finish_timer()?;

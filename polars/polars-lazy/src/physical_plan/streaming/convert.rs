@@ -1,9 +1,10 @@
 use std::any::Any;
 use std::sync::Arc;
 
+use polars_core::datatypes::DataType;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{SchemaRef, Series};
+use polars_core::prelude::{Field, SchemaRef, Series};
 use polars_core::schema::Schema;
 use polars_pipe::expressions::PhysicalPipedExpr;
 use polars_pipe::operators::chunks::DataChunk;
@@ -22,11 +23,14 @@ impl PhysicalPipedExpr for Wrap {
         let state = state.downcast_ref::<ExecutionState>().unwrap();
         self.0.evaluate(&chunk.data, state)
     }
+    fn field(&self, input_schema: &Schema) -> PolarsResult<Field> {
+        self.0.to_field(input_schema)
+    }
 }
 
 fn to_physical_piped_expr(
     node: Node,
-    expr_arena: &mut Arena<AExpr>,
+    expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<Arc<dyn PhysicalPipedExpr>> {
     // this is a double Arc<dyn> explore if we can create a single of it.
     create_physical_expr(node, Context::Default, expr_arena)

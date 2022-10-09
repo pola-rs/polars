@@ -10,6 +10,7 @@ pub struct OptState {
     pub slice_pushdown: bool,
     #[cfg(feature = "cse")]
     pub common_subplan_elimination: bool,
+    pub streaming: bool,
 }
 
 impl Default for OptState {
@@ -25,6 +26,7 @@ impl Default for OptState {
             aggregate_pushdown: false,
             #[cfg(feature = "cse")]
             common_subplan_elimination: true,
+            streaming: false,
         }
     }
 }

@@ -8,12 +8,15 @@ use polars_core::export::ahash::RandomState;
 use polars_core::export::arrow;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
-use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical, accumulate_dataframes_vertical_unchecked};
 use polars_core::utils::arrow::types::NativeType;
+use polars_core::utils::{
+    _set_partition_size, accumulate_dataframes_vertical, accumulate_dataframes_vertical_unchecked,
+};
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::{debug_unwrap, get_hash, hash_to_partition};
 
 use super::aggregates::AggregateFn;
+use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, PExecutionContext, Sink, SinkResult};
 
 // We must strike a balance between cache coherence and resizing costs.
@@ -32,18 +35,20 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     //      * end = (offset + n_aggs)
     aggregators: Vec<Vec<Box<dyn AggregateFn>>>,
     key: Arc<str>,
-    // index of the columns that will be aggregated
-    aggregation_columns: Vec<usize>,
+    // the columns that will be aggregated
+    aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
     hb: RandomState,
     // Aggregation functions
     agg_fns: Vec<Box<dyn AggregateFn>>,
+    output_schema: SchemaRef,
 }
 
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K> {
     pub fn new(
         key: Arc<str>,
-        aggregation_columns: Vec<usize>,
+        aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         agg_fns: Vec<Box<dyn AggregateFn>>,
+        output_schema: SchemaRef,
     ) -> Self {
         let hb = RandomState::default();
         let partitions = _set_partition_size();
@@ -69,6 +74,7 @@ impl<K: PolarsNumericType> PrimitiveGroupbySink<K> {
             aggregation_columns,
             hb,
             agg_fns,
+            output_schema,
         }
     }
 
@@ -81,9 +87,10 @@ impl<K: PolarsNumericType> PrimitiveGroupbySink<K> {
 impl<K: PolarsNumericType> Sink for PrimitiveGroupbySink<K>
 where
     K::Native: Hash + Eq + Debug,
-    ChunkedArray<K>: IntoSeries
+    ChunkedArray<K>: IntoSeries,
 {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        let num_aggs = self.number_of_aggs();
         let s = chunk.data.column(self.key.as_ref())?.to_physical_repr();
         // cow -> &series -> &dyn series_trait -> &chunkedarray
         let ca: &ChunkedArray<K> = s.as_ref().as_ref().as_ref();
@@ -92,8 +99,11 @@ where
         let agg_s = self
             .aggregation_columns
             .iter()
-            .map(|i| chunk.data.select_at_idx(*i).unwrap().rechunk())
-            .collect::<Vec<_>>();
+            .map(|phys_e| {
+                let s = phys_e.evaluate(&chunk, context.execution_state.as_ref())?;
+                Ok(s.rechunk())
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
 
         let mut agg_iters = agg_s.iter().map(|s| s.iter()).collect::<Vec<_>>();
 
@@ -122,9 +132,8 @@ where
                     }
                     RawEntryMut::Occupied(entry) => *entry.get(),
                 };
-                for (i, agg_iter) in 
-                    (agg_idx as usize..agg_idx as usize + self.aggregation_columns.len()).zip(agg_iters.iter_mut())
-                {
+                for (i, agg_iter) in (0..num_aggs).zip(agg_iters.iter_mut()) {
+                    let i = agg_idx as usize + i;
                     let agg_fn = unsafe { current_aggregators.get_unchecked_release_mut(i) };
 
                     let value = unsafe { debug_unwrap(agg_iter.next()) };
@@ -144,35 +153,37 @@ where
             .zip(other.pre_agg_partitions.iter())
             .zip(self.aggregators.iter_mut())
             .zip(other.aggregators.iter())
-            .for_each(|(((map_self, map_other), aggregators_self), aggregators_other)| {
-                for (k, &agg_idx_other) in map_other.iter() {
-                    let opt_v = *k;
-                    unsafe {
+            .for_each(
+                |(((map_self, map_other), aggregators_self), aggregators_other)| {
+                    for (k, &agg_idx_other) in map_other.iter() {
+                        let opt_v = *k;
+                        unsafe {
+                            let h = get_hash(opt_v, &self.hb);
+                            let entry = map_self.raw_entry_mut().from_key_hashed_nocheck(h, &opt_v);
 
-                        let h = get_hash(opt_v, &self.hb);
-                        let entry = map_self.raw_entry_mut().from_key_hashed_nocheck(h, &opt_v);
-
-                        let agg_idx_self = match entry {
-                            RawEntryMut::Vacant(entry) => {
-
-                                let offset = NumCast::from(aggregators_self.len()).unwrap();
-                                entry.insert_with_hasher(h, opt_v, offset, |_| h);
-                                // initialize the aggregators
-                                for agg_fn in &self.agg_fns {
-                                    aggregators_self.push(agg_fn.split())
+                            let agg_idx_self = match entry {
+                                RawEntryMut::Vacant(entry) => {
+                                    let offset = NumCast::from(aggregators_self.len()).unwrap();
+                                    entry.insert_with_hasher(h, opt_v, offset, |_| h);
+                                    // initialize the aggregators
+                                    for agg_fn in &self.agg_fns {
+                                        aggregators_self.push(agg_fn.split())
+                                    }
+                                    offset
                                 }
-                                offset
+                                RawEntryMut::Occupied(entry) => *entry.get(),
+                            };
+                            for i in 0..self.aggregation_columns.len() {
+                                let agg_fn_other = aggregators_other
+                                    .get_unchecked_release(agg_idx_other as usize + i);
+                                let agg_fn_self = aggregators_self
+                                    .get_unchecked_release_mut(agg_idx_self as usize + i);
+                                agg_fn_self.combine(agg_fn_other)
                             }
-                            RawEntryMut::Occupied(entry) => *entry.get(),
-                        };
-                        for i in 0..self.aggregation_columns.len() {
-                            let agg_fn_other = aggregators_other.get_unchecked_release(agg_idx_other as usize + i);
-                            let agg_fn_self = aggregators_self.get_unchecked_release_mut(agg_idx_self as usize + i);
-                            agg_fn_self.combine(agg_fn_other)
                         }
                     }
-                }
-            });
+                },
+            );
     }
 
     fn split(&self, thread_no: usize) -> Box<dyn Sink> {
@@ -180,6 +191,7 @@ where
             self.key.clone(),
             self.aggregation_columns.clone(),
             self.agg_fns.iter().map(|func| func.split()).collect(),
+            self.output_schema.clone(),
         );
         new.thread_no = thread_no;
         Box::new(new)
@@ -188,27 +200,32 @@ where
     fn finalize(&mut self) -> PolarsResult<DataFrame> {
         // TODO! parallel
         let mut aggregators = std::mem::take(&mut self.aggregators);
-        let dfs = self.pre_agg_partitions
+        let dfs = self
+            .pre_agg_partitions
             .iter()
             .zip(aggregators.iter_mut())
             .filter_map(|(agg_map, agg_fns)| {
                 if agg_map.is_empty() {
-                    return None
+                    return None;
                 }
                 let mut key_builder = PrimitiveChunkedBuilder::<K>::new(&self.key, agg_map.len());
                 let dtypes = agg_fns
                     .iter()
-                    .take(self.number_of_aggs()).map(|func| func.dtype()).collect::<Vec<_>>();
+                    .take(self.number_of_aggs())
+                    .map(|func| func.dtype())
+                    .collect::<Vec<_>>();
 
-                let mut buffers = dtypes.iter()
+                let mut buffers = dtypes
+                    .iter()
                     .map(|dtype| AnyValueBuffer::new(dtype, agg_map.len()))
                     .collect::<Vec<_>>();
 
                 agg_map.into_iter().for_each(|(k, &offset)| {
                     key_builder.append_option(*k);
 
-                    for (i, buffer) in
-                        (offset as usize..offset as usize + self.aggregation_columns.len()).zip(buffers.iter_mut())
+                    for (i, buffer) in (offset as usize
+                        ..offset as usize + self.aggregation_columns.len())
+                        .zip(buffers.iter_mut())
                     {
                         unsafe {
                             let agg_fn = agg_fns.get_unchecked_release_mut(i);
@@ -220,11 +237,18 @@ where
 
                 let mut cols = Vec::with_capacity(1 + self.number_of_aggs());
                 cols.push(key_builder.finish().into_series());
-                cols.extend(
-                    buffers.into_iter().map(|buf| buf.into_series())
-                );
-                Some(DataFrame::new(cols))
-            }).collect::<PolarsResult<Vec<_>>>()?;
+                cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
+                for (s, (name, dtype)) in cols.iter_mut().zip(self.output_schema.iter()) {
+                    if s.name() != name {
+                        s.rename(name);
+                    }
+                    if s.dtype() != dtype {
+                        *s = s.cast(dtype).unwrap()
+                    }
+                }
+                Some(DataFrame::new_no_checks(cols))
+            })
+            .collect::<Vec<_>>();
         Ok(accumulate_dataframes_vertical_unchecked(dfs))
     }
 

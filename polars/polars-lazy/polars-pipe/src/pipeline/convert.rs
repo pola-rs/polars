@@ -17,7 +17,7 @@ fn exprs_to_physical<F>(
     to_physical: &F,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalPipedExpr>>>
 where
-    F: Fn(Node, &mut Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(Node, &Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     exprs
         .iter()
@@ -34,9 +34,66 @@ pub fn create_pipeline<F>(
     to_physical: F,
 ) -> PolarsResult<Pipeline>
 where
-    F: Fn(Node, &mut Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(Node, &Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use ALogicalPlan::*;
+
+    let sink = match sink {
+        None => Box::new(OrderedSink::new()) as Box<dyn Sink>,
+        Some(node) => match lp_arena.get(node) {
+            Aggregate {
+                input,
+                keys,
+                aggs,
+                schema: output_schema,
+                ..
+            } => {
+                assert_eq!(keys.len(), 1);
+                if let AExpr::Column(key) = expr_arena.get(keys[0]) {
+                    let mut aggregation_columns = Vec::with_capacity(aggs.len());
+                    let mut agg_fns = Vec::with_capacity(aggs.len());
+
+                    let input_schema = lp_arena.get(*input).schema(lp_arena);
+
+                    for node in aggs {
+                        let (index, agg_fn) =
+                            convert_to_hash_agg(*node, expr_arena, &input_schema, &to_physical);
+                        aggregation_columns.push(index);
+                        agg_fns.push(agg_fn)
+                    }
+                    let aggregation_columns = Arc::new(aggregation_columns);
+                    match input_schema
+                        .get(key)
+                        .ok_or_else(|| PolarsError::NotFound(format!("{}", key.as_ref()).into()))?
+                    {
+                        DataType::Int64 => {
+                            Box::new(groupby::PrimitiveGroupbySink::<Int64Type>::new(
+                                key.clone(),
+                                aggregation_columns,
+                                agg_fns,
+                                output_schema.clone(),
+                            )) as Box<dyn Sink>
+                        }
+                        DataType::Int32 => {
+                            Box::new(groupby::PrimitiveGroupbySink::<Int32Type>::new(
+                                key.clone(),
+                                aggregation_columns,
+                                agg_fns,
+                                output_schema.clone(),
+                            )) as Box<dyn Sink>
+                        }
+                        dt => panic!("dtype: '{}' not yet implemented in streaming", dt),
+                    }
+                } else {
+                    unreachable!()
+                }
+            }
+            _ => {
+                todo!()
+            }
+        },
+    };
+
     let mut source_objects = Vec::with_capacity(sources.len());
 
     for node in sources {
@@ -92,53 +149,6 @@ where
             }
         })
         .collect::<PolarsResult<Vec<_>>>()?;
-
-    let sink = match sink {
-        None => Box::new(OrderedSink::new()) as Box<dyn Sink>,
-        Some(node) => match lp_arena.get(node) {
-            Aggregate {
-                keys, aggs, schema, ..
-            } => {
-                assert_eq!(keys.len(), 1);
-                if let AExpr::Column(key) = expr_arena.get(keys[0]) {
-                    let mut aggregation_columns = Vec::with_capacity(aggs.len());
-                    let mut agg_fns = Vec::with_capacity(aggs.len());
-
-                    for node in aggs {
-                        let (index, agg_fn) =
-                            convert_to_hash_agg(*node, expr_arena, schema).unwrap();
-                        aggregation_columns.push(index);
-                        agg_fns.push(agg_fn)
-                    }
-                    match schema
-                        .get(key)
-                        .ok_or_else(|| PolarsError::NotFound(format!("{}", key.as_ref()).into()))?
-                    {
-                        DataType::Int64 => {
-                            Box::new(groupby::PrimitiveGroupbySink::<Int64Type>::new(
-                                key.clone(),
-                                aggregation_columns,
-                                agg_fns,
-                            )) as Box<dyn Sink>
-                        }
-                        DataType::Int32 => {
-                            Box::new(groupby::PrimitiveGroupbySink::<Int32Type>::new(
-                                key.clone(),
-                                aggregation_columns,
-                                agg_fns,
-                            )) as Box<dyn Sink>
-                        }
-                        dt => panic!("dtype: '{}' not yet implemented in streaming", dt),
-                    }
-                } else {
-                    unreachable!()
-                }
-            }
-            _ => {
-                todo!()
-            }
-        },
-    };
 
     Ok(Pipeline::new(source_objects, operators, sink))
 }
