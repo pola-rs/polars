@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use std::hash::{BuildHasher, Hash, Hasher};
 
 use hashbrown::hash_map::RawEntryMut;
+use num::NumCast;
 use polars_core::export::ahash::RandomState;
 use polars_core::export::arrow;
 use polars_core::frame::row::AnyValueBuffer;
@@ -22,7 +23,7 @@ pub(crate) const HASHMAP_INIT_SIZE: usize = 128;
 pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     thread_no: usize,
     // idx is the offset in the array with aggregators
-    pre_agg_partitions: Vec<PlHashMap<Option<K::Native>, usize>>,
+    pre_agg_partitions: Vec<PlHashMap<Option<K::Native>, IdxSize>>,
     // the aggregations are all tightly packed
     // the aggregation function of a group can be found
     // by:
@@ -71,6 +72,7 @@ impl<K: PolarsNumericType> PrimitiveGroupbySink<K> {
         }
     }
 
+    #[inline]
     fn number_of_aggs(&self) -> usize {
         self.aggregation_columns.len()
     }
@@ -110,17 +112,18 @@ where
                     .from_key_hashed_nocheck(h, &opt_v);
                 let agg_idx = match entry {
                     RawEntryMut::Vacant(entry) => {
-                        entry.insert_with_hasher(h, opt_v, current_aggregators.len(), |_| h);
+                        let offset = NumCast::from(current_aggregators.len()).unwrap();
+                        entry.insert_with_hasher(h, opt_v, offset, |_| h);
                         // initialize the aggregators
                         for agg_fn in &self.agg_fns {
                             current_aggregators.push(agg_fn.split())
                         }
-                        0 as usize
+                        offset
                     }
                     RawEntryMut::Occupied(entry) => *entry.get(),
                 };
-                for (i, agg_iter) in
-                    (agg_idx..agg_idx + self.aggregation_columns.len()).zip(agg_iters.iter_mut())
+                for (i, agg_iter) in 
+                    (agg_idx as usize..agg_idx as usize + self.aggregation_columns.len()).zip(agg_iters.iter_mut())
                 {
                     let agg_fn = unsafe { current_aggregators.get_unchecked_release_mut(i) };
 
@@ -141,28 +144,30 @@ where
             .zip(other.pre_agg_partitions.iter())
             .zip(self.aggregators.iter_mut())
             .zip(other.aggregators.iter())
-            .for_each(|(((map_self, map_other), agg_fn_self), agg_fn_other)| {
-                for (k, agg_idx_other) in map_other.iter() {
+            .for_each(|(((map_self, map_other), aggregators_self), aggregators_other)| {
+                for (k, &agg_idx_other) in map_other.iter() {
                     let opt_v = *k;
                     unsafe {
-                        let agg_fn_other = agg_fn_other.get_unchecked_release(*agg_idx_other);
 
                         let h = get_hash(opt_v, &self.hb);
                         let entry = map_self.raw_entry_mut().from_key_hashed_nocheck(h, &opt_v);
 
                         let agg_idx_self = match entry {
                             RawEntryMut::Vacant(entry) => {
-                                entry.insert_with_hasher(h, opt_v, agg_fn_self.len(), |_| h);
+
+                                let offset = NumCast::from(aggregators_self.len()).unwrap();
+                                entry.insert_with_hasher(h, opt_v, offset, |_| h);
                                 // initialize the aggregators
                                 for agg_fn in &self.agg_fns {
-                                    agg_fn_self.push(agg_fn.split())
+                                    aggregators_self.push(agg_fn.split())
                                 }
-                                0 as usize
+                                offset
                             }
                             RawEntryMut::Occupied(entry) => *entry.get(),
                         };
-                        for i in agg_idx_self..agg_idx_self + self.aggregation_columns.len() {
-                            let agg_fn_self = agg_fn_self.get_unchecked_release_mut(i);
+                        for i in 0..self.aggregation_columns.len() {
+                            let agg_fn_other = aggregators_other.get_unchecked_release(agg_idx_other as usize + i);
+                            let agg_fn_self = aggregators_self.get_unchecked_release_mut(agg_idx_self as usize + i);
                             agg_fn_self.combine(agg_fn_other)
                         }
                     }
@@ -203,7 +208,7 @@ where
                     key_builder.append_option(*k);
 
                     for (i, buffer) in
-                        (offset..offset + self.aggregation_columns.len()).zip(buffers.iter_mut())
+                        (offset as usize..offset as usize + self.aggregation_columns.len()).zip(buffers.iter_mut())
                     {
                         unsafe {
                             let agg_fn = agg_fns.get_unchecked_release_mut(i);
