@@ -1,6 +1,7 @@
+use std::iter::repeat;
+
 use super::*;
 use crate::prelude::*;
-
 pub type DateChunked = Logical<DateType, Int32Type>;
 
 impl From<Int32Chunked> for DateChunked {
@@ -40,6 +41,12 @@ impl LogicalType for DateChunked {
                     .into_datetime(*tu, tz.clone())
                     .into_series())
             }
+            (Date, Time) => Ok(Int64Chunked::from_iter_values(
+                self.name(),
+                repeat(0i64).take(self.len()),
+            )
+            .into_time()
+            .into_series()),
             _ => self.0.cast(dtype),
         }
     }
