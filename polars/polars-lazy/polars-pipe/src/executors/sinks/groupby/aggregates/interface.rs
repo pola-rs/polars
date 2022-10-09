@@ -1,12 +1,11 @@
 use std::any::Any;
-use std::fmt::Debug;
 
 use polars_core::datatypes::DataType;
 use polars_core::prelude::AnyValue;
 
 use crate::operators::IdxSize;
 
-pub trait AggregateFn: Send + Debug {
+pub trait AggregateFn: Send + Sync {
     fn pre_agg(&mut self, chunk_idx: IdxSize, item: AnyValue);
 
     fn dtype(&self) -> DataType;

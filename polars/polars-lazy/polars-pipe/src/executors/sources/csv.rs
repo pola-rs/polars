@@ -8,14 +8,13 @@ use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::prelude::CsvParserOptions;
 
 use super::*;
-use crate::expressions::PhysicalPipedExpr;
 
 pub(crate) struct CsvSource {
+    #[allow(dead_code)]
+    // this exist because we need to keep ownership
     schema: SchemaRef,
-    predicate: Option<Arc<dyn PhysicalPipedExpr>>,
     reader: *mut CsvReader<'static, File>,
     batched_reader: *mut BatchedCsvReader<'static>,
-    stack: Vec<(IdxSize, DataFrame)>,
     n_threads: usize,
 }
 
@@ -24,7 +23,6 @@ impl CsvSource {
         path: PathBuf,
         schema: SchemaRef,
         options: CsvParserOptions,
-        predicate: Option<Arc<dyn PhysicalPipedExpr>>,
     ) -> PolarsResult<Self> {
         let mut with_columns = options.with_columns;
         let mut projected_len = 0;
@@ -73,10 +71,8 @@ impl CsvSource {
 
         Ok(CsvSource {
             schema,
-            predicate,
             reader,
             batched_reader,
-            stack: vec![],
             n_threads: POOL.current_num_threads(),
         })
     }

@@ -64,7 +64,7 @@ where
                     let aggregation_columns = Arc::new(aggregation_columns);
                     match input_schema
                         .get(key)
-                        .ok_or_else(|| PolarsError::NotFound(format!("{}", key.as_ref()).into()))?
+                        .ok_or_else(|| PolarsError::NotFound(key.to_string().into()))?
                     {
                         DataType::Int64 => {
                             Box::new(groupby::PrimitiveGroupbySink::<Int64Type>::new(
@@ -95,6 +95,7 @@ where
     };
 
     let mut source_objects = Vec::with_capacity(sources.len());
+    let mut operator_objects = Vec::with_capacity(operators.len() + 1);
 
     for node in sources {
         match lp_arena.take(*node) {
@@ -108,12 +109,14 @@ where
             } => {
                 // todo! remove aggregate pushdown
                 assert!(aggregate.is_empty());
-                let src = sources::CsvSource::new(
-                    path,
-                    schema,
-                    options,
-                    predicate.map(|node| to_physical(node, expr_arena).unwrap()),
-                )?;
+                // add predicate to operators
+                if let Some(predicate) = predicate {
+                    let predicate = to_physical(predicate, expr_arena)?;
+                    let op = operators::FilterOperator { predicate };
+                    let op = Arc::new(op) as Arc<dyn Operator>;
+                    operator_objects.push(op)
+                }
+                let src = sources::CsvSource::new(path, schema, options)?;
                 source_objects.push(Arc::new(src) as Arc<dyn Source>)
             }
             lp => {
@@ -122,33 +125,33 @@ where
         }
     }
 
-    let operators = operators
-        .iter()
-        .map(|node| match lp_arena.take(*node) {
+    for node in operators.iter() {
+        let op = match lp_arena.take(*node) {
             Projection { expr, .. } => {
                 let op = operators::ProjectionOperator {
                     exprs: exprs_to_physical(&expr, expr_arena, &to_physical)?,
                 };
-                Ok(Arc::new(op) as Arc<dyn Operator>)
+                Arc::new(op) as Arc<dyn Operator>
             }
             Selection { predicate, .. } => {
                 let predicate = to_physical(predicate, expr_arena)?;
                 let op = operators::FilterOperator { predicate };
-                Ok(Arc::new(op) as Arc<dyn Operator>)
+                Arc::new(op) as Arc<dyn Operator>
             }
             MapFunction {
                 function: FunctionNode::FastProjection { columns },
                 ..
             } => {
                 let op = operators::FastProjectionOperator { columns };
-                Ok(Arc::new(op) as Arc<dyn Operator>)
+                Arc::new(op) as Arc<dyn Operator>
             }
 
             lp => {
                 panic!("operator {:?} not (yet) supported", lp)
             }
-        })
-        .collect::<PolarsResult<Vec<_>>>()?;
+        };
+        operator_objects.push(op)
+    }
 
-    Ok(Pipeline::new(source_objects, operators, sink))
+    Ok(Pipeline::new(source_objects, operator_objects, sink))
 }

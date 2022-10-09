@@ -1,18 +1,15 @@
 use std::any::Any;
-use std::fmt::Debug;
-use std::ops::{Add, AddAssign};
+use std::ops::Add;
 
 use polars_core::datatypes::{AnyValue, DataType};
 use polars_core::export::arrow::datatypes::PrimitiveType;
 use polars_core::export::num::NumCast;
 use polars_core::prelude::NumericNative;
-use polars_core::utils::arrow::types::NativeType;
 use polars_utils::debug_unwrap;
 
 use super::*;
 use crate::operators::{ArrowDataType, IdxSize};
 
-#[derive(Debug)]
 pub struct SumAgg<K: NumericNative> {
     sum: Option<K>,
 }

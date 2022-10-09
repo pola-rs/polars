@@ -15,7 +15,6 @@ pub struct Pipeline {
     operators: Vec<Arc<dyn Operator>>,
     // a sink for every thread
     sink: Vec<Box<dyn Sink>>,
-    n_threads: usize,
 }
 
 impl Pipeline {
@@ -32,7 +31,6 @@ impl Pipeline {
             sources,
             operators,
             sink,
-            n_threads,
         }
     }
 
@@ -47,11 +45,11 @@ impl Pipeline {
                 .into_par_iter()
                 .zip(sink.par_iter_mut())
                 .map(|(chunk, sink)| {
-                    let chunk = match self.push_operators(chunk, &ec)? {
+                    let chunk = match self.push_operators(chunk, ec)? {
                         OperatorResult::Finished(chunk) => chunk,
                         _ => todo!(),
                     };
-                    sink.sink(&ec, chunk)
+                    sink.sink(ec, chunk)
                 })
                 .collect()
         })
@@ -69,7 +67,7 @@ impl Pipeline {
             in_process.push((op, chunk));
 
             while let Some((op, chunk)) = in_process.pop() {
-                match op.execute(&ec, &chunk)? {
+                match op.execute(ec, &chunk)? {
                     OperatorResult::Finished(chunk) => {
                         if let Some(op) = op_iter.next() {
                             in_process.push((op, chunk))

@@ -39,6 +39,7 @@ use polars_plan::logical_plan::optimize;
 use polars_plan::utils::{combine_predicates_expr, expr_to_leaf_column_names};
 
 use crate::physical_plan::executors::Executor;
+use crate::physical_plan::planner::create_physical_plan;
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::streaming::insert_streaming_nodes;
 use crate::prelude::*;
@@ -554,8 +555,7 @@ impl LazyFrame {
             insert_streaming_nodes(lp_top, &mut lp_arena, &mut expr_arena, &mut scratch)?;
         }
 
-        let planner = PhysicalPlanner::default();
-        let physical_plan = planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
+        let physical_plan = create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
         let state = ExecutionState::with_finger_prints(finger_prints);
         Ok((state, physical_plan))

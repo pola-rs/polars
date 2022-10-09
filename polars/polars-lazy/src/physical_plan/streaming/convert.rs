@@ -1,7 +1,6 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use polars_core::datatypes::DataType;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Field, SchemaRef, Series};
@@ -9,7 +8,6 @@ use polars_core::schema::Schema;
 use polars_pipe::expressions::PhysicalPipedExpr;
 use polars_pipe::operators::chunks::DataChunk;
 use polars_pipe::pipeline::{create_pipeline, Pipeline};
-use polars_plan::prelude::ApplyOptions::ApplyFlat;
 use polars_plan::prelude::*;
 
 use crate::physical_plan::planner::create_physical_expr;
@@ -73,7 +71,7 @@ pub(crate) fn insert_streaming_nodes(
             }
             MapFunction {
                 input,
-                function: FunctionNode::FastProjection { columns },
+                function: FunctionNode::FastProjection { .. },
             } => {
                 state.streamable = true;
                 state.operators.push(root);
@@ -130,7 +128,7 @@ pub(crate) fn insert_streaming_nodes(
     }
 
     for state in states {
-        let mut latest = match state.sink {
+        let latest = match state.sink {
             Some(node) => node,
             None => state.operators[state.operators.len() - 1],
         };
@@ -159,8 +157,6 @@ struct State {
     sink: Option<Node>,
 }
 
-type StateObject = dyn Any + Send + Sync;
-
 fn get_pipeline_node(
     lp_arena: &mut Arena<ALogicalPlan>,
     mut pipeline: Pipeline,
@@ -178,7 +174,7 @@ fn get_pipeline_node(
 
     ALogicalPlan::MapFunction {
         function: FunctionNode::Opaque {
-            function: Arc::new(move |df: DataFrame| {
+            function: Arc::new(move |_df: DataFrame| {
                 let state = ExecutionState::new();
                 if state.verbose() {
                     eprintln!("polars runs part of the query streaming.")

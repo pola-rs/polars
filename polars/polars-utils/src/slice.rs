@@ -1,10 +1,18 @@
 use core::slice::SliceIndex;
 
 pub trait GetSaferUnchecked<T> {
+    /// # Safety
+    ///
+    /// Calling this method with an out-of-bounds index is *[undefined behavior]*
+    /// even if the resulting reference is not used.
     unsafe fn get_unchecked_release<I>(&self, index: I) -> &<I as SliceIndex<[T]>>::Output
     where
         I: SliceIndex<[T]>;
 
+    /// # Safety
+    ///
+    /// Calling this method with an out-of-bounds index is *[undefined behavior]*
+    /// even if the resulting reference is not used.
     unsafe fn get_unchecked_release_mut<I>(
         &mut self,
         index: I,

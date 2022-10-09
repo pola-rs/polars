@@ -360,6 +360,7 @@ impl<'a> CoreReader<'a> {
         n_threads: &mut usize,
         bytes: &'a [u8],
         logging: bool,
+        streaming: bool,
     ) -> PolarsResult<(Vec<(usize, usize)>, usize, usize, Option<usize>, &'a [u8])> {
         // Make the variable mutable so that we can reassign the sliced file to this variable.
         let (mut bytes, starting_point_offset) = self.find_starting_point(bytes, self.eol_char)?;
@@ -425,12 +426,14 @@ impl<'a> CoreReader<'a> {
             );
         }
 
+        let n_file_chunks = if streaming { n_chunks } else { *n_threads };
+
         // split the file by the nearest new line characters such that every thread processes
         // approximately the same number of rows.
         Ok((
             get_file_chunks(
                 bytes,
-                *n_threads,
+                n_file_chunks,
                 self.schema.len(),
                 self.delimiter,
                 self.quote_char,
@@ -492,7 +495,7 @@ impl<'a> CoreReader<'a> {
     ) -> PolarsResult<DataFrame> {
         let logging = std::env::var("POLARS_VERBOSE").is_ok();
         let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes) =
-            self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging)?;
+            self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging, false)?;
         let projection = self.get_projection();
         let str_columns = self.get_string_columns(&projection)?;
 
@@ -710,8 +713,8 @@ impl<'a> CoreReader<'a> {
         let mut n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
         let reader_bytes = self.reader_bytes.take().unwrap();
         let logging = std::env::var("POLARS_VERBOSE").is_ok();
-        let (file_chunks, chunk_size, _total_rows, starting_point_offset, _bytes) =
-            self.determine_file_chunks_and_statistics(&mut n_threads, &reader_bytes, logging)?;
+        let (file_chunks, chunk_size, _total_rows, starting_point_offset, _bytes) = self
+            .determine_file_chunks_and_statistics(&mut n_threads, &reader_bytes, logging, true)?;
         let projection = self.get_projection();
 
         // safety

@@ -13,7 +13,7 @@ pub(crate) struct FastProjectionOperator {
 impl Operator for FastProjectionOperator {
     fn execute(
         &self,
-        context: &PExecutionContext,
+        _context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
         let chunk = chunk.with_data(chunk.data.select(self.columns.as_slice())?);
@@ -34,7 +34,7 @@ impl Operator for ProjectionOperator {
         let projected = self
             .exprs
             .iter()
-            .map(|e| e.evaluate(&chunk, context.execution_state.as_ref()))
+            .map(|e| e.evaluate(chunk, context.execution_state.as_ref()))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let chunk = chunk.with_data(DataFrame::new_no_checks(projected));

@@ -22,7 +22,7 @@ impl Operator for FilterOperator {
             )
         })?;
         // TODO! filter sequentially?
-        let df = chunk.data.filter(&mask)?;
+        let df = chunk.data.filter(mask)?;
 
         Ok(OperatorResult::Finished(chunk.with_data(df)))
     }
