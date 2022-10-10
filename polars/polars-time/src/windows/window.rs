@@ -60,11 +60,6 @@ impl Window {
         self.truncate_ns(t)
     }
 
-    pub fn round_no_offset_ns(&self, t: i64) -> i64 {
-        let t = t + self.every.nanoseconds() / 2_i64;
-        self.truncate_no_offset_ns(t)
-    }
-
     /// Round the given us timestamp by the window boundary.
     pub fn round_us(&self, t: i64) -> i64 {
         let t = t + self.every.nanoseconds()
@@ -72,23 +67,11 @@ impl Window {
         self.truncate_us(t)
     }
 
-    pub fn round_no_offset_us(&self, t: i64) -> i64 {
-        let t = t + self.every.nanoseconds()
-            / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Microsecond) as i64);
-        self.truncate_no_offset_us(t)
-    }
-
     /// Round the given ms timestamp by the window boundary.
     pub fn round_ms(&self, t: i64) -> i64 {
         let t = t + self.every.nanoseconds()
             / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Millisecond) as i64);
         self.truncate_ms(t)
-    }
-
-    pub fn round_no_offset_ms(&self, t: i64) -> i64 {
-        let t = t + self.every.nanoseconds()
-            / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Millisecond) as i64);
-        self.truncate_no_offset_ms(t)
     }
 
     /// returns the bounds for the earliest window bounds
