@@ -329,6 +329,51 @@ macro_rules! with_match_physical_numeric_type {(
     }
 })}
 
+#[macro_export]
+macro_rules! with_match_physical_numeric_polars_type {(
+    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use $crate::datatypes::DataType::*;
+    match $key_type {
+        Int8 => __with_ty__! { Int8Type },
+        Int16 => __with_ty__! { Int16Type },
+        Int32 => __with_ty__! { Int32Type },
+        Int64 => __with_ty__! { Int64Type },
+        UInt8 => __with_ty__! { UInt8Type },
+        UInt16 => __with_ty__! { UInt16Type },
+        UInt32 => __with_ty__! { UInt32Type },
+        UInt64 => __with_ty__! { UInt64Type },
+        Float32 => __with_ty__! { Float32Type },
+        Float64 => __with_ty__! { Float64Type },
+        _ => unimplemented!()
+    }
+})}
+
+#[macro_export]
+macro_rules! with_match_physical_integer_polars_type {(
+    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use $crate::datatypes::DataType::*;
+    use $crate::datatypes::*;
+    match $key_type {
+            #[cfg(feature = "dtype-i8")]
+        Int8 => __with_ty__! { Int8Type },
+            #[cfg(feature = "dtype-i16")]
+        Int16 => __with_ty__! { Int16Type },
+        Int32 => __with_ty__! { Int32Type },
+        Int64 => __with_ty__! { Int64Type },
+            #[cfg(feature = "dtype-u8")]
+        UInt8 => __with_ty__! { UInt8Type },
+            #[cfg(feature = "dtype-u16")]
+        UInt16 => __with_ty__! { UInt16Type },
+        UInt32 => __with_ty__! { UInt32Type },
+        UInt64 => __with_ty__! { UInt64Type },
+        _ => unimplemented!()
+    }
+})}
+
 /// Apply a macro on the Downcasted ChunkedArray's of DataTypes that are logical numerics.
 /// So no logical.
 #[macro_export]

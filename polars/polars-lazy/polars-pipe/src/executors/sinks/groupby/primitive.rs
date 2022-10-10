@@ -32,7 +32,7 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     //      * offset = (idx)
     //      * end = (offset + n_aggs)
     aggregators: Vec<Vec<Box<dyn AggregateFn>>>,
-    key: Arc<str>,
+    key: Arc<dyn PhysicalPipedExpr>,
     // the columns that will be aggregated
     aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
     hb: RandomState,
@@ -45,7 +45,7 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
 
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K> {
     pub fn new(
-        key: Arc<str>,
+        key: Arc<dyn PhysicalPipedExpr>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         agg_fns: Vec<Box<dyn AggregateFn>>,
         output_schema: SchemaRef,
@@ -92,7 +92,11 @@ where
 {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         let num_aggs = self.number_of_aggs();
-        let s = chunk.data.column(self.key.as_ref())?.to_physical_repr();
+
+        let s = self
+            .key
+            .evaluate(&chunk, context.execution_state.as_ref())?;
+        let s = s.to_physical_repr();
         // cow -> &series -> &dyn series_trait -> &chunkedarray
         let ca: &ChunkedArray<K> = s.as_ref().as_ref().as_ref();
 
@@ -215,8 +219,10 @@ where
                     if agg_map.is_empty() {
                         return None;
                     }
-                    let mut key_builder =
-                        PrimitiveChunkedBuilder::<K>::new(&self.key, agg_map.len());
+                    let mut key_builder = PrimitiveChunkedBuilder::<K>::new(
+                        self.output_schema.get_index(0).unwrap().0,
+                        agg_map.len(),
+                    );
                     let dtypes = agg_fns
                         .iter()
                         .take(self.number_of_aggs())

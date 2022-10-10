@@ -1,6 +1,4 @@
 use std::any::Any;
-use std::fmt::Debug;
-use std::hash::Hash;
 
 use hashbrown::hash_map::RawEntryMut;
 use num::NumCast;
@@ -9,9 +7,9 @@ use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
 use polars_core::POOL;
-use polars_utils::option::UnwrapUncheckedRelease;
+use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
-use polars_utils::{debug_unwrap, get_hash, hash_to_partition};
+use polars_utils::unwrap::UnwrapUncheckedRelease;
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
@@ -25,6 +23,11 @@ pub(crate) const HASHMAP_INIT_SIZE: usize = 128;
 // This is the hash and the Index offset in the linear buffer
 type Key = (u64, IdxSize);
 
+// we store a hashmap per partition (partitioned by hash)
+// the hashmap contains indexes as keys and as values
+// those indexes point into the keys buffer and the values buffer
+// the keys buffer are buffers of AnyValue per partition
+// and the values are buffer of Aggregation functions per partition
 pub struct GenericGroupbySink {
     thread_no: usize,
     // idx is the offset in the array with keys
@@ -74,6 +77,7 @@ impl GenericGroupbySink {
             aggregators.push(Vec::with_capacity(
                 HASHMAP_INIT_SIZE * aggregation_columns.len(),
             ));
+            keys.push(Vec::with_capacity(HASHMAP_INIT_SIZE * key_columns.len()))
         }
 
         Self {
@@ -95,6 +99,10 @@ impl GenericGroupbySink {
     #[inline]
     fn number_of_aggs(&self) -> usize {
         self.aggregation_columns.len()
+    }
+    #[inline]
+    fn number_of_keys(&self) -> usize {
+        self.key_columns.len()
     }
 }
 
@@ -129,9 +137,13 @@ impl Sink for GenericGroupbySink {
 
         let mut iter_keys = self.keys_series.iter();
         let first_key = iter_keys.next().unwrap();
-        first_key.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        first_key
+            .vec_hash(self.hb.clone(), &mut self.hashes)
+            .unwrap();
         for other_key in iter_keys {
-            other_key.vec_hash_combine(self.hb.clone(), &mut self.hashes).unwrap();
+            other_key
+                .vec_hash_combine(self.hb.clone(), &mut self.hashes)
+                .unwrap();
         }
 
         let mut current_keys_buf = Vec::with_capacity(self.keys.len());
@@ -150,7 +162,7 @@ impl Sink for GenericGroupbySink {
                 unsafe { self.aggregators.get_unchecked_release_mut(partition) };
             let current_key_values = unsafe { self.keys.get_unchecked_release_mut(partition) };
 
-            let mut entry = current_partition.raw_entry_mut().from_hash(h, |key| {
+            let entry = current_partition.raw_entry_mut().from_hash(h, |key| {
                 let idx = key.1 as usize;
                 if self.keys_series.len() > 1 {
                     current_keys_buf.iter().enumerate().all(|(i, key)| unsafe {
@@ -170,7 +182,10 @@ impl Sink for GenericGroupbySink {
                         NumCast::from(current_aggregators.len()).unwrap_unchecked_release()
                     };
                     let keys_offset = unsafe {
-                        (h, NumCast::from(current_key_values.len()).unwrap_unchecked_release())
+                        (
+                            h,
+                            NumCast::from(current_key_values.len()).unwrap_unchecked_release(),
+                        )
                     };
                     entry.insert_with_hasher(h, keys_offset, value_offset, |_| h);
 
@@ -210,6 +225,7 @@ impl Sink for GenericGroupbySink {
 
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         let n_partitions = self.pre_agg_partitions.len();
+        let n_keys = self.number_of_keys();
 
         self.pre_agg_partitions
             .iter_mut()
@@ -219,61 +235,69 @@ impl Sink for GenericGroupbySink {
             .for_each(
                 |(((map_self, map_other), aggregators_self), aggregators_other)| {
                     for (k_other, &agg_idx_other) in map_other.iter() {
-                        unsafe {
-                            // the hash value
-                            let h = k_other.0;
-                            // the partition where all keys and maps are located
-                            let partition = hash_to_partition(h, n_partitions);
-                            // get the key buffers
-                            let keys_buffer_self = self.keys.get_unchecked_release_mut(partition);
-                            let keys_buffer_other = other.keys.get_unchecked_release(partition);
+                        // the hash value
+                        let h = k_other.0;
+                        // the partition where all keys and maps are located
+                        let partition = hash_to_partition(h, n_partitions);
+                        // get the key buffers
+                        let keys_buffer_self =
+                            unsafe { self.keys.get_unchecked_release_mut(partition) };
+                        let keys_buffer_other =
+                            unsafe { other.keys.get_unchecked_release(partition) };
 
-                            // the offset in the keys of other
-                            let idx_other = k_other.1 as usize;
-                            // slice to the keys of other
-                            let keys_other = keys_buffer_other
-                                .get_unchecked_release(idx_other..idx_other + self.keys_series.len());
+                        // the offset in the keys of other
+                        let idx_other = k_other.1 as usize;
+                        // slice to the keys of other
+                        let keys_other = unsafe {
+                            keys_buffer_other.get_unchecked_release(idx_other..idx_other + n_keys)
+                        };
 
-                            let entry = map_self.raw_entry_mut().from_hash(h, |k_self| {
-                                // the offset in the keys of self
-                                let idx_self = k_self.1 as usize;
-                                // slice to the keys of self
-                                let keys_self = keys_buffer_self
-                                    .get_unchecked_release(idx_self..idx_self + self.keys_series.len());
-                                // compare the keys
-                                keys_self == keys_other
-                            });
-
-                            let agg_idx_self = match entry {
-                                // the keys of other are not in this table, so we must update this table
-                                RawEntryMut::Vacant(entry) => {
-                                    // get the current offset in the values buffer
-                                    let values_offset = NumCast::from(aggregators_self.len()).unwrap_unchecked_release();
-                                    // get the key, comprised of the hash and the current offset in the keys buffer
-                                    let key = unsafe {
-                                        (h, NumCast::from(keys_buffer_self.len()).unwrap_unchecked_release())
-                                    };
-
-                                    // extend the keys buffer with the new keys from othger
-                                    unsafe {
-                                        keys_buffer_self.extend_from_slice(
-                                            keys_other
-                                        )
-                                    };
-
-                                    // inser the keys and values_offset
-                                    entry.insert_with_hasher(h, key, values_offset, |_| h);
-                                    // initialize the new aggregators
-                                    for agg_fn in &self.agg_fns {
-                                        aggregators_self.push(agg_fn.split())
-                                    }
-                                    values_offset
-                                }
-                                RawEntryMut::Occupied(entry) => *entry.get(),
+                        let entry = map_self.raw_entry_mut().from_hash(h, |k_self| {
+                            // the offset in the keys of self
+                            let idx_self = k_self.1 as usize;
+                            // slice to the keys of self
+                            // safety:
+                            // in bounds
+                            let keys_self = unsafe {
+                                keys_buffer_self.get_unchecked_release(idx_self..idx_self + n_keys)
                             };
+                            // compare the keys
+                            keys_self == keys_other
+                        });
 
-                            // combine the aggregation functions
-                            for i in 0..self.aggregation_columns.len() {
+                        let agg_idx_self = match entry {
+                            // the keys of other are not in this table, so we must update this table
+                            RawEntryMut::Vacant(entry) => {
+                                // get the current offset in the values buffer
+                                let values_offset = unsafe {
+                                    NumCast::from(aggregators_self.len()).unwrap_unchecked_release()
+                                };
+                                // get the key, comprised of the hash and the current offset in the keys buffer
+                                let key = unsafe {
+                                    (
+                                        h,
+                                        NumCast::from(keys_buffer_self.len())
+                                            .unwrap_unchecked_release(),
+                                    )
+                                };
+
+                                // extend the keys buffer with the new keys from othger
+                                keys_buffer_self.extend_from_slice(keys_other);
+
+                                // insert the keys and values_offset
+                                entry.insert_with_hasher(h, key, values_offset, |_| h);
+                                // initialize the new aggregators
+                                for agg_fn in &self.agg_fns {
+                                    aggregators_self.push(agg_fn.split())
+                                }
+                                values_offset
+                            }
+                            RawEntryMut::Occupied(entry) => *entry.get(),
+                        };
+
+                        // combine the aggregation functions
+                        for i in 0..self.aggregation_columns.len() {
+                            unsafe {
                                 let agg_fn_other = aggregators_other
                                     .get_unchecked_release(agg_idx_other as usize + i);
                                 let agg_fn_self = aggregators_self
@@ -299,9 +323,8 @@ impl Sink for GenericGroupbySink {
     }
 
     fn finalize(&mut self) -> PolarsResult<DataFrame> {
-        // TODO! parallel
         let mut aggregators = std::mem::take(&mut self.aggregators);
-        let n_keys = self.keys_series.len();
+        let n_keys = self.number_of_keys();
 
         POOL.install(|| {
             let dfs = self
@@ -313,7 +336,12 @@ impl Sink for GenericGroupbySink {
                     if agg_map.is_empty() {
                         return None;
                     }
-                    let mut key_builders = self.keys_series.iter().map(|s|AnyValueBuffer::new(s.dtype(), agg_map.len())).collect::<Vec<_>>();
+                    let mut key_builders = self
+                        .output_schema
+                        .iter_dtypes()
+                        .take(n_keys)
+                        .map(|dtype| AnyValueBuffer::new(dtype, agg_map.len()))
+                        .collect::<Vec<_>>();
                     let dtypes = agg_fns
                         .iter()
                         .take(self.number_of_aggs())
@@ -327,7 +355,9 @@ impl Sink for GenericGroupbySink {
 
                     agg_map.into_iter().for_each(|(k, &offset)| {
                         let keys_offset = k.1 as usize;
-                        let keys = unsafe { current_keys.get_unchecked_release(keys_offset..keys_offset + n_keys) };
+                        let keys = unsafe {
+                            current_keys.get_unchecked_release(keys_offset..keys_offset + n_keys)
+                        };
 
                         for (key, key_builder) in keys.iter().zip(key_builders.iter_mut()) {
                             key_builder.add(key.as_borrowed());

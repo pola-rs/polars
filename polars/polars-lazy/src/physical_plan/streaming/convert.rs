@@ -133,11 +133,9 @@ pub(crate) fn insert_streaming_nodes(
                 apply: None,
                 ..
             } => {
-                if keys.len() == 1
-                    && matches!(expr_arena.get(keys[0]), AExpr::Column(_))
-                    && aggs.iter().all(|node| {
-                        polars_pipe::pipeline::can_convert_to_hash_agg(*node, expr_arena)
-                    })
+                if aggs
+                    .iter()
+                    .all(|node| polars_pipe::pipeline::can_convert_to_hash_agg(*node, expr_arena))
                 {
                     let input_schema = lp_arena.get(*input).schema(lp_arena);
                     if let AExpr::Column(key) = expr_arena.get(keys[0]) {
@@ -167,7 +165,13 @@ pub(crate) fn insert_streaming_nodes(
     for state in states {
         let latest = match state.sink {
             Some(node) => node,
-            None => state.operators[state.operators.len() - 1],
+            None => {
+                if state.operators.is_empty() {
+                    continue;
+                } else {
+                    state.operators[state.operators.len() - 1]
+                }
+            }
         };
         let schema = lp_arena.get(latest).schema(lp_arena).into_owned();
         let pipeline = create_pipeline(
@@ -186,7 +190,7 @@ pub(crate) fn insert_streaming_nodes(
     Ok(())
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct State {
     streamable: bool,
     sources: Vec<Node>,

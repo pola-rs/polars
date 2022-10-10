@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use polars_core::error::PolarsError;
-use polars_core::prelude::{DataType, Int32Type, Int64Type, PolarsResult};
+use polars_core::prelude::PolarsResult;
+use polars_core::with_match_physical_integer_polars_type;
 use polars_plan::prelude::*;
 
 use crate::executors::sinks::groupby::aggregates::convert_to_hash_agg;
@@ -106,44 +106,45 @@ where
                 schema: output_schema,
                 ..
             } => {
-                assert_eq!(keys.len(), 1);
-                if let AExpr::Column(key) = expr_arena.get(keys[0]) {
-                    let mut aggregation_columns = Vec::with_capacity(aggs.len());
-                    let mut agg_fns = Vec::with_capacity(aggs.len());
+                let key_columns = Arc::new(
+                    keys.iter()
+                        .map(|node| to_physical(*node, expr_arena).unwrap())
+                        .collect::<Vec<_>>(),
+                );
 
-                    let input_schema = lp_arena.get(*input).schema(lp_arena);
+                let mut aggregation_columns = Vec::with_capacity(aggs.len());
+                let mut agg_fns = Vec::with_capacity(aggs.len());
 
-                    for node in aggs {
-                        let (index, agg_fn) =
-                            convert_to_hash_agg(*node, expr_arena, &input_schema, &to_physical);
-                        aggregation_columns.push(index);
-                        agg_fns.push(agg_fn)
-                    }
-                    let aggregation_columns = Arc::new(aggregation_columns);
-                    match input_schema
-                        .get(key)
-                        .ok_or_else(|| PolarsError::NotFound(key.to_string().into()))?
-                    {
-                        DataType::Int64 => {
-                            Box::new(groupby::PrimitiveGroupbySink::<Int64Type>::new(
-                                key.clone(),
+                let input_schema = lp_arena.get(*input).schema(lp_arena);
+
+                for node in aggs {
+                    let (index, agg_fn) =
+                        convert_to_hash_agg(*node, expr_arena, &input_schema, &to_physical);
+                    aggregation_columns.push(index);
+                    agg_fns.push(agg_fn)
+                }
+                let aggregation_columns = Arc::new(aggregation_columns);
+
+                match (
+                    output_schema.get_index(0).unwrap().1.to_physical(),
+                    keys.len(),
+                ) {
+                    (dt, 1) if dt.is_integer() => {
+                        with_match_physical_integer_polars_type!(dt, |$T| {
+                            Box::new(groupby::PrimitiveGroupbySink::<$T>::new(
+                                key_columns[0].clone(),
                                 aggregation_columns,
                                 agg_fns,
                                 output_schema.clone(),
                             )) as Box<dyn Sink>
-                        }
-                        DataType::Int32 => {
-                            Box::new(groupby::PrimitiveGroupbySink::<Int32Type>::new(
-                                key.clone(),
-                                aggregation_columns,
-                                agg_fns,
-                                output_schema.clone(),
-                            )) as Box<dyn Sink>
-                        }
-                        dt => panic!("dtype: '{}' not yet implemented in streaming", dt),
+                        })
                     }
-                } else {
-                    unreachable!()
+                    _ => Box::new(groupby::GenericGroupbySink::new(
+                        key_columns,
+                        aggregation_columns,
+                        agg_fns,
+                        output_schema.clone(),
+                    )) as Box<dyn Sink>,
                 }
             }
             _ => {

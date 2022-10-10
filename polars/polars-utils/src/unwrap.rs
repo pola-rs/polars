@@ -1,7 +1,9 @@
-use std::error::Error;
 use std::fmt::Debug;
 
 pub trait UnwrapUncheckedRelease<T> {
+    /// # Safety
+    ///
+    /// unwrap without checking the invariant
     unsafe fn unwrap_unchecked_release(self) -> T;
 }
 

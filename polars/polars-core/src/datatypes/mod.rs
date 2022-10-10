@@ -745,6 +745,7 @@ impl<'a> AnyValue<'a> {
     #[inline]
     pub fn as_borrowed(&self) -> AnyValue<'_> {
         match self {
+            #[cfg(feature = "dtype-binary")]
             AnyValue::BinaryOwned(data) => AnyValue::Binary(data),
             AnyValue::Utf8Owned(data) => AnyValue::Utf8(data),
             av => av.clone(),

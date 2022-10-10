@@ -73,6 +73,25 @@ fn test_streaming_glob() -> PolarsResult<()> {
 }
 
 #[test]
+fn test_streaming_multiple_keys_aggregate() -> PolarsResult<()> {
+    let q = get_csv_glob();
+
+    let q = q
+        .filter(col("sugars_g").gt(lit(10)))
+        .groupby([col("sugars_g"), col("calories")])
+        .agg([col("fats_g").sum() * lit(10)])
+        .sort("sugars_g", Default::default());
+
+    let q1 = q.clone().with_streaming(true);
+    let q2 = q.clone();
+    let out_streaming = q1.collect()?;
+    let out_one_shot = q2.collect()?;
+
+    assert!(out_streaming.frame_equal(&out_one_shot));
+    Ok(())
+}
+
+#[test]
 fn test_streaming_first_sum() -> PolarsResult<()> {
     let q = get_csv_file();
 
@@ -91,36 +110,5 @@ fn test_streaming_first_sum() -> PolarsResult<()> {
     let out_one_shot = q2.collect()?;
 
     assert!(out_streaming.frame_equal(&out_one_shot));
-    Ok(())
-}
-
-#[test]
-fn test_streaming2() -> PolarsResult<()> {
-    let out = LazyFrame::scan_parquet(
-        "/home/ritchie46/Downloads/csv-benchmark/yellow_tripdata_2010-01.parquet",
-        ScanArgsParquet::default(),
-    )?
-    .groupby([col("passenger_count")])
-    .agg([
-        col("rate_code").first().alias("first"),
-        col("rate_code").sum(),
-    ])
-    .with_streaming(true)
-    .collect()?;
-
-    // let out =
-    //     LazyCsvReader::new("/home/ritchie46/Downloads/csv-benchmark/yellow_tripdata_2010-01.csv")
-    //         .finish()
-    //         .unwrap()
-    //         .groupby([col("passenger_count")])
-    //         .agg([
-    //             col("rate_code").first().alias("first"),
-    //             col("rate_code").sum(),
-    //         ])
-    //         .with_streaming(true)
-    //         .collect()?;
-
-    dbg!(out);
-
     Ok(())
 }
