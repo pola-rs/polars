@@ -1,7 +1,6 @@
-use polars_arrow::export::arrow::temporal_conversions::{MILLISECONDS, NANOSECONDS};
-use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
+use polars_arrow::export::arrow::temporal_conversions::{MICROSECONDS, MILLISECONDS, NANOSECONDS};
 use polars_core::prelude::*;
-use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
+use polars_core::utils::arrow::temporal_conversions::{timeunit_scale, SECONDS_IN_DAY};
 
 use crate::prelude::*;
 
@@ -50,29 +49,30 @@ impl Window {
         self.offset.add_ms(t)
     }
 
+    #[inline]
+    pub fn truncate_no_offset_ms(&self, t: i64) -> i64 {
+        self.every.truncate_ms(t)
+    }
+
     /// Truncate the given ns timestamp by the window boundary.
     pub fn round_ns(&self, t: i64) -> i64 {
         let t = t + self.every.nanoseconds() / 2 as i64;
-        let t = self.every.truncate_ns(t);
-        self.offset.add_ns(t)
+        self.truncate_ns(t)
     }
 
     /// Truncate the given ns timestamp by the window boundary.
     pub fn round_us(&self, t: i64) -> i64 {
-        let t = t + self.every.nanoseconds() / 2e3 as i64;
-        let t = self.every.truncate_us(t);
-        self.offset.add_us(t)
+        let t = t + timeunit_scale(ArrowTimeUnit::Microsecond, ArrowTimeUnit::Nanosecond) as i64
+            * self.every.nanoseconds()
+            / 2 as i64;
+        self.truncate_us(t)
     }
 
     pub fn round_ms(&self, t: i64) -> i64 {
-        let t = t + self.every.nanoseconds() / 2e6 as i64;
-        let t = self.every.truncate_ms(t);
-        self.offset.add_ms(t)
-    }
-
-    #[inline]
-    pub fn truncate_no_offset_ms(&self, t: i64) -> i64 {
-        self.every.truncate_ms(t)
+        let t = t + timeunit_scale(ArrowTimeUnit::Millisecond, ArrowTimeUnit::Nanosecond) as i64
+            * self.every.nanoseconds()
+            / 2 as i64;
+        self.truncate_ms(t)
     }
 
     /// returns the bounds for the earliest window bounds
