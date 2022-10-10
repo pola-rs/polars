@@ -72,3 +72,6 @@ exclude_lines = [
   "if TYPE_CHECKING:",
   "from typing_extensions import ",
 ]
+
+[tool.ruff]
+line-length = 88

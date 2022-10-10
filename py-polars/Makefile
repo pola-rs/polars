@@ -49,7 +49,7 @@ develop-release: $(VENV)  ## Build by running `maturin develop --release`
 	$(VENV_ACT_BIN)maturin develop --release
 
 .PHONY: clean cleaner cleanest
-clean:  ## Just run `carcumgo clean`
+clean:  ## Just run `cargo clean`
 	-cargo clean
 
 cleaner: clean  ## clean + remove VENV and other auto-generated dirs & files
@@ -60,6 +60,7 @@ cleaner: clean  ## clean + remove VENV and other auto-generated dirs & files
 	-rm -rf .hypothesis
 	-rm -rf .mypy_cache
 	-rm -rf .pytest_cache
+	-rm -rf .ruff_cache
 	-rm -f .coverage
 	-rm -f coverage.xml
 	-rm -f polars/polars.abi3.so
