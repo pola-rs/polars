@@ -210,7 +210,7 @@ fn get_pipeline_node(
     });
 
     ALogicalPlan::MapFunction {
-        function: FunctionNode::Opaque {
+        function: FunctionNode::Pipeline {
             function: Arc::new(move |_df: DataFrame| {
                 let state = ExecutionState::new();
                 if state.verbose() {
@@ -219,10 +219,7 @@ fn get_pipeline_node(
                 let state = Box::new(state) as Box<dyn Any + Send + Sync>;
                 pipeline.execute(state)
             }),
-            schema: Some(Arc::new(move |_: &Schema| Ok(schema.clone()))),
-            predicate_pd: false,
-            projection_pd: false,
-            fmt_str: "",
+            schema,
         },
         input: dummy,
     }

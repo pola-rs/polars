@@ -47,9 +47,9 @@ pub(super) fn groupby_helper(
     df.as_single_chunk_par();
     let gb = df.groupby_with_series(keys, true, maintain_order)?;
 
-    if let Some(mut f) = apply {
+    if let Some(f) = apply {
         state.clear_schema_cache();
-        return gb.apply(move |df| Arc::get_mut(&mut f).unwrap().call_udf(df));
+        return gb.apply(move |df| f.call_udf(df));
     }
 
     let mut groups = gb.get_groups();
