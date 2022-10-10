@@ -1,6 +1,5 @@
 use super::*;
 use crate::prelude::*;
-
 pub type DateChunked = Logical<DateType, Int32Type>;
 
 impl From<Int32Chunked> for DateChunked {
@@ -40,6 +39,9 @@ impl LogicalType for DateChunked {
                     .into_datetime(*tu, tz.clone())
                     .into_series())
             }
+            (Date, Time) => Ok(Int64Chunked::full(self.name(), 0i64, self.len())
+                .into_time()
+                .into_series()),
             _ => self.0.cast(dtype),
         }
     }

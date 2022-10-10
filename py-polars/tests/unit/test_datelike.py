@@ -1371,6 +1371,22 @@ def test_time_microseconds_3843() -> None:
     assert s.to_list() == in_val
 
 
+def test_date_to_time_cast_5111() -> None:
+    # check date -> time casts (fast-path: always 00:00:00)
+    df = pl.DataFrame(
+        {
+            "xyz": [
+                date(1969, 1, 1),
+                date(1990, 3, 8),
+                date(2000, 6, 16),
+                date(2010, 9, 24),
+                date(2022, 12, 31),
+            ]
+        }
+    ).with_column(pl.col("xyz").cast(pl.Time))
+    assert df["xyz"].to_list() == [time(0), time(0), time(0), time(0), time(0)]
+
+
 def test_year_empty_df() -> None:
     df = pl.DataFrame(pl.Series(name="date", dtype=pl.Date))
     assert df.select(pl.col("date").dt.year()).dtypes == [pl.Int32]
