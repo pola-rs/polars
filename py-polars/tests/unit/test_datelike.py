@@ -359,6 +359,36 @@ def test_truncate() -> None:
         assert out.dt[-1] == stop
 
 
+def test_round() -> None:
+    start = datetime(2001, 1, 1)
+    stop = datetime(2001, 1, 2)
+
+    s1 = pl.date_range(
+        start, stop, timedelta(minutes=30), name="dates[ms]", time_unit="ms"
+    )
+    s2 = pl.date_range(
+        start, stop, timedelta(minutes=30), name="dates[us]", time_unit="us"
+    )
+    s3 = pl.date_range(
+        start, stop, timedelta(minutes=30), name="dates[ns]", time_unit="ns"
+    )
+
+    # can pass strings and timedeltas
+    for out in [
+        s1.dt.round("1h"),
+        s2.dt.round("1h0m0s"),
+        s3.dt.round(timedelta(hours=1)),
+    ]:
+        assert out.dt[0] == start
+        assert out.dt[1] == start + timedelta(hours=1)
+        assert out.dt[2] == start + timedelta(hours=1)
+        assert out.dt[3] == start + timedelta(hours=2)
+        # ...
+        assert out.dt[-3] == stop - timedelta(hours=1)
+        assert out.dt[-2] == stop
+        assert out.dt[-1] == stop
+
+
 def test_date_range() -> None:
     result = pl.date_range(
         date(1985, 1, 1), date(2015, 7, 1), timedelta(days=1, hours=12)
