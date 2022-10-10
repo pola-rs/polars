@@ -603,15 +603,8 @@ pub(super) fn parse_lines<'a>(
         // there can be lines that miss fields (also the comma values)
         // this means the splitter won't process them.
         // We traverse them to read them as null values.
-        while processed_fields < projection.len() {
-            debug_assert!(processed_fields < buffers.len());
-            let buf = unsafe {
-                // SAFETY: processed fields index can never exceed the projection indices.
-                buffers.get_unchecked_mut(processed_fields)
-            };
-
+        for buf in buffers[processed_fields..].iter_mut() {
             buf.add_null();
-            processed_fields += 1;
         }
 
         line_count += 1;
