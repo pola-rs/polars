@@ -12,18 +12,12 @@ pub trait PolarsRound {
 impl PolarsRound for DatetimeChunked {
     #[must_use]
     fn round(&self, every: Duration, offset: Duration) -> Self {
-        let offset = match self.time_unit() {
-            TimeUnit::Nanoseconds => Duration::parse("1ns"),
-            TimeUnit::Microseconds => Duration::parse("500ns"),
-            TimeUnit::Milliseconds => Duration::parse("500us"),
-        };
-
         let w = Window::new(every, every, offset);
 
         let func = match self.time_unit() {
-            TimeUnit::Nanoseconds => Window::truncate_ns,
-            TimeUnit::Microseconds => Window::truncate_us,
-            TimeUnit::Milliseconds => Window::truncate_ms,
+            TimeUnit::Nanoseconds => Window::round_ns,
+            TimeUnit::Microseconds => Window::round_us,
+            TimeUnit::Milliseconds => Window::round_ms,
         };
 
         self.apply(|t| func(&w, t))
@@ -38,7 +32,7 @@ impl PolarsRound for DateChunked {
         let w = Window::new(every, every, offset);
         self.apply(|t| {
             const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
-            (w.truncate_ms((1.5 * MSECS_IN_DAY as f64) as i64 * t as i64) / MSECS_IN_DAY) as i32
+            (w.round_ms(MSECS_IN_DAY * t as i64) / MSECS_IN_DAY) as i32
         })
         .into_date()
     }
