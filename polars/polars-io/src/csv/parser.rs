@@ -98,15 +98,8 @@ where
     if input.is_empty() {
         return input;
     }
-    let mut read = 0;
-    let len = input.len();
-    while read < len {
-        let b = input[read];
-        if !f(b) {
-            break;
-        }
-        read += 1;
-    }
+
+    let read = input.iter().position(|b| !f(*b)).unwrap_or(input.len());
     &input[read..]
 }
 
