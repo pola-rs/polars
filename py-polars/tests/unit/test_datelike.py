@@ -17,7 +17,11 @@ else:
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, TemporalDataType
-from polars.testing import assert_series_equal, verify_series_and_expr_api
+from polars.testing import (
+    assert_frame_equal,
+    assert_series_equal,
+    verify_series_and_expr_api,
+)
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit
@@ -979,15 +983,46 @@ def test_asof_join() -> None:
     ].to_list() == [51.95, 51.95, None, None, 720.77, None, None, None]
 
 
-def test_lambda_with_python_datetime_return_type() -> None:
-    df = pl.DataFrame({"timestamp": [1284286794, 1234567890]})
+def test_temporal_dtypes_apply() -> None:
+    df = pl.DataFrame(
+        {"timestamp": [1284286794000, None, 1234567890000]},
+        columns=[("timestamp", pl.Datetime("ms"))],
+    )
+    const_dtm = datetime(2010, 9, 12)
 
-    assert df.with_column(
-        pl.col("timestamp").apply(lambda x: datetime(2010, 9, 12)).alias("my_date_time")
-    )["my_date_time"].to_list() == [
-        datetime(2010, 9, 12),
-        datetime(2010, 9, 12),
-    ]
+    assert_frame_equal(
+        df.with_columns(
+            [
+                # don't actually do any of this; native expressions are MUCH faster ;)
+                pl.col("timestamp").apply(lambda x: const_dtm).alias("const_dtm"),
+                pl.col("timestamp").apply(lambda x: x and x.date()).alias("date"),
+                pl.col("timestamp").apply(lambda x: x and x.time()).alias("time"),
+            ]
+        ),
+        pl.DataFrame(
+            [
+                (
+                    datetime(2010, 9, 12, 10, 19, 54),
+                    datetime(2010, 9, 12, 0, 0),
+                    date(2010, 9, 12),
+                    time(10, 19, 54),
+                ),
+                (None, const_dtm, None, None),
+                (
+                    datetime(2009, 2, 13, 23, 31, 30),
+                    datetime(2010, 9, 12, 0, 0),
+                    date(2009, 2, 13),
+                    time(23, 31, 30),
+                ),
+            ],
+            columns={
+                "timestamp": pl.Datetime("ms"),
+                "const_dtm": pl.Datetime("us"),
+                "date": pl.Date,
+                "time": pl.Time,
+            },
+        ),
+    )
 
 
 def test_timelike_init() -> None:

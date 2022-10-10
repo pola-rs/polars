@@ -582,6 +582,8 @@ impl<'a> AnyValue<'a> {
             Date(v) => NumCast::from(*v),
             #[cfg(feature = "dtype-datetime")]
             Datetime(v, _, _) => NumCast::from(*v),
+            #[cfg(feature = "dtype-time")]
+            Time(v) => NumCast::from(*v),
             #[cfg(feature = "dtype-duration")]
             Duration(v, _) => NumCast::from(*v),
             Boolean(v) => {

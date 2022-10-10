@@ -409,6 +409,7 @@ macro_rules! apply_method_all_arrow_series {
             DataType::Int64 => $self.i64().unwrap().$method($($args),*),
             DataType::Float32 => $self.f32().unwrap().$method($($args),*),
             DataType::Float64 => $self.f64().unwrap().$method($($args),*),
+            DataType::Time => $self.time().unwrap().$method($($args),*),
             DataType::Date => $self.date().unwrap().$method($($args),*),
             DataType::Datetime(_, _) => $self.datetime().unwrap().$method($($args),*),
             DataType::List(_) => $self.list().unwrap().$method($($args),*),

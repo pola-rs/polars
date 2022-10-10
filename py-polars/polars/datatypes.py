@@ -417,6 +417,7 @@ _PY_TYPE_TO_DTYPE: dict[type, PolarsDataType] = {
     tuple: List,
     Decimal: Float64,
     bytes: Binary,
+    object: Object,
 }
 
 _PY_STR_TO_DTYPE: dict[str, PolarsDataType] = {

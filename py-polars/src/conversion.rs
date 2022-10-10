@@ -510,7 +510,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Ok(AnyValue::Float64(v).into())
         } else if let Ok(v) = ob.extract::<&'s str>() {
             Ok(AnyValue::Utf8(v).into())
-        } else if ob.get_type().name()?.contains("datetime") {
+        } else if ob.get_type().name()?.eq("datetime") {
             Python::with_gil(|py| {
                 // windows
                 #[cfg(target_arch = "windows")]
@@ -574,7 +574,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             let py_pyseries = ob.getattr("_s").unwrap();
             let series = py_pyseries.extract::<PySeries>().unwrap().series;
             Ok(Wrap(AnyValue::List(series)))
-        } else if ob.get_type().name()?.contains("date") {
+        } else if ob.get_type().name()?.eq("date") {
             Python::with_gil(|py| {
                 let date = py_modules::UTILS
                     .getattr(py, "_date_to_pl_date")
@@ -584,7 +584,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 let v = date.extract::<i32>(py).unwrap();
                 Ok(Wrap(AnyValue::Date(v)))
             })
-        } else if ob.get_type().name()?.contains("timedelta") {
+        } else if ob.get_type().name()?.eq("timedelta") {
             Python::with_gil(|py| {
                 let td = py_modules::UTILS
                     .getattr(py, "_timedelta_to_pl_timedelta")
@@ -594,11 +594,21 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 let v = td.extract::<i64>(py).unwrap();
                 Ok(Wrap(AnyValue::Duration(v, TimeUnit::Microseconds)))
             })
+        } else if ob.get_type().name()?.eq("time") {
+            Python::with_gil(|py| {
+                let time = py_modules::UTILS
+                    .getattr(py, "_time_to_pl_time")
+                    .unwrap()
+                    .call1(py, (ob,))
+                    .unwrap();
+                let v = time.extract::<i64>(py).unwrap();
+                Ok(Wrap(AnyValue::Time(v)))
+            })
         } else if let Ok(v) = ob.extract::<&'s [u8]>() {
             Ok(AnyValue::Binary(v).into())
         } else {
             Err(PyErr::from(PyPolarsErr::Other(format!(
-                "row type not supported {:?}",
+                "object type not supported {:?}",
                 ob
             ))))
         }
