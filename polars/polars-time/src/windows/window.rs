@@ -54,13 +54,13 @@ impl Window {
         self.every.truncate_ms(t)
     }
 
-    /// Truncate the given ns timestamp by the window boundary.
+    /// Round the given ns timestamp by the window boundary.
     pub fn round_ns(&self, t: i64) -> i64 {
         let t = t + self.every.nanoseconds() / 2 as i64;
         self.truncate_ns(t)
     }
 
-    /// Truncate the given ns timestamp by the window boundary.
+    /// Round the given us timestamp by the window boundary.
     pub fn round_us(&self, t: i64) -> i64 {
         let t = t + timeunit_scale(ArrowTimeUnit::Microsecond, ArrowTimeUnit::Nanosecond) as i64
             * self.every.nanoseconds()
@@ -68,6 +68,7 @@ impl Window {
         self.truncate_us(t)
     }
 
+    /// Round the given ms timestamp by the window boundary.
     pub fn round_ms(&self, t: i64) -> i64 {
         let t = t + timeunit_scale(ArrowTimeUnit::Millisecond, ArrowTimeUnit::Nanosecond) as i64
             * self.every.nanoseconds()
