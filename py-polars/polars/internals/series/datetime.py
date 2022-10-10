@@ -1535,4 +1535,5 @@ class DateTimeNameSpace:
         ]
         >>> s.dt.round("1h").series_equal(s.dt.round(timedelta(hours=1)))
         True
+
         """
