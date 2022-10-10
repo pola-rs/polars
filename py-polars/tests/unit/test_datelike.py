@@ -49,23 +49,37 @@ def test_fill_null() -> None:
 
 
 def test_filter_date() -> None:
-    dataset = pl.DataFrame(
+    dtcol = pl.col("date")
+    df = pl.DataFrame(
         {"date": ["2020-01-02", "2020-01-03", "2020-01-04"], "index": [1, 2, 3]}
-    )
-    df = dataset.with_column(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
-    assert df.filter(pl.col("date") <= pl.lit(datetime(2019, 1, 3))).is_empty()
-    assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 4))).shape[0] == 2
-    assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 5))).shape[0] == 3
-    assert df.filter(pl.col("date") <= pl.lit(date(2019, 1, 3))).is_empty()
-    assert df.filter(pl.col("date") < pl.lit(date(2020, 1, 4))).shape[0] == 2
-    assert df.filter(pl.col("date") < pl.lit(date(2020, 1, 5))).shape[0] == 3
+    ).with_column(dtcol.str.strptime(pl.Date, "%Y-%m-%d"))
+    assert df.rows() == [
+        (date(2020, 1, 2), 1),
+        (date(2020, 1, 3), 2),
+        (date(2020, 1, 4), 3),
+    ]
+
+    # filter by datetime
+    assert df.filter(dtcol <= pl.lit(datetime(2019, 1, 3))).is_empty()
+    assert df.filter(dtcol < pl.lit(datetime(2020, 1, 4))).rows() == df.rows()[:2]
+    assert df.filter(dtcol < pl.lit(datetime(2020, 1, 5))).rows() == df.rows()
+
+    # filter by date
+    assert df.filter(dtcol <= pl.lit(date(2019, 1, 3))).is_empty()
+    assert df.filter(dtcol < pl.lit(date(2020, 1, 4))).rows() == df.rows()[:2]
+    assert df.filter(dtcol < pl.lit(date(2020, 1, 5))).rows() == df.rows()
 
 
 def test_filter_time() -> None:
-    df = pl.DataFrame({"t": [time(8, 0), time(9, 0), time(10, 0)]})
+    times = [time(8, 0), time(9, 0), time(10, 0)]
+    df = pl.DataFrame({"t": times})
+
     assert df.filter(pl.col("t") <= pl.lit(time(7, 0))).is_empty()
-    assert df.filter(pl.col("t") < pl.lit(time(10, 0))).shape[0] == 2
-    assert df.filter(pl.col("t") < pl.lit(time(11, 0))).shape[0] == 3
+    assert df.filter(pl.col("t") < pl.lit(time(11, 0))).rows() == [(t,) for t in times]
+    assert df.filter(pl.col("t") < pl.lit(time(10, 0))).to_series().to_list() == [
+        time(8, 0),
+        time(9, 0),
+    ]
 
 
 def test_series_add_timedelta() -> None:
@@ -94,7 +108,6 @@ def test_diff_datetime() -> None:
             "char": ["a", "a", "b"],
         }
     )
-
     out = (
         df.with_columns(
             [
@@ -481,6 +494,7 @@ def test_truncate_negative_offset() -> None:
         every="1mo",
         by=["admin", "five_type", "actor"],
     ).agg([pl.col("adm1_code").unique(), (pl.col("fatalities") > 0).sum()])
+
     assert out["event_date"].to_list() == [
         datetime(2021, 4, 1),
         datetime(2021, 5, 1),
@@ -498,7 +512,9 @@ def test_truncate_negative_offset() -> None:
         out = df.groupby_dynamic(
             "idx", every="2i", period="3i", include_boundaries=True
         ).agg(pl.col("A").list())
+
         assert out.shape == (3, 4)
+        assert out["A"].to_list() == [["A", "A", "B"], ["B", "B", "B"], ["B", "C"]]
 
 
 def test_to_arrow() -> None:
@@ -543,20 +559,26 @@ def test_explode_date() -> None:
         date(2021, 12, 1),
         date(2021, 12, 1),
     ]
-    for d in [dates, datetimes]:
+    for dclass, values in ((date, dates), (datetime, datetimes)):
         df = pl.DataFrame(
             {
-                "a": d,
+                "a": values,
                 "b": ["a", "b", "a", "b"],
-                "c": [1.0, 2.0, 1.1, 2.2],
+                "c": [1.0, 2.0, 1.5, 2.5],
             }
         )
         out = (
-            df.groupby("b")
+            df.groupby("b", maintain_order=True)
             .agg([pl.col("a"), pl.col("c").pct_change()])
             .explode(["a", "c"])
         )
         assert out.shape == (4, 3)
+        assert out.rows() == [
+            ("a", dclass(2021, 12, 1), None),
+            ("a", dclass(2021, 12, 1), 0.5),
+            ("b", dclass(2021, 12, 1), None),
+            ("b", dclass(2021, 12, 1), 0.25),
+        ]
 
 
 def test_rolling() -> None:
@@ -572,7 +594,6 @@ def test_rolling() -> None:
     df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_column(
         pl.col("dt").str.strptime(pl.Datetime)
     )
-
     out = df.groupby_rolling(index_column="dt", period="2d").agg(
         [
             pl.sum("a").alias("sum_a"),
@@ -580,7 +601,6 @@ def test_rolling() -> None:
             pl.max("a").alias("max_a"),
         ]
     )
-
     assert out["sum_a"].to_list() == [3, 10, 15, 24, 11, 1]
     assert out["max_a"].to_list() == [3, 7, 7, 9, 9, 1]
     assert out["min_a"].to_list() == [3, 3, 3, 3, 2, 1]
@@ -1001,15 +1021,20 @@ def test_timelike_init() -> None:
 
 
 def test_duration_filter() -> None:
-    date_df = pl.DataFrame(
+    df = pl.DataFrame(
         {
             "start_date": [date(2022, 1, 1), date(2022, 1, 1), date(2022, 1, 1)],
             "end_date": [date(2022, 1, 7), date(2022, 2, 20), date(2023, 1, 1)],
         }
     ).with_column((pl.col("end_date") - pl.col("start_date")).alias("time_passed"))
 
-    assert date_df.filter(pl.col("time_passed") < timedelta(days=30)).shape[0] == 1
-    assert date_df.filter(pl.col("time_passed") >= timedelta(days=30)).shape[0] == 2
+    assert df.filter(pl.col("time_passed") < timedelta(days=30)).rows() == [
+        (date(2022, 1, 1), date(2022, 1, 7), timedelta(days=6))
+    ]
+    assert df.filter(pl.col("time_passed") >= timedelta(days=30)).rows() == [
+        (date(2022, 1, 1), date(2022, 2, 20), timedelta(days=50)),
+        (date(2022, 1, 1), date(2023, 1, 1), timedelta(days=365)),
+    ]
 
 
 def test_agg_logical() -> None:
@@ -1021,13 +1046,17 @@ def test_agg_logical() -> None:
 
 @no_type_check
 def test_from_time_arrow() -> None:
-    times = pa.array([10, 20, 30], type=pa.time32("s"))
-    times_table = pa.table([times], names=["times"])
+    pa_times = pa.table([pa.array([10, 20, 30], type=pa.time32("s"))], names=["times"])
 
-    assert pl.from_arrow(times_table).to_series().to_list() == [
+    assert pl.from_arrow(pa_times).to_series().to_list() == [
         time(0, 0, 10),
         time(0, 0, 20),
         time(0, 0, 30),
+    ]
+    assert pl.from_arrow(pa_times).rows() == [
+        (time(0, 0, 10),),
+        (time(0, 0, 20),),
+        (time(0, 0, 30),),
     ]
 
 

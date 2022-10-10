@@ -230,7 +230,12 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                     TimeUnit::Milliseconds => convert.call1((v, "ms")).unwrap().into_py(py),
                 }
             }
-            AnyValue::Time(v) => v.into_py(py),
+            AnyValue::Time(v) => {
+                let pl = PyModule::import(py, "polars").unwrap();
+                let utils = pl.getattr("utils").unwrap();
+                let convert = utils.getattr("_to_python_time").unwrap();
+                convert.call1((v,)).unwrap().into_py(py)
+            }
             AnyValue::List(v) => PySeries::new(v).to_list(),
             AnyValue::Struct(vals, flds) => struct_dict(py, vals, flds),
             AnyValue::StructOwned(payload) => struct_dict(py, payload.0, &payload.1),
