@@ -43,8 +43,9 @@ where
         (&self.0).into_partial_eq_inner()
     }
 
-    fn vec_hash(&self, random_state: RandomState) -> PolarsResult<Vec<u64>> {
-        Ok(self.0.vec_hash(random_state))
+    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+        self.0.vec_hash(random_state, buf);
+        Ok(())
     }
 
     fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {

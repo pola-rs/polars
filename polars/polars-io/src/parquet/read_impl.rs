@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::VecDeque;
 use std::convert::TryFrom;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -317,7 +318,7 @@ pub struct BatchedParquetReader {
     rows_read: IdxSize,
     row_group_offset: usize,
     n_row_groups: usize,
-    chunk_offset: IdxSize,
+    chunks_fifo: VecDeque<DataFrame>,
 }
 
 impl BatchedParquetReader {
@@ -353,12 +354,12 @@ impl BatchedParquetReader {
             rows_read: 0,
             row_group_offset: 0,
             n_row_groups,
-            chunk_offset: 0,
+            chunks_fifo: VecDeque::with_capacity(POOL.current_num_threads()),
         })
     }
 
-    pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<(IdxSize, DataFrame)>>> {
-        if self.row_group_offset < self.n_row_groups {
+    pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
+        if self.row_group_offset < self.n_row_groups && self.chunks_fifo.len() < n {
             let dfs = rg_to_dfs(
                 self.reader_bytes.deref(),
                 &mut self.rows_read,
@@ -377,26 +378,35 @@ impl BatchedParquetReader {
 
             // TODO! this is slower than it needs to be
             // we also need to parallelize over row groups here.
-            let mut chunks = Vec::with_capacity(dfs.len());
 
             for mut df in dfs {
                 // make sure that the chunks are not too large
                 let n = df.shape().0 / 50_000;
                 if n > 1 {
                     for df in split_df(&mut df, n)? {
-                        let i = self.chunk_offset;
-                        self.chunk_offset += 1;
-                        chunks.push((i, df))
+                        self.chunks_fifo.push_back(df)
                     }
                 } else {
-                    let i = self.chunk_offset;
-                    self.chunk_offset += 1;
-                    chunks.push((i, df))
+                    self.chunks_fifo.push_back(df)
                 }
             }
-            Ok(Some(chunks))
-        } else {
+        };
+
+        if self.chunks_fifo.is_empty() {
             Ok(None)
+        } else {
+            let mut chunks = Vec::with_capacity(n);
+            let mut i = 0;
+            while let Some(df) = self.chunks_fifo.pop_front() {
+                if i == n {
+                    break;
+                }
+
+                chunks.push(df);
+                i += 1;
+            }
+
+            Ok(Some(chunks))
         }
     }
 }

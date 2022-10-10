@@ -6,12 +6,14 @@ use polars_core::POOL;
 use polars_io::parquet::{BatchedParquetReader, ParquetReader};
 use polars_io::SerReader;
 use polars_plan::prelude::ParquetOptions;
+use polars_utils::IdxSize;
 
 use crate::operators::{DataChunk, PExecutionContext, Source, SourceResult};
 
 pub struct ParquetSource {
     batched_reader: BatchedParquetReader,
     n_threads: usize,
+    chunk_index: IdxSize,
 }
 
 impl ParquetSource {
@@ -37,6 +39,7 @@ impl ParquetSource {
         Ok(ParquetSource {
             batched_reader,
             n_threads: POOL.current_num_threads(),
+            chunk_index: 0,
         })
     }
 }
@@ -49,7 +52,11 @@ impl Source for ParquetSource {
             Some(batches) => SourceResult::GotMoreData(
                 batches
                     .into_iter()
-                    .map(|(chunk_index, data)| DataChunk { chunk_index, data })
+                    .map(|data| {
+                        let chunk_index = self.chunk_index;
+                        self.chunk_index += 1;
+                        DataChunk { chunk_index, data }
+                    })
                     .collect(),
             ),
         })

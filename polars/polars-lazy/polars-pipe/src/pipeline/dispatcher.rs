@@ -40,6 +40,7 @@ impl Pipeline {
         sink: &mut [Box<dyn Sink>],
         ec: &PExecutionContext,
     ) -> PolarsResult<Vec<SinkResult>> {
+        debug_assert!(chunks.len() <= sink.len());
         POOL.install(|| {
             chunks
                 .into_par_iter()

@@ -66,9 +66,7 @@ impl FunctionNode {
                     Ok(Cow::Owned(output_schema))
                 }
             },
-            Pipeline { .. } => {
-                unimplemented!()
-            }
+            Pipeline { schema, .. } => Ok(Cow::Owned(schema.clone())),
             FastProjection { columns } => {
                 let schema = columns
                     .iter()

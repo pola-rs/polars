@@ -74,8 +74,9 @@ macro_rules! impl_dyn_series {
                     .map(|ca| ca.$into_logical().into_series())
             }
 
-            fn vec_hash(&self, random_state: RandomState) -> PolarsResult<Vec<u64>> {
-                Ok(self.0.vec_hash(random_state))
+            fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+                self.0.vec_hash(random_state, buf);
+                Ok(())
             }
 
             fn vec_hash_combine(

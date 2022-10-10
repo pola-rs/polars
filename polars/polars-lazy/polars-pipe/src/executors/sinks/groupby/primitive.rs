@@ -265,5 +265,3 @@ where
         self
     }
 }
-
-unsafe impl<K: PolarsNumericType> Sync for PrimitiveGroupbySink<K> {}

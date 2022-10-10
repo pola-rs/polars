@@ -92,8 +92,9 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         (&self.0).into_partial_ord_inner()
     }
 
-    fn vec_hash(&self, random_state: RandomState) -> PolarsResult<Vec<u64>> {
-        Ok(self.0.logical().vec_hash(random_state))
+    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+        self.0.logical().vec_hash(random_state, buf);
+        Ok(())
     }
 
     fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {

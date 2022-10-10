@@ -742,8 +742,18 @@ impl<'a> AnyValue<'a> {
         }
     }
 
+    #[inline]
+    pub fn as_borrowed(&self) -> AnyValue<'_> {
+        match self {
+            AnyValue::BinaryOwned(data) => AnyValue::Binary(data),
+            AnyValue::Utf8Owned(data) => AnyValue::Utf8(data),
+            av => av.clone(),
+        }
+    }
+
     /// Try to coerce to an AnyValue with static lifetime.
     /// This can be done if it does not borrow any values.
+    #[inline]
     pub fn into_static(self) -> PolarsResult<AnyValue<'static>> {
         use AnyValue::*;
         let av = match self {
@@ -797,13 +807,7 @@ impl PartialEq for AnyValue<'_> {
     // Everything of Any is slow. Don't use.
     fn eq(&self, other: &Self) -> bool {
         use AnyValue::*;
-        match (self, other) {
-            #[cfg(feature = "dtype-binary")]
-            (BinaryOwned(l), BinaryOwned(r)) => l == r,
-            #[cfg(feature = "dtype-binary")]
-            (Binary(l), Binary(r)) => l == r,
-            (Utf8Owned(l), Utf8Owned(r)) => l == r,
-            (Utf8(l), Utf8(r)) => l == r,
+        match (self.as_borrowed(), other.as_borrowed()) {
             (UInt8(l), UInt8(r)) => l == r,
             (UInt16(l), UInt16(r)) => l == r,
             (UInt32(l), UInt32(r)) => l == r,
@@ -822,6 +826,9 @@ impl PartialEq for AnyValue<'_> {
             (Datetime(l, tul, tzl), Datetime(r, tur, tzr)) => l == r && tul == tur && tzl == tzr,
             (Boolean(l), Boolean(r)) => l == r,
             (List(l), List(r)) => l == r,
+            #[cfg(feature = "dtype-binary")]
+            (Binary(l), Binary(r)) => l == r,
+            (Utf8(l), Utf8(r)) => l == r,
             #[cfg(feature = "object")]
             (Object(_), Object(_)) => panic!("eq between object not supported"),
             // should it?
@@ -847,7 +854,7 @@ impl PartialOrd for AnyValue<'_> {
     /// Only implemented for the same types and physical types!
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         use AnyValue::*;
-        match (self, other) {
+        match (self.as_borrowed(), &other.as_borrowed()) {
             (UInt8(l), UInt8(r)) => l.partial_cmp(r),
             (UInt16(l), UInt16(r)) => l.partial_cmp(r),
             (UInt32(l), UInt32(r)) => l.partial_cmp(r),
@@ -858,12 +865,9 @@ impl PartialOrd for AnyValue<'_> {
             (Int64(l), Int64(r)) => l.partial_cmp(r),
             (Float32(l), Float32(r)) => l.partial_cmp(r),
             (Float64(l), Float64(r)) => l.partial_cmp(r),
-            (Utf8(l), Utf8(r)) => l.partial_cmp(r),
-            (Utf8Owned(l), Utf8Owned(r)) => l.partial_cmp(r),
+            (Utf8(l), Utf8(r)) => l.partial_cmp(*r),
             #[cfg(feature = "dtype-binary")]
             (Binary(l), Binary(r)) => l.partial_cmp(r),
-            #[cfg(feature = "dtype-binary")]
-            (BinaryOwned(l), BinaryOwned(r)) => l.partial_cmp(r),
             _ => None,
         }
     }
