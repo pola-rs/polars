@@ -795,7 +795,7 @@ def cumsum(
     column: str | Sequence[pli.Expr | str] | pli.Series | pli.Expr,
 ) -> pli.Expr | Any:
     """
-    Cumulatively sum values in a column/Series, or horizontally across list of columns/expressions.  # noqa E501
+    Cumulatively sum values in a column/Series, or horizontally across list of columns/expressions.
 
     ``pl.cumsum(str)`` is syntactic sugar for:
 
@@ -865,7 +865,7 @@ def cumsum(
     │ 2   ┆ 4   ┆ 6   ┆ {2,8}     │
     └─────┴─────┴─────┴───────────┘
 
-    """
+    """  # noqa E501
     if isinstance(column, pli.Series):
         return column.cumsum()
     elif isinstance(column, str):
@@ -1046,7 +1046,7 @@ def cumfold(
     include_init: bool = False,
 ) -> pli.Expr:
     """
-    Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.  # noqa E501
+    Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
 
     Every cumulative result is added as a separate field in a Struct column.
 
@@ -1063,7 +1063,7 @@ def cumfold(
     include_init
         Include the initial accumulator state as struct field.
 
-    """
+    """  # noqa E501
     # in case of pl.col("*")
     acc = pli.expr_to_lit_or_expr(acc, str_to_lit=True)
     if isinstance(exprs, pli.Expr):
