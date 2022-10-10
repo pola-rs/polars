@@ -91,7 +91,7 @@ dtype-i8 = []
 dtype-i16 = []
 dtype-u8 = []
 dtype-u16 = []
-dtype-categorical = ["smartstring"]
+dtype-categorical = []
 dtype-struct = []
 dtype-binary = []
 
@@ -170,7 +170,7 @@ regex = { version = "1.6", optional = true }
 # activate if you want serde support for Series and DataFrames
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
-smartstring = { version = "1", optional = true }
+smartstring = { version = "1" }
 thiserror.workspace = true
 
 [dev-dependencies]

@@ -306,7 +306,7 @@ pub enum AnyValue<'a> {
     #[cfg(feature = "dtype-struct")]
     StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
     /// A UTF8 encoded string type.
-    Utf8Owned(String),
+    Utf8Owned(smartstring::alias::String),
     #[cfg(feature = "dtype-binary")]
     Binary(&'a [u8]),
     #[cfg(feature = "dtype-binary")]
@@ -337,7 +337,7 @@ impl Serialize for AnyValue<'_> {
             // both utf8 variants same number
             AnyValue::Utf8(v) => serializer.serialize_newtype_variant(name, 13, "Utf8Owned", v),
             AnyValue::Utf8Owned(v) => {
-                serializer.serialize_newtype_variant(name, 13, "Utf8Owned", v)
+                serializer.serialize_newtype_variant(name, 13, "Utf8Owned", v.as_str())
             }
             #[cfg(feature = "dtype-binary")]
             AnyValue::Binary(v) => serializer.serialize_newtype_variant(name, 14, "BinaryOwned", v),
@@ -544,8 +544,8 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
                         AnyValue::List(value)
                     }
                     (AvField::Utf8Owned, variant) => {
-                        let value = variant.newtype_variant()?;
-                        AnyValue::Utf8Owned(value)
+                        let value: String = variant.newtype_variant()?;
+                        AnyValue::Utf8Owned(value.into())
                     }
                     #[cfg(feature = "dtype-binary")]
                     (AvField::BinaryOwned, variant) => {
@@ -775,7 +775,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-time")]
             Time(v) => AnyValue::Time(v),
             List(v) => AnyValue::List(v),
-            Utf8(v) => AnyValue::Utf8Owned(v.to_string()),
+            Utf8(v) => AnyValue::Utf8Owned(v.into()),
             Utf8Owned(v) => AnyValue::Utf8Owned(v),
             #[cfg(feature = "dtype-binary")]
             Binary(v) => AnyValue::BinaryOwned(v.to_vec()),

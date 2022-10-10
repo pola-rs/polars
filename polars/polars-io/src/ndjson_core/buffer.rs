@@ -257,7 +257,7 @@ fn deserialize_all<'a, 'b>(json: &'b Value) -> AnyValue<'a> {
         Value::Static(StaticNode::U64(u)) => AnyValue::UInt64(*u),
         Value::Static(StaticNode::F64(f)) => AnyValue::Float64(*f),
         Value::Static(StaticNode::Null) => AnyValue::Null,
-        Value::String(s) => AnyValue::Utf8Owned(s.to_string()),
+        Value::String(s) => AnyValue::Utf8Owned(s.as_ref().into()),
         Value::Array(arr) => {
             let vals: Vec<AnyValue> = arr.iter().map(deserialize_all).collect();
 
