@@ -27,10 +27,10 @@ rayon.workspace = true
 [features]
 compile = ["polars-plan/compile"]
 default = ["compile", "private"]
-parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet"]
+parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet", "polars-pipe/parquet"]
 ipc = ["polars-io/ipc", "polars-plan/ipc"]
 json = ["polars-io/json", "polars-plan/json"]
-csv-file = ["polars-io/csv-file", "polars-plan/csv-file"]
+csv-file = ["polars-io/csv-file", "polars-plan/csv-file", "polars-pipe/csv-file"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time", "dtype-duration", "polars-plan/temporal"]
 # debugging purposes
 fmt = ["polars-core/fmt", "polars-plan/fmt"]

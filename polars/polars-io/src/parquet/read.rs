@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::aggregations::ScanAggregation;
 use crate::mmap::MmapBytesReader;
 use crate::parquet::read_impl::read_parquet;
+pub use crate::parquet::read_impl::BatchedParquetReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowCount;
@@ -124,6 +125,17 @@ impl<R: MmapBytesReader> ParquetReader<R> {
 
         let schema = read::infer_schema(&metadata)?;
         Ok((&schema.fields).into())
+    }
+}
+
+impl<R: MmapBytesReader + 'static> ParquetReader<R> {
+    pub fn batched(self) -> PolarsResult<BatchedParquetReader> {
+        BatchedParquetReader::new(
+            Box::new(self.reader),
+            self.n_rows.unwrap_or(usize::MAX),
+            self.projection,
+            self.row_count,
+        )
     }
 }
 

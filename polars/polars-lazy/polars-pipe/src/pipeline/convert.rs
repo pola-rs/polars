@@ -25,6 +25,64 @@ where
         .collect()
 }
 
+fn get_source<F>(
+    source: ALogicalPlan,
+    operator_objects: &mut Vec<Arc<dyn Operator>>,
+    expr_arena: &Arena<AExpr>,
+    to_physical: &F,
+    push_predicate: bool,
+) -> PolarsResult<Box<dyn Source>>
+where
+    F: Fn(Node, &Arena<AExpr>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+{
+    use ALogicalPlan::*;
+    match source {
+        #[cfg(feature = "csv-file")]
+        CsvScan {
+            path,
+            schema,
+            options,
+            predicate,
+            aggregate,
+            ..
+        } => {
+            // todo! remove aggregate pushdown
+            assert!(aggregate.is_empty());
+            // add predicate to operators
+            if let (true, Some(predicate)) = (push_predicate, predicate) {
+                let predicate = to_physical(predicate, expr_arena)?;
+                let op = operators::FilterOperator { predicate };
+                let op = Arc::new(op) as Arc<dyn Operator>;
+                operator_objects.push(op)
+            }
+            let src = sources::CsvSource::new(path, schema, options)?;
+            Ok(Box::new(src) as Box<dyn Source>)
+        }
+        #[cfg(feature = "parquet")]
+        ParquetScan {
+            path,
+            schema,
+            options,
+            predicate,
+            aggregate,
+            ..
+        } => {
+            // todo! remove aggregate pushdown
+            assert!(aggregate.is_empty());
+            // add predicate to operators
+            if let (true, Some(predicate)) = (push_predicate, predicate) {
+                let predicate = to_physical(predicate, expr_arena)?;
+                let op = operators::FilterOperator { predicate };
+                let op = Arc::new(op) as Arc<dyn Operator>;
+                operator_objects.push(op)
+            }
+            let src = sources::ParquetSource::new(path, options, &schema)?;
+            Ok(Box::new(src) as Box<dyn Source>)
+        }
+        _ => todo!(),
+    }
+}
+
 pub fn create_pipeline<F>(
     sources: &[Node],
     operators: &[Node],
@@ -98,31 +156,32 @@ where
     let mut operator_objects = Vec::with_capacity(operators.len() + 1);
 
     for node in sources {
-        match lp_arena.take(*node) {
-            ALogicalPlan::CsvScan {
-                path,
-                schema,
-                options,
-                predicate,
-                aggregate,
-                ..
-            } => {
-                // todo! remove aggregate pushdown
-                assert!(aggregate.is_empty());
-                // add predicate to operators
-                if let Some(predicate) = predicate {
-                    let predicate = to_physical(predicate, expr_arena)?;
-                    let op = operators::FilterOperator { predicate };
-                    let op = Arc::new(op) as Arc<dyn Operator>;
-                    operator_objects.push(op)
-                }
-                let src = sources::CsvSource::new(path, schema, options)?;
-                source_objects.push(Arc::new(src) as Arc<dyn Source>)
+        let src = match lp_arena.take(*node) {
+            #[cfg(feature = "csv-file")]
+            lp @ CsvScan { .. } => {
+                get_source(lp, &mut operator_objects, expr_arena, &to_physical, true)?
+            }
+            #[cfg(feature = "parquet")]
+            lp @ ParquetScan { .. } => {
+                get_source(lp, &mut operator_objects, expr_arena, &to_physical, true)?
+            }
+            Union { inputs, .. } => {
+                let sources = inputs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, node)| {
+                        let lp = lp_arena.take(*node);
+                        // only push predicate of first source
+                        get_source(lp, &mut operator_objects, expr_arena, &to_physical, i == 0)
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                Box::new(sources::UnionSource::new(sources)) as Box<dyn Source>
             }
             lp => {
                 panic!("source {:?} not (yet) supported", lp)
             }
-        }
+        };
+        source_objects.push(src)
     }
 
     for node in operators.iter() {

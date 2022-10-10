@@ -49,6 +49,7 @@ fn all_streamable(exprs: &[Node], expr_arena: &Arena<AExpr>) -> bool {
     exprs.iter().all(|node| is_streamable(*node, expr_arena))
 }
 
+#[cfg(any(feature = "csv-file", feature = "parquet"))]
 pub(crate) fn insert_streaming_nodes(
     root: Node,
     lp_arena: &mut Arena<ALogicalPlan>,
@@ -82,8 +83,44 @@ pub(crate) fn insert_streaming_nodes(
                 state.operators.push(root);
                 stack.push((*input, state))
             }
+            MapFunction {
+                input,
+                function: FunctionNode::Rechunk,
+            } => {
+                // we ignore a rechunk
+                state.streamable = true;
+                stack.push((*input, state))
+            }
+            #[cfg(feature = "csv-file")]
             CsvScan { .. } => {
                 if state.streamable {
+                    state.sources.push(root);
+                    states.push(state)
+                }
+            }
+            #[cfg(feature = "parquet")]
+            ParquetScan { .. } => {
+                if state.streamable {
+                    state.sources.push(root);
+                    states.push(state)
+                }
+            }
+            // add globbing patterns
+            #[cfg(all(feature = "csv-file", feature = "parquet"))]
+            Union { inputs, .. } => {
+                if state.streamable
+                    && inputs.iter().all(|node| match lp_arena.get(*node) {
+                        ParquetScan { .. } => true,
+                        CsvScan { .. } => true,
+                        MapFunction {
+                            input,
+                            function: FunctionNode::Rechunk,
+                        } => {
+                            matches!(lp_arena.get(*input), ParquetScan { .. } | CsvScan { .. })
+                        }
+                        _ => false,
+                    })
+                {
                     state.sources.push(root);
                     states.push(state)
                 }

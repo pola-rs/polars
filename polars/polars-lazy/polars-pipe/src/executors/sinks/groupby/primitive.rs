@@ -99,13 +99,14 @@ where
         // todo! ammortize allocation
         for phys_e in self.aggregation_columns.iter() {
             let s = phys_e.evaluate(&chunk, context.execution_state.as_ref())?;
+            let s = s.to_physical_repr();
             self.aggregation_series.push(s.rechunk());
         }
 
         let mut agg_iters = self
             .aggregation_series
             .iter()
-            .map(|s| s.iter())
+            .map(|s| s.phys_iter())
             .collect::<Vec<_>>();
 
         for arr in ca.downcast_iter() {
@@ -142,6 +143,7 @@ where
                 }
             }
         }
+        drop(agg_iters);
         self.aggregation_series.clear();
         Ok(SinkResult::CanHaveMoreInput)
     }

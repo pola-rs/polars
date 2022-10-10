@@ -1,13 +1,41 @@
 use super::*;
 
-fn get_file() -> LazyFrame {
+fn get_csv_file() -> LazyFrame {
     let file = "../../examples/datasets/foods1.csv";
     LazyCsvReader::new(file).finish().unwrap()
 }
 
+fn get_parquet_file() -> LazyFrame {
+    let file = "../../examples/datasets/foods1.parquet";
+    LazyFrame::scan_parquet(file, Default::default()).unwrap()
+}
+
+fn get_csv_glob() -> LazyFrame {
+    let file = "../../examples/datasets/foods*.csv";
+    LazyCsvReader::new(file).finish().unwrap()
+}
+
+#[test]
+fn test_streaming_parquet() -> PolarsResult<()> {
+    let q = get_parquet_file();
+
+    let q = q
+        .groupby([col("sugars_g")])
+        .agg([((lit(1) - col("fats_g")) + col("calories")).sum()])
+        .sort("sugars_g", Default::default());
+
+    let q1 = q.clone().with_streaming(true);
+    let q2 = q.clone();
+    let out_streaming = q1.collect()?;
+    let out_one_shot = q2.collect()?;
+
+    assert!(out_streaming.frame_equal(&out_one_shot));
+    Ok(())
+}
+
 #[test]
 fn test_streaming_csv() -> PolarsResult<()> {
-    let q = get_file();
+    let q = get_csv_file();
 
     let q = q
         .select([col("sugars_g"), col("calories")])
@@ -25,8 +53,28 @@ fn test_streaming_csv() -> PolarsResult<()> {
 }
 
 #[test]
+fn test_streaming_glob() -> PolarsResult<()> {
+    let q = get_csv_glob();
+
+    let q = q
+        .select([col("sugars_g"), col("calories")])
+        .filter(col("sugars_g").gt(lit(10)))
+        .groupby([col("sugars_g")])
+        .agg([col("calories").sum() * lit(10)])
+        .sort("sugars_g", Default::default());
+
+    let q1 = q.clone().with_streaming(true);
+    let q2 = q.clone();
+    let out_streaming = q1.collect()?;
+    let out_one_shot = q2.collect()?;
+
+    assert!(out_streaming.frame_equal(&out_one_shot));
+    Ok(())
+}
+
+#[test]
 fn test_streaming_first_sum() -> PolarsResult<()> {
-    let q = get_file();
+    let q = get_csv_file();
 
     let q = q
         .select([col("sugars_g"), col("calories")])
@@ -48,17 +96,29 @@ fn test_streaming_first_sum() -> PolarsResult<()> {
 
 #[test]
 fn test_streaming2() -> PolarsResult<()> {
-    let out =
-        LazyCsvReader::new("/home/ritchie46/Downloads/csv-benchmark/yellow_tripdata_2010-01.csv")
-            .finish()
-            .unwrap()
-            .groupby([col("passenger_count")])
-            .agg([
-                col("rate_code").first().alias("first"),
-                col("rate_code").sum(),
-            ])
-            .with_streaming(true)
-            .collect()?;
+    let out = LazyFrame::scan_parquet(
+        "/home/ritchie46/Downloads/csv-benchmark/yellow_tripdata_2010-01.parquet",
+        ScanArgsParquet::default(),
+    )?
+    .groupby([col("passenger_count")])
+    .agg([
+        col("rate_code").first().alias("first"),
+        col("rate_code").sum(),
+    ])
+    .with_streaming(true)
+    .collect()?;
+
+    // let out =
+    //     LazyCsvReader::new("/home/ritchie46/Downloads/csv-benchmark/yellow_tripdata_2010-01.csv")
+    //         .finish()
+    //         .unwrap()
+    //         .groupby([col("passenger_count")])
+    //         .agg([
+    //             col("rate_code").first().alias("first"),
+    //             col("rate_code").sum(),
+    //         ])
+    //         .with_streaming(true)
+    //         .collect()?;
 
     dbg!(out);
 

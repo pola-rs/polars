@@ -75,6 +75,56 @@ impl Series {
             len,
         }
     }
+
+    pub fn phys_iter(&self) -> Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_> {
+        let dtype = self.dtype();
+        let phys_dtype = dtype.to_physical();
+
+        assert_eq!(dtype, &phys_dtype, "impl error");
+        assert_eq!(self.chunks().len(), 1, "impl error");
+        let arr = &*self.chunks()[0];
+
+        if phys_dtype.is_numeric() {
+            if arr.null_count() == 0 {
+                with_match_physical_numeric_type!(phys_dtype, |$T| {
+                        let arr = arr.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
+                        let values = arr.values().as_slice();
+                        Box::new(values.iter().map(|&value| AnyValue::from(value))) as Box<dyn ExactSizeIterator<Item=AnyValue<'_>> + '_>
+                })
+            } else {
+                with_match_physical_numeric_type!(phys_dtype, |$T| {
+                        let arr = arr.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
+                        Box::new(arr.iter().map(|value| {
+
+                        match value {
+                            Some(value) => AnyValue::from(*value),
+                            None => AnyValue::Null
+                        }
+
+                    })) as Box<dyn ExactSizeIterator<Item=AnyValue<'_>> + '_>
+                })
+            }
+        } else {
+            // TODO! null_count paths, but first exactsize iters must be implmeneted upstream
+            match dtype {
+                DataType::Utf8 => {
+                    let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+                    Box::new(arr.iter().map(|value| match value {
+                        Some(value) => AnyValue::Utf8(value),
+                        None => AnyValue::Null,
+                    })) as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
+                }
+                DataType::Boolean => {
+                    let arr = arr.as_any().downcast_ref::<BooleanArray>().unwrap();
+                    Box::new(arr.iter().map(|value| match value {
+                        Some(value) => AnyValue::Boolean(value),
+                        None => AnyValue::Null,
+                    })) as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
+                }
+                _ => Box::new(self.iter()),
+            }
+        }
+    }
 }
 
 pub struct SeriesIter<'a> {

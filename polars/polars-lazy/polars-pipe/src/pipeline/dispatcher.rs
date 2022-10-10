@@ -11,7 +11,7 @@ use crate::operators::{
 };
 
 pub struct Pipeline {
-    sources: Vec<Arc<dyn Source>>,
+    sources: Vec<Box<dyn Source>>,
     operators: Vec<Arc<dyn Operator>>,
     // a sink for every thread
     sink: Vec<Box<dyn Sink>>,
@@ -19,7 +19,7 @@ pub struct Pipeline {
 
 impl Pipeline {
     pub fn new(
-        sources: Vec<Arc<dyn Source>>,
+        sources: Vec<Box<dyn Source>>,
         operators: Vec<Arc<dyn Operator>>,
         sink: Box<dyn Sink>,
     ) -> Pipeline {
@@ -99,7 +99,6 @@ impl Pipeline {
         let mut sink = std::mem::take(&mut self.sink);
 
         for src in &mut std::mem::take(&mut self.sources) {
-            let src = Arc::get_mut(src).unwrap();
             while let SourceResult::GotMoreData(chunks) = src.get_batches(&ec)? {
                 let results = self.par_process_chunks(chunks, &mut sink, &ec)?;
 

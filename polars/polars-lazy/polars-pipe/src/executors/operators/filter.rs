@@ -15,7 +15,9 @@ impl Operator for FilterOperator {
         context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
-        let s = self.predicate.evaluate(chunk, &context.execution_state)?;
+        let s = self
+            .predicate
+            .evaluate(chunk, context.execution_state.as_ref())?;
         let mask = s.bool().map_err(|e| {
             PolarsError::ComputeError(
                 format!("Filter predicate must be of type Boolean, got: {:?}", e).into(),
