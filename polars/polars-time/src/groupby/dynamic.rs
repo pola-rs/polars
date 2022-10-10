@@ -24,6 +24,8 @@ pub struct DynamicGroupOptions {
     pub offset: Duration,
     /// truncate the time column values to the window
     pub truncate: bool,
+    /// round the time column values to the window
+    pub round: bool,
     // add the boundaries to the dataframe
     pub include_boundaries: bool,
     pub closed_window: ClosedWindow,
@@ -302,6 +304,16 @@ impl Wrap<&DataFrame> {
                 TimeUnit::Milliseconds => Window::truncate_no_offset_ms,
             };
             dt = dt.apply(|v| truncate_fn(&w, v));
+        }
+
+        if options.round {
+            let w = Window::new(options.every, options.period, options.offset);
+            let round_fn = match tu {
+                TimeUnit::Nanoseconds => Window::round_no_offset_ns,
+                TimeUnit::Microseconds => Window::round_no_offset_us,
+                TimeUnit::Milliseconds => Window::round_no_offset_ms,
+            };
+            dt = dt.apply(|v| round_fn(&w, v));
         }
 
         if let (true, Some(lower), Some(higher)) =
@@ -596,6 +608,7 @@ mod test {
                     period: Duration::parse("1h"),
                     offset: Duration::parse("0h"),
                     truncate: true,
+                    round: false,
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
                 },
@@ -675,6 +688,7 @@ mod test {
                 period: Duration::parse("1i"),
                 offset: Duration::parse("0h"),
                 truncate: true,
+                round: false,
                 include_boundaries: true,
                 closed_window: ClosedWindow::Both,
             },
