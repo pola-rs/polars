@@ -505,7 +505,7 @@ class DataFrame:
         cls: type[DF],
         file: str | Path | BinaryIO | bytes,
         has_header: bool = True,
-        columns: list[int] | list[str] | None = None,
+        columns: Sequence[int] | Sequence[str] | None = None,
         sep: str = ",",
         comment_char: str | None = None,
         quote_char: str | None = r'"',
@@ -563,6 +563,8 @@ class DataFrame:
 
         processed_null_values = _process_null_values(null_values)
 
+        if isinstance(columns, str):
+            columns = [columns]
         if isinstance(file, str) and "*" in file:
             dtypes_dict = None
             if dtype_list is not None:
@@ -638,7 +640,7 @@ class DataFrame:
     def _read_parquet(
         cls: type[DF],
         file: str | Path | BinaryIO,
-        columns: list[int] | list[str] | None = None,
+        columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
         parallel: ParallelStrategy = "auto",
         row_count_name: str | None = None,
@@ -657,6 +659,8 @@ class DataFrame:
         """
         if isinstance(file, (str, Path)):
             file = format_path(file)
+        if isinstance(columns, str):
+            columns = [columns]
 
         if isinstance(file, str) and "*" in file and pli._is_local_file(file):
             from polars import scan_parquet
@@ -698,7 +702,7 @@ class DataFrame:
     def _read_avro(
         cls: type[DF],
         file: str | Path | BinaryIO,
-        columns: list[int] | list[str] | None = None,
+        columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
     ) -> DF:
         """
@@ -729,7 +733,7 @@ class DataFrame:
     def _read_ipc(
         cls,
         file: str | Path | BinaryIO,
-        columns: list[int] | list[str] | None = None,
+        columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
         row_count_name: str | None = None,
         row_count_offset: int = 0,
@@ -766,6 +770,8 @@ class DataFrame:
         """
         if isinstance(file, (str, Path)):
             file = format_path(file)
+        if isinstance(columns, str):
+            columns = [columns]
 
         if isinstance(file, str) and "*" in file and pli._is_local_file(file):
             from polars import scan_ipc
@@ -1395,7 +1401,9 @@ class DataFrame:
         )
 
     def __setitem__(
-        self, key: str | list[int] | list[str] | tuple[Any, str | int], value: Any
+        self,
+        key: str | Sequence[int] | Sequence[str] | tuple[Any, str | int],
+        value: Any,
     ) -> None:  # pragma: no cover
         # df["foo"] = series
         if isinstance(key, str):
@@ -2616,7 +2624,7 @@ class DataFrame:
 
     def sort(
         self: DF,
-        by: str | pli.Expr | list[str] | list[pli.Expr],
+        by: str | pli.Expr | Sequence[str] | Sequence[pli.Expr],
         reverse: bool | list[bool] = False,
         nulls_last: bool = False,
     ) -> DF | DataFrame:
@@ -2676,7 +2684,7 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        if type(by) is list or isinstance(by, pli.Expr):
+        if not isinstance(by, str) and isinstance(by, (Sequence, pli.Expr)):
             df = (
                 self.lazy()
                 .sort(by, reverse, nulls_last)
@@ -2899,7 +2907,7 @@ class DataFrame:
         """
         return self._from_pydf(self._df.tail(n))
 
-    def drop_nulls(self: DF, subset: str | list[str] | None = None) -> DF:
+    def drop_nulls(self: DF, subset: str | Sequence[str] | None = None) -> DF:
         """
         Return a new DataFrame where the null values are dropped.
 
@@ -3164,7 +3172,7 @@ class DataFrame:
         period: str,
         offset: str | None = None,
         closed: ClosedWindow = "right",
-        by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
+        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
     ) -> RollingGroupBy[DF]:
         """
         Create rolling groups based on a time column.
@@ -3277,7 +3285,7 @@ class DataFrame:
         truncate: bool = True,
         include_boundaries: bool = False,
         closed: ClosedWindow = "left",
-        by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
+        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
     ) -> DynamicGroupBy[DF]:
         """
         Group based on a time value (or index value of type Int32, Int64).
@@ -3689,9 +3697,9 @@ class DataFrame:
         left_on: str | None = None,
         right_on: str | None = None,
         on: str | None = None,
-        by_left: str | list[str] | None = None,
-        by_right: str | list[str] | None = None,
-        by: str | list[str] | None = None,
+        by_left: str | Sequence[str] | None = None,
+        by_right: str | Sequence[str] | None = None,
+        by: str | Sequence[str] | None = None,
         strategy: AsofJoinStrategy = "backward",
         suffix: str = "_right",
         tolerance: str | int | float | None = None,
@@ -4219,7 +4227,7 @@ class DataFrame:
         return self
 
     @deprecated_alias(name="columns")
-    def drop(self: DF, columns: str | list[str]) -> DF:
+    def drop(self: DF, columns: str | Sequence[str]) -> DF:
         """
         Remove column from DataFrame and return as new.
 
@@ -4552,7 +4560,7 @@ class DataFrame:
 
     def explode(
         self,
-        columns: str | list[str] | pli.Expr | list[pli.Expr],
+        columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr],
     ) -> DataFrame:
         """
         Explode `DataFrame` to long format by exploding a column with Lists.
@@ -4618,9 +4626,9 @@ class DataFrame:
 
     def pivot(
         self: DF,
-        values: list[str] | str,
-        index: list[str] | str,
-        columns: list[str] | str,
+        values: Sequence[str] | str,
+        index: Sequence[str] | str,
+        columns: Sequence[str] | str,
         aggregate_fn: PivotAgg | pli.Expr = "first",
         maintain_order: bool = True,
         sort_columns: bool = False,
@@ -4712,8 +4720,8 @@ class DataFrame:
 
     def melt(
         self: DF,
-        id_vars: list[str] | str | None = None,
-        value_vars: list[str] | str | None = None,
+        id_vars: Sequence[str] | str | None = None,
+        value_vars: Sequence[str] | str | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
     ) -> DF:
@@ -4785,7 +4793,7 @@ class DataFrame:
         self: DF,
         step: int,
         how: UnstackDirection = "vertical",
-        columns: str | list[str] | None = None,
+        columns: str | Sequence[str] | None = None,
         fill_values: list[Any] | None = None,
     ) -> DF:
         """
@@ -4922,7 +4930,7 @@ class DataFrame:
     @overload
     def partition_by(
         self: DF,
-        groups: str | list[str],
+        groups: str | Sequence[str],
         maintain_order: bool = False,
         *,
         as_dict: Literal[False] = ...,
@@ -4932,7 +4940,7 @@ class DataFrame:
     @overload
     def partition_by(
         self: DF,
-        groups: str | list[str],
+        groups: str | Sequence[str],
         maintain_order: bool = False,
         *,
         as_dict: Literal[True],
@@ -4942,7 +4950,7 @@ class DataFrame:
     @overload
     def partition_by(
         self: DF,
-        groups: str | list[str],
+        groups: str | Sequence[str],
         maintain_order: bool,
         *,
         as_dict: bool,
@@ -4951,7 +4959,7 @@ class DataFrame:
 
     def partition_by(
         self: DF,
-        groups: str | list[str],
+        groups: str | Sequence[str],
         maintain_order: bool = True,
         *,
         as_dict: bool = False,
@@ -5012,6 +5020,8 @@ class DataFrame:
         """
         if isinstance(groups, str):
             groups = [groups]
+        elif not isinstance(groups, list):
+            groups = list(groups)
 
         if as_dict:
             out: dict[Any, DF] = {}
@@ -5771,7 +5781,7 @@ class DataFrame:
         """
         return self._from_pydf(self._df.quantile(quantile, interpolation))
 
-    def to_dummies(self: DF, *, columns: list[str] | None = None) -> DF:
+    def to_dummies(self: DF, *, columns: Sequence[str] | None = None) -> DF:
         """
         Get one hot encoded dummy variables.
 
@@ -5805,12 +5815,14 @@ class DataFrame:
         └───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┘
 
         """
+        if isinstance(columns, str):
+            columns = [columns]
         return self._from_pydf(self._df.to_dummies(columns))
 
     def unique(
         self: DF,
         maintain_order: bool = True,
-        subset: str | list[str] | None = None,
+        subset: str | Sequence[str] | None = None,
         keep: UniqueKeepStrategy = "first",
     ) -> DF:
         """
@@ -5829,7 +5841,7 @@ class DataFrame:
         subset
             Subset to use to compare rows.
         keep : {'first', 'last'}
-            Which of the duplicate rows to keep.
+            Which of the duplicate rows to keep (in conjunction with ``subset``).
 
         Returns
         -------
@@ -5863,8 +5875,12 @@ class DataFrame:
         └─────┴──────┴───────┘
 
         """
-        if subset is not None and not isinstance(subset, list):
-            subset = [subset]
+        if subset is not None:
+            if isinstance(subset, str):
+                subset = [subset]
+            elif not isinstance(subset, list):
+                subset = list(subset)
+
         return self._from_pydf(self._df.unique(maintain_order, subset, keep))
 
     def rechunk(self: DF) -> DF:
@@ -6299,7 +6315,7 @@ class DataFrame:
         """
         return pli.wrap_s(self._df.to_struct(name))
 
-    def unnest(self: DF, names: str | list[str]) -> DF:
+    def unnest(self: DF, names: str | Sequence[str]) -> DF:
         """
         Decompose a struct into its fields.
 

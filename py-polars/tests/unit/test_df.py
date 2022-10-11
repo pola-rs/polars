@@ -2336,7 +2336,7 @@ def test_set() -> None:
 
     # needs to be a 2 element tuple
     with pytest.raises(ValueError):
-        df[(1, 2, 3)] = 1  # type: ignore[index]
+        df[(1, 2, 3)] = 1
 
     # we cannot index with any type, such as bool
     with pytest.raises(ValueError):
