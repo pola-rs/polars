@@ -193,7 +193,7 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
                 ),
             }),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-            AnyValue::Time(nano_secs_sinds_midnight) => Ok(Self::Int64(nano_secs_sinds_midnight)),
+            AnyValue::Time(nanosecs_since_midnight) => Ok(Self::Int64(nanosecs_since_midnight)),
             AnyValue::List(l) => Ok(Self::Series(SpecialEq::new(l))),
             AnyValue::Utf8Owned(o) => Ok(Self::Utf8(o.into())),
             #[cfg(feature = "dtype-categorical")]
