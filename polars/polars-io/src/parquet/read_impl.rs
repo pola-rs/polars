@@ -80,7 +80,7 @@ fn rg_to_dfs(
     previous_row_count: &mut IdxSize,
     row_group_start: usize,
     row_group_end: usize,
-    limit: usize,
+    remaining_rows: &mut usize,
     file_metadata: &FileMetaData,
     schema: &ArrowSchema,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
@@ -90,8 +90,6 @@ fn rg_to_dfs(
     projection: &[usize],
 ) -> PolarsResult<Vec<DataFrame>> {
     let mut dfs = Vec::with_capacity(row_group_end - row_group_start);
-
-    let mut remaining_rows = limit;
 
     for rg in row_group_start..row_group_end {
         let md = &file_metadata.row_groups[rg];
@@ -116,7 +114,7 @@ fn rg_to_dfs(
                         column_idx_to_series(
                             *column_i,
                             md,
-                            remaining_rows,
+                            *remaining_rows,
                             schema,
                             bytes,
                             chunk_size,
@@ -128,12 +126,12 @@ fn rg_to_dfs(
             projection
                 .iter()
                 .map(|column_i| {
-                    column_idx_to_series(*column_i, md, remaining_rows, schema, bytes, chunk_size)
+                    column_idx_to_series(*column_i, md, *remaining_rows, schema, bytes, chunk_size)
                 })
                 .collect::<PolarsResult<Vec<_>>>()?
         };
 
-        remaining_rows =
+        *remaining_rows =
             remaining_rows.saturating_sub(file_metadata.row_groups[rg].num_rows() as usize);
 
         let mut df = DataFrame::new_no_checks(columns);
@@ -147,7 +145,7 @@ fn rg_to_dfs(
         *previous_row_count += current_row_count;
         dfs.push(df);
 
-        if remaining_rows == 0 {
+        if *remaining_rows == 0 {
             break;
         }
     }
@@ -158,7 +156,10 @@ fn rg_to_dfs(
 // parallelizes over row groups
 fn rg_to_dfs_par(
     bytes: &[u8],
-    limit: usize,
+    row_group_start: usize,
+    row_group_end: usize,
+    previous_row_count: &mut IdxSize,
+    remaining_rows: &mut usize,
     file_metadata: &FileMetaData,
     schema: &ArrowSchema,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
@@ -166,20 +167,19 @@ fn rg_to_dfs_par(
     row_count: Option<RowCount>,
     projection: &[usize],
 ) -> PolarsResult<Vec<DataFrame>> {
-    let mut remaining_rows = limit;
-    let mut previous_row_count = 0;
-
     // compute the limits per row group and the row count offsets
     let row_groups = file_metadata
         .row_groups
         .iter()
         .enumerate()
+        .skip(row_group_start)
+        .take(row_group_start - row_group_end)
         .map(|(rg_idx, rg_md)| {
-            let row_count_start = previous_row_count;
+            let row_count_start = *previous_row_count;
             let num_rows = rg_md.num_rows();
-            previous_row_count += num_rows;
-            let local_limit = remaining_rows;
-            remaining_rows = remaining_rows.saturating_sub(num_rows);
+            *previous_row_count += num_rows as IdxSize;
+            let local_limit = *remaining_rows;
+            *remaining_rows = remaining_rows.saturating_sub(num_rows);
 
             (rg_idx, rg_md, local_limit, row_count_start)
         })
@@ -203,7 +203,14 @@ fn rg_to_dfs_par(
             let columns = projection
                 .iter()
                 .map(|column_i| {
-                    column_idx_to_series(*column_i, md, local_limit, schema, bytes, chunk_size)
+                    column_idx_to_series(
+                        *column_i,
+                        md,
+                        local_limit as usize,
+                        schema,
+                        bytes,
+                        chunk_size,
+                    )
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -225,7 +232,7 @@ fn rg_to_dfs_par(
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet<R: MmapBytesReader>(
     mut reader: R,
-    limit: usize,
+    mut limit: usize,
     projection: Option<&[usize]>,
     schema: &ArrowSchema,
     metadata: Option<FileMetaData>,
@@ -264,7 +271,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             &mut 0,
             0,
             row_group_len,
-            limit,
+            &mut limit,
             &file_metadata,
             schema,
             predicate,
@@ -275,7 +282,10 @@ pub fn read_parquet<R: MmapBytesReader>(
         )?,
         ParallelStrategy::RowGroups => rg_to_dfs_par(
             bytes,
-            limit,
+            0,
+            file_metadata.row_groups.len(),
+            &mut 0,
+            &mut limit,
             &file_metadata,
             schema,
             predicate,
@@ -319,6 +329,7 @@ pub struct BatchedParquetReader {
     row_group_offset: usize,
     n_row_groups: usize,
     chunks_fifo: VecDeque<DataFrame>,
+    parallel: ParallelStrategy,
 }
 
 impl BatchedParquetReader {
@@ -333,6 +344,13 @@ impl BatchedParquetReader {
         let n_row_groups = metadata.row_groups.len();
         let projection =
             projection.unwrap_or_else(|| (0usize..schema.fields.len()).collect::<Vec<_>>());
+
+        let parallel =
+            if n_row_groups > projection.len() || n_row_groups > POOL.current_num_threads() {
+                ParallelStrategy::RowGroups
+            } else {
+                ParallelStrategy::Columns
+            };
 
         // safety we will keep ownership on the struct and reference the bytes on the heap.
         // this should not work with passed bytes so we check if it is a file
@@ -355,26 +373,51 @@ impl BatchedParquetReader {
             row_group_offset: 0,
             n_row_groups,
             chunks_fifo: VecDeque::with_capacity(POOL.current_num_threads()),
+            parallel,
         })
     }
 
     pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
+        // fill up fifo stack
         if self.row_group_offset < self.n_row_groups && self.chunks_fifo.len() < n {
-            let dfs = rg_to_dfs(
-                self.reader_bytes.deref(),
-                &mut self.rows_read,
-                self.row_group_offset,
-                std::cmp::min(self.row_group_offset + n, self.n_row_groups),
-                self.limit,
-                &self.metadata,
-                &self.schema,
-                None,
-                None,
-                self.row_count.clone(),
-                ParallelStrategy::Columns,
-                &self.projection,
-            )?;
-            self.row_group_offset += n;
+            let dfs = match self.parallel {
+                ParallelStrategy::Columns => {
+                    let dfs = rg_to_dfs(
+                        self.reader_bytes.deref(),
+                        &mut self.rows_read,
+                        self.row_group_offset,
+                        std::cmp::min(self.row_group_offset + n, self.n_row_groups),
+                        &mut self.limit,
+                        &self.metadata,
+                        &self.schema,
+                        None,
+                        None,
+                        self.row_count.clone(),
+                        ParallelStrategy::Columns,
+                        &self.projection,
+                    )?;
+                    self.row_group_offset += n;
+                    dfs
+                }
+                ParallelStrategy::RowGroups => {
+                    let dfs = rg_to_dfs_par(
+                        self.reader_bytes.deref(),
+                        self.row_group_offset,
+                        std::cmp::min(self.row_group_offset + n, self.n_row_groups),
+                        &mut self.rows_read,
+                        &mut self.limit,
+                        &self.metadata,
+                        &self.schema,
+                        None,
+                        None,
+                        self.row_count.clone(),
+                        &self.projection,
+                    )?;
+                    self.row_group_offset += n;
+                    dfs
+                }
+                _ => unimplemented!(),
+            };
 
             // TODO! this is slower than it needs to be
             // we also need to parallelize over row groups here.
