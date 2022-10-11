@@ -240,7 +240,6 @@ pub fn read_parquet<R: MmapBytesReader>(
     aggregate: Option<&[ScanAggregation]>,
     mut parallel: ParallelStrategy,
     row_count: Option<RowCount>,
-    low_memory: bool,
 ) -> PolarsResult<DataFrame> {
     let file_metadata = metadata
         .map(Ok)
@@ -307,11 +306,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     } else {
         let mut df = accumulate_dataframes_vertical(dfs.into_iter())?;
         apply_aggregations(&mut df, aggregate)?;
-        Ok(if low_memory {
-            df._slice_and_realloc(0, limit)
-        } else {
-            df.slice_par(0, limit)
-        })
+        Ok(df)
     }
 }
 

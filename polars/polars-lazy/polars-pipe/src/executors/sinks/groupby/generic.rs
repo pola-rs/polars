@@ -110,7 +110,7 @@ impl Sink for GenericGroupbySink {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         let num_aggs = self.number_of_aggs();
 
-        // todo! ammortize allocation
+        // todo! amortize allocation
         for phys_e in self.aggregation_columns.iter() {
             let s = phys_e.evaluate(&chunk, context.execution_state.as_ref())?;
             let s = s.to_physical_repr();

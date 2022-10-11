@@ -71,7 +71,6 @@ impl<R: MmapBytesReader> ParquetReader<R> {
             aggregate,
             self.parallel,
             self.row_count,
-            self.low_memory,
         )
         .map(|mut df| {
             if rechunk {
@@ -177,7 +176,6 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             None,
             self.parallel,
             self.row_count,
-            self.low_memory,
         )
         .map(|mut df| {
             if self.rechunk {
