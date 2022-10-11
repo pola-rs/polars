@@ -144,13 +144,15 @@ def range_to_slice(rng: range) -> slice:
 
 
 def handle_projection_columns(
-    columns: list[str] | list[int] | None,
+    columns: Sequence[str] | Sequence[int] | str | None,
 ) -> tuple[list[int] | None, list[str] | None]:
     """Disambiguates between columns specified as integers vs. strings."""
     projection: list[int] | None = None
     if columns:
-        if is_int_sequence(columns):
-            projection = columns  # type: ignore[assignment]
+        if isinstance(columns, str):
+            columns = [columns]
+        elif is_int_sequence(columns):
+            projection = list(columns)
             columns = None
         elif not is_str_sequence(columns):
             raise ValueError(

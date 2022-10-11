@@ -837,7 +837,7 @@ class RollingGroupBy(Generic[DF]):
         period: str,
         offset: str | None,
         closed: ClosedWindow = "none",
-        by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
+        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
     ):
         self.df = df
         self.time_column = index_column
@@ -875,7 +875,7 @@ class DynamicGroupBy(Generic[DF]):
         truncate: bool = True,
         include_boundaries: bool = True,
         closed: ClosedWindow = "none",
-        by: str | list[str] | pli.Expr | list[pli.Expr] | None = None,
+        by: str | Sequence[str] | pli.Expr | Sequence[pli.Expr] | None = None,
     ):
         self.df = df
         self.time_column = index_column
@@ -911,8 +911,8 @@ class GBSelection(Generic[DF]):
     def __init__(
         self,
         df: PyDataFrame,
-        by: str | list[str],
-        selection: list[str] | None,
+        by: str | Sequence[str],
+        selection: Sequence[str] | None,
         dataframe_class: type[DF],
     ):
         self._df = df
