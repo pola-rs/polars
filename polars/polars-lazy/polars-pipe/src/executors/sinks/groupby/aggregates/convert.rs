@@ -1,18 +1,34 @@
+use std::any::Any;
 use std::sync::Arc;
 
+use polars_core::datatypes::Field;
 use polars_core::error::PolarsResult;
-use polars_core::prelude::DataType;
+use polars_core::prelude::{DataType, Series, IDX_DTYPE};
 use polars_core::schema::Schema;
 use polars_plan::logical_plan::ArenaExprIter;
 use polars_plan::prelude::{AAggExpr, AExpr};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::IdxSize;
 
+use crate::executors::sinks::groupby::aggregates::count::CountAgg;
 use crate::executors::sinks::groupby::aggregates::first::FirstAgg;
 use crate::executors::sinks::groupby::aggregates::last::LastAgg;
 use crate::executors::sinks::groupby::aggregates::mean::MeanAgg;
 use crate::executors::sinks::groupby::aggregates::{AggregateFn, SumAgg};
 use crate::expressions::PhysicalPipedExpr;
+use crate::operators::DataChunk;
+
+struct Count {}
+
+impl PhysicalPipedExpr for Count {
+    fn evaluate(&self, _chunk: &DataChunk, _lazy_state: &dyn Any) -> PolarsResult<Series> {
+        Ok(Series::new_empty("", &IDX_DTYPE))
+    }
+
+    fn field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
+        todo!()
+    }
+}
 
 pub fn can_convert_to_hash_agg(mut node: Node, expr_arena: &Arena<AExpr>) -> bool {
     let mut can_run_partitioned = true;
@@ -21,6 +37,7 @@ pub fn can_convert_to_hash_agg(mut node: Node, expr_arena: &Arena<AExpr>) -> boo
         .map(|(_, ae)| {
             match ae {
                 AExpr::Agg(_)
+                | AExpr::Count
                 | AExpr::Cast { .. }
                 | AExpr::Literal(_)
                 | AExpr::Column(_)
@@ -43,6 +60,7 @@ pub fn can_convert_to_hash_agg(mut node: Node, expr_arena: &Arena<AExpr>) -> boo
             node = *input
         }
         match expr_arena.get(node) {
+            AExpr::Count => true,
             AExpr::Agg(agg_fn) => {
                 matches!(
                     agg_fn,
@@ -67,6 +85,7 @@ where
 {
     match expr_arena.get(node) {
         AExpr::Alias(input, _) => convert_to_hash_agg(*input, expr_arena, schema, to_physical),
+        AExpr::Count => (Arc::new(Count {}), Box::new(CountAgg::new())),
         AExpr::Agg(agg) => match agg {
             AAggExpr::Sum(input) => {
                 let phys_expr = to_physical(*input, expr_arena).unwrap();

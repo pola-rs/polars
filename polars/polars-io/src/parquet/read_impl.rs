@@ -173,7 +173,7 @@ fn rg_to_dfs_par(
         .iter()
         .enumerate()
         .skip(row_group_start)
-        .take(row_group_start - row_group_end)
+        .take(row_group_end - row_group_start)
         .map(|(rg_idx, rg_md)| {
             let row_count_start = *previous_row_count;
             let num_rows = rg_md.num_rows();

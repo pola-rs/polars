@@ -169,8 +169,7 @@ where
                 let i = (agg_idx + i) as usize;
                 let agg_fn = unsafe { current_aggregators.get_unchecked_release_mut(i) };
 
-                let value = unsafe { agg_iter.next().unwrap_unchecked_release() };
-                agg_fn.pre_agg(chunk.chunk_index, value)
+                agg_fn.pre_agg(chunk.chunk_index, agg_iter.as_mut())
             }
         }
         drop(agg_iters);

@@ -21,7 +21,8 @@ impl<K: NumericNative> SumAgg<K> {
 }
 
 impl<K: NumericNative + Add<Output = K> + NumCast> AggregateFn for SumAgg<K> {
-    fn pre_agg(&mut self, _chunk_idx: IdxSize, item: AnyValue) {
+    fn pre_agg(&mut self, _chunk_idx: IdxSize, item: &mut dyn ExactSizeIterator<Item = AnyValue>) {
+        let item = unsafe { item.next().unwrap_unchecked_release() };
         match (item.extract::<K>(), self.sum) {
             (Some(val), Some(sum)) => self.sum = Some(sum + val),
             (Some(val), None) => self.sum = Some(val),
