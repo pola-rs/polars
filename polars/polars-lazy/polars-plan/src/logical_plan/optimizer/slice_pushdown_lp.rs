@@ -305,6 +305,7 @@ impl SlicePushDown {
             | m @ (Cache {..}, _)
             | m @ (Distinct {..}, _)
             | m @ (HStack {..},_)
+            | m @ (Aggregate{..},_)
             => {
                 let (lp, state) = m;
                 self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)

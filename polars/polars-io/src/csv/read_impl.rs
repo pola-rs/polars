@@ -605,12 +605,7 @@ impl<'a> CoreReader<'a> {
 
                             // update the running str bytes statistics
                             if !self.low_memory {
-                                update_string_stats(
-                                    &str_capacities,
-                                    &str_columns,
-                                    &local_df,
-                                    logging,
-                                )?;
+                                update_string_stats(&str_capacities, &str_columns, &local_df)?;
                             }
                             dfs.push((local_df, current_row_count));
                         }
@@ -662,7 +657,7 @@ impl<'a> CoreReader<'a> {
 
                         // update the running str bytes statistics
                         if !self.low_memory {
-                            update_string_stats(&str_capacities, &str_columns, &df, logging)?;
+                            update_string_stats(&str_capacities, &str_columns, &df)?;
                         }
 
                         cast_columns(&mut df, &self.to_cast, false)?;
@@ -833,7 +828,7 @@ impl<'a> BatchedCsvReader<'a> {
 
                     cast_columns(&mut df, &self.to_cast, false)?;
 
-                    update_string_stats(&self.str_capacities, &self.str_columns, &df, false)?;
+                    update_string_stats(&self.str_capacities, &self.str_columns, &df)?;
                     if let Some(rc) = &self.row_count {
                         df.with_row_count_mut(&rc.name, Some(rc.offset));
                     }
@@ -861,28 +856,13 @@ fn update_string_stats(
     str_capacities: &[RunningSize],
     str_columns: &[&str],
     local_df: &DataFrame,
-    logging: bool,
 ) -> PolarsResult<()> {
     // update the running str bytes statistics
     for (str_index, name) in str_columns.iter().enumerate() {
         let ca = local_df.column(name)?.utf8()?;
         let str_bytes_len = ca.get_values_size();
 
-        let (max, avg, last, size_hint) = str_capacities[str_index].update(str_bytes_len);
-        if logging {
-            if size_hint < str_bytes_len {
-                eprintln!(
-                    "probably needed to reallocate column: {}\
-                                \nprevious capacity was: {}\
-                                \nneeded capacity was: {}",
-                    name, size_hint, str_bytes_len
-                );
-            }
-            eprintln!(
-                "column {} statistics: \nmax: {}\navg: {}\nlast: {}",
-                name, max, avg, last
-            )
-        }
+        let _ = str_capacities[str_index].update(str_bytes_len);
     }
 
     Ok(())

@@ -50,7 +50,7 @@ pub fn can_convert_to_hash_agg(mut node: Node, expr_arena: &Arena<AExpr>) -> boo
             }
             ae
         })
-        .filter(|ae| matches!(ae, AExpr::Agg(_)))
+        .filter(|ae| matches!(ae, AExpr::Agg(_) | AExpr::Count))
         .count()
         == 1
         && can_run_partitioned
@@ -64,7 +64,11 @@ pub fn can_convert_to_hash_agg(mut node: Node, expr_arena: &Arena<AExpr>) -> boo
             AExpr::Agg(agg_fn) => {
                 matches!(
                     agg_fn,
-                    AAggExpr::Sum(_) | AAggExpr::First(_) | AAggExpr::Last(_) | AAggExpr::Mean(_)
+                    AAggExpr::Sum(_)
+                        | AAggExpr::First(_)
+                        | AAggExpr::Last(_)
+                        | AAggExpr::Mean(_)
+                        | AAggExpr::Count(_)
                 )
             }
             _ => false,
