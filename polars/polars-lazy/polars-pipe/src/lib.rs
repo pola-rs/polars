@@ -1,3 +1,4 @@
 mod executors;
-mod expressions;
-mod operators;
+pub mod expressions;
+pub mod operators;
+pub mod pipeline;

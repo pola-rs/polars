@@ -360,6 +360,7 @@ impl<'a> CoreReader<'a> {
         n_threads: &mut usize,
         bytes: &'a [u8],
         logging: bool,
+        streaming: bool,
     ) -> PolarsResult<(Vec<(usize, usize)>, usize, usize, Option<usize>, &'a [u8])> {
         // Make the variable mutable so that we can reassign the sliced file to this variable.
         let (mut bytes, starting_point_offset) = self.find_starting_point(bytes, self.eol_char)?;
@@ -425,12 +426,14 @@ impl<'a> CoreReader<'a> {
             );
         }
 
+        let n_file_chunks = if streaming { n_chunks } else { *n_threads };
+
         // split the file by the nearest new line characters such that every thread processes
         // approximately the same number of rows.
         Ok((
             get_file_chunks(
                 bytes,
-                *n_threads,
+                n_file_chunks,
                 self.schema.len(),
                 self.delimiter,
                 self.quote_char,
@@ -492,7 +495,7 @@ impl<'a> CoreReader<'a> {
     ) -> PolarsResult<DataFrame> {
         let logging = std::env::var("POLARS_VERBOSE").is_ok();
         let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes) =
-            self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging)?;
+            self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging, false)?;
         let projection = self.get_projection();
         let str_columns = self.get_string_columns(&projection)?;
 
@@ -602,12 +605,7 @@ impl<'a> CoreReader<'a> {
 
                             // update the running str bytes statistics
                             if !self.low_memory {
-                                update_string_stats(
-                                    &str_capacities,
-                                    &str_columns,
-                                    &local_df,
-                                    logging,
-                                )?;
+                                update_string_stats(&str_capacities, &str_columns, &local_df)?;
                             }
                             dfs.push((local_df, current_row_count));
                         }
@@ -659,7 +657,7 @@ impl<'a> CoreReader<'a> {
 
                         // update the running str bytes statistics
                         if !self.low_memory {
-                            update_string_stats(&str_capacities, &str_columns, &df, logging)?;
+                            update_string_stats(&str_capacities, &str_columns, &df)?;
                         }
 
                         cast_columns(&mut df, &self.to_cast, false)?;
@@ -710,8 +708,8 @@ impl<'a> CoreReader<'a> {
         let mut n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
         let reader_bytes = self.reader_bytes.take().unwrap();
         let logging = std::env::var("POLARS_VERBOSE").is_ok();
-        let (file_chunks, chunk_size, _total_rows, starting_point_offset, _bytes) =
-            self.determine_file_chunks_and_statistics(&mut n_threads, &reader_bytes, logging)?;
+        let (file_chunks, chunk_size, _total_rows, starting_point_offset, _bytes) = self
+            .determine_file_chunks_and_statistics(&mut n_threads, &reader_bytes, logging, true)?;
         let projection = self.get_projection();
 
         // safety
@@ -830,7 +828,7 @@ impl<'a> BatchedCsvReader<'a> {
 
                     cast_columns(&mut df, &self.to_cast, false)?;
 
-                    update_string_stats(&self.str_capacities, &self.str_columns, &df, false)?;
+                    update_string_stats(&self.str_capacities, &self.str_columns, &df)?;
                     if let Some(rc) = &self.row_count {
                         df.with_row_count_mut(&rc.name, Some(rc.offset));
                     }
@@ -858,28 +856,13 @@ fn update_string_stats(
     str_capacities: &[RunningSize],
     str_columns: &[&str],
     local_df: &DataFrame,
-    logging: bool,
 ) -> PolarsResult<()> {
     // update the running str bytes statistics
     for (str_index, name) in str_columns.iter().enumerate() {
         let ca = local_df.column(name)?.utf8()?;
         let str_bytes_len = ca.get_values_size();
 
-        let (max, avg, last, size_hint) = str_capacities[str_index].update(str_bytes_len);
-        if logging {
-            if size_hint < str_bytes_len {
-                eprintln!(
-                    "probably needed to reallocate column: {}\
-                                \nprevious capacity was: {}\
-                                \nneeded capacity was: {}",
-                    name, size_hint, str_bytes_len
-                );
-            }
-            eprintln!(
-                "column {} statistics: \nmax: {}\navg: {}\nlast: {}",
-                name, max, avg, last
-            )
-        }
+        let _ = str_capacities[str_index].update(str_bytes_len);
     }
 
     Ok(())

@@ -40,7 +40,7 @@ pub(crate) fn fmt_column_delimited<S: AsRef<str>>(
     write!(f, "{}", container_end)
 }
 
-pub(crate) trait PushNode {
+pub trait PushNode {
     fn push_node(&mut self, value: Node);
 }
 

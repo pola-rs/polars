@@ -6,7 +6,7 @@ where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
     IntoSlice: AsRef<[T]> + Send + Sync,
 {
-    let n_partitions = set_partition_size();
+    let n_partitions = _set_partition_size();
 
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.

@@ -23,6 +23,11 @@ pub enum FunctionNode {
         #[cfg_attr(feature = "serde", serde(skip))]
         fmt_str: &'static str,
     },
+    #[cfg_attr(feature = "serde", serde(skip))]
+    Pipeline {
+        function: Arc<dyn DataFrameUdfMut>,
+        schema: SchemaRef,
+    },
     Unnest {
         columns: Arc<Vec<Arc<str>>>,
     },
@@ -61,6 +66,7 @@ impl FunctionNode {
                     Ok(Cow::Owned(output_schema))
                 }
             },
+            Pipeline { schema, .. } => Ok(Cow::Owned(schema.clone())),
             FastProjection { columns } => {
                 let schema = columns
                     .iter()
@@ -111,6 +117,7 @@ impl FunctionNode {
         match self {
             Opaque { predicate_pd, .. } => *predicate_pd,
             FastProjection { .. } | DropNulls { .. } | Rechunk | Unnest { .. } => true,
+            Pipeline { .. } => unimplemented!(),
         }
     }
 
@@ -119,6 +126,7 @@ impl FunctionNode {
         match self {
             Opaque { projection_pd, .. } => *projection_pd,
             FastProjection { .. } | DropNulls { .. } | Rechunk | Unnest { .. } => true,
+            Pipeline { .. } => unimplemented!(),
         }
     }
 
@@ -130,7 +138,7 @@ impl FunctionNode {
         }
     }
 
-    pub fn evaluate(&self, mut df: DataFrame) -> PolarsResult<DataFrame> {
+    pub fn evaluate(&mut self, mut df: DataFrame) -> PolarsResult<DataFrame> {
         use FunctionNode::*;
         match self {
             Opaque { function, .. } => function.call_udf(df),
@@ -150,6 +158,7 @@ impl FunctionNode {
                     panic!("activate feature 'dtype-struct'")
                 }
             }
+            Pipeline { function, .. } => Arc::get_mut(function).unwrap().call_udf(df),
         }
     }
 }
@@ -175,6 +184,7 @@ impl Display for FunctionNode {
                 let columns = columns.as_slice();
                 fmt_column_delimited(f, columns, "[", "]")
             }
+            Pipeline { .. } => write!(f, "PIPELINE"),
         }
     }
 }

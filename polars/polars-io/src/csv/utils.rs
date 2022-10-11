@@ -56,7 +56,7 @@ pub(crate) fn get_file_chunks(
     offsets
 }
 
-pub fn get_reader_bytes<R: Read + MmapBytesReader>(
+pub fn get_reader_bytes<R: Read + MmapBytesReader + ?Sized>(
     reader: &mut R,
 ) -> PolarsResult<ReaderBytes<'_>> {
     // we have a file so we can mmap

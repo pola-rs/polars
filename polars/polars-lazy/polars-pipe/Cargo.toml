@@ -6,10 +6,14 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+hashbrown.workspace = true
+num.wokspace = true
 polars-core = { version = "0.24.2", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
 polars-io = { version = "0.24.2", path = "../../polars-io", default-features = false }
 polars-plan = { version = "0.24.2", path = "../polars-plan", default-features = false, features = ["compile"] }
+polars-utils = { version = "0.24.2", path = "../../polars-utils" }
 rayon.workspace = true
 
 [features]
 csv-file = ["polars-plan/csv-file", "polars-io/csv-file"]
+parquet = ["polars-plan/parquet", "polars-io/parquet"]

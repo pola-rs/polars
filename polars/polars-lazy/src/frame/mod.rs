@@ -39,7 +39,10 @@ use polars_plan::logical_plan::optimize;
 use polars_plan::utils::{combine_predicates_expr, expr_to_leaf_column_names};
 
 use crate::physical_plan::executors::Executor;
+use crate::physical_plan::planner::create_physical_plan;
 use crate::physical_plan::state::ExecutionState;
+#[cfg(any(feature = "csv-file", feature = "parquet"))]
+use crate::physical_plan::streaming::insert_streaming_nodes;
 use crate::prelude::*;
 
 pub trait IntoLazy {
@@ -120,6 +123,7 @@ impl LazyFrame {
             aggregate_pushdown: false,
             #[cfg(feature = "cse")]
             common_subplan_elimination: false,
+            streaming: false,
         })
     }
 
@@ -164,6 +168,12 @@ impl LazyFrame {
     /// Toggle slice pushdown optimization
     pub fn with_slice_pushdown(mut self, toggle: bool) -> Self {
         self.opt_state.slice_pushdown = toggle;
+        self
+    }
+
+    /// Allow (partial) streaming engine
+    pub fn with_streaming(mut self, toggle: bool) -> Self {
+        self.opt_state.streaming = toggle;
         self
     }
 
@@ -495,14 +505,37 @@ impl LazyFrame {
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Node> {
-        optimize(self.logical_plan, self.opt_state, lp_arena, expr_arena)
+        optimize(
+            self.logical_plan,
+            self.opt_state,
+            lp_arena,
+            expr_arena,
+            &mut vec![],
+        )
+    }
+
+    fn optimize_with_scratch(
+        self,
+        lp_arena: &mut Arena<ALogicalPlan>,
+        expr_arena: &mut Arena<AExpr>,
+        scratch: &mut Vec<Node>,
+    ) -> PolarsResult<Node> {
+        optimize(
+            self.logical_plan,
+            self.opt_state,
+            lp_arena,
+            expr_arena,
+            scratch,
+        )
     }
 
     fn prepare_collect(self) -> PolarsResult<(ExecutionState, Box<dyn Executor>)> {
         let file_caching = self.opt_state.file_caching;
+        let streaming = self.opt_state.streaming;
         let mut expr_arena = Arena::with_capacity(256);
         let mut lp_arena = Arena::with_capacity(128);
-        let lp_top = self.optimize(&mut lp_arena, &mut expr_arena)?;
+        let mut scratch = vec![];
+        let lp_top = self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch)?;
 
         let finger_prints = if file_caching {
             #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
@@ -519,8 +552,18 @@ impl LazyFrame {
             None
         };
 
-        let planner = PhysicalPlanner::default();
-        let physical_plan = planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
+        if streaming {
+            #[cfg(any(feature = "csv-file", feature = "parquet"))]
+            {
+                insert_streaming_nodes(lp_top, &mut lp_arena, &mut expr_arena, &mut scratch)?;
+            }
+            #[cfg(not(any(feature = "csv-file", feature = "parquet")))]
+            {
+                panic!("activate feature 'csv-file' or 'parquet'")
+            }
+        }
+
+        let physical_plan = create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
         let state = ExecutionState::with_finger_prints(finger_prints);
         Ok((state, physical_plan))

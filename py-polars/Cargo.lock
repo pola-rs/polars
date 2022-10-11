@@ -1355,6 +1355,7 @@ dependencies = [
  "polars-core",
  "polars-io",
  "polars-ops",
+ "polars-pipe",
  "polars-plan",
  "polars-time",
  "polars-utils",
@@ -1368,6 +1369,19 @@ version = "0.24.3"
 dependencies = [
  "polars-arrow",
  "polars-core",
+]
+
+[[package]]
+name = "polars-pipe"
+version = "0.24.3"
+dependencies = [
+ "hashbrown",
+ "num",
+ "polars-core",
+ "polars-io",
+ "polars-plan",
+ "polars-utils",
+ "rayon",
 ]
 
 [[package]]

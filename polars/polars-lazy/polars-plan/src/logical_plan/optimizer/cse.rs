@@ -25,6 +25,7 @@ pub(super) fn collect_trails(
     // if trails should be collected
     collect: bool,
 ) -> Option<()> {
+    // TODO! remove recursion and use a stack
     if collect {
         trails.get_mut(id).unwrap().push(root);
     }

@@ -288,7 +288,7 @@ where
     fn hash_join_outer(&self, other: &ChunkedArray<T>) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
-        let n_partitions = set_partition_size();
+        let n_partitions = _set_partition_size();
         let splitted_a = split_ca(a, n_partitions).unwrap();
         let splitted_b = split_ca(b, n_partitions).unwrap();
 
@@ -402,7 +402,7 @@ impl Utf8Chunked {
     fn hash_join_outer(&self, other: &Utf8Chunked) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
-        let n_partitions = set_partition_size();
+        let n_partitions = _set_partition_size();
         let splitted_a = split_ca(a, n_partitions).unwrap();
         let splitted_b = split_ca(b, n_partitions).unwrap();
 
@@ -518,7 +518,7 @@ impl BinaryChunked {
     fn hash_join_outer(&self, other: &BinaryChunked) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
-        let n_partitions = set_partition_size();
+        let n_partitions = _set_partition_size();
         let splitted_a = split_ca(a, n_partitions).unwrap();
         let splitted_b = split_ca(b, n_partitions).unwrap();
 

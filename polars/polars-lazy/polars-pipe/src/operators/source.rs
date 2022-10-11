@@ -2,9 +2,9 @@ use super::*;
 
 pub enum SourceResult {
     Finished,
-    GotMoreData(DataChunk),
+    GotMoreData(Vec<DataChunk>),
 }
 
-pub trait Source {
-    fn get_batches(context: &PExecutionContext) -> PolarsResult<SourceResult>;
+pub trait Source: Send + Sync {
+    fn get_batches(&mut self, context: &PExecutionContext) -> PolarsResult<SourceResult>;
 }

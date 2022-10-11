@@ -1685,6 +1685,7 @@ def collect_all(
     no_optimization: bool = False,
     slice_pushdown: bool = True,
     common_subplan_elimination: bool = True,
+    allow_streaming: bool = False,
 ) -> list[pli.DataFrame]:
     """
     Collect multiple LazyFrames at the same time.
@@ -1711,6 +1712,8 @@ def collect_all(
         Slice pushdown optimization.
     common_subplan_elimination
         Will try to cache branching subplans that occur on self-joins or unions.
+    allow_streaming
+        Run parts of the query in a streaming fashion (this is in an alpha state)
 
     Returns
     -------
@@ -1733,6 +1736,7 @@ def collect_all(
             simplify_expression,
             slice_pushdown,
             common_subplan_elimination,
+            allow_streaming,
         )
         prepared.append(ldf)
 

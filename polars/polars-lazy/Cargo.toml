@@ -17,6 +17,7 @@ polars-arrow = { version = "0.24.3", path = "../polars-arrow" }
 polars-core = { version = "0.24.3", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
 polars-io = { version = "0.24.3", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
 polars-ops = { version = "0.24.3", path = "../polars-ops", default-features = false }
+polars-pipe = { version = "0.24.3", path = "./polars-pipe" }
 polars-plan = { version = "0.24.3", path = "./polars-plan" }
 polars-time = { version = "0.24.3", path = "../polars-time", optional = true }
 polars-utils = { version = "0.24.3", path = "../polars-utils" }
@@ -26,10 +27,10 @@ rayon.workspace = true
 [features]
 compile = ["polars-plan/compile"]
 default = ["compile", "private"]
-parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet"]
+parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet", "polars-pipe/parquet"]
 ipc = ["polars-io/ipc", "polars-plan/ipc"]
 json = ["polars-io/json", "polars-plan/json"]
-csv-file = ["polars-io/csv-file", "polars-plan/csv-file"]
+csv-file = ["polars-io/csv-file", "polars-plan/csv-file", "polars-pipe/csv-file"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time", "dtype-duration", "polars-plan/temporal"]
 # debugging purposes
 fmt = ["polars-core/fmt", "polars-plan/fmt"]

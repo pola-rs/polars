@@ -26,7 +26,7 @@ impl<T> Deref for Wrap<T> {
     }
 }
 
-pub(crate) fn set_partition_size() -> usize {
+pub fn _set_partition_size() -> usize {
     let mut n_partitions = POOL.current_num_threads();
     // set n_partitions to closes 2^n above the no of threads.
     loop {
@@ -307,6 +307,72 @@ macro_rules! match_arrow_data_type_apply_macro_ca {
         }
     }};
 }
+
+#[macro_export]
+macro_rules! with_match_physical_numeric_type {(
+    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use $crate::datatypes::DataType::*;
+    match $key_type {
+        Int8 => __with_ty__! { i8 },
+        Int16 => __with_ty__! { i16 },
+        Int32 => __with_ty__! { i32 },
+        Int64 => __with_ty__! { i64 },
+        UInt8 => __with_ty__! { u8 },
+        UInt16 => __with_ty__! { u16 },
+        UInt32 => __with_ty__! { u32 },
+        UInt64 => __with_ty__! { u64 },
+        Float32 => __with_ty__! { f32 },
+        Float64 => __with_ty__! { f64 },
+        _ => unimplemented!()
+    }
+})}
+
+#[macro_export]
+macro_rules! with_match_physical_numeric_polars_type {(
+    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use $crate::datatypes::DataType::*;
+    match $key_type {
+        Int8 => __with_ty__! { Int8Type },
+        Int16 => __with_ty__! { Int16Type },
+        Int32 => __with_ty__! { Int32Type },
+        Int64 => __with_ty__! { Int64Type },
+        UInt8 => __with_ty__! { UInt8Type },
+        UInt16 => __with_ty__! { UInt16Type },
+        UInt32 => __with_ty__! { UInt32Type },
+        UInt64 => __with_ty__! { UInt64Type },
+        Float32 => __with_ty__! { Float32Type },
+        Float64 => __with_ty__! { Float64Type },
+        _ => unimplemented!()
+    }
+})}
+
+#[macro_export]
+macro_rules! with_match_physical_integer_polars_type {(
+    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use $crate::datatypes::DataType::*;
+    use $crate::datatypes::*;
+    match $key_type {
+            #[cfg(feature = "dtype-i8")]
+        Int8 => __with_ty__! { Int8Type },
+            #[cfg(feature = "dtype-i16")]
+        Int16 => __with_ty__! { Int16Type },
+        Int32 => __with_ty__! { Int32Type },
+        Int64 => __with_ty__! { Int64Type },
+            #[cfg(feature = "dtype-u8")]
+        UInt8 => __with_ty__! { UInt8Type },
+            #[cfg(feature = "dtype-u16")]
+        UInt16 => __with_ty__! { UInt16Type },
+        UInt32 => __with_ty__! { UInt32Type },
+        UInt64 => __with_ty__! { UInt64Type },
+        _ => unimplemented!()
+    }
+})}
 
 /// Apply a macro on the Downcasted ChunkedArray's of DataTypes that are logical numerics.
 /// So no logical.

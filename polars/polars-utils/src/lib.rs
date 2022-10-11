@@ -4,7 +4,9 @@ pub mod contention_pool;
 mod error;
 mod functions;
 pub mod mem;
+pub mod slice;
 pub mod sort;
+pub mod unwrap;
 
 pub use functions::*;
 

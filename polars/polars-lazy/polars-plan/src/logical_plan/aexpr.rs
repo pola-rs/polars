@@ -193,6 +193,7 @@ impl AExpr {
         arena: &Arena<AExpr>,
     ) -> PolarsResult<Field> {
         use AExpr::*;
+        use DataType::*;
         match self {
             Count => Ok(Field::new(COUNT, DataType::UInt32)),
             Window { function, .. } => {
@@ -282,12 +283,19 @@ impl AExpr {
                 use AAggExpr::*;
                 match agg {
                     Max { input: expr, .. }
-                    | Sum(expr)
                     | Min { input: expr, .. }
                     | First(expr)
                     | Last(expr) => {
                         // default context because `col()` would return a list in aggregation context
                         arena.get(*expr).to_field(schema, Context::Default, arena)
+                    }
+                    Sum(expr) => {
+                        let mut field =
+                            arena.get(*expr).to_field(schema, Context::Default, arena)?;
+                        if matches!(field.data_type(), UInt8 | Int8 | Int16 | UInt16) {
+                            field.coerce(DataType::Int64);
+                        }
+                        Ok(field)
                     }
                     Median(expr) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::aggregations::ScanAggregation;
 use crate::mmap::MmapBytesReader;
 use crate::parquet::read_impl::read_parquet;
+pub use crate::parquet::read_impl::BatchedParquetReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowCount;
@@ -70,7 +71,6 @@ impl<R: MmapBytesReader> ParquetReader<R> {
             aggregate,
             self.parallel,
             self.row_count,
-            self.low_memory,
         )
         .map(|mut df| {
             if rechunk {
@@ -127,6 +127,17 @@ impl<R: MmapBytesReader> ParquetReader<R> {
     }
 }
 
+impl<R: MmapBytesReader + 'static> ParquetReader<R> {
+    pub fn batched(self) -> PolarsResult<BatchedParquetReader> {
+        BatchedParquetReader::new(
+            Box::new(self.reader),
+            self.n_rows.unwrap_or(usize::MAX),
+            self.projection,
+            self.row_count,
+        )
+    }
+}
+
 impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
     /// Create a new [`ParquetReader`] from an existing `Reader`.
     fn new(reader: R) -> Self {
@@ -165,7 +176,6 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             None,
             self.parallel,
             self.row_count,
-            self.low_memory,
         )
         .map(|mut df| {
             if self.rechunk {

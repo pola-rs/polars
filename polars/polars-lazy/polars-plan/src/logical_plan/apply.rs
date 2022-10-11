@@ -15,9 +15,27 @@ where
     }
 }
 
+pub trait DataFrameUdfMut: Send + Sync {
+    fn call_udf(&mut self, df: DataFrame) -> PolarsResult<DataFrame>;
+}
+
+impl<F> DataFrameUdfMut for F
+where
+    F: FnMut(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
+{
+    fn call_udf(&mut self, df: DataFrame) -> PolarsResult<DataFrame> {
+        self(df)
+    }
+}
+
 impl Debug for dyn DataFrameUdf {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "dyn DataFrameUdf")
+    }
+}
+impl Debug for dyn DataFrameUdfMut {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "dyn DataFrameUdfMut")
     }
 }
 

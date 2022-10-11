@@ -357,7 +357,7 @@ impl From<&Row<'_>> for Schema {
     }
 }
 
-pub(crate) enum AnyValueBuffer<'a> {
+pub enum AnyValueBuffer<'a> {
     Boolean(BooleanChunkedBuilder),
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
@@ -380,7 +380,8 @@ pub(crate) enum AnyValueBuffer<'a> {
 }
 
 impl<'a> AnyValueBuffer<'a> {
-    pub(crate) fn add(&mut self, val: AnyValue<'a>) -> Option<()> {
+    #[inline]
+    pub fn add(&mut self, val: AnyValue<'a>) -> Option<()> {
         use AnyValueBuffer::*;
         match (self, val) {
             (Boolean(builder), AnyValue::Boolean(v)) => builder.append_value(v),
@@ -437,7 +438,7 @@ impl<'a> AnyValueBuffer<'a> {
         })
     }
 
-    pub(crate) fn into_series(self) -> Series {
+    pub fn into_series(self) -> Series {
         use AnyValueBuffer::*;
         match self {
             Boolean(b) => b.finish().into_series(),
@@ -456,6 +457,10 @@ impl<'a> AnyValueBuffer<'a> {
             Utf8(b) => b.finish().into_series(),
             All(dtype, vals) => Series::from_any_values_and_dtype("", &vals, &dtype).unwrap(),
         }
+    }
+
+    pub fn new(dtype: &DataType, capacity: usize) -> AnyValueBuffer<'_> {
+        (dtype, capacity).into()
     }
 }
 
