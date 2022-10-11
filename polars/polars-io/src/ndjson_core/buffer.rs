@@ -278,6 +278,6 @@ fn deserialize_all<'a, 'b>(json: &'b Value) -> AnyValue<'a> {
             AnyValue::StructOwned(Box::new(vals))
         }
         #[cfg(not(feature = "dtype-struct"))]
-        val => AnyValue::Utf8Owned(format!("{:#?}", val)),
+        val => AnyValue::Utf8Owned(format!("{:#?}", val).into()),
     }
 }

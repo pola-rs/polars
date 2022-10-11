@@ -26,9 +26,16 @@ impl<K: NumericNative> MeanAgg<K> {
 
 impl<K: NumericNative + Add<Output = K> + NumCast> AggregateFn for MeanAgg<K> {
     fn pre_agg(&mut self, _chunk_idx: IdxSize, item: AnyValue) {
-        if let (Some(val), Some(sum)) = (item.extract::<K>(), self.sum) {
-            self.sum = Some(sum + val);
-            self.count += 1;
+        match (item.extract::<K>(), self.sum) {
+            (Some(val), Some(sum)) => {
+                self.sum = Some(sum + val);
+                self.count += 1;
+            }
+            (Some(val), None) => {
+                self.sum = Some(val);
+                self.count += 1;
+            }
+            _ => {}
         }
     }
 

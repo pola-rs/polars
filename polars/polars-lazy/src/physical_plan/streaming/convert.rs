@@ -127,7 +127,6 @@ pub(crate) fn insert_streaming_nodes(
             }
             Aggregate {
                 input,
-                keys,
                 aggs,
                 maintain_order: false,
                 apply: None,
@@ -137,17 +136,9 @@ pub(crate) fn insert_streaming_nodes(
                     .iter()
                     .all(|node| polars_pipe::pipeline::can_convert_to_hash_agg(*node, expr_arena))
                 {
-                    let input_schema = lp_arena.get(*input).schema(lp_arena);
-                    if let AExpr::Column(key) = expr_arena.get(keys[0]) {
-                        let key_dtype = input_schema.try_get(key)?;
-                        if key_dtype.to_physical().is_numeric() {
-                            state.streamable = true;
-                            state.sink = Some(root);
-                            stack.push((*input, state))
-                        } else {
-                            stack.push((*input, State::default()))
-                        }
-                    }
+                    state.streamable = true;
+                    state.sink = Some(root);
+                    stack.push((*input, state))
                 } else {
                     stack.push((*input, State::default()))
                 }
@@ -218,7 +209,7 @@ fn get_pipeline_node(
             function: Arc::new(move |_df: DataFrame| {
                 let state = ExecutionState::new();
                 if state.verbose() {
-                    eprintln!("polars runs part of the query streaming.")
+                    eprintln!("RUN STREAMING PIPELINE")
                 }
                 let state = Box::new(state) as Box<dyn Any + Send + Sync>;
                 pipeline.execute(state)
