@@ -1374,8 +1374,12 @@ def test_hashing_on_python_objects() -> None:
 
 
 def test_unique_unit_rows() -> None:
-    # simply test if we don't panic.
-    pl.DataFrame({"a": [1], "b": [None]}).unique(subset="a")
+    df = pl.DataFrame({"a": [1], "b": [None]})
+
+    # 'unique' one-row frame should be equal to the original frame
+    assert df.frame_equal(df.unique(subset="a"))
+    for col in df.columns:
+        assert df.n_unique(subset=[col]) == 1
 
 
 def test_panic() -> None:
@@ -1734,7 +1738,30 @@ def test_is_duplicated() -> None:
 
 def test_is_unique() -> None:
     df = pl.DataFrame({"foo": [1, 2, 2], "bar": [6, 7, 7]})
+
     assert df.is_unique().series_equal(pl.Series("", [True, False, False]))
+    assert df.unique(maintain_order=True).rows() == [(1, 6), (2, 7)]
+    assert df.n_unique() == 2
+
+
+def test_n_unique_subsets() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 2, 3, 4, 5],
+            "b": [0.5, 0.5, 1.0, 2.0, 3.0, 3.0],
+            "c": [True, True, True, False, True, True],
+        }
+    )
+    # omitting 'subset' counts unique rows
+    assert df.n_unique() == 5
+
+    # providing it counts unique col/expr subsets
+    assert df.n_unique(subset=["b", "c"]) == 4
+    assert df.n_unique(subset=pl.col("c")) == 2
+    assert (
+        df.n_unique(subset=[(pl.col("a") // 2), (pl.col("c") | (pl.col("b") >= 2))])
+        == 3
+    )
 
 
 def test_sample() -> None:

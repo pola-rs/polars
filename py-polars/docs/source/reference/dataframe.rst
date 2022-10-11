@@ -61,6 +61,7 @@ Descriptive stats
     DataFrame.is_empty
     DataFrame.is_unique
     DataFrame.n_chunks
+    DataFrame.n_unique
     DataFrame.null_count
 
 Computations
