@@ -1,6 +1,6 @@
 use std::any::Any;
 use std::fmt::Debug;
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 
 use hashbrown::hash_map::RawEntryMut;
 use num::NumCast;
@@ -9,8 +9,9 @@ use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
 use polars_core::POOL;
+use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
-use polars_utils::{debug_unwrap, get_hash, hash_to_partition};
+use polars_utils::unwrap::UnwrapUncheckedRelease;
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
@@ -20,11 +21,29 @@ use crate::operators::{DataChunk, PExecutionContext, Sink, SinkResult};
 // We must strike a balance between cache coherence and resizing costs.
 // Overallocation seems a lot more expensive than resizing so we start reasonable small.
 pub(crate) const HASHMAP_INIT_SIZE: usize = 128;
+// hash + value
+#[derive(Eq, Copy, Clone)]
+struct Key<T: Copy> {
+    hash: u64,
+    value: T,
+}
+
+impl<T: Copy> Hash for Key<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash)
+    }
+}
+
+impl<T: Copy + PartialEq> PartialEq for Key<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
 
 pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     thread_no: usize,
     // idx is the offset in the array with aggregators
-    pre_agg_partitions: Vec<PlHashMap<Option<K::Native>, IdxSize>>,
+    pre_agg_partitions: Vec<PlHashMap<Key<Option<K::Native>>, IdxSize>>,
     // the aggregations are all tightly packed
     // the aggregation function of a group can be found
     // by:
@@ -41,6 +60,7 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     output_schema: SchemaRef,
     // amortize allocations
     aggregation_series: Vec<Series>,
+    hashes: Vec<u64>,
 }
 
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K> {
@@ -76,6 +96,7 @@ impl<K: PolarsNumericType> PrimitiveGroupbySink<K> {
             agg_fns,
             output_schema,
             aggregation_series: vec![],
+            hashes: vec![],
         }
     }
 
@@ -97,8 +118,12 @@ where
             .key
             .evaluate(&chunk, context.execution_state.as_ref())?;
         let s = s.to_physical_repr();
+        let s = s.rechunk();
+
+        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+
         // cow -> &series -> &dyn series_trait -> &chunkedarray
-        let ca: &ChunkedArray<K> = s.as_ref().as_ref().as_ref();
+        let ca: &ChunkedArray<K> = s.as_ref().as_ref();
 
         // todo! ammortize allocation
         for phys_e in self.aggregation_columns.iter() {
@@ -113,38 +138,39 @@ where
             .map(|s| s.phys_iter())
             .collect::<Vec<_>>();
 
-        for arr in ca.downcast_iter() {
-            for opt_v in arr {
-                let opt_v = opt_v.copied();
-                let h = get_hash(opt_v, &self.hb);
-                let part = hash_to_partition(h, self.pre_agg_partitions.len());
-                let current_partition =
-                    unsafe { self.pre_agg_partitions.get_unchecked_release_mut(part) };
-                let current_aggregators =
-                    unsafe { self.aggregators.get_unchecked_release_mut(part) };
+        let arr = ca.downcast_iter().next().unwrap();
+        for (opt_v, &h) in arr.iter().zip(self.hashes.iter()) {
+            let opt_v = opt_v.copied();
+            let part = hash_to_partition(h, self.pre_agg_partitions.len());
+            let current_partition =
+                unsafe { self.pre_agg_partitions.get_unchecked_release_mut(part) };
+            let current_aggregators = unsafe { self.aggregators.get_unchecked_release_mut(part) };
 
-                let entry = current_partition
-                    .raw_entry_mut()
-                    .from_key_hashed_nocheck(h, &opt_v);
-                let agg_idx = match entry {
-                    RawEntryMut::Vacant(entry) => {
-                        let offset = NumCast::from(current_aggregators.len()).unwrap();
-                        entry.insert_with_hasher(h, opt_v, offset, |_| h);
-                        // initialize the aggregators
-                        for agg_fn in &self.agg_fns {
-                            current_aggregators.push(agg_fn.split())
-                        }
-                        offset
+            let key = Key {
+                hash: h,
+                value: opt_v,
+            };
+            let entry = current_partition.raw_entry_mut().from_key(&key);
+            let agg_idx = match entry {
+                RawEntryMut::Vacant(entry) => {
+                    let offset = unsafe {
+                        NumCast::from(current_aggregators.len()).unwrap_unchecked_release()
+                    };
+                    entry.insert(key, offset);
+                    // initialize the aggregators
+                    for agg_fn in &self.agg_fns {
+                        current_aggregators.push(agg_fn.split())
                     }
-                    RawEntryMut::Occupied(entry) => *entry.get(),
-                };
-                for (i, agg_iter) in (0..num_aggs).zip(agg_iters.iter_mut()) {
-                    let i = agg_idx as usize + i;
-                    let agg_fn = unsafe { current_aggregators.get_unchecked_release_mut(i) };
-
-                    let value = unsafe { debug_unwrap(agg_iter.next()) };
-                    agg_fn.pre_agg(chunk.chunk_index, value)
+                    offset
                 }
+                RawEntryMut::Occupied(entry) => *entry.get(),
+            };
+            for (i, agg_iter) in (0 as IdxSize..num_aggs as IdxSize).zip(agg_iters.iter_mut()) {
+                let i = (agg_idx + i) as usize;
+                let agg_fn = unsafe { current_aggregators.get_unchecked_release_mut(i) };
+
+                let value = unsafe { agg_iter.next().unwrap_unchecked_release() };
+                agg_fn.pre_agg(chunk.chunk_index, value)
             }
         }
         drop(agg_iters);
@@ -163,16 +189,14 @@ where
             .zip(other.aggregators.iter())
             .for_each(
                 |(((map_self, map_other), aggregators_self), aggregators_other)| {
-                    for (k, &agg_idx_other) in map_other.iter() {
-                        let opt_v = *k;
+                    for (key, &agg_idx_other) in map_other.iter() {
                         unsafe {
-                            let h = get_hash(opt_v, &self.hb);
-                            let entry = map_self.raw_entry_mut().from_key_hashed_nocheck(h, &opt_v);
+                            let entry = map_self.raw_entry_mut().from_key(key);
 
                             let agg_idx_self = match entry {
                                 RawEntryMut::Vacant(entry) => {
                                     let offset = NumCast::from(aggregators_self.len()).unwrap();
-                                    entry.insert_with_hasher(h, opt_v, offset, |_| h);
+                                    entry.insert(*key, offset);
                                     // initialize the aggregators
                                     for agg_fn in &self.agg_fns {
                                         aggregators_self.push(agg_fn.split())
@@ -235,7 +259,7 @@ where
                         .collect::<Vec<_>>();
 
                     agg_map.into_iter().for_each(|(k, &offset)| {
-                        key_builder.append_option(*k);
+                        key_builder.append_option(k.value);
 
                         for (i, buffer) in (offset as usize
                             ..offset as usize + self.aggregation_columns.len())
@@ -263,7 +287,8 @@ where
                     Some(DataFrame::new_no_checks(cols))
                 })
                 .collect::<Vec<_>>();
-            Ok(accumulate_dataframes_vertical_unchecked(dfs))
+            let mut df = accumulate_dataframes_vertical_unchecked(dfs);
+            DataFrame::new(std::mem::take(df.get_columns_mut()))
         })
     }
 

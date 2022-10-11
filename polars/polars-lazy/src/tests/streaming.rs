@@ -80,7 +80,7 @@ fn test_streaming_multiple_keys_aggregate() -> PolarsResult<()> {
         .filter(col("sugars_g").gt(lit(10)))
         .groupby([col("sugars_g"), col("calories")])
         .agg([col("fats_g").sum() * lit(10)])
-        .sort("sugars_g", Default::default());
+        .sort_by_exprs([col("sugars_g"), col("calories")], [false, false], false);
 
     let q1 = q.clone().with_streaming(true);
     let q2 = q.clone();

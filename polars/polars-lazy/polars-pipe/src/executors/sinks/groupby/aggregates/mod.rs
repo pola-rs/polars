@@ -2,6 +2,7 @@ mod convert;
 mod first;
 mod interface;
 mod last;
+mod mean;
 mod sum;
 
 pub use convert::*;

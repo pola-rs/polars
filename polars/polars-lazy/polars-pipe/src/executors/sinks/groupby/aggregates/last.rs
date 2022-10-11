@@ -2,7 +2,7 @@ use std::any::Any;
 
 use polars_core::datatypes::DataType;
 use polars_core::prelude::AnyValue;
-use polars_utils::debug_unwrap;
+use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use crate::executors::sinks::groupby::aggregates::AggregateFn;
 use crate::operators::IdxSize;
@@ -34,7 +34,7 @@ impl AggregateFn for LastAgg {
     }
 
     fn combine(&mut self, other: &dyn Any) {
-        let other = unsafe { debug_unwrap(other.downcast_ref::<Self>()) };
+        let other = unsafe { other.downcast_ref::<Self>().unwrap_unchecked_release() };
         if other.last.is_some() && other.chunk_idx > self.chunk_idx {
             self.last = other.last.clone();
             self.chunk_idx = other.chunk_idx;

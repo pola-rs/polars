@@ -10,6 +10,7 @@ use polars_utils::IdxSize;
 
 use crate::executors::sinks::groupby::aggregates::first::FirstAgg;
 use crate::executors::sinks::groupby::aggregates::last::LastAgg;
+use crate::executors::sinks::groupby::aggregates::mean::MeanAgg;
 use crate::executors::sinks::groupby::aggregates::{AggregateFn, SumAgg};
 use crate::expressions::PhysicalPipedExpr;
 
@@ -45,7 +46,7 @@ pub fn can_convert_to_hash_agg(mut node: Node, expr_arena: &Arena<AExpr>) -> boo
             AExpr::Agg(agg_fn) => {
                 matches!(
                     agg_fn,
-                    AAggExpr::Sum(_) | AAggExpr::First(_) | AAggExpr::Last(_)
+                    AAggExpr::Sum(_) | AAggExpr::First(_) | AAggExpr::Last(_) | AAggExpr::Mean(_)
                 )
             }
             _ => false,
@@ -70,17 +71,34 @@ where
             AAggExpr::Sum(input) => {
                 let phys_expr = to_physical(*input, expr_arena).unwrap();
                 let agg_fn = match phys_expr.field(schema).unwrap().dtype.to_physical() {
+                    // Boolean is aggregated as the IDX type.
                     DataType::Boolean => Box::new(SumAgg::<IdxSize>::new()) as Box<dyn AggregateFn>,
-                    DataType::UInt8 => Box::new(SumAgg::<u8>::new()) as Box<dyn AggregateFn>,
-                    DataType::UInt16 => Box::new(SumAgg::<u16>::new()) as Box<dyn AggregateFn>,
+                    // these are aggregated as i64 to prevent overflow
+                    DataType::Int8 => Box::new(SumAgg::<i64>::new()) as Box<dyn AggregateFn>,
+                    DataType::Int16 => Box::new(SumAgg::<i64>::new()) as Box<dyn AggregateFn>,
+                    DataType::UInt8 => Box::new(SumAgg::<i64>::new()) as Box<dyn AggregateFn>,
+                    DataType::UInt16 => Box::new(SumAgg::<i64>::new()) as Box<dyn AggregateFn>,
+                    //  these stay true to there types
                     DataType::UInt32 => Box::new(SumAgg::<u32>::new()) as Box<dyn AggregateFn>,
                     DataType::UInt64 => Box::new(SumAgg::<u64>::new()) as Box<dyn AggregateFn>,
-                    DataType::Int8 => Box::new(SumAgg::<i8>::new()) as Box<dyn AggregateFn>,
-                    DataType::Int16 => Box::new(SumAgg::<i16>::new()) as Box<dyn AggregateFn>,
                     DataType::Int32 => Box::new(SumAgg::<i32>::new()) as Box<dyn AggregateFn>,
                     DataType::Int64 => Box::new(SumAgg::<i64>::new()) as Box<dyn AggregateFn>,
                     DataType::Float32 => Box::new(SumAgg::<f32>::new()) as Box<dyn AggregateFn>,
                     DataType::Float64 => Box::new(SumAgg::<f64>::new()) as Box<dyn AggregateFn>,
+                    _ => unreachable!(),
+                };
+                (phys_expr, agg_fn)
+            }
+            AAggExpr::Mean(input) => {
+                let phys_expr = to_physical(*input, expr_arena).unwrap();
+                let agg_fn = match phys_expr.field(schema).unwrap().dtype.to_physical() {
+                    dt if dt.is_integer() => {
+                        Box::new(MeanAgg::<f64>::new()) as Box<dyn AggregateFn>
+                    }
+                    // Boolean is aggregated as the IDX type.
+                    DataType::Boolean => Box::new(MeanAgg::<f64>::new()) as Box<dyn AggregateFn>,
+                    DataType::Float32 => Box::new(MeanAgg::<f32>::new()) as Box<dyn AggregateFn>,
+                    DataType::Float64 => Box::new(MeanAgg::<f64>::new()) as Box<dyn AggregateFn>,
                     _ => unreachable!(),
                 };
                 (phys_expr, agg_fn)

@@ -12,24 +12,6 @@ pub fn flatten<T: Clone, R: AsRef<[T]>>(bufs: &[R], len: Option<usize>) -> Vec<T
 }
 
 #[inline]
-/// # Safety
-///
-/// does an uncecked unwrap. Ensure this will never fail
-pub unsafe fn debug_unwrap<T>(item: Option<T>) -> T {
-    {
-        #[cfg(debug_assertions)]
-        {
-            // check if the type is correct
-            item.unwrap()
-        }
-        #[cfg(not(debug_assertions))]
-        unsafe {
-            item.unwrap_unchecked()
-        }
-    }
-}
-
-#[inline]
 pub fn hash_to_partition(h: u64, n_partitions: usize) -> usize {
     debug_assert!(n_partitions.is_power_of_two());
     // n % 2^i = n & (2^i - 1)
