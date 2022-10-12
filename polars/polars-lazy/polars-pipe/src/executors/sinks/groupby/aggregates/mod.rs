@@ -7,5 +7,5 @@ mod mean;
 mod sum;
 
 pub use convert::*;
-pub(crate) use interface::AggregateFn;
+pub(crate) use interface::{AggregateFn, AggregateFunction};
 pub(crate) use sum::SumAgg;

@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+enum_dispatch = "0.3"
 hashbrown.workspace = true
 num.wokspace = true
 polars-core = { version = "0.24.2", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }

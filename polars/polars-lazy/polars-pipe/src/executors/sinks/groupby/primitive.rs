@@ -15,12 +15,11 @@ use polars_utils::unwrap::UnwrapUncheckedRelease;
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
+use super::HASHMAP_INIT_SIZE;
+use crate::executors::sinks::groupby::aggregates::AggregateFunction;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, PExecutionContext, Sink, SinkResult};
 
-// We must strike a balance between cache coherence and resizing costs.
-// Overallocation seems a lot more expensive than resizing so we start reasonable small.
-pub(crate) const HASHMAP_INIT_SIZE: usize = 128;
 // hash + value
 #[derive(Eq, Copy, Clone)]
 struct Key<T: Copy> {
@@ -50,13 +49,15 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     // first get the correct vec by the partition index
     //      * offset = (idx)
     //      * end = (offset + n_aggs)
-    aggregators: Vec<Vec<Box<dyn AggregateFn>>>,
+    aggregators: Vec<Vec<AggregateFunction>>,
     key: Arc<dyn PhysicalPipedExpr>,
     // the columns that will be aggregated
     aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
     hb: RandomState,
-    // Aggregation functions
-    agg_fns: Vec<Box<dyn AggregateFn>>,
+    // Initializing Aggregation functions. If we aggregate by 2 columns
+    // this vec will have two functions. We will use these functions
+    // to populate the buffer where the hashmap points to
+    agg_fns: Vec<AggregateFunction>,
     output_schema: SchemaRef,
     // amortize allocations
     aggregation_series: Vec<Series>,
@@ -67,7 +68,7 @@ impl<K: PolarsNumericType> PrimitiveGroupbySink<K> {
     pub fn new(
         key: Arc<dyn PhysicalPipedExpr>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-        agg_fns: Vec<Box<dyn AggregateFn>>,
+        agg_fns: Vec<AggregateFunction>,
         output_schema: SchemaRef,
     ) -> Self {
         let hb = RandomState::default();
@@ -159,7 +160,7 @@ where
                     entry.insert(key, offset);
                     // initialize the aggregators
                     for agg_fn in &self.agg_fns {
-                        current_aggregators.push(agg_fn.split())
+                        current_aggregators.push(agg_fn.split2())
                     }
                     offset
                 }
@@ -198,7 +199,7 @@ where
                                     entry.insert(*key, offset);
                                     // initialize the aggregators
                                     for agg_fn in &self.agg_fns {
-                                        aggregators_self.push(agg_fn.split())
+                                        aggregators_self.push(agg_fn.split2())
                                     }
                                     offset
                                 }
@@ -221,7 +222,7 @@ where
         let mut new = Self::new(
             self.key.clone(),
             self.aggregation_columns.clone(),
-            self.agg_fns.iter().map(|func| func.split()).collect(),
+            self.agg_fns.iter().map(|func| func.split2()).collect(),
             self.output_schema.clone(),
         );
         new.hb = self.hb.clone();
