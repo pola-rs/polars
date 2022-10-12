@@ -10,7 +10,7 @@ members = [
   "polars/polars-lazy",
   "polars/polars-lazy/polars-plan",
   "polars/polars-lazy/polars-pipe",
-  "polars-sql",
+  "polars/polars-sql",
   "examples/read_csv",
   "examples/read_parquet",
   "examples/python_rust_compiled_function",

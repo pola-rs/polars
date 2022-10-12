@@ -1,4 +1,4 @@
-use polars_sql::SQLContext;
+use polars::sql::SQLContext;
 use pyo3::prelude::*;
 
 use crate::{PyLazyFrame, PyPolarsErr};

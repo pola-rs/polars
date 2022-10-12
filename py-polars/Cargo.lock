@@ -1276,6 +1276,7 @@ dependencies = [
  "polars-io",
  "polars-lazy",
  "polars-ops",
+ "polars-sql",
  "polars-time",
 ]
 
@@ -1418,8 +1419,8 @@ dependencies = [
 name = "polars-sql"
 version = "0.1.0"
 dependencies = [
- "polars",
  "polars-arrow",
+ "polars-core",
  "polars-lazy",
  "polars-plan",
  "serde",
@@ -1477,7 +1478,6 @@ dependencies = [
  "polars",
  "polars-core",
  "polars-lazy",
- "polars-sql",
  "pyo3",
  "serde_json",
  "thiserror",
