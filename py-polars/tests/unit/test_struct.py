@@ -410,7 +410,10 @@ def test_struct_comparison() -> None:
             "col2": [{"a": 1, "b": 2}, {"a": 3, "b": 4}],
         }
     )
-    assert df.filter(pl.col("col1") == pl.col("col2")).shape == (2, 2)
+    assert df.filter(pl.col("col1") == pl.col("col2")).rows() == [
+        ({"a": 1, "b": 2}, {"a": 1, "b": 2}),
+        ({"a": 3, "b": 4}, {"a": 3, "b": 4}),
+    ]
     # floats w/ ints
     df = pl.DataFrame(
         {
@@ -418,7 +421,10 @@ def test_struct_comparison() -> None:
             "col2": [{"a": 1.0, "b": 2}, {"a": 3.0, "b": 4}],
         }
     )
-    assert df.filter(pl.col("col1") == pl.col("col2")).shape == (2, 2)
+    assert df.filter(pl.col("col1") == pl.col("col2")).rows() == [
+        ({"a": 1, "b": 2}, {"a": 1.0, "b": 2}),
+        ({"a": 3, "b": 4}, {"a": 3.0, "b": 4}),
+    ]
 
     df = pl.DataFrame(
         {

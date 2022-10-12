@@ -111,9 +111,11 @@ def test_sample() -> None:
     out = pl.select(
         pl.lit(a).sample(frac=0.5, with_replacement=False, seed=1)
     ).to_series()
+
     assert out.shape == (10,)
     assert out.to_list() != out.sort().to_list()
     assert out.unique().shape == (10,)
+    assert set(out).issubset(set(a))
 
     out = pl.select(pl.lit(a).sample(n=10, with_replacement=False, seed=1)).to_series()
     assert out.shape == (10,)
@@ -125,7 +127,6 @@ def test_map_alias() -> None:
     out = pl.DataFrame({"foo": [1, 2, 3]}).select(
         (pl.col("foo") * 2).map_alias(lambda name: f"{name}{name}")
     )
-
     expected = pl.DataFrame({"foofoo": [2, 4, 6]})
     assert out.frame_equal(expected)
 

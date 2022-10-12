@@ -118,7 +118,9 @@ def test_slice() -> None:
 def test_agg() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     ldf = df.lazy().min()
-    assert ldf.collect().shape == (1, 2)
+    res = ldf.collect()
+    assert res.shape == (1, 2)
+    assert res.row(0) == (1, 1.0)
 
 
 def test_fold() -> None:
@@ -143,7 +145,7 @@ def test_fold() -> None:
 def test_or() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = df.lazy().filter((pl.col("a") == 1) | (pl.col("b") > 2)).collect()
-    assert out.shape[0] == 2
+    assert out.rows() == [(1, 1.0), (3, 3.0)]
 
 
 def test_groupby_apply() -> None:
@@ -459,18 +461,24 @@ def test_head_groupby() -> None:
     # this query flexes the wildcard exclusion quite a bit.
     keys = ["commodity", "location"]
     out = (
-        df.sort(by="price")
-        .groupby(keys)
+        df.sort(by="price", reverse=True)
+        .groupby(keys, maintain_order=True)
         .agg([col("*").exclude(keys).head(2).list().keep_name()])
         .explode(col("*").exclude(keys))
     )
 
     assert out.shape == (5, 4)
+    assert out.rows() == [
+        ("Corn", "Chicago", "Mary", 3.0),
+        ("Corn", "Chicago", "Paul", 2.4),
+        ("Wheat", "StPaul", "Bob", 1.0),
+        ("Wheat", "StPaul", "Susan", 0.8),
+        ("Wheat", "Chicago", "Paul", 0.55),
+    ]
 
     df = pl.DataFrame(
         {"letters": ["c", "c", "a", "c", "a", "b"], "nrs": [1, 2, 3, 4, 5, 6]}
     )
-
     out = df.groupby("letters").tail(2).sort("letters")
     assert out.frame_equal(
         pl.DataFrame({"letters": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 2, 4]})
@@ -543,8 +551,10 @@ def test_sort() -> None:
 
 
 def test_drop_nulls() -> None:
-    df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
-    assert df.select(col("nrs").drop_nulls()).shape == (5, 1)
+    df = pl.DataFrame({"nrs": [None, 1, 2, 3, None, 4, 5, None]})
+    assert df.select(col("nrs").drop_nulls()).to_dict(as_series=False) == {
+        "nrs": [1, 2, 3, 4, 5]
+    }
 
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8], "ham": ["a", "b", "c"]})
     expected = pl.DataFrame({"foo": [1, 3], "bar": [6, 8], "ham": ["a", "c"]})
@@ -569,7 +579,6 @@ def test_lazy_columns() -> None:
             "c": [1],
         }
     ).lazy()
-
     assert df.select(["a", "c"]).columns == ["a", "c"]
 
 
@@ -582,7 +591,6 @@ def test_regex_selection() -> None:
             "bar": [1],
         }
     ).lazy()
-
     assert df.select([col("^foo.*$")]).columns == ["foo", "fooey", "foobar"]
 
 
@@ -687,6 +695,7 @@ def test_select_by_col_list(fruits_cars: pl.DataFrame) -> None:
     out = df.select(col(["A", "B"]).sum())
     assert out.columns == ["A", "B"]
     assert out.shape == (1, 2)
+    assert out.row(0) == (15, 15)
 
 
 def test_rolling(fruits_cars: pl.DataFrame) -> None:
@@ -1268,7 +1277,8 @@ def test_nested_min_max() -> None:
     df = pl.DataFrame({"a": [1], "b": [2], "c": [3], "d": [4]})
     out = df.with_column(pl.max([pl.min(["a", "b"]), pl.min(["c", "d"])]).alias("t"))
     assert out.shape == (1, 5)
-    assert out["t"][0] == 3
+    assert out.row(0) == (1, 2, 3, 4, 3)
+    assert out.columns == ["a", "b", "c", "d", "t"]
 
 
 def test_self_join() -> None:
@@ -1451,11 +1461,13 @@ def test_update_schema_after_projection_pd_t4157() -> None:
 
 
 def test_type_coercion_unknown_4190() -> None:
-    assert (
+    df = (
         pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
         .lazy()
         .with_columns([pl.col("a") & pl.col("a").fill_null(True)])
-    ).collect().shape == (3, 2)
+    ).collect()
+    assert df.shape == (3, 2)
+    assert df.rows() == [(1, 1), (2, 2), (3, 3)]
 
 
 def test_all_any_accept_expr() -> None:
