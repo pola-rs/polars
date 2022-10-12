@@ -235,7 +235,7 @@ class Datetime(DataType):
             ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
 
         """
-        self.tu = time_unit
+        self.tu = time_unit or "us"
         self.tz = time_zone
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
@@ -379,9 +379,7 @@ _DTYPE_TO_FFINAME: dict[PolarsDataType, str] = {
     Struct: "struct",
     Binary: "binary",
 }
-for tu in DTYPE_TEMPORAL_UNITS:
-    _DTYPE_TO_FFINAME[Datetime(tu)] = "datetime"
-    _DTYPE_TO_FFINAME[Duration(tu)] = "duration"
+
 
 _DTYPE_TO_CTYPE: dict[PolarsDataType, Any] = {
     UInt8: ctypes.c_uint8,
@@ -399,9 +397,6 @@ _DTYPE_TO_CTYPE: dict[PolarsDataType, Any] = {
     Duration: ctypes.c_int64,
     Time: ctypes.c_int64,
 }
-for tu in DTYPE_TEMPORAL_UNITS:
-    _DTYPE_TO_CTYPE[Datetime(tu)] = ctypes.c_int64
-    _DTYPE_TO_CTYPE[Duration(tu)] = ctypes.c_int64
 
 
 _PY_TYPE_TO_DTYPE: dict[type, PolarsDataType] = {
@@ -442,10 +437,8 @@ _DTYPE_TO_PY_TYPE: dict[PolarsDataType, type] = {
     Date: date,
     Time: time,
     Binary: bytes,
+    List: list,
 }
-for tu in DTYPE_TEMPORAL_UNITS:
-    _DTYPE_TO_PY_TYPE[Datetime(tu)] = datetime
-    _DTYPE_TO_PY_TYPE[Duration(tu)] = timedelta
 
 # Map Numpy char codes to polars dtypes.
 #
@@ -507,16 +500,17 @@ if _PYARROW_AVAILABLE:
     }
 
 
-def _lookup_type(dtype: PolarsDataType) -> PolarsDataType:
-    """Normalise type so it can be looked-up correctly."""
-    # (currently only List requires this, due to arbitrary 'inner')
-    return List if dtype == List else dtype
+def _base_type(dtype: PolarsDataType) -> type[DataType]:
+    """Ensure return of the DataType base dtype/class."""
+    if isinstance(dtype, DataType):
+        return type(dtype)
+    return dtype
 
 
 def dtype_to_ctype(dtype: PolarsDataType) -> type[_SimpleCData]:
     """Convert a Polars dtype to a ctype."""
     try:
-        dtype = _lookup_type(dtype)
+        dtype = _base_type(dtype)
         return _DTYPE_TO_CTYPE[dtype]
     except KeyError:  # pragma: no cover
         raise NotImplementedError(
@@ -527,7 +521,7 @@ def dtype_to_ctype(dtype: PolarsDataType) -> type[_SimpleCData]:
 def dtype_to_ffiname(dtype: PolarsDataType) -> str:
     """Return FFI function name associated with the given Polars dtype."""
     try:
-        dtype = _lookup_type(dtype)
+        dtype = _base_type(dtype)
         return _DTYPE_TO_FFINAME[dtype]
     except KeyError:  # pragma: no cover
         raise NotImplementedError(
@@ -538,7 +532,7 @@ def dtype_to_ffiname(dtype: PolarsDataType) -> str:
 def dtype_to_py_type(dtype: PolarsDataType) -> type:
     """Convert a Polars dtype to a Python dtype."""
     try:
-        dtype = _lookup_type(dtype)
+        dtype = _base_type(dtype)
         return _DTYPE_TO_PY_TYPE[dtype]
     except KeyError:  # pragma: no cover
         raise NotImplementedError(
@@ -598,7 +592,16 @@ def py_type_to_arrow_type(dtype: type[Any]) -> pa.lib.DataType:
 def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
     """Convert a Polars dtype to an Arrow dtype."""
     try:
-        return _DTYPE_TO_ARROW_TYPE[dtype]
+        # special handling for mapping to tz-aware timestamp type.
+        # (don't want to include every possible tz string in the lookup)
+        tz = None
+        if dtype == Datetime:
+            dtype, tz = Datetime(dtype.tu), dtype.tz  # type: ignore[union-attr]
+
+        arrow_type = _DTYPE_TO_ARROW_TYPE[dtype]
+        if tz:
+            arrow_type = pa.timestamp(dtype.tu or "us", tz)  # type: ignore[union-attr]
+        return arrow_type
     except KeyError:  # pragma: no cover
         raise ValueError(
             f"Cannot parse data type {dtype} into Arrow data type."
