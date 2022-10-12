@@ -1,21 +1,22 @@
-use std::io::{self, Write, BufRead};
-use std::path::Path;
 use std::ffi::OsStr;
+use std::io::{self, BufRead, Write};
+use std::path::Path;
 
 #[cfg(feature = "csv")]
 use polars_lazy::frame::LazyCsvReader;
-
+use polars_lazy::frame::LazyFrame;
 #[cfg(feature = "parquet")]
-
 #[cfg(feature = "parquet")]
 use polars_lazy::frame::ScanArgsParquet;
-
-use polars_lazy::frame::LazyFrame;
 use polars_sql::SQLContext;
 
 // Command: /dd or dataframes
 fn print_dataframes(dataframes: &Vec<(String, String)>) {
-    println!("{} dataframes registered{}", dataframes.len(), if dataframes.is_empty() { "." } else { ":" });
+    println!(
+        "{} dataframes registered{}",
+        dataframes.len(),
+        if dataframes.is_empty() { "." } else { ":" }
+    );
     for (name, file) in dataframes.iter() {
         println!("{}:\t {}", name, file);
     }
@@ -26,9 +27,15 @@ fn print_help() {
     for (name, short, desc) in vec![
         ("dataframes", "dd", "Show registered frames."),
         ("help", "?", "Display this help."),
-        ("register", "rd", "Register new dataframe: \\rd <name> <source>"),
-        ("quit", "q", "Exit")
-    ].iter() {
+        (
+            "register",
+            "rd",
+            "Register new dataframe: \\rd <name> <source>",
+        ),
+        ("quit", "q", "Exit"),
+    ]
+    .iter()
+    {
         println!("{:20}\\{:10} {}", name, short, desc);
     }
 }
@@ -36,21 +43,25 @@ fn print_help() {
 fn execute_query(context: &SQLContext, query: &str) {
     // Execute SQL command
     let out = match context.execute(&query) {
-        Ok(q)=> q.limit(100).collect(),
+        Ok(q) => q.limit(100).collect(),
         Err(e) => Err(e),
     };
-    
+
     match out {
         Ok(df) => println!("{}", df),
         Err(e) => println!("{}", e),
     }
 }
 
-fn register_dataframe(context: &mut SQLContext, dataframes: &mut Vec<(String, String)>, command: Vec<&str>) {
+fn register_dataframe(
+    context: &mut SQLContext,
+    dataframes: &mut Vec<(String, String)>,
+    command: Vec<&str>,
+) {
     if command.len() < 3 {
         println!("Usage: \\rd <name> <file>");
         return;
-    } 
+    }
     let name = command[1];
     let source = command[2];
 
@@ -60,7 +71,7 @@ fn register_dataframe(context: &mut SQLContext, dataframes: &mut Vec<(String, St
         None | Some(_) => {
             println!("Unknown extension.");
             return;
-        },
+        }
     };
 
     match df {
@@ -68,9 +79,9 @@ fn register_dataframe(context: &mut SQLContext, dataframes: &mut Vec<(String, St
             context.register(name, frame);
             dataframes.push((name.to_owned(), source.to_owned()));
             println!("Added dataframe \"{}\" from file {}", name, source)
-        },
-        Err(e) => println!("{}", e)
-    }              
+        }
+        Err(e) => println!("{}", e),
+    }
 }
 
 fn main() -> io::Result<()> {
@@ -85,13 +96,13 @@ fn main() -> io::Result<()> {
         print!("=> ");
         stdout.flush().unwrap();
         input.clear();
-        
+
         if let Err(e) = io::stdin().lock().read_line(&mut input) {
             println!("Error reading from stdin: {}", e);
             continue;
         }
-        
-        let command : Vec<&str> = input.trim().split(" ").collect();
+
+        let command: Vec<&str> = input.trim().split(" ").collect();
         if command[0].is_empty() {
             continue;
         }
@@ -102,18 +113,15 @@ fn main() -> io::Result<()> {
             "\\?" | "help" | "?" | "\\h" => print_help(),
             "\\q" | "quit" | "exit" => {
                 println!("Bye");
-                return Ok(())
-            },
+                return Ok(());
+            }
             _ => execute_query(&context, input.trim()),
         }
-        
+
         println!();
     }
 }
 
-
 fn get_extension_from_filename(filename: &str) -> Option<&str> {
-    Path::new(filename)
-        .extension()
-        .and_then(OsStr::to_str)
+    Path::new(filename).extension().and_then(OsStr::to_str)
 }
