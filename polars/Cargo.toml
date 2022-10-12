@@ -10,6 +10,7 @@ repository = "https://github.com/pola-rs/polars"
 description = "DataFrame Library based on Apache Arrow"
 
 [features]
+sql = ["polars-sql"]
 rows = ["polars-core/rows"]
 simd = ["polars-core/simd"]
 avx512 = ["polars-core/avx512"]
@@ -280,6 +281,7 @@ polars-core = { version = "0.24.3", path = "./polars-core", features = ["docs", 
 polars-io = { version = "0.24.3", path = "./polars-io", features = ["private"], default-features = false, optional = true }
 polars-lazy = { version = "0.24.3", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
 polars-ops = { version = "0.24.3", path = "./polars-ops" }
+polars-sql = { version = "0.1.0", path = "./polars-sql", default-features = false, optional = true }
 polars-time = { version = "0.24.3", path = "./polars-time", default-features = false, optional = true }
 
 [dev-dependencies]

@@ -1,4 +1,4 @@
-use polars::prelude::*;
+use polars_core::prelude::*;
 
 #[cfg(feature = "binary")]
 mod binary {

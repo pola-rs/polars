@@ -9,18 +9,10 @@ binary = ["clap"]
 
 [dependencies]
 clap = { version = "3.2.22", features = ["derive"], optional = true }
-polars-arrow = { path = "../polars/polars-arrow", features = ["like"] }
-polars-lazy = { path = "../polars/polars-lazy", features = ["compile"] }
-polars-plan = { path = "../polars/polars-lazy/polars-plan", features = ["compile"] }
+polars-arrow = { path = "../polars-arrow", features = ["like"] }
+polars-core = { path = "../polars-core", features = [] }
+polars-lazy = { path = "../polars-lazy", features = ["compile", "strings", "cross_join"] }
+polars-plan = { path = "../polars-lazy/polars-plan", features = ["compile"] }
 serde = "1"
 serde_json = { version = "1" }
 sqlparser = { version = "0.19" }
-
-[dependencies.polars]
-path = "../polars"
-default-features = false
-features = [
-  "lazy",
-  "cross_join",
-  "strings",
-]
