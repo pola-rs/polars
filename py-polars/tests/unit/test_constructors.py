@@ -182,6 +182,7 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     df = pl.DataFrame({"a": np.arange(10, dtype=np.int64).reshape(2, -1)})
     assert df.dtypes == [pl.List(pl.Int64)]
     assert df.shape == (2, 1)
+    assert df.rows() == [([0, 1, 2, 3, 4],), ([5, 6, 7, 8, 9],)]
 
 
 def test_init_arrow() -> None:
@@ -400,6 +401,7 @@ def test_init_only_columns() -> None:
         assert df.schema["d"].inner == pl.UInt8  # type: ignore[union-attr]
 
         dfe = df.cleared()
+        assert len(dfe) == 0
         assert (df.schema == dfe.schema) and (dfe.shape == df.shape)
 
 
@@ -443,3 +445,4 @@ def test_upcast_primitive_and_strings() -> None:
 def test_u64_lit_5031() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3]}).with_column(pl.col("foo").cast(pl.UInt64))
     assert df.filter(pl.col("foo") < (1 << 64) - 20).shape == (3, 1)
+    assert df["foo"].to_list() == [1, 2, 3]

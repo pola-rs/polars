@@ -51,10 +51,8 @@ def test_apply_none() -> None:
 
 def test_apply_return_py_object() -> None:
     df = pl.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
-
     out = df.select([pl.all().map(lambda s: reduce(lambda a, b: a + b, s))])
-
-    assert out.shape == (1, 2)
+    assert out.rows() == [(6, 15)]
 
 
 @no_type_check

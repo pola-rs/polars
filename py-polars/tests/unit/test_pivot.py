@@ -19,33 +19,37 @@ def test_pivot_list() -> None:
             "3": [None, None, [3, 3]],
         }
     )
-
     out = df.pivot("b", index="a", columns="a", aggregate_fn="first", sort_columns=True)
-
     assert out.frame_equal(expected, null_equal=True)
 
 
 def test_pivot() -> None:
     df = pl.DataFrame(
         {
-            "a": [1, 2, 3, 4, 5],
+            "a": [1, 1, 2, 2, 3],
             "b": ["a", "a", "b", "b", "b"],
-            "c": [None, 1, None, 1, None],
+            "c": [2, 4, None, 8, 10],
         }
     )
-    gb = df.groupby("b").pivot("a", "c")
-    assert gb.first().shape == (2, 6)
-    assert gb.max().shape == (2, 6)
-    assert gb.mean().shape == (2, 6)
-    assert gb.count().shape == (2, 6)
-    assert gb.median().shape == (2, 6)
+    gb = df.groupby("b").pivot(
+        pivot_column="a",
+        values_column="c",
+    )
+    assert gb.count().rows() == [("a", 2, None, None), ("b", None, 2, 1)]
+    assert gb.first().rows() == [("a", 2, None, None), ("b", None, None, 10)]
+    assert gb.max().rows() == [("a", 4, None, None), ("b", None, 8, 10)]
+    assert gb.mean().rows() == [("a", 3.0, None, None), ("b", None, 8.0, 10.0)]
+    assert gb.median().rows() == [("a", 3.0, None, None), ("b", None, 8.0, 10.0)]
+    assert gb.min().rows() == [("a", 2, None, None), ("b", None, 8, 10)]
+    assert gb.sum().rows() == [("a", 6, None, None), ("b", None, 8, 10)]
 
     agg_fns: list[PivotAgg] = ["sum", "min", "max", "mean", "count", "median", "mean"]
     for agg_fn in agg_fns:
         out = df.pivot(
             values="c", index="b", columns="a", aggregate_fn=agg_fn, sort_columns=True
         )
-        assert out.shape == (2, 6)
+        assert out.shape == (2, 4)
+        assert out.rows() == getattr(gb, agg_fn)().rows()
 
     # example in polars-book
     df = pl.DataFrame(
@@ -57,6 +61,11 @@ def test_pivot() -> None:
     )
     out = df.groupby("foo").pivot(pivot_column="bar", values_column="N").first()
     assert out.shape == (3, 6)
+    assert out.rows() == [
+        ("A", 1, 2, None, None, None),
+        ("B", None, None, 2, 4, None),
+        ("C", None, None, None, None, 2),
+    ]
 
 
 def test_pivot_categorical_3968() -> None:

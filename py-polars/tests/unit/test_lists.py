@@ -132,14 +132,22 @@ def test_list_concat_rolling_window() -> None:
             "A": [1.0, 2.0, 9.0, 2.0, 13.0],
         }
     )
-
     out = df.with_columns(
         [pl.col("A").shift(i).alias(f"A_lag_{i}") for i in range(3)]
     ).select(
         [pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias("A_rolling")]
     )
     assert out.shape == (5, 1)
-    assert out.to_series().dtype == pl.List
+
+    s = out.to_series()
+    assert s.dtype == pl.List
+    assert s.to_list() == [
+        [None, None, 1.0],
+        [None, 1.0, 2.0],
+        [1.0, 2.0, 9.0],
+        [2.0, 9.0, 2.0],
+        [9.0, 2.0, 13.0],
+    ]
 
     # this test proper null behavior of concat list
     out = (
@@ -160,7 +168,15 @@ def test_list_concat_rolling_window() -> None:
         )
     )
     assert out.shape == (5, 5)
-    assert out["A_rolling"].dtype == pl.List
+
+    l64 = pl.List(pl.Float64)
+    assert out.schema == {
+        "A": l64,
+        "A_lag_0": l64,
+        "A_lag_1": l64,
+        "A_lag_2": l64,
+        "A_rolling": l64,
+    }
 
 
 def test_list_append() -> None:

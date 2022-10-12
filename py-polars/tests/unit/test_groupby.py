@@ -8,7 +8,7 @@ import polars as pl
 
 
 def test_groupby_sorted_empty_dataframe_3680() -> None:
-    assert (
+    df = (
         pl.DataFrame(
             [
                 pl.Series("key", [], dtype=pl.Categorical),
@@ -20,7 +20,9 @@ def test_groupby_sorted_empty_dataframe_3680() -> None:
         .groupby("key")
         .tail(1)
         .collect()
-    ).shape == (0, 2)
+    )
+    assert df.shape == (0, 2)
+    assert df.schema == {"key": pl.Categorical, "val": pl.Float64}
 
 
 def test_groupby_custom_agg_empty_list() -> None:

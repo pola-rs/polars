@@ -10,6 +10,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
+from polars.datatypes import dtype_to_py_type
 
 
 def test_df_from_numpy() -> None:
@@ -102,6 +103,22 @@ def test_from_pandas() -> None:
 
     out = pl.from_pandas(df)
     assert out.shape == (3, 9)
+    assert out.schema == {
+        "bools": pl.Boolean,
+        "bools_nulls": pl.Boolean,
+        "int": pl.Int64,
+        "int_nulls": pl.Float64,
+        "floats": pl.Float64,
+        "floats_nulls": pl.Float64,
+        "strings": pl.Utf8,
+        "strings_nulls": pl.Utf8,
+        "strings-cat": pl.Categorical,
+    }
+    assert out.rows() == [
+        (False, None, 1, 1.0, 1.0, 1.0, "foo", "foo", "foo"),
+        (True, True, 2, None, 2.0, None, "bar", None, "bar"),
+        (False, False, 3, 3.0, 3.0, 3.0, "ham", "ham", "ham"),
+    ]
 
 
 def test_from_pandas_nan_to_none() -> None:
@@ -154,7 +171,12 @@ def test_from_pandas_duplicated_columns() -> None:
 def test_arrow_list_roundtrip() -> None:
     # https://github.com/pola-rs/polars/issues/1064
     tbl = pa.table({"a": [1], "b": [[1, 2]]})
-    assert pl.from_arrow(tbl).to_arrow().shape == tbl.shape
+    arw = pl.from_arrow(tbl).to_arrow()
+
+    assert arw.shape == tbl.shape
+    assert arw.schema.names == tbl.schema.names
+    for c1, c2 in zip(arw.columns, tbl.columns):
+        assert c1.to_pylist() == c2.to_pylist()
 
 
 def test_arrow_dict_to_polars() -> None:
@@ -197,6 +219,12 @@ def test_from_pandas_nested_list() -> None:
     )
     pldf = pl.from_pandas(pddf)
     assert pldf.shape == (4, 2)
+    assert pldf.rows() == [
+        (1, ["x", "y"]),
+        (2, ["x", "y", "z"]),
+        (3, ["x"]),
+        (4, ["x", "y"]),
+    ]
 
 
 def test_from_pandas_categorical_none() -> None:
@@ -210,6 +238,8 @@ def test_from_dict() -> None:
     data = {"a": [1, 2], "b": [3, 4]}
     df = pl.from_dict(data)
     assert df.shape == (2, 2)
+    for s1, s2 in zip(list(df), [pl.Series("a", [1, 2]), pl.Series("b", [3, 4])]):
+        assert s1.series_equal(s2)
 
 
 def test_from_dict_struct() -> None:
@@ -224,9 +254,11 @@ def test_from_dict_struct() -> None:
 
 
 def test_from_dicts() -> None:
-    data = [{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]
-    df = pl.from_dicts(data)
+    data = [{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": None}]
+    df = pl.from_dicts(data)  # type: ignore[arg-type]
     assert df.shape == (3, 2)
+    assert df.rows() == [(1, 4), (2, 5), (3, None)]
+    assert df.schema == {"a": pl.Int64, "b": pl.Int64}
 
 
 def test_from_dicts_struct() -> None:
@@ -241,18 +273,21 @@ def test_from_records() -> None:
     data = [[1, 2, 3], [4, 5, 6]]
     df = pl.from_records(data, columns=["a", "b"])
     assert df.shape == (3, 2)
+    assert df.rows() == [(1, 4), (2, 5), (3, 6)]
 
 
 def test_from_numpy() -> None:
     data = np.array([[1, 2, 3], [4, 5, 6]])
     df = pl.from_numpy(data, columns=["a", "b"], orient="col")
     assert df.shape == (3, 2)
+    assert df.rows() == [(1, 4), (2, 5), (3, 6)]
 
 
 def test_from_arrow() -> None:
     data = pa.table({"a": [1, 2, 3], "b": [4, 5, 6]})
     df = pl.from_arrow(data)
     assert df.shape == (3, 2)
+    assert df.rows() == [(1, 4), (2, 5), (3, 6)]  # type: ignore[union-attr]
 
     # if not a PyArrow type, raise a ValueError
     with pytest.raises(ValueError):
@@ -263,6 +298,7 @@ def test_from_pandas_dataframe() -> None:
     pd_df = pd.DataFrame([[1, 2, 3], [4, 5, 6]], columns=["a", "b", "c"])
     df = pl.from_pandas(pd_df)
     assert df.shape == (2, 3)
+    assert df.rows() == [(1, 2, 3), (4, 5, 6)]
 
     # if not a pandas dataframe, raise a ValueError
     with pytest.raises(ValueError):
@@ -271,8 +307,9 @@ def test_from_pandas_dataframe() -> None:
 
 def test_from_pandas_series() -> None:
     pd_series = pd.Series([1, 2, 3], name="pd")
-    df = pl.from_pandas(pd_series)
-    assert df.shape == (3,)
+    s = pl.from_pandas(pd_series)
+    assert s.shape == (3,)
+    assert list(s) == [1, 2, 3]
 
 
 def test_from_optional_not_available() -> None:
@@ -304,8 +341,10 @@ def test_upcast_pyarrow_dicts() -> None:
         )
 
     tbl = pa.concat_tables(tbls, promote=True)
-    out = pl.from_arrow(tbl)
+    out = cast(pl.DataFrame, pl.from_arrow(tbl))
     assert out.shape == (128, 1)
+    assert out["col_name"][0] == "value_0"
+    assert out["col_name"][127] == "value_127"
 
 
 def test_no_rechunk() -> None:
@@ -337,7 +376,6 @@ def test_from_empty_pandas() -> None:
             "fruits": [],
         }
     )
-
     polars_df = pl.from_pandas(pandas_df)
     assert polars_df.columns == ["A", "fruits"]
     assert polars_df.dtypes == [pl.Float64, pl.Float64]
@@ -375,7 +413,11 @@ def test_from_empty_arrow() -> None:
 
 
 def test_from_null_column() -> None:
-    assert pl.from_pandas(pd.DataFrame(data=[pd.NA, pd.NA])).shape == (2, 1)
+    df = pl.from_pandas(pd.DataFrame(data=[pd.NA, pd.NA], columns=["n/a"]))
+
+    assert df.shape == (2, 1)
+    assert df.columns == ["n/a"]
+    assert dtype_to_py_type(df.dtypes[0]) == int
 
 
 def test_to_pandas_series() -> None:
