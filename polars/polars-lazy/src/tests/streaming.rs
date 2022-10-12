@@ -115,3 +115,18 @@ fn test_streaming_first_sum() -> PolarsResult<()> {
     assert!(out_streaming.frame_equal(&out_one_shot));
     Ok(())
 }
+
+#[test]
+fn test_streaming_slice() -> PolarsResult<()> {
+    let q = get_parquet_file();
+
+    let q = q
+        .groupby([col("sugars_g")])
+        .agg([((lit(1) - col("fats_g")) + col("calories")).sum()])
+        .slice(3, 3);
+
+    let q1 = q.clone().with_streaming(true);
+    let out_streaming = q1.collect()?;
+    assert_eq!(out_streaming.shape(), (3, 2));
+    Ok(())
+}

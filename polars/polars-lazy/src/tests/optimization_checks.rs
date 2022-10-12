@@ -510,3 +510,19 @@ fn test_with_column_prune() -> PolarsResult<()> {
     );
     Ok(())
 }
+
+#[test]
+fn test_slice_at_scan_groupby() -> PolarsResult<()> {
+    let ldf = scan_foods_csv();
+
+    // this tests if slice pushdown restarts aggregation nodes (it did not)
+    let q = ldf
+        .slice(0, 5)
+        .filter(col("calories").lt(lit(10)))
+        .groupby([col("calories")])
+        .agg([col("fats_g").first()])
+        .select([col("fats_g")]);
+
+    assert!(slice_at_scan(q));
+    Ok(())
+}

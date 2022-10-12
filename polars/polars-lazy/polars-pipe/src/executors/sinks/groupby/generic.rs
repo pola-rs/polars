@@ -15,6 +15,7 @@ use rayon::prelude::*;
 use super::aggregates::AggregateFn;
 use super::HASHMAP_INIT_SIZE;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
+use crate::executors::sinks::groupby::utils::compute_slices;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, PExecutionContext, Sink, SinkResult};
 
@@ -53,6 +54,7 @@ pub struct GenericGroupbySink {
     aggregation_series: Vec<Series>,
     keys_series: Vec<Series>,
     hashes: Vec<u64>,
+    slice: Option<(i64, usize)>,
 }
 
 impl GenericGroupbySink {
@@ -61,6 +63,7 @@ impl GenericGroupbySink {
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         agg_fns: Vec<AggregateFunction>,
         output_schema: SchemaRef,
+        slice: Option<(i64, usize)>,
     ) -> Self {
         let hb = RandomState::default();
         let partitions = _set_partition_size();
@@ -93,6 +96,7 @@ impl GenericGroupbySink {
             aggregation_series: vec![],
             keys_series: vec![],
             hashes: vec![],
+            slice,
         }
     }
 
@@ -315,6 +319,7 @@ impl Sink for GenericGroupbySink {
             self.aggregation_columns.clone(),
             self.agg_fns.iter().map(|func| func.split2()).collect(),
             self.output_schema.clone(),
+            self.slice,
         );
         new.hb = self.hb.clone();
         new.thread_no = thread_no;
@@ -324,72 +329,78 @@ impl Sink for GenericGroupbySink {
     fn finalize(&mut self) -> PolarsResult<DataFrame> {
         let mut aggregators = std::mem::take(&mut self.aggregators);
         let n_keys = self.number_of_keys();
+        let slices = compute_slices(&self.pre_agg_partitions, self.slice);
 
         POOL.install(|| {
-            let dfs = self
-                .pre_agg_partitions
-                .par_iter()
-                .zip(aggregators.par_iter_mut())
-                .zip(self.keys.par_iter())
-                .filter_map(|((agg_map, agg_fns), current_keys)| {
-                    if agg_map.is_empty() {
-                        return None;
-                    }
-                    let mut key_builders = self
-                        .output_schema
-                        .iter_dtypes()
-                        .take(n_keys)
-                        .map(|dtype| AnyValueBuffer::new(dtype, agg_map.len()))
-                        .collect::<Vec<_>>();
-                    let dtypes = agg_fns
-                        .iter()
-                        .take(self.number_of_aggs())
-                        .map(|func| func.dtype())
-                        .collect::<Vec<_>>();
-
-                    let mut buffers = dtypes
-                        .iter()
-                        .map(|dtype| AnyValueBuffer::new(dtype, agg_map.len()))
-                        .collect::<Vec<_>>();
-
-                    agg_map.into_iter().for_each(|(k, &offset)| {
-                        let keys_offset = k.1 as usize;
-                        let keys = unsafe {
-                            current_keys.get_unchecked_release(keys_offset..keys_offset + n_keys)
-                        };
-
-                        for (key, key_builder) in keys.iter().zip(key_builders.iter_mut()) {
-                            key_builder.add(key.as_borrowed());
+            let dfs =
+                self.pre_agg_partitions
+                    .par_iter()
+                    .zip(aggregators.par_iter_mut())
+                    .zip(self.keys.par_iter())
+                    .zip(slices.par_iter())
+                    .filter_map(|(((agg_map, agg_fns), current_keys), slice)| {
+                        let (offset, slice_len) = (*slice)?;
+                        if agg_map.is_empty() {
+                            return None;
                         }
+                        let mut key_builders = self
+                            .output_schema
+                            .iter_dtypes()
+                            .take(n_keys)
+                            .map(|dtype| AnyValueBuffer::new(dtype, agg_map.len()))
+                            .collect::<Vec<_>>();
+                        let dtypes = agg_fns
+                            .iter()
+                            .take(self.number_of_aggs())
+                            .map(|func| func.dtype())
+                            .collect::<Vec<_>>();
 
-                        for (i, buffer) in (offset as usize
-                            ..offset as usize + self.aggregation_columns.len())
-                            .zip(buffers.iter_mut())
-                        {
-                            unsafe {
-                                let agg_fn = agg_fns.get_unchecked_release_mut(i);
-                                let av = agg_fn.finalize();
-                                buffer.add(av);
+                        let mut buffers = dtypes
+                            .iter()
+                            .map(|dtype| AnyValueBuffer::new(dtype, slice_len))
+                            .collect::<Vec<_>>();
+
+                        agg_map.into_iter().skip(offset).take(slice_len).for_each(
+                            |(k, &offset)| {
+                                let keys_offset = k.1 as usize;
+                                let keys = unsafe {
+                                    current_keys
+                                        .get_unchecked_release(keys_offset..keys_offset + n_keys)
+                                };
+
+                                for (key, key_builder) in keys.iter().zip(key_builders.iter_mut()) {
+                                    key_builder.add(key.as_borrowed());
+                                }
+
+                                for (i, buffer) in (offset as usize
+                                    ..offset as usize + self.aggregation_columns.len())
+                                    .zip(buffers.iter_mut())
+                                {
+                                    unsafe {
+                                        let agg_fn = agg_fns.get_unchecked_release_mut(i);
+                                        let av = agg_fn.finalize();
+                                        buffer.add(av);
+                                    }
+                                }
+                            },
+                        );
+
+                        let mut cols = Vec::with_capacity(n_keys + self.number_of_aggs());
+                        for key_builder in key_builders {
+                            cols.push(key_builder.into_series());
+                        }
+                        cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
+                        for (s, (name, dtype)) in cols.iter_mut().zip(self.output_schema.iter()) {
+                            if s.name() != name {
+                                s.rename(name);
+                            }
+                            if s.dtype() != dtype {
+                                *s = s.cast(dtype).unwrap()
                             }
                         }
-                    });
-
-                    let mut cols = Vec::with_capacity(n_keys + self.number_of_aggs());
-                    for key_builder in key_builders {
-                        cols.push(key_builder.into_series());
-                    }
-                    cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
-                    for (s, (name, dtype)) in cols.iter_mut().zip(self.output_schema.iter()) {
-                        if s.name() != name {
-                            s.rename(name);
-                        }
-                        if s.dtype() != dtype {
-                            *s = s.cast(dtype).unwrap()
-                        }
-                    }
-                    Some(DataFrame::new_no_checks(cols))
-                })
-                .collect::<Vec<_>>();
+                        Some(DataFrame::new_no_checks(cols))
+                    })
+                    .collect::<Vec<_>>();
             Ok(accumulate_dataframes_vertical_unchecked(dfs))
         })
     }
