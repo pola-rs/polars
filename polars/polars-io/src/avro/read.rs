@@ -123,7 +123,6 @@ where
             rechunk,
             self.n_rows,
             None,
-            None,
             &projected_schema,
             None,
         )

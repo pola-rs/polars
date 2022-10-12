@@ -4,19 +4,17 @@ pub struct IpcExec {
     pub(crate) path: PathBuf,
     pub(crate) schema: SchemaRef,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
-    pub(crate) aggregate: Vec<ScanAggregation>,
     pub(crate) options: IpcScanOptionsInner,
 }
 
 impl IpcExec {
     fn read(&mut self, verbose: bool) -> PolarsResult<DataFrame> {
-        let (file, projection, n_rows, aggregate, predicate) = prepare_scan_args(
+        let (file, projection, n_rows, predicate) = prepare_scan_args(
             &self.path,
             &self.predicate,
             &mut self.options.with_columns,
             &mut self.schema,
             self.options.n_rows,
-            &self.aggregate,
         );
         IpcReader::new(file)
             .with_n_rows(n_rows)
@@ -24,7 +22,7 @@ impl IpcExec {
             .set_rechunk(self.options.rechunk)
             .with_projection(projection)
             .memory_mapped(self.options.memmap)
-            .finish_with_scan_ops(predicate, aggregate, verbose)
+            .finish_with_scan_ops(predicate, verbose)
     }
 }
 

@@ -123,14 +123,13 @@ impl<R: MmapBytesReader> IpcReader<R> {
     pub fn finish_with_scan_ops(
         mut self,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
-        aggregate: Option<&[ScanAggregation]>,
         verbose: bool,
     ) -> PolarsResult<DataFrame> {
         if self.memmap && self.reader.to_file().is_some() {
             if verbose {
                 eprintln!("memory map ipc file")
             }
-            match self.finish_memmapped(predicate.clone(), aggregate) {
+            match self.finish_memmapped(predicate.clone()) {
                 Ok(df) => return Ok(df),
                 Err(err) => match err {
                     PolarsError::ArrowError(e) => match e.as_ref() {
@@ -156,15 +155,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
 
         let reader = read::FileReader::new(self.reader, metadata, self.projection, self.n_rows);
 
-        finish_reader(
-            reader,
-            rechunk,
-            None,
-            predicate,
-            aggregate,
-            &schema,
-            self.row_count,
-        )
+        finish_reader(reader, rechunk, None, predicate, &schema, self.row_count)
     }
 }
 
@@ -197,7 +188,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
 
     fn finish(mut self) -> PolarsResult<DataFrame> {
         if self.memmap && self.reader.to_file().is_some() {
-            match self.finish_memmapped(None, None) {
+            match self.finish_memmapped(None) {
                 Ok(df) => return Ok(df),
                 Err(err) => match err {
                     PolarsError::ArrowError(e) => match e.as_ref() {
@@ -229,15 +220,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
 
         let ipc_reader =
             read::FileReader::new(self.reader, metadata.clone(), self.projection, self.n_rows);
-        finish_reader(
-            ipc_reader,
-            rechunk,
-            None,
-            None,
-            None,
-            &schema,
-            self.row_count,
-        )
+        finish_reader(ipc_reader, rechunk, None, None, &schema, self.row_count)
     }
 }
 
@@ -268,7 +251,6 @@ pub struct IpcWriter<W> {
 use polars_core::frame::ArrowChunk;
 pub use write::Compression as IpcCompression;
 
-use crate::aggregations::ScanAggregation;
 use crate::mmap::MmapBytesReader;
 use crate::RowCount;
 

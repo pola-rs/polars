@@ -166,17 +166,12 @@ pub fn to_alp(
             function,
             schema,
             predicate,
-            aggregate,
             options,
         } => ALogicalPlan::AnonymousScan {
             function,
             schema,
             output_schema: None,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
-            aggregate: aggregate
-                .into_iter()
-                .map(|expr| to_aexpr(expr, expr_arena))
-                .collect(),
             options,
         },
         #[cfg(feature = "python")]
@@ -218,34 +213,24 @@ pub fn to_alp(
             schema,
             options,
             predicate,
-            aggregate,
         } => ALogicalPlan::CsvScan {
             path,
             schema,
             output_schema: None,
             options,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
-            aggregate: aggregate
-                .into_iter()
-                .map(|expr| to_aexpr(expr, expr_arena))
-                .collect(),
         },
         #[cfg(feature = "ipc")]
         LogicalPlan::IpcScan {
             path,
             schema,
             predicate,
-            aggregate,
             options,
         } => ALogicalPlan::IpcScan {
             path,
             schema,
             output_schema: None,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
-            aggregate: aggregate
-                .into_iter()
-                .map(|expr| to_aexpr(expr, expr_arena))
-                .collect(),
             options,
         },
         #[cfg(feature = "parquet")]
@@ -253,17 +238,12 @@ pub fn to_alp(
             path,
             schema,
             predicate,
-            aggregate,
             options,
         } => ALogicalPlan::ParquetScan {
             path,
             schema,
             output_schema: None,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
-            aggregate: aggregate
-                .into_iter()
-                .map(|expr| to_aexpr(expr, expr_arena))
-                .collect(),
             options,
         },
         LogicalPlan::DataFrameScan {
@@ -673,14 +653,12 @@ pub fn node_to_lp(
             function,
             schema,
             output_schema: _,
-            aggregate,
             predicate,
             options,
         } => LogicalPlan::AnonymousScan {
             function,
             schema,
             predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-            aggregate: nodes_to_exprs(&aggregate, expr_arena),
             options,
         },
         #[cfg(feature = "python")]
@@ -715,13 +693,11 @@ pub fn node_to_lp(
             output_schema: _,
             options,
             predicate,
-            aggregate,
         } => LogicalPlan::CsvScan {
             path,
             schema,
             options,
             predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-            aggregate: nodes_to_exprs(&aggregate, expr_arena),
         },
         #[cfg(feature = "ipc")]
         ALogicalPlan::IpcScan {
@@ -729,13 +705,11 @@ pub fn node_to_lp(
             schema,
             output_schema: _,
             predicate,
-            aggregate,
             options,
         } => LogicalPlan::IpcScan {
             path,
             schema,
             predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-            aggregate: nodes_to_exprs(&aggregate, expr_arena),
             options,
         },
         #[cfg(feature = "parquet")]
@@ -744,13 +718,11 @@ pub fn node_to_lp(
             schema,
             output_schema: _,
             predicate,
-            aggregate,
             options,
         } => LogicalPlan::ParquetScan {
             path,
             schema,
             predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-            aggregate: nodes_to_exprs(&aggregate, expr_arena),
             options,
         },
         ALogicalPlan::DataFrameScan {

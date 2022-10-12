@@ -25,7 +25,6 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         output_schema: Option<SchemaRef>,
         predicate: Option<Node>,
-        aggregate: Vec<Node>,
         options: AnonymousScanOptions,
     },
     #[cfg(feature = "python")]
@@ -55,7 +54,6 @@ pub enum ALogicalPlan {
         output_schema: Option<SchemaRef>,
         options: CsvParserOptions,
         predicate: Option<Node>,
-        aggregate: Vec<Node>,
     },
     #[cfg(feature = "ipc")]
     IpcScan {
@@ -65,7 +63,6 @@ pub enum ALogicalPlan {
         output_schema: Option<SchemaRef>,
         options: IpcScanOptionsInner,
         predicate: Option<Node>,
-        aggregate: Vec<Node>,
     },
     #[cfg(feature = "parquet")]
     ParquetScan {
@@ -75,7 +72,6 @@ pub enum ALogicalPlan {
         // schema of the projected file
         output_schema: Option<SchemaRef>,
         predicate: Option<Node>,
-        aggregate: Vec<Node>,
         options: ParquetOptions,
     },
     DataFrameScan {
@@ -362,7 +358,6 @@ impl ALogicalPlan {
                     schema: schema.clone(),
                     output_schema: output_schema.clone(),
                     predicate: new_predicate,
-                    aggregate: exprs,
                     options: options.clone(),
                 }
             }
@@ -386,7 +381,6 @@ impl ALogicalPlan {
                     schema: schema.clone(),
                     output_schema: output_schema.clone(),
                     predicate: new_predicate,
-                    aggregate: exprs,
                     options: options.clone(),
                 }
             }
@@ -409,7 +403,6 @@ impl ALogicalPlan {
                     output_schema: output_schema.clone(),
                     options: options.clone(),
                     predicate: new_predicate,
-                    aggregate: exprs,
                 }
             }
             DataFrameScan {
@@ -437,7 +430,6 @@ impl ALogicalPlan {
                 schema,
                 output_schema,
                 predicate,
-                aggregate: _,
                 options,
             } => {
                 let mut new_predicate = None;
@@ -448,7 +440,6 @@ impl ALogicalPlan {
                 AnonymousScan {
                     function: function.clone(),
                     schema: schema.clone(),
-                    aggregate: exprs,
                     output_schema: output_schema.clone(),
                     predicate: new_predicate,
                     options: options.clone(),
@@ -493,34 +484,19 @@ impl ALogicalPlan {
             }
             HStack { exprs, .. } => container.extend_from_slice(exprs),
             #[cfg(feature = "parquet")]
-            ParquetScan {
-                predicate,
-                aggregate,
-                ..
-            } => {
-                container.extend_from_slice(aggregate);
+            ParquetScan { predicate, .. } => {
                 if let Some(node) = predicate {
                     container.push(*node)
                 }
             }
             #[cfg(feature = "ipc")]
-            IpcScan {
-                predicate,
-                aggregate,
-                ..
-            } => {
-                container.extend_from_slice(aggregate);
+            IpcScan { predicate, .. } => {
                 if let Some(node) = predicate {
                     container.push(*node)
                 }
             }
             #[cfg(feature = "csv-file")]
-            CsvScan {
-                predicate,
-                aggregate,
-                ..
-            } => {
-                container.extend_from_slice(aggregate);
+            CsvScan { predicate, .. } => {
                 if let Some(node) = predicate {
                     container.push(*node)
                 }
@@ -532,12 +508,7 @@ impl ALogicalPlan {
             }
             #[cfg(feature = "python")]
             PythonScan { .. } => {}
-            AnonymousScan {
-                predicate,
-                aggregate,
-                ..
-            } => {
-                container.extend_from_slice(aggregate);
+            AnonymousScan { predicate, .. } => {
                 if let Some(node) = predicate {
                     container.push(*node)
                 }

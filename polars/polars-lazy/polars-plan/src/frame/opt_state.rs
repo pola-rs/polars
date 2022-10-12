@@ -6,7 +6,6 @@ pub struct OptState {
     pub type_coercion: bool,
     pub simplify_expr: bool,
     pub file_caching: bool,
-    pub aggregate_pushdown: bool,
     pub slice_pushdown: bool,
     #[cfg(feature = "cse")]
     pub common_subplan_elimination: bool,
@@ -23,7 +22,6 @@ impl Default for OptState {
             slice_pushdown: true,
             // will be toggled by a scan operation such as csv scan or parquet scan
             file_caching: false,
-            aggregate_pushdown: false,
             #[cfg(feature = "cse")]
             common_subplan_elimination: true,
             streaming: false,

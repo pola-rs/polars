@@ -381,7 +381,6 @@ impl ProjectionPushDown {
                 predicate,
                 mut options,
                 output_schema,
-                aggregate,
             } => {
                 if function.allows_projection_pushdown() {
                     options.with_columns = get_scan_columns(&mut acc_projections, expr_arena);
@@ -404,7 +403,6 @@ impl ProjectionPushDown {
                         output_schema,
                         options,
                         predicate,
-                        aggregate,
                     };
                     Ok(lp)
                 } else {
@@ -414,7 +412,6 @@ impl ProjectionPushDown {
                         predicate,
                         options,
                         output_schema,
-                        aggregate,
                     };
                     Ok(lp)
                 }
@@ -450,7 +447,6 @@ impl ProjectionPushDown {
                 path,
                 schema,
                 predicate,
-                aggregate,
                 mut options,
                 ..
             } => {
@@ -472,7 +468,6 @@ impl ProjectionPushDown {
                     schema,
                     output_schema,
                     predicate,
-                    aggregate,
                     options,
                 };
                 Ok(lp)
@@ -483,7 +478,6 @@ impl ProjectionPushDown {
                 path,
                 schema,
                 predicate,
-                aggregate,
                 mut options,
                 ..
             } => {
@@ -505,7 +499,6 @@ impl ProjectionPushDown {
                     schema,
                     output_schema,
                     predicate,
-                    aggregate,
                     options,
                 };
                 Ok(lp)
@@ -532,7 +525,6 @@ impl ProjectionPushDown {
                 schema,
                 mut options,
                 predicate,
-                aggregate,
                 ..
             } => {
                 options.with_columns = get_scan_columns(&mut acc_projections, expr_arena);
@@ -554,7 +546,6 @@ impl ProjectionPushDown {
                     output_schema,
                     options,
                     predicate,
-                    aggregate,
                 };
                 Ok(lp)
             }

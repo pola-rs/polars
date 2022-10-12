@@ -4,7 +4,6 @@ pub struct ParquetExec {
     path: PathBuf,
     schema: SchemaRef,
     predicate: Option<Arc<dyn PhysicalExpr>>,
-    aggregate: Vec<ScanAggregation>,
     options: ParquetOptions,
 }
 
@@ -13,26 +12,23 @@ impl ParquetExec {
         path: PathBuf,
         schema: SchemaRef,
         predicate: Option<Arc<dyn PhysicalExpr>>,
-        aggregate: Vec<ScanAggregation>,
         options: ParquetOptions,
     ) -> Self {
         ParquetExec {
             path,
             schema,
             predicate,
-            aggregate,
             options,
         }
     }
 
     fn read(&mut self) -> PolarsResult<DataFrame> {
-        let (file, projection, n_rows, aggregate, predicate) = prepare_scan_args(
+        let (file, projection, n_rows, predicate) = prepare_scan_args(
             &self.path,
             &self.predicate,
             &mut self.options.with_columns,
             &mut self.schema,
             self.options.n_rows,
-            &self.aggregate,
         );
 
         ParquetReader::new(file)
@@ -41,11 +37,7 @@ impl ParquetExec {
             .with_row_count(std::mem::take(&mut self.options.row_count))
             .set_rechunk(self.options.rechunk)
             .set_low_memory(self.options.low_memory)
-            ._finish_with_scan_ops(
-                predicate,
-                aggregate,
-                projection.as_ref().map(|v| v.as_ref()),
-            )
+            ._finish_with_scan_ops(predicate, projection.as_ref().map(|v| v.as_ref()))
     }
 }
 

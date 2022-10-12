@@ -185,7 +185,6 @@ where
             rechunk,
             self.n_rows,
             None,
-            None,
             &schema,
             self.row_count,
         )

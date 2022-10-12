@@ -15,7 +15,6 @@ pub(crate) use csv::CsvExec;
 pub(crate) use ipc::IpcExec;
 #[cfg(feature = "parquet")]
 pub(crate) use parquet::ParquetExec;
-use polars_io::aggregations::ScanAggregation;
 use polars_io::csv::CsvEncoding;
 use polars_io::prelude::*;
 use polars_plan::global::_set_n_rows_for_scan;
@@ -35,25 +34,16 @@ type Projection = Option<Vec<usize>>;
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 type StopNRows = Option<usize>;
 #[cfg(any(feature = "ipc", feature = "parquet"))]
-type Aggregation<'a> = Option<&'a [ScanAggregation]>;
-#[cfg(any(feature = "ipc", feature = "parquet"))]
 type Predicate = Option<Arc<dyn PhysicalIoExpr>>;
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
-fn prepare_scan_args<'a>(
+fn prepare_scan_args(
     path: &std::path::Path,
     predicate: &Option<Arc<dyn PhysicalExpr>>,
     with_columns: &mut Option<Arc<Vec<String>>>,
     schema: &mut SchemaRef,
     n_rows: Option<usize>,
-    aggregate: &'a [ScanAggregation],
-) -> (
-    std::fs::File,
-    Projection,
-    StopNRows,
-    Aggregation<'a>,
-    Predicate,
-) {
+) -> (std::fs::File, Projection, StopNRows, Predicate) {
     let file = std::fs::File::open(path).unwrap();
 
     let with_columns = mem::take(with_columns);
@@ -67,16 +57,11 @@ fn prepare_scan_args<'a>(
     });
 
     let n_rows = _set_n_rows_for_scan(n_rows);
-    let aggregate = if aggregate.is_empty() {
-        None
-    } else {
-        Some(aggregate)
-    };
     let predicate = predicate
         .clone()
         .map(|expr| Arc::new(PhysicalIoHelper { expr }) as Arc<dyn PhysicalIoExpr>);
 
-    (file, projection, n_rows, aggregate, predicate)
+    (file, projection, n_rows, predicate)
 }
 
 /// Producer of an in memory DataFrame

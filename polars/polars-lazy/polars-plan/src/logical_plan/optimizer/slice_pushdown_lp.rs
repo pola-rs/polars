@@ -101,7 +101,6 @@ impl SlicePushDown {
                 output_schema,
                 predicate,
                 options,
-                aggregate,
             },
                 // TODO! we currently skip slice pushdown if there is a predicate.
                 // we can modify the readers to only limit after predicates have been applied
@@ -114,7 +113,6 @@ impl SlicePushDown {
                     output_schema,
                     predicate,
                     options,
-                    aggregate,
                 };
 
                 Ok(lp)
@@ -126,7 +124,6 @@ impl SlicePushDown {
                 schema,
                 output_schema,
                 predicate,
-                aggregate,
                 options,
 
             },
@@ -140,7 +137,6 @@ impl SlicePushDown {
                     schema,
                     output_schema,
                     predicate,
-                    aggregate,
                     options
                 };
 
@@ -151,7 +147,6 @@ impl SlicePushDown {
             schema,
                 output_schema,
                 predicate,
-                aggregate,
                 options
             }, Some(state)) if state.offset == 0 && predicate.is_none() => {
                 let mut options = options;
@@ -161,7 +156,6 @@ impl SlicePushDown {
                     schema,
                     output_schema,
                     predicate,
-                    aggregate,
                     options
                 };
 
@@ -176,7 +170,6 @@ impl SlicePushDown {
                 output_schema,
                 options,
                 predicate,
-                aggregate,
             }, Some(state)) if state.offset >= 0 && predicate.is_none() => {
                 let mut options = options;
                 options.skip_rows += state.offset as usize;
@@ -188,7 +181,6 @@ impl SlicePushDown {
                     output_schema,
                     options,
                     predicate,
-                    aggregate
                 };
                 Ok(lp)
             }

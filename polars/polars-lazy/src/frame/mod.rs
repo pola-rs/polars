@@ -120,7 +120,6 @@ impl LazyFrame {
             slice_pushdown: false,
             // will be toggled by a scan operation such as csv scan or parquet scan
             file_caching: false,
-            aggregate_pushdown: false,
             #[cfg(feature = "cse")]
             common_subplan_elimination: false,
             streaming: false,
@@ -156,12 +155,6 @@ impl LazyFrame {
     #[cfg_attr(docsrs, doc(cfg(feature = "cse")))]
     pub fn with_common_subplan_elimination(mut self, toggle: bool) -> Self {
         self.opt_state.common_subplan_elimination = toggle;
-        self
-    }
-
-    /// Toggle aggregate pushdown.
-    pub fn with_aggregate_pushdown(mut self, toggle: bool) -> Self {
-        self.opt_state.aggregate_pushdown = toggle;
         self
     }
 
