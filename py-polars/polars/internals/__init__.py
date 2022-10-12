@@ -37,6 +37,7 @@ from polars.internals.lazy_functions import (
     format,
     lit,
     select,
+    struct,
 )
 from polars.internals.lazyframe import LazyFrame, wrap_ldf
 from polars.internals.series import Series, wrap_s
@@ -64,6 +65,7 @@ __all__ = [
     "read_parquet_schema",
     "select",
     "selection_to_pyexpr_list",
+    "struct",
     "when",
     "wrap_df",
     "wrap_expr",
