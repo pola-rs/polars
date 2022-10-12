@@ -890,6 +890,14 @@ impl PyExpr {
         self.inner.clone().dt().cast_time_zone(tz).into()
     }
 
+    pub fn dt_truncate(&self, every: &str, offset: &str) -> PyExpr {
+        self.inner.clone().dt().truncate(every, offset).into()
+    }
+
+    pub fn dt_round(&self, every: &str, offset: &str) -> PyExpr {
+        self.inner.clone().dt().round(every, offset).into()
+    }
+
     pub fn rolling_apply(
         &self,
         py: Python,
@@ -1399,48 +1407,6 @@ impl PyExpr {
 
     fn cat_set_ordering(&self, ordering: Wrap<CategoricalOrdering>) -> Self {
         self.inner.clone().cat().set_ordering(ordering.0).into()
-    }
-
-    fn date_truncate(&self, every: &str, offset: &str) -> Self {
-        let every = Duration::parse(every);
-        let offset = Duration::parse(offset);
-        self.inner
-            .clone()
-            .apply(
-                move |s| match s.dtype() {
-                    DataType::Datetime(_, _) => {
-                        Ok(s.datetime().unwrap().truncate(every, offset).into_series())
-                    }
-                    DataType::Date => Ok(s.date().unwrap().truncate(every, offset).into_series()),
-                    dt => Err(PolarsError::ComputeError(
-                        format!("expected date/datetime got {:?}", dt).into(),
-                    )),
-                },
-                GetOutput::same_type(),
-            )
-            .with_fmt("dt.truncate")
-            .into()
-    }
-
-    fn date_round(&self, every: &str, offset: &str) -> Self {
-        let every = Duration::parse(every);
-        let offset = Duration::parse(offset);
-        self.inner
-            .clone()
-            .apply(
-                move |s| match s.dtype() {
-                    DataType::Datetime(_, _) => {
-                        Ok(s.datetime().unwrap().round(every, offset).into_series())
-                    }
-                    DataType::Date => Ok(s.date().unwrap().round(every, offset).into_series()),
-                    dt => Err(PolarsError::ComputeError(
-                        format!("expected date/datetime got {:?}", dt).into(),
-                    )),
-                },
-                GetOutput::same_type(),
-            )
-            .with_fmt("dt.round")
-            .into()
     }
 
     pub fn reshape(&self, dims: Vec<i64>) -> Self {

@@ -180,6 +180,46 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TimeStamp(tu)))
     }
 
+    pub fn truncate(self, every: &str, offset: &str) -> Expr {
+        let every = Duration::parse(every);
+        let offset = Duration::parse(offset);
+        self.0
+            .clone()
+            .apply(
+                move |s| match s.dtype() {
+                    DataType::Datetime(_, _) => {
+                        Ok(s.datetime().unwrap().truncate(every, offset).into_series())
+                    }
+                    DataType::Date => Ok(s.date().unwrap().truncate(every, offset).into_series()),
+                    dt => Err(PolarsError::ComputeError(
+                        format!("expected date/datetime got {:?}", dt).into(),
+                    )),
+                },
+                GetOutput::same_type(),
+            )
+            .into()
+    }
+
+    pub fn round(self, every: &str, offset: &str) -> Expr {
+        let every = Duration::parse(every);
+        let offset = Duration::parse(offset);
+        self.0
+            .clone()
+            .apply(
+                move |s| match s.dtype() {
+                    DataType::Datetime(_, _) => {
+                        Ok(s.datetime().unwrap().round(every, offset).into_series())
+                    }
+                    DataType::Date => Ok(s.date().unwrap().round(every, offset).into_series()),
+                    dt => Err(PolarsError::ComputeError(
+                        format!("expected date/datetime got {:?}", dt).into(),
+                    )),
+                },
+                GetOutput::same_type(),
+            )
+            .into()
+    }
+
     /// Offset this `Date/Datetime` by a given offset [`Duration`].
     /// This will take leap years/ months into account.
     #[cfg(feature = "date_offset")]

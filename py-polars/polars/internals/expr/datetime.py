@@ -130,7 +130,7 @@ class ExprDateTimeNameSpace:
             every = _timedelta_to_pl_duration(every)
         if isinstance(offset, timedelta):
             offset = _timedelta_to_pl_duration(offset)
-        return pli.wrap_expr(self._pyexpr.date_truncate(every, offset))
+        return pli.wrap_expr(self._pyexpr.dt_truncate(every, offset))
 
     def round(
         self,
@@ -248,7 +248,7 @@ class ExprDateTimeNameSpace:
             every = _timedelta_to_pl_duration(every)
         if isinstance(offset, timedelta):
             offset = _timedelta_to_pl_duration(offset)
-        return pli.wrap_expr(self._pyexpr.date_round(every, offset))
+        return pli.wrap_expr(self._pyexpr.dt_round(every, offset))
 
     def strftime(self, fmt: str) -> pli.Expr:
         """
