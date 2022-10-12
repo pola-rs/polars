@@ -222,7 +222,7 @@ class Datetime(DataType):
     tu: TimeUnit | None = None
     tz: str | None = None
 
-    def __init__(self, time_unit: TimeUnit = "us", time_zone: str | None = None):
+    def __init__(self, time_unit: TimeUnit | None = "us", time_zone: str | None = None):
         """
         Calendar date and time type.
 
