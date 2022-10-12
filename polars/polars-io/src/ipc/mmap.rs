@@ -71,7 +71,6 @@ impl<R: MmapBytesReader> IpcReader<R> {
     pub(super) fn finish_memmapped(
         &mut self,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
-        aggregate: Option<&[ScanAggregation]>,
     ) -> PolarsResult<DataFrame> {
         match self.reader.to_file() {
             Some(file) => {
@@ -98,7 +97,6 @@ impl<R: MmapBytesReader> IpcReader<R> {
                     false,
                     self.n_rows,
                     predicate,
-                    aggregate,
                     &schema,
                     self.row_count.clone(),
                 )

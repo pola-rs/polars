@@ -43,11 +43,8 @@ where
             schema,
             options,
             predicate,
-            aggregate,
             ..
         } => {
-            // todo! remove aggregate pushdown
-            assert!(aggregate.is_empty());
             // add predicate to operators
             if let (true, Some(predicate)) = (push_predicate, predicate) {
                 let predicate = to_physical(predicate, expr_arena)?;
@@ -64,11 +61,8 @@ where
             schema,
             options,
             predicate,
-            aggregate,
             ..
         } => {
-            // todo! remove aggregate pushdown
-            assert!(aggregate.is_empty());
             // add predicate to operators
             if let (true, Some(predicate)) = (push_predicate, predicate) {
                 let predicate = to_physical(predicate, expr_arena)?;

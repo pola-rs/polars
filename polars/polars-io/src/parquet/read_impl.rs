@@ -12,7 +12,6 @@ use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
 use rayon::prelude::*;
 
-use crate::aggregations::{apply_aggregations, ScanAggregation};
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::mmap::mmap_columns;
 use crate::parquet::predicates::read_this_row_group;
@@ -84,7 +83,6 @@ fn rg_to_dfs(
     file_metadata: &FileMetaData,
     schema: &ArrowSchema,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    aggregate: Option<&[ScanAggregation]>,
     row_count: Option<RowCount>,
     parallel: ParallelStrategy,
     projection: &[usize],
@@ -140,7 +138,6 @@ fn rg_to_dfs(
         }
 
         apply_predicate(&mut df, predicate.as_deref(), true)?;
-        apply_aggregations(&mut df, aggregate)?;
 
         *previous_row_count += current_row_count;
         dfs.push(df);
@@ -163,7 +160,6 @@ fn rg_to_dfs_par(
     file_metadata: &FileMetaData,
     schema: &ArrowSchema,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    aggregate: Option<&[ScanAggregation]>,
     row_count: Option<RowCount>,
     projection: &[usize],
 ) -> PolarsResult<Vec<DataFrame>> {
@@ -221,7 +217,6 @@ fn rg_to_dfs_par(
             }
 
             apply_predicate(&mut df, predicate.as_deref(), false)?;
-            apply_aggregations(&mut df, aggregate)?;
 
             Ok(Some(df))
         })
@@ -237,7 +232,6 @@ pub fn read_parquet<R: MmapBytesReader>(
     schema: &ArrowSchema,
     metadata: Option<FileMetaData>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    aggregate: Option<&[ScanAggregation]>,
     mut parallel: ParallelStrategy,
     row_count: Option<RowCount>,
 ) -> PolarsResult<DataFrame> {
@@ -274,7 +268,6 @@ pub fn read_parquet<R: MmapBytesReader>(
             &file_metadata,
             schema,
             predicate,
-            aggregate,
             row_count,
             parallel,
             &projection,
@@ -288,7 +281,6 @@ pub fn read_parquet<R: MmapBytesReader>(
             &file_metadata,
             schema,
             predicate,
-            aggregate,
             row_count,
             &projection,
         )?,
@@ -304,9 +296,7 @@ pub fn read_parquet<R: MmapBytesReader>(
         };
         Ok(arrow_schema_to_empty_df(&schema))
     } else {
-        let mut df = accumulate_dataframes_vertical(dfs.into_iter())?;
-        apply_aggregations(&mut df, aggregate)?;
-        Ok(df)
+        accumulate_dataframes_vertical(dfs.into_iter())
     }
 }
 
@@ -386,7 +376,6 @@ impl BatchedParquetReader {
                         &self.metadata,
                         &self.schema,
                         None,
-                        None,
                         self.row_count.clone(),
                         ParallelStrategy::Columns,
                         &self.projection,
@@ -403,7 +392,6 @@ impl BatchedParquetReader {
                         &mut self.limit,
                         &self.metadata,
                         &self.schema,
-                        None,
                         None,
                         self.row_count.clone(),
                         &self.projection,

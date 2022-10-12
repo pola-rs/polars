@@ -279,7 +279,6 @@ impl FileCacher {
                     schema,
                     output_schema,
                     predicate,
-                    aggregate,
                     mut options,
                 } => {
                     let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
@@ -305,7 +304,6 @@ impl FileCacher {
                         schema,
                         output_schema,
                         predicate,
-                        aggregate,
                         options: options.clone(),
                     };
                     let lp = self.finish_rewrite(
@@ -324,7 +322,6 @@ impl FileCacher {
                     schema,
                     output_schema,
                     predicate,
-                    aggregate,
                     mut options,
                 } => {
                     let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
@@ -350,7 +347,6 @@ impl FileCacher {
                         schema,
                         output_schema,
                         predicate,
-                        aggregate,
                         options: options.clone(),
                     };
                     let lp = self.finish_rewrite(
@@ -369,7 +365,6 @@ impl FileCacher {
                     schema,
                     output_schema,
                     predicate,
-                    aggregate,
                     mut options,
                 } => {
                     let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
@@ -395,7 +390,6 @@ impl FileCacher {
                         schema,
                         output_schema,
                         predicate,
-                        aggregate,
                         options: options.clone(),
                     };
                     let lp = self.finish_rewrite(
