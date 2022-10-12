@@ -29,7 +29,7 @@ pub(super) fn position_aggregates(
             for ((row_idx, col_idx), val) in row_locations
                 .iter()
                 .zip(col_locations)
-                .zip(value_agg_phys.iter())
+                .zip(value_agg_phys.phys_iter())
             {
                 // Safety:
                 // in bounds
@@ -162,7 +162,7 @@ pub(super) fn compute_col_idx(
             let mut col_to_idx = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
             let mut idx = 0 as IdxSize;
             column_agg_physical
-                .iter()
+                .phys_iter()
                 .map(|v| {
                     let idx = *col_to_idx.entry(v).or_insert_with(|| {
                         let old_idx = idx;
@@ -248,7 +248,7 @@ pub(super) fn compute_row_idx(
                     PlIndexMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
                 let mut idx = 0 as IdxSize;
                 let row_locations = index_agg_physical
-                    .iter()
+                    .phys_iter()
                     .map(|v| {
                         let idx = *row_to_idx.entry(v).or_insert_with(|| {
                             let old_idx = idx;
@@ -282,7 +282,7 @@ pub(super) fn compute_row_idx(
             .collect::<Vec<_>>();
         let mut iters = index_agg_physical
             .iter()
-            .map(|s| s.iter())
+            .map(|s| s.phys_iter())
             .collect::<Vec<_>>();
         let mut row_to_idx =
             PlIndexMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
