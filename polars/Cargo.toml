@@ -281,8 +281,8 @@ polars-core = { version = "0.24.3", path = "./polars-core", features = ["docs", 
 polars-io = { version = "0.24.3", path = "./polars-io", features = ["private"], default-features = false, optional = true }
 polars-lazy = { version = "0.24.3", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
 polars-ops = { version = "0.24.3", path = "./polars-ops" }
-polars-time = { version = "0.24.3", path = "./polars-time", default-features = false, optional = true }
 polars-sql = { version = "0.1.0", path = "./polars-sql", default-features = false, optional = true }
+polars-time = { version = "0.24.3", path = "./polars-time", default-features = false, optional = true }
 
 [dev-dependencies]
 ahash = "0.7"
