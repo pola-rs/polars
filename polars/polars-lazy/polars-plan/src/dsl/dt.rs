@@ -183,41 +183,35 @@ impl DateLikeNameSpace {
     pub fn truncate(self, every: &str, offset: &str) -> Expr {
         let every = Duration::parse(every);
         let offset = Duration::parse(offset);
-        self.0
-            .clone()
-            .apply(
-                move |s| match s.dtype() {
-                    DataType::Datetime(_, _) => {
-                        Ok(s.datetime().unwrap().truncate(every, offset).into_series())
-                    }
-                    DataType::Date => Ok(s.date().unwrap().truncate(every, offset).into_series()),
-                    dt => Err(PolarsError::ComputeError(
-                        format!("expected date/datetime got {:?}", dt).into(),
-                    )),
-                },
-                GetOutput::same_type(),
-            )
-            .into()
+        self.0.apply(
+            move |s| match s.dtype() {
+                DataType::Datetime(_, _) => {
+                    Ok(s.datetime().unwrap().truncate(every, offset).into_series())
+                }
+                DataType::Date => Ok(s.date().unwrap().truncate(every, offset).into_series()),
+                dt => Err(PolarsError::ComputeError(
+                    format!("expected date/datetime got {:?}", dt).into(),
+                )),
+            },
+            GetOutput::same_type(),
+        )
     }
 
     pub fn round(self, every: &str, offset: &str) -> Expr {
         let every = Duration::parse(every);
         let offset = Duration::parse(offset);
-        self.0
-            .clone()
-            .apply(
-                move |s| match s.dtype() {
-                    DataType::Datetime(_, _) => {
-                        Ok(s.datetime().unwrap().round(every, offset).into_series())
-                    }
-                    DataType::Date => Ok(s.date().unwrap().round(every, offset).into_series()),
-                    dt => Err(PolarsError::ComputeError(
-                        format!("expected date/datetime got {:?}", dt).into(),
-                    )),
-                },
-                GetOutput::same_type(),
-            )
-            .into()
+        self.0.apply(
+            move |s| match s.dtype() {
+                DataType::Datetime(_, _) => {
+                    Ok(s.datetime().unwrap().round(every, offset).into_series())
+                }
+                DataType::Date => Ok(s.date().unwrap().round(every, offset).into_series()),
+                dt => Err(PolarsError::ComputeError(
+                    format!("expected date/datetime got {:?}", dt).into(),
+                )),
+            },
+            GetOutput::same_type(),
+        )
     }
 
     /// Offset this `Date/Datetime` by a given offset [`Duration`].
