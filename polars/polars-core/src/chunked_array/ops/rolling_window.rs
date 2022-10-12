@@ -227,8 +227,18 @@ mod inner_mod {
 
                 let out = f(&mut heap_container);
                 match out {
-                    Some(v) => unsafe { values.push_unchecked(v) },
-                    None => unsafe { unset_bit_raw(validity_ptr, offset + window_size - 1) },
+                    Some(v) => {
+                        // Safety: we have pre-allocated
+                        unsafe { values.push_unchecked(v) }
+                    }
+                    None => {
+                        // safety: we allocated enough for both the `values` vec
+                        // and the `validity_ptr`
+                        unsafe {
+                            values.push_unchecked(T::Native::default());
+                            unset_bit_raw(validity_ptr, offset + window_size - 1);
+                        }
+                    }
                 }
             }
             let arr = PrimitiveArray::from_data(

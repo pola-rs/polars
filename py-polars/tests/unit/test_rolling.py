@@ -342,3 +342,25 @@ def test_overlapping_groups_4628() -> None:
             [None, 40, 50],
         ],
     }
+
+
+def test_rolling_skew_lagging_null_5179() -> None:
+    s = pl.Series([None, 3, 4, 1, None, None, None, None, 3, None, 5, 4, 7, 2, 1, None])
+    assert s.rolling_skew(3).fill_nan(-1.0).to_list() == [
+        None,
+        None,
+        0.0,
+        -0.3818017741606059,
+        0.0,
+        -1.0,
+        None,
+        None,
+        -1.0,
+        -1.0,
+        0.0,
+        0.0,
+        0.38180177416060695,
+        0.23906314692954517,
+        0.6309038567106234,
+        0.0,
+    ]
