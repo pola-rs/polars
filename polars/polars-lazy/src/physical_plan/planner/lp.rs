@@ -1,59 +1,8 @@
 use polars_core::prelude::*;
-use polars_io::aggregations::ScanAggregation;
 
 use super::super::executors::{self, Executor};
 use super::*;
 use crate::utils::*;
-
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
-fn aggregate_expr_to_scan_agg(
-    aggregate: Vec<Node>,
-    expr_arena: &mut Arena<AExpr>,
-) -> Vec<ScanAggregation> {
-    aggregate
-        .into_iter()
-        .map(|mut expr| {
-            let mut alias = None;
-            if let AExpr::Alias(e, name) = expr_arena.get(expr) {
-                expr = *e;
-                alias = Some((*name).to_string())
-            };
-            if let AExpr::Agg(agg) = expr_arena.get(expr) {
-                match agg {
-                    AAggExpr::Min {
-                        input: e,
-                        propagate_nans: false,
-                    } => ScanAggregation::Min {
-                        column: (*aexpr_to_leaf_names(*e, expr_arena).pop().unwrap()).to_string(),
-                        alias,
-                    },
-                    AAggExpr::Max {
-                        input: e,
-                        propagate_nans: false,
-                    } => ScanAggregation::Max {
-                        column: (*aexpr_to_leaf_names(*e, expr_arena).pop().unwrap()).to_string(),
-                        alias,
-                    },
-                    AAggExpr::Sum(e) => ScanAggregation::Sum {
-                        column: (*aexpr_to_leaf_names(*e, expr_arena).pop().unwrap()).to_string(),
-                        alias,
-                    },
-                    AAggExpr::First(e) => ScanAggregation::First {
-                        column: (*aexpr_to_leaf_names(*e, expr_arena).pop().unwrap()).to_string(),
-                        alias,
-                    },
-                    AAggExpr::Last(e) => ScanAggregation::Last {
-                        column: (*aexpr_to_leaf_names(*e, expr_arena).pop().unwrap()).to_string(),
-                        alias,
-                    },
-                    _ => todo!(),
-                }
-            } else {
-                unreachable!()
-            }
-        })
-        .collect()
-}
 
 pub fn create_physical_plan(
     root: Node,
@@ -92,18 +41,15 @@ pub fn create_physical_plan(
             output_schema: _,
             options,
             predicate,
-            aggregate,
         } => {
             let predicate = predicate
                 .map(|pred| create_physical_expr(pred, Context::Default, expr_arena))
                 .map_or(Ok(None), |v| v.map(Some))?;
-            let aggregate = aggregate_expr_to_scan_agg(aggregate, expr_arena);
             Ok(Box::new(executors::CsvExec {
                 path,
                 schema,
                 options,
                 predicate,
-                aggregate,
             }))
         }
         #[cfg(feature = "ipc")]
@@ -112,19 +58,16 @@ pub fn create_physical_plan(
             schema,
             output_schema: _,
             predicate,
-            aggregate,
             options,
         } => {
             let predicate = predicate
                 .map(|pred| create_physical_expr(pred, Context::Default, expr_arena))
                 .map_or(Ok(None), |v| v.map(Some))?;
 
-            let aggregate = aggregate_expr_to_scan_agg(aggregate, expr_arena);
             Ok(Box::new(executors::IpcExec {
                 path,
                 schema,
                 predicate,
-                aggregate,
                 options,
             }))
         }
@@ -134,16 +77,14 @@ pub fn create_physical_plan(
             schema,
             output_schema: _,
             predicate,
-            aggregate,
             options,
         } => {
             let predicate = predicate
                 .map(|pred| create_physical_expr(pred, Context::Default, expr_arena))
                 .map_or(Ok(None), |v| v.map(Some))?;
 
-            let aggregate = aggregate_expr_to_scan_agg(aggregate, expr_arena);
             Ok(Box::new(executors::ParquetExec::new(
-                path, schema, predicate, aggregate, options,
+                path, schema, predicate, options,
             )))
         }
         Projection {

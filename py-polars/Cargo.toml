@@ -31,7 +31,6 @@ numpy = "0.16"
 once_cell = "1"
 polars-core = { path = "../polars/polars-core", default-features = false }
 polars-lazy = { path = "../polars/polars-lazy", features = ["python"], default-features = false }
-polars-sql = { path = "../polars-sql", optional = true }
 pyo3 = { version = "0.16", features = ["abi3-py37", "extension-module", "multiple-pymethods"] }
 serde_json = { version = "1", optional = true }
 thiserror = "^1.0"
@@ -60,6 +59,7 @@ extract_jsonpath = ["polars/extract_jsonpath"]
 pivot = ["polars/pivot"]
 top_k = ["polars/top_k"]
 propagate_nans = ["polars/propagate_nans"]
+sql = ["polars/sql"]
 
 all = [
   "json",
@@ -89,7 +89,7 @@ all = [
   "polars/cse",
   "propagate_nans",
   "polars/groupby_list",
-  "polars-sql",
+  "sql",
   "polars/dtype-binary",
 ]
 

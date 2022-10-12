@@ -3,7 +3,6 @@ use polars_core::prelude::*;
 
 use crate::prelude::*;
 
-mod aggregate_pushdown;
 mod cache_states;
 #[cfg(feature = "cse")]
 mod cse;
@@ -25,7 +24,6 @@ mod slice_pushdown_lp;
 mod stack_opt;
 mod type_coercion;
 
-use aggregate_pushdown::AggregatePushdown;
 use delay_rechunk::DelayRechunk;
 use drop_nulls::ReplaceDropNulls;
 use fast_projection::FastProjectionAndCollapse;
@@ -68,7 +66,6 @@ pub fn optimize(
     let cse = opt_state.common_subplan_elimination;
 
     let agg_scan_projection = opt_state.file_caching;
-    let aggregate_pushdown = opt_state.aggregate_pushdown;
 
     // gradually fill the rules passed to the optimizer
     let opt = StackOptimizer {};
@@ -135,10 +132,6 @@ pub fn optimize(
     // is completed
     if simplify_expr {
         rules.push(Box::new(SimplifyBooleanRule {}));
-    }
-
-    if aggregate_pushdown {
-        rules.push(Box::new(AggregatePushdown::new()))
     }
 
     // make sure that we do that once slice pushdown

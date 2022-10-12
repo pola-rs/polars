@@ -108,9 +108,16 @@ def test_cut() -> None:
     }
 
     # test cut on integers #4939
+    inf = float("inf")
     df = pl.DataFrame({"a": list(range(5))})
     ser = df.select("a").to_series()
-    assert pl.cut(ser, bins=[-1, 1]).shape == (5, 3)
+    assert pl.cut(ser, bins=[-1, 1]).rows() == [
+        (0.0, 1.0, "(-1.0, 1.0]"),
+        (1.0, 1.0, "(-1.0, 1.0]"),
+        (2.0, inf, "(1.0, inf]"),
+        (3.0, inf, "(1.0, inf]"),
+        (4.0, inf, "(1.0, inf]"),
+    ]
 
 
 def test_null_handling_correlation() -> None:

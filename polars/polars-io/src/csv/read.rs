@@ -123,7 +123,6 @@ where
     eol_char: u8,
     null_values: Option<NullValues>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    aggregate: Option<&'a [ScanAggregation]>,
     quote_char: Option<u8>,
     skip_rows_after_header: usize,
     parse_dates: bool,
@@ -310,11 +309,6 @@ where
         self.predicate = predicate;
         self
     }
-
-    pub fn with_aggregate(mut self, aggregate: Option<&'a [ScanAggregation]>) -> Self {
-        self.aggregate = aggregate;
-        self
-    }
 }
 
 impl<'a> CsvReader<'a, File> {
@@ -359,7 +353,6 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.eol_char,
             std::mem::take(&mut self.null_values),
             std::mem::take(&mut self.predicate),
-            self.aggregate,
             to_cast,
             self.skip_rows_after_header,
             std::mem::take(&mut self.row_count),
@@ -458,7 +451,6 @@ where
             eol_char: b'\n',
             null_values: None,
             predicate: None,
-            aggregate: None,
             quote_char: Some(b'"'),
             skip_rows_after_header: 0,
             parse_dates: false,

@@ -232,9 +232,11 @@ def test_join() -> None:
 
     joined = df_left.join(df_right, left_on="a", right_on="a").sort("a")
     assert joined["b"].series_equal(pl.Series("b", [1, 3, 2, 2]))
+
     joined = df_left.join(df_right, left_on="a", right_on="a", how="left").sort("a")
     assert joined["c_right"].is_null().sum() == 1
     assert joined["b"].series_equal(pl.Series("b", [1, 3, 2, 2, 4]))
+
     joined = df_left.join(df_right, left_on="a", right_on="a", how="outer").sort("a")
     assert joined["c_right"].null_count() == 1
     assert joined["c"].null_count() == 1
@@ -258,11 +260,12 @@ def test_join() -> None:
 
     # just check if join on multiple columns runs
     df_a.join(df_b, left_on=["a", "b"], right_on=["foo", "bar"])
-
     eager_join = df_a.join(df_b, left_on="a", right_on="foo")
-
     lazy_join = df_a.lazy().join(df_b.lazy(), left_on="a", right_on="foo").collect()
+
+    cols = ["a", "b", "bar", "ham"]
     assert lazy_join.shape == eager_join.shape
+    assert lazy_join.sort(by=cols).frame_equal(eager_join.sort(by=cols))
 
 
 def test_joins_dispatch() -> None:

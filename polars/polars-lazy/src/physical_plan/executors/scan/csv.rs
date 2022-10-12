@@ -5,7 +5,6 @@ pub struct CsvExec {
     pub schema: SchemaRef,
     pub options: CsvParserOptions,
     pub predicate: Option<Arc<dyn PhysicalExpr>>,
-    pub aggregate: Vec<ScanAggregation>,
 }
 
 impl CsvExec {
@@ -26,12 +25,6 @@ impl CsvExec {
             .clone()
             .map(|expr| Arc::new(PhysicalIoHelper { expr }) as Arc<dyn PhysicalIoExpr>);
 
-        let aggregate = if self.aggregate.is_empty() {
-            None
-        } else {
-            Some(self.aggregate.as_slice())
-        };
-
         CsvReader::from_path(&self.path)
             .unwrap()
             .has_header(self.options.has_header)
@@ -44,7 +37,6 @@ impl CsvExec {
             .low_memory(self.options.low_memory)
             .with_null_values(std::mem::take(&mut self.options.null_values))
             .with_predicate(predicate)
-            .with_aggregate(aggregate)
             .with_encoding(CsvEncoding::LossyUtf8)
             .with_comment_char(self.options.comment_char)
             .with_quote_char(self.options.quote_char)

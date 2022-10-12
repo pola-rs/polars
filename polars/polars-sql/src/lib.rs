@@ -5,7 +5,8 @@ pub use context::SQLContext;
 
 #[cfg(test)]
 mod test {
-    use polars::prelude::*;
+    use polars_core::prelude::*;
+    use polars_lazy::prelude::*;
 
     use super::*;
 

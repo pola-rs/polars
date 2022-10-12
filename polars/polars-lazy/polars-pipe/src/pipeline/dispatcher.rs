@@ -52,6 +52,13 @@ impl Pipeline {
                     };
                     sink.sink(ec, chunk)
                 })
+                // only collect failed and finished messages as there should be acted upon those
+                // the other ones (e.g. success and can have more input) can be ignored
+                // this saves a lot of allocations.
+                .filter(|result| match result {
+                    Ok(sink_result) => matches!(sink_result, SinkResult::Finished),
+                    Err(_) => true,
+                })
                 .collect()
         })
     }

@@ -10,7 +10,7 @@ use crate::operators::IdxSize;
 pub struct LastAgg {
     chunk_idx: IdxSize,
     last: Option<AnyValue<'static>>,
-    dtype: DataType,
+    pub(crate) dtype: DataType,
 }
 
 impl LastAgg {

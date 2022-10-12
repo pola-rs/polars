@@ -102,7 +102,6 @@ pub(crate) fn binary_lambda(lambda: &PyObject, a: Series, b: Series) -> PolarsRe
                 .select([expr])
                 .with_predicate_pushdown(false)
                 .with_projection_pushdown(false)
-                .with_aggregate_pushdown(false)
                 .collect()?;
 
             let s = out.select_at_idx(0).unwrap().clone();

@@ -1,10 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-#[cfg(feature = "private")]
-pub mod aggregations;
-#[cfg(not(feature = "private"))]
-pub(crate) mod aggregations;
-
 #[cfg(feature = "avro")]
 #[cfg_attr(docsrs, doc(cfg(feature = "avro")))]
 pub mod avro;
@@ -63,13 +58,6 @@ use polars_core::prelude::*;
     feature = "avro",
     feature = "ipc_streaming"
 ))]
-use crate::aggregations::{apply_aggregations, ScanAggregation};
-#[cfg(any(
-    feature = "ipc",
-    feature = "json",
-    feature = "avro",
-    feature = "ipc_streaming"
-))]
 use crate::predicates::PhysicalIoExpr;
 
 pub trait SerReader<R>
@@ -121,7 +109,6 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     rechunk: bool,
     n_rows: Option<usize>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    aggregate: Option<&[ScanAggregation]>,
     arrow_schema: &ArrowSchema,
     row_count: Option<RowCount>,
 ) -> PolarsResult<DataFrame> {
@@ -144,8 +131,6 @@ pub(crate) fn finish_reader<R: ArrowReader>(
             let mask = s.bool().expect("filter predicates was not of type boolean");
             df = df.filter(mask)?;
         }
-
-        apply_aggregations(&mut df, aggregate)?;
 
         if let Some(n) = n_rows {
             if num_rows >= n {
@@ -176,10 +161,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
             DataFrame::new(empty_cols)?
         } else {
             // If there are any rows, accumulate them into a df
-            let mut df = accumulate_dataframes_vertical(parsed_dfs)?;
-            // Aggregations must be applied a final time to aggregate the partitions
-            apply_aggregations(&mut df, aggregate)?;
-            df
+            accumulate_dataframes_vertical(parsed_dfs)?
         }
     };
 

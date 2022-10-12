@@ -956,11 +956,38 @@ def test_describe() -> None:
     date_s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
     empty_s = pl.Series(np.empty(0))
 
-    assert num_s.describe().shape == (6, 2)
-    assert float_s.describe().shape == (6, 2)
-    assert str_s.describe().shape == (3, 2)
-    assert bool_s.describe().shape == (3, 2)
-    assert date_s.describe().shape == (4, 2)
+    assert {k: v for k, v in num_s.describe().rows()} == {
+        "count": 3.0,
+        "max": 3.0,
+        "mean": 2.0,
+        "min": 1.0,
+        "null_count": 0.0,
+        "std": 1.0,
+    }
+    assert {k: v for k, v in float_s.describe().rows()} == {
+        "count": 3.0,
+        "max": 8.9,
+        "mean": 4.933333333333334,
+        "min": 1.3,
+        "null_count": 0.0,
+        "std": 3.8109491381194442,
+    }
+    assert {k: v for k, v in str_s.describe().rows()} == {
+        "count": 3,
+        "null_count": 0,
+        "unique": 3,
+    }
+    assert {k: v for k, v in bool_s.describe().rows()} == {
+        "count": 5,
+        "null_count": 1,
+        "sum": 3,
+    }
+    assert {k: v for k, v in date_s.describe().rows()} == {
+        "count": "3",
+        "max": "2021-01-03",
+        "min": "2021-01-01",
+        "null_count": "0",
+    }
 
     with pytest.raises(ValueError):
         assert empty_s.describe()

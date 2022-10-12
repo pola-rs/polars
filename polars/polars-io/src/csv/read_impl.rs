@@ -14,7 +14,6 @@ use polars_utils::flatten;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 
-use crate::aggregations::ScanAggregation;
 use crate::csv::buffer::*;
 use crate::csv::parser::*;
 use crate::csv::read::NullValuesCompiled;
@@ -92,7 +91,6 @@ pub(crate) struct CoreReader<'a> {
     eol_char: u8,
     null_values: Option<NullValuesCompiled>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    aggregate: Option<&'a [ScanAggregation]>,
     to_cast: Vec<Field>,
     row_count: Option<RowCount>,
 }
@@ -180,7 +178,6 @@ impl<'a> CoreReader<'a> {
         eol_char: u8,
         null_values: Option<NullValues>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
-        aggregate: Option<&'a [ScanAggregation]>,
         to_cast: Vec<Field>,
         skip_rows_after_header: usize,
         row_count: Option<RowCount>,
@@ -294,7 +291,6 @@ impl<'a> CoreReader<'a> {
             eol_char,
             null_values,
             predicate,
-            aggregate,
             to_cast,
             row_count,
         })
@@ -679,20 +675,11 @@ impl<'a> CoreReader<'a> {
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
     pub fn as_df(&mut self) -> PolarsResult<DataFrame> {
         let predicate = self.predicate.take();
-        let aggregate = self.aggregate.take();
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
 
         let reader_bytes = self.reader_bytes.take().unwrap();
 
         let mut df = self.parse_csv(n_threads, &reader_bytes, predicate.as_ref())?;
-
-        if let Some(aggregate) = aggregate {
-            let cols = aggregate
-                .iter()
-                .map(|scan_agg| scan_agg.finish(&df))
-                .collect::<PolarsResult<Vec<_>>>()?;
-            df = DataFrame::new_no_checks(cols)
-        }
 
         // if multi-threaded the n_rows was probabilistically determined.
         // Let's slice to correct number of rows if possible.

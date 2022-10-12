@@ -18,7 +18,7 @@ pub mod prelude;
 pub(crate) mod py_modules;
 pub mod series;
 mod set;
-#[cfg(feature = "polars-sql")]
+#[cfg(feature = "sql")]
 mod sql;
 pub mod utils;
 
@@ -528,7 +528,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyLazyFrame>().unwrap();
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<dsl::PyExpr>().unwrap();
-    #[cfg(feature = "polars-sql")]
+    #[cfg(feature = "sql")]
     m.add_class::<sql::PySQLContext>().unwrap();
     m.add_wrapped(wrap_pyfunction!(col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(count)).unwrap();

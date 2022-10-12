@@ -76,7 +76,6 @@ impl LogicalPlanBuilder {
             function,
             schema: schema.clone(),
             predicate: None,
-            aggregate: vec![],
             options: AnonymousScanOptions {
                 fmt_str: name,
                 schema,
@@ -110,7 +109,6 @@ impl LogicalPlanBuilder {
             path,
             schema,
             predicate: None,
-            aggregate: vec![],
             options: ParquetOptions {
                 n_rows,
                 with_columns: None,
@@ -138,7 +136,6 @@ impl LogicalPlanBuilder {
             path,
             schema,
             predicate: None,
-            aggregate: vec![],
             options: options.into(),
         }
         .into())
@@ -224,7 +221,6 @@ impl LogicalPlanBuilder {
                 file_counter: Default::default(),
             },
             predicate: None,
-            aggregate: vec![],
         }
         .into())
     }

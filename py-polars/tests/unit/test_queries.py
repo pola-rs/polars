@@ -17,8 +17,13 @@ def test_sort_by_bools() -> None:
         }
     )
     out = df.with_column((pl.col("foo") % 2 == 1).alias("foo_odd")).sort(
-        by=["foo", "foo_odd"]
+        by=["foo_odd", "foo"]
     )
+    assert out.rows() == [
+        (2, 7.0, "b", False),
+        (1, 6.0, "a", True),
+        (3, 8.0, "c", True),
+    ]
     assert out.shape == (3, 4)
 
 
@@ -225,18 +230,14 @@ def test_dtype_concat_3735() -> None:
         pl.Float32,
         pl.Float64,
     ]:
-        d1 = pl.DataFrame(
-            [
-                pl.Series("val", [1, 2], dtype=dt),
-            ]
-        )
-    d2 = pl.DataFrame(
-        [
-            pl.Series("val", [3, 4], dtype=dt),
-        ]
-    )
+        d1 = pl.DataFrame([pl.Series("val", [1, 2], dtype=dt)])
+
+    d2 = pl.DataFrame([pl.Series("val", [3, 4], dtype=dt)])
     df = pl.concat([d1, d2])
+
     assert df.shape == (4, 1)
+    assert df.columns == ["val"]
+    assert df.to_series().to_list() == [1, 2, 3, 4]
 
 
 def test_opaque_filter_on_lists_3784() -> None:
@@ -326,7 +327,7 @@ def test_when_then_edge_cases_3994() -> None:
 
 def test_edge_cast_string_duplicates_4259() -> None:
     # carefully constructed data.
-    # note that row 2, 3 concatenated are the same string
+    # note that row 2, 3 concatenated are the same string ('5461214484')
     df = pl.DataFrame(
         {
             "a": [99, 54612, 546121],
@@ -335,7 +336,10 @@ def test_edge_cast_string_duplicates_4259() -> None:
     ).with_columns(pl.all().cast(pl.Utf8))
 
     mask = df.select(["a", "b"]).is_duplicated()
-    assert df.filter(pl.lit(mask)).shape == (0, 2)
+    df_filtered = df.filter(pl.lit(mask))
+
+    assert df_filtered.shape == (0, 2)
+    assert df_filtered.rows() == []
 
 
 def test_query_4438() -> None:
@@ -387,3 +391,4 @@ def test_none_comparison_4773() -> None:
         }
     ).filter(pl.col("x") != pl.col("y"))
     assert df.shape == (3, 2)
+    assert df.rows() == [(0, 1), (1, 2), (2, 3)]

@@ -67,7 +67,6 @@ pub enum LogicalPlan {
         function: Arc<dyn AnonymousScan>,
         schema: SchemaRef,
         predicate: Option<Expr>,
-        aggregate: Vec<Expr>,
         options: AnonymousScanOptions,
     },
     #[cfg(feature = "python")]
@@ -91,8 +90,6 @@ pub enum LogicalPlan {
         options: CsvParserOptions,
         /// Filters at the scan level
         predicate: Option<Expr>,
-        /// Aggregations at the scan level
-        aggregate: Vec<Expr>,
     },
     #[cfg(feature = "parquet")]
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
@@ -101,7 +98,6 @@ pub enum LogicalPlan {
         path: PathBuf,
         schema: SchemaRef,
         predicate: Option<Expr>,
-        aggregate: Vec<Expr>,
         options: ParquetOptions,
     },
     #[cfg(feature = "ipc")]
@@ -111,7 +107,6 @@ pub enum LogicalPlan {
         schema: SchemaRef,
         options: IpcScanOptionsInner,
         predicate: Option<Expr>,
-        aggregate: Vec<Expr>,
     },
     // we keep track of the projection and selection as it is cheaper to first project and then filter
     /// In memory DataFrame

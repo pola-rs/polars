@@ -6,7 +6,6 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::aggregations::ScanAggregation;
 use crate::mmap::MmapBytesReader;
 use crate::parquet::read_impl::read_parquet;
 pub use crate::parquet::read_impl::BatchedParquetReader;
@@ -53,7 +52,6 @@ impl<R: MmapBytesReader> ParquetReader<R> {
     pub fn _finish_with_scan_ops(
         mut self,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
-        aggregate: Option<&[ScanAggregation]>,
         projection: Option<&[usize]>,
     ) -> PolarsResult<DataFrame> {
         // this path takes predicates and parallelism into account
@@ -68,7 +66,6 @@ impl<R: MmapBytesReader> ParquetReader<R> {
             &schema,
             Some(metadata),
             predicate,
-            aggregate,
             self.parallel,
             self.row_count,
         )
@@ -172,7 +169,6 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             self.projection.as_deref(),
             &schema,
             Some(metadata),
-            None,
             None,
             self.parallel,
             self.row_count,

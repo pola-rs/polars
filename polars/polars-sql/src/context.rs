@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
-use polars::error::PolarsResult;
-use polars::prelude::*;
+use polars_core::prelude::*;
+use polars_lazy::prelude::*;
 use polars_plan::prelude::*;
 use polars_plan::utils::expressions_to_schema;
 use sqlparser::ast::{

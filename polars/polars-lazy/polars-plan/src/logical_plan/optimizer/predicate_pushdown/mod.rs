@@ -256,7 +256,6 @@ impl PredicatePushDown {
                 schema,
                 output_schema,
                 predicate,
-                aggregate,
                 options,
             } => {
                 let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
@@ -267,7 +266,6 @@ impl PredicatePushDown {
                     schema,
                     output_schema,
                     predicate,
-                    aggregate,
                     options,
                 };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
@@ -278,7 +276,6 @@ impl PredicatePushDown {
                 schema,
                 output_schema,
                 predicate,
-                aggregate,
                 options,
             } => {
                 let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
@@ -290,7 +287,6 @@ impl PredicatePushDown {
                     schema,
                     output_schema,
                     predicate,
-                    aggregate,
                     options,
                 };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
@@ -302,7 +298,6 @@ impl PredicatePushDown {
                 output_schema,
                 options,
                 predicate,
-                aggregate,
             } => {
                 let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
@@ -314,7 +309,6 @@ impl PredicatePushDown {
                         output_schema,
                         options,
                         predicate: None,
-                        aggregate,
                     };
                     let input = lp_arena.add(lp);
                     Selection {
@@ -328,7 +322,6 @@ impl PredicatePushDown {
                         output_schema,
                         options,
                         predicate,
-                        aggregate,
                     }
                 };
 
@@ -340,7 +333,6 @@ impl PredicatePushDown {
                 output_schema,
                 options,
                 predicate,
-                aggregate
             } => {
                 if function.allows_predicate_pushdown() {
                     let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
@@ -351,7 +343,6 @@ impl PredicatePushDown {
                         output_schema,
                         options,
                         predicate,
-                        aggregate
                     };
                     Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
                 } else {
@@ -361,7 +352,6 @@ impl PredicatePushDown {
                         output_schema,
                         options,
                         predicate,
-                        aggregate
                     };
                     self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
                 }
