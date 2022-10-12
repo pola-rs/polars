@@ -1,7 +1,17 @@
 use std::io::{self, Write, BufRead};
-use polars_lazy::frame::LazyCsvReader;
-use polars_sql::SQLContext;
+use std::path::Path;
+use std::ffi::OsStr;
 
+#[cfg(feature = "csv")]
+use polars_lazy::frame::LazyCsvReader;
+
+#[cfg(feature = "parquet")]
+
+#[cfg(feature = "parquet")]
+use polars_lazy::frame::ScanArgsParquet;
+
+use polars_lazy::frame::LazyFrame;
+use polars_sql::SQLContext;
 
 // Command: /dd or dataframes
 fn print_dataframes(dataframes: &Vec<(String, String)>) {
@@ -44,7 +54,16 @@ fn register_dataframe(context: &mut SQLContext, dataframes: &mut Vec<(String, St
     let name = command[1];
     let source = command[2];
 
-    match LazyCsvReader::new(source).finish() {
+    let df = match get_extension_from_filename(source) {
+        Some("csv") => LazyCsvReader::new(source).finish(),
+        Some("parquet") => LazyFrame::scan_parquet(source, ScanArgsParquet::default()),
+        None | Some(_) => {
+            println!("Unknown extension.");
+            return;
+        },
+    };
+
+    match df {
         Ok(frame) => {
             context.register(name, frame);
             dataframes.push((name.to_owned(), source.to_owned()));
@@ -80,8 +99,8 @@ fn main() -> io::Result<()> {
         match command[0] {
             "\\dd" | "dataframes" => print_dataframes(&dataframes),
             "\\rd" | "register" => register_dataframe(&mut context, &mut dataframes, command),
-            "\\?" | "help" => print_help(),
-            "\\q" | "quit" => {
+            "\\?" | "help" | "?" | "\\h" => print_help(),
+            "\\q" | "quit" | "exit" => {
                 println!("Bye");
                 return Ok(())
             },
@@ -90,4 +109,11 @@ fn main() -> io::Result<()> {
         
         println!();
     }
+}
+
+
+fn get_extension_from_filename(filename: &str) -> Option<&str> {
+    Path::new(filename)
+        .extension()
+        .and_then(OsStr::to_str)
 }
