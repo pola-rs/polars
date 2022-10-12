@@ -140,7 +140,7 @@ where
                         aggregation_columns,
                         agg_fns,
                         output_schema.clone(),
-                        options.slice
+                        options.slice,
                     )) as Box<dyn Sink>,
                 }
             }
