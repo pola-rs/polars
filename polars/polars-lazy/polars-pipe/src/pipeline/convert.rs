@@ -98,6 +98,7 @@ where
                 keys,
                 aggs,
                 schema: output_schema,
+                options,
                 ..
             } => {
                 let key_columns = Arc::new(
@@ -130,6 +131,7 @@ where
                                 aggregation_columns,
                                 agg_fns,
                                 output_schema.clone(),
+                                options.slice
                             )) as Box<dyn Sink>
                         })
                     }
@@ -138,6 +140,7 @@ where
                         aggregation_columns,
                         agg_fns,
                         output_schema.clone(),
+                        options.slice
                     )) as Box<dyn Sink>,
                 }
             }

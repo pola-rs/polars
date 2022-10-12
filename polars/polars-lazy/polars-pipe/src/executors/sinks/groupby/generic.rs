@@ -61,6 +61,7 @@ impl GenericGroupbySink {
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         agg_fns: Vec<AggregateFunction>,
         output_schema: SchemaRef,
+        slice: Option<(i64, usize)>
     ) -> Self {
         let hb = RandomState::default();
         let partitions = _set_partition_size();
@@ -315,6 +316,7 @@ impl Sink for GenericGroupbySink {
             self.aggregation_columns.clone(),
             self.agg_fns.iter().map(|func| func.split2()).collect(),
             self.output_schema.clone(),
+            self.slice
         );
         new.hb = self.hb.clone();
         new.thread_no = thread_no;
@@ -324,6 +326,7 @@ impl Sink for GenericGroupbySink {
     fn finalize(&mut self) -> PolarsResult<DataFrame> {
         let mut aggregators = std::mem::take(&mut self.aggregators);
         let n_keys = self.number_of_keys();
+
 
         POOL.install(|| {
             let dfs = self
