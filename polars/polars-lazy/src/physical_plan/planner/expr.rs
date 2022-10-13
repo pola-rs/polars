@@ -592,7 +592,7 @@ pub(crate) fn create_physical_expr(
                 ApplyOptions::ApplyGroups,
             )))
         }
-        Wildcard => panic!("should be no wildcard at this point"),
-        Nth(_) => panic!("should be no nth at this point"),
+        Wildcard => Err(PolarsError::ComputeError("should be no wildcard at this point".into())),
+        Nth(_) => Err(PolarsError::ComputeError("should be no nth at this point".into()))
     }
 }
