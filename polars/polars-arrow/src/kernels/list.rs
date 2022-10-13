@@ -31,9 +31,11 @@ use crate::utils::CustomIterTools;
 ///
 /// ```
 fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> IdxArr {
-    let mut iter = arr.offsets().iter();
+    let offsets = arr.offsets().as_slice();
+    let mut iter = offsets.iter();
 
-    let mut cum_offset: IdxSize = 0;
+    // the indices can be sliced, so we should not start at 0.
+    let mut cum_offset = (*offsets.first().unwrap_or(&0)) as IdxSize;
 
     if let Some(mut previous) = iter.next().copied() {
         let a: IdxArr = iter
