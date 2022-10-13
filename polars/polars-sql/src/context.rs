@@ -182,52 +182,59 @@ impl SQLContext {
         }
     }
 
+    // Executes the given statement against the SQLContext
+    pub fn execute_statement(&self, stmt: &Statement) -> PolarsResult<LazyFrame> {
+        let ast = stmt;
+        Ok(match ast {
+            Statement::Query(query) => {
+                let mut lf = match &query.body.as_ref() {
+                    SetExpr::Select(select_stmt) => self.execute_select(select_stmt)?,
+                    _ => {
+                        return Err(PolarsError::ComputeError(
+                            "INSERT, UPDATE is not supported for polars".into(),
+                        ))
+                    }
+                };
+                if !query.order_by.is_empty() {
+                    lf = self.process_order_by(lf, &query.order_by)?;
+                }
+                match &query.limit {
+                    Some(SqlExpr::Value(SQLValue::Number(nrow, _))) => {
+                        let nrow = nrow.parse().map_err(|err| {
+                            PolarsError::ComputeError(
+                                format!("Conversion Error: {:?}", err).into(),
+                            )
+                        })?;
+                        lf.limit(nrow)
+                    }
+                    None => lf,
+                    _ => {
+                        return Err(PolarsError::ComputeError(
+                            "Only support number argument to LIMIT clause".into(),
+                        ))
+                    }
+                }
+            }
+            _ => {
+                return Err(PolarsError::ComputeError(
+                    format!("Statement type {:?} is not supported", ast).into(),
+                ))
+            }
+        })
+    }
+
+    // Executes the given SQL query against the SQLContext.
     pub fn execute(&self, query: &str) -> PolarsResult<LazyFrame> {
         let ast = Parser::parse_sql(&GenericDialect::default(), query)
             .map_err(|e| PolarsError::ComputeError(format!("{:?}", e).into()))?;
         if ast.len() != 1 {
-            Err(PolarsError::ComputeError(
+            return Err(PolarsError::ComputeError(
                 "One and only one statement at a time please".into(),
             ))
-        } else {
-            let ast = ast.get(0).unwrap();
-            Ok(match ast {
-                Statement::Query(query) => {
-                    let mut lf = match &query.body.as_ref() {
-                        SetExpr::Select(select_stmt) => self.execute_select(select_stmt)?,
-                        _ => {
-                            return Err(PolarsError::ComputeError(
-                                "INSERT, UPDATE is not supported for polars".into(),
-                            ))
-                        }
-                    };
-                    if !query.order_by.is_empty() {
-                        lf = self.process_order_by(lf, &query.order_by)?;
-                    }
-                    match &query.limit {
-                        Some(SqlExpr::Value(SQLValue::Number(nrow, _))) => {
-                            let nrow = nrow.parse().map_err(|err| {
-                                PolarsError::ComputeError(
-                                    format!("Conversion Error: {:?}", err).into(),
-                                )
-                            })?;
-                            lf.limit(nrow)
-                        }
-                        None => lf,
-                        _ => {
-                            return Err(PolarsError::ComputeError(
-                                "Only support number argument to LIMIT clause".into(),
-                            ))
-                        }
-                    }
-                }
-                _ => {
-                    return Err(PolarsError::ComputeError(
-                        format!("Statement type {:?} is not supported", ast).into(),
-                    ))
-                }
-            })
         }
+         
+        let ast = ast.get(0).unwrap();
+        return self.execute_statement(ast);
     }
 
     fn process_order_by(&self, lf: LazyFrame, ob: &[OrderByExpr]) -> PolarsResult<LazyFrame> {
