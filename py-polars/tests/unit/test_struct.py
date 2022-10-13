@@ -151,7 +151,7 @@ def test_nested_struct() -> None:
     # Nest the dataframe
     nest_l1 = df.to_struct("c").to_frame()
     # Add another column on the same level
-    nest_l1 = nest_l1.with_column(pl.col("c").is_nan().alias("b"))
+    nest_l1 = nest_l1.with_column(pl.col("c").is_null().alias("b"))
     # Nest the dataframe again
     nest_l2 = nest_l1.to_struct("a").to_frame()
 
