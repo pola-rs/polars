@@ -509,7 +509,9 @@ class ExprListNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.lst_shift(periods))
 
-    def slice(self, offset: int, length: int | None = None) -> pli.Expr:
+    def slice(
+        self, offset: int | str | pli.Expr, length: int | str | pli.Expr | None = None
+    ) -> pli.Expr:
         """
         Slice every sublist.
 
@@ -533,9 +535,11 @@ class ExprListNameSpace:
         ]
 
         """
+        offset = pli.expr_to_lit_or_expr(offset, str_to_lit=False)._pyexpr
+        length = pli.expr_to_lit_or_expr(length, str_to_lit=False)._pyexpr
         return pli.wrap_expr(self._pyexpr.lst_slice(offset, length))
 
-    def head(self, n: int = 5) -> pli.Expr:
+    def head(self, n: int | str | pli.Expr = 5) -> pli.Expr:
         """
         Slice the first `n` values of every sublist.
 
@@ -558,7 +562,7 @@ class ExprListNameSpace:
         """
         return self.slice(0, n)
 
-    def tail(self, n: int = 5) -> pli.Expr:
+    def tail(self, n: int | str | pli.Expr = 5) -> pli.Expr:
         """
         Slice the last `n` values of every sublist.
 
@@ -579,7 +583,8 @@ class ExprListNameSpace:
         ]
 
         """
-        return self.slice(-n, n)
+        offset = (-pli.expr_to_lit_or_expr(n, str_to_lit=False))
+        return self.slice(offset, n)
 
     def to_struct(
         self,

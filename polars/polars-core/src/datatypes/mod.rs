@@ -561,6 +561,40 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
 }
 
 impl<'a> AnyValue<'a> {
+    pub fn dtype(&self) -> DataType {
+        use AnyValue::*;
+        match self.as_borrowed() {
+            Null => DataType::Unknown,
+            Int8(_) => DataType::Int8,
+            Int16(_) => DataType::Int16,
+            Int32(_) => DataType::Int32,
+            Int64(_) => DataType::Int64,
+            UInt8(_) => DataType::UInt8,
+            UInt16(_) => DataType::UInt16,
+            UInt32(_) => DataType::UInt32,
+            UInt64(_) => DataType::UInt64,
+            Float32(_) => DataType::Float32,
+            Float64(_) => DataType::Float64,
+            #[cfg(feature = "dtype-date")]
+            Date(_) => DataType::Date,
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(_, tu, tz) => DataType::Datetime(tu, tz.clone()),
+            #[cfg(feature = "dtype-time")]
+            Time(_) => DataType::Time,
+            #[cfg(feature = "dtype-duration")]
+            Duration(_, tu) => DataType::Duration(tu),
+            Boolean(_) => DataType::Boolean,
+            Utf8(_) => DataType::Utf8,
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_, _) => DataType::Categorical(None),
+            List(s) => DataType::List(Box::new(s.dtype().clone())),
+            #[cfg(feature = "dtype-struct")]
+            Struct(_, field) => DataType::Struct(field.to_vec()),
+            #[cfg(feature = "dtype-binary")]
+            Binary(_) => DataType::Binary,
+            _ => unimplemented!(),
+        }
+    }
     /// Extract a numerical value from the AnyValue
     #[doc(hidden)]
     #[cfg(feature = "private")]
@@ -594,8 +628,26 @@ impl<'a> AnyValue<'a> {
                     NumCast::from(0)
                 }
             }
-            _ => unimplemented!(),
+            dt => panic!("dtype {:?} not implemented", dt),
         }
+    }
+
+    pub fn try_extract<T: NumCast>(&self) -> PolarsResult<T> {
+        self.extract().ok_or_else(|| {
+            PolarsError::ComputeError(
+                format!(
+                    "could not extract number from AnyValue of dtype: '{:?}'",
+                    self.dtype()
+                )
+                .into(),
+            )
+        })
+    }
+}
+
+impl From<AnyValue<'_>> for DataType {
+    fn from(value: AnyValue<'_>) -> Self {
+        value.dtype()
     }
 }
 

@@ -485,3 +485,23 @@ def groupby_list_column() -> None:
         "a_list": [["b"], ["a", "a"]],
         "a": ["b", "a"],
     }
+
+
+def test_list_slice() -> None:
+    df = pl.DataFrame(
+        {
+            "lst": [[1, 2, 3, 4], [10, 2, 1]],
+            "offset": [1, 2],
+            "len": [3, 2],
+        }
+    )
+
+    assert df.select([pl.col("lst").arr.slice("offset", "len")]).to_dict(False) == {
+        "lst": [[2, 3, 4], [1]]
+    }
+    assert df.select([pl.col("lst").arr.slice("offset", 1)]).to_dict(False) == {
+        "lst": [[2], [1]]
+    }
+    assert df.select([pl.col("lst").arr.slice(-2, "len")]).to_dict(False) == {
+        "lst": [[3, 4], [2, 1]]
+    }

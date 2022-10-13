@@ -148,8 +148,6 @@ impl FunctionExpr {
             #[cfg(feature = "sign")]
             Sign => with_dtype(DataType::Int64),
             FillNull { super_type, .. } => with_dtype(super_type.clone()),
-            #[cfg(feature = "is_in")]
-            ListContains => with_dtype(DataType::Boolean),
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { .. } => float_dtype(),
             ShiftAndFill { .. } => same_type(),
@@ -161,6 +159,9 @@ impl FunctionExpr {
                 use ListFunction::*;
                 match l {
                     Concat => inner_super_type_list(),
+                    #[cfg(feature = "is_in")]
+                    Contains => with_dtype(DataType::Boolean),
+                    Slice => same_type(),
                 }
             }
             #[cfg(feature = "dtype-struct")]
