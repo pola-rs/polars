@@ -742,6 +742,25 @@ def test_fill_null() -> None:
         "str": ["a", "b", "bar"],
         "bool": [True, True, False],
     }
+    df = pl.DataFrame({"a": [1, None, 2, None]})
+
+    out = df.with_columns(
+        [
+            pl.col("a").cast(pl.UInt8).alias("u8"),
+            pl.col("a").cast(pl.UInt16).alias("u16"),
+            pl.col("a").cast(pl.UInt32).alias("u32"),
+            pl.col("a").cast(pl.UInt64).alias("u64"),
+        ]
+    ).fill_null(3)
+
+    assert out.to_dict(False) == {
+        "a": [1, 3, 2, 3],
+        "u8": [1, 3, 2, 3],
+        "u16": [1, 3, 2, 3],
+        "u32": [1, 3, 2, 3],
+        "u64": [1, 3, 2, 3],
+    }
+    assert out.dtypes == [pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64]
 
 
 def test_fill_nan() -> None:
