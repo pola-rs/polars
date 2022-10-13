@@ -669,17 +669,20 @@ pub(crate) mod test {
         let a = a.sort(false);
         let b = a.into_iter().collect::<Vec<_>>();
         assert_eq!(b, [Some("a"), Some("b"), Some("c")]);
+        assert_eq!(a.is_sorted(), true);
     }
 
     #[test]
     fn arithmetic() {
-        let s1 = get_chunked_array();
-        println!("{:?}", s1.chunks);
-        let s2 = &s1;
-        let s1 = &s1;
-        println!("{:?}", s1 + s2);
-        println!("{:?}", s1 - s2);
-        println!("{:?}", s1 * s2);
+        let a = &Int32Chunked::new("a", &[1, 100, 6, 40]);
+        let b = &Int32Chunked::new("b", &[-1, 2, 3, 4]);
+
+        // Not really asserting anything here but shill making sure the code is exercised
+        // This (and more) is properly tested from the integration test suite and Python bindings.
+        println!("{:?}", a + b);
+        println!("{:?}", a - b);
+        println!("{:?}", a * b);
+        println!("{:?}", a / b);
     }
 
     #[test]
@@ -708,11 +711,11 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn aggregates_numeric() {
-        let a = get_chunked_array();
-        assert_eq!(a.max(), Some(3));
+    fn aggregates() {
+        let a = &Int32Chunked::new("a", &[1, 100, 10, 9]);
+        assert_eq!(a.max(), Some(100));
         assert_eq!(a.min(), Some(1));
-        assert_eq!(a.sum(), Some(6))
+        assert_eq!(a.sum(), Some(120))
     }
 
     #[test]
