@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import typing
 from datetime import date, datetime, time
 
+import numpy as np
 import pandas as pd
 
 import polars as pl
@@ -505,3 +507,30 @@ def test_list_slice() -> None:
     assert df.select([pl.col("lst").arr.slice(-2, "len")]).to_dict(False) == {
         "lst": [[3, 4], [2, 1]]
     }
+
+
+@typing.no_type_check
+def test_list_sliced_get_5186() -> None:
+    n = 30
+    df = pl.from_dict(
+        {
+            "ind": pl.arange(0, n, eager=True),
+            "inds": np.stack([np.arange(n), -np.arange(n)], axis=-1),
+        }
+    )
+
+    assert df.select(
+        [
+            "ind",
+            pl.col("inds").arr.first().alias("first_element"),
+            pl.col("inds").arr.last().alias("last_element"),
+        ]
+    )[10:20].frame_equal(
+        df[10:20].select(
+            [
+                "ind",
+                pl.col("inds").arr.first().alias("first_element"),
+                pl.col("inds").arr.last().alias("last_element"),
+            ]
+        )
+    )
