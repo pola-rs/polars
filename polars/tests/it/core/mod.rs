@@ -5,6 +5,7 @@ mod list;
 mod pivot;
 #[cfg(feature = "rolling_window")]
 mod rolling_window;
+mod series;
 mod utils;
 
 use polars::prelude::*;
