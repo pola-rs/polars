@@ -9,6 +9,13 @@ use polars_lazy::frame::LazyFrame;
 use polars_lazy::frame::ScanArgsParquet;
 use polars_sql::SQLContext;
 
+use sqlparser::ast::{
+    Expr as SqlExpr, JoinOperator, OrderByExpr, Select, SelectItem, SetExpr, Statement,
+    TableFactor, TableWithJoins, Value as SQLValue,
+};
+use sqlparser::dialect::GenericDialect;
+use sqlparser::parser::Parser;
+
 // Command: /dd or dataframes
 fn print_dataframes(dataframes: &Vec<(String, String)>) {
     println!(
@@ -40,8 +47,17 @@ fn print_help() {
 }
 
 fn execute_query(context: &SQLContext, query: &str) {
+    let ast = Parser::parse_sql(&GenericDialect::default(), query).unwrap();
+    if ast.len() != 1 {
+        println!("One and only one statement at a time please");
+        return;
+    }
+    let ast = ast.get(0).unwrap();
+    // TODO: Attempt to unwrap into SetExpr::Select
+    // TODO: Register dataframes in SQLContext on the fly from FROM clause
+
     // Execute SQL command
-    let out = match context.execute(&query) {
+    let out = match context.execute_statement(&ast) {
         Ok(q) => q.limit(100).collect(),
         Err(e) => Err(e),
     };
