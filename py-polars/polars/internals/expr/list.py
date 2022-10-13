@@ -583,7 +583,7 @@ class ExprListNameSpace:
         ]
 
         """
-        offset = (-pli.expr_to_lit_or_expr(n, str_to_lit=False))
+        offset = -pli.expr_to_lit_or_expr(n, str_to_lit=False)
         return self.slice(offset, n)
 
     def to_struct(
