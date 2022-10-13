@@ -312,7 +312,13 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
-            _ => Ok(BooleanChunked::full(self.name(), false, self.len())),
+            _ => Err(PolarsError::InvalidOperation(
+                format!(
+                    "'is_nan' not supported for series with dtype {:?}",
+                    self.dtype()
+                )
+                .into(),
+            )),
         }
     }
 
@@ -321,7 +327,13 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
-            _ => Ok(BooleanChunked::full(self.name(), true, self.len())),
+            _ => Err(PolarsError::InvalidOperation(
+                format!(
+                    "'is_not_nan' not supported for series with dtype {:?}",
+                    self.dtype()
+                )
+                .into(),
+            )),
         }
     }
 
@@ -332,7 +344,7 @@ impl Series {
             DataType::Float64 => Ok(self.f64().unwrap().is_finite()),
             _ => Err(PolarsError::InvalidOperation(
                 format!(
-                    "is_nan not supported for series with dtype {:?}",
+                    "'is_finite' not supported for series with dtype {:?}",
                     self.dtype()
                 )
                 .into(),
@@ -347,7 +359,7 @@ impl Series {
             DataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
             _ => Err(PolarsError::InvalidOperation(
                 format!(
-                    "is_nan not supported for series with dtype {:?}",
+                    "'is_infinite' not supported for series with dtype {:?}",
                     self.dtype()
                 )
                 .into(),

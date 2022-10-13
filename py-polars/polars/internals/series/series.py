@@ -2848,9 +2848,7 @@ class Series:
         """
         return wrap_s(self._s.clone())
 
-    def fill_nan(
-        self, fill_value: str | int | float | bool | pli.Expr | None
-    ) -> Series:
+    def fill_nan(self, fill_value: int | float | pli.Expr | None) -> Series:
         """
         Fill floating point NaN value with a fill value.
 

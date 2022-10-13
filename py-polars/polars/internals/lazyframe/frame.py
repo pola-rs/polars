@@ -2184,7 +2184,7 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
 
         return self.select(pli.all().fill_null(value, strategy, limit))
 
-    def fill_nan(self: LDF, fill_value: int | str | float | pli.Expr | None) -> LDF:
+    def fill_nan(self: LDF, fill_value: int | float | pli.Expr | None) -> LDF:
         """
         Fill floating point NaN values.
 
