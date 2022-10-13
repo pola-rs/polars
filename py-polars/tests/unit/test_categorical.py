@@ -163,20 +163,21 @@ def test_categorical_is_in_list() -> None:
 
 
 def test_unset_sorted_on_append() -> None:
-    df1 = pl.DataFrame(
-        [
-            pl.Series("key", ["a", "b", "a", "b"], dtype=pl.Categorical),
-            pl.Series("val", [1, 2, 3, 4]),
-        ]
-    ).sort("key")
-    df2 = pl.DataFrame(
-        [
-            pl.Series("key", ["a", "b", "a", "b"], dtype=pl.Categorical),
-            pl.Series("val", [5, 6, 7, 8]),
-        ]
-    ).sort("key")
-    df = pl.concat([df1, df2], rechunk=False)
-    assert df.groupby("key").count()["count"].to_list() == [4, 4]
+    with pl.StringCache():
+        df1 = pl.DataFrame(
+            [
+                pl.Series("key", ["a", "b", "a", "b"], dtype=pl.Categorical),
+                pl.Series("val", [1, 2, 3, 4]),
+            ]
+        ).sort("key")
+        df2 = pl.DataFrame(
+            [
+                pl.Series("key", ["a", "b", "a", "b"], dtype=pl.Categorical),
+                pl.Series("val", [5, 6, 7, 8]),
+            ]
+        ).sort("key")
+        df = pl.concat([df1, df2], rechunk=False)
+        assert df.groupby("key").count()["count"].to_list() == [4, 4]
 
 
 def test_categorical_error_on_local_cmp() -> None:
@@ -267,4 +268,3 @@ def test_categorical_list_concat_4762() -> None:
     q = df.lazy().select([pl.concat_list([pl.col("x").cast(pl.Categorical)] * 2)])
     with pl.StringCache():
         assert q.collect().to_dict(False) == expected
-    assert q.collect().to_dict(False) == expected
