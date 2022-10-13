@@ -962,6 +962,11 @@ class Expr:
         """
         Returns a boolean Series indicating which values are NaN.
 
+        Notes
+        -----
+        Floating point ```NaN`` (Not A Number) should not be confused
+        with missing data represented as ``Null/None``.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -970,23 +975,23 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_column(pl.all().is_nan().suffix("_isnan"))  # nan != null
-        shape: (5, 4)
-        ┌──────┬─────┬─────────┬─────────┐
-        │ a    ┆ b   ┆ a_isnan ┆ b_isnan │
-        │ ---  ┆ --- ┆ ---     ┆ ---     │
-        │ i64  ┆ f64 ┆ bool    ┆ bool    │
-        ╞══════╪═════╪═════════╪═════════╡
-        │ 1    ┆ 1.0 ┆ false   ┆ false   │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ 2    ┆ 2.0 ┆ false   ┆ false   │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ null ┆ NaN ┆ false   ┆ true    │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ 1    ┆ 1.0 ┆ false   ┆ false   │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ 5    ┆ 5.0 ┆ false   ┆ false   │
-        └──────┴─────┴─────────┴─────────┘
+        >>> df.with_column(pl.col(pl.Float64).is_nan().suffix("_isnan"))
+        shape: (5, 3)
+        ┌──────┬─────┬─────────┐
+        │ a    ┆ b   ┆ b_isnan │
+        │ ---  ┆ --- ┆ ---     │
+        │ i64  ┆ f64 ┆ bool    │
+        ╞══════╪═════╪═════════╡
+        │ 1    ┆ 1.0 ┆ false   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ 2    ┆ 2.0 ┆ false   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ null ┆ NaN ┆ true    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ 1    ┆ 1.0 ┆ false   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ 5    ┆ 5.0 ┆ false   │
+        └──────┴─────┴─────────┘
 
         """
         return wrap_expr(self._pyexpr.is_nan())
@@ -995,6 +1000,11 @@ class Expr:
         """
         Returns a boolean Series indicating which values are not NaN.
 
+        Notes
+        -----
+        Floating point ```NaN`` (Not A Number) should not be confused
+        with missing data represented as ``Null/None``.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -1003,23 +1013,23 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_column(pl.all().is_not_nan().suffix("_is_not_nan"))  # nan != null
-        shape: (5, 4)
-        ┌──────┬─────┬──────────────┬──────────────┐
-        │ a    ┆ b   ┆ a_is_not_nan ┆ b_is_not_nan │
-        │ ---  ┆ --- ┆ ---          ┆ ---          │
-        │ i64  ┆ f64 ┆ bool         ┆ bool         │
-        ╞══════╪═════╪══════════════╪══════════════╡
-        │ 1    ┆ 1.0 ┆ true         ┆ true         │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2    ┆ 2.0 ┆ true         ┆ true         │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ null ┆ NaN ┆ true         ┆ false        │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 1    ┆ 1.0 ┆ true         ┆ true         │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 5    ┆ 5.0 ┆ true         ┆ true         │
-        └──────┴─────┴──────────────┴──────────────┘
+        >>> df.with_column(pl.col(pl.Float64).is_not_nan().suffix("_is_not_nan"))
+        shape: (5, 3)
+        ┌──────┬─────┬──────────────┐
+        │ a    ┆ b   ┆ b_is_not_nan │
+        │ ---  ┆ --- ┆ ---          │
+        │ i64  ┆ f64 ┆ bool         │
+        ╞══════╪═════╪══════════════╡
+        │ 1    ┆ 1.0 ┆ true         │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2    ┆ 2.0 ┆ true         │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null ┆ NaN ┆ false        │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 1    ┆ 1.0 ┆ true         │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5    ┆ 5.0 ┆ true         │
+        └──────┴─────┴──────────────┘
 
         """
         return wrap_expr(self._pyexpr.is_not_nan())
