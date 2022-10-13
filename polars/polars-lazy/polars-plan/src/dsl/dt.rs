@@ -17,6 +17,40 @@ impl DateLikeNameSpace {
             .with_fmt("strftime")
     }
 
+    pub fn truncate(self, every: &str, offset: &str) -> Expr {
+        let every = Duration::parse(every);
+        let offset = Duration::parse(offset);
+        self.0.map(
+            move |s| match s.dtype() {
+                DataType::Datetime(_, _) => {
+                    Ok(s.datetime().unwrap().truncate(every, offset).into_series())
+                }
+                DataType::Date => Ok(s.date().unwrap().truncate(every, offset).into_series()),
+                dt => Err(PolarsError::ComputeError(
+                    format!("expected date/datetime got {:?}", dt).into(),
+                )),
+            },
+            GetOutput::same_type(),
+        )
+    }
+
+    pub fn round(self, every: &str, offset: &str) -> Expr {
+        let every = Duration::parse(every);
+        let offset = Duration::parse(offset);
+        self.0.map(
+            move |s| match s.dtype() {
+                DataType::Datetime(_, _) => {
+                    Ok(s.datetime().unwrap().round(every, offset).into_series())
+                }
+                DataType::Date => Ok(s.date().unwrap().round(every, offset).into_series()),
+                dt => Err(PolarsError::ComputeError(
+                    format!("expected date/datetime got {:?}", dt).into(),
+                )),
+            },
+            GetOutput::same_type(),
+        )
+    }
+
     /// Change the underlying [`TimeUnit`]. And update the data accordingly.
     pub fn cast_time_unit(self, tu: TimeUnit) -> Expr {
         self.0.map(
@@ -180,38 +214,22 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TimeStamp(tu)))
     }
 
+    #[cfg(feature = "truncate")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "truncate")))]
     pub fn truncate(self, every: &str, offset: &str) -> Expr {
-        let every = Duration::parse(every);
-        let offset = Duration::parse(offset);
-        self.0.apply(
-            move |s| match s.dtype() {
-                DataType::Datetime(_, _) => {
-                    Ok(s.datetime().unwrap().truncate(every, offset).into_series())
-                }
-                DataType::Date => Ok(s.date().unwrap().truncate(every, offset).into_series()),
-                dt => Err(PolarsError::ComputeError(
-                    format!("expected date/datetime got {:?}", dt).into(),
-                )),
-            },
-            GetOutput::same_type(),
-        )
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Truncate(
+                every, offset,
+            )))
     }
 
+    #[cfg(feature = "round")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "round")))]
     pub fn round(self, every: &str, offset: &str) -> Expr {
-        let every = Duration::parse(every);
-        let offset = Duration::parse(offset);
-        self.0.apply(
-            move |s| match s.dtype() {
-                DataType::Datetime(_, _) => {
-                    Ok(s.datetime().unwrap().round(every, offset).into_series())
-                }
-                DataType::Date => Ok(s.date().unwrap().round(every, offset).into_series()),
-                dt => Err(PolarsError::ComputeError(
-                    format!("expected date/datetime got {:?}", dt).into(),
-                )),
-            },
-            GetOutput::same_type(),
-        )
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Round(
+                every, offset,
+            )))
     }
 
     /// Offset this `Date/Datetime` by a given offset [`Duration`].
