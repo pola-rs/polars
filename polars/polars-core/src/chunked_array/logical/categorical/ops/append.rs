@@ -4,12 +4,22 @@ use crate::series::IsSorted;
 
 impl CategoricalChunked {
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
-        let new_rev_map = self.merge_categorical_map(other)?;
-        unsafe { self.set_rev_map(new_rev_map, false) };
+        let is_local_different_source =
+            match (self.get_rev_map().as_ref(), other.get_rev_map().as_ref()) {
+                (RevMapping::Local(arr_l), RevMapping::Local(arr_r)) => !std::ptr::eq(arr_l, arr_r),
+                _ => false,
+            };
 
-        self.logical_mut().length += other.len() as IdxSize;
-        let len = self.len();
-        new_chunks(&mut self.logical.chunks, &other.logical().chunks, len);
+        if is_local_different_source {
+            return Err(PolarsError::ComputeError("Cannot concat Categoricals coming from a different source. Consider setting a global StringCache.".into()));
+        } else {
+            let len = self.len();
+            let new_rev_map = self.merge_categorical_map(other)?;
+            unsafe { self.set_rev_map(new_rev_map, false) };
+
+            self.logical_mut().length += other.len() as IdxSize;
+            new_chunks(&mut self.logical.chunks, &other.logical().chunks, len);
+        }
         self.logical.set_sorted2(IsSorted::Not);
         Ok(())
     }
