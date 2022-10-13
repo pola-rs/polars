@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
@@ -749,35 +750,42 @@ impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
     }
 }
 
-pub(crate) fn dicts_to_rows(records: &PyAny) -> PyResult<(Vec<Row>, Vec<String>)> {
+pub(crate) fn dicts_to_rows(
+    records: &PyAny,
+    infer_schema_len: usize,
+) -> PyResult<(Vec<Row>, Vec<String>)> {
     let (dicts, len) = get_pyseq(records)?;
+
+    let mut key_names = BTreeSet::new();
+    for d in dicts.iter()?.take(infer_schema_len) {
+        let d = d?;
+        let d = d.downcast::<PyDict>()?;
+        let keys = d.keys();
+
+        for name in keys {
+            let name = name.extract::<String>()?;
+            key_names.insert(name);
+        }
+    }
+
     let mut rows = Vec::with_capacity(len);
 
-    let mut iter = dicts.iter()?;
-    let d = iter.next().unwrap()?;
-    let d = d.downcast::<PyDict>()?;
-    let vals = d.values();
-    let keys_first = d.keys().extract::<Vec<String>>()?;
-    let row = vals.extract::<Wrap<Row>>()?.0;
-    rows.push(row);
-
-    let keys = d.keys();
-    let width = keys.len();
-
-    for d in iter {
+    for d in dicts.iter()? {
         let d = d?;
         let d = d.downcast::<PyDict>()?;
 
-        let mut row = Vec::with_capacity(width);
+        let mut row = Vec::with_capacity(key_names.len());
 
-        for k in keys {
-            let val = d.get_item(k).unwrap();
-            let val = val.extract::<Wrap<AnyValue>>()?.0;
+        for k in key_names.iter() {
+            let val = match d.get_item(k) {
+                None => AnyValue::Null,
+                Some(val) => val.extract::<Wrap<AnyValue>>()?.0,
+            };
             row.push(val)
         }
         rows.push(Row(row))
     }
-    Ok((rows, keys_first))
+    Ok((rows, key_names.into_iter().collect()))
 }
 
 #[cfg(feature = "asof_join")]

@@ -406,7 +406,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     pub fn read_dicts(dicts: &PyAny, infer_schema_length: Option<usize>) -> PyResult<Self> {
-        let (rows, names) = dicts_to_rows(dicts)?;
+        let (rows, names) = dicts_to_rows(dicts, infer_schema_length.unwrap_or(1))?;
         let mut pydf = Self::finish_from_rows(rows, infer_schema_length)?;
         pydf.df
             .set_column_names(&names)

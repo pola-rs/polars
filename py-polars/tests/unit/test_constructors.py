@@ -446,3 +446,12 @@ def test_u64_lit_5031() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3]}).with_column(pl.col("foo").cast(pl.UInt64))
     assert df.filter(pl.col("foo") < (1 << 64) - 20).shape == (3, 1)
     assert df["foo"].to_list() == [1, 2, 3]
+
+
+def test_from_dicts_missing_columns() -> None:
+    data = [
+        {"a": 1},
+        {"b": 2},
+    ]
+
+    assert pl.from_dicts(data).to_dict(False) == {"a": [1, None], "b": [None, 2]}
