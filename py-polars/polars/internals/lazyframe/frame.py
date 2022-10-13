@@ -21,6 +21,10 @@ from polars.datatypes import (
     Int64,
     PolarsDataType,
     Schema,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
     Utf8,
     py_type_to_dtype,
 )
@@ -2166,6 +2170,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                     dtypes.append(Int8)
                     dtypes.append(Int16)
                     dtypes.append(Int32)
+                    dtypes.append(UInt8)
+                    dtypes.append(UInt16)
+                    dtypes.append(UInt32)
+                    dtypes.append(UInt64)
                     dtypes.append(Float32)
                     dtypes.append(Float64)
             elif isinstance(value, float):
@@ -2175,6 +2183,10 @@ naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
                     dtypes.append(Int16)
                     dtypes.append(Int32)
                     dtypes.append(Int64)
+                    dtypes.append(UInt8)
+                    dtypes.append(UInt16)
+                    dtypes.append(UInt32)
+                    dtypes.append(UInt64)
                     dtypes.append(Float32)
                     dtypes.append(Float64)
             elif isinstance(value, str):
