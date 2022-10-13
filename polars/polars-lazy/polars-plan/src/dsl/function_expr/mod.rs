@@ -76,8 +76,6 @@ pub enum FunctionExpr {
     FillNull {
         super_type: DataType,
     },
-    #[cfg(feature = "is_in")]
-    ListContains,
     #[cfg(all(feature = "rolling_window", feature = "moment"))]
     // if we add more, make a sub enum
     RollingSkew {
@@ -138,8 +136,6 @@ impl Display for FunctionExpr {
             #[cfg(feature = "sign")]
             Sign => "sign",
             FillNull { .. } => "fill_null",
-            #[cfg(feature = "is_in")]
-            ListContains => "arr.contains",
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { .. } => "rolling_skew",
             ShiftAndFill { .. } => "shift_and_fill",
@@ -293,10 +289,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(fill_null::fill_null, &super_type)
             }
 
-            #[cfg(feature = "is_in")]
-            ListContains => {
-                wrap!(list::contains)
-            }
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { window_size, bias } => {
                 map!(rolling::rolling_skew, window_size, bias)
@@ -314,6 +306,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 use ListFunction::*;
                 match lf {
                     Concat => wrap!(list::concat),
+                    #[cfg(feature = "is_in")]
+                    Contains => wrap!(list::contains),
+                    Slice => wrap!(list::slice),
                 }
             }
             #[cfg(feature = "dtype-struct")]

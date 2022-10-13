@@ -1329,12 +1329,12 @@ impl PyExpr {
         self.inner.clone().arr().shift(periods).into()
     }
 
-    fn lst_slice(&self, offset: i64, length: Option<usize>) -> Self {
+    fn lst_slice(&self, offset: PyExpr, length: Option<PyExpr>) -> Self {
         let length = match length {
-            Some(i) => i,
-            None => usize::MAX,
+            Some(i) => i.inner,
+            None => dsl::lit(i64::MAX),
         };
-        self.inner.clone().arr().slice(offset, length).into()
+        self.inner.clone().arr().slice(offset.inner, length).into()
     }
 
     fn lst_eval(&self, expr: PyExpr, parallel: bool) -> Self {

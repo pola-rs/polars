@@ -3,6 +3,7 @@ use polars_core::series::ops::NullBehavior;
 use polars_ops::prelude::*;
 
 use crate::dsl::function_expr::FunctionExpr;
+use crate::prelude::function_expr::ListFunction;
 use crate::prelude::*;
 
 /// Specialized expressions for [`Series`] of [`DataType::List`].
@@ -188,23 +189,22 @@ impl ListNameSpace {
     }
 
     /// Slice every sublist.
-    pub fn slice(self, offset: i64, length: usize) -> Expr {
-        self.0
-            .map(
-                move |s| Ok(s.list()?.lst_slice(offset, length).into_series()),
-                GetOutput::same_type(),
-            )
-            .with_fmt("arr.slice")
+    pub fn slice(self, offset: Expr, length: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::Slice),
+            &[offset, length],
+            false,
+        )
     }
 
     /// Get the head of every sublist
-    pub fn head(self, n: usize) -> Expr {
-        self.slice(0, n)
+    pub fn head(self, n: Expr) -> Expr {
+        self.slice(lit(0), n)
     }
 
     /// Get the tail of every sublist
-    pub fn tail(self, n: usize) -> Expr {
-        self.slice(-(n as i64), n)
+    pub fn tail(self, n: Expr) -> Expr {
+        self.slice(lit(0) - n.clone().cast(DataType::Int64), n)
     }
 
     #[cfg(feature = "list_to_struct")]
@@ -238,7 +238,7 @@ impl ListNameSpace {
 
         Expr::Function {
             input: vec![self.0, other],
-            function: FunctionExpr::ListContains,
+            function: FunctionExpr::ListExpr(ListFunction::Contains),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: true,
