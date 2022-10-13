@@ -387,8 +387,12 @@ impl AExpr {
                 function.get_field(schema, ctxt, &fields)
             }
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
-            Wildcard => Err(PolarsError::ComputeError("should be no wildcard at this point".into())),
-            Nth(_) => Err(PolarsError::ComputeError("should be no nth at this point".into()))
+            Wildcard => Err(PolarsError::ComputeError(
+                "should be no wildcard at this point".into(),
+            )),
+            Nth(_) => Err(PolarsError::ComputeError(
+                "should be no nth at this point".into(),
+            )),
         }
     }
 }
