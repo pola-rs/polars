@@ -46,8 +46,8 @@ impl Display for TemporalFunction {
             Microsecond => "microsecond",
             Nanosecond => "nanosecond",
             TimeStamp(tu) => return write!(f, "dt.timestamp({})", tu),
-            Truncate(every, offset) => "truncate",
-            Round(every, offset) => "round",
+            Truncate(..) => "truncate",
+            Round(..) => "round",
             #[cfg(feature = "timezones")]
             CastTimezone(_) => "cast_timezone",
         };
