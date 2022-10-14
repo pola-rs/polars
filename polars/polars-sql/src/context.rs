@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_plan::prelude::*;
@@ -50,6 +49,7 @@ impl SQLContext {
         let tbl_name = match relation {
             TableFactor::Table { name, alias, .. } => {
                 let tbl_name = name.0.get(0).unwrap().value.as_str();
+                
                 if self.table_map.contains_key(tbl_name) {
                     if let Some(alias) = alias {
                         alias_map.insert(alias.name.value.clone(), tbl_name.to_owned());
@@ -201,9 +201,7 @@ impl SQLContext {
                 match &query.limit {
                     Some(SqlExpr::Value(SQLValue::Number(nrow, _))) => {
                         let nrow = nrow.parse().map_err(|err| {
-                            PolarsError::ComputeError(
-                                format!("Conversion Error: {:?}", err).into(),
-                            )
+                            PolarsError::ComputeError(format!("Conversion Error: {:?}", err).into())
                         })?;
                         lf.limit(nrow)
                     }
@@ -230,9 +228,9 @@ impl SQLContext {
         if ast.len() != 1 {
             return Err(PolarsError::ComputeError(
                 "One and only one statement at a time please".into(),
-            ))
+            ));
         }
-         
+
         let ast = ast.get(0).unwrap();
         return self.execute_statement(ast);
     }

@@ -1,6 +1,7 @@
 use std::ffi::OsStr;
 use std::io::{self, BufRead, Write};
 use std::path::Path;
+use polars_core::prelude::*;
 
 #[cfg(feature = "csv")]
 use polars_lazy::frame::LazyCsvReader;
@@ -8,9 +9,8 @@ use polars_lazy::frame::LazyFrame;
 #[cfg(feature = "parquet")]
 use polars_lazy::frame::ScanArgsParquet;
 use polars_sql::SQLContext;
-
 use sqlparser::ast::{
-    Expr as SqlExpr, JoinOperator, OrderByExpr, Select, SelectItem, SetExpr, Statement,
+    Expr as SqlExpr, JoinOperator, OrderByExpr, Select, SelectItem, SetExpr, Statement, Query,
     TableFactor, TableWithJoins, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
@@ -46,26 +46,80 @@ fn print_help() {
     }
 }
 
-fn execute_query(context: &SQLContext, query: &str) {
+fn setup_dataframe_from_table(context: &mut SQLContext, relation: &TableFactor) -> PolarsResult<()> {
+    let tbl_name = match relation {
+        TableFactor::Table { name, alias, .. } => {
+            let source = name.0.get(0).unwrap().value.as_str();
+            let name = match alias {
+                Some(alias) => alias.name.value.to_string(),
+                None => source.to_string(),
+            };
+            let df = match get_extension_from_filename(&source) {
+                #[cfg(feature = "csv")]
+                Some("csv") => LazyCsvReader::new(source).finish(),
+                #[cfg(feature = "parquet")]
+                Some("parquet") => LazyFrame::scan_parquet(source, ScanArgsParquet::default()),
+                None | Some(_) => {
+                    return Err(PolarsError::ComputeError("Unsupported file extension".into()))
+                }
+            };
+        
+            match df {
+                Ok(frame) => {
+                    context.register(&name, frame);
+                    // dataframes.push((name.to_owned(), source.to_owned()));
+                    // println!("Added dataframe \"{}\" from file {}", name, source)
+                }
+                Err(e) => println!("{}", e),
+            }
+        },
+        _ => return Err(PolarsError::ComputeError("Unsupported.".into())),
+    };
+
+    Ok(())
+}
+
+fn setup_dataframes(context: &mut SQLContext, stmt: &Select) -> PolarsResult<()> {
+    let sql_tbl: &TableWithJoins = stmt
+            .from
+            .get(0)
+            .ok_or_else(|| PolarsError::ComputeError("No table name provided in query".into()))?;
+    
+    setup_dataframe_from_table(context, &sql_tbl.relation)?;
+
+    if !sql_tbl.joins.is_empty() {
+        for tbl in &sql_tbl.joins {
+            setup_dataframe_from_table(context, &tbl.relation)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn execute_query(context: &mut SQLContext, query: &str) -> PolarsResult<DataFrame> {
     let ast = Parser::parse_sql(&GenericDialect::default(), query).unwrap();
     if ast.len() != 1 {
-        println!("One and only one statement at a time please");
-        return;
+        return Err(PolarsError::ComputeError("One and only one statement at a time please".into()));
     }
+
     let ast = ast.get(0).unwrap();
+    match ast {
+        Statement::Query(query) => {
+            match &query.body.as_ref() {
+                SetExpr::Select(select_stmt) => {
+                    setup_dataframes(context, &select_stmt);
+                },
+                _ => return Err(PolarsError::ComputeError("Only SELECT queries are supported.".into())),
+            }
+        },
+        _ => return Err(PolarsError::ComputeError(format!("Statement type {:?} is not supported", ast).into()))
+    }
+
     // TODO: Attempt to unwrap into SetExpr::Select
     // TODO: Register dataframes in SQLContext on the fly from FROM clause
 
     // Execute SQL command
-    let out = match context.execute_statement(&ast) {
-        Ok(q) => q.limit(100).collect(),
-        Err(e) => Err(e),
-    };
-
-    match out {
-        Ok(df) => println!("{}", df),
-        Err(e) => println!("{}", e),
-    }
+    return context.execute_statement(&ast)?.limit(100).collect();
 }
 
 fn register_dataframe(
@@ -132,7 +186,12 @@ pub fn run() -> io::Result<()> {
                 println!("Bye");
                 return Ok(());
             }
-            _ => execute_query(&context, input.trim()),
+            _ => {
+                match execute_query(&mut context, input.trim()) {
+                    Ok(lf) => println!("{}", lf),
+                    Err(e) => println!("{}", e),
+                }
+            }
         }
 
         println!();
