@@ -60,6 +60,7 @@ from polars.exceptions import (
     SchemaError,
     ShapeError,
 )
+from polars.internals import BatchedCsvReader
 
 # TODO remove need for wrap_df
 from polars.internals.dataframe import wrap_df  # noqa: F401
@@ -130,6 +131,7 @@ from polars.internals.whenthen import when
 from polars.io import (
     read_avro,
     read_csv,
+    read_csv_batched,
     read_excel,
     read_ipc,
     read_json,
@@ -152,6 +154,7 @@ __all__ = [
     "ShapeError",
     "SchemaError",
     "ArrowError",
+    "BatchedCsvReader",
     "ComputeError",
     "InvalidOperationError",
     "NoDataError",
@@ -190,6 +193,7 @@ __all__ = [
     "get_idx_type",
     # polars.io
     "read_csv",
+    "read_csv_batched",
     "read_excel",
     "read_parquet",
     "read_json",

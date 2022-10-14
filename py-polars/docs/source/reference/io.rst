@@ -11,6 +11,7 @@ CSV
    :toctree: api/
 
    read_csv
+   read_csv_batched
    scan_csv
    DataFrame.write_csv
 
@@ -75,3 +76,15 @@ Connect to pyarrow datasets.
    :toctree: api/
 
    scan_ds
+
+
+BatchedCsvReader
+----------------
+This reader comes available by calling `pl.read_csv_batched`.
+
+.. currentmodule:: polars.internals.batched
+
+.. autosummary::
+   :toctree: api/
+
+    BatchedCsvReader.next_batches

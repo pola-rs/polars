@@ -1,5 +1,6 @@
 use super::*;
-use crate::csv::read_impl::BatchedCsvReader;
+use crate::csv::read_impl::{to_batched_owned, BatchedCsvReader, OwnedBatchedCsvReader};
+use crate::csv::utils::infer_file_schema;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -110,7 +111,7 @@ where
     delimiter: Option<u8>,
     has_header: bool,
     ignore_parser_errors: bool,
-    schema: Option<&'a Schema>,
+    pub(crate) schema: Option<&'a Schema>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
     path: Option<PathBuf>,
@@ -397,7 +398,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
         (schema, to_cast, _has_categorical)
     }
 
-    pub fn batched(&'a mut self) -> PolarsResult<BatchedCsvReader<'a>> {
+    pub fn batched_borrowed(&'a mut self) -> PolarsResult<BatchedCsvReader<'a>> {
         if let Some(schema) = self.schema_overwrite {
             let (schema, to_cast, has_cat) = self.prepare_schema_overwrite(schema);
             self.owned_schema = Some(Box::new(schema));
@@ -417,6 +418,34 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
         } else {
             let csv_reader = self.core_reader(self.schema, vec![])?;
             csv_reader.batched(false)
+        }
+    }
+}
+
+impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
+    pub fn batched(mut self, schema: Option<SchemaRef>) -> PolarsResult<OwnedBatchedCsvReader> {
+        match schema {
+            Some(schema) => Ok(to_batched_owned(self, schema)),
+            None => {
+                let reader_bytes = get_reader_bytes(&mut self.reader)?;
+
+                let (inferred_schema, _) = infer_file_schema(
+                    &reader_bytes,
+                    self.delimiter.unwrap_or(b','),
+                    self.max_records,
+                    self.has_header,
+                    None,
+                    &mut self.skip_rows_before_header,
+                    self.skip_rows_after_header,
+                    self.comment_char,
+                    self.quote_char,
+                    self.eol_char,
+                    self.null_values.as_ref(),
+                    self.parse_dates,
+                )?;
+                let schema = Arc::new(inferred_schema);
+                Ok(to_batched_owned(self, schema))
+            }
         }
     }
 }

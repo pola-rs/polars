@@ -1,9 +1,12 @@
+mod batched;
+
 use std::borrow::Cow;
 use std::fmt;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+pub use batched::*;
 use polars_arrow::array::*;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
@@ -197,35 +200,17 @@ impl<'a> CoreReader<'a> {
         let mut schema = match schema {
             Some(schema) => Cow::Borrowed(schema),
             None => {
-                #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
                 {
                     // We keep track of the inferred schema bool
                     // In case the file is compressed this schema inference is wrong and has to be done
                     // again after decompression.
+                    #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
                     if let Some(b) =
                         decompress(&reader_bytes, n_rows, delimiter, quote_char, eol_char)
                     {
                         reader_bytes = ReaderBytes::Owned(b);
                     }
 
-                    let (inferred_schema, _) = infer_file_schema(
-                        &reader_bytes,
-                        delimiter,
-                        max_records,
-                        has_header,
-                        schema_overwrite,
-                        &mut skip_rows,
-                        skip_rows_after_header,
-                        comment_char,
-                        quote_char,
-                        eol_char,
-                        null_values.as_ref(),
-                        parse_dates,
-                    )?;
-                    Cow::Owned(inferred_schema)
-                }
-                #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
-                {
                     let (inferred_schema, _) = infer_file_schema(
                         &reader_bytes,
                         delimiter,
@@ -689,153 +674,6 @@ impl<'a> CoreReader<'a> {
             }
         }
         Ok(df)
-    }
-
-    pub fn batched(mut self, _has_cat: bool) -> PolarsResult<BatchedCsvReader<'a>> {
-        let mut n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
-        let reader_bytes = self.reader_bytes.take().unwrap();
-        let logging = std::env::var("POLARS_VERBOSE").is_ok();
-        let (file_chunks, chunk_size, _total_rows, starting_point_offset, _bytes) = self
-            .determine_file_chunks_and_statistics(&mut n_threads, &reader_bytes, logging, true)?;
-        let projection = self.get_projection();
-
-        // safety
-        // we extend the lifetime because we are sure they are bound
-        // to 'a, as the &str refer to the &schema whihc is bound by 'a
-        let str_columns = unsafe {
-            std::mem::transmute::<Vec<&str>, Vec<&'a str>>(self.get_string_columns(&projection)?)
-        };
-
-        // RAII structure that will ensure we maintain a global stringcache
-        #[cfg(feature = "dtype-categorical")]
-        let _cat_lock = if _has_cat {
-            Some(polars_core::IUseStringCache::new())
-        } else {
-            None
-        };
-
-        #[cfg(not(feature = "dtype-categorical"))]
-        let _cat_lock = None;
-
-        Ok(BatchedCsvReader {
-            reader_bytes,
-            chunk_size,
-            file_chunks,
-            chunk_offset: 0,
-            str_capacities: self.init_string_size_stats(&str_columns, chunk_size),
-            str_columns,
-            projection,
-            starting_point_offset,
-            row_count: self.row_count,
-            comment_char: self.comment_char,
-            quote_char: self.quote_char,
-            eol_char: self.eol_char,
-            null_values: self.null_values,
-            to_cast: self.to_cast,
-            ignore_parser_errors: self.ignore_parser_errors,
-            n_rows: self.n_rows,
-            encoding: self.encoding,
-            delimiter: self.delimiter,
-            schema: self.schema,
-            rows_read: 0,
-            _cat_lock,
-        })
-    }
-}
-
-pub struct BatchedCsvReader<'a> {
-    reader_bytes: ReaderBytes<'a>,
-    chunk_size: usize,
-    file_chunks: Vec<(usize, usize)>,
-    chunk_offset: IdxSize,
-    str_capacities: Vec<RunningSize>,
-    str_columns: Vec<&'a str>,
-    projection: Vec<usize>,
-    starting_point_offset: Option<usize>,
-    row_count: Option<RowCount>,
-    comment_char: Option<u8>,
-    quote_char: Option<u8>,
-    eol_char: u8,
-    null_values: Option<NullValuesCompiled>,
-    to_cast: Vec<Field>,
-    ignore_parser_errors: bool,
-    n_rows: Option<usize>,
-    encoding: CsvEncoding,
-    delimiter: u8,
-    schema: Cow<'a, Schema>,
-    rows_read: IdxSize,
-    #[cfg(feature = "dtype-categorical")]
-    _cat_lock: Option<polars_core::IUseStringCache>,
-    #[cfg(not(feature = "dtype-categorical"))]
-    _cat_lock: Option<u8>,
-}
-
-impl<'a> BatchedCsvReader<'a> {
-    pub fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<(IdxSize, DataFrame)>>> {
-        if self.chunk_offset == self.file_chunks.len() as IdxSize {
-            return Ok(None);
-        }
-        if let Some(n_rows) = self.n_rows {
-            if n_rows as IdxSize >= self.rows_read {
-                return Ok(None);
-            }
-        }
-        let end = std::cmp::min(self.chunk_offset as usize + n, self.file_chunks.len());
-
-        let chunks = &self.file_chunks[self.chunk_offset as usize..end];
-        self.chunk_offset = end as IdxSize;
-        let mut bytes = self.reader_bytes.deref();
-        if let Some(pos) = self.starting_point_offset {
-            bytes = &bytes[pos..];
-        }
-
-        let mut chunks = POOL.install(|| {
-            chunks
-                .into_par_iter()
-                .copied()
-                .map(|(bytes_offset_thread, stop_at_nbytes)| {
-                    let mut df = read_chunk(
-                        bytes,
-                        self.delimiter,
-                        self.schema.as_ref(),
-                        self.ignore_parser_errors,
-                        &self.projection,
-                        bytes_offset_thread,
-                        self.quote_char,
-                        self.eol_char,
-                        self.comment_char,
-                        self.chunk_size,
-                        &self.str_capacities,
-                        self.encoding,
-                        self.null_values.as_ref(),
-                        self.chunk_size,
-                        stop_at_nbytes,
-                        self.starting_point_offset,
-                    )?;
-
-                    cast_columns(&mut df, &self.to_cast, false)?;
-
-                    update_string_stats(&self.str_capacities, &self.str_columns, &df)?;
-                    if let Some(rc) = &self.row_count {
-                        df.with_row_count_mut(&rc.name, Some(rc.offset));
-                    }
-                    let n_read = df.height() as IdxSize;
-                    Ok((df, n_read))
-                })
-                .collect::<PolarsResult<Vec<_>>>()
-        })?;
-
-        if self.row_count.is_some() {
-            update_row_counts(&mut chunks, self.rows_read)
-        }
-        self.rows_read += chunks[chunks.len() - 1].1;
-        Ok(Some(
-            chunks
-                .into_iter()
-                .enumerate()
-                .map(|(i, t)| (i as IdxSize + self.chunk_offset, t.0))
-                .collect(),
-        ))
     }
 }
 
