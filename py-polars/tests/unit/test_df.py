@@ -2395,6 +2395,7 @@ def test_union_with_aliases_4770() -> None:
     assert lf.collect()["x"].to_list() == [1, 3, 4]
 
 
+@pytest.mark.skip(reason="locale issues, see #5177")
 def test_init_with_timezone() -> None:
     for tu in DTYPE_TEMPORAL_UNITS | frozenset([None]):
         df = pl.DataFrame(
