@@ -525,3 +525,17 @@ def test_jit_sort_joins() -> None:
         a = pl.from_pandas(pd_result).with_column(pl.all().cast(int)).sort(["a", "b"])
         assert a.frame_equal(pl_result, null_equal=True)
         assert pl_result["a"].flags["SORTED_ASC"]
+
+
+def test_asof_join_schema_5211() -> None:
+    df1 = pl.DataFrame({"today": [1, 2]})
+
+    df2 = pl.DataFrame({"next_friday": [1, 2]})
+
+    assert (
+        df1.lazy()
+        .join_asof(
+            df2.lazy(), left_on="today", right_on="next_friday", strategy="forward"
+        )
+        .schema
+    ) == {"today": pl.Int64, "next_friday": pl.Int64}

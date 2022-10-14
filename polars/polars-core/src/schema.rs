@@ -129,6 +129,13 @@ impl Schema {
             .map(|dtype| Field::new(name, dtype.clone()))
     }
 
+    pub fn try_get_field(&self, name: &str) -> PolarsResult<Field> {
+        self.inner
+            .get(name)
+            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
+            .map(|dtype| Field::new(name, dtype.clone()))
+    }
+
     pub fn get_index(&self, index: usize) -> Option<(&String, &DataType)> {
         self.inner.get_index(index)
     }

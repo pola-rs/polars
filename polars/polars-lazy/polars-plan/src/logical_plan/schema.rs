@@ -6,7 +6,7 @@ pub(crate) fn det_join_schema(
     schema_left: &SchemaRef,
     schema_right: &SchemaRef,
     left_on: &[Expr],
-    right_on: &[String],
+    right_on: &[Expr],
     options: &JoinOptions,
 ) -> PolarsResult<SchemaRef> {
     match options.how {
@@ -35,8 +35,27 @@ pub(crate) fn det_join_schema(
                 new_schema.with_column(field.name, field.dtype);
                 arena.clear();
             }
+            // except in asof joins. Asof joins are not equi-joins
+            // so the columns that are joined on, may have different
+            // values so if the right has a different name, it is added to the schema
+            #[cfg(feature = "asof_join")]
+            if let JoinType::AsOf(_) = &options.how {
+                for (left_on, right_on) in left_on.iter().zip(right_on) {
+                    let field_left =
+                        left_on.to_field_amortized(schema_left, Context::Default, &mut arena)?;
+                    let field_right =
+                        right_on.to_field_amortized(schema_right, Context::Default, &mut arena)?;
+                    if field_left.name != field_right.name {
+                        new_schema.with_column(field_right.name, field_right.dtype);
+                    }
+                }
+            }
 
-            let right_names: PlHashSet<_> = right_on.iter().map(|s| s.as_str()).collect();
+            let mut right_names: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
+            for e in right_on {
+                let field = e.to_field_amortized(schema_right, Context::Default, &mut arena)?;
+                right_names.insert(field.name);
+            }
 
             for (name, dtype) in schema_right.iter() {
                 if !right_names.contains(name.as_str()) {
