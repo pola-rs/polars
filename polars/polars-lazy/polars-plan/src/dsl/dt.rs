@@ -180,14 +180,18 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TimeStamp(tu)))
     }
 
-    pub fn truncate(self, every: &str, offset: &str) -> Expr {
+    pub fn truncate<S: AsRef<str>>(self, every: S, offset: S) -> Expr {
+        let every = every.as_ref().into();
+        let offset = offset.as_ref().into();
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Truncate(
                 every, offset,
             )))
     }
 
-    pub fn round(self, every: &str, offset: &str) -> Expr {
+    pub fn round<S: AsRef<str>>(self, every: S, offset: S) -> Expr {
+        let every = every.as_ref().into();
+        let offset = offset.as_ref().into();
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Round(
                 every, offset,

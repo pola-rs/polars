@@ -21,8 +21,8 @@ pub enum TemporalFunction {
     Microsecond,
     Nanosecond,
     TimeStamp(TimeUnit),
-    Truncate(&str, &str),
-    Round(&str, &str),
+    Truncate(String, String),
+    Round(String, String),
     #[cfg(feature = "timezones")]
     CastTimezone(TimeZone),
 }
@@ -101,8 +101,8 @@ pub(super) fn timestamp(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
     s.timestamp(tu).map(|ca| ca.into_series())
 }
 pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Series> {
-    let every = Duration::parse(every);
-    let offset = Duration::parse(offset);
+    let every = Duration::parse(&every);
+    let offset = Duration::parse(&offset);
     match s.dtype() {
         DataType::Datetime(_, _) => Ok(s.datetime().unwrap().truncate(every, offset).into_series()),
         DataType::Date => Ok(s.date().unwrap().truncate(every, offset).into_series()),
