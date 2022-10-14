@@ -17,7 +17,7 @@ thread_local! {pub(crate) static TABLES: RefCell<Vec<String>> = RefCell::new(vec
 
 #[derive(Default, Clone)]
 pub struct SQLContext {
-    pub(crate) table_map: PlHashMap<String, LazyFrame>,
+    pub table_map: PlHashMap<String, LazyFrame>,
 }
 
 impl SQLContext {

@@ -1,7 +1,11 @@
+#![allow(unused)]
+
 #[cfg(feature = "cli")]
 mod cli;
 
-fn main() {
+fn main() -> std::io::Result<()> {
     #[cfg(feature = "cli")]
-    cli::run();
+    return cli::run();
+
+    Ok(())
 }
