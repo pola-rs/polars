@@ -364,3 +364,20 @@ def test_rolling_skew_lagging_null_5179() -> None:
         0.6309038567106234,
         0.0,
     ]
+
+
+def test_rolling_var_numerical_stability_5197() -> None:
+    s = pl.Series([*[1.2] * 4, *[3.3] * 7])
+    assert s.to_frame("a").with_columns(pl.col("a").rolling_var(5))[:, 0].to_list() == [
+        None,
+        None,
+        None,
+        None,
+        0.882,
+        1.3229999999999997,
+        1.3229999999999997,
+        0.8819999999999983,
+        0.0,
+        0.0,
+        0.0,
+    ]

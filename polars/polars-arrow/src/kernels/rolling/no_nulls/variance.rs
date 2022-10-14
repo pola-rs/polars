@@ -93,6 +93,7 @@ impl<
             + NumCast
             + One
             + Zero
+            + PartialOrd
             + Sub<Output = T>,
     > RollingAggWindowNoNulls<'a, T> for VarWindow<'a, T>
 {
@@ -114,7 +115,14 @@ impl<
             T::zero()
         } else {
             // apply Bessel's correction
-            var / (count - T::one()) * count
+            let out = var / (count - T::one()) * count;
+            // variance cannot be negative.
+            // if it is negative it is due to numeric instability
+            if out < T::zero() {
+                T::zero()
+            } else {
+                out
+            }
         }
     }
 }
@@ -196,6 +204,7 @@ impl<
             + One
             + Zero
             + Sub<Output = T>
+            + PartialOrd
             + Pow<T, Output = T>,
     > RollingAggWindowNoNulls<'a, T> for StdWindow<'a, T>
 {
