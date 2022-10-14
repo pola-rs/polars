@@ -1,6 +1,8 @@
 use std::ffi::OsStr;
-use std::io::{self, BufRead, Write};
+use std::io::{self, Read, BufRead, Write};
 use std::path::Path;
+use std::str;
+
 use polars_core::prelude::*;
 
 #[cfg(feature = "csv")]
@@ -97,7 +99,10 @@ fn setup_dataframes(context: &mut SQLContext, stmt: &Select) -> PolarsResult<()>
 }
 
 fn execute_query(context: &mut SQLContext, query: &str) -> PolarsResult<DataFrame> {
-    let ast = Parser::parse_sql(&GenericDialect::default(), query).unwrap();
+    let ast = match Parser::parse_sql(&GenericDialect::default(), query) {
+        Ok(ast) => ast,
+        Err(e) => return Err(PolarsError::ComputeError(format!("Error parsing SQL: {:?}", e).into()))
+    };
     if ast.len() != 1 {
         return Err(PolarsError::ComputeError("One and only one statement at a time please".into()));
     }
@@ -109,14 +114,15 @@ fn execute_query(context: &mut SQLContext, query: &str) -> PolarsResult<DataFram
                 SetExpr::Select(select_stmt) => {
                     setup_dataframes(context, &select_stmt);
                 },
-                _ => return Err(PolarsError::ComputeError("Only SELECT queries are supported.".into())),
+                // Statement is validated in context::execute_statement
+                // so we leave it to them to return an error type for unsupported expressions
+                _ => (),
             }
         },
-        _ => return Err(PolarsError::ComputeError(format!("Statement type {:?} is not supported", ast).into()))
+        // Statement is validated in context::execute_statement
+        // so we leave it to them to return an error type for unsupported statements
+        _ => (),
     }
-
-    // TODO: Attempt to unwrap into SetExpr::Select
-    // TODO: Register dataframes in SQLContext on the fly from FROM clause
 
     // Execute SQL command
     return context.execute_statement(&ast)?.limit(100).collect();
@@ -155,7 +161,7 @@ fn register_dataframe(
     }
 }
 
-pub fn run() -> io::Result<()> {
+pub fn run_tty() -> std::io::Result<()> {
     let mut stdout = io::stdout();
     let mut context = SQLContext::try_new().unwrap();
     let mut dataframes = Vec::new();
@@ -163,6 +169,7 @@ pub fn run() -> io::Result<()> {
 
     println!("Welcome to Polars CLI. Commands end with ; or \\n");
     println!("Type help or \\? for help.");
+
     loop {
         print!("=> ");
         stdout.flush().unwrap();
@@ -173,6 +180,7 @@ pub fn run() -> io::Result<()> {
             continue;
         }
 
+        println!("Input: {}", input);
         let command: Vec<&str> = input.trim().split(" ").collect();
         if command[0].is_empty() {
             continue;
@@ -196,6 +204,22 @@ pub fn run() -> io::Result<()> {
 
         println!();
     }
+}
+
+pub fn run() -> io::Result<()> {
+    if atty::is(atty::Stream::Stdin) {
+        return run_tty();
+    } 
+
+    let mut context = SQLContext::try_new().unwrap();
+    for line in std::io::stdin().lines() {
+        match execute_query(&mut context, line.unwrap().trim()) {
+            Ok(lf) => println!("{}", lf),
+            Err(e) => println!("{}", e),
+        }
+    }
+    
+    Ok(())
 }
 
 fn get_extension_from_filename(filename: &str) -> Option<&str> {
