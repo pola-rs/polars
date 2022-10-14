@@ -125,6 +125,32 @@ impl FunctionExpr {
                     Month | Quarter | Week | WeekDay | Day | OrdinalDay | Hour | Minute
                     | Millisecond | Microsecond | Nanosecond | Second => DataType::UInt32,
                     TimeStamp(_) => DataType::Int64,
+                    Truncate(every, offset) => {
+                        return try_map_dtype(&|dt| {
+                            if let DataType::Datetime(tu, _) = dt {
+                                Ok(DataType::Datetime(*tu, None))
+                            } else if let DataType::Date = dt {
+                                Ok(DataType::Date)
+                            } else {
+                                Err(PolarsError::SchemaMisMatch(
+                                    format!("expected Datetime got {:?}", dt).into(),
+                                ))
+                            }
+                        })
+                    }
+                    Round(every, offset) => {
+                        return try_map_dtype(&|dt| {
+                            if let DataType::Datetime(tu, _) = dt {
+                                Ok(DataType::Datetime(*tu, None))
+                            } else if let DataType::Date = dt {
+                                Ok(DataType::Date)
+                            } else {
+                                Err(PolarsError::SchemaMisMatch(
+                                    format!("expected Datetime got {:?}", dt).into(),
+                                ))
+                            }
+                        })
+                    }
                     #[cfg(feature = "timezones")]
                     CastTimezone(tz) => {
                         return try_map_dtype(&|dt| {

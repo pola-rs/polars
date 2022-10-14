@@ -21,8 +21,8 @@ pub enum TemporalFunction {
     Microsecond,
     Nanosecond,
     TimeStamp(TimeUnit),
-    Round(&str, &str),
     Truncate(&str, &str),
+    Round(&str, &str),
     #[cfg(feature = "timezones")]
     CastTimezone(TimeZone),
 }
@@ -46,8 +46,8 @@ impl Display for TemporalFunction {
             Microsecond => "microsecond",
             Nanosecond => "nanosecond",
             TimeStamp(tu) => return write!(f, "dt.timestamp({})", tu),
-            Round(every, offset) => "round",
             Truncate(every, offset) => "truncate",
+            Round(every, offset) => "round",
             #[cfg(feature = "timezones")]
             CastTimezone(_) => "cast_timezone",
         };
