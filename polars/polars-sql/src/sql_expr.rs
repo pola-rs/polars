@@ -302,10 +302,10 @@ pub(super) fn process_join_constraint(
                             }
                         }
                     }
-                }
+                },
                 (SqlExpr::Identifier(left), SqlExpr::Identifier(right)) => {
                     return Ok((col(&left.value), col(&right.value)))
-                }
+                },
                 _ => {}
             }
         }
