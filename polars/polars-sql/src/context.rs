@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_plan::prelude::*;
@@ -49,7 +50,7 @@ impl SQLContext {
         let tbl_name = match relation {
             TableFactor::Table { name, alias, .. } => {
                 let tbl_name = name.0.get(0).unwrap().value.as_str();
-                
+
                 if self.table_map.contains_key(tbl_name) {
                     if let Some(alias) = alias {
                         alias_map.insert(alias.name.value.clone(), tbl_name.to_owned());

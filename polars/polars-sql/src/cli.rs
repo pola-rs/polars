@@ -1,10 +1,9 @@
 use std::ffi::OsStr;
-use std::io::{self, Read, BufRead, Write};
+use std::io::{self, BufRead, Read, Write};
 use std::path::Path;
 use std::str;
 
 use polars_core::prelude::*;
-
 #[cfg(feature = "csv")]
 use polars_lazy::frame::LazyCsvReader;
 use polars_lazy::frame::LazyFrame;
@@ -12,7 +11,7 @@ use polars_lazy::frame::LazyFrame;
 use polars_lazy::frame::ScanArgsParquet;
 use polars_sql::SQLContext;
 use sqlparser::ast::{
-    Expr as SqlExpr, JoinOperator, OrderByExpr, Select, SelectItem, SetExpr, Statement, Query,
+    Expr as SqlExpr, JoinOperator, OrderByExpr, Query, Select, SelectItem, SetExpr, Statement,
     TableFactor, TableWithJoins, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
@@ -48,7 +47,10 @@ fn print_help() {
     }
 }
 
-fn setup_dataframe_from_table(context: &mut SQLContext, relation: &TableFactor) -> PolarsResult<()> {
+fn setup_dataframe_from_table(
+    context: &mut SQLContext,
+    relation: &TableFactor,
+) -> PolarsResult<()> {
     let tbl_name = match relation {
         TableFactor::Table { name, alias, .. } => {
             let source = name.0.get(0).unwrap().value.as_str();
@@ -62,10 +64,12 @@ fn setup_dataframe_from_table(context: &mut SQLContext, relation: &TableFactor) 
                 #[cfg(feature = "parquet")]
                 Some("parquet") => LazyFrame::scan_parquet(source, ScanArgsParquet::default()),
                 None | Some(_) => {
-                    return Err(PolarsError::ComputeError("Unsupported file extension".into()))
+                    return Err(PolarsError::ComputeError(
+                        "Unsupported file extension".into(),
+                    ))
                 }
             };
-        
+
             match df {
                 Ok(frame) => {
                     context.register(&name, frame);
@@ -74,7 +78,7 @@ fn setup_dataframe_from_table(context: &mut SQLContext, relation: &TableFactor) 
                 }
                 Err(e) => println!("{}", e),
             }
-        },
+        }
         _ => return Err(PolarsError::ComputeError("Unsupported.".into())),
     };
 
@@ -83,10 +87,10 @@ fn setup_dataframe_from_table(context: &mut SQLContext, relation: &TableFactor) 
 
 fn setup_dataframes(context: &mut SQLContext, stmt: &Select) -> PolarsResult<()> {
     let sql_tbl: &TableWithJoins = stmt
-            .from
-            .get(0)
-            .ok_or_else(|| PolarsError::ComputeError("No table name provided in query".into()))?;
-    
+        .from
+        .get(0)
+        .ok_or_else(|| PolarsError::ComputeError("No table name provided in query".into()))?;
+
     setup_dataframe_from_table(context, &sql_tbl.relation)?;
 
     if !sql_tbl.joins.is_empty() {
@@ -101,10 +105,16 @@ fn setup_dataframes(context: &mut SQLContext, stmt: &Select) -> PolarsResult<()>
 fn execute_query(context: &mut SQLContext, query: &str) -> PolarsResult<DataFrame> {
     let ast = match Parser::parse_sql(&GenericDialect::default(), query) {
         Ok(ast) => ast,
-        Err(e) => return Err(PolarsError::ComputeError(format!("Error parsing SQL: {:?}", e).into()))
+        Err(e) => {
+            return Err(PolarsError::ComputeError(
+                format!("Error parsing SQL: {:?}", e).into(),
+            ))
+        }
     };
     if ast.len() != 1 {
-        return Err(PolarsError::ComputeError("One and only one statement at a time please".into()));
+        return Err(PolarsError::ComputeError(
+            "One and only one statement at a time please".into(),
+        ));
     }
 
     let ast = ast.get(0).unwrap();
@@ -113,12 +123,12 @@ fn execute_query(context: &mut SQLContext, query: &str) -> PolarsResult<DataFram
             match &query.body.as_ref() {
                 SetExpr::Select(select_stmt) => {
                     setup_dataframes(context, &select_stmt);
-                },
+                }
                 // Statement is validated in context::execute_statement
                 // so we leave it to them to return an error type for unsupported expressions
                 _ => (),
             }
-        },
+        }
         // Statement is validated in context::execute_statement
         // so we leave it to them to return an error type for unsupported statements
         _ => (),
@@ -146,7 +156,7 @@ fn register_dataframe(
         #[cfg(feature = "parquet")]
         Some("parquet") => LazyFrame::scan_parquet(source, ScanArgsParquet::default()),
         None | Some(_) => {
-            println!("Unknown extension.");
+            println!("Unsupported file: {}", source);
             return;
         }
     };
@@ -194,12 +204,10 @@ pub fn run_tty() -> std::io::Result<()> {
                 println!("Bye");
                 return Ok(());
             }
-            _ => {
-                match execute_query(&mut context, input.trim()) {
-                    Ok(lf) => println!("{}", lf),
-                    Err(e) => println!("{}", e),
-                }
-            }
+            _ => match execute_query(&mut context, input.trim()) {
+                Ok(lf) => println!("{}", lf),
+                Err(e) => println!("{}", e),
+            },
         }
 
         println!();
@@ -209,7 +217,7 @@ pub fn run_tty() -> std::io::Result<()> {
 pub fn run() -> io::Result<()> {
     if atty::is(atty::Stream::Stdin) {
         return run_tty();
-    } 
+    }
 
     let mut context = SQLContext::try_new().unwrap();
     for line in std::io::stdin().lines() {
@@ -218,7 +226,7 @@ pub fn run() -> io::Result<()> {
             Err(e) => println!("{}", e),
         }
     }
-    
+
     Ok(())
 }
 
