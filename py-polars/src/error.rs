@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Formatter};
+use std::io::Error;
 
 use polars::prelude::PolarsError;
 use polars_core::error::ArrowError;
@@ -15,6 +16,12 @@ pub enum PyPolarsErr {
     Other(String),
     #[error(transparent)]
     Arrow(#[from] ArrowError),
+}
+
+impl std::convert::From<std::io::Error> for PyPolarsErr {
+    fn from(value: Error) -> Self {
+        PyPolarsErr::Other(format!("{:?}", value))
+    }
 }
 
 impl std::convert::From<PyPolarsErr> for PyErr {

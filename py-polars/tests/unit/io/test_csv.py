@@ -852,3 +852,23 @@ def test_csv_categorical_categorical_merge() -> None:
     assert pl.read_csv(f, dtypes={"x": pl.Categorical}, sample_size=10).unique()[
         "x"
     ].to_list() == ["A", "B"]
+
+
+def test_batched_csv_reader(foods_csv: str) -> None:
+    reader = pl.read_csv_batched(foods_csv, batch_size=4)
+    batches = reader.next_batches(5)
+
+    assert batches is not None
+    assert len(batches) == 5
+    assert batches[0].to_dict(False) == {
+        "category": ["vegetables"],
+        "calories": [45],
+        "fats_g": [0.5],
+        "sugars_g": [2],
+    }
+    assert batches[-1].to_dict(False) == {
+        "category": ["meat"],
+        "calories": [120],
+        "fats_g": [10.0],
+        "sugars_g": [1],
+    }

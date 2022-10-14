@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, overload
 from urllib.request import urlopen
 
+import polars.internals as pli
 from polars.datatypes import DataType
 from polars.utils import format_path
 
@@ -185,3 +186,13 @@ def _is_local_file(file: str) -> bool:
         return True
     except StopIteration:
         return False
+
+
+def _update_columns(df: pli.DataFrame, new_columns: list[str]) -> pli.DataFrame:
+    if df.width > len(new_columns):
+        cols = df.columns
+        for i, name in enumerate(new_columns):
+            cols[i] = name
+        new_columns = cols
+    df.columns = new_columns
+    return df

@@ -65,7 +65,7 @@ impl CsvSource {
         let reader = Box::new(reader);
         let reader = Box::leak(reader) as *mut CsvReader<'static, File>;
 
-        let batched_reader = unsafe { Box::new((*reader).batched()?) };
+        let batched_reader = unsafe { Box::new((*reader).batched_borrowed()?) };
 
         let batched_reader = Box::leak(batched_reader) as *mut BatchedCsvReader;
 
