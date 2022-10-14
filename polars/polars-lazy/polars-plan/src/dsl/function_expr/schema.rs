@@ -125,7 +125,7 @@ impl FunctionExpr {
                     Month | Quarter | Week | WeekDay | Day | OrdinalDay | Hour | Minute
                     | Millisecond | Microsecond | Nanosecond | Second => DataType::UInt32,
                     TimeStamp(_) => DataType::Int64,
-                    Truncate(every, offset) => {
+                    Truncate(..) => {
                         return try_map_dtype(&|dt| {
                             if let DataType::Datetime(tu, _) = dt {
                                 Ok(DataType::Datetime(*tu, None))
@@ -138,7 +138,7 @@ impl FunctionExpr {
                             }
                         })
                     }
-                    Round(every, offset) => {
+                    Round(..) => {
                         return try_map_dtype(&|dt| {
                             if let DataType::Datetime(tu, _) = dt {
                                 Ok(DataType::Datetime(*tu, None))
