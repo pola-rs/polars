@@ -266,7 +266,15 @@ impl PartitionedAggregation for AggregationExpr {
                 #[cfg(feature = "dtype-struct")]
                 GroupByMethod::Mean => {
                     let new_name = series.name().to_string();
-                    let mut agg_s = series.agg_sum(groups);
+
+                    // ensure we don't overflow
+                    // the all 8 and 16 bits integers are already upcasted to int16 on `agg_sum`
+                    let mut agg_s = if matches!(series.dtype(), DataType::Int32 | DataType::UInt32)
+                    {
+                        series.cast(&DataType::Int64).unwrap().agg_sum(groups)
+                    } else {
+                        series.agg_sum(groups)
+                    };
                     agg_s.rename(&new_name);
 
                     if !agg_s.dtype().is_numeric() {
