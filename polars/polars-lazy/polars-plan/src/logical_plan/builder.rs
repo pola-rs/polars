@@ -530,30 +530,9 @@ impl LogicalPlanBuilder {
     ) -> Self {
         let schema_left = try_delayed!(self.0.schema(), &self.0, into);
         let schema_right = try_delayed!(other.schema(), &self.0, into);
-        let mut arena = Arena::with_capacity(8);
-        let right_names = try_delayed!(
-            right_on
-                .iter()
-                .map(|e| {
-                    let name = e
-                        .to_field_amortized(&schema_right, Context::Default, &mut arena)
-                        .map(|field| field.name);
-                    arena.clear();
-                    name
-                })
-                .collect::<PolarsResult<Vec<_>>>(),
-            &self.0,
-            into
-        );
 
         let schema = try_delayed!(
-            det_join_schema(
-                &schema_left,
-                &schema_right,
-                &left_on,
-                &right_names,
-                &options
-            ),
+            det_join_schema(&schema_left, &schema_right, &left_on, &right_on, &options),
             self.0,
             into
         );

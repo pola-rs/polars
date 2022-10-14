@@ -767,18 +767,12 @@ impl<'a> ALogicalPlanBuilder<'a> {
     ) -> Self {
         let schema_left = self.schema();
         let schema_right = self.lp_arena.get(other).schema(self.lp_arena);
-        let right_names = right_on
-            .iter()
-            .map(|e| {
-                self.expr_arena
-                    .get(*e)
-                    .to_field(&schema_right, Context::Default, self.expr_arena)
-                    .unwrap()
-                    .name
-            })
-            .collect::<Vec<_>>();
 
         let left_on_exprs = left_on
+            .iter()
+            .map(|node| node_to_expr(*node, self.expr_arena))
+            .collect::<Vec<_>>();
+        let right_on_exprs = right_on
             .iter()
             .map(|node| node_to_expr(*node, self.expr_arena))
             .collect::<Vec<_>>();
@@ -787,7 +781,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             &schema_left,
             &schema_right,
             &left_on_exprs,
-            &right_names,
+            &right_on_exprs,
             &options,
         )
         .unwrap();
