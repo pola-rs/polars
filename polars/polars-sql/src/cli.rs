@@ -158,7 +158,7 @@ fn execute_query(context: &mut SQLContext, query: &str) -> PolarsResult<DataFram
     }
 
     // Execute SQL command
-    return context.execute_statement(ast)?.limit(100).collect();
+    return context.execute_statement(ast)?.collect();
 }
 
 fn get_extension_from_filename(filename: &str) -> Option<&str> {
