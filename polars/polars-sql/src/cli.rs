@@ -10,10 +10,7 @@ use polars_lazy::frame::LazyFrame;
 #[cfg(feature = "parquet")]
 use polars_lazy::frame::ScanArgsParquet;
 use polars_sql::SQLContext;
-use sqlparser::ast::{
-    Expr as SqlExpr, JoinOperator, OrderByExpr, Query, Select, SelectItem, SetExpr, Statement,
-    TableFactor, TableWithJoins, Value as SQLValue,
-};
+use sqlparser::ast::{Select, SetExpr, Statement, TableFactor, TableWithJoins};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
@@ -47,55 +44,56 @@ fn print_help() {
     }
 }
 
-fn setup_dataframe_from_table(
+fn create_dataframe_from_file(filename: &str) -> PolarsResult<LazyFrame> {
+    return match get_extension_from_filename(filename) {
+        #[cfg(feature = "csv")]
+        Some("csv") => LazyCsvReader::new(filename).finish(),
+        #[cfg(feature = "parquet")]
+        Some("parquet") => LazyFrame::scan_parquet(filename, ScanArgsParquet::default()),
+        None | Some(_) => Err(PolarsError::ComputeError(
+            format!("Unsupported file: {}", filename).into(),
+        )),
+    };
+}
+
+fn create_dataframe_from_table(
     context: &mut SQLContext,
     relation: &TableFactor,
 ) -> PolarsResult<()> {
-    let tbl_name = match relation {
+    match relation {
         TableFactor::Table { name, alias, .. } => {
             let source = name.0.get(0).unwrap().value.as_str();
             let name = match alias {
                 Some(alias) => alias.name.value.to_string(),
                 None => source.to_string(),
             };
-            let df = match get_extension_from_filename(&source) {
-                #[cfg(feature = "csv")]
-                Some("csv") => LazyCsvReader::new(source).finish(),
-                #[cfg(feature = "parquet")]
-                Some("parquet") => LazyFrame::scan_parquet(source, ScanArgsParquet::default()),
-                None | Some(_) => {
-                    return Err(PolarsError::ComputeError(
-                        "Unsupported file extension".into(),
-                    ))
-                }
-            };
 
-            match df {
-                Ok(frame) => {
-                    context.register(&name, frame);
-                    // dataframes.push((name.to_owned(), source.to_owned()));
-                    // println!("Added dataframe \"{}\" from file {}", name, source)
-                }
-                Err(e) => println!("{}", e),
+            // Return early if table was already registered.
+            if context.table_map.contains_key(&name) {
+                return Ok(());
             }
+
+            let frame = create_dataframe_from_file(source)?;
+            context.register(&name, frame);
         }
-        _ => return Err(PolarsError::ComputeError("Unsupported.".into())),
+        // We leave the error for unsupported table types up to SQlContext::execute
+        _ => (),
     };
 
     Ok(())
 }
 
-fn setup_dataframes(context: &mut SQLContext, stmt: &Select) -> PolarsResult<()> {
+fn create_dataframes_from_statement(context: &mut SQLContext, stmt: &Select) -> PolarsResult<()> {
     let sql_tbl: &TableWithJoins = stmt
         .from
         .get(0)
         .ok_or_else(|| PolarsError::ComputeError("No table name provided in query".into()))?;
 
-    setup_dataframe_from_table(context, &sql_tbl.relation)?;
+    create_dataframe_from_table(context, &sql_tbl.relation)?;
 
     if !sql_tbl.joins.is_empty() {
         for tbl in &sql_tbl.joins {
-            setup_dataframe_from_table(context, &tbl.relation)?;
+            create_dataframe_from_table(context, &tbl.relation)?;
         }
     }
 
@@ -122,7 +120,7 @@ fn execute_query(context: &mut SQLContext, query: &str) -> PolarsResult<DataFram
         Statement::Query(query) => {
             match &query.body.as_ref() {
                 SetExpr::Select(select_stmt) => {
-                    setup_dataframes(context, &select_stmt);
+                    create_dataframes_from_statement(context, &select_stmt)?;
                 }
                 // Statement is validated in context::execute_statement
                 // so we leave it to them to return an error type for unsupported expressions
@@ -149,17 +147,7 @@ fn register_dataframe(
     }
     let name = command[1];
     let source = command[2];
-
-    let df = match get_extension_from_filename(source) {
-        #[cfg(feature = "csv")]
-        Some("csv") => LazyCsvReader::new(source).finish(),
-        #[cfg(feature = "parquet")]
-        Some("parquet") => LazyFrame::scan_parquet(source, ScanArgsParquet::default()),
-        None | Some(_) => {
-            println!("Unsupported file: {}", source);
-            return;
-        }
-    };
+    let df = create_dataframe_from_file(source);
 
     match df {
         Ok(frame) => {
@@ -169,6 +157,10 @@ fn register_dataframe(
         }
         Err(e) => println!("{}", e),
     }
+}
+
+fn get_extension_from_filename(filename: &str) -> Option<&str> {
+    Path::new(filename).extension().and_then(OsStr::to_str)
 }
 
 pub fn run_tty() -> std::io::Result<()> {
@@ -220,16 +212,23 @@ pub fn run() -> io::Result<()> {
     }
 
     let mut context = SQLContext::try_new().unwrap();
-    for line in std::io::stdin().lines() {
-        match execute_query(&mut context, line.unwrap().trim()) {
+    let mut input: Vec<u8> = Vec::with_capacity(1024);
+    let mut stdin = std::io::stdin();
+
+    loop {
+        input.clear();
+        stdin.lock().read_until(b';', &mut input);
+
+        let query = std::str::from_utf8(&input).unwrap_or("").trim();
+        if query.is_empty() {
+            break;
+        }
+
+        match execute_query(&mut context, query) {
             Ok(lf) => println!("{}", lf),
             Err(e) => println!("{}", e),
         }
     }
 
     Ok(())
-}
-
-fn get_extension_from_filename(filename: &str) -> Option<&str> {
-    Path::new(filename).extension().and_then(OsStr::to_str)
 }
