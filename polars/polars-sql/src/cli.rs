@@ -2,6 +2,7 @@ use std::ffi::OsStr;
 use std::io::{self, BufRead, Read, Write};
 use std::path::Path;
 use std::str;
+use std::time::{Duration, Instant};
 
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
@@ -133,7 +134,7 @@ fn execute_query(context: &mut SQLContext, query: &str) -> PolarsResult<DataFram
     }
 
     // Execute SQL command
-    return context.execute_statement(&ast)?.limit(100).collect();
+    return context.execute_statement(ast)?.limit(100).collect();
 }
 
 fn register_dataframe(
@@ -196,10 +197,21 @@ pub fn run_tty() -> std::io::Result<()> {
                 println!("Bye");
                 return Ok(());
             }
-            _ => match execute_query(&mut context, input.trim()) {
-                Ok(lf) => println!("{}", lf),
-                Err(e) => println!("{}", e),
-            },
+            _ => {
+                let start = Instant::now();
+
+                match execute_query(&mut context, input.trim()) {
+                    Ok(lf) => {
+                        println!("{}", lf);
+                        println!(
+                            "{} rows in set ({:.3} sec)",
+                            lf.shape().0,
+                            start.elapsed().as_secs_f32()
+                        )
+                    }
+                    Err(e) => println!("{}", e),
+                }
+            }
         }
 
         println!();
