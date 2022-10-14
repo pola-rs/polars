@@ -27,7 +27,7 @@ pub(crate) fn next_line_position_naive(input: &[u8], eol_char: u8) -> Option<usi
 /// Find the nearest next line position that is not embedded in a String field.
 pub(crate) fn next_line_position(
     mut input: &[u8],
-    expected_fields: Option<usize>,
+    mut expected_fields: Option<usize>,
     delimiter: u8,
     quote_char: Option<u8>,
     eol_char: u8,
@@ -36,7 +36,17 @@ pub(crate) fn next_line_position(
     if input.is_empty() {
         return None;
     }
+    let mut lines_checked = 0u16;
     loop {
+        lines_checked += 1;
+        // headers might have an extra value
+        // So if we have churned through enough lines
+        // we try one field less.
+        if lines_checked == 256 {
+            if let Some(ef) = expected_fields {
+                expected_fields = Some(ef.saturating_sub(1))
+            }
+        };
         let pos = memchr::memchr(eol_char, input)? + 1;
         if input.len() - pos == 0 {
             return None;
@@ -45,16 +55,15 @@ pub(crate) fn next_line_position(
         let new_input = unsafe { input.get_unchecked(pos..) };
         let line = SplitLines::new(new_input, quote_char.unwrap_or(b'"'), eol_char).next();
 
+        let count_fields = |line: &[u8]| {
+            SplitFields::new(line, delimiter, quote_char, eol_char)
+                .into_iter()
+                .count()
+        };
+
         match (line, expected_fields) {
             // count the fields, and determine if they are equal to what we expect from the schema
-            (Some(line), Some(expected_fields))
-                if {
-                    SplitFields::new(line, delimiter, quote_char, eol_char)
-                        .into_iter()
-                        .count()
-                        == expected_fields
-                } =>
-            {
+            (Some(line), Some(expected_fields)) if { count_fields(line) == expected_fields } => {
                 return Some(total_pos + pos)
             }
             (Some(_), Some(_)) => {
@@ -67,14 +76,7 @@ pub(crate) fn next_line_position(
             // don't count the fields
             (Some(_), None) => return Some(total_pos + pos),
             // no new line found, check latest line (without eol) for number of fields
-            (None, Some(expected_fields))
-                if {
-                    SplitFields::new(new_input, delimiter, quote_char, eol_char)
-                        .into_iter()
-                        .count()
-                        == expected_fields
-                } =>
-            {
+            (None, Some(expected_fields)) if { count_fields(new_input) == expected_fields } => {
                 return Some(total_pos + pos)
             }
             _ => return None,
