@@ -1,7 +1,6 @@
 use std::ffi::OsStr;
 use std::io::{self, BufRead, Read, Write};
 use std::path::Path;
-use std::str;
 use std::time::{Duration, Instant};
 
 use polars_core::prelude::*;
@@ -11,11 +10,13 @@ use polars_lazy::frame::LazyFrame;
 #[cfg(feature = "parquet")]
 use polars_lazy::frame::ScanArgsParquet;
 use polars_sql::SQLContext;
+use rustyline::error::ReadlineError;
+use rustyline::{Editor, Result};
 use sqlparser::ast::{Select, SetExpr, Statement, TableFactor, TableWithJoins};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
-// Command: /dd or dataframes
+// Command: /dd | dataframes
 fn print_dataframes(dataframes: &Vec<(String, String)>) {
     println!(
         "{} dataframes registered{}",
@@ -26,8 +27,31 @@ fn print_dataframes(dataframes: &Vec<(String, String)>) {
         println!("{}:\t {}", name, file);
     }
 }
+// Command: /rd | register
+fn register_dataframe(
+    context: &mut SQLContext,
+    dataframes: &mut Vec<(String, String)>,
+    command: Vec<&str>,
+) {
+    if command.len() < 3 {
+        println!("Usage: \\rd <name> <file>");
+        return;
+    }
+    let name = command[1];
+    let source = command[2];
+    let df = create_dataframe_from_filename(source);
 
-// Command: /? or help
+    match df {
+        Ok(frame) => {
+            context.register(name, frame);
+            dataframes.push((name.to_owned(), source.to_owned()));
+            println!("Added dataframe \"{}\" from file {}", name, source)
+        }
+        Err(e) => println!("{}", e),
+    }
+}
+
+// Command: /? | help
 fn print_help() {
     for (name, short, desc) in vec![
         ("dataframes", "dd", "Show registered frames."),
@@ -45,7 +69,7 @@ fn print_help() {
     }
 }
 
-fn create_dataframe_from_file(filename: &str) -> PolarsResult<LazyFrame> {
+fn create_dataframe_from_filename(filename: &str) -> PolarsResult<LazyFrame> {
     return match get_extension_from_filename(filename) {
         #[cfg(feature = "csv")]
         Some("csv") => LazyCsvReader::new(filename).finish(),
@@ -57,7 +81,7 @@ fn create_dataframe_from_file(filename: &str) -> PolarsResult<LazyFrame> {
     };
 }
 
-fn create_dataframe_from_table(
+fn create_dataframe_from_tablename(
     context: &mut SQLContext,
     relation: &TableFactor,
 ) -> PolarsResult<()> {
@@ -74,7 +98,7 @@ fn create_dataframe_from_table(
                 return Ok(());
             }
 
-            let frame = create_dataframe_from_file(source)?;
+            let frame = create_dataframe_from_filename(source)?;
             context.register(&name, frame);
         }
         // We leave the error for unsupported table types up to SQlContext::execute
@@ -90,11 +114,11 @@ fn create_dataframes_from_statement(context: &mut SQLContext, stmt: &Select) -> 
         .get(0)
         .ok_or_else(|| PolarsError::ComputeError("No table name provided in query".into()))?;
 
-    create_dataframe_from_table(context, &sql_tbl.relation)?;
+    create_dataframe_from_tablename(context, &sql_tbl.relation)?;
 
     if !sql_tbl.joins.is_empty() {
         for tbl in &sql_tbl.joins {
-            create_dataframe_from_table(context, &tbl.relation)?;
+            create_dataframe_from_tablename(context, &tbl.relation)?;
         }
     }
 
@@ -137,29 +161,6 @@ fn execute_query(context: &mut SQLContext, query: &str) -> PolarsResult<DataFram
     return context.execute_statement(ast)?.limit(100).collect();
 }
 
-fn register_dataframe(
-    context: &mut SQLContext,
-    dataframes: &mut Vec<(String, String)>,
-    command: Vec<&str>,
-) {
-    if command.len() < 3 {
-        println!("Usage: \\rd <name> <file>");
-        return;
-    }
-    let name = command[1];
-    let source = command[2];
-    let df = create_dataframe_from_file(source);
-
-    match df {
-        Ok(frame) => {
-            context.register(name, frame);
-            dataframes.push((name.to_owned(), source.to_owned()));
-            println!("Added dataframe \"{}\" from file {}", name, source)
-        }
-        Err(e) => println!("{}", e),
-    }
-}
-
 fn get_extension_from_filename(filename: &str) -> Option<&str> {
     Path::new(filename).extension().and_then(OsStr::to_str)
 }
@@ -168,22 +169,24 @@ pub fn run_tty() -> std::io::Result<()> {
     let mut stdout = io::stdout();
     let mut context = SQLContext::try_new().unwrap();
     let mut dataframes = Vec::new();
-    let mut input = String::new();
+    let mut rl = Editor::<()>::new().unwrap();
 
     println!("Welcome to Polars CLI. Commands end with ; or \\n");
     println!("Type help or \\? for help.");
 
     loop {
-        print!("=> ");
-        stdout.flush().unwrap();
-        input.clear();
+        let input = match rl.readline(">> ") {
+            Ok(line) => {
+                rl.add_history_entry(&line);
+                line.trim().to_owned()
+            }
+            Err(ReadlineError::Interrupted) => "exit".to_string(),
+            Err(e) => {
+                println!("Error: {:?}", e);
+                "".to_string()
+            }
+        };
 
-        if let Err(e) = io::stdin().lock().read_line(&mut input) {
-            println!("Error reading from stdin: {}", e);
-            continue;
-        }
-
-        println!("Input: {}", input);
         let command: Vec<&str> = input.trim().split(" ").collect();
         if command[0].is_empty() {
             continue;
