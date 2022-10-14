@@ -110,6 +110,13 @@ class BatchedCsvReader:
             Number of chunks to fetch.
             This is ideally >= number of threads
 
+        Examples
+        --------
+        >>> reader = pl.read_csv_batched(
+        ...     "./tpch/tables_scale_100/lineitem.tbl", sep="|", parse_dates=True
+        ... )  # doctest: +SKIP
+        >>> reader.next_batches(5)  # doctest: +SKIP
+
         Returns
         -------
         Sequence of DataFrames

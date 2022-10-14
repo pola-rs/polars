@@ -79,7 +79,7 @@ Connect to pyarrow datasets.
 
 
 BatchedCsvReader
-----------------
+~~~~~~~~~~~~~~~~
 This reader comes available by calling `pl.read_csv_batched`.
 
 .. currentmodule:: polars.internals.batched
