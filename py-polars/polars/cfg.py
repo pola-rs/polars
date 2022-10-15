@@ -4,8 +4,6 @@ import json
 import os
 import sys
 
-from polars.string_cache import toggle_string_cache
-
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
@@ -14,7 +12,7 @@ else:
 
 # note: register any new Config environment variables here; need to constrain
 # which 'POLARS_' environment variables are recognised, as some are lower-level
-# or experimental and should not be associated with the Config.
+# or experimental and should not be associated with the Config on save.
 POLARS_CFG_VARS = {
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
@@ -30,12 +28,14 @@ POLARS_CFG_VARS = {
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
 }
+# register class-local flag defaults here
+POLARS_CFG_FLAGS = {"with_columns_kwargs": False}
 
 
 class Config:
     """Configure polars."""
 
-    # class-local boolean flags can be used for options that don't have
+    # note: class-local boolean flags can be used for options that don't have
     # a Rust component (so no need to register environment variables).
     with_columns_kwargs: bool = False
 
@@ -44,8 +44,11 @@ class Config:
         """
         Load and set previously saved (or shared) Config options.
 
-        Note that this will not update any options that were not
-        explicitly set when the Config was originally saved.
+        Parameters
+        ----------
+        cfg : str
+            json string produced by ``Config.save()``.
+
         """
         options = json.loads(cfg)
         os.environ.update(options.get("environment", {}))
@@ -55,24 +58,25 @@ class Config:
         return cls
 
     @classmethod
-    def restore_defaults(cls) -> int:
+    def restore_defaults(cls) -> type[Config]:
         """
         Reset all polars Config settings to their default state.
 
-        This method removes all Config options from the environment.
+        Note: this method removes all Config options from the environment.
         """
-        n_reset = 0
         for var in POLARS_CFG_VARS:
-            if var in os.environ:
-                _ = os.environ.pop(var, None)
-                n_reset += 1
-        return n_reset
+            _ = os.environ.pop(var, None)
+        for flag, value in POLARS_CFG_FLAGS.items():
+            setattr(cls, flag, value)
+        return cls
 
     @classmethod
     def save(cls) -> str:
-        """Save the current set of Config options."""
+        """Save the current set of Config options as a json string."""
         environment_vars = {
-            key: value for key, value in os.environ.items() if key in POLARS_CFG_VARS
+            key: os.environ[key]
+            for key in sorted(POLARS_CFG_VARS)
+            if (key in os.environ)
         }
         config_flags = {
             attr: getattr(cls, attr)
@@ -82,6 +86,25 @@ class Config:
         return json.dumps(
             {"environment": environment_vars, "local_config": config_flags}
         )
+
+    @classmethod
+    def state(cls, if_set: bool = False) -> dict[str, str | None]:
+        """
+        Show the current state of all Config environment variables as a dict.
+
+        Parameters
+        ----------
+        if_set : bool
+            by default this will show the state of all environment variables that have
+            can be set by ``Config``; change this to ``True`` to restrict the returned
+            dictionary to include only those that have been _explicitly_ set.
+
+        """
+        return {
+            var: os.environ.get(var)
+            for var in sorted(POLARS_CFG_VARS)
+            if not if_set or (os.environ.get(var) is not None)
+        }
 
     @classmethod
     def set_tbl_hide_column_names(cls, active: bool = True) -> type[Config]:
@@ -269,18 +292,6 @@ class Config:
 
         """
         os.environ["POLARS_FMT_MAX_COLS"] = str(n)
-        return cls
-
-    @classmethod
-    def set_global_string_cache(cls) -> type[Config]:
-        """Turn on the global string cache."""
-        toggle_string_cache(True)
-        return cls
-
-    @classmethod
-    def unset_global_string_cache(cls) -> type[Config]:
-        """Turn off the global string cache."""
-        toggle_string_cache(False)
         return cls
 
     @classmethod

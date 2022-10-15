@@ -291,14 +291,18 @@ def test_string_cache(environ: None) -> None:
     df2 = pl.DataFrame({"a": ["foo", "spam", "eggs"], "c": [3, 2, 2]})
 
     # ensure cache is off when casting to categorical; the join will fail
-    pl.Config.unset_global_string_cache()
+    pl.toggle_string_cache(False)
+    assert pl.using_string_cache() is False
+
     df1a = df1.with_column(pl.col("a").cast(pl.Categorical))
     df2a = df2.with_column(pl.col("a").cast(pl.Categorical))
     with pytest.raises(pl.ComputeError):
         _ = df1a.join(df2a, on="a", how="inner")
 
     # now turn on the cache
-    pl.Config.set_global_string_cache()
+    pl.toggle_string_cache(True)
+    assert pl.using_string_cache() is True
+
     df1b = df1.with_column(pl.col("a").cast(pl.Categorical))
     df2b = df2.with_column(pl.col("a").cast(pl.Categorical))
     out = df1b.join(df2b, on="a", how="inner")
@@ -306,7 +310,8 @@ def test_string_cache(environ: None) -> None:
 
     # turn off again so we do not break other tests
     # (TODO: environ fixture does not roll this back?)
-    pl.Config.unset_global_string_cache()
+    pl.toggle_string_cache(False)
+    assert pl.using_string_cache() is False
 
 
 def test_config_load_save(environ: None) -> None:
@@ -317,6 +322,7 @@ def test_config_load_save(environ: None) -> None:
 
     cfg = pl.Config.save()
     assert isinstance(cfg, str)
+    assert "POLARS_VERBOSE" in pl.Config.state(if_set=True)
 
     # unset the saved options
     pl.Config.with_columns_kwargs = False
@@ -327,9 +333,12 @@ def test_config_load_save(environ: None) -> None:
     pl.Config.load(cfg)
 
     # ...and confirm the saved options were set
-    assert pl.Config.with_columns_kwargs is True
     assert os.environ["POLARS_VERBOSE"] == "1"
+    assert pl.Config.with_columns_kwargs is True
 
     # restore explicitly-set config options (unsets from env)
     pl.Config.restore_defaults()
+    assert "POLARS_VERBOSE" not in pl.Config.state(if_set=True)
+    assert "POLARS_VERBOSE" in pl.Config.state()
     assert os.environ.get("POLARS_VERBOSE") is None
+    assert pl.Config.with_columns_kwargs is False
