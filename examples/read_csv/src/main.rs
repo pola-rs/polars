@@ -1,19 +1,18 @@
+use polars::io::mmap::MmapBytesReader;
 use polars::prelude::*;
 
 fn main() -> PolarsResult<()> {
-    let mut df = LazyCsvReader::new("../datasets/foods1.csv")
-        .finish()?
-        .select([
-            // select all columns
-            all(),
-            // and do some aggregations
-            cols(["fats_g", "sugars_g"]).sum().suffix("_summed"),
-        ])
-        .collect()?;
+    let file = std::fs::File::open("/home/ritchie46/Downloads/tpch/tables_scale_100/lineitem.tbl")
+        .unwrap();
+    let file = Box::new(file) as Box<dyn MmapBytesReader>;
+    let df = CsvReader::new(file)
+        .with_delimiter(b'|')
+        .has_header(false)
+        .with_chunk_size(10)
+        .batched(None)
+        .unwrap();
 
-    dbg!(&df);
-
-    write_other_formats(&mut df)?;
+    // write_other_formats(&mut df)?;
     Ok(())
 }
 
