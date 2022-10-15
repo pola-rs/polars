@@ -125,8 +125,8 @@ impl FunctionExpr {
                     Month | Quarter | Week | WeekDay | Day | OrdinalDay | Hour | Minute
                     | Millisecond | Microsecond | Nanosecond | Second => DataType::UInt32,
                     TimeStamp(_) => DataType::Int64,
-                    Truncate(..) => DataType::Date,
-                    Round(..) => DataType::Date,
+                    Truncate(..) => same_type().unwrap().dtype,
+                    Round(..) => same_type().unwrap().dtype,
                     #[cfg(feature = "timezones")]
                     CastTimezone(tz) => {
                         return try_map_dtype(&|dt| {
