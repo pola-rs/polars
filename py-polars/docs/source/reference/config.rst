@@ -4,8 +4,8 @@ Config
 ============
 .. currentmodule:: polars
 
-Config options
---------------
+Config options (set/unset)
+--------------------------
 
 .. autosummary::
    :toctree: api/
@@ -26,11 +26,12 @@ Config options
     Config.set_utf8_tables
     Config.set_verbose
 
-Config load/save
-----------------
+Config load/save and state
+--------------------------
 .. autosummary::
    :toctree: api/
 
     Config.load
     Config.save
+    Config.state
     Config.restore_defaults
