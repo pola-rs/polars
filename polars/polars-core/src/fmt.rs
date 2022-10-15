@@ -521,6 +521,8 @@ impl Display for DataFrame {
 
             if std::env::var("POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION").is_ok() {
                 write!(f, "{}", table)?;
+            } else if std::env::var("POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW").is_ok() {
+                write!(f, "{}\nshape: {:?}", table, self.shape())?;
             } else {
                 write!(f, "shape: {:?}\n{}", self.shape(), table)?;
             }

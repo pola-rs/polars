@@ -271,7 +271,7 @@ def format_path(path: str | Path) -> str:
 
 
 def threadpool_size() -> int:
-    """Get the size of polars; thread pool."""
+    """Get the size of polars' thread pool."""
     return _pool_size()
 
 

@@ -269,6 +269,23 @@ def test_set_tbl_rows(environ: None) -> None:
     )
 
 
+def test_shape_below_table(environ: None) -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
+    pl.Config.set_tbl_dataframe_shape_below(True)
+    assert (
+        str(df) == "┌─────┬─────┬─────┐\n"
+        "│ a   ┆ b   ┆ c   │\n"
+        "│ --- ┆ --- ┆ --- │\n"
+        "│ i64 ┆ i64 ┆ i64 │\n"
+        "╞═════╪═════╪═════╡\n"
+        "│ 1   ┆ 3   ┆ 5   │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 2   ┆ 4   ┆ 6   │\n"
+        "└─────┴─────┴─────┘\n"
+        "shape: (2, 3)"
+    )
+
+
 def test_string_cache(environ: None) -> None:
     df1 = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
     df2 = pl.DataFrame({"a": ["foo", "spam", "eggs"], "c": [3, 2, 2]})
@@ -290,3 +307,29 @@ def test_string_cache(environ: None) -> None:
     # turn off again so we do not break other tests
     # (TODO: environ fixture does not roll this back?)
     pl.Config.unset_global_string_cache()
+
+
+def test_config_load_save(environ: None) -> None:
+    # set some config options
+    pl.Config.with_columns_kwargs = True
+    pl.Config.set_verbose(True)
+    assert os.environ["POLARS_VERBOSE"] == "1"
+
+    cfg = pl.Config.save()
+    assert isinstance(cfg, str)
+
+    # unset the saved options
+    pl.Config.with_columns_kwargs = False
+    pl.Config.set_verbose(False)
+    assert os.environ["POLARS_VERBOSE"] == "0"
+
+    # now load back from config...
+    pl.Config.load(cfg)
+
+    # ...and confirm the saved options were set
+    assert pl.Config.with_columns_kwargs is True
+    assert os.environ["POLARS_VERBOSE"] == "1"
+
+    # restore explicitly-set config options (unsets from env)
+    pl.Config.restore_defaults()
+    assert os.environ.get("POLARS_VERBOSE") is None

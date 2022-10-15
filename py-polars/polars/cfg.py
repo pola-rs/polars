@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -11,6 +12,26 @@ else:
     from typing_extensions import Literal
 
 
+# note: register any new Config environment variables here; need to constrain
+# which 'POLARS_' environment variables are recognised, as some are lower-level
+# or experimental and should not be associated with the Config.
+POLARS_CFG_VARS = {
+    "POLARS_FMT_MAX_COLS",
+    "POLARS_FMT_MAX_ROWS",
+    "POLARS_FMT_STR_LEN",
+    "POLARS_FMT_TABLE_CELL_ALIGNMENT",
+    "POLARS_FMT_TABLE_CHANGE_COLUMN_DATA_TYPE_POSITION_FORMAT",
+    "POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW",
+    "POLARS_FMT_TABLE_FORMATTING",
+    "POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES",
+    "POLARS_FMT_TABLE_HIDE_COLUMN_NAMES",
+    "POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR",
+    "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION",
+    "POLARS_TABLE_WIDTH",
+    "POLARS_VERBOSE",
+}
+
+
 class Config:
     """Configure polars."""
 
@@ -19,33 +40,89 @@ class Config:
     with_columns_kwargs: bool = False
 
     @classmethod
-    def set_tbl_hide_column_names(cls) -> type[Config]:
+    def load(cls, cfg: str) -> type[Config]:
+        """
+        Load and set previously saved (or shared) Config options.
+
+        Note that this will not update any options that were not
+        explicitly set when the Config was originally saved.
+        """
+        options = json.loads(cfg)
+        os.environ.update(options.get("environment", {}))
+        for flag, value in options.get("local_config", {}).items():
+            if hasattr(cls, flag):
+                setattr(cls, flag, value)
+        return cls
+
+    @classmethod
+    def restore_defaults(cls) -> int:
+        """
+        Reset all polars Config settings to their default state.
+
+        This method removes all Config options from the environment.
+        """
+        n_reset = 0
+        for var in POLARS_CFG_VARS:
+            if var in os.environ:
+                _ = os.environ.pop(var, None)
+                n_reset += 1
+        return n_reset
+
+    @classmethod
+    def save(cls) -> str:
+        """Save the current set of Config options."""
+        environment_vars = {
+            key: value for key, value in os.environ.items() if key in POLARS_CFG_VARS
+        }
+        config_flags = {
+            attr: getattr(cls, attr)
+            for attr in dir(cls)
+            if isinstance(getattr(cls, attr), bool)
+        }
+        return json.dumps(
+            {"environment": environment_vars, "local_config": config_flags}
+        )
+
+    @classmethod
+    def set_tbl_hide_column_names(cls, active: bool = True) -> type[Config]:
         """Hide column names of tables."""
-        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_NAMES"] = "1"
+        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_NAMES"] = str(int(active))
         return cls
 
     @classmethod
-    def set_tbl_hide_column_data_types(cls) -> type[Config]:
+    def set_tbl_hide_column_data_types(cls, active: bool = True) -> type[Config]:
         """Hide column data types (i64, f64, str etc.) of tables."""
-        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES"] = "1"
+        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES"] = str(int(active))
         return cls
 
     @classmethod
-    def set_tbl_hide_column_separator(cls) -> type[Config]:
+    def set_tbl_hide_column_separator(cls, active: bool = True) -> type[Config]:
         """Hide the '---' separator that separates column names from the table rows."""
-        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR"] = "1"
+        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR"] = str(int(active))
         return cls
 
     @classmethod
-    def set_tbl_hide_dataframe_shape(cls) -> type[Config]:
+    def set_tbl_hide_dataframe_shape(cls, active: bool = True) -> type[Config]:
         """Hide the shape information of the dataframe when displaying tables."""
-        os.environ["POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION"] = "1"
+        os.environ["POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION"] = str(
+            int(active)
+        )
         return cls
 
     @classmethod
-    def set_tbl_change_column_data_type_position_format(cls) -> type[Config]:
+    def set_tbl_dataframe_shape_below(cls, active: bool = True) -> type[Config]:
+        """Print the dataframe shape below the dataframe when displaying tables."""
+        os.environ["POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW"] = str(int(active))
+        return cls
+
+    @classmethod
+    def set_tbl_change_column_data_type_position_format(
+        cls, active: bool = True
+    ) -> type[Config]:
         """Changes the data type position / format to directly below column name."""
-        os.environ["POLARS_FMT_TABLE_CHANGE_COLUMN_DATA_TYPE_POSITION_FORMAT"] = "1"
+        os.environ["POLARS_FMT_TABLE_CHANGE_COLUMN_DATA_TYPE_POSITION_FORMAT"] = str(
+            int(active)
+        )
         return cls
 
     @classmethod
@@ -218,4 +295,10 @@ class Config:
 
         """
         os.environ["POLARS_FMT_STR_LEN"] = str(n)
+        return cls
+
+    @classmethod
+    def set_verbose(cls, active: bool = True) -> type[Config]:
+        """Enable additional verbose/debug logging."""
+        os.environ["POLARS_VERBOSE"] = str(int(active))
         return cls
