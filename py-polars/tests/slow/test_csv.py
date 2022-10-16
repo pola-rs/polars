@@ -1,4 +1,5 @@
 import io
+import os
 
 import polars as pl
 
@@ -13,8 +14,9 @@ def test_csv_statistics_offset() -> None:
 
 def test_csv_scan_categorical() -> None:
     N = 5_000
-    pl.DataFrame({"x": ["A"] * N}).write_csv("/tmp/test_csv_scan_categorical.csv")
-    df = pl.scan_csv(
-        "/tmp/test_csv_scan_categorical.csv", dtypes={"x": pl.Categorical}
-    ).collect()
-    assert df["x"].dtype == pl.Categorical
+    if os.name != "nt":
+        pl.DataFrame({"x": ["A"] * N}).write_csv("/tmp/test_csv_scan_categorical.csv")
+        df = pl.scan_csv(
+            "/tmp/test_csv_scan_categorical.csv", dtypes={"x": pl.Categorical}
+        ).collect()
+        assert df["x"].dtype == pl.Categorical
