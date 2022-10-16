@@ -1633,3 +1633,17 @@ def test_tz_aware_get_idx_5010() -> None:
     )
     a = pa.array([when]).cast(pa.timestamp("s", tz="Asia/Shanghai"))
     assert int(pl.from_arrow(a)[0].timestamp()) == when  # type: ignore[union-attr]
+
+
+def test_tz_datetime_duration_arithm_5221() -> None:
+    run_datetimes = [
+        datetime.fromisoformat("2022-01-01T00:00:00+00:00"),
+        datetime.fromisoformat("2022-01-02T00:00:00+00:00"),
+    ]
+    out = pl.DataFrame(
+        data={"run_datetime": run_datetimes},
+        columns=[("run_datetime", pl.Datetime(time_zone="UTC"))],
+    )
+    assert out.to_dict(False) == {
+        "run_datetime": [datetime(2022, 1, 2, 0, 0), datetime(2022, 1, 3, 0, 0)]
+    }
