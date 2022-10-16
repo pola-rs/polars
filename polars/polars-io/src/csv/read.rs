@@ -510,6 +510,20 @@ where
             let mut csv_reader = self.core_reader(Some(&schema), to_cast)?;
             csv_reader.as_df()?
         } else {
+            #[cfg(feature = "dtype-categorical")]
+            {
+                let has_cat = self
+                    .schema
+                    .map(|schema| {
+                        schema
+                            .iter_dtypes()
+                            .any(|dtype| matches!(dtype, DataType::Categorical(_)))
+                    })
+                    .unwrap_or(false);
+                if has_cat {
+                    _cat_lock = Some(polars_core::IUseStringCache::new())
+                }
+            }
             let mut csv_reader = self.core_reader(self.schema, vec![])?;
             csv_reader.as_df()?
         };
