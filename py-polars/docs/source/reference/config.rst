@@ -26,8 +26,8 @@ Config options (set/unset)
     Config.set_utf8_tables
     Config.set_verbose
 
-Config load/save and state
---------------------------
+Config load, save, and current state
+------------------------------------
 .. autosummary::
    :toctree: api/
 

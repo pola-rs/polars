@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from types import TracebackType
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -10,10 +11,10 @@ else:
     from typing_extensions import Literal
 
 
-# note: register any new Config environment variables here; need to constrain
-# which 'POLARS_' environment variables are recognised, as some are lower-level
-# or experimental and should not be associated with the Config on save.
-POLARS_CFG_VARS = {
+# note: register any new Config environment variable names here; need to constrain
+# which 'POLARS_' environment variables are recognised, as there are also other
+# lower-level or experimental settings that should not be associated with Config.
+POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
     "POLARS_FMT_STR_LEN",
@@ -28,15 +29,29 @@ POLARS_CFG_VARS = {
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
 }
-# register class-local flag defaults here
-POLARS_CFG_FLAGS = {"with_columns_kwargs": False}
+# register class-local defaults here
+POLARS_CFG_LOCAL_VARS = {"with_columns_kwargs": False}
 
 
 class Config:
     """Configure polars."""
 
-    # note: class-local boolean flags can be used for options that don't have
-    # a Rust component (so no need to register environment variables).
+    def __enter__(self) -> Config:
+        """Support setting temporary Config options that are reset on scope exit."""
+        self._original_state = self.save()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """Reset any Config options that were set within the scope."""
+        self.restore_defaults().load(self._original_state)
+
+    # note: class-local attributes can be used for options that don't have
+    # a Rust component (so, no need to register environment variables).
     with_columns_kwargs: bool = False
 
     @classmethod
@@ -52,7 +67,7 @@ class Config:
         """
         options = json.loads(cfg)
         os.environ.update(options.get("environment", {}))
-        for flag, value in options.get("local_config", {}).items():
+        for flag, value in options.get("local", {}).items():
             if hasattr(cls, flag):
                 setattr(cls, flag, value)
         return cls
@@ -62,29 +77,38 @@ class Config:
         """
         Reset all polars Config settings to their default state.
 
-        Note: this method removes all Config options from the environment.
+        Notes
+        -----
+        This method operates by removing all Config options from the environment,
+        and then setting any class-local flags back to their default value.
+
         """
-        for var in POLARS_CFG_VARS:
-            _ = os.environ.pop(var, None)
-        for flag, value in POLARS_CFG_FLAGS.items():
+        for var in POLARS_CFG_ENV_VARS:
+            os.environ.pop(var, None)
+        for flag, value in POLARS_CFG_LOCAL_VARS.items():
             setattr(cls, flag, value)
         return cls
 
     @classmethod
     def save(cls) -> str:
-        """Save the current set of Config options as a json string."""
+        """
+        Save the current set of Config options as a json string.
+
+        Examples
+        --------
+        >>> pl.Config.restore_defaults().set_ascii_tables().set_verbose(True)
+        >>> cfg = pl.Config.save()
+
+        """
         environment_vars = {
             key: os.environ[key]
-            for key in sorted(POLARS_CFG_VARS)
+            for key in sorted(POLARS_CFG_ENV_VARS)
             if (key in os.environ)
         }
-        config_flags = {
-            attr: getattr(cls, attr)
-            for attr in dir(cls)
-            if isinstance(getattr(cls, attr), bool)
-        }
+        config_vars = {attr: getattr(cls, attr) for attr in POLARS_CFG_LOCAL_VARS}
         return json.dumps(
-            {"environment": environment_vars, "local_config": config_flags}
+            {"environment": environment_vars, "local": config_vars},
+            separators=(",", ":"),
         )
 
     @classmethod
@@ -95,14 +119,14 @@ class Config:
         Parameters
         ----------
         if_set : bool
-            by default this will show the state of all environment variables that have
-            can be set by ``Config``; change this to ``True`` to restrict the returned
-            dictionary to include only those that have been _explicitly_ set.
+            by default this will show the state of all ``Config`` environment variables.
+            change this to ``True`` to restrict the returned dictionary to include only
+            those that _have_ been set to a specific value.
 
         """
         return {
             var: os.environ.get(var)
-            for var in sorted(POLARS_CFG_VARS)
+            for var in sorted(POLARS_CFG_ENV_VARS)
             if not if_set or (os.environ.get(var) is not None)
         }
 
@@ -183,23 +207,24 @@ class Config:
         """
         Set table formatting style.
 
-        Args
-        ----
-            "ASCII_FULL": ASCII borders / lines
-            "ASCII_NO_BORDERS": ASCII no borders
-            "ASCII_BORDERS_ONLY": ASCII borders only
-            "ASCII_BORDERS_ONLY_CONDENSED": ASCII borders only condensed
-            "ASCII_HORIZONTAL_ONLY": Horizontal lines only
-            "ASCII_MARKDOWN": Markdown style
-            "UTF8_FULL": UTF8 borders lines
-            "UTF8_NO_BORDERS": UTF8 no borders
-            "UTF8_BORDERS_ONLY": UTF8 borders only
-            "UTF8_HORIZONTAL_ONLY": UTF8 horizontal only
-            "NOTHING": No borders /lines
+        Parameters
+        ----------
+        format : str
+            * "ASCII_FULL": ASCII borders / lines
+            * "ASCII_NO_BORDERS": ASCII no borders
+            * "ASCII_BORDERS_ONLY": ASCII borders only
+            * "ASCII_BORDERS_ONLY_CONDENSED": ASCII borders only condensed
+            * "ASCII_HORIZONTAL_ONLY": Horizontal lines only
+            * "ASCII_MARKDOWN": Markdown style
+            * "UTF8_FULL": UTF8 borders lines
+            * "UTF8_NO_BORDERS": UTF8 no borders
+            * "UTF8_BORDERS_ONLY": UTF8 borders only
+            * "UTF8_HORIZONTAL_ONLY": UTF8 horizontal only
+            * "NOTHING": No borders /lines
 
         Raises
         ------
-            KeyError: Wrong key
+        KeyError: if format string not recognised.
 
         """
         os.environ["POLARS_FMT_TABLE_FORMATTING"] = format
@@ -212,15 +237,16 @@ class Config:
         """
         Set table cell alignment.
 
-        Args
-        ----
-            "LEFT": left aligned
-            "CENTER": center aligned
-            "RIGHT": right aligned
+        Parameters
+        ----------
+        format : str
+            * "LEFT": left aligned
+            * "CENTER": center aligned
+            * "RIGHT": right aligned
 
         Raises
         ------
-            KeyError: Wrong key
+        KeyError: if format string not recognised.
 
         """
         os.environ["POLARS_FMT_TABLE_CELL_ALIGNMENT"] = format
@@ -233,7 +259,7 @@ class Config:
 
         Parameters
         ----------
-        width
+        width : int
             number of chars
 
         """
@@ -247,7 +273,7 @@ class Config:
 
         Parameters
         ----------
-        n
+        n : int
             number of rows to print.
             If n<0 print all rows (DataFrame) and all elements (Series).
 
@@ -262,7 +288,7 @@ class Config:
 
         Parameters
         ----------
-        n
+        n : int
             number of columns to print. If n<0 print all the columns.
 
         Examples
@@ -301,7 +327,7 @@ class Config:
 
         Parameters
         ----------
-        n
+        n : int
             number of characters to print
 
         """

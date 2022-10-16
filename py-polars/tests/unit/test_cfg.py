@@ -342,3 +342,27 @@ def test_config_load_save(environ: None) -> None:
     assert "POLARS_VERBOSE" in pl.Config.state()
     assert os.environ.get("POLARS_VERBOSE") is None
     assert pl.Config.with_columns_kwargs is False
+
+
+def test_config_context(environ: None) -> None:
+    pl.Config.set_verbose(False)
+    pl.Config.set_tbl_cols(8)
+
+    initial_state = pl.Config.state()
+
+    with pl.Config() as cfg:
+        cfg.set_verbose(True).set_tbl_hide_column_separator(True).set_ascii_tables()
+
+        new_state_entries = set(
+            {
+                "POLARS_FMT_MAX_COLS": "8",
+                "POLARS_FMT_TABLE_FORMATTING": "ASCII_FULL",
+                "POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR": "1",
+                "POLARS_VERBOSE": "1",
+            }.items()
+        )
+        assert set(initial_state.items()) != new_state_entries
+        assert new_state_entries.issubset(set(cfg.state().items()))
+
+    # expect scope-exit to restore original state
+    assert pl.Config.state() == initial_state
