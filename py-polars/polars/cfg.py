@@ -96,7 +96,6 @@ class Config:
 
         Examples
         --------
-        >>> pl.Config.restore_defaults().set_ascii_tables().set_verbose(True)
         >>> cfg = pl.Config.save()
 
         """
