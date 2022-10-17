@@ -199,7 +199,6 @@ def sequence_to_pyseries(
     """Construct a PySeries from a sequence."""
     python_dtype: type | None = None
     nested_dtype: PolarsDataType | type | None = None
-    temporal_unit: str | None = None
 
     # empty sequence
     if not values and dtype is None:
@@ -233,7 +232,6 @@ def sequence_to_pyseries(
             elif (
                 dtype in pl_temporal_types or type(dtype) in pl_temporal_types
             ) and not isinstance(value, int):
-                temporal_unit = getattr(dtype, "tu", None)
                 python_dtype = dtype_to_py_type(dtype)  # type: ignore[arg-type]
 
     # physical branch
@@ -252,8 +250,6 @@ def sequence_to_pyseries(
                 python_dtype = float
             else:
                 python_dtype = type(value)
-                if datetime == python_dtype:
-                    temporal_unit = "us"
 
         # temporal branch
         if python_dtype in py_temporal_types:
@@ -276,7 +272,6 @@ def sequence_to_pyseries(
                     )  # conversion lead to utc tz, which is not correct.
                     ._s
                 )
-                return py_series
 
             # TODO: use anyvalues here
             # no need to require pyarrow for this.
