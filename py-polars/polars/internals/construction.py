@@ -262,12 +262,24 @@ def sequence_to_pyseries(
             elif dtype in py_temporal_types:
                 dtype = py_type_to_dtype(dtype)
 
-            # if no temporal unit given, we use anyvalues, so that we have one
-            # consistent level of entry that sets the units and timezones
-            # (e.g. we ignore them). They can be set afterwards.
-            if dtype == Datetime and temporal_unit is None:
-                return PySeries.new_from_anyvalues(name, values)
+            # we use anyvalue builder to create the datetime array
+            # we store the values internally as UTC and set the timezone
+            if dtype == Datetime and value.tzinfo is not None:
+                py_series = PySeries.new_from_anyvalues(name, values)
+                tz = str(value.tzinfo)
+                return (
+                    pli.wrap_s(py_series)
+                    .dt.with_time_zone(tz)  # first inform polars of tz
+                    .dt.cast_time_zone("UTC")  # ensure we store them as utc
+                    .dt.with_time_zone(
+                        tz
+                    )  # conversion lead to utc tz, which is not correct.
+                    ._s
+                )
+                return py_series
 
+            # TODO: use anyvalues here
+            # no need to require pyarrow for this.
             if not _PYARROW_AVAILABLE:  # pragma: no cover
                 raise ImportError(
                     "'pyarrow' is required for converting a Sequence of date or"
