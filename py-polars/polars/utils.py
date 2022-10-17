@@ -213,7 +213,7 @@ def _to_python_datetime(
         dt += timedelta(seconds=value * 3600 * 24)
         return dt.date()
     elif dtype == Datetime:
-        if tz is None or tz == "" or tz == "UTC":
+        if tz is None or tz == "":
             if tu == "ns":
                 # nanoseconds to seconds
                 dt = EPOCH + timedelta(microseconds=value / 1000)
@@ -225,18 +225,23 @@ def _to_python_datetime(
             else:
                 raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
         else:
+            tzinfo = zoneinfo.ZoneInfo("UTC")
             if tu == "ns":
                 # nanoseconds to seconds
-                dt = datetime.fromtimestamp(0) + timedelta(microseconds=value / 1000)
+                dt = datetime.fromtimestamp(0, tz=tzinfo) + timedelta(
+                    microseconds=value / 1000
+                )
             elif tu == "us":
-                dt = datetime.fromtimestamp(0) + timedelta(microseconds=value)
+                dt = datetime.fromtimestamp(0, tz=tzinfo) + timedelta(
+                    microseconds=value
+                )
             elif tu == "ms":
                 # milliseconds to seconds
-                dt = datetime.fromtimestamp(value / 1000)
+                dt = datetime.fromtimestamp(value / 1000, tz=tzinfo)
             else:
                 raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
-
             return _localize(dt, tz)
+
         return dt
     else:
         raise NotImplementedError  # pragma: no cover

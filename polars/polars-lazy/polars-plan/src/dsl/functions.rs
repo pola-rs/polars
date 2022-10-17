@@ -579,7 +579,7 @@ pub fn duration(args: DurationArgs) -> Expr {
             args.weeks.unwrap_or_else(|| lit(0i64)),
         ],
         function,
-        output_type: GetOutput::from_type(DataType::Datetime(TimeUnit::Microseconds, None)),
+        output_type: GetOutput::from_type(DataType::Duration(TimeUnit::Nanoseconds)),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
