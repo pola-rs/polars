@@ -1626,7 +1626,7 @@ def test_cast_timezone() -> None:
         .alias("b")
     ).to_dict(False) == {
         "a": [datetime(2022, 9, 25, 18, 0)],
-        "b": [datetime(2022, 9, 25, 14, 0, tzinfo=ny)],
+        "b": [datetime(2022, 9, 25, 10, 0, tzinfo=ny)],
     }
 
 
@@ -1634,13 +1634,8 @@ def test_tz_aware_get_idx_5010() -> None:
     when = int(
         datetime(2022, 1, 1, 12, tzinfo=zoneinfo.ZoneInfo("Asia/Shanghai")).timestamp()
     )
-    s = (
-        pl.Series([when * 1000])
-        .cast(pl.Datetime("ms"))
-        .dt.with_time_zone("UTC")
-        .dt.cast_time_zone("Asia/Shanghai")
-    )
-    assert int(s[0].timestamp()) == when
+    a = pa.array([when]).cast(pa.timestamp("s", tz="Asia/Shanghai"))
+    assert int(pl.from_arrow(a)[0].timestamp()) == when  # type: ignore[union-attr]
 
 
 def test_tz_datetime_duration_arithm_5221() -> None:
