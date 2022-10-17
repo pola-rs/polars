@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+import typing
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -381,3 +382,30 @@ def test_rolling_var_numerical_stability_5197() -> None:
         0.0,
         0.0,
     ]
+
+
+@typing.no_type_check
+def test_dynamic_groupby_timezone_awareness() -> None:
+    df = pl.DataFrame(
+        (
+            pl.date_range(
+                datetime(2020, 1, 1),
+                datetime(2020, 1, 10),
+                timedelta(days=1),
+                time_unit="ns",
+                name="datetime",
+            ).dt.with_time_zone("UTC"),
+            pl.Series("value", pl.arange(1, 11, eager=True)),
+        )
+    )
+
+    assert (
+        df.groupby_dynamic(
+            "datetime",
+            "3d",
+            offset="-1d",
+            closed="right",
+            include_boundaries=True,
+            truncate=False,
+        ).agg(pl.col("value").last())
+    ).dtypes == [pl.Datetime("ns", "UTC")] * 3 + [pl.Int64]
