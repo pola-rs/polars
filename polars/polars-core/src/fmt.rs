@@ -692,8 +692,9 @@ impl Display for AnyValue<'_> {
                         #[cfg(feature = "timezones")]
                         {
                             let tz = _tz.parse::<chrono_tz::Tz>().unwrap();
-                            let tz_dt = tz.from_local_datetime(&ndt).unwrap();
-                            write!(f, "{}", tz_dt)
+                            let dt_utc = chrono::Utc.from_local_datetime(&ndt).unwrap();
+                            let dt_tz_aware = dt_utc.with_timezone(&tz);
+                            write!(f, "{}", dt_tz_aware)
                         }
                         #[cfg(not(feature = "timezones"))]
                         {

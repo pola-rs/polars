@@ -934,9 +934,9 @@ class DateTimeNameSpace:
         shape: (3,)
         Series: 'London' [datetime[μs, Europe/London]]
         [
-                2020-03-01 00:00:00 GMT
-                2020-04-01 00:00:00 BST
-                2020-05-01 00:00:00 BST
+            2020-03-01 00:00:00 GMT
+            2020-04-01 01:00:00 BST
+            2020-05-01 01:00:00 BST
         ]
 
         """
@@ -980,9 +980,9 @@ class DateTimeNameSpace:
         shape: (3,)
         Series: 'London' [datetime[μs, Europe/London]]
         [
-                2020-03-01 00:00:00 GMT
-                2020-04-01 00:00:00 BST
-                2020-05-01 00:00:00 BST
+            2020-03-01 00:00:00 GMT
+            2020-04-01 01:00:00 BST
+            2020-05-01 01:00:00 BST
         ]
         >>> # Timestamps have not changed after with_time_zone
         >>> date.dt.epoch(tu="s")
@@ -998,9 +998,9 @@ class DateTimeNameSpace:
         shape: (3,)
         Series: 'NYC' [datetime[μs, America/New_York]]
         [
-            2020-02-29 19:00:00 EST
-            2020-03-31 19:00:00 EDT
-            2020-04-30 19:00:00 EDT
+            2020-02-29 14:00:00 EST
+            2020-03-31 15:00:00 EDT
+            2020-04-30 15:00:00 EDT
         ]
         >>> # Timestamps have changed after cast_time_zone
         >>> date.dt.epoch(tu="s")

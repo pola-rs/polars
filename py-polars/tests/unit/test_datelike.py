@@ -1501,6 +1501,7 @@ def test_weekday() -> None:
     assert s.cast(pl.Date).dt.weekday()[0] == 0
 
 
+@pytest.mark.skip(reason="from_dicts cannot yet infer timezones")
 def test_from_dict_tu_consistency() -> None:
     tz = zoneinfo.ZoneInfo("PRC")
     dt = datetime(2020, 8, 1, 12, 0, 0, tzinfo=tz)
@@ -1654,3 +1655,10 @@ def test_tz_datetime_duration_arithm_5221() -> None:
             datetime(2022, 1, 2, 0, 0, tzinfo=utc),
         ]
     }
+
+
+def test_auto_infer_time_zone() -> None:
+    dt = datetime(2022, 10, 17, 10, tzinfo=zoneinfo.ZoneInfo("Asia/Shanghai"))
+    s = pl.Series([dt])
+    assert s.dtype == pl.Datetime("us", "Asia/Shanghai")
+    assert s[0] == dt
