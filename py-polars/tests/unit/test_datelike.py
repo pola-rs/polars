@@ -1644,6 +1644,10 @@ def test_tz_datetime_duration_arithm_5221() -> None:
         data={"run_datetime": run_datetimes},
         columns=[("run_datetime", pl.Datetime(time_zone="UTC"))],
     )
+    utc = zoneinfo.ZoneInfo("UTC")
     assert out.to_dict(False) == {
-        "run_datetime": [datetime(2022, 1, 2, 0, 0), datetime(2022, 1, 3, 0, 0)]
+        "run_datetime": [
+            datetime(2022, 1, 1, 0, 0, tzinfo=utc),
+            datetime(2022, 1, 2, 0, 0, tzinfo=utc),
+        ]
     }

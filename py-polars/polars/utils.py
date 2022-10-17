@@ -213,7 +213,7 @@ def _to_python_datetime(
         dt += timedelta(seconds=value * 3600 * 24)
         return dt.date()
     elif dtype == Datetime:
-        if tz is None or tz == "" or tz == "UTC":
+        if tz is None or tz == "":
             if tu == "ns":
                 # nanoseconds to seconds
                 dt = EPOCH + timedelta(microseconds=value / 1000)

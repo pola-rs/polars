@@ -469,11 +469,12 @@ impl ToPyObject for Wrap<&DatetimeChunked> {
         let py_date_dtype = pl.getattr("Datetime").unwrap();
 
         let tu = Wrap(self.0.time_unit()).to_object(py);
+        let tz = self.0.time_zone().to_object(py);
 
         let iter = self
             .0
             .into_iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v, py_date_dtype, &tu)).unwrap()));
+            .map(|opt_v| opt_v.map(|v| convert.call1((v, py_date_dtype, &tu, &tz)).unwrap()));
         PyList::new(py, iter).into_py(py)
     }
 }
