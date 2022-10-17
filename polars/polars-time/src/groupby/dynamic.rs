@@ -202,6 +202,7 @@ impl Wrap<&DataFrame> {
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         let w = Window::new(options.every, options.period, options.offset);
         let dt = dt.datetime().unwrap();
+        let tz = dt.time_zone();
 
         let mut lower_bound = None;
         let mut upper_bound = None;
@@ -254,10 +255,10 @@ impl Wrap<&DataFrame> {
                             tu,
                         );
                         let _lower = Int64Chunked::new_vec("lower", lower.clone())
-                            .into_datetime(tu, None)
+                            .into_datetime(tu, tz.clone())
                             .into_series();
                         let _higher = Int64Chunked::new_vec("upper", upper.clone())
-                            .into_datetime(tu, None)
+                            .into_datetime(tu, tz.clone())
                             .into_series();
 
                         update_bounds(lower, upper);
@@ -308,11 +309,11 @@ impl Wrap<&DataFrame> {
             (options.include_boundaries, lower_bound, upper_bound)
         {
             let s = Int64Chunked::new_vec(LB_NAME, lower)
-                .into_datetime(tu, None)
+                .into_datetime(tu, tz.clone())
                 .into_series();
             by.push(s);
             let s = Int64Chunked::new_vec(UP_NAME, higher)
-                .into_datetime(tu, None)
+                .into_datetime(tu, tz.clone())
                 .into_series();
             by.push(s);
         }
