@@ -244,7 +244,11 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             // None and Some("<tz>") timezones
             // we cast from more precision to higher precision as that always fits with occasional loss of precision
             #[cfg(feature = "dtype-datetime")]
-            (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) if tz_l.is_none() && tz_r.is_some() => {
+            (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) if
+                // both are none
+                tz_l.is_none() && tz_r.is_some()
+                // both have the same time zone
+                || (tz_l.is_some() && (tz_l == tz_r)) => {
                 let tu = get_time_units(tu_l, tu_r);
                 Some(Datetime(tu, tz_r.clone()))
             }
