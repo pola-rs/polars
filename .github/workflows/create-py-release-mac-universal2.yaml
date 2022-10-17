@@ -1,4 +1,4 @@
-name: Create macOs universal2/aarch64-apple-darwin python release
+name: Create Python release macOs universal2/aarch64-apple-darwin
 
 on:
   push:
