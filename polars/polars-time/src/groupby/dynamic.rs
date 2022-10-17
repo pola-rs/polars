@@ -207,6 +207,17 @@ impl Wrap<&DataFrame> {
         let mut lower_bound = None;
         let mut upper_bound = None;
 
+        let mut include_lower_bound = false;
+        let mut include_upper_bound = false;
+
+        if options.include_boundaries {
+            include_lower_bound = true;
+            include_upper_bound = true;
+        }
+        if options.truncate {
+            include_lower_bound = true;
+        }
+
         let mut update_bounds =
             |lower: Vec<i64>, upper: Vec<i64>| match (&mut lower_bound, &mut upper_bound) {
                 (None, None) => {
@@ -223,8 +234,14 @@ impl Wrap<&DataFrame> {
         let groups = if by.is_empty() {
             let vals = dt.downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
-            let (groups, lower, upper) =
-                groupby_windows(w, ts, options.include_boundaries, options.closed_window, tu);
+            let (groups, lower, upper) = groupby_windows(
+                w,
+                ts,
+                options.closed_window,
+                tu,
+                include_lower_bound,
+                include_upper_bound,
+            );
             update_bounds(lower, upper);
             GroupsProxy::Slice {
                 groups,
@@ -238,34 +255,36 @@ impl Wrap<&DataFrame> {
             let groups = groups.into_idx();
 
             // include boundaries cannot be parallel (easily)
-            if options.include_boundaries {
-                let groupsidx = groups
-                    .iter()
-                    // we just flat map, because iterate over groups so we almost always need to reallocate
-                    .flat_map(|base_g| {
-                        let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
+            if include_lower_bound {
+                POOL.install(|| {
+                    let mut ir = groups
+                        .par_iter()
+                        .map(|base_g| {
+                            let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
 
-                        let vals = dt.downcast_iter().next().unwrap();
-                        let ts = vals.values().as_slice();
-                        let (sub_groups, lower, upper) = groupby_windows(
-                            w,
-                            ts,
-                            options.include_boundaries,
-                            options.closed_window,
-                            tu,
-                        );
-                        let _lower = Int64Chunked::new_vec("lower", lower.clone())
-                            .into_datetime(tu, tz.clone())
-                            .into_series();
-                        let _higher = Int64Chunked::new_vec("upper", upper.clone())
-                            .into_datetime(tu, tz.clone())
-                            .into_series();
+                            let vals = dt.downcast_iter().next().unwrap();
+                            let ts = vals.values().as_slice();
+                            let (sub_groups, lower, upper) = groupby_windows(
+                                w,
+                                ts,
+                                options.closed_window,
+                                tu,
+                                include_lower_bound,
+                                include_upper_bound,
+                            );
 
-                        update_bounds(lower, upper);
-                        update_subgroups_idx(&sub_groups, base_g)
-                    })
-                    .collect();
-                GroupsProxy::Idx(groupsidx)
+                            (lower, upper, update_subgroups_idx(&sub_groups, base_g))
+                        })
+                        .collect::<Vec<_>>();
+
+                    ir.iter_mut().for_each(|(lower, upper, _)| {
+                        let lower = std::mem::take(lower);
+                        let upper = std::mem::take(upper);
+                        update_bounds(lower, upper)
+                    });
+
+                    GroupsProxy::Idx(ir.into_iter().flat_map(|(_, _, groups)| groups).collect())
+                })
             } else {
                 let groupsidx = POOL.install(|| {
                     groups
@@ -277,9 +296,10 @@ impl Wrap<&DataFrame> {
                             let (sub_groups, _, _) = groupby_windows(
                                 w,
                                 ts,
-                                options.include_boundaries,
                                 options.closed_window,
                                 tu,
+                                include_lower_bound,
+                                include_upper_bound,
                             );
                             update_subgroups_idx(&sub_groups, base_g)
                         })
@@ -295,23 +315,17 @@ impl Wrap<&DataFrame> {
             *key = unsafe { key.agg_first(&groups) };
         }
 
+        let lower = lower_bound.map(|lower| Int64Chunked::new_vec(LB_NAME, lower));
+
         if options.truncate {
-            let w = Window::new(options.every, options.period, options.offset);
-            let truncate_fn = match tu {
-                TimeUnit::Nanoseconds => Window::truncate_no_offset_ns,
-                TimeUnit::Microseconds => Window::truncate_no_offset_us,
-                TimeUnit::Milliseconds => Window::truncate_no_offset_ms,
-            };
-            dt = dt.apply(|v| truncate_fn(&w, v));
+            let mut lower = lower.clone().unwrap();
+            lower.rename(dt.name());
+            dt = lower;
         }
 
-        if let (true, Some(lower), Some(higher)) =
-            (options.include_boundaries, lower_bound, upper_bound)
+        if let (true, Some(lower), Some(higher)) = (options.include_boundaries, lower, upper_bound)
         {
-            let s = Int64Chunked::new_vec(LB_NAME, lower)
-                .into_datetime(tu, tz.clone())
-                .into_series();
-            by.push(s);
+            by.push(lower.into_datetime(tu, tz.clone()).into_series());
             let s = Int64Chunked::new_vec(UP_NAME, higher)
                 .into_datetime(tu, tz.clone())
                 .into_series();
@@ -683,5 +697,47 @@ mod test {
                 closed_window: ClosedWindow::Both,
             },
         );
+    }
+
+    #[test]
+    fn test_truncate_offset() {
+        let start = NaiveDate::from_ymd(2021, 3, 1)
+            .and_hms(12, 0, 0)
+            .timestamp_millis();
+        let stop = NaiveDate::from_ymd(2021, 3, 7)
+            .and_hms(12, 0, 0)
+            .timestamp_millis();
+        let range = date_range_impl(
+            "date",
+            start,
+            stop,
+            Duration::parse("1d"),
+            ClosedWindow::Both,
+            TimeUnit::Milliseconds,
+            None,
+        )
+        .into_series();
+
+        let groups = Series::new("groups", ["a", "a", "a", "b", "b", "a", "a"]);
+        let df = DataFrame::new(vec![range, groups.clone()]).unwrap();
+
+        let (mut time_key, mut keys, groups) = df
+            .groupby_dynamic(
+                vec![groups],
+                &DynamicGroupOptions {
+                    index_column: "date".into(),
+                    every: Duration::parse("6d"),
+                    period: Duration::parse("6d"),
+                    offset: Duration::parse("0h"),
+                    truncate: true,
+                    include_boundaries: true,
+                    closed_window: ClosedWindow::Both,
+                },
+            )
+            .unwrap();
+        let mut lower_bound = keys[1].clone();
+        time_key.rename("");
+        lower_bound.rename("");
+        assert!(time_key.series_equal(&lower_bound));
     }
 }

@@ -13,7 +13,7 @@ pub struct Window {
     //   window_stop_i = zero + every * i + period
     every: Duration,
     period: Duration,
-    offset: Duration,
+    pub offset: Duration,
 }
 
 impl Window {

@@ -474,7 +474,7 @@ def test_truncate_negative_offset() -> None:
     )
 
     assert out["event_date"].to_list() == [
-        datetime(2021, 4, 1),
+        datetime(2021, 3, 1),
         datetime(2021, 4, 1),
         datetime(2021, 5, 1),
     ]
@@ -733,9 +733,9 @@ def test_default_negative_every_offset_dynamic_groupby() -> None:
     expected = pl.DataFrame(
         {
             "dt": [
+                datetime(2019, 12, 1, 0, 0),
                 datetime(2020, 1, 1, 0, 0),
-                datetime(2020, 1, 1, 0, 0),
-                datetime(2020, 3, 1, 0, 0),
+                datetime(2020, 2, 1, 0, 0),
             ],
             "idx": [[0], [1, 2], [3]],
         }
