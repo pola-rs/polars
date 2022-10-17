@@ -34,9 +34,10 @@ pub enum ClosedWindow {
 pub fn groupby_windows(
     window: Window,
     time: &[i64],
-    include_boundaries: bool,
     closed_window: ClosedWindow,
     tu: TimeUnit,
+    include_lower_bound: bool,
+    include_upper_bound: bool,
 ) -> (GroupsSlice, Vec<i64>, Vec<i64>) {
     let start = time[0];
     let boundary = if time.len() > 1 {
@@ -48,7 +49,7 @@ pub fn groupby_windows(
         Bounds::new_checked(start, stop)
     };
 
-    let size = if include_boundaries {
+    let size = if include_lower_bound || include_upper_bound {
         match tu {
             TimeUnit::Nanoseconds => window.estimate_overlapping_bounds_ns(boundary),
             TimeUnit::Microseconds => window.estimate_overlapping_bounds_us(boundary),
@@ -57,8 +58,10 @@ pub fn groupby_windows(
     } else {
         0
     };
-    let mut lower_bound = Vec::with_capacity(size);
-    let mut upper_bound = Vec::with_capacity(size);
+    let size_lower = if include_lower_bound { size } else { 0 };
+    let size_upper = if include_upper_bound { size } else { 0 };
+    let mut lower_bound = Vec::with_capacity(size_lower);
+    let mut upper_bound = Vec::with_capacity(size_upper);
 
     let mut groups = match tu {
         TimeUnit::Nanoseconds => {
@@ -106,8 +109,10 @@ pub fn groupby_windows(
         if i == time.len() - 1 {
             let t = time[i];
             if bi.is_member(t, closed_window) {
-                if include_boundaries {
+                if include_lower_bound {
                     lower_bound.push(bi.start);
+                }
+                if include_upper_bound {
                     upper_bound.push(bi.stop);
                 }
                 groups.push([i as IdxSize, 1])
@@ -126,8 +131,10 @@ pub fn groupby_windows(
         }
         let len = (i as IdxSize) - first;
 
-        if include_boundaries {
+        if include_lower_bound {
             lower_bound.push(bi.start);
+        }
+        if include_upper_bound {
             upper_bound.push(bi.stop);
         }
         groups.push([first, len])

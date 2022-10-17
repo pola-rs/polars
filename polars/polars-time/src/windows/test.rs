@@ -77,16 +77,37 @@ fn test_groups_large_interval() {
 
     let dur = Duration::parse("2d");
     let w = Window::new(Duration::parse("2d"), dur.clone(), Duration::from_nsecs(0));
-    let (groups, _, _) = groupby_windows(w, &ts, false, ClosedWindow::Both, TimeUnit::Nanoseconds);
+    let (groups, _, _) = groupby_windows(
+        w,
+        &ts,
+        ClosedWindow::Both,
+        TimeUnit::Nanoseconds,
+        false,
+        false,
+    );
     assert_eq!(groups.len(), 4);
     assert_eq!(groups[0], [0, 1]);
     assert_eq!(groups[1], [1, 1]);
     assert_eq!(groups[2], [1, 3]);
     assert_eq!(groups[3], [3, 1]);
-    let (groups, _, _) = groupby_windows(w, &ts, false, ClosedWindow::Left, TimeUnit::Nanoseconds);
+    let (groups, _, _) = groupby_windows(
+        w,
+        &ts,
+        ClosedWindow::Left,
+        TimeUnit::Nanoseconds,
+        false,
+        false,
+    );
     assert_eq!(groups.len(), 3);
     assert_eq!(groups[2], [3, 1]);
-    let (groups, _, _) = groupby_windows(w, &ts, false, ClosedWindow::Right, TimeUnit::Nanoseconds);
+    let (groups, _, _) = groupby_windows(
+        w,
+        &ts,
+        ClosedWindow::Right,
+        TimeUnit::Nanoseconds,
+        false,
+        false,
+    );
     assert_eq!(groups.len(), 2);
     assert_eq!(groups[1], [2, 2]);
 }
@@ -136,8 +157,14 @@ fn test_boundaries() {
     assert_eq!(b.start, start.timestamp_nanos());
 
     // test closed: "both" (includes both ends of the interval)
-    let (groups, lower, higher) =
-        groupby_windows(w, &ts, true, ClosedWindow::Both, TimeUnit::Nanoseconds);
+    let (groups, lower, higher) = groupby_windows(
+        w,
+        &ts,
+        ClosedWindow::Both,
+        TimeUnit::Nanoseconds,
+        true,
+        true,
+    );
 
     // 1st group
     // expected boundary:
@@ -194,19 +221,40 @@ fn test_boundaries() {
     assert_eq!(groups[2], [4, 3]);
 
     // test closed: "left" (should not include right end of interval)
-    let (groups, _, _) = groupby_windows(w, &ts, false, ClosedWindow::Left, TimeUnit::Nanoseconds);
+    let (groups, _, _) = groupby_windows(
+        w,
+        &ts,
+        ClosedWindow::Left,
+        TimeUnit::Nanoseconds,
+        false,
+        false,
+    );
     assert_eq!(groups[0], [0, 2]); // 00:00:00 -> 00:30:00
     assert_eq!(groups[1], [2, 2]); // 01:00:00 -> 01:30:00
     assert_eq!(groups[2], [4, 2]); // 02:00:00 -> 02:30:00
 
     // test closed: "right" (should not include left end of interval)
-    let (groups, _, _) = groupby_windows(w, &ts, false, ClosedWindow::Right, TimeUnit::Nanoseconds);
+    let (groups, _, _) = groupby_windows(
+        w,
+        &ts,
+        ClosedWindow::Right,
+        TimeUnit::Nanoseconds,
+        false,
+        false,
+    );
     assert_eq!(groups[0], [1, 2]); // 00:00:00 -> 00:30:00
     assert_eq!(groups[1], [3, 2]); // 01:00:00 -> 01:30:00
     assert_eq!(groups[2], [5, 2]); // 02:00:00 -> 02:30:00
 
     // test closed: "none" (should not include left or right end of interval)
-    let (groups, _, _) = groupby_windows(w, &ts, false, ClosedWindow::None, TimeUnit::Nanoseconds);
+    let (groups, _, _) = groupby_windows(
+        w,
+        &ts,
+        ClosedWindow::None,
+        TimeUnit::Nanoseconds,
+        false,
+        false,
+    );
     assert_eq!(groups[0], [1, 1]); // 00:00:00 -> 00:30:00
     assert_eq!(groups[1], [3, 1]); // 01:00:00 -> 01:30:00
     assert_eq!(groups[2], [5, 1]); // 02:00:00 -> 02:30:00
@@ -239,8 +287,14 @@ fn test_boundaries_2() {
 
     assert_eq!(b.start, start.timestamp_nanos() + offset.duration_ns());
 
-    let (groups, lower, higher) =
-        groupby_windows(w, &ts, true, ClosedWindow::Left, TimeUnit::Nanoseconds);
+    let (groups, lower, higher) = groupby_windows(
+        w,
+        &ts,
+        ClosedWindow::Left,
+        TimeUnit::Nanoseconds,
+        true,
+        true,
+    );
 
     // 1st group
     // expected boundary:
@@ -307,8 +361,14 @@ fn test_boundaries_ms() {
     assert_eq!(b.start, start.timestamp_millis());
 
     // test closed: "both" (includes both ends of the interval)
-    let (groups, lower, higher) =
-        groupby_windows(w, &ts, true, ClosedWindow::Both, TimeUnit::Milliseconds);
+    let (groups, lower, higher) = groupby_windows(
+        w,
+        &ts,
+        ClosedWindow::Both,
+        TimeUnit::Milliseconds,
+        true,
+        true,
+    );
 
     // 1st group
     // expected boundary:
@@ -365,20 +425,40 @@ fn test_boundaries_ms() {
     assert_eq!(groups[2], [4, 3]);
 
     // test closed: "left" (should not include right end of interval)
-    let (groups, _, _) = groupby_windows(w, &ts, false, ClosedWindow::Left, TimeUnit::Milliseconds);
+    let (groups, _, _) = groupby_windows(
+        w,
+        &ts,
+        ClosedWindow::Left,
+        TimeUnit::Milliseconds,
+        false,
+        false,
+    );
     assert_eq!(groups[0], [0, 2]); // 00:00:00 -> 00:30:00
     assert_eq!(groups[1], [2, 2]); // 01:00:00 -> 01:30:00
     assert_eq!(groups[2], [4, 2]); // 02:00:00 -> 02:30:00
 
     // test closed: "right" (should not include left end of interval)
-    let (groups, _, _) =
-        groupby_windows(w, &ts, false, ClosedWindow::Right, TimeUnit::Milliseconds);
+    let (groups, _, _) = groupby_windows(
+        w,
+        &ts,
+        ClosedWindow::Right,
+        TimeUnit::Milliseconds,
+        false,
+        false,
+    );
     assert_eq!(groups[0], [1, 2]); // 00:00:00 -> 00:30:00
     assert_eq!(groups[1], [3, 2]); // 01:00:00 -> 01:30:00
     assert_eq!(groups[2], [5, 2]); // 02:00:00 -> 02:30:00
 
     // test closed: "none" (should not include left or right end of interval)
-    let (groups, _, _) = groupby_windows(w, &ts, false, ClosedWindow::None, TimeUnit::Milliseconds);
+    let (groups, _, _) = groupby_windows(
+        w,
+        &ts,
+        ClosedWindow::None,
+        TimeUnit::Milliseconds,
+        false,
+        false,
+    );
     assert_eq!(groups[0], [1, 1]); // 00:00:00 -> 00:30:00
     assert_eq!(groups[1], [3, 1]); // 01:00:00 -> 01:30:00
     assert_eq!(groups[2], [5, 1]); // 02:00:00 -> 02:30:00
@@ -504,9 +584,10 @@ fn test_end_membership() {
     let (groups, _, _) = groupby_windows(
         window,
         &time,
-        false,
         ClosedWindow::Left,
         TimeUnit::Milliseconds,
+        false,
+        false,
     );
     assert_eq!(groups[0], [0, 1]);
     assert_eq!(groups[1], [0, 1]);
@@ -525,9 +606,10 @@ fn test_groupby_windows_membership_2791() {
     let (groups, _, _) = groupby_windows(
         window,
         &dates,
-        false,
         ClosedWindow::Left,
         TimeUnit::Milliseconds,
+        false,
+        false,
     );
     assert_eq!(groups[0], [0, 2]);
     assert_eq!(groups[1], [2, 2]);
@@ -545,9 +627,10 @@ fn test_groupby_windows_duplicates_2931() {
     let (groups, _, _) = groupby_windows(
         window,
         &dates,
-        false,
         ClosedWindow::Left,
         TimeUnit::Milliseconds,
+        false,
+        false,
     );
     assert_eq!(groups, [[0, 1], [1, 2], [3, 2]]);
 }
@@ -572,9 +655,10 @@ fn test_groupby_windows_offsets_3776() {
     let (groups, _, _) = groupby_windows(
         window,
         &ts,
-        false,
         ClosedWindow::Right,
         TimeUnit::Nanoseconds,
+        false,
+        false,
     );
     assert_eq!(groups, [[0, 1], [1, 1], [2, 1]]);
 }
