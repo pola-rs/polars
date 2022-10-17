@@ -31,7 +31,7 @@ use lazy::ToExprs;
 use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
 use polars::prelude::Null;
-use polars_core::datatypes::TimeUnit;
+use polars_core::datatypes::{TimeUnit, TimeZone};
 use polars_core::prelude::{DataFrame, IntoSeries, IDX_DTYPE};
 use polars_core::POOL;
 use pyo3::exceptions::PyValueError;
@@ -453,10 +453,19 @@ fn py_date_range(
     closed: Wrap<ClosedWindow>,
     name: &str,
     tu: Wrap<TimeUnit>,
+    tz: Option<TimeZone>,
 ) -> PySeries {
-    polars::time::date_range_impl(name, start, stop, Duration::parse(every), closed.0, tu.0)
-        .into_series()
-        .into()
+    polars::time::date_range_impl(
+        name,
+        start,
+        stop,
+        Duration::parse(every),
+        closed.0,
+        tu.0,
+        tz,
+    )
+    .into_series()
+    .into()
 }
 
 #[pyfunction]

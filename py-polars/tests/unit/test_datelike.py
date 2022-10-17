@@ -1662,3 +1662,34 @@ def test_auto_infer_time_zone() -> None:
     s = pl.Series([dt])
     assert s.dtype == pl.Datetime("us", "Asia/Shanghai")
     assert s[0] == dt
+
+
+def test_timezone_aware_date_range() -> None:
+    low = datetime(2022, 10, 17, 10, tzinfo=zoneinfo.ZoneInfo("Asia/Shanghai"))
+    high = datetime(2022, 11, 17, 10, tzinfo=zoneinfo.ZoneInfo("Asia/Shanghai"))
+
+    assert pl.date_range(low, high, interval=timedelta(days=5)).to_list() == [
+        datetime(2022, 10, 17, 10, 0, tzinfo=zoneinfo.ZoneInfo(key="Asia/Shanghai")),
+        datetime(2022, 10, 22, 10, 0, tzinfo=zoneinfo.ZoneInfo(key="Asia/Shanghai")),
+        datetime(2022, 10, 27, 10, 0, tzinfo=zoneinfo.ZoneInfo(key="Asia/Shanghai")),
+        datetime(2022, 11, 1, 10, 0, tzinfo=zoneinfo.ZoneInfo(key="Asia/Shanghai")),
+        datetime(2022, 11, 6, 10, 0, tzinfo=zoneinfo.ZoneInfo(key="Asia/Shanghai")),
+        datetime(2022, 11, 11, 10, 0, tzinfo=zoneinfo.ZoneInfo(key="Asia/Shanghai")),
+        datetime(2022, 11, 16, 10, 0, tzinfo=zoneinfo.ZoneInfo(key="Asia/Shanghai")),
+    ]
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot mix different timezone aware datetimes. "
+        "Got: 'Asia/Shanghai' and 'None'",
+    ):
+        pl.date_range(
+            low, high.replace(tzinfo=None), interval=timedelta(days=5), time_zone="UTC"
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="Given time_zone is different from that timezone aware datetimes. "
+        "Given: 'UTC', got: 'Asia/Shanghai'.",
+    ):
+        pl.date_range(low, high, interval=timedelta(days=5), time_zone="UTC")

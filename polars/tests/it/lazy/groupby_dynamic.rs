@@ -18,6 +18,7 @@ fn test_groupby_dynamic_week_bounds() -> PolarsResult<()> {
         Duration::parse("1d"),
         ClosedWindow::Left,
         TimeUnit::Milliseconds,
+        None,
     )
     .into_series();
 

@@ -99,5 +99,5 @@ pub(super) fn timestamp(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
 #[cfg(feature = "timezones")]
 pub(super) fn cast_timezone(s: &Series, tz: &str) -> PolarsResult<Series> {
     let ca = s.datetime()?;
-    ca.cast_timezone(tz).map(|ca| ca.into_series())
+    ca.cast_time_zone(tz).map(|ca| ca.into_series())
 }

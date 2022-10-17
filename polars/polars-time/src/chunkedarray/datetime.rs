@@ -146,7 +146,7 @@ pub trait DatetimeMethods: AsDatetime {
     }
 
     #[cfg(feature = "timezones")]
-    fn cast_timezone(&self, tz: &str) -> PolarsResult<DatetimeChunked> {
+    fn cast_time_zone(&self, tz: &str) -> PolarsResult<DatetimeChunked> {
         use chrono_tz::Tz;
         let ca = self.as_datetime();
 
