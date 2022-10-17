@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import random
+import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, NoReturn, Sequence
 from warnings import warn
@@ -3428,7 +3429,7 @@ class Expr:
         self,
         start: Expr | datetime | int,
         end: Expr | datetime | int,
-        include_bounds: bool | Sequence[bool] = False,
+        include_bounds: bool | tuple[bool, bool] = False,
     ) -> Expr:
         """
         Check if this expression is between start and end.
@@ -3442,10 +3443,10 @@ class Expr:
         include_bounds
            False:           Exclude both start and end (default).
            True:            Include both start and end.
-           [False, False]:  Exclude start and exclude end.
-           [True, True]:    Include start and include end.
-           [False, True]:   Exclude start and include end.
-           [True, False]:   Include start and exclude end.
+           (False, False):  Exclude start and exclude end.
+           (True, True):    Include start and include end.
+           (False, True):   Exclude start and include end.
+           (True, False):   Include start and exclude end.
 
         Returns
         -------
@@ -3453,11 +3454,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "num": [1, 2, 3, 4, 5],
-        ...     }
-        ... )
+        >>> df = pl.DataFrame({"num": [1, 2, 3, 4, 5]})
         >>> df.with_column(pl.col("num").is_between(2, 4))
         shape: (5, 2)
         ┌─────┬────────────┐
@@ -3488,18 +3485,23 @@ class Expr:
             expr = self.cast(Datetime)
         else:
             expr = self
-        if include_bounds is False or include_bounds == [False, False]:
+        if isinstance(include_bounds, list):
+            warnings.warn(
+                "include_bounds: list[bool] will not be supported in a future "
+                "version; pass include_bounds: tuple[bool, bool] instead",
+                category=DeprecationWarning,
+            )
+            include_bounds = tuple(include_bounds)
+        if include_bounds is False or include_bounds == (False, False):
             return ((expr > start) & (expr < end)).alias("is_between")
-        elif include_bounds is True or include_bounds == [True, True]:
+        elif include_bounds is True or include_bounds == (True, True):
             return ((expr >= start) & (expr <= end)).alias("is_between")
-        elif include_bounds == [False, True]:
+        elif include_bounds == (False, True):
             return ((expr > start) & (expr <= end)).alias("is_between")
-        elif include_bounds == [True, False]:
+        elif include_bounds == (True, False):
             return ((expr >= start) & (expr < end)).alias("is_between")
         else:
-            raise ValueError(
-                "include_bounds should be a boolean or [boolean, boolean]."
-            )
+            raise ValueError("include_bounds should be a bool or tuple[bool, bool].")
 
     def hash(
         self,
