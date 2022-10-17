@@ -197,48 +197,65 @@ class LazyGroupBy(Generic[LDF]):
             Schema of the output function. This has to be known statically.
             If the schema provided is incorrect, this is a bug in the callers
             query and may lead to errors.
-            If none given, polars assumes the schema is unchanged.
+            If set to None, polars assumes the schema is unchanged.
 
 
         Examples
         --------
-        The function is applied by group.
-
         >>> df = pl.DataFrame(
         ...     {
-        ...         "foo": [1, 2, 3, 1],
-        ...         "bar": ["a", "b", "c", "c"],
+        ...         "id": [0, 1, 2, 3, 4],
+        ...         "color": ["red", "green", "green", "red", "red"],
+        ...         "shape": ["square", "triangle", "square", "triangle", "square"],
         ...     }
         ... )
+        >>> df
+        shape: (5, 3)
+        ┌─────┬───────┬──────────┐
+        │ id  ┆ color ┆ shape    │
+        │ --- ┆ ---   ┆ ---      │
+        │ i64 ┆ str   ┆ str      │
+        ╞═════╪═══════╪══════════╡
+        │ 0   ┆ red   ┆ square   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 1   ┆ green ┆ triangle │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ green ┆ square   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ red   ┆ triangle │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 4   ┆ red   ┆ square   │
+        └─────┴───────┴──────────┘
+
+        For each color group sample two rows:
+
         >>> (
         ...     df.lazy()
-        ...     .groupby("bar", maintain_order=True)
-        ...     .agg(
-        ...         [
-        ...             pl.col("foo").apply(lambda x: x.sum()),
-        ...         ]
-        ...     )
+        ...     .groupby("color")
+        ...     .apply(lambda group_df: group_df.sample(2), schema=None)
         ...     .collect()
-        ... )
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ bar ┆ foo │
-        │ --- ┆ --- │
-        │ str ┆ i64 │
-        ╞═════╪═════╡
-        │ a   ┆ 1   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b   ┆ 2   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c   ┆ 4   │
-        └─────┴─────┘
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (4, 3)
+        ┌─────┬───────┬──────────┐
+        │ id  ┆ color ┆ shape    │
+        │ --- ┆ ---   ┆ ---      │
+        │ i64 ┆ str   ┆ str      │
+        ╞═════╪═══════╪══════════╡
+        │ 1   ┆ green ┆ triangle │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ green ┆ square   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 4   ┆ red   ┆ square   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ red   ┆ triangle │
+        └─────┴───────┴──────────┘
 
         It is better to implement this with an expression:
 
         >>> (
-        ...     df.groupby("bar", maintain_order=True).agg(
-        ...         pl.col("foo").sum(),
-        ...     )
+        ...     df.lazy()
+        ...     .filter(pl.arange(0, pl.count()).shuffle().over("color") < 2)
+        ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
 
         """
