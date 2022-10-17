@@ -25,7 +25,7 @@ dtype-duration = ["polars-core/dtype-duration", "polars-core/temporal"]
 rolling_window = ["polars-core/rolling_window", "dtype-duration"]
 private = []
 fmt = ["polars-core/fmt"]
-timezones = ["chrono-tz"]
+timezones = ["chrono-tz", "dtype-datetime"]
 
 test = [
   "dtype-date",

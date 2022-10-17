@@ -582,6 +582,7 @@ mod test {
             Duration::parse("30m"),
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
+            None,
         )
         .into_series();
 
@@ -628,6 +629,7 @@ mod test {
             Duration::parse("1h"),
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
+            None,
         )
         .into_series();
         assert_eq!(&upper, &range);
@@ -646,6 +648,7 @@ mod test {
             Duration::parse("1h"),
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
+            None,
         )
         .into_series();
         assert_eq!(&upper, &range);

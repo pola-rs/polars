@@ -181,6 +181,7 @@ def date_range(
     closed: ClosedWindow = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
+    time_zone: str | None = None,
 ) -> pli.Series:
     """
     Create a range of type `Datetime` (or `Date`).
@@ -201,6 +202,8 @@ def date_range(
         Name of the output Series.
     time_unit : {None, 'ns', 'us', 'ms'}
         Set the time unit.
+    time_zone:
+        Optional timezone
 
     Notes
     -----
@@ -256,6 +259,22 @@ def date_range(
     low, low_is_date = _ensure_datetime(low)
     high, high_is_date = _ensure_datetime(high)
 
+    if low.tzinfo is not None or time_zone is not None:
+        if low.tzinfo != high.tzinfo:
+            raise ValueError(
+                "Cannot mix different timezone aware datetimes."
+                f" Got: '{low.tzinfo}' and '{high.tzinfo}'."
+            )
+
+        if time_zone is not None and low.tzinfo is not None:
+            if str(low.tzinfo) != time_zone:
+                raise ValueError(
+                    "Given time_zone is different from that timezone aware datetimes."
+                    f" Given: '{time_zone}', got: '{low.tzinfo}'."
+                )
+        if time_zone is None:
+            time_zone = str(low.tzinfo)
+
     tu: TimeUnit
     if time_unit is not None:
         tu = time_unit
@@ -269,7 +288,9 @@ def date_range(
     if name is None:
         name = ""
 
-    dt_range = pli.wrap_s(_py_date_range(start, stop, interval, closed, name, tu))
+    dt_range = pli.wrap_s(
+        _py_date_range(start, stop, interval, closed, name, tu, time_zone)
+    )
     if (
         low_is_date
         and high_is_date

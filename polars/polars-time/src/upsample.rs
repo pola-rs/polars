@@ -157,6 +157,7 @@ fn upsample_single_impl(
                         every,
                         ClosedWindow::Both,
                         *tu,
+                        None,
                     )
                     .with_time_zone(tz.clone())
                     .into_series()

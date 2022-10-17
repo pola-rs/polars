@@ -17,9 +17,19 @@ pub fn date_range_impl(
     every: Duration,
     closed: ClosedWindow,
     tu: TimeUnit,
+    _tz: Option<TimeZone>,
 ) -> DatetimeChunked {
     let mut out = Int64Chunked::new_vec(name, date_range_vec(start, stop, every, closed, tu))
         .into_datetime(tu, None);
+
+    #[cfg(feature = "timezones")]
+    if let Some(tz) = _tz {
+        out = out
+            .with_time_zone(Some(tz.clone()))
+            .cast_time_zone("UTC")
+            .unwrap() // ensure we store them as UTC
+            .with_time_zone(Some(tz))
+    }
     out.set_sorted(start > stop);
     out
 }
@@ -32,6 +42,7 @@ pub fn date_range(
     every: Duration,
     closed: ClosedWindow,
     tu: TimeUnit,
+    tz: Option<TimeZone>,
 ) -> DatetimeChunked {
     let (start, stop) = match tu {
         TimeUnit::Nanoseconds => (start.timestamp_nanos(), stop.timestamp_nanos()),
@@ -41,5 +52,5 @@ pub fn date_range(
         ),
         TimeUnit::Milliseconds => (start.timestamp_millis(), stop.timestamp_millis()),
     };
-    date_range_impl(name, start, stop, every, closed, tu)
+    date_range_impl(name, start, stop, every, closed, tu, tz)
 }
