@@ -198,11 +198,10 @@ class LazyGroupBy(Generic[LDF]):
             If the schema provided is incorrect, this is a bug in the callers
             query and may lead to errors.
             If set to None, polars assumes the schema is unchanged.
- 
+
 
         Examples
         --------
-
         >>> df = pl.DataFrame(
         ...     {
         ...         "id": [0, 1, 2, 3, 4],
@@ -227,9 +226,9 @@ class LazyGroupBy(Generic[LDF]):
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 4   ┆ red   ┆ square   │
         └─────┴───────┴──────────┘
-        
+
         For each color group sample two rows:
-        
+
         >>> (
         ...     df.lazy()
         ...     .groupby("color")
@@ -250,14 +249,14 @@ class LazyGroupBy(Generic[LDF]):
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ red   ┆ triangle │
         └─────┴───────┴──────────┘
-        
+
         It is better to implement this with an expression:
-        
+
         >>> (
         ...     df.lazy()
         ...     .filter(pl.arange(0, pl.count()).shuffle().over("color") < 2)
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
-        
+
         """
         return self._lazyframe_class._from_pyldf(self.lgb.apply(f, schema))
