@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
+import pandas as pd
 
 import polars as pl
 
@@ -392,3 +393,24 @@ def test_none_comparison_4773() -> None:
     ).filter(pl.col("x") != pl.col("y"))
     assert df.shape == (3, 2)
     assert df.rows() == [(0, 1), (1, 2), (2, 3)]
+
+
+def test_datetime_supertype_5236() -> None:
+    df = pd.DataFrame(
+        {
+            "StartDateTime": [
+                pd.Timestamp(datetime.utcnow(), tz="UTC"),
+                pd.Timestamp(datetime.utcnow(), tz="UTC"),
+            ],
+            "EndDateTime": [
+                pd.Timestamp(datetime.utcnow(), tz="UTC"),
+                pd.Timestamp(datetime.utcnow(), tz="UTC"),
+            ],
+        }
+    )
+    out = pl.from_pandas(df).filter(
+        pl.col("StartDateTime")
+        < (pl.col("EndDateTime").dt.truncate("1d").max() - timedelta(days=1))
+    )
+    assert out.shape == (0, 2)
+    assert out.dtypes == [pl.Datetime("ns", "UTC")] * 2
