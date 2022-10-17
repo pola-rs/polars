@@ -2395,25 +2395,46 @@ def test_union_with_aliases_4770() -> None:
     assert lf.collect()["x"].to_list() == [1, 3, 4]
 
 
-def test_init_with_timezone() -> None:
+def test_init_datetimes_with_timezone() -> None:
+    tz_us = "America/New_York"
+    tz_europe = "Europe/Amsterdam"
+
+    dtm = datetime(2022, 10, 12, 12, 30, tzinfo=ZoneInfo("UTC"))
     for tu in DTYPE_TEMPORAL_UNITS | frozenset([None]):
         df = pl.DataFrame(
-            data={
-                "d1": [datetime(2022, 10, 12, 12, 30)],
-                "d2": [datetime(2022, 10, 12, 12, 30)],
-            },
+            data={"d1": [dtm], "d2": [dtm]},
             columns=[
-                ("d1", pl.Datetime(tu, "America/New_York")),  # type: ignore[arg-type]
-                ("d2", pl.Datetime(tu, "Asia/Tokyo")),  # type: ignore[arg-type]
+                ("d1", pl.Datetime(tu, tz_us)),
+                ("d2", pl.Datetime(tu, tz_europe)),
             ],
         )
-        # note: setting timezone doesn't change the underlying/physical value...
         assert (df["d1"].to_physical() == df["d2"].to_physical()).all()
-
-        # ...but (as expected) it _does_ change the interpretation of that value
         assert df.rows() == [
             (
-                datetime(2022, 10, 12, 8, 30, tzinfo=ZoneInfo("America/New_York")),
-                datetime(2022, 10, 12, 21, 30, tzinfo=ZoneInfo("Asia/Tokyo")),
+                datetime(2022, 10, 12, 8, 30, tzinfo=ZoneInfo(tz_us)),
+                datetime(2022, 10, 12, 14, 30, tzinfo=ZoneInfo(tz_europe)),
+            )
+        ]
+
+
+def test_init_physical_with_timezone() -> None:
+    tz_uae = "Asia/Dubai"
+    tz_asia = "Asia/Tokyo"
+
+    dtm_us = 1665577800000000
+    for tu in DTYPE_TEMPORAL_UNITS | frozenset([None]):
+        dtm = {"ms": dtm_us // 1_000, "ns": dtm_us * 1_000}.get(str(tu), dtm_us)
+        df = pl.DataFrame(
+            data={"d1": [dtm], "d2": [dtm]},
+            columns=[
+                ("d1", pl.Datetime(tu, tz_uae)),
+                ("d2", pl.Datetime(tu, tz_asia)),
+            ],
+        )
+        assert (df["d1"].to_physical() == df["d2"].to_physical()).all()
+        assert df.rows() == [
+            (
+                datetime(2022, 10, 12, 16, 30, tzinfo=ZoneInfo(tz_uae)),
+                datetime(2022, 10, 12, 21, 30, tzinfo=ZoneInfo(tz_asia)),
             )
         ]

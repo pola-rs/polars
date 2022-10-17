@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any, Callable, Sequence
 
 from polars.datatypes import (
-    DTYPE_TEMPORAL_UNITS,
     Boolean,
     Categorical,
     Date,
@@ -23,6 +22,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Utf8,
+    _base_type,
 )
 
 try:
@@ -63,9 +63,6 @@ if not _DOCUMENTING:
         Object: PySeries.new_object,
         Categorical: PySeries.new_str,
     }
-    for tu in DTYPE_TEMPORAL_UNITS:
-        _POLARS_TYPE_TO_CONSTRUCTOR[Datetime(tu)] = PySeries.new_opt_i64
-        _POLARS_TYPE_TO_CONSTRUCTOR[Duration(tu)] = PySeries.new_opt_i64
 
 
 def polars_type_to_constructor(
@@ -73,6 +70,7 @@ def polars_type_to_constructor(
 ) -> Callable[[str, Sequence[Any], bool], PySeries]:
     """Get the right PySeries constructor for the given Polars dtype."""
     try:
+        dtype = _base_type(dtype)
         return _POLARS_TYPE_TO_CONSTRUCTOR[dtype]
     except KeyError:  # pragma: no cover
         raise ValueError(f"Cannot construct PySeries for type {dtype}.") from None
