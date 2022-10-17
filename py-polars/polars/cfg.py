@@ -11,30 +11,44 @@ else:
     from typing_extensions import Literal
 
 
-# note: register any new Config environment variable names here; need to constrain
-# which 'POLARS_' environment variables are recognised, as there are also other
-# lower-level or experimental settings that should not be associated with Config.
+# note: register all Config-specific environment variable names here; need to constrain
+# which 'POLARS_' environment variables are recognised, as there are other lower-level
+# and/or experimental settings that should not be saved or reset with the Config vars.
 POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
     "POLARS_FMT_STR_LEN",
     "POLARS_FMT_TABLE_CELL_ALIGNMENT",
-    "POLARS_FMT_TABLE_CHANGE_COLUMN_DATA_TYPE_POSITION_FORMAT",
     "POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW",
     "POLARS_FMT_TABLE_FORMATTING",
     "POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES",
     "POLARS_FMT_TABLE_HIDE_COLUMN_NAMES",
     "POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR",
     "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION",
+    "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
 }
-# register class-local defaults here
+# register Config-local attributes (with their defaults) here
 POLARS_CFG_LOCAL_VARS = {"with_columns_kwargs": False}
 
 
 class Config:
-    """Configure polars."""
+    """
+    Configure polars; offers options for table formatting and more.
+
+    Notes
+    -----
+    Can also be used as a context manager in order to temporarily scope
+    the lifetime of specific options. For example:
+
+    >>> with pl.Config() as cfg:
+    ...     # set verbose for more detailed output within the scope
+    ...     cfg.set_verbose(True)  # doctest: +IGNORE_RESULT
+    ...
+    >>> # scope exit - no longer in verbose mode
+
+    """
 
     def __enter__(self) -> Config:
         """Support setting temporary Config options that are reset on scope exit."""
@@ -82,6 +96,10 @@ class Config:
         This method operates by removing all Config options from the environment,
         and then setting any class-local flags back to their default value.
 
+        Examples
+        --------
+        >>> cfg = pl.Config.restore_defaults()  # doctest: +SKIP
+
         """
         for var in POLARS_CFG_ENV_VARS:
             os.environ.pop(var, None)
@@ -122,6 +140,11 @@ class Config:
             change this to ``True`` to restrict the returned dictionary to include only
             those that _have_ been set to a specific value.
 
+        Examples
+        --------
+        >>> set_state = pl.Config.state(if_set=True)
+        >>> all_state = pl.Config.state()
+
         """
         return {
             var: os.environ.get(var)
@@ -130,60 +153,184 @@ class Config:
         }
 
     @classmethod
-    def set_tbl_hide_column_names(cls, active: bool = True) -> type[Config]:
-        """Hide column names of tables."""
-        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_NAMES"] = str(int(active))
+    def set_ascii_tables(cls, active: bool = True) -> type[Config]:
+        """
+        Use ASCII characters to print table outlines (set False to revert to UTF8).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
+        >>> pl.Config.set_ascii_tables(True)  # doctest: +SKIP
+        # ...
+        # shape: (3, 2)        shape: (3, 2)
+        # ┌─────┬───────┐      +-----+-------+
+        # │ abc ┆ xyz   │      | abc | xyz   |
+        # │ --- ┆ ---   │      | --- | ---   |
+        # │ f64 ┆ bool  │      | f64 | bool  |
+        # ╞═════╪═══════╡      +=============+
+        # │ 1.0 ┆ true  │  >>  | 1.0 | true  |
+        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      |-----+-------|
+        # │ 2.5 ┆ false │      | 2.5 | false |
+        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      |-----+-------|
+        # │ 5.0 ┆ true  │      | 5.0 | true  |
+        # └─────┴───────┘      +-----+-------+
+
+        """
+        fmt = "ASCII_FULL" if active else "UTF8_FULL"
+        os.environ["POLARS_FMT_TABLE_FORMATTING"] = fmt
         return cls
 
     @classmethod
-    def set_tbl_hide_column_data_types(cls, active: bool = True) -> type[Config]:
-        """Hide column data types (i64, f64, str etc.) of tables."""
-        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES"] = str(int(active))
+    def set_fmt_str_lengths(cls, n: int) -> type[Config]:
+        """
+        Set the number of characters used to print string values.
+
+        Parameters
+        ----------
+        n : int
+            number of characters to print
+
+        """
+        os.environ["POLARS_FMT_STR_LEN"] = str(n)
         return cls
 
     @classmethod
-    def set_tbl_hide_column_separator(cls, active: bool = True) -> type[Config]:
-        """Hide the '---' separator that separates column names from the table rows."""
-        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR"] = str(int(active))
+    def set_tbl_cell_alignment(
+        cls, format: Literal["LEFT", "CENTER", "RIGHT"]
+    ) -> type[Config]:
+        """
+        Set table cell alignment.
+
+        Parameters
+        ----------
+        format : str
+            * "LEFT": left aligned
+            * "CENTER": center aligned
+            * "RIGHT": right aligned
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"column_abc": [1.0, 2.5, 5.0], "column_xyz": [True, False, True]}
+        ... )
+        >>> pl.Config.set_tbl_cell_alignment("RIGHT")  # doctest: +SKIP
+        # ...
+        # shape: (3, 2)
+        # ┌────────────┬────────────┐
+        # │ column_abc ┆ column_xyz │
+        # │        --- ┆        --- │
+        # │        f64 ┆       bool │
+        # ╞════════════╪════════════╡
+        # │        1.0 ┆       true │
+        # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        # │        2.5 ┆      false │
+        # ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        # │        5.0 ┆       true │
+        # └────────────┴────────────┘
+
+        Raises
+        ------
+        KeyError: if alignment string not recognised.
+
+        """
+        os.environ["POLARS_FMT_TABLE_CELL_ALIGNMENT"] = format
         return cls
 
     @classmethod
-    def set_tbl_hide_dataframe_shape(cls, active: bool = True) -> type[Config]:
-        """Hide the shape information of the dataframe when displaying tables."""
-        os.environ["POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION"] = str(
-            int(active)
-        )
+    def set_tbl_cols(cls, n: int) -> type[Config]:
+        """
+        Set the number of columns used to print tables.
+
+        Parameters
+        ----------
+        n : int
+            number of columns to print. If n<0 print all the columns.
+
+        Examples
+        --------
+        >>> with pl.Config() as cfg:
+        ...     cfg.set_tbl_cols(5)  # doctest: +IGNORE_RESULT
+        ...     df = pl.DataFrame({str(i): [i] for i in range(100)})
+        ...     df
+        ...
+        shape: (1, 100)
+        ┌─────┬─────┬─────┬─────┬─────┬─────┐
+        │ 0   ┆ 1   ┆ 2   ┆ ... ┆ 98  ┆ 99  │
+        │ --- ┆ --- ┆ --- ┆     ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 ┆     ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╪═════╪═════╡
+        │ 0   ┆ 1   ┆ 2   ┆ ... ┆ 98  ┆ 99  │
+        └─────┴─────┴─────┴─────┴─────┴─────┘
+
+        >>> with pl.Config() as cfg:
+        ...     pl.cfg.Config.set_tbl_cols(10)  # doctest: +IGNORE_RESULT
+        ...     df
+        ...
+        shape: (1, 100)
+        ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
+        │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ 4   ┆ ... ┆ 95  ┆ 96  ┆ 97  ┆ 98  ┆ 99  │
+        │ --- ┆ --- ┆ --- ┆ --- ┆ --- ┆     ┆ --- ┆ --- ┆ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 ┆ i64 ┆ i64 ┆     ┆ i64 ┆ i64 ┆ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╪═════╪═════╪═════╪═════╪═════╪═════╪═════╡
+        │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ 4   ┆ ... ┆ 95  ┆ 96  ┆ 97  ┆ 98  ┆ 99  │
+        └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
+
+        """
+        os.environ["POLARS_FMT_MAX_COLS"] = str(n)
+        return cls
+
+    @classmethod
+    def set_tbl_column_data_type_inline(cls, active: bool = True) -> type[Config]:
+        """
+        Moves the data type inline with the column name (to the right, in parentheses).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
+        >>> pl.Config.set_tbl_dataframe_shape_below(True)  # doctest: +SKIP
+        # ...
+        # shape: (3, 2)        shape: (3, 2)
+        # ┌─────┬───────┐      ┌───────────┬────────────┐
+        # │ abc ┆ xyz   │      │ abc (f64) ┆ xyz (bool) │
+        # │ --- ┆ ---   │      ╞═══════════╪════════════╡
+        # │ f64 ┆ bool  │      │ 1.0       ┆ true       │
+        # ╞═════╪═══════╡      ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        # │ 1.0 ┆ true  │  >>  │ 2.5       ┆ false      │
+        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        # │ 2.5 ┆ false │      │ 5.0       ┆ true       │
+        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      └───────────┴────────────┘
+        # │ 5.0 ┆ true  │
+        # └─────┴───────┘
+
+        """
+        os.environ["POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE"] = str(int(active))
         return cls
 
     @classmethod
     def set_tbl_dataframe_shape_below(cls, active: bool = True) -> type[Config]:
-        """Print the dataframe shape below the dataframe when displaying tables."""
+        """
+        Print the dataframe shape below the dataframe when displaying tables.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
+        >>> pl.Config.set_tbl_dataframe_shape_below(True)  # doctest: +SKIP
+        # ...
+        # shape: (3, 2)        ┌─────┬───────┐
+        # ┌─────┬───────┐      │ abc ┆ xyz   │
+        # │ abc ┆ xyz   │      │ --- ┆ ---   │
+        # │ --- ┆ ---   │      │ f64 ┆ bool  │
+        # │ f64 ┆ bool  │      ╞═════╪═══════╡
+        # ╞═════╪═══════╡      │ 1.0 ┆ true  │
+        # │ 1.0 ┆ true  │  >>  ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 2.5 ┆ false │
+        # │ 2.5 ┆ false │      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 5.0 ┆ true  │
+        # │ 5.0 ┆ true  │      └─────┴───────┘
+        # └─────┴───────┘      shape: (3, 2)
+
+        """
         os.environ["POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW"] = str(int(active))
-        return cls
-
-    @classmethod
-    def set_tbl_change_column_data_type_position_format(
-        cls, active: bool = True
-    ) -> type[Config]:
-        """Changes the data type position / format to directly below column name."""
-        os.environ["POLARS_FMT_TABLE_CHANGE_COLUMN_DATA_TYPE_POSITION_FORMAT"] = str(
-            int(active)
-        )
-        return cls
-
-    @classmethod
-    def set_utf8_tables(cls) -> type[Config]:
-        """Use utf8 characters to print tables."""
-        # os.unsetenv is automatically called if we remove a key from os.environ,
-        # see https://docs.python.org/3/library/os.html#os.environ. However, we cannot
-        # call os.unsetenv directly, as that fails on Windows
-        os.environ["POLARS_FMT_TABLE_FORMATTING"] = "UTF8_FULL"
-        return cls
-
-    @classmethod
-    def set_ascii_tables(cls) -> type[Config]:
-        """Use ascii characters to print tables."""
-        os.environ["POLARS_FMT_TABLE_FORMATTING"] = "ASCII_FULL"
         return cls
 
     @classmethod
@@ -226,35 +373,164 @@ class Config:
         KeyError: if format string not recognised.
 
         """
+        # can see what the different styles look like in the comfy-table tests:
+        # https://github.com/Nukesor/comfy-table/blob/main/tests/all/presets_test.rs
         os.environ["POLARS_FMT_TABLE_FORMATTING"] = format
         return cls
 
     @classmethod
-    def set_tbl_cell_alignment(
-        cls, format: Literal["LEFT", "CENTER", "RIGHT"]
-    ) -> type[Config]:
+    def set_tbl_hide_column_data_types(cls, active: bool = True) -> type[Config]:
         """
-        Set table cell alignment.
+        Hide table column data types (i64, f64, str etc.).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
+        >>> pl.Config.set_tbl_hide_column_data_types(True)  # doctest: +SKIP
+        # ...
+        # shape: (3, 2)        shape: (3, 2)
+        # ┌─────┬───────┐      ┌─────┬───────┐
+        # │ abc ┆ xyz   │      │ abc ┆ xyz   │
+        # │ --- ┆ ---   │      ╞═════╪═══════╡
+        # │ f64 ┆ bool  │      │ 1.0 ┆ true  │
+        # ╞═════╪═══════╡      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        # │ 1.0 ┆ true  │  >>  │ 2.5 ┆ false │
+        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        # │ 2.5 ┆ false │      │ 5.0 ┆ true  │
+        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      └─────┴───────┘
+        # │ 5.0 ┆ true  │
+        # └─────┴───────┘
+
+        """
+        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES"] = str(int(active))
+        return cls
+
+    @classmethod
+    def set_tbl_hide_column_names(cls, active: bool = True) -> type[Config]:
+        """
+        Hide table column names.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
+        >>> pl.Config.set_tbl_hide_column_names(True)  # doctest: +SKIP
+        # ...
+        # shape: (3, 2)        shape: (3, 2)
+        # ┌─────┬───────┐      ┌─────┬───────┐
+        # │ abc ┆ xyz   │      │ f64 ┆ bool  │
+        # │ --- ┆ ---   │      ╞═════╪═══════╡
+        # │ f64 ┆ bool  │      │ 1.0 ┆ true  │
+        # ╞═════╪═══════╡      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        # │ 1.0 ┆ true  │  >>  │ 2.5 ┆ false │
+        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        # │ 2.5 ┆ false │      │ 5.0 ┆ true  │
+        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      └─────┴───────┘
+        # │ 5.0 ┆ true  │
+        # └─────┴───────┘
+
+        """
+        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_NAMES"] = str(int(active))
+        return cls
+
+    @classmethod
+    def set_tbl_hide_dtype_separator(cls, active: bool = True) -> type[Config]:
+        """
+        Hide the '---' separator between the column names and column types.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
+        >>> pl.Config.set_tbl_hide_dtype_separator(True)  # doctest: +SKIP
+        # ...
+        # shape: (3, 2)        shape: (3, 2)
+        # ┌─────┬───────┐      ┌─────┬───────┐
+        # │ abc ┆ xyz   │      │ abc ┆ xyz   │
+        # │ --- ┆ ---   │      │ f64 ┆ bool  │
+        # │ f64 ┆ bool  │      ╞═════╪═══════╡
+        # ╞═════╪═══════╡      │ 1.0 ┆ true  │
+        # │ 1.0 ┆ true  │  >>  ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 2.5 ┆ false │
+        # │ 2.5 ┆ false │      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 5.0 ┆ true  │
+        # │ 5.0 ┆ true  │      └─────┴───────┘
+        # └─────┴───────┘
+
+        See Also
+        --------
+        set_tbl_column_data_type_inline
+
+        """
+        os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR"] = str(int(active))
+        return cls
+
+    @classmethod
+    def set_tbl_hide_dataframe_shape(cls, active: bool = True) -> type[Config]:
+        """
+        Hide the shape information of the dataframe when displaying tables.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
+        >>> pl.Config.set_tbl_hide_dataframe_shape(True)  # doctest: +SKIP
+        # ...
+        # shape: (3, 2)        ┌─────┬───────┐
+        # ┌─────┬───────┐      │ abc ┆ xyz   │
+        # │ abc ┆ xyz   │      │ --- ┆ ---   │
+        # │ --- ┆ ---   │      │ f64 ┆ bool  │
+        # │ f64 ┆ bool  │      ╞═════╪═══════╡
+        # ╞═════╪═══════╡      │ 1.0 ┆ true  │
+        # │ 1.0 ┆ true  │  >>  ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 2.5 ┆ false │
+        # │ 2.5 ┆ false │      ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤      │ 5.0 ┆ true  │
+        # │ 5.0 ┆ true  │      └─────┴───────┘
+        # └─────┴───────┘
+
+        """
+        os.environ["POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION"] = str(
+            int(active)
+        )
+        return cls
+
+    @classmethod
+    def set_tbl_rows(cls, n: int) -> type[Config]:
+        """
+        Set the max number of rows used to draw the table (both Dataframe and Series).
 
         Parameters
         ----------
-        format : str
-            * "LEFT": left aligned
-            * "CENTER": center aligned
-            * "RIGHT": right aligned
+        n : int
+            number of rows to print; if n < 0, prints all rows (DataFrame) and
+            all elements (Series).
 
-        Raises
-        ------
-        KeyError: if format string not recognised.
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"abc": [1.0, 2.5, 3.5, 5.0], "xyz": [True, False, True, False]}
+        ... )
+        >>> pl.Config.set_tbl_rows(2)  # doctest: +SKIP
+        # ...
+        # shape: (4, 2)
+        # ┌─────┬───────┐
+        # │ abc ┆ xyz   │
+        # │ --- ┆ ---   │
+        # │ f64 ┆ bool  │
+        # ╞═════╪═══════╡
+        # │ 1.0 ┆ true  │
+        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        # │ ... ┆ ...   │
+        # ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        # │ 5.0 ┆ false │
+        # └─────┴───────┘
 
         """
-        os.environ["POLARS_FMT_TABLE_CELL_ALIGNMENT"] = format
+        os.environ["POLARS_FMT_MAX_ROWS"] = str(n)
         return cls
 
     @classmethod
     def set_tbl_width_chars(cls, width: int) -> type[Config]:
         """
-        Set the number of character used to draw the table.
+        Set the number of characters used to draw the table.
 
         Parameters
         ----------
@@ -263,74 +539,6 @@ class Config:
 
         """
         os.environ["POLARS_TABLE_WIDTH"] = str(width)
-        return cls
-
-    @classmethod
-    def set_tbl_rows(cls, n: int) -> type[Config]:
-        """
-        Set the number of rows used to print tables (Dataframe and Series).
-
-        Parameters
-        ----------
-        n : int
-            number of rows to print.
-            If n<0 print all rows (DataFrame) and all elements (Series).
-
-        """
-        os.environ["POLARS_FMT_MAX_ROWS"] = str(n)
-        return cls
-
-    @classmethod
-    def set_tbl_cols(cls, n: int) -> type[Config]:
-        """
-        Set the number of columns used to print tables.
-
-        Parameters
-        ----------
-        n : int
-            number of columns to print. If n<0 print all the columns.
-
-        Examples
-        --------
-        >>> pl.cfg.Config.set_tbl_cols(5)  # doctest: +IGNORE_RESULT
-        >>> df = pl.DataFrame({str(i): [i] for i in range(100)})
-        >>> df
-        shape: (1, 100)
-        ┌─────┬─────┬─────┬─────┬─────┬─────┐
-        │ 0   ┆ 1   ┆ 2   ┆ ... ┆ 98  ┆ 99  │
-        │ --- ┆ --- ┆ --- ┆     ┆ --- ┆ --- │
-        │ i64 ┆ i64 ┆ i64 ┆     ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╪═════╪═════╪═════╡
-        │ 0   ┆ 1   ┆ 2   ┆ ... ┆ 98  ┆ 99  │
-        └─────┴─────┴─────┴─────┴─────┴─────┘
-
-        >>> pl.cfg.Config.set_tbl_cols(10)  # doctest: +IGNORE_RESULT
-        >>> df
-        shape: (1, 100)
-        ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
-        │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ 4   ┆ ... ┆ 95  ┆ 96  ┆ 97  ┆ 98  ┆ 99  │
-        │ --- ┆ --- ┆ --- ┆ --- ┆ --- ┆     ┆ --- ┆ --- ┆ --- ┆ --- ┆ --- │
-        │ i64 ┆ i64 ┆ i64 ┆ i64 ┆ i64 ┆     ┆ i64 ┆ i64 ┆ i64 ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╪═════╪═════╪═════╪═════╪═════╪═════╪═════╪═════╡
-        │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ 4   ┆ ... ┆ 95  ┆ 96  ┆ 97  ┆ 98  ┆ 99  │
-        └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
-
-        """
-        os.environ["POLARS_FMT_MAX_COLS"] = str(n)
-        return cls
-
-    @classmethod
-    def set_fmt_str_lengths(cls, n: int) -> type[Config]:
-        """
-        Set the number of characters used to print string values.
-
-        Parameters
-        ----------
-        n : int
-            number of characters to print
-
-        """
-        os.environ["POLARS_FMT_STR_LEN"] = str(n)
         return cls
 
     @classmethod

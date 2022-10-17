@@ -74,7 +74,7 @@ where
     T::Native: NumCast,
 {
     fn create_groups_from_sorted(&self, multithreaded: bool) -> GroupsSlice {
-        if std::env::var("POLARS_VERBOSE").is_ok() {
+        if std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1" {
             eprintln!("groupby keys are sorted; running sorted key fast path");
         }
         let arr = self.downcast_iter().next().unwrap();

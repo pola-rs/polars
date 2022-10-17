@@ -474,7 +474,7 @@ impl<'a> CoreReader<'a> {
         bytes: &[u8],
         predicate: Option<&Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<DataFrame> {
-        let logging = std::env::var("POLARS_VERBOSE").is_ok();
+        let logging = std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1";
         let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes) =
             self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging, false)?;
         let projection = self.get_projection();

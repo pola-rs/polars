@@ -36,7 +36,7 @@ impl Default for StateFlags {
 
 impl StateFlags {
     fn init() -> Self {
-        let verbose = std::env::var("POLARS_VERBOSE").is_ok();
+        let verbose = std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1";
         let mut flags: StateFlags = Default::default();
         if verbose {
             flags |= StateFlags::VERBOSE;
@@ -144,7 +144,7 @@ impl ExecutionState {
     }
 
     pub fn new() -> Self {
-        let verbose = std::env::var("POLARS_VERBOSE").is_ok();
+        let verbose = std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1";
         let mut flags: StateFlags = Default::default();
         if verbose {
             flags |= StateFlags::VERBOSE;
