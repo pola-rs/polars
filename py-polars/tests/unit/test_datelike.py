@@ -701,7 +701,8 @@ def test_read_utc_times_parquet() -> None:
     df.to_parquet(f)
     f.seek(0)
     df_in = pl.read_parquet(f)
-    assert df_in["Timestamp"][0] == datetime(2022, 1, 1, 0, 0)
+    tz = zoneinfo.ZoneInfo("UTC")
+    assert df_in["Timestamp"][0] == datetime(2022, 1, 1, 0, 0, tzinfo=tz)
 
 
 def test_epoch() -> None:
@@ -1607,6 +1608,8 @@ def test_invalid_date_parsing_4898() -> None:
 
 
 def test_cast_timezone() -> None:
+    utc = zoneinfo.ZoneInfo("UTC")
+    ny = zoneinfo.ZoneInfo("America/New_York")
     assert pl.DataFrame({"a": [datetime(2022, 9, 25, 14)]}).with_column(
         pl.col("a")
         .dt.with_time_zone("America/New_York")
@@ -1614,7 +1617,7 @@ def test_cast_timezone() -> None:
         .alias("b")
     ).to_dict(False) == {
         "a": [datetime(2022, 9, 25, 14, 0)],
-        "b": [datetime(2022, 9, 25, 18, 0)],
+        "b": [datetime(2022, 9, 25, 18, 0, tzinfo=utc)],
     }
     assert pl.DataFrame({"a": [datetime(2022, 9, 25, 18)]}).with_column(
         pl.col("a")
@@ -1623,7 +1626,7 @@ def test_cast_timezone() -> None:
         .alias("b")
     ).to_dict(False) == {
         "a": [datetime(2022, 9, 25, 18, 0)],
-        "b": [datetime(2022, 9, 25, 14, 0)],
+        "b": [datetime(2022, 9, 25, 14, 0, tzinfo=ny)],
     }
 
 
@@ -1631,8 +1634,13 @@ def test_tz_aware_get_idx_5010() -> None:
     when = int(
         datetime(2022, 1, 1, 12, tzinfo=zoneinfo.ZoneInfo("Asia/Shanghai")).timestamp()
     )
-    a = pa.array([when]).cast(pa.timestamp("s", tz="Asia/Shanghai"))
-    assert int(pl.from_arrow(a)[0].timestamp()) == when  # type: ignore[union-attr]
+    s = (
+        pl.Series([when * 1000])
+        .cast(pl.Datetime("ms"))
+        .dt.with_time_zone("UTC")
+        .dt.cast_time_zone("Asia/Shanghai")
+    )
+    assert int(s[0].timestamp()) == when
 
 
 def test_tz_datetime_duration_arithm_5221() -> None:
