@@ -9,7 +9,7 @@ default = []
 cli = ["csv", "polars-lazy/fmt", "atty", "rustyline"]
 csv = ["polars-lazy/csv-file"]
 parquet = ["polars-lazy/parquet", "polars-lazy/dtype-binary"]
-ipc = [ "polars-lazy/ipc" ]
+ipc = ["polars-lazy/ipc"]
 
 [dependencies]
 atty = { version = "0.2", optional = true }
