@@ -42,18 +42,16 @@ impl SQLContext {
         self.table_map.insert(name.to_owned(), lf);
     }
 
-    fn get_relation_name<'a>(
-        &self,
-        relation: &'a TableFactor,
-        alias_map: &mut PlHashMap<String, String>,
-    ) -> PolarsResult<&'a str> {
+    fn get_relation_name<'a>(&self, relation: &'a TableFactor) -> PolarsResult<&'a str> {
         let tbl_name = match relation {
             TableFactor::Table { name, alias, .. } => {
                 let tbl_name = name.0.get(0).unwrap().value.as_str();
 
                 if self.table_map.contains_key(tbl_name) {
-                    if let Some(alias) = alias {
-                        alias_map.insert(alias.name.value.clone(), tbl_name.to_owned());
+                    if let Some(_) = alias {
+                        return Err(PolarsError::ComputeError(
+                            format!("Table aliases are not supported.").into(),
+                        ));
                     };
 
                     tbl_name
@@ -84,14 +82,13 @@ impl SQLContext {
             .from
             .get(0)
             .ok_or_else(|| PolarsError::ComputeError("No table name provided in query".into()))?;
-        let mut alias_map = PlHashMap::new();
 
-        let tbl_name = self.get_relation_name(&sql_tbl.relation, &mut alias_map)?;
+        let tbl_name = self.get_relation_name(&sql_tbl.relation)?;
         let mut lf = self.get_table(tbl_name)?;
 
         if !sql_tbl.joins.is_empty() {
             for tbl in &sql_tbl.joins {
-                let join_tbl_name = self.get_relation_name(&tbl.relation, &mut alias_map)?;
+                let join_tbl_name = self.get_relation_name(&tbl.relation)?;
                 let join_tbl = self.get_table(join_tbl_name)?;
                 match &tbl.join_operator {
                     JoinOperator::Inner(constraint) => {
