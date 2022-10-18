@@ -601,7 +601,19 @@ impl PyExpr {
         self.clone()
             .inner
             .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("str.len")
+            .with_fmt("str.lengths")
+            .into()
+    }
+
+    pub fn str_n_chars(&self) -> PyExpr {
+        let function = |s: Series| {
+            let ca = s.utf8()?;
+            Ok(ca.str_n_chars().into_series())
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("str.n_chars")
             .into()
     }
 

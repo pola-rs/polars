@@ -111,27 +111,75 @@ class ExprStringNameSpace:
 
     def lengths(self) -> pli.Expr:
         """
-        Get the length of the Strings as UInt32.
+        Get length of the strings as UInt32 (as number of bytes).
+
+        Notes
+        -----
+        The returned lengths are equal to the number of bytes in the UTF8 string. If you
+        need the length in terms of the number of characters, use ``n_chars`` instead.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"s": [None, "bears", "110"]})
-        >>> df.select(["s", pl.col("s").str.lengths().alias("len")])
-        shape: (3, 2)
-        ┌───────┬──────┐
-        │ s     ┆ len  │
-        │ ---   ┆ ---  │
-        │ str   ┆ u32  │
-        ╞═══════╪══════╡
-        │ null  ┆ null │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ bears ┆ 5    │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ 110   ┆ 3    │
-        └───────┴──────┘
+        >>> df = pl.DataFrame({"s": ["Café", None, "345", "東京"]}).with_columns(
+        ...     [
+        ...         pl.col("s").str.lengths().alias("length"),
+        ...         pl.col("s").str.n_chars().alias("nchars"),
+        ...     ]
+        ... )
+        >>> df
+        shape: (4, 3)
+        ┌──────┬────────┬────────┐
+        │ s    ┆ length ┆ nchars │
+        │ ---  ┆ ---    ┆ ---    │
+        │ str  ┆ u32    ┆ u32    │
+        ╞══════╪════════╪════════╡
+        │ Café ┆ 5      ┆ 4      │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ null ┆ null   ┆ null   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 345  ┆ 3      ┆ 3      │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 東京  ┆ 6      ┆ 2      │
+        └──────┴────────┴────────┘
 
         """
         return pli.wrap_expr(self._pyexpr.str_lengths())
+
+    def n_chars(self) -> pli.Expr:
+        """
+        Get length of the strings as UInt32 (as number of chars).
+
+        Notes
+        -----
+        If you know that you are working with ASCII text, ``lengths`` will be
+        equivalent, and faster (returns length in terms of the number of bytes).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"s": ["Café", None, "345", "東京"]}).with_columns(
+        ...     [
+        ...         pl.col("s").str.n_chars().alias("nchars"),
+        ...         pl.col("s").str.lengths().alias("length"),
+        ...     ]
+        ... )
+        >>> df
+        shape: (4, 3)
+        ┌──────┬────────┬────────┐
+        │ s    ┆ nchars ┆ length │
+        │ ---  ┆ ---    ┆ ---    │
+        │ str  ┆ u32    ┆ u32    │
+        ╞══════╪════════╪════════╡
+        │ Café ┆ 4      ┆ 5      │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ null ┆ null   ┆ null   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 345  ┆ 3      ┆ 3      │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 東京  ┆ 2      ┆ 6      │
+        └──────┴────────┴────────┘
+
+        """
+        return pli.wrap_expr(self._pyexpr.str_n_chars())
 
     def concat(self, delimiter: str = "-") -> pli.Expr:
         """

@@ -1617,9 +1617,15 @@ def test_str_concat() -> None:
 
 
 def test_str_lengths() -> None:
-    s = pl.Series(["messi", "ronaldo", None])
-    expected = pl.Series([5, 7, None], dtype=UInt32)
+    s = pl.Series(["Café", None, "345", "東京"])
+    expected = pl.Series([5, None, 3, 6], dtype=UInt32)
     verify_series_and_expr_api(s, expected, "str.lengths")
+
+
+def test_str_n_chars() -> None:
+    s = pl.Series(["Café", None, "345", "東京"])
+    expected = pl.Series([4, None, 3, 2], dtype=UInt32)
+    verify_series_and_expr_api(s, expected, "str.n_chars")
 
 
 def test_str_contains() -> None:

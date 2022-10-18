@@ -93,7 +93,12 @@ class StringNameSpace:
 
     def lengths(self) -> pli.Series:
         """
-        Get length of the string values in the Series.
+        Get length of the string values in the Series (as number of bytes).
+
+        Notes
+        -----
+        The returned lengths are equal to the number of bytes in the UTF8 string. If you
+        need the length in terms of the number of characters, use ``n_chars`` instead.
 
         Returns
         -------
@@ -101,15 +106,43 @@ class StringNameSpace:
 
         Examples
         --------
-        >>> s = pl.Series(["foo", None, "hello", "world"])
+        >>> s = pl.Series(["Café", None, "345", "東京"])
         >>> s.str.lengths()
         shape: (4,)
         Series: '' [u32]
         [
-            3
+            5
             null
-            5
-            5
+            3
+            6
+        ]
+
+        """
+
+    def n_chars(self) -> pli.Series:
+        """
+        Get length of the string values in the Series (as number of chars).
+
+        Returns
+        -------
+        Series[u32]
+
+        Notes
+        -----
+        If you know that you are working with ASCII text, ``lengths`` will be
+        equivalent, and faster (returns length in terms of the number of bytes).
+
+        Examples
+        --------
+        >>> s = pl.Series(["Café", None, "345", "東京"])
+        >>> s.str.n_chars()
+        shape: (4,)
+        Series: '' [u32]
+        [
+            4
+            null
+            3
+            2
         ]
 
         """

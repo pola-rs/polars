@@ -283,6 +283,7 @@ The following methods are available under the `Series.str` attribute.
     StringNameSpace.lengths
     StringNameSpace.ljust
     StringNameSpace.lstrip
+    StringNameSpace.n_chars
     StringNameSpace.replace
     StringNameSpace.replace_all
     StringNameSpace.rjust

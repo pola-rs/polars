@@ -331,6 +331,7 @@ The following methods are available under the `Expr.str` attribute.
     ExprStringNameSpace.lengths
     ExprStringNameSpace.ljust
     ExprStringNameSpace.lstrip
+    ExprStringNameSpace.n_chars
     ExprStringNameSpace.replace
     ExprStringNameSpace.replace_all
     ExprStringNameSpace.rjust
