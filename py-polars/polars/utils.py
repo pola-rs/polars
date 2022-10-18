@@ -197,7 +197,6 @@ def _prepare_row_count_args(
 
 
 EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
-UTC = zoneinfo.ZoneInfo("UTC")
 
 
 def _to_python_datetime(
@@ -226,16 +225,22 @@ def _to_python_datetime(
             else:
                 raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
         else:
+            if not _ZONEINFO_AVAILABLE:
+                raise ImportError(
+                    "Install polars[timezone] to handle datetimes with timezones."
+                )
+
+            utc = zoneinfo.ZoneInfo("UTC")
             if tu == "ns":
                 # nanoseconds to seconds
-                dt = datetime.fromtimestamp(0, tz=UTC) + timedelta(
+                dt = datetime.fromtimestamp(0, tz=utc) + timedelta(
                     microseconds=value / 1000
                 )
             elif tu == "us":
-                dt = datetime.fromtimestamp(0, tz=UTC) + timedelta(microseconds=value)
+                dt = datetime.fromtimestamp(0, tz=utc) + timedelta(microseconds=value)
             elif tu == "ms":
                 # milliseconds to seconds
-                dt = datetime.fromtimestamp(value / 1000, tz=UTC)
+                dt = datetime.fromtimestamp(value / 1000, tz=utc)
             else:
                 raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
             return _localize(dt, tz)
