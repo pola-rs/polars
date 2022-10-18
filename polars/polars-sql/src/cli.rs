@@ -9,6 +9,8 @@ use polars_lazy::frame::LazyCsvReader;
 use polars_lazy::frame::LazyFrame;
 #[cfg(feature = "parquet")]
 use polars_lazy::frame::ScanArgsParquet;
+#[cfg(feature = "ipc")]
+use polars_lazy::frame::ScanArgsIpc;
 use polars_sql::SQLContext;
 use rustyline::error::ReadlineError;
 use rustyline::{Editor, Result};
@@ -78,6 +80,8 @@ fn create_dataframe_from_filename(filename: &str) -> PolarsResult<LazyFrame> {
         Some("csv") => LazyCsvReader::new(filename).finish(),
         #[cfg(feature = "parquet")]
         Some("parquet") => LazyFrame::scan_parquet(filename, ScanArgsParquet::default()),
+        #[cfg(feature = "ipc")]
+        Some("ipc") => LazyFrame::scan_ipc(filename, ScanArgsIpc::default()),
         None => Err(PolarsError::ComputeError(
             format!("Unknown dataframe \"{}\". Either specify a dataframe name registered with \\rd or an absolute path to a file.", filename).into(),
         )),
