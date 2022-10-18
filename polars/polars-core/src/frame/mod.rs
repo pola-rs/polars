@@ -1786,7 +1786,12 @@ impl DataFrame {
                 // no need to compute the sort indices and then take by these indices
                 // simply sort and return as frame
                 if self.width() == 1 && self.check_name_to_idx(s.name()).is_ok() {
-                    return Ok(s.sort_with(options).into_frame());
+                    let mut out = s.sort_with(options);
+                    if let Some((offset, len)) = slice {
+                        out = out.slice(offset, len);
+                    }
+
+                    return Ok(out.into_frame());
                 }
                 s.argsort(options)
             }
