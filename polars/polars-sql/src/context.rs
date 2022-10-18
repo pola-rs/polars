@@ -272,10 +272,10 @@ impl SQLContext {
                 "Group By Error: Can't processed wildcard in groupby".into(),
             ));
         }
-        let schema_before = lf.schema().unwrap();
+        let schema_before = lf.schema()?;
 
         let groupby_keys_schema =
-            expressions_to_schema(groupby_keys, &schema_before, Context::Default).unwrap();
+            expressions_to_schema(groupby_keys, &schema_before, Context::Default)?;
 
         // remove the groupby keys as polars adds those implicitly
         let mut aggregation_projection = Vec::with_capacity(projections.len());
@@ -289,7 +289,7 @@ impl SQLContext {
         let aggregated = lf.groupby(groupby_keys).agg(&aggregation_projection);
 
         let projection_schema =
-            expressions_to_schema(projections, &schema_before, Context::Default).unwrap();
+            expressions_to_schema(projections, &schema_before, Context::Default)?;
 
         // a final projection to get the proper order
         let final_projection = projection_schema
