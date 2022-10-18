@@ -13,7 +13,13 @@ fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Optio
 }
 
 pub trait Utf8NameSpaceImpl: AsUtf8 {
-    /// Get the length of the string values.
+    /// Get the length of the string values as number of chars.
+    fn str_n_chars(&self) -> UInt32Chunked {
+        let ca = self.as_utf8();
+        ca.apply_kernel_cast(&string_nchars)
+    }
+
+    /// Get the length of the string values as number of bytes.
     fn str_lengths(&self) -> UInt32Chunked {
         let ca = self.as_utf8();
         ca.apply_kernel_cast(&string_lengths)
