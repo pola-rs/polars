@@ -1617,8 +1617,8 @@ def test_str_concat() -> None:
 
 
 def test_str_lengths() -> None:
-    s = pl.Series(["messi", "ronaldo", None])
-    expected = pl.Series([5, 7, None], dtype=UInt32)
+    s = pl.Series(["messi", "ronaldo", "中", "café", None])
+    expected = pl.Series([5, 7, 1, 4, None], dtype=UInt32)
     verify_series_and_expr_api(s, expected, "str.lengths")
 
 
