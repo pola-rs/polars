@@ -6,7 +6,7 @@ use crate::prelude::*;
 use crate::trusted_len::PushUnchecked;
 
 pub fn string_lengths(array: &Utf8Array<i64>) -> ArrayRef {
-    let values = array.offsets().windows(2).map(|x| (x[1] - x[0]) as u32);
+    let values = array.values_iter().map(|x| x.chars().count() as u32);
 
     let values: Buffer<_> = Vec::from_trusted_len_iter(values).into();
 
